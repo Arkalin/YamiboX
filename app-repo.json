@@ -1,0 +1,17 @@
+{
+  "name": "YamiboX Repository",
+  "identifier": "com.arkalin.yamibox.source",
+  "featuredApps": [
+    "com.arkalin.YamiboX"
+  ],
+  "apps": [
+    {
+      "name": "Yamibo X",
+      "bundleIdentifier": "com.arkalin.YamiboX",
+      "developerName": "Arkalin",
+      "localizedDescription": "A SwiftUI reader for Yamibo forum novels and manga.",
+      "iconURL": "https://raw.githubusercontent.com/Arkalin/YamiboX/main/YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "versions": []
+    }
+  ]
+}

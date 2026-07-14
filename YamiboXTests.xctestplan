@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "A7A88C2B-5F5D-4687-8E5C-7E7DCCB4F29A",
+      "name" : "YamiboXTests",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:YamiboX.xcodeproj",
+        "identifier" : "91A00000000000000000002A",
+        "name" : "YamiboXCoreTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:YamiboX.xcodeproj",
+        "identifier" : "91A000000000000000000010",
+        "name" : "YamiboXUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

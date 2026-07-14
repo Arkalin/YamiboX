@@ -1,0 +1,3 @@
+/* App Intents */
+"app.intent.check_in.description" = "在后台检查并完成百合会每日签到";
+"app.intent.check_in.title" = "百合会签到";

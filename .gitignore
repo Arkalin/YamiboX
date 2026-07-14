@@ -1,0 +1,21 @@
+.DS_Store
+
+# Swift Package Manager
+.build/
+.sim-build/
+.xcodebuild/
+build/
+.swiftpm/
+Package.resolved
+
+# Local build artifacts
+.derived/
+
+# Xcode user data
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+docs/issues/

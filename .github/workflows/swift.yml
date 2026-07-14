@@ -1,0 +1,71 @@
+# This workflow will build a Swift project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
+
+name: Swift
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: macos-26
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Show toolchain
+      run: |
+        xcodebuild -version
+        swift --version
+    - name: Select iOS simulator
+      run: |
+        set -euo pipefail
+        device_line="$(
+          xcrun simctl list devices available |
+          awk '
+            /^-- iOS / { in_ios = 1; next }
+            /^-- / { in_ios = 0 }
+            in_ios && $0 ~ /^[[:space:]]+iPhone / { candidate = $0 }
+            END {
+              if (candidate != "") {
+                print candidate
+              }
+            }
+          '
+        )"
+        if [[ -z "${device_line}" ]]; then
+          echo "No available iPhone simulator found" >&2
+          xcrun simctl list devices available >&2
+          exit 1
+        fi
+
+        udid="$(printf '%s\n' "${device_line}" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')"
+        if [[ "${udid}" == "${device_line}" ]]; then
+          echo "Failed to parse simulator UDID from: ${device_line}" >&2
+          exit 1
+        fi
+
+        destination="platform=iOS Simulator,id=${udid}"
+        echo "IOS_SIMULATOR_DESTINATION=${destination}" >> "${GITHUB_ENV}"
+        echo "Selected simulator: ${device_line}"
+        echo "Selected simulator destination: ${destination}"
+    - name: Build
+      run: |
+        xcodebuild build \
+          -project YamiboX.xcodeproj \
+          -scheme YamiboX \
+          -destination "${IOS_SIMULATOR_DESTINATION}" \
+          CODE_SIGNING_ALLOWED=NO
+    - name: Run tests
+      run: |
+        xcodebuild test \
+          -quiet \
+          -project YamiboX.xcodeproj \
+          -scheme YamiboX \
+          -testPlan YamiboXTests \
+          -destination "${IOS_SIMULATOR_DESTINATION}" \
+          -collect-test-diagnostics never \
+          CODE_SIGNING_ALLOWED=NO
