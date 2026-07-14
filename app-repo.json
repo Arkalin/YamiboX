@@ -11,7 +11,15 @@
       "developerName": "Arkalin",
       "localizedDescription": "A SwiftUI reader for Yamibo forum novels and manga.",
       "iconURL": "https://raw.githubusercontent.com/Arkalin/YamiboX/main/YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
-      "versions": []
+      "versions": [
+        {
+          "version": "0.0.1",
+          "date": "2026-07-14T05:08:13Z",
+          "localizedDescription": "版本更新，详见 GitHub Release 说明",
+          "downloadURL": "https://github.com/Arkalin/YamiboX/releases/download/v0.0.1/YamiboX_v0.0.1_unsigned.ipa",
+          "size": 8502469
+        }
+      ]
     }
   ]
 }
