@@ -1,0 +1,78 @@
+# Builds an unsigned .ipa from the YamiboX scheme and publishes it as a
+# GitHub Release asset. Unsigned because distribution is via AltStore-style
+# sideloading, which re-signs the .ipa locally at install time.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 'MARKETING_VERSION = ' YamiboX.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);.*/\1/')"
+          if [[ -z "${version}" ]]; then
+            echo "Failed to resolve MARKETING_VERSION from project.pbxproj" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved MARKETING_VERSION=${version}"
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project YamiboX.xcodeproj \
+            -scheme YamiboX \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/YamiboX.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned IPA
+        id: package
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/YamiboX.xcarchive/Products/Applications/YamiboX.app"
+          if [[ ! -d "${app_path}" ]]; then
+            echo "Archived .app not found at ${app_path}" >&2
+            exit 1
+          fi
+          payload_dir="$RUNNER_TEMP/Payload"
+          rm -rf "${payload_dir}"
+          mkdir -p "${payload_dir}"
+          cp -R "${app_path}" "${payload_dir}/"
+          ipa_name="YamiboX_v${{ steps.version.outputs.version }}_unsigned.ipa"
+          (cd "$RUNNER_TEMP" && zip -r -y -q "$GITHUB_WORKSPACE/${ipa_name}" Payload)
+          echo "ipa_name=${ipa_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v${{ steps.version.outputs.version }}" \
+            "${{ steps.package.outputs.ipa_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes
