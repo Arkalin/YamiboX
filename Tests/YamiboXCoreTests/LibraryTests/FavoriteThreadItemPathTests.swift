@@ -68,7 +68,11 @@ import Testing
         lastEditedText: nil,
         postedAtText: "2026-06-01 10:00"
     ))
-    let calendar = Calendar(identifier: .gregorian)
+    // The resolver always parses forum text as Asia/Shanghai (bbs.yamibo.com
+    // posts Beijing time regardless of reader location), so components must
+    // be read back in that same zone rather than the host's local zone.
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
 
     #expect(calendar.component(.year, from: edited) == 2026)
     #expect(calendar.component(.month, from: edited) == 6)

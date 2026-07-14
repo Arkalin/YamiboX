@@ -634,6 +634,18 @@ public enum LocalFavoriteLibraryProjection {
         )
     }
 
+    /// Chinese-locale string compare, pinned rather than following the
+    /// device's current locale/region: the app ships a single zh-Hans
+    /// localization, so an ambient-locale compare would only make title/
+    /// source-group sort order depend on an unrelated device Region
+    /// setting instead of being stable across devices (and environments —
+    /// this is also what keeps `.displayTitle`/`.sourceGroup` sort order
+    /// deterministic in CI, where the simulator's locale doesn't match a
+    /// developer machine's).
+    private static func sortCompare(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        lhs.compare(rhs, options: [.caseInsensitive], range: nil, locale: Locale(identifier: "zh_CN"))
+    }
+
     private static func sorted(
         _ cards: [FavoriteCardProjection],
         by sortOrder: LocalFavoriteLibrarySortOrder,
@@ -653,10 +665,10 @@ public enum LocalFavoriteLibraryProjection {
                 }
                 return lhs.id < rhs.id
             case .displayTitle:
-                let result = lhs.resolvedTitle.localizedCaseInsensitiveCompare(rhs.resolvedTitle)
+                let result = sortCompare(lhs.resolvedTitle, rhs.resolvedTitle)
                 return result == .orderedSame ? lhs.id < rhs.id : result == .orderedAscending
             case .sourceGroup:
-                let result = sourceGroupSortKey(for: lhs).localizedCaseInsensitiveCompare(sourceGroupSortKey(for: rhs))
+                let result = sortCompare(sourceGroupSortKey(for: lhs), sourceGroupSortKey(for: rhs))
                 return result == .orderedSame ? lhs.id < rhs.id : result == .orderedAscending
             case .lastReadAt:
                 return compareDates(lhs.recentReadingAt, rhs.recentReadingAt, lhsID: lhs.id, rhsID: rhs.id, descending: descending)
@@ -698,10 +710,10 @@ public enum LocalFavoriteLibraryProjection {
             }
             return lhs.id < rhs.id
         case .displayTitle:
-            let result = mixedTitle(lhs).localizedCaseInsensitiveCompare(mixedTitle(rhs))
+            let result = sortCompare(mixedTitle(lhs), mixedTitle(rhs))
             return result == .orderedSame ? lhs.id < rhs.id : result == .orderedAscending
         case .sourceGroup:
-            let result = mixedSourceGroupKey(lhs).localizedCaseInsensitiveCompare(mixedSourceGroupKey(rhs))
+            let result = sortCompare(mixedSourceGroupKey(lhs), mixedSourceGroupKey(rhs))
             return result == .orderedSame ? lhs.id < rhs.id : result == .orderedAscending
         case .lastReadAt:
             return compareDates(
