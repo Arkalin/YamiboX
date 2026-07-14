@@ -373,10 +373,10 @@ private struct MangaDirectorySortToggleButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.down")
-                    .foregroundStyle(sortOrder == .ascending ? .accentColor : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .ascending ? Color.accentColor : .gray.opacity(0.35))
 
                 Image(systemName: "arrow.up")
-                    .foregroundStyle(sortOrder == .descending ? .accentColor : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .descending ? Color.accentColor : .gray.opacity(0.35))
             }
             .font(.subheadline.weight(.bold))
             .padding(.horizontal, 10)
