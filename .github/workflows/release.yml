@@ -1,6 +1,8 @@
-# Builds an unsigned .ipa from the YamiboX scheme and publishes it as a
-# GitHub Release asset. Unsigned because distribution is via AltStore-style
-# sideloading, which re-signs the .ipa locally at install time.
+# Builds an unsigned .ipa from the YamiboX scheme, publishes it as a
+# GitHub Release asset, and registers the new version in app-repo.json
+# (the AltStore source / in-app update feed) on main.
+# Unsigned because distribution is via AltStore-style sideloading, which
+# re-signs the .ipa locally at install time.
 
 name: Release
 
@@ -9,6 +11,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes shown in-app (optional; falls back to an annotated tag message, then a generic note)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -19,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Show toolchain
         run: |
@@ -63,8 +72,11 @@ jobs:
           mkdir -p "${payload_dir}"
           cp -R "${app_path}" "${payload_dir}/"
           ipa_name="YamiboX_v${{ steps.version.outputs.version }}_unsigned.ipa"
-          (cd "$RUNNER_TEMP" && zip -r -y -q "$GITHUB_WORKSPACE/${ipa_name}" Payload)
+          ipa_path="$RUNNER_TEMP/${ipa_name}"
+          (cd "${payload_dir}/.." && zip -r -y -q "${ipa_path}" Payload)
           echo "ipa_name=${ipa_name}" >> "$GITHUB_OUTPUT"
+          echo "ipa_path=${ipa_path}" >> "$GITHUB_OUTPUT"
+          echo "ipa_size=$(stat -f%z "${ipa_path}")" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:
@@ -72,7 +84,66 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "v${{ steps.version.outputs.version }}" \
-            "${{ steps.package.outputs.ipa_name }}" \
+            "${{ steps.package.outputs.ipa_path }}#${{ steps.package.outputs.ipa_name }}" \
             --repo "${{ github.repository }}" \
             --title "v${{ steps.version.outputs.version }}" \
             --generate-notes
+
+      - name: Register release in app-repo.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES_INPUT: ${{ github.event.inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          tag="v${version}"
+          download_url="https://github.com/${{ github.repository }}/releases/download/${tag}/${{ steps.package.outputs.ipa_name }}"
+
+          description="${RELEASE_NOTES_INPUT:-}"
+          if [[ -z "${description}" ]]; then
+            if [[ "$(git for-each-ref "refs/tags/${tag}" --format='%(objecttype)')" == "tag" ]]; then
+              description="$(git tag -l --format='%(contents:subject)' "${tag}")"
+            fi
+          fi
+          if [[ -z "${description}" ]]; then
+            description="版本更新，详见 GitHub Release 说明"
+          fi
+
+          git fetch origin main
+          git checkout -B main origin/main
+
+          python3 - "${version}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${description}" "${download_url}" "${{ steps.package.outputs.ipa_size }}" <<'PYEOF'
+          import json
+          import sys
+
+          version, date, description, url, size = sys.argv[1:6]
+          path = "app-repo.json"
+
+          with open(path) as f:
+              data = json.load(f)
+
+          versions = data["apps"][0]["versions"]
+          versions[:] = [v for v in versions if v.get("version") != version]
+          versions.insert(0, {
+              "version": version,
+              "date": date,
+              "localizedDescription": description,
+              "downloadURL": url,
+              "size": int(size),
+          })
+
+          with open(path, "w") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          PYEOF
+
+          if git diff --quiet -- app-repo.json; then
+            echo "app-repo.json already up to date for ${tag}"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app-repo.json
+          git commit -m "Register ${tag} in app-repo.json"
+          git push origin HEAD:main
