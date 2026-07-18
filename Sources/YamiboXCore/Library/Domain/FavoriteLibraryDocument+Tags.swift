@@ -27,11 +27,16 @@ extension FavoriteLibraryDocument {
         tags[index].updatedAt = date
     }
 
-    public mutating func deleteTag(id tagID: String) {
+    public mutating func deleteTag(id tagID: String, date: Date = .now) {
+        guard tags.contains(where: { $0.id == tagID }) else { return }
         tags.removeAll { $0.id == tagID }
+        deletedTagIDs[tagID] = date
         items = items.map { item in
             var item = item
+            guard item.tagIDs.contains(tagID) else { return item }
             item.tagIDs.removeAll { $0 == tagID }
+            item.tagIDsUpdatedAt = date
+            item.updatedAt = date
             return item
         }
     }
@@ -46,14 +51,20 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    public mutating func assignTag(id tagID: String, to target: FavoriteItemTarget) {
+    public mutating func assignTag(id tagID: String, to target: FavoriteItemTarget, date: Date = .now) {
         guard tags.contains(where: { $0.id == tagID }),
-              let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
+              let index = items.firstIndex(where: { $0.target.id == target.id }),
+              !items[index].tagIDs.contains(tagID) else { return }
         items[index].tagIDs = FavoriteItem.normalizedIDs(items[index].tagIDs + [tagID])
+        items[index].tagIDsUpdatedAt = date
+        items[index].updatedAt = date
     }
 
-    public mutating func unassignTag(id tagID: String, from target: FavoriteItemTarget) {
-        guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
+    public mutating func unassignTag(id tagID: String, from target: FavoriteItemTarget, date: Date = .now) {
+        guard let index = items.firstIndex(where: { $0.target.id == target.id }),
+              items[index].tagIDs.contains(tagID) else { return }
         items[index].tagIDs.removeAll { $0 == tagID }
+        items[index].tagIDsUpdatedAt = date
+        items[index].updatedAt = date
     }
 }

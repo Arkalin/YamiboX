@@ -141,7 +141,9 @@ public actor FavoriteLibraryStore {
     /// categories (default ensured, sorted) and items (validated, sorted by
     /// id) — Codable decoding bypasses it, so save is where canonical form is
     /// enforced. Collections and tags get the ordering the relational schema
-    /// used to impose via ORDER BY.
+    /// used to impose via ORDER BY. Uses the internal 8-param initializer, not
+    /// `document.rebuiltPreservingTombstones()`, because this also needs to
+    /// substitute the freshly sorted collections/tags in the same call.
     private static func canonicalized(_ document: FavoriteLibraryDocument) -> FavoriteLibraryDocument {
         FavoriteLibraryDocument(
             categories: document.categories,
@@ -154,7 +156,11 @@ public actor FavoriteLibraryStore {
             tags: document.tags.sorted {
                 if $0.manualOrder != $1.manualOrder { return $0.manualOrder < $1.manualOrder }
                 return $0.id < $1.id
-            }
+            },
+            deletedItemIDs: document.deletedItemIDs,
+            deletedCategoryIDs: document.deletedCategoryIDs,
+            deletedCollectionIDs: document.deletedCollectionIDs,
+            deletedTagIDs: document.deletedTagIDs
         )
     }
 

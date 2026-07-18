@@ -12,7 +12,13 @@ extension FavoriteLibraryDocument {
     /// layer as `push*`.)
     public mutating func upsertItem(_ item: FavoriteItem) {
         removeItem(target: item.target)
-        items.append(Self.normalizedItem(item, categories: categories, collections: collections))
+        items.append(Self.normalizedItem(item, categories: categories, collections: collections, tags: tags))
+        // This id is being actively kept alive, not deleted — clear any
+        // tombstone `removeItem` above just wrote for it (target ids are
+        // content-derived, so re-favoriting a previously removed thread
+        // reuses the same id) so a merge doesn't treat the live item as
+        // still-deleted.
+        deletedItemIDs.removeValue(forKey: item.target.id)
         sortItems()
     }
 
@@ -60,7 +66,7 @@ extension FavoriteLibraryDocument {
         if let existingThreadID = probeResult.target.threadID,
            let existingTarget = items.first(where: { $0.target.threadID == existingThreadID })?.target,
            existingTarget.id != probeResult.target.id {
-            retargetItem(from: existingTarget, to: probeResult.target)
+            retargetItem(from: existingTarget, to: probeResult.target, date: date)
         }
 
         if let index = items.firstIndex(where: { $0.target.id == probeResult.target.id }) {
@@ -71,11 +77,21 @@ extension FavoriteLibraryDocument {
                 items[index].forumName = probeResult.forumName
             }
             items[index].contentUpdatedAt = probeResult.contentUpdatedAt ?? items[index].contentUpdatedAt
-            items[index].remoteMapping = remoteMapping ?? items[index].remoteMapping
-            items[index].displayName = displayName?.nilIfBlank ?? items[index].displayName
+            if let remoteMapping {
+                items[index].remoteMapping = remoteMapping
+                items[index].remoteMappingUpdatedAt = date
+            }
+            if let displayName = displayName?.nilIfBlank {
+                items[index].displayName = displayName
+                items[index].displayNameUpdatedAt = date
+            }
+            let locationsBeforeImport = items[index].locations
             items[index].locations = FavoriteItem.normalizedLocations(items[index].locations + [resolvedLocation])
+            if items[index].locations != locationsBeforeImport {
+                items[index].locationsUpdatedAt = date
+            }
             items[index].updatedAt = date
-            items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections)
+            items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections, tags: tags)
             return items[index]
         }
 
@@ -120,8 +136,10 @@ extension FavoriteLibraryDocument {
     // `MangaReaderViewModel.migrateMangaTitleReferences` for the remaining
     // (reading-progress-only) half of that migration.
 
-    public mutating func removeItem(target: FavoriteItemTarget) {
+    public mutating func removeItem(target: FavoriteItemTarget, date: Date = .now) {
+        guard items.contains(where: { $0.target.id == target.id }) else { return }
         items.removeAll { $0.target.id == target.id }
+        deletedItemIDs[target.id] = date
     }
 
     /// Refreshes the Yamibo remote mapping after a sync run saw the item on
@@ -138,6 +156,7 @@ extension FavoriteLibraryDocument {
         mapping.yamiboRemoteOrder = yamiboRemoteOrder ?? mapping.yamiboRemoteOrder
         mapping.lastSeenAt = date
         items[index].remoteMapping = mapping
+        items[index].remoteMappingUpdatedAt = date
         items[index].updatedAt = date
     }
 
@@ -165,7 +184,7 @@ extension FavoriteLibraryDocument {
         items[index].updatedAt = date
     }
 
-    public mutating func retargetItem(from oldTarget: FavoriteItemTarget, to newTarget: FavoriteItemTarget) {
+    public mutating func retargetItem(from oldTarget: FavoriteItemTarget, to newTarget: FavoriteItemTarget, date: Date = .now) {
         guard let index = items.firstIndex(where: { $0.target.id == oldTarget.id }) else { return }
         var replacement = items[index]
         replacement.target = newTarget
@@ -177,28 +196,49 @@ extension FavoriteLibraryDocument {
         if let duplicateIndex = items.firstIndex(where: { $0.target.id == newTarget.id }) {
             replacement.locations = FavoriteItem.normalizedLocations(items[duplicateIndex].locations + replacement.locations)
             replacement.tagIDs = FavoriteItem.normalizedIDs(items[duplicateIndex].tagIDs + replacement.tagIDs)
+            replacement.locationsUpdatedAt = date
+            replacement.tagIDsUpdatedAt = date
             items.remove(at: duplicateIndex)
         }
+        replacement.updatedAt = date
         if let updatedIndex = items.firstIndex(where: { $0.target.id == oldTarget.id }) {
             items[updatedIndex] = replacement
         } else {
             items.append(replacement)
         }
         sortItems()
+        // `oldTarget.id` no longer exists in `items` after this — tombstone
+        // it so a stale peer's copy under the old id isn't revived as a
+        // duplicate favorite on the next merge (see `deletedItemIDs`'s doc
+        // comment). `newTarget.id` is now very much alive, so clear any
+        // stale tombstone it might carry from a prior deletion, mirroring
+        // `upsertItem`'s own resurrection handling.
+        deletedItemIDs[oldTarget.id] = date
+        deletedItemIDs.removeValue(forKey: newTarget.id)
     }
 
-    public mutating func addLocation(_ location: FavoriteLocation, to target: FavoriteItemTarget) {
+    public mutating func addLocation(_ location: FavoriteLocation, to target: FavoriteItemTarget, date: Date = .now) {
         guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
+        let isNewLocation = !items[index].locations.contains(location)
         items[index].locations = FavoriteItem.normalizedLocations(items[index].locations + [location])
-        items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections)
+        items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections, tags: tags)
+        // Only a genuinely new location should advance the merge clock — a
+        // no-op add (already a member) must not let this call's timestamp
+        // spuriously outrun a real, unsynced edit from another device.
+        guard isNewLocation else { return }
+        items[index].locationsUpdatedAt = date
+        items[index].updatedAt = date
     }
 
     @discardableResult
-    public mutating func removeLocation(_ location: FavoriteLocation, from target: FavoriteItemTarget) -> Bool {
-        guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return false }
+    public mutating func removeLocation(_ location: FavoriteLocation, from target: FavoriteItemTarget, date: Date = .now) -> Bool {
+        guard let index = items.firstIndex(where: { $0.target.id == target.id }),
+              items[index].locations.contains(location) else { return false }
         let remaining = items[index].locations.filter { $0 != location }
         guard !remaining.isEmpty else { return false }
         items[index].locations = remaining
+        items[index].locationsUpdatedAt = date
+        items[index].updatedAt = date
         return true
     }
 
