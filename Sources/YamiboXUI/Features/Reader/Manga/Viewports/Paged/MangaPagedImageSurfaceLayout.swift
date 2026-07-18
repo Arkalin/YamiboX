@@ -16,6 +16,18 @@ enum MangaPageZoomPolicy {
         min(maximumScale, max(minimumScale, scale))
     }
 
+    /// Soft clamp for live pinches: past the scale limits the zoom keeps
+    /// following the fingers with rubber-band attenuation instead of pinning,
+    /// then settles back to the hard-clamped bound on release.
+    static func rubberBandedScale(_ scale: CGFloat) -> CGFloat {
+        GesturePhysics.rubberBanded(
+            scale,
+            lower: minimumScale,
+            upper: maximumScale,
+            dimension: maximumScale
+        )
+    }
+
     static func isZoomedForDoubleTapReset(_ scale: CGFloat) -> Bool {
         scale > resetThreshold
     }
@@ -256,6 +268,28 @@ struct MangaPagedImageSurfaceLayout: Equatable {
         )
     }
 
+    /// Live-drag variant of `clampedUserOffset`: the portion of the proposed
+    /// offset past the pannable bounds follows the finger with rubber-band
+    /// resistance instead of pinning at the edge.
+    func rubberBandedUserOffset(_ proposed: CGSize) -> CGSize {
+        let bounds = overflowBounds
+        let restingOffset = restingOffset
+        return CGSize(
+            width: GesturePhysics.rubberBanded(
+                proposed.width,
+                lower: -bounds.width - restingOffset.width,
+                upper: bounds.width - restingOffset.width,
+                dimension: containerSize.width
+            ),
+            height: GesturePhysics.rubberBanded(
+                proposed.height,
+                lower: -bounds.height,
+                upper: bounds.height,
+                dimension: containerSize.height
+            )
+        )
+    }
+
     func displayOffset(forUserOffset userOffset: CGSize) -> CGSize {
         let clampedUserOffset = clampedUserOffset(userOffset)
         let restingOffset = restingOffset
@@ -265,8 +299,19 @@ struct MangaPagedImageSurfaceLayout: Equatable {
         )
     }
 
+    /// Composition without the safety clamp, for offsets that are already
+    /// rubber-banded by a live gesture — clamping here would flatten the
+    /// overshoot and snap the content back to the edge mid-drag.
+    func liveDisplayOffset(forUserOffset userOffset: CGSize) -> CGSize {
+        let restingOffset = restingOffset
+        return CGSize(
+            width: restingOffset.width + userOffset.width,
+            height: restingOffset.height + userOffset.height
+        )
+    }
+
     func displayedImageFrame(forUserOffset userOffset: CGSize) -> CGRect {
-        let offset = displayOffset(forUserOffset: userOffset)
+        let offset = liveDisplayOffset(forUserOffset: userOffset)
         return CGRect(
             x: (containerSize.width - contentSize.width) / 2 + offset.width,
             y: (containerSize.height - contentSize.height) / 2 + offset.height,
@@ -339,8 +384,34 @@ struct MangaPagedSpreadSurfaceZoomLayout: Equatable {
         )
     }
 
+    /// Live-drag variant of `clampedUserOffset`: overshoot past the pannable
+    /// bounds follows the finger with rubber-band resistance.
+    func rubberBandedUserOffset(_ proposed: CGSize) -> CGSize {
+        let bounds = overflowBounds
+        return CGSize(
+            width: GesturePhysics.rubberBanded(
+                proposed.width,
+                lower: -bounds.width,
+                upper: bounds.width,
+                dimension: containerSize.width
+            ),
+            height: GesturePhysics.rubberBanded(
+                proposed.height,
+                lower: -bounds.height,
+                upper: bounds.height,
+                dimension: containerSize.height
+            )
+        )
+    }
+
     func displayOffset(forUserOffset userOffset: CGSize) -> CGSize {
         clampedUserOffset(userOffset)
+    }
+
+    /// Composition without the safety clamp, for offsets already
+    /// rubber-banded by a live gesture.
+    func liveDisplayOffset(forUserOffset userOffset: CGSize) -> CGSize {
+        userOffset
     }
 
     func userOffsetAnchoring(_ location: CGPoint) -> CGSize {
