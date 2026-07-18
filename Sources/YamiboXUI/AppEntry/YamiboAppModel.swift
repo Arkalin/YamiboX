@@ -25,6 +25,12 @@ public struct ClipboardForumLinkPrompt: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct ForumSearchRequest: Identifiable, Hashable, Sendable {
+    public let id = UUID()
+
+    public init() {}
+}
+
 @MainActor
 @Observable
 public final class YamiboAppModel {
@@ -37,6 +43,7 @@ public final class YamiboAppModel {
     public private(set) var suspendedNovelContext: NovelLaunchContext?
     public private(set) var suspendedMangaContext: MangaLaunchContext?
     public private(set) var forumNavigationRequest: ForumNavigationRequest?
+    public private(set) var forumSearchRequest: ForumSearchRequest?
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
 
     public let appContext: YamiboAppContext
@@ -167,6 +174,16 @@ public final class YamiboAppModel {
     public func openNativeForumThread(url: URL, title: String?) {
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url, source: .readerOrigin, title: title)
+    }
+
+    public func openForumSearch() {
+        if activeNovelContext != nil {
+            dismissNovelReader()
+        } else if activeMangaContext != nil {
+            dismissMangaReader()
+        }
+        selectedTab = .forum
+        forumSearchRequest = ForumSearchRequest()
     }
 
     public func presentClipboardForumLinkPrompt(url: URL) {

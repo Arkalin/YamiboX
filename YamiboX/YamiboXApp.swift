@@ -97,6 +97,21 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
 
     func application(
         _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        // A custom scene delegate is required to observe Home Screen quick
+        // action taps (`windowScene(_:performActionFor:)`/`scene(_:willConnectTo:options:)`
+        // are scene-delegate callbacks, not app-delegate ones); it doesn't
+        // touch window setup, so SwiftUI's own `WindowGroup` hosting is
+        // unaffected.
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = YamiboSceneDelegate.self
+        return configuration
+    }
+
+    func application(
+        _ application: UIApplication,
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
@@ -125,6 +140,32 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         let userInfo = response.notification.request.content.userInfo
         guard let appModel = await MainActor.run(body: { Self.appModel }) else { return }
         await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, appModel: appModel)
+    }
+}
+
+private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
+    static let searchShortcutType = "com.arkalin.YamiboX.search"
+
+    // Cold launch: the app wasn't running, so the shortcut item arrives via
+    // connection options instead of `performActionFor`.
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let shortcutItem = connectionOptions.shortcutItem else { return }
+        Self.handle(shortcutItem)
+    }
+
+    // Warm launch: the app was already running/suspended.
+    func windowScene(
+        _ windowScene: UIWindowScene,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        Self.handle(shortcutItem)
+        completionHandler(true)
+    }
+
+    private static func handle(_ shortcutItem: UIApplicationShortcutItem) {
+        guard shortcutItem.type == searchShortcutType else { return }
+        YamiboAppDelegate.appModel?.openForumSearch()
     }
 }
 #endif
