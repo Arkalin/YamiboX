@@ -135,7 +135,7 @@ actor DiskCacheStore {
 
     func trimNamespace(_ namespace: String, maximumEntryCount: Int) async throws {
         let resolvedNamespace = try validatedComponent(namespace, label: "namespace")
-        guard maximumEntryCount >= 0 else { throw YamiboError.persistenceFailed("Invalid cache entry limit") }
+        guard maximumEntryCount >= 0 else { throw YamiboPersistenceError(context: "Invalid cache entry limit") }
         let keys = try await writer.read { db in
             try String.fetchAll(
                 db,
@@ -251,7 +251,7 @@ actor DiskCacheStore {
               !trimmed.contains(":"),
               trimmed != ".",
               trimmed != ".." else {
-            throw YamiboError.persistenceFailed("Invalid \(label)")
+            throw YamiboPersistenceError(context: "Invalid \(label)")
         }
         return trimmed
     }

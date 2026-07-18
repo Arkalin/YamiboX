@@ -2,24 +2,19 @@ import Foundation
 @preconcurrency import GRDB
 
 public actor ReadingProgressStore {
-    public static let didChangeNotification = Notification.Name("yamibox.readingProgressStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
-    nonisolated(unsafe) private static var databasePoolCache: [String: DatabasePool] = [:]
-    private static let databasePoolCacheLock = NSLock()
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
-    public nonisolated let changeID = UUID().uuidString
-
-    private let defaults: UserDefaults
-    private let key: String
     private let database: DatabasePool
 
     public init(
         defaults: UserDefaults = .standard,
         key: String = "yamibox.readingProgress.records"
     ) {
-        self.defaults = defaults
-        self.key = key
-        self.database = Self.openDatabase(defaults: defaults, key: key)
+        self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
     init(
@@ -27,8 +22,6 @@ public actor ReadingProgressStore {
         key: String = "yamibox.readingProgress.records",
         databasePool: DatabasePool
     ) {
-        self.defaults = defaults
-        self.key = key
         self.database = databasePool
     }
 
@@ -144,7 +137,7 @@ public actor ReadingProgressStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -168,7 +161,7 @@ public actor ReadingProgressStore {
         date: Date = .now
     ) async throws -> ReadingProgressRecord {
         guard let threadID = Self.trimmedNonEmpty(threadID) else {
-            throw YamiboError.persistenceFailed("Normal thread reading progress requires a thread tid")
+            throw YamiboPersistenceError(context: "Normal thread reading progress requires a thread tid")
         }
         let record = ReadingProgressRecord(
             contentTarget: .normalThread(threadID: threadID),
@@ -303,7 +296,7 @@ public actor ReadingProgressStore {
         let target = FavoriteContentTarget(mangaID: mangaID ?? cleanBookName, mangaCleanBookName: cleanBookName)
         let chapterTID = Self.trimmedNonEmpty(chapterThreadID)
         guard let chapterTID else {
-            throw YamiboError.persistenceFailed("Manga reading progress requires a chapter tid")
+            throw YamiboPersistenceError(context: "Manga reading progress requires a chapter tid")
         }
         let resolvedThreadID = Self.trimmedNonEmpty(threadID) ?? chapterTID
         let record = ReadingProgressRecord(
@@ -342,43 +335,8 @@ public actor ReadingProgressStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
-    }
-
-    private static func openDatabase(defaults: UserDefaults, key: String) -> DatabasePool {
-        do {
-            if defaults === UserDefaults.standard {
-                return try cachedDatabasePool(rootDirectory: YamiboDatabase.defaultRootDirectory())
-            }
-            let idKey = "\(key).grdbDatabaseID"
-            let databaseID: String
-            if let existing = defaults.string(forKey: idKey), !existing.isEmpty {
-                databaseID = existing
-            } else {
-                databaseID = UUID().uuidString
-                defaults.set(databaseID, forKey: idKey)
-            }
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent("yamibo-x-reading-progress", isDirectory: true)
-                .appendingPathComponent(databaseID, isDirectory: true)
-            return try cachedDatabasePool(rootDirectory: root)
-        } catch {
-            fatalError("Failed to open ReadingProgressStore database: \(error)")
-        }
-    }
-
-    private static func cachedDatabasePool(rootDirectory: URL) throws -> DatabasePool {
-        let key = rootDirectory.standardizedFileURL.path
-        databasePoolCacheLock.lock()
-        defer { databasePoolCacheLock.unlock() }
-        if let pool = databasePoolCache[key] {
-            return pool
-        }
-
-        let pool = try YamiboDatabase.openPool(rootDirectory: rootDirectory)
-        databasePoolCache[key] = pool
-        return pool
     }
 
     private static func fetchRecord(in db: Database, sql: String, arguments: StatementArguments) throws -> ReadingProgressRecord? {
@@ -597,11 +555,7 @@ public actor ReadingProgressStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 
     private static func timeInterval(from date: Date) -> Double {

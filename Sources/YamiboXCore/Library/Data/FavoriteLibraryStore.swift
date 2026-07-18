@@ -2,24 +2,19 @@ import Foundation
 @preconcurrency import GRDB
 
 public actor FavoriteLibraryStore {
-    public static let didChangeNotification = Notification.Name("yamibox.favoriteLibraryStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
-    nonisolated(unsafe) private static var databasePoolCache: [String: DatabasePool] = [:]
-    private static let databasePoolCacheLock = NSLock()
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
-    public nonisolated let changeID = UUID().uuidString
-
-    private let defaults: UserDefaults
-    private let key: String
     private let database: DatabasePool
 
     public init(
         defaults: UserDefaults = .standard,
         key: String = "yamibox.favoriteLibrary.localFirst"
     ) {
-        self.defaults = defaults
-        self.key = key
-        self.database = Self.openDatabase(defaults: defaults, key: key)
+        self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
     init(
@@ -27,8 +22,6 @@ public actor FavoriteLibraryStore {
         key: String = "yamibox.favoriteLibrary.localFirst",
         databasePool: DatabasePool
     ) {
-        self.defaults = defaults
-        self.key = key
         self.database = databasePool
     }
 
@@ -44,7 +37,7 @@ public actor FavoriteLibraryStore {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -76,7 +69,7 @@ public actor FavoriteLibraryStore {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -101,7 +94,7 @@ public actor FavoriteLibraryStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -112,41 +105,6 @@ public actor FavoriteLibraryStore {
             try LibraryDatabaseSchema.deleteAllRows(in: db)
         }
         postChangeNotification()
-    }
-
-    private static func openDatabase(defaults: UserDefaults, key: String) -> DatabasePool {
-        do {
-            if defaults === UserDefaults.standard {
-                return try cachedDatabasePool(rootDirectory: YamiboDatabase.defaultRootDirectory())
-            }
-            let idKey = "\(key).grdbDatabaseID"
-            let databaseID: String
-            if let existing = defaults.string(forKey: idKey), !existing.isEmpty {
-                databaseID = existing
-            } else {
-                databaseID = UUID().uuidString
-                defaults.set(databaseID, forKey: idKey)
-            }
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent("yamibo-x-local-favorite-library", isDirectory: true)
-                .appendingPathComponent(databaseID, isDirectory: true)
-            return try cachedDatabasePool(rootDirectory: root)
-        } catch {
-            fatalError("Failed to open FavoriteLibraryStore database: \(error)")
-        }
-    }
-
-    private static func cachedDatabasePool(rootDirectory: URL) throws -> DatabasePool {
-        let key = rootDirectory.standardizedFileURL.path
-        databasePoolCacheLock.lock()
-        defer { databasePoolCacheLock.unlock() }
-        if let pool = databasePoolCache[key] {
-            return pool
-        }
-
-        let pool = try YamiboDatabase.openPool(rootDirectory: rootDirectory)
-        databasePoolCache[key] = pool
-        return pool
     }
 
     private static func loadDocument(in db: Database) throws -> FavoriteLibraryDocument {
@@ -201,10 +159,6 @@ public actor FavoriteLibraryStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 }

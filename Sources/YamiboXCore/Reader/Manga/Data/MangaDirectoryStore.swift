@@ -2,9 +2,11 @@ import Foundation
 @preconcurrency import GRDB
 
 public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenaming {
-    public nonisolated let changeID = UUID().uuidString
-    public static let didChangeNotification = Notification.Name("yamibox.mangaDirectoryStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
     /// The rename cascade writes `FavoriteUpdateStore`'s tables directly
@@ -16,7 +18,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     private let favoriteUpdateStore: FavoriteUpdateStore?
 
     public init(databasePool: DatabasePool? = nil, favoriteUpdateStore: FavoriteUpdateStore? = nil) {
-        self.database = databasePool ?? Self.openDatabase()
+        self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "MangaDirectoryStore")
         self.favoriteUpdateStore = favoriteUpdateStore
     }
 
@@ -220,7 +222,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     static func save(_ directory: MangaDirectory, in db: Database) throws {
         var normalized = directory
         guard let cleanBookName = directory.cleanBookName.mangaReaderTrimmedNonEmpty else {
-            throw YamiboError.persistenceFailed("Directory name is empty")
+            throw YamiboPersistenceError(context: "Directory name is empty")
         }
         normalized.cleanBookName = cleanBookName
 
@@ -379,20 +381,9 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     private static let maxInClauseBatchSize = 500
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 
-    private static func openDatabase() -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool()
-        } catch {
-            fatalError("Failed to open MangaDirectoryStore database: \(error)")
-        }
-    }
 }
 
 private extension Array {
@@ -413,9 +404,15 @@ private func optionalDate(from value: Double?) -> Date? {
     value.map(Date.init(timeIntervalSince1970:))
 }
 
-private func persistenceError(from error: Error) -> YamiboError {
+// Same contract as `offlineCachePersistenceError`: domain errors pass through
+// untouched, everything else is wrapped with the source error preserved as
+// `underlying` for logging.
+private func persistenceError(from error: Error) -> any Error {
     if let error = error as? YamiboError {
         return error
     }
-    return YamiboError.persistenceFailed(error.localizedDescription)
+    if let error = error as? YamiboPersistenceError {
+        return error
+    }
+    return YamiboPersistenceError(context: error.localizedDescription, underlying: error)
 }

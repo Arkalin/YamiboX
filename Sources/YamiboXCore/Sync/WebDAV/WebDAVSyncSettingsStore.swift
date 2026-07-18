@@ -1,40 +1,29 @@
 import Foundation
 
 public actor WebDAVSyncSettingsStore {
-    public static let didChangeNotification = Notification.Name("yamibox.webDAVSyncSettingsStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
     public static let defaultKey = "yamibox.webdav.sync.settings"
 
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
-    private let defaults: UserDefaults
-    private let key: String
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    private let storage: UserDefaultsJSONStorage<WebDAVSyncSettings>
 
     public init(defaults: UserDefaults = .standard, key: String = defaultKey) {
-        self.defaults = defaults
-        self.key = key
+        self.storage = UserDefaultsJSONStorage(defaults: defaults, key: key) { error in
+            YamiboLog.sync.error("Failed to decode stored WebDAV sync settings, resetting to defaults: \(error)")
+        }
     }
 
     public func load() async -> WebDAVSyncSettings {
-        guard let data = defaults.data(forKey: key) else { return WebDAVSyncSettings() }
-        do {
-            return try decoder.decode(WebDAVSyncSettings.self, from: data)
-        } catch {
-            YamiboLog.sync.error("Failed to decode stored WebDAV sync settings, resetting to defaults: \(error)")
-            return WebDAVSyncSettings()
-        }
+        storage.load(default: WebDAVSyncSettings())
     }
 
     public func save(_ settings: WebDAVSyncSettings) async throws {
-        do {
-            let data = try encoder.encode(settings)
-            defaults.set(data, forKey: key)
-            postChangeNotification()
-        } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
-        }
+        try storage.save(settings)
+        postChangeNotification()
     }
 
     public func reset() async throws {
@@ -42,10 +31,6 @@ public actor WebDAVSyncSettingsStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 }

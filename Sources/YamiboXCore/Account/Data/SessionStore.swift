@@ -10,39 +10,27 @@ public protocol SessionStoring: Sendable {
 }
 
 public actor SessionStore: SessionStoring {
-    public static let didChangeNotification = Notification.Name("yamibox.sessionStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
-    public nonisolated let changeID = UUID().uuidString
-
-    private let defaults: UserDefaults
-    private let key: String
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    private let storage: UserDefaultsJSONStorage<SessionState>
 
     public init(defaults: UserDefaults = .standard, key: String = "yamibox.session") {
-        self.defaults = defaults
-        self.key = key
+        self.storage = UserDefaultsJSONStorage(defaults: defaults, key: key) { error in
+            YamiboLog.account.error("Failed to decode stored session state, resetting to logged-out state: \(error)")
+        }
     }
 
     public func load() async -> SessionState {
-        guard let data = defaults.data(forKey: key) else { return SessionState() }
-        do {
-            return try decoder.decode(SessionState.self, from: data)
-        } catch {
-            YamiboLog.account.error("Failed to decode stored session state, resetting to logged-out state: \(error)")
-            return SessionState()
-        }
+        storage.load(default: SessionState())
     }
 
     public func save(_ session: SessionState) async throws {
-        do {
-            let data = try encoder.encode(session)
-            defaults.set(data, forKey: key)
-            postChangeNotification()
-        } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
-        }
+        try storage.save(session)
+        postChangeNotification()
     }
 
     public func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws {
@@ -100,16 +88,6 @@ public actor SessionStore: SessionStoring {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
+        changeBroadcaster.post()
     }
 }

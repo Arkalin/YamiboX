@@ -2,33 +2,27 @@ import Foundation
 import os
 
 public actor SettingsStore {
-    public static let didChangeNotification = Notification.Name("yamibox.settingsStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
     public static let defaultKey = "yamibox.settings"
 
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
-    private let defaults: UserDefaults
-    private let key: String
-    private let encoder = JSONEncoder()
+    private let storage: UserDefaultsJSONStorage<AppSettings>
 
     public init(defaults: UserDefaults = .standard, key: String = defaultKey) {
-        self.defaults = defaults
-        self.key = key
+        self.storage = Self.makeStorage(defaults: defaults, key: key)
     }
 
     public func load() async -> AppSettings {
-        Self.loadSync(defaults: defaults, key: key)
+        storage.load(default: AppSettings())
     }
 
     public func save(_ settings: AppSettings) async throws {
-        do {
-            let data = try encoder.encode(settings)
-            defaults.set(data, forKey: key)
-            postChangeNotification()
-        } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
-        }
+        try storage.save(settings)
+        postChangeNotification()
     }
 
     public func reset() async throws {
@@ -43,7 +37,7 @@ public actor SettingsStore {
     /// persisted (or as loaded, when unchanged).
     @discardableResult
     public func update(_ mutate: @Sendable (inout AppSettings) -> Void) async throws -> AppSettings {
-        var settings = Self.loadSync(defaults: defaults, key: key)
+        var settings = storage.load(default: AppSettings())
         let original = settings
         mutate(&settings)
         if settings != original {
@@ -56,25 +50,21 @@ public actor SettingsStore {
         defaults: UserDefaults = .standard,
         key: String = defaultKey
     ) -> AppSettings {
-        guard let data = defaults.data(forKey: key) else { return AppSettings() }
-        return decodeSettings(from: data)
+        makeStorage(defaults: defaults, key: key).load(default: AppSettings())
+    }
+
+    /// Shared by the instance storage and `loadSync`, so both read paths keep
+    /// identical decode-failure handling.
+    private nonisolated static func makeStorage(
+        defaults: UserDefaults,
+        key: String
+    ) -> UserDefaultsJSONStorage<AppSettings> {
+        UserDefaultsJSONStorage(defaults: defaults, key: key) { error in
+            YamiboLog.persistence.error("Failed to decode persisted app settings, resetting to defaults: \(error)")
+        }
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
-    }
-
-    private nonisolated static func decodeSettings(from data: Data) -> AppSettings {
-        let decoder = JSONDecoder()
-        do {
-            return try decoder.decode(AppSettings.self, from: data)
-        } catch {
-            YamiboLog.persistence.error("Failed to decode persisted app settings, resetting to defaults: \(error)")
-            return AppSettings()
-        }
+        changeBroadcaster.post()
     }
 }

@@ -18,21 +18,26 @@ public struct LikeTextUpsertResult: Hashable, Sendable {
 /// independent of the Favorite Library. Liking never requires or creates a
 /// favorite, and deleting a favorite never deletes Like Items.
 public actor LikeStore {
-    public static let didChangeNotification = Notification.Name("yamibox.likeStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 
     public init(databasePool: DatabasePool? = nil) {
-        self.database = databasePool ?? Self.openDatabase()
+        // `.standard` is the resolver's "shared production pool" signal, so
+        // the nil-pool fallback and the convenience below stay one code path.
+        self.database = databasePool
+            ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.likeStore")
     }
 
     /// Isolated-storage convenience mirroring `ContentCoverStore`: standard
     /// defaults use the shared database, any other suite gets its own pool in
     /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.likeStore") {
-        self.database = Self.openDatabase(defaults: defaults, key: key)
+        self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
     public func like(id: String) async -> LikeItem? {
@@ -92,8 +97,10 @@ public actor LikeStore {
             return result
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -127,8 +134,10 @@ public actor LikeStore {
             return item
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -141,8 +150,10 @@ public actor LikeStore {
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -159,8 +170,10 @@ public actor LikeStore {
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -184,8 +197,10 @@ public actor LikeStore {
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -200,8 +215,10 @@ public actor LikeStore {
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -211,17 +228,15 @@ public actor LikeStore {
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 
     private static func fetchLike(id: String, in db: Database) throws -> LikeItem? {
@@ -283,7 +298,7 @@ public actor LikeStore {
     private static func upsertRow(_ item: LikeItem, in db: Database) throws {
         let anchorData = try JSONEncoder().encode(item.anchor)
         guard let anchorJSON = String(data: anchorData, encoding: .utf8) else {
-            throw YamiboError.persistenceFailed("Unable to encode Like anchor")
+            throw YamiboPersistenceError(context: "Unable to encode Like anchor")
         }
         try db.execute(
             sql: """
@@ -349,34 +364,4 @@ public actor LikeStore {
     SELECT id, work_kind, work_id, kind, excerpt_text, source_image_url, anchor_json, created_at, updated_at, deleted_at
     FROM like_items
     """
-
-    private static func openDatabase() -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool()
-        } catch {
-            fatalError("Failed to open LikeStore database: \(error)")
-        }
-    }
-
-    private static func openDatabase(defaults: UserDefaults, key: String) -> DatabasePool {
-        do {
-            if defaults === UserDefaults.standard {
-                return try YamiboDatabase.openPool()
-            }
-            let idKey = "\(key).grdbDatabaseID"
-            let databaseID: String
-            if let existing = defaults.string(forKey: idKey), !existing.isEmpty {
-                databaseID = existing
-            } else {
-                databaseID = UUID().uuidString
-                defaults.set(databaseID, forKey: idKey)
-            }
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent("yamibo-x-like-store", isDirectory: true)
-                .appendingPathComponent(databaseID, isDirectory: true)
-            return try YamiboDatabase.openPool(rootDirectory: root)
-        } catch {
-            fatalError("Failed to open LikeStore database: \(error)")
-        }
-    }
 }

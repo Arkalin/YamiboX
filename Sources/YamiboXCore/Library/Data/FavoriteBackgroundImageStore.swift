@@ -92,7 +92,7 @@ public enum FavoriteBackgroundImageProcessor {
         compressionQuality: Double = FavoriteBackgroundImageStore.defaultJPEGQuality
     ) throws -> Data {
         guard let source = CGImageSourceCreateWithData(sourceData as CFData, nil) else {
-            throw YamiboError.persistenceFailed("Invalid image data")
+            throw YamiboPersistenceError(context: "Invalid image data")
         }
 
         let thumbnailOptions: [CFString: Any] = [
@@ -103,7 +103,7 @@ public enum FavoriteBackgroundImageProcessor {
         ]
 
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
-            throw YamiboError.persistenceFailed("Invalid image data")
+            throw YamiboPersistenceError(context: "Invalid image data")
         }
 
         let output = NSMutableData()
@@ -113,7 +113,7 @@ public enum FavoriteBackgroundImageProcessor {
             1,
             nil
         ) else {
-            throw YamiboError.persistenceFailed("Unable to create JPEG destination")
+            throw YamiboPersistenceError(context: "Unable to create JPEG destination")
         }
 
         let destinationOptions: [CFString: Any] = [
@@ -122,7 +122,7 @@ public enum FavoriteBackgroundImageProcessor {
         CGImageDestinationAddImage(destination, image, destinationOptions as CFDictionary)
 
         guard CGImageDestinationFinalize(destination) else {
-            throw YamiboError.persistenceFailed("Unable to write JPEG data")
+            throw YamiboPersistenceError(context: "Unable to write JPEG data")
         }
 
         return output as Data

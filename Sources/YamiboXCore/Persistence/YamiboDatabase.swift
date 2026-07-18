@@ -55,12 +55,41 @@ enum YamiboDatabase {
         // Several pools may point at the same database file (app plus tests);
         // wait for concurrent writers instead of failing with SQLITE_BUSY.
         configuration.busyMode = .timeout(5)
-        let pool = try DatabasePool(
-            path: databaseURL(rootDirectory: root, fileManager: fileManager).path,
-            configuration: configuration
-        )
+        let databaseURL = databaseURL(rootDirectory: root, fileManager: fileManager)
+        do {
+            return try openAndMigratePool(at: databaseURL, configuration: configuration)
+        } catch let error as DatabaseError where corruptionResultCodes.contains(error.resultCode) {
+            // Every store treats "cannot open the database" as fatal, so a
+            // corrupt file would otherwise crash-loop the app on each launch
+            // with no self-serve way out. Losing local cache/bookkeeping
+            // beats being unable to launch: quarantine the corpse for
+            // diagnosis and start over with an empty database.
+            YamiboLog.persistence.error("yamibox.sqlite is corrupt; quarantining it and recreating: \(error)")
+            try quarantineCorruptDatabase(at: databaseURL, fileManager: fileManager)
+            return try openAndMigratePool(at: databaseURL, configuration: configuration)
+        }
+    }
+
+    private static let corruptionResultCodes: [ResultCode] = [.SQLITE_CORRUPT, .SQLITE_NOTADB]
+
+    private static func openAndMigratePool(at databaseURL: URL, configuration: Configuration) throws -> DatabasePool {
+        let pool = try DatabasePool(path: databaseURL.path, configuration: configuration)
         try migrate(pool)
         return pool
+    }
+
+    /// Moves the database file (and its WAL/SHM sidecars) aside under a
+    /// timestamped `.corrupt-*` name instead of deleting it, so the corpse
+    /// stays available for diagnosis.
+    private static func quarantineCorruptDatabase(at databaseURL: URL, fileManager: FileManager) throws {
+        let suffix = ".corrupt-\(Int(Date.now.timeIntervalSince1970))"
+        for sidecar in ["", "-wal", "-shm"] {
+            let source = URL(fileURLWithPath: databaseURL.path + sidecar)
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            let destination = URL(fileURLWithPath: databaseURL.path + suffix + sidecar)
+            try? fileManager.removeItem(at: destination)
+            try fileManager.moveItem(at: source, to: destination)
+        }
     }
 
     static func migrate(_ writer: any DatabaseWriter) throws {
