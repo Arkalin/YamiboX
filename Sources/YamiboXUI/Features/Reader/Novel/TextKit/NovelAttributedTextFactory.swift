@@ -35,6 +35,11 @@ private extension ReaderPlatformColor {
 /// kerning, line height, and justification.
 enum NovelAttributedTextFactory {
     static let defaultBaseFontSize: Double = 22
+    /// Leading tracks the type size (6pt of extra leading at the default
+    /// 22pt body) instead of staying a fixed 6pt: a fixed value reads loose
+    /// at small sizes and cramped at large ones. `lineHeightScale` still
+    /// multiplies on top as the user's own adjustment.
+    static let lineSpacingRatio: Double = 6.0 / 22.0
     private static let bodyFontWeight: ReaderPlatformFontWeight = .light
 
     static func makeAttributedDocument(
@@ -223,7 +228,7 @@ enum NovelAttributedTextFactory {
         appliesFirstLineIndent: Bool
     ) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 6 * settings.lineHeightScale
+        style.lineSpacing = pointSize * Self.lineSpacingRatio * settings.lineHeightScale
         style.alignment = settings.usesJustifiedText ? .justified : .natural
         style.lineBreakMode = .byWordWrapping
         if settings.indentsParagraphFirstLine, appliesFirstLineIndent {

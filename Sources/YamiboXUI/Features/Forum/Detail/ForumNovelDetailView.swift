@@ -260,6 +260,7 @@ private struct ForumNovelChapterSectionView: View {
 }
 
 private struct ForumNovelChapterRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let chapter: ForumNovelChapterSummary
     let action: () -> Void
 
@@ -275,7 +276,7 @@ private struct ForumNovelChapterRow: View {
                     Text(chapter.title)
                         .font(.subheadline)
                         .foregroundStyle(chapter.isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let progressText = chapter.progressText {
                         Text(progressText)

@@ -2505,8 +2505,11 @@ private final class StubURLProtocol: URLProtocol {
         ) as? NSParagraphStyle
     )
 
-    #expect(abs(titleStyle.lineSpacing - 9.6) < 0.001)
-    #expect(abs(bodyStyle.lineSpacing - 9.6) < 0.001)
+    // Leading is proportional to the point size (6pt at the default 22pt
+    // body), scaled by the user's lineHeightScale.
+    let expectedLineSpacing = pointSize * NovelAttributedTextFactory.lineSpacingRatio * 1.6
+    #expect(abs(titleStyle.lineSpacing - expectedLineSpacing) < 0.001)
+    #expect(abs(bodyStyle.lineSpacing - expectedLineSpacing) < 0.001)
 }
 
 @Test func novelTextSettingsPreviewSurfaceUsesAttributedParagraphSemantics() throws {

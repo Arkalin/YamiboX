@@ -4,6 +4,7 @@ import YamiboXCore
 /// One collection row in the list layouts, mixed into the same section as
 /// the favorite item rows.
 struct LocalFavoriteCollectionRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let collection: LocalFavoriteCollection
     let itemCount: Int
     let categories: [FavoriteCategory]
@@ -58,7 +59,7 @@ struct LocalFavoriteCollectionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(collection.name)
                     .font(.body)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 Text(L10n.string("favorites.collection_summary", itemCount))
                     .font(.caption)
                     .foregroundStyle(.secondary)

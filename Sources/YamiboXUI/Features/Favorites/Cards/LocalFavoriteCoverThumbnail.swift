@@ -66,7 +66,7 @@ struct LocalFavoriteCoverThumbnail: View {
 struct LocalFavoriteSmartCardBadge: View {
     var body: some View {
         Image(systemName: "sparkles")
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
             .padding(5)
             .background(Color.accentColor, in: Circle())
@@ -125,7 +125,9 @@ struct LocalFavoriteCoverTextFallback: View {
     }
 
     private var fontSize: CGFloat {
-        max(6, baseFontSize * scale)
+        // 10pt floor: below that the title stops being legible at all and the
+        // tile reads as noise (small mosaic tiles used to bottom out at 6pt).
+        max(10, baseFontSize * scale)
     }
 
     private var baseFontSize: CGFloat {

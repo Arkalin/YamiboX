@@ -478,6 +478,8 @@ private struct ForumMangaChapterRow: View {
     let currentReadProgressText: String?
     let onTap: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -493,7 +495,7 @@ private struct ForumMangaChapterRow: View {
                     ))
                     .font(.subheadline.weight(isFocused || isCurrentRead ? .semibold : .regular))
                     .foregroundStyle(isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let subtitleText {
                         Text(subtitleText)
