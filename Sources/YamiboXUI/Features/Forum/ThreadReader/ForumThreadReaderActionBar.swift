@@ -23,8 +23,10 @@ struct ForumThreadReaderActionBar: View {
                     systemImage: isFavorited ? "star.fill" : "star"
                 )
                 .labelStyle(.iconOnly)
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(isFavorited ? ForumColors.orangeAccent : ForumColors.brownEmphasis)
                 .frame(width: 42, height: 34)
+                .expandedHitTarget()
             }
             .buttonStyle(.bordered)
             .tint(ForumColors.brownEmphasis)
@@ -38,6 +40,7 @@ struct ForumThreadReaderActionBar: View {
                     .labelStyle(.iconOnly)
                     .foregroundStyle(ForumColors.brownEmphasis)
                     .frame(width: 42, height: 34)
+                    .expandedHitTarget()
             }
             .buttonStyle(.bordered)
             .tint(ForumColors.brownEmphasis)

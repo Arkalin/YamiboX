@@ -16,10 +16,15 @@ public struct RootTabView: View {
         Group {
             if appModel.isBootstrapping && appModel.bootstrapState == nil {
                 ProgressView(L10n.string("app.initializing"))
+                    .transition(.opacity)
             } else {
                 content
+                    .transition(.opacity)
             }
         }
+        // Cross-fade from the bootstrap placeholder into the tab content
+        // instead of hard-swapping frames.
+        .animation(.easeInOut(duration: 0.25), value: appModel.isBootstrapping && appModel.bootstrapState == nil)
         .task {
             await appModel.bootstrapIfNeeded()
         }

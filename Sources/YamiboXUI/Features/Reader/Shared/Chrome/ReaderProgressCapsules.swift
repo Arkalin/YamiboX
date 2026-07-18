@@ -431,6 +431,10 @@ struct ReaderVerticalProgressPreviewCapsule: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                // Digits roll instead of hard-swapping as the scrub sweeps
+                // through pages.
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.18), value: preview.pageNumber)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 16)

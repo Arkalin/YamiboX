@@ -146,6 +146,10 @@ struct NovelReaderBottomChrome: View {
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         .multilineTextAlignment(.center)
+        // Page counters roll digit-by-digit as pages turn instead of
+        // hard-swapping the whole line.
+        .contentTransition(.numericText())
+        .animation(.snappy(duration: 0.18), value: summary.pageProgressLine)
 
         if readingMode == .vertical {
             content

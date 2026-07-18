@@ -484,6 +484,7 @@ private struct ForumNovelHeaderActions: View {
     private var favoriteButton: some View {
         Button(action: onFavoriteTap) {
             Image(systemName: isFavorited ? "star.fill" : "star")
+                .contentTransition(.symbolEffect(.replace))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(ForumColors.brownEmphasis)
                 .frame(minWidth: 42, minHeight: 38)

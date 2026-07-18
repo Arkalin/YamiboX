@@ -35,6 +35,9 @@ private struct TransientMessageOverlayModifier: ViewModifier {
                                 ? .opacity.animation(.snappy(duration: 0.2))
                                 : .move(edge: .bottom).combined(with: .opacity)
                         )
+                        // Transient status must never steal input from the
+                        // content it floats above.
+                        .allowsHitTesting(false)
                 }
             }
             .animation(.snappy(duration: 0.2), value: message)
