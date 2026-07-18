@@ -110,8 +110,7 @@ final class ForumNovelDetailViewModel {
             await dependencies.makeForumThreadReaderRepository()
         }
         readingProgressUpdatesTask = StoreChangeObservation.task(
-            named: ReadingProgressStore.didChangeNotification,
-            changeIDKey: ReadingProgressStore.changeIDUserInfoKey,
+            changes: { [store = dependencies.readingProgressStore] in store.changes() },
             changeID: { [store = dependencies.readingProgressStore] in store.changeID }
         ) { [weak self, store = dependencies.readingProgressStore] in
             await self?.refreshReadingProgress(from: store)
@@ -540,7 +539,7 @@ final class ForumNovelDetailViewModel {
         if let authorID = trimmedNonEmpty(page?.posts.first?.author.uid) {
             return authorID
         }
-        throw YamiboError.parsingFailed(context: "小说作者范围")
+        throw YamiboError.parsingFailed(context: L10n.string("parsing_context.novel_author_scope"))
     }
 
     private static func firstFloorPreviewText(from post: ForumThreadPost?) -> String? {

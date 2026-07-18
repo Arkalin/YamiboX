@@ -1,6 +1,12 @@
 import Foundation
 import Kanna
 
+// SwiftSoup-style adapter over Kanna. Signature policy: `throws` is reserved for
+// operations that can actually fail (document parsing). Kanna 6.1.0's
+// `Searchable.css/xpath` return an `XPathObject` and never throw, and the node
+// accessors are all `value ?? ""` fallbacks, so the traversal/extraction API here
+// is deliberately non-throwing — historical `throws` on these methods only forced
+// `try?`-noise onto every call site without any real failure path.
 enum KannaSoup {
     static func parse(_ html: String, baseURL: String? = nil) throws -> Document {
         try Document(document: HTML(html: html, url: baseURL, encoding: .utf8))
@@ -22,7 +28,7 @@ class Node {
         rawNode.xpath("child::node()").map(Self.wrap)
     }
 
-    func text() throws -> String {
+    func text() -> String {
         rawNode.text ?? ""
     }
 
@@ -32,10 +38,6 @@ class Node {
 }
 
 final class TextNode: Node {
-    override func text() -> String {
-        rawNode.text ?? ""
-    }
-
     func getWholeText() -> String {
         text()
     }
@@ -49,23 +51,28 @@ class Element: Node {
         "pre", "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"
     ]
 
-    func select(_ selector: String) throws -> Elements {
+    // Cached DOM-identity key, see `isSameDOMNode(as:)`. Computed at most once per
+    // wrapper; Kanna documents are confined to a single thread by all callers, so a
+    // plain `lazy var` is sufficient.
+    private lazy var domNodePath: [Int] = Self.computeDOMNodePath(of: rawNode)
+
+    func select(_ selector: String) -> Elements {
         Elements(Self.selectElements(selector, in: rawNode))
     }
 
-    override func text() throws -> String {
+    override func text() -> String {
         Self.normalizedText(renderedText())
     }
 
-    func attr(_ name: String) throws -> String {
+    func attr(_ name: String) -> String {
         rawNode[name] ?? ""
     }
 
-    func html() throws -> String {
+    func html() -> String {
         rawNode.innerHTML ?? ""
     }
 
-    func outerHtml() throws -> String {
+    func outerHtml() -> String {
         rawNode.toHTML ?? ""
     }
 
@@ -83,7 +90,7 @@ class Element: Node {
         rawNode["id"] ?? ""
     }
 
-    func className() throws -> String {
+    func className() -> String {
         rawNode.className ?? ""
     }
 
@@ -108,11 +115,11 @@ class Element: Node {
         return result
     }
 
-    func nextElementSibling() throws -> Element? {
+    func nextElementSibling() -> Element? {
         rawNode.nextSibling.map { Element(rawNode: $0) }
     }
 
-    func previousElementSibling() throws -> Element? {
+    func previousElementSibling() -> Element? {
         rawNode.previousSibling.map { Element(rawNode: $0) }
     }
 
@@ -120,19 +127,37 @@ class Element: Node {
         Elements(rawNode.children.map { Element(rawNode: $0) })
     }
 
-    func remove() throws {
+    func remove() {
         rawNode.parent?.removeChild(rawNode)
     }
 
+    /// Whether both wrappers point at the same underlying DOM node.
+    ///
+    /// Chosen approach: compare a cached "positional path" — the chain of
+    /// element-sibling indices from the node up to the document root.
+    ///
+    /// Why not pointer equality: Kanna 6.1.0 keeps the underlying `xmlNodePtr`
+    /// private (`libxmlHTMLNode.nodePtr`; the class itself is internal) and the
+    /// public `XMLElement` protocol exposes no identity member, so the real node
+    /// pointer is unreachable from this layer.
+    ///
+    /// Why not the previous `outerHTML` string comparison: it re-serialized both
+    /// subtrees on every call (O(n·m) across the ordering filter in
+    /// `selectElements`) and, worse, it declared isomorphic siblings "the same
+    /// node" (two identical adjacent `<li>x</li>` serialize identically), which
+    /// corrupted multi-selector ordering and `cssSelector()` sibling indices.
+    ///
+    /// The positional path is unambiguous for nodes of one document: distinct
+    /// nodes diverge at the level below their lowest common ancestor, and the same
+    /// underlying node always yields the same path. Cost is O(depth + preceding
+    /// siblings), paid once per wrapper thanks to the cache. All callers compare
+    /// nodes originating from the same document; cross-document comparison is out
+    /// of scope (the old outerHTML comparison was no better there).
     func isSameDOMNode(as other: Element) -> Bool {
-        if let id = try? attr("id"), !id.isEmpty {
-            return id == ((try? other.attr("id")) ?? "")
-                && tagName() == other.tagName()
-        }
-        return (try? outerHtml()) == (try? other.outerHtml())
+        self === other || domNodePath == other.domNodePath
     }
 
-    func cssSelector() throws -> String {
+    func cssSelector() -> String {
         var parts: [String] = []
         var current: Element? = self
         while let element = current {
@@ -154,6 +179,27 @@ class Element: Node {
             current = element.parent()
         }
         return parts.reversed().joined(separator: " > ")
+    }
+
+    /// Positional path used as the node-identity key: index among element
+    /// siblings at every level, walking parents up to the root. Sibling position
+    /// is derived by hopping `previousSibling` (libxml's
+    /// `xmlPreviousElementSibling`), which follows the *underlying* node chain and
+    /// therefore needs no equality primitive itself.
+    private static func computeDOMNodePath(of node: any Kanna.XMLElement) -> [Int] {
+        var path: [Int] = []
+        var current: (any Kanna.XMLElement)? = node
+        while let node = current {
+            var index = 0
+            var sibling = node.previousSibling
+            while let previous = sibling {
+                index += 1
+                sibling = previous.previousSibling
+            }
+            path.append(index)
+            current = node.parent
+        }
+        return path
     }
 
     private func renderedText() -> String {
@@ -216,7 +262,7 @@ class Element: Node {
                 let first = descendantParts[0]
                 let rest = descendantParts.dropFirst().joined(separator: " ")
                 return selectSingleSelector(first, in: searchable).flatMap { element in
-                    (try? element.select(rest).array()) ?? []
+                    element.select(rest).array()
                 }
             }
         }
@@ -384,7 +430,7 @@ class Element: Node {
         let value: String
 
         func matches(element: Element) -> Bool {
-            let attribute = ((try? element.attr(name)) ?? "")
+            let attribute = element.attr(name)
             switch operation {
             case "*=":
                 return attribute.contains(value)
@@ -454,6 +500,7 @@ class Element: Node {
 final class Document: Element {
     private let rawDocument: any Kanna.HTMLDocument
 
+    // Real failure path: an empty/unparseable document has no root element.
     fileprivate init(document: any Kanna.HTMLDocument) throws {
         self.rawDocument = document
         guard let root = document.at_xpath("/*") else {
@@ -462,19 +509,19 @@ final class Document: Element {
         super.init(rawNode: root)
     }
 
-    override func select(_ selector: String) throws -> Elements {
+    override func select(_ selector: String) -> Elements {
         Elements(Element.selectElements(selector, in: rawDocument))
     }
 
-    override func text() throws -> String {
-        try (body() ?? self).text()
+    override func text() -> String {
+        (body() ?? self).text()
     }
 
-    override func html() throws -> String {
+    override func html() -> String {
         rawDocument.toHTML ?? ""
     }
 
-    func title() throws -> String {
+    func title() -> String {
         rawDocument.title ?? ""
     }
 
@@ -518,21 +565,21 @@ struct Elements: Sequence {
         elements.isEmpty
     }
 
-    func select(_ selector: String) throws -> Elements {
-        Elements(try elements.flatMap { try $0.select(selector).array() })
+    func select(_ selector: String) -> Elements {
+        Elements(elements.flatMap { $0.select(selector).array() })
     }
 
-    func text() throws -> String {
-        try elements.map { try $0.text() }.joined()
+    func text() -> String {
+        elements.map { $0.text() }.joined()
     }
 
-    func html() throws -> String {
-        try elements.map { try $0.outerHtml() }.joined()
+    func html() -> String {
+        elements.map { $0.outerHtml() }.joined()
     }
 
-    func remove() throws {
+    func remove() {
         for element in elements {
-            try element.remove()
+            element.remove()
         }
     }
 }

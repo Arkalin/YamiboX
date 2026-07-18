@@ -45,6 +45,12 @@ enum ReaderProjectionFallbackPolicy {
         if let urlError = error as? URLError {
             return urlError.code != .cancelled
         }
+        // Favorite-action and persistence failures keep the classification
+        // their old `YamiboError` cases had before the domain split: neither
+        // is a transport failure, so neither triggers the offline fallback.
+        if error is FavoriteActionError || error is YamiboPersistenceError {
+            return false
+        }
         guard let yamiboError = error as? YamiboError else {
             return false
         }
@@ -60,15 +66,6 @@ enum ReaderProjectionFallbackPolicy {
              .loginFailed,
              .loginVerificationRequired,
              .searchCooldown,
-             .persistenceFailed,
-             .missingFavoriteDeleteToken,
-             .missingFavoriteDeleteID,
-             .favoriteDeleteFailed,
-             .missingFavoriteAddToken,
-             .missingFavoriteThreadID,
-             .favoriteAddFailed,
-             .missingForumBoardFavoriteToken,
-             .forumBoardFavoriteFailed,
              .missingForumSearchToken:
             return false
         }

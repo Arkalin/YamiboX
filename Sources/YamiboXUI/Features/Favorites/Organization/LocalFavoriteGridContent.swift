@@ -7,7 +7,7 @@ import YamiboXCore
 /// order — see `LocalFavoriteLibraryProjection.mixedEntries`). Column counts
 /// adapt to the available width with two columns on iPhone.
 struct LocalFavoriteGridContent: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
     let isStaggered: Bool
@@ -96,7 +96,7 @@ struct LocalFavoriteGridContent: View {
 /// Renders one mixed-grid entry as either a collection cell or an item card.
 struct LocalFavoriteGridEntryCell: View {
     let entry: FavoriteMixedEntry
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
     let derived: LocalFavoriteDerivedState
@@ -137,7 +137,7 @@ struct LocalFavoriteGridEntryCell: View {
 struct LocalFavoriteStaggeredCards: View {
     let entries: [FavoriteMixedEntry]
     let columnCount: Int
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
     let derived: LocalFavoriteDerivedState

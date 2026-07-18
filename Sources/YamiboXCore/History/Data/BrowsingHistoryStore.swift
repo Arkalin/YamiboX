@@ -12,16 +12,18 @@ import Foundation
 /// `last_visit_time` after every insert. Purely local — never synced
 /// (decision #12).
 public actor BrowsingHistoryStore {
-    public static let didChangeNotification = Notification.Name("yamibox.browsingHistoryStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
     public static let maxEntryCount = 2000
 
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 
     public init(databasePool: DatabasePool? = nil) {
-        self.database = databasePool ?? Self.openDatabase()
+        self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "BrowsingHistoryStore")
     }
 
     /// Upserts one visit, absorbing superseded rows in the same transaction
@@ -82,7 +84,7 @@ public actor BrowsingHistoryStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -183,7 +185,7 @@ public actor BrowsingHistoryStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -194,7 +196,7 @@ public actor BrowsingHistoryStore {
             }
             postChangeNotification()
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -293,18 +295,7 @@ public actor BrowsingHistoryStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 
-    private static func openDatabase() -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool()
-        } catch {
-            fatalError("Failed to open BrowsingHistoryStore database: \(error)")
-        }
-    }
 }

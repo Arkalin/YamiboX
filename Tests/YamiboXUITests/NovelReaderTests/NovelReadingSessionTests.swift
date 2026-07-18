@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import YamiboXCore
+import YamiboXTestSupport
 @testable import YamiboXUI
 
 private typealias NovelTextLayoutFixture = @Sendable (
@@ -1048,18 +1049,8 @@ final class NovelReadingSessionTests: XCTestCase {
     }
 }
 
-private func makeNovelDocument(
-    view: Int,
-    maxView: Int,
-    segments: [(chapterTitle: String, text: String)]
-) -> NovelReaderProjection {
-    NovelReaderProjection(
-        threadID: "9001",
-        view: view,
-        maxView: maxView,
-        segments: segments.map { .text($0.text, chapterTitle: $0.chapterTitle) }
-    )
-}
+// makeNovelDocument(view:maxView:segments:) 已收敛到 YamiboXTestSupport
+// (与 NovelReadingSessionRuntimeTests 的副本逐字节一致)。
 
 private func viewportSurfaceContainsSegmentOffset(_ page: NovelTextViewportIndexSurface, segmentIndex: Int, offset: Int) -> Bool {
     page.ranges.filter { $0.segmentIndex == segmentIndex }.contains { range in
@@ -1089,7 +1080,7 @@ private extension NovelReadingSession {
             pagination: pagination
         )
         self.init(
-            document: document,
+            projection: document,
             layoutResult: layoutResult,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             resumePoint: resumePoint,

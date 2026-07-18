@@ -225,8 +225,7 @@ public final class NovelReaderCacheOperationModule {
         _ views: Set<Int>,
         snapshot: NovelReaderCacheOperationSnapshot,
         repository: NovelReaderCacheOperationRepository,
-        summary: @escaping @MainActor (NovelReaderCacheOperationMode, NovelReaderCacheBatchResult) -> String,
-        onFailure: @escaping @MainActor (Error) -> Void
+        summary: @escaping @MainActor (NovelReaderCacheOperationMode, NovelReaderCacheBatchResult) -> String
     ) {
         guard !state.isRunning else { return }
         let selection = selectionState(for: views, snapshot: snapshot)

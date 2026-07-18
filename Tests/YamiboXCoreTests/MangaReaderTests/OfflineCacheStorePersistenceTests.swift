@@ -198,7 +198,7 @@ struct MangaReaderTestsMangaOfflineCachePersistence {
         )
         let imageURL = try #require(URL(string: "https://img.example.com/mismatch.jpg"))
 
-        await #expect(throws: YamiboError.self) {
+        await #expect(throws: YamiboPersistenceError.self) {
             try await store.saveMangaOfflineCacheMembership(
                 MangaOfflineCacheMembership(
                     ownerName: "作品A",

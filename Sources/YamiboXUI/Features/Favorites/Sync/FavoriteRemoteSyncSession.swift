@@ -409,7 +409,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         case let .webFallback(url):
             let canonicalURL = YamiboThreadURLCanonicalizer.canonicalThreadURL(from: url)
             guard let threadID = YamiboThreadURLCanonicalizer.threadID(from: canonicalURL) else {
-                throw YamiboError.missingFavoriteThreadID
+                throw FavoriteActionError.missingFavoriteThreadID
             }
             // Route the fallback through the routing payload so a missing or
             // blank title gets the same default as resolved `.thread` routes.

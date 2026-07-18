@@ -426,9 +426,3 @@ private extension UserSpaceSubPage {
         }
     }
 }
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
-}

@@ -60,7 +60,7 @@ public final class ReaderResumeRouteStore: @unchecked Sendable {
         do {
             return try JSONEncoder().encode(route)
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 

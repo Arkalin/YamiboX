@@ -227,8 +227,8 @@ public struct OfflineCacheProcessingWork: Hashable, Identifiable, Sendable {
         self.entryID = entryID
         self.ownerTitle = ownerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.targetImageURLs = Self.uniqueURLs(targetImageURLs)
-        self.completedImageURLs = Self.uniqueURLs(completedImageURLs)
+        self.targetImageURLs = targetImageURLs.removingDuplicateURLs()
+        self.completedImageURLs = completedImageURLs.removingDuplicateURLs()
         self.retainsInlineImages = retainsInlineImages
         self.state = state
         self.failureMessage = failureMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -239,15 +239,6 @@ public struct OfflineCacheProcessingWork: Hashable, Identifiable, Sendable {
         self.insertionIndex = max(1, insertionIndex)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var output: [URL] = []
-        for url in urls where seen.insert(url.absoluteString).inserted {
-            output.append(url)
-        }
-        return output
     }
 }
 

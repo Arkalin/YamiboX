@@ -65,7 +65,7 @@ import Testing
 @Test func favoriteItemRequiresAtLeastOneFavoriteLocation() throws {
     let target = FavoriteItemTarget(kind: .normalThread, threadID: "320")
 
-    #expect(throws: YamiboError.self) {
+    #expect(throws: YamiboPersistenceError.self) {
         _ = try FavoriteItem(target: target, title: "No location", locations: [])
     }
 }
@@ -231,7 +231,7 @@ import Testing
     }
 
     // The caller's error must come back unchanged (not wrapped in
-    // persistenceFailed), and the aborted mutation must not persist.
+    // YamiboPersistenceError), and the aborted mutation must not persist.
     await #expect(throws: TransformAbort.self) {
         try await store.update { document in
             document.removeItem(target: target)

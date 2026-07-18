@@ -187,6 +187,14 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var actionButtonSpacing: CGFloat { 8 }
     public var bottomControlsAdditionalBottomOffset: CGFloat { 8 }
     public var bottomChromeTopPadding: CGFloat { 8 }
+
+    /// Bottom padding under the whole chrome stack: tucks the chrome toward
+    /// the home indicator (inset − 18) but never lets it collapse below 8pt
+    /// on inset-less devices. Both readers must share this curve or their
+    /// chrome heights drift — it used to live as a magic formula in each.
+    public func bottomPadding(forBottomInset bottomInset: CGFloat) -> CGFloat {
+        max(bottomInset - 18, 8)
+    }
     public var horizontalAlignment: ReaderBottomChromeHorizontalAlignment { .trailing }
     public var progressTextLeadsIcon: Bool { true }
     public var progressFillHasVerticalTrailingEdge: Bool { true }

@@ -36,10 +36,11 @@ enum YamiboHTMLPageInspector {
     }
 
     static func pageTitle(from html: String) -> String? {
-        if let document = try? KannaSoup.parse(html),
-           let title = try? document.title().trimmingCharacters(in: .whitespacesAndNewlines),
-           !title.isEmpty {
-            return title
+        if let document = try? KannaSoup.parse(html) {
+            let title = document.title().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                return title
+            }
         }
 
         guard let raw = HTMLTextExtractor.firstMatch(
@@ -57,7 +58,7 @@ enum YamiboHTMLPageInspector {
 enum YamiboThreadHTMLFacts {
     static func onlyAuthorID(from html: String, threadID: String) -> String? {
         guard let document = try? KannaSoup.parse(html) else { return nil }
-        return try? onlyAuthorID(in: document, threadID: threadID)
+        return onlyAuthorID(in: document, threadID: threadID)
     }
 
     static func maxView(from html: String, threadID: String, currentView: Int) -> Int {
@@ -71,33 +72,29 @@ enum YamiboThreadHTMLFacts {
         let fallback = max(1, currentView)
         var pages = Set([fallback])
 
-        if let options = try? document.select("select option[value]") {
-            for option in options {
-                let value = ((try? option.attr("value")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if let page = Int(value), page > 0 {
-                    pages.insert(page)
-                }
+        for option in document.select("select option[value]") {
+            let value = option.attr("value").trimmingCharacters(in: .whitespacesAndNewlines)
+            if let page = Int(value), page > 0 {
+                pages.insert(page)
             }
         }
 
-        if let links = try? document.select("a[href]") {
-            for link in links {
-                let href = ((try? link.attr("href")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let components = urlComponents(from: href),
-                      isSameThreadLink(components: components, href: href, threadID: threadID),
-                      let page = pageNumber(from: components, href: href, threadID: threadID) else {
-                    continue
-                }
-                pages.insert(page)
+        for link in document.select("a[href]") {
+            let href = link.attr("href").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let components = urlComponents(from: href),
+                  isSameThreadLink(components: components, href: href, threadID: threadID),
+                  let page = pageNumber(from: components, href: href, threadID: threadID) else {
+                continue
             }
+            pages.insert(page)
         }
 
         return pages.max() ?? fallback
     }
 
-    private static func onlyAuthorID(in document: Document, threadID: String) throws -> String? {
-        for link in try document.select("a[href]") {
-            let href = try link.attr("href").trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func onlyAuthorID(in document: Document, threadID: String) -> String? {
+        for link in document.select("a[href]") {
+            let href = link.attr("href").trimmingCharacters(in: .whitespacesAndNewlines)
             guard let components = urlComponents(from: href),
                   isSameThreadLink(components: components, href: href, threadID: threadID),
                   let authorID = components.queryItems?.first(where: { $0.name == "authorid" })?.value,

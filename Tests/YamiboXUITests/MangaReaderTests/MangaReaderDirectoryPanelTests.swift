@@ -443,12 +443,12 @@ private func waitForDirectoryPanelUpdate(
     pollIntervalNanoseconds: UInt64 = 20_000_000,
     predicate: @escaping @MainActor @Sendable () async -> Bool
 ) async throws {
-    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-    while DispatchTime.now().uptimeNanoseconds < deadline {
-        if await predicate() {
-            return
-        }
-        try await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    do {
+        try await waitForCondition(
+            timeout: .nanoseconds(Int64(timeoutNanoseconds)),
+            pollInterval: .nanoseconds(Int64(pollIntervalNanoseconds))
+        ) { await predicate() }
+    } catch is TestWaitTimeoutError {
+        XCTFail("Timed out waiting for condition")
     }
-    XCTFail("Timed out waiting for condition")
 }

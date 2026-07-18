@@ -23,7 +23,7 @@ actor OfflineCacheStore {
         fileManager: FileManager = .default,
         baseDirectory: URL? = nil
     ) {
-        self.database = databasePool ?? Self.openDatabase()
+        self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "OfflineCacheStore")
         self.fileManager = fileManager
         let root = baseDirectory ?? Self.defaultBaseDirectory(fileManager: fileManager)
         self.baseDirectory = root
@@ -37,7 +37,7 @@ actor OfflineCacheStore {
     }
 
     func mangaOfflineCacheMembership(ownerName: String, tid: String) async -> MangaOfflineCacheMembership? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard let id = normalizedID(ownerName: ownerName, tid: tid) else { return nil }
         do {
             return try await database.read { db in
@@ -57,7 +57,7 @@ actor OfflineCacheStore {
     }
 
     func mangaOfflineCacheMemberships(forOwnerName ownerName: String) async -> [MangaOfflineCacheMembership] {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return [] }
         do {
             return try await database.read { db in
@@ -76,7 +76,7 @@ actor OfflineCacheStore {
     }
 
     func allMangaOfflineCacheMemberships() async -> [MangaOfflineCacheMembership] {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 try Self.allMangaMemberships(
@@ -93,7 +93,7 @@ actor OfflineCacheStore {
     }
 
     func saveMangaOfflineCacheMembership(_ membership: MangaOfflineCacheMembership) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         var writtenPayload: MangaSourcePagePayload?
         do {
             let normalized = try Self.normalizedMembership(membership)
@@ -138,7 +138,7 @@ actor OfflineCacheStore {
     }
 
     func removeMangaOfflineCacheMembership(ownerName: String, tid: String) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         guard let id = normalizedID(ownerName: ownerName, tid: tid) else { return }
         do {
             try await database.write { db in
@@ -172,7 +172,7 @@ actor OfflineCacheStore {
     }
 
     func removeMangaOfflineCacheMemberships(forOwnerName ownerName: String) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return }
         do {
             try await database.write { db in
@@ -204,7 +204,7 @@ actor OfflineCacheStore {
     }
 
     func renameMangaOfflineCacheOwner(from oldOwnerName: String, to newOwnerName: String) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         guard let oldOwnerName = oldOwnerName.mangaReaderTrimmedNonEmpty,
               let newOwnerName = newOwnerName.mangaReaderTrimmedNonEmpty,
               oldOwnerName != newOwnerName else {
@@ -295,14 +295,14 @@ actor OfflineCacheStore {
     }
 
     func enqueueMangaOfflineCacheWork(_ request: MangaOfflineCacheWorkRequest) async throws -> MangaOfflineCacheEnqueueResult {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         do {
             let result: MangaOfflineCacheEnqueueResult = try await database.write { db in
                 guard request.ownerName.mangaReaderTrimmedNonEmpty != nil else {
-                    throw YamiboError.persistenceFailed("Offline cache owner is empty")
+                    throw YamiboPersistenceError(context: "Offline cache owner is empty")
                 }
                 guard request.tid.mangaReaderTrimmedNonEmpty != nil else {
-                    throw YamiboError.persistenceFailed("Chapter tid is empty")
+                    throw YamiboPersistenceError(context: "Chapter tid is empty")
                 }
                 let normalizedRequest = MangaOfflineCacheWorkRequest(
                     ownerName: request.ownerName,
@@ -354,7 +354,7 @@ actor OfflineCacheStore {
     }
 
     func clearOfflineCacheQueue() async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         try await database.write { db in
             try db.execute(sql: "DELETE FROM offline_cache_works")
             try Self.setQueueRunState(.paused, in: db)
@@ -363,7 +363,7 @@ actor OfflineCacheStore {
     }
 
     func offlineCacheQueueRunState() async -> OfflineCacheQueueRunState {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 try Self.queueRunState(in: db)
@@ -390,7 +390,7 @@ actor OfflineCacheStore {
     }
 
     func mangaOfflineCacheState(ownerName: String, tid: String) async -> MangaOfflineCacheState {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard let id = normalizedID(ownerName: ownerName, tid: tid) else { return .uncached }
         do {
             return try await database.read { db in
@@ -419,15 +419,9 @@ actor OfflineCacheStore {
     func clearAll() async throws {
         do {
             try await database.write { db in
-                try db.execute(sql: "DELETE FROM offline_cache_completed_images")
-                try db.execute(sql: "DELETE FROM offline_cache_work_images")
-                try db.execute(sql: "DELETE FROM offline_cache_works")
-                try db.execute(sql: "DELETE FROM offline_cache_novel_entry_images")
-                try db.execute(sql: "DELETE FROM offline_cache_novel_entries")
-                try db.execute(sql: "DELETE FROM offline_cache_manga_entry_images")
-                try db.execute(sql: "DELETE FROM offline_cache_manga_entries")
-                try db.execute(sql: "DELETE FROM offline_cache_image_assets")
-                try db.execute(sql: "DELETE FROM offline_cache_queue_state")
+                for table in ReaderDatabaseSchema.offlineCacheTableNamesInDeletionOrder {
+                    try db.execute(sql: "DELETE FROM \(table)")
+                }
             }
             if fileManager.fileExists(atPath: baseDirectory.path) {
                 try fileManager.removeItem(at: baseDirectory)
@@ -440,7 +434,7 @@ actor OfflineCacheStore {
     }
 
     func totalDiskUsageBytes() async -> Int {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 let imageBytes = try Int.fetchOne(
@@ -477,6 +471,36 @@ actor OfflineCacheStore {
             YamiboLog.offlineCache.error("Failed to recover offline cache queue state after restart: \(error)")
             throw error
         }
+    }
+
+    // Every store entry point must run the one-time post-restart queue
+    // recovery before touching queue state. The two wrappers below replace the
+    // per-method `try`/`try?` prefix boilerplate so that "does this operation
+    // tolerate a failed recovery?" is a visible, named decision at each call
+    // site instead of a one-character difference. Neither variant retries a
+    // failed recovery: `recoverQueueStateAfterRestart()` sets its
+    // `didRecoverQueueState` flag before attempting the write, which is the
+    // exact behavior every call site already had.
+    //
+    // They are internal rather than private only because the call sites live
+    // in this actor's sibling extension files; the actor itself is internal,
+    // so nothing is added to the package's public surface.
+
+    /// For operations whose contract is to throw on persistence problems
+    /// (queue mutations, saves, removals): a failed recovery aborts the
+    /// operation before it can act on unrecovered queue state, and the error
+    /// propagates to the caller exactly as the previous inline
+    /// `try await recoverQueueStateAfterRestart()` did.
+    func ensureQueueRecovered() async throws {
+        try await recoverQueueStateAfterRestart()
+    }
+
+    /// Best-effort variant for accessors that have no error channel and must
+    /// degrade to an empty/default answer (`nil`, `[]`, `0`, `.paused`)
+    /// instead of failing. Swallowing the error here loses no signal:
+    /// `recoverQueueStateAfterRestart()` already logs it before rethrowing.
+    func ensureQueueRecoveredBestEffort() async {
+        try? await recoverQueueStateAfterRestart()
     }
 
     private func normalizedID(ownerName: String, tid: String) -> MangaOfflineCacheMembershipID? {
@@ -551,13 +575,13 @@ actor OfflineCacheStore {
 
     private static func normalizedMembership(_ membership: MangaOfflineCacheMembership) throws -> MangaOfflineCacheMembership {
         guard membership.ownerName.mangaReaderTrimmedNonEmpty != nil else {
-            throw YamiboError.persistenceFailed("Offline cache owner is empty")
+            throw YamiboPersistenceError(context: "Offline cache owner is empty")
         }
         guard membership.tid.mangaReaderTrimmedNonEmpty != nil else {
-            throw YamiboError.persistenceFailed("Chapter tid is empty")
+            throw YamiboPersistenceError(context: "Chapter tid is empty")
         }
         guard membership.sourcePage.thread.tid == membership.tid else {
-            throw YamiboError.persistenceFailed("Manga offline source page does not match chapter tid")
+            throw YamiboPersistenceError(context: "Manga offline source page does not match chapter tid")
         }
         return MangaOfflineCacheMembership(
             ownerName: membership.ownerName,
@@ -842,7 +866,7 @@ actor OfflineCacheStore {
         do {
             return try JSONEncoder().encode(sourcePage)
         } catch {
-            throw YamiboError.persistenceFailed("Failed to encode manga offline source page")
+            throw YamiboPersistenceError(context: "Failed to encode manga offline source page", underlying: error)
         }
     }
 
@@ -997,28 +1021,6 @@ actor OfflineCacheStore {
             .appendingPathComponent("offline-cache", isDirectory: true)
     }
 
-    private static func openDatabase() -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool()
-        } catch {
-            fatalError("Failed to open OfflineCacheStore database: \(error)")
-        }
-    }
-}
-
-private func offlineCacheTimeInterval(from date: Date) -> Double {
-    date.timeIntervalSince1970
-}
-
-private func offlineCacheOptionalDate(from value: Double?) -> Date? {
-    value.map(Date.init(timeIntervalSince1970:))
-}
-
-private func offlineCachePersistenceError(from error: Error) -> YamiboError {
-    if let error = error as? YamiboError {
-        return error
-    }
-    return YamiboError.persistenceFailed(error.localizedDescription)
 }
 
 extension OfflineCacheStore: OfflineCacheStoreCore {}

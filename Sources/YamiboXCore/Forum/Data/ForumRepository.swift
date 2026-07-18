@@ -86,7 +86,7 @@ public actor ForumRepository {
     public func addBoardFavorite(fid: String, formHash: String?) async throws -> String {
         guard let formHash = formHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               !formHash.isEmpty else {
-            throw YamiboError.missingForumBoardFavoriteToken
+            throw FavoriteActionError.missingForumBoardFavoriteToken
         }
 
         let html = try await client.fetchHTML(

@@ -3526,7 +3526,7 @@ private func novelReaderViewModelSegmentPagination(
 ) throws -> NovelTextLayoutResult {
     let targetCharactersPerSurface = 120
     return try NovelTextLayout.layout(
-        document: document,
+        projection: document,
         settings: settings,
         layout: layout,
         viewportSurfaceLayout: { context, _, _ in
@@ -3559,14 +3559,15 @@ private func waitFor(
     pollIntervalNanoseconds: UInt64 = 20_000_000,
     predicate: @escaping () async -> Bool
 ) async throws {
-    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-    while DispatchTime.now().uptimeNanoseconds < deadline {
-        if await predicate() {
-            return
-        }
-        try await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    do {
+        try await waitForCondition(
+            timeout: .nanoseconds(Int64(timeoutNanoseconds)),
+            pollInterval: .nanoseconds(Int64(pollIntervalNanoseconds)),
+            predicate
+        )
+    } catch is TestWaitTimeoutError {
+        XCTFail("Timed out waiting for condition")
     }
-    XCTFail("Timed out waiting for condition")
 }
 
 @MainActor

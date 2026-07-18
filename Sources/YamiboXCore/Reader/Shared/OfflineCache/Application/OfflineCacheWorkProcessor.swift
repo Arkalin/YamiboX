@@ -13,18 +13,9 @@ struct OfflineCachePreparedWork<Payload: Sendable>: Sendable {
         payload: Payload
     ) {
         self.workID = workID
-        self.targetImageURLs = Self.uniqueURLs(targetImageURLs)
+        self.targetImageURLs = targetImageURLs.removingDuplicateURLs()
         self.refererURL = refererURL
         self.payload = payload
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var output: [URL] = []
-        for url in urls where seen.insert(url.absoluteString).inserted {
-            output.append(url)
-        }
-        return output
     }
 }
 
@@ -101,7 +92,9 @@ struct OfflineCacheWorkProcessor<Strategy: OfflineCacheWorkProcessingStrategy>: 
     private func reconciledCompletedImageURLs(_ targetImageURLs: [URL]) async -> [URL] {
         var completed: [URL] = []
         for imageURL in targetImageURLs {
-            if await store.offlineImageData(for: imageURL) != nil {
+            // Existence check only — loading the image bytes here would read
+            // every already-cached image of the work into memory per run.
+            if await store.hasOfflineImage(for: imageURL) {
                 completed.append(imageURL)
             }
         }

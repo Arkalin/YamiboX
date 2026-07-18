@@ -113,9 +113,12 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             await persist(snapshot)
         }
 
-        /// Records a mutation against `workingDocument` and queues it for replay
-        /// onto a freshly-loaded document at save time, so a save never blindly
-        /// overwrites edits the user made elsewhere while this run was fetching.
+        /// Queues a mutation for replay onto a freshly-loaded document at save
+        /// time, so a save never blindly overwrites edits the user made
+        /// elsewhere while this run was fetching. Reach for `apply` (defined
+        /// next to `workingDocument`) instead wherever possible — raw `record`
+        /// is only for the import case whose first application must throw
+        /// while its replay is tolerant.
         func record(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument) -> Void) {
             pendingOperations.append(operation)
         }
@@ -149,8 +152,19 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             try Task.checkCancellation()
             await commit { $0.phase = .preparing }
             var workingDocument = try await libraryStore.load()
+
+            /// Single write path for this run's document mutations: applies
+            /// the operation to the in-memory working copy and queues the
+            /// same closure for the save-time replay. One closure feeding
+            /// both copies is what keeps them from drifting — previously
+            /// every mutation was written twice by hand, and forgetting
+            /// either half meant "visible but never saved" (or the reverse).
+            func apply(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument) -> Void) {
+                operation(&workingDocument)
+                record(operation)
+            }
             guard workingDocument.categories.contains(where: { $0.id == snapshot.targetCategoryID }) else {
-                throw YamiboError.persistenceFailed(L10n.string("favorites.sync.error.category_missing"))
+                throw YamiboPersistenceError(context: L10n.string("favorites.sync.error.category_missing"))
             }
             let targetLocation = FavoriteLocation.category(snapshot.targetCategoryID)
 
@@ -252,15 +266,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     let alreadyMapped = existing.remoteMapping?.yamiboFavoriteID != nil
                     let existingTarget = existing.target
                     if !alreadyMapped {
-                        workingDocument.addLocation(targetLocation, to: existingTarget)
-                        record { doc in doc.addLocation(targetLocation, to: existingTarget) }
+                        apply { doc in doc.addLocation(targetLocation, to: existingTarget) }
                     }
-                    workingDocument.updateRemoteMapping(
-                        for: existingTarget,
-                        yamiboFavoriteID: entry.remoteFavoriteID,
-                        yamiboRemoteOrder: entry.remoteOrder
-                    )
-                    record { doc in
+                    apply { doc in
                         doc.updateRemoteMapping(
                             for: existingTarget,
                             yamiboFavoriteID: entry.remoteFavoriteID,
@@ -423,12 +431,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         guard let target = workingDocument.items.first(where: { $0.target.threadID == entry.threadID })?.target else {
                             continue
                         }
-                        workingDocument.updateRemoteMapping(
-                            for: target,
-                            yamiboFavoriteID: entry.remoteFavoriteID,
-                            yamiboRemoteOrder: entry.remoteOrder
-                        )
-                        record { doc in
+                        apply { doc in
                             doc.updateRemoteMapping(
                                 for: target,
                                 yamiboFavoriteID: entry.remoteFavoriteID,
@@ -489,15 +492,18 @@ public struct FavoriteYamiboSyncEngine: Sendable {
 
     // MARK: - Helpers
 
-    private static func probeWithRetry(
-        _ entry: YamiboRemoteFavoriteEntry,
-        client: FavoriteYamiboSyncClient,
-        attempts: Int = 3
-    ) async throws -> FavoriteThreadProbeResult {
-        var lastError: any Error = YamiboError.parsingFailed(context: entry.threadID)
+    /// Shared retry loop for per-item network calls: cancellation always
+    /// propagates immediately, run-fatal errors (auth loss, offline) abort
+    /// the whole run, anything else retries and surfaces the last error.
+    private static func withRetry<Value>(
+        attempts: Int = 3,
+        fallbackError: @autoclosure () -> any Error,
+        _ operation: () async throws -> Value
+    ) async throws -> Value {
+        var lastError: (any Error)?
         for attempt in 1 ... max(1, attempts) {
             do {
-                return try await client.probe(entry)
+                return try await operation()
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error where isRunFatal(error) {
@@ -509,7 +515,20 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 }
             }
         }
-        throw lastError
+        throw lastError ?? fallbackError()
+    }
+
+    private static func probeWithRetry(
+        _ entry: YamiboRemoteFavoriteEntry,
+        client: FavoriteYamiboSyncClient,
+        attempts: Int = 3
+    ) async throws -> FavoriteThreadProbeResult {
+        try await withRetry(
+            attempts: attempts,
+            fallbackError: YamiboError.parsingFailed(context: entry.threadID)
+        ) {
+            try await client.probe(entry)
+        }
     }
 
     private static func fetchPageWithRetry(
@@ -517,22 +536,12 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         client: FavoriteYamiboSyncClient,
         attempts: Int = 3
     ) async throws -> FavoriteYamiboRemotePage {
-        var lastError: any Error = YamiboError.parsingFailed(context: "\(page)")
-        for attempt in 1 ... max(1, attempts) {
-            do {
-                return try await client.fetchPage(page)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch let error where isRunFatal(error) {
-                throw error
-            } catch {
-                lastError = error
-                if attempt < attempts {
-                    try Task.checkCancellation()
-                }
-            }
+        try await withRetry(
+            attempts: attempts,
+            fallbackError: YamiboError.parsingFailed(context: "\(page)")
+        ) {
+            try await client.fetchPage(page)
         }
-        throw lastError
     }
 
     private static func fetchAllPages(client: FavoriteYamiboSyncClient) async throws -> [YamiboRemoteFavoriteEntry] {
@@ -557,9 +566,20 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     /// Errors that abort the whole run instead of failing one item, matching
     /// the Android reference (not logged in / site maintenance).
     private static func isRunFatal(_ error: any Error) -> Bool {
+        // A missing add token was run-fatal before the favorites-domain split
+        // moved it from `YamiboError` to `FavoriteActionError`: without a
+        // formHash no subsequent add in this run can succeed either.
+        if let favoriteError = error as? FavoriteActionError {
+            switch favoriteError {
+            case .missingFavoriteAddToken:
+                return true
+            default:
+                return false
+            }
+        }
         guard let yamiboError = error as? YamiboError else { return false }
         switch yamiboError {
-        case .notAuthenticated, .floodControl, .missingFavoriteAddToken:
+        case .notAuthenticated, .floodControl:
             return true
         default:
             return false

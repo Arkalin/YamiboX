@@ -6,7 +6,7 @@ import UIKit
 /// Renders persisted text Like Items as permanent highlights on top of the
 /// same selection-rect geometry `NovelTextSelectionController` uses for the
 /// live selection. Mirrors its register/unregister weak-view bookkeeping and
-/// `LikeStore.didChangeNotification` changeID loop-filtering.
+/// `LikeStore.changes()` changeID loop-filtering.
 @MainActor
 final class NovelLikeHighlightController {
     private let registeredViews = NSHashTable<NovelTextViewportReferenceUIView>.weakObjects()
@@ -27,11 +27,12 @@ final class NovelLikeHighlightController {
         changeObserverTask?.cancel()
         let expectedChangeID = likeStore.changeID
         changeObserverTask = Task { @MainActor [weak self] in
-            for await notification in NotificationCenter.default.notifications(named: LikeStore.didChangeNotification) {
+            for await changeID in likeStore.changes() {
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
-                guard let changeID = notification.userInfo?[LikeStore.changeIDUserInfoKey] as? String,
-                      changeID == expectedChangeID else {
+                // Per-instance stream: the guard is kept as the explicit
+                // "only this exact store instance" contract.
+                guard changeID == expectedChangeID else {
                     continue
                 }
                 await self.reload()

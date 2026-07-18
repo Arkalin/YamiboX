@@ -8,7 +8,13 @@ public struct MangaReaderView: View {
     private let context: MangaLaunchContext
     private let dependencies: MangaReaderDependencies
     private let appModel: YamiboAppModel
-    @StateObject private var model: MangaReaderViewModel
+    /// `@State` (not `@StateObject`) because the view model is `@Observable`.
+    /// SwiftUI keeps the first instance for the view's lifetime; the
+    /// constructions on later `init` calls are discarded, which is safe here
+    /// because `MangaReaderViewModel.init` only stores its context and
+    /// dependencies plus a loading-placeholder presentation, and has no side
+    /// effects (workflow and modules are created in `prepare()`/on first use).
+    @State private var model: MangaReaderViewModel
     @State private var isDismissing = false
     @State private var isChromeVisible = true
     @State private var isDirectoryPresented = false
@@ -27,13 +33,19 @@ public struct MangaReaderView: View {
     @State private var controlScrollStep: ReaderControlScrollStepRequest?
     @State private var controlPageTurnBridge = MangaPagedControlPageTurnBridge()
     @State private var controlUsesTwoPageSpread = false
+    @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
 
     public init(context: MangaLaunchContext, dependencies: MangaReaderDependencies, appModel: YamiboAppModel) {
         self.context = context
         self.dependencies = dependencies
         self.appModel = appModel
-        _model = StateObject(
-            wrappedValue: MangaReaderViewModel(
+        // `State(initialValue:)` evaluates its argument on every init (unlike
+        // `StateObject(wrappedValue:)`'s autoclosure), so a view model is now
+        // built — and, past the first init, discarded — on each parent
+        // render. Accepted deliberately, mirroring `LocalFavoritesRootView`:
+        // the init is side-effect-free, so the extra constructions are inert.
+        _model = State(
+            initialValue: MangaReaderViewModel(
                 context: context,
                 dependencies: dependencies,
                 onReaderResumeRouteChange: { route in
@@ -114,9 +126,12 @@ public struct MangaReaderView: View {
                     isVisible: isChromeVisible,
                     isPreview: context.isPreview,
                     imageLoader: model.imageLoader,
-                    summary: mangaChromeSummary(
-                        from: model.presentation,
-                        usesTwoPageSpread: usesTwoPageSpread
+                    summary: chromeSummaryMemo.summary(
+                        presentation: model.presentation,
+                        usesTwoPageSpread: usesTwoPageSpread,
+                        compute: { presentation, spread in
+                            mangaChromeSummary(from: presentation, usesTwoPageSpread: spread)
+                        }
                     ),
                     readingMode: model.presentation.settings.readingMode,
                     pageTurnDirection: model.presentation.settings.pageTurnDirection,
@@ -398,16 +413,18 @@ public struct MangaReaderView: View {
 
     private var canReceiveApplePencilPageTurn: Bool {
         guard case let .loaded(loaded) = model.presentation.state else { return false }
-        return UIDevice.current.userInterfaceIdiom == .pad &&
-            model.presentation.settings.readingMode == .paged &&
-            !loaded.pages.isEmpty &&
-            !isDirectoryPresented &&
-            !isChapterCommentsPresented &&
-            !isSettingsPresented &&
-            !isCachePresented &&
-            forumThreadOverlayItem == nil &&
-            !isDismissing &&
-            !isChromeVisible
+        return ReaderApplePencilPageTurnGate.canTurnPage(
+            isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
+            isPagedReadingMode: model.presentation.settings.readingMode == .paged,
+            hasReadableContent: !loaded.pages.isEmpty,
+            hasBlockingOverlay: isDirectoryPresented
+                || isChapterCommentsPresented
+                || isSettingsPresented
+                || isCachePresented
+                || forumThreadOverlayItem != nil,
+            isDismissing: isDismissing,
+            isChromeVisible: isChromeVisible
+        )
     }
 
     private var hasControlBlockingSheet: Bool {
@@ -598,11 +615,7 @@ public struct MangaReaderView: View {
     }
 
     private var windowSafeAreaInsets: UIEdgeInsets {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets ?? .zero
+        ReaderShellMetrics.windowSafeAreaInsets
     }
 
     private func mangaChromeSummary(
@@ -661,6 +674,37 @@ public struct MangaReaderView: View {
                 scrubTargetIndexes: Array(0 ..< itemCount)
             )
         )
+    }
+}
+
+/// Body-eval memo for the chrome summary: computing it walks every loaded
+/// page, but the shell's body re-evaluates far more often (chrome toggles,
+/// sheet flags, inset changes) than the presentation actually changes. A
+/// reference box lets body reuse the previous reduction without scheduling
+/// another render pass.
+@MainActor
+private final class MangaChromeSummaryMemo {
+    private var presentation: MangaReaderPresentation?
+    private var usesTwoPageSpread: Bool?
+    private var cached: MangaReaderChromeSummary?
+
+    // `@State`'s initial value is built in the view's nonisolated init; the
+    // box only becomes main-actor-bound once body starts using it.
+    nonisolated init() {}
+
+    func summary(
+        presentation: MangaReaderPresentation,
+        usesTwoPageSpread: Bool,
+        compute: (MangaReaderPresentation, Bool) -> MangaReaderChromeSummary?
+    ) -> MangaReaderChromeSummary? {
+        if self.presentation == presentation, self.usesTwoPageSpread == usesTwoPageSpread {
+            return cached
+        }
+        let value = compute(presentation, usesTwoPageSpread)
+        self.presentation = presentation
+        self.usesTwoPageSpread = usesTwoPageSpread
+        cached = value
+        return value
     }
 }
 

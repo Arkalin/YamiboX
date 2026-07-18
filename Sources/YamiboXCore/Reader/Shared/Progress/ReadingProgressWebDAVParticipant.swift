@@ -18,7 +18,7 @@ struct ReadingProgressWebDAVParticipant: WebDAVSyncParticipant {
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(ReadingProgressWebDAVPayload.self, from: data)
-        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt)
+        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
     }
 
     func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
@@ -66,17 +66,23 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
 
     var version: Int
     var updatedAt: Date
+    /// Monotonic per-dataset sync revision, stamped into the envelope by the
+    /// sync service after export; nil for payloads written before revisions
+    /// existed (decode falls back to `updatedAt` comparisons then).
+    var syncRevision: UInt64?
     var records: [ReadingProgressRecord]
 
-    init(version: Int = Self.currentVersion, updatedAt: Date, records: [ReadingProgressRecord]) {
+    init(version: Int = Self.currentVersion, updatedAt: Date, syncRevision: UInt64? = nil, records: [ReadingProgressRecord]) {
         self.version = version
         self.updatedAt = updatedAt
+        self.syncRevision = syncRevision
         self.records = records
     }
 
     private enum CodingKeys: String, CodingKey {
         case version
         case updatedAt
+        case syncRevision
         case records
     }
 
@@ -90,6 +96,7 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         }
         self.version = version
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.records = try container.decode([ReadingProgressWebDAVRecord].self, forKey: .records)
             .map { try $0.record() }
     }
@@ -98,6 +105,7 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(syncRevision, forKey: .syncRevision)
         try container.encode(try records.map { try ReadingProgressWebDAVRecord(record: $0) }, forKey: .records)
     }
 }

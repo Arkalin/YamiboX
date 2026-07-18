@@ -18,7 +18,11 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(FavoriteLibraryWebDAVPayload.self, from: data)
-        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, accountUID: payload.accountUID)
+        return WebDAVRemotePayloadInfo(
+            updatedAt: payload.updatedAt,
+            accountUID: payload.accountUID,
+            revision: payload.syncRevision
+        )
     }
 
     func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> Data {
@@ -40,7 +44,16 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
 
     func applyRemote(_ data: Data) async throws {
         let payload = try decoder.decode(FavoriteLibraryWebDAVPayload.self, from: data)
-        try await store.save(payload.library)
+        // Codable decoding bypasses `FavoriteLibraryDocument`'s normalizing
+        // initializer; rebuild through it so a malformed remote payload
+        // (duplicate target ids, dangling locations) cannot persist invariant
+        // violations into the local store.
+        try await store.save(FavoriteLibraryDocument(
+            categories: payload.library.categories,
+            collections: payload.library.collections,
+            items: payload.library.items,
+            tags: payload.library.tags
+        ))
     }
 
     // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
@@ -79,6 +92,10 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
     var version: Int
     var updatedAt: Date
     var accountUID: String?
+    /// Monotonic per-dataset sync revision, stamped into the envelope by the
+    /// sync service after export; nil for payloads written before revisions
+    /// existed (decode falls back to `updatedAt` comparisons then).
+    var syncRevision: UInt64?
     var library: FavoriteLibraryDocument
     var tombstones: FavoriteLibraryWebDAVTombstones
     var clocks: FavoriteLibraryWebDAVClocks
@@ -87,6 +104,7 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         version: Int = Self.currentVersion,
         updatedAt: Date,
         accountUID: String? = nil,
+        syncRevision: UInt64? = nil,
         library: FavoriteLibraryDocument,
         tombstones: FavoriteLibraryWebDAVTombstones = FavoriteLibraryWebDAVTombstones(),
         clocks: FavoriteLibraryWebDAVClocks = FavoriteLibraryWebDAVClocks()
@@ -94,6 +112,7 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         self.version = version
         self.updatedAt = updatedAt
         self.accountUID = accountUID
+        self.syncRevision = syncRevision
         self.library = library
         self.tombstones = tombstones
         self.clocks = clocks
@@ -103,6 +122,7 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         case version
         case updatedAt
         case accountUID
+        case syncRevision
         case library
         case tombstones
         case clocks
@@ -119,6 +139,7 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         self.version = version
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         self.accountUID = try container.decodeIfPresent(String.self, forKey: .accountUID)
+        self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.library = try container.decode(FavoriteLibraryDocument.self, forKey: .library)
         self.tombstones = try container.decodeIfPresent(FavoriteLibraryWebDAVTombstones.self, forKey: .tombstones) ?? FavoriteLibraryWebDAVTombstones()
         self.clocks = try container.decodeIfPresent(FavoriteLibraryWebDAVClocks.self, forKey: .clocks) ?? FavoriteLibraryWebDAVClocks()
@@ -198,8 +219,13 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         tombstones: FavoriteLibraryWebDAVTombstones,
         clocks: FavoriteLibraryWebDAVClocks
     ) -> [FavoriteItem] {
-        let localByID = Dictionary(uniqueKeysWithValues: local.library.items.map { ($0.id, $0) })
-        let remoteByID = Dictionary(uniqueKeysWithValues: remote.library.items.map { ($0.id, $0) })
+        // `uniquingKeysWith` rather than `uniqueKeysWithValues`: Codable
+        // decoding bypasses the document initializer's normalization, so a
+        // payload written by an older/buggy peer (or edited by hand) can
+        // carry duplicate target ids — that must degrade to keep-newest, not
+        // crash every future sync round.
+        let localByID = Dictionary(local.library.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
+        let remoteByID = Dictionary(remote.library.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
         return Set(localByID.keys).union(remoteByID.keys).compactMap { targetID in
             guard var item = localByID[targetID] ?? remoteByID[targetID] else { return nil }
             if let remoteItem = remoteByID[targetID], localByID[targetID] == nil {
@@ -235,6 +261,10 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             return item.locations.isEmpty ? nil : item
         }
         .sorted { $0.id < $1.id }
+    }
+
+    private static func newerItem(_ lhs: FavoriteItem, _ rhs: FavoriteItem) -> FavoriteItem {
+        lhs.updatedAt >= rhs.updatedAt ? lhs : rhs
     }
 
     private func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {

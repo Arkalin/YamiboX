@@ -35,7 +35,7 @@ struct NovelReaderSheetPalette {
         self.bodyBackground = bodyBackground
         self.cardBackground = cardBackground
         primaryText = isNightMode
-            ? Color.white.opacity(0.92)
+            ? ReaderSettingsPaletteTokens.darkPrimaryText
             : Color(red: 0.09, green: 0.08, blue: 0.10)
         secondaryText = isNightMode
             ? Color.white.opacity(0.68)
@@ -43,16 +43,28 @@ struct NovelReaderSheetPalette {
         segmentedBackground = isNightMode
             ? bodyBackground.mix(with: .white, amount: 0.05)
             : bodyBackground.mix(with: Color.black, amount: 0.03)
-        divider = isNightMode
-            ? Color.white.opacity(0.08)
-            : Color.black.opacity(0.08)
+        divider = ReaderSettingsPaletteTokens.divider(isDark: isNightMode)
         headerButtonBackground = isNightMode
             ? Color.white.opacity(0.10)
             : Color.white.opacity(0.78)
-        confirmButtonBackground = isNightMode
-            ? heroBackground.mix(with: Color(red: 0.44, green: 0.39, blue: 0.30), amount: 0.58)
-            : heroBackground.mix(with: Color(red: 0.31, green: 0.26, blue: 0.18), amount: 0.72)
+        confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
+            blendingInto: heroBackground,
+            isDark: isNightMode
+        )
     }
+}
+
+extension NovelReaderSheetPalette: ReaderSettingsPalette {
+    /// The Novel sheet has no dedicated card stroke; its cards have always
+    /// been outlined with the divider hairline.
+    var sectionStroke: Color { divider }
+
+    /// Novel highlights selected picker chips with its warm confirm blend
+    /// (not the app accent Manga uses) and always paints white on top —
+    /// both values are mapped, not merged, because they are semantically
+    /// different colors per reader.
+    var selectedControlBackground: Color { confirmButtonBackground }
+    var selectedControlText: Color { .white }
 }
 
 

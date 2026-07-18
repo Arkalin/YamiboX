@@ -24,9 +24,7 @@ struct NovelReaderBottomChrome: View {
     let isProgressScrubbing: Bool
 
     @State private var scrubState = ReaderProgressScrubState()
-    @State private var progressTickFeedbackGenerator = UISelectionFeedbackGenerator()
-    @State private var progressStartFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
-    @State private var progressCommitFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
+    @State private var scrubFeedback = ReaderProgressScrubFeedback()
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -43,7 +41,7 @@ struct NovelReaderBottomChrome: View {
                 .padding(.horizontal, 12)
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
-        .padding(.bottom, max(bottomInset - 18, 8))
+        .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
     }
 
     private var chromeLayout: ReaderBottomChromeLayoutPresentation {
@@ -270,20 +268,7 @@ struct NovelReaderBottomChrome: View {
     }
 
     private func triggerFeedback(_ haptics: [ReaderProgressScrubHaptic]) {
-        for haptic in haptics {
-            switch haptic {
-            case .start:
-                progressStartFeedbackGenerator.impactOccurred()
-                progressStartFeedbackGenerator.prepare()
-                progressTickFeedbackGenerator.prepare()
-            case .chapterTick:
-                progressTickFeedbackGenerator.selectionChanged()
-                progressTickFeedbackGenerator.prepare()
-            case .commit:
-                progressCommitFeedbackGenerator.impactOccurred()
-                progressCommitFeedbackGenerator.prepare()
-            }
-        }
+        scrubFeedback.trigger(haptics)
     }
 }
 #endif

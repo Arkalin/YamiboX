@@ -5,7 +5,9 @@ import YamiboXCore
 import UIKit
 
 struct MangaReaderSettingsSheet: View {
-    @ObservedObject var model: MangaReaderViewModel
+    // Plain reference (was `@ObservedObject`): the `@Observable` model's
+    // tracked properties read in `body` register observation on their own.
+    let model: MangaReaderViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()

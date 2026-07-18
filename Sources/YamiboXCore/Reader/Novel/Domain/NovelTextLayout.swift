@@ -80,7 +80,7 @@ public enum NovelTextLayout {
         }
         let viewportContext = makeViewportContext(
             annotatedSegments: annotatedSegments,
-            document: document,
+            projection: document,
             settings: settings,
             layout: layout
         )
@@ -103,7 +103,7 @@ public enum NovelTextLayout {
     ) throws -> NovelTextLayoutResult {
         let result = try render(
             annotatedSegments: preparedInput.annotatedSegments,
-            document: preparedInput.document,
+            projection: preparedInput.document,
             settings: preparedInput.settings,
             layout: preparedInput.layout,
             viewportContextSeed: preparedInput.viewportContextSeed,
@@ -120,29 +120,29 @@ public enum NovelTextLayout {
     static func viewportSample(
         displayOffset: Int,
         ranges: [NovelRenderedTextRange],
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         surfaceOrdinal: Int
     ) -> NovelTextViewportSample? {
         NovelTextViewportIndexSurface(
             surfaceOrdinal: surfaceOrdinal,
-            documentView: document.view,
+            documentView: projection.view,
             chapterOrdinal: nil,
             chapterTitle: nil,
             ranges: ranges,
             externalBlocks: []
         )
-        .sample(displayOffset: displayOffset, in: document)
+        .sample(displayOffset: displayOffset, in: projection)
     }
 
     static func displayOffset(
         for textSegmentIdentity: NovelTextSegmentIdentity,
         displayedTextOffset: Int,
-        in document: NovelReaderProjection,
+        in projection: NovelReaderProjection,
         ranges: [NovelRenderedTextRange]
     ) -> Int? {
         NovelTextViewportIndexSurface(
             surfaceOrdinal: 0,
-            documentView: document.view,
+            documentView: projection.view,
             chapterOrdinal: nil,
             chapterTitle: nil,
             ranges: ranges,
@@ -151,24 +151,24 @@ public enum NovelTextLayout {
         .displayOffset(
             for: textSegmentIdentity,
             displayedTextOffset: displayedTextOffset,
-            in: document
+            in: projection
         )
     }
 
     static func layout(
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         viewportSurfaceLayout: NovelTextViewportSurfaceLayout
     ) throws -> NovelTextLayoutResult {
         let preparedInput = try prepareInput(
-            document: document,
+            document: projection,
             settings: settings,
             layout: layout
         )
         let result = try render(
             annotatedSegments: preparedInput.annotatedSegments,
-            document: document,
+            projection: projection,
             settings: settings,
             layout: layout,
             viewportContextSeed: preparedInput.viewportContextSeed,
@@ -198,7 +198,7 @@ public enum NovelTextLayout {
 
     private static func render(
         annotatedSegments: [NovelAnnotatedSegment],
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         viewportContextSeed: NovelTextViewportContext,
@@ -230,7 +230,7 @@ public enum NovelTextLayout {
                     ranges,
                     aroundImageSegmentIndexes: imageSegmentIndexes,
                     annotatedSegmentByIndex: annotatedSegmentByIndex,
-                    document: document
+                    projection: projection
                 ) where !group.isEmpty {
                     surfaceDrafts.append(
                         NovelViewportSurfaceDraft(
@@ -257,7 +257,7 @@ public enum NovelTextLayout {
                     chapterOrdinal: annotatedSegment.chapterOrdinal,
                     chapterTitle: annotatedSegment.chapterTitle,
                     frozenFrame: frozenExternalBlockFrame(layout: layout),
-                    chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, document: document)
+                    chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, projection: projection)
                 )
                 guard let frame = externalBlock.frozenFrame,
                       frame.width.isFinite,
@@ -291,13 +291,13 @@ public enum NovelTextLayout {
                 }
                 let surface = NovelTextViewportIndexSurface(
                     surfaceOrdinal: indexSurfaces.count,
-                    documentView: document.view,
+                    documentView: projection.view,
                     chapterOrdinal: annotatedSegment.chapterOrdinal,
                     chapterTitle: annotatedSegment.chapterTitle,
                     ranges: ranges,
                     externalBlocks: [],
                     frozenGeometry: frozenGeometry,
-                    chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, document: document)
+                    chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, projection: projection)
                 )
                 for range in ranges {
                     guard let rangeSegment = annotatedSegmentByIndex[range.segmentIndex],
@@ -311,7 +311,7 @@ public enum NovelTextLayout {
                             ordinal: chapterOrdinal,
                             title: chapterTitle,
                             startSurfaceOrdinal: surface.surfaceOrdinal,
-                            chapterCommentTarget: chapterCommentTarget(for: rangeSegment, document: document)
+                            chapterCommentTarget: chapterCommentTarget(for: rangeSegment, projection: projection)
                         )
                     )
                 }
@@ -320,7 +320,7 @@ public enum NovelTextLayout {
             case let .image(_, _, externalBlock):
                 let surface = NovelTextViewportIndexSurface(
                     surfaceOrdinal: indexSurfaces.count,
-                    documentView: document.view,
+                    documentView: projection.view,
                     chapterOrdinal: externalBlock.chapterOrdinal,
                     chapterTitle: externalBlock.chapterTitle,
                     ranges: [],
@@ -348,7 +348,7 @@ public enum NovelTextLayout {
         }
 
         let viewportIndex = NovelTextViewportIndex(
-            documentView: document.view,
+            documentView: projection.view,
             readingMode: settings.readingMode,
             surfaces: indexSurfaces,
             chapters: chapters
@@ -498,7 +498,7 @@ public enum NovelTextLayout {
 
     private static func makeViewportContext(
         annotatedSegments: [NovelAnnotatedSegment],
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout
     ) -> NovelTextViewportContext {
@@ -562,7 +562,7 @@ public enum NovelTextLayout {
                         url: url,
                         chapterOrdinal: annotatedSegment.chapterOrdinal,
                         chapterTitle: annotatedSegment.chapterTitle,
-                        chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, document: document)
+                        chapterCommentTarget: chapterCommentTarget(for: annotatedSegment, projection: projection)
                     )
                 )
             }
@@ -570,10 +570,10 @@ public enum NovelTextLayout {
 
         return NovelTextViewportContext(
             identity: NovelTextViewportIdentity(
-                threadID: document.threadID,
-                documentView: document.view,
-                maxView: document.maxView,
-                fetchedAt: document.fetchedAt,
+                threadID: projection.threadID,
+                documentView: projection.view,
+                maxView: projection.maxView,
+                fetchedAt: projection.fetchedAt,
                 appearance: settings,
                 layout: layout
             ),
@@ -614,7 +614,7 @@ public enum NovelTextLayout {
         _ ranges: [NovelRenderedTextRange],
         aroundImageSegmentIndexes imageSegmentIndexes: Set<Int>,
         annotatedSegmentByIndex: [Int: NovelAnnotatedSegment],
-        document: NovelReaderProjection
+        projection: NovelReaderProjection
     ) -> [[NovelRenderedTextRange]] {
         guard !ranges.isEmpty else { return [] }
 
@@ -630,7 +630,7 @@ public enum NovelTextLayout {
                    nextSegmentIndex: range.segmentIndex,
                    imageSegmentIndexes: imageSegmentIndexes,
                    annotatedSegmentByIndex: annotatedSegmentByIndex,
-                   document: document
+                   projection: projection
                ) {
                 groups.append(currentGroup)
                 currentGroup = []
@@ -650,7 +650,7 @@ public enum NovelTextLayout {
         nextSegmentIndex: Int,
         imageSegmentIndexes: Set<Int>,
         annotatedSegmentByIndex: [Int: NovelAnnotatedSegment],
-        document: NovelReaderProjection
+        projection: NovelReaderProjection
     ) -> Bool {
         if imageSegmentIndexes.contains(where: { imageSegmentIndex in
             imageSegmentIndex > previousSegmentIndex && imageSegmentIndex < nextSegmentIndex
@@ -660,34 +660,12 @@ public enum NovelTextLayout {
         let previousSegment = annotatedSegmentByIndex[previousSegmentIndex]
         let nextSegment = annotatedSegmentByIndex[nextSegmentIndex]
         return previousSegment?.chapterOrdinal != nextSegment?.chapterOrdinal ||
-            previousSegment.flatMap { chapterCommentTarget(for: $0, document: document) } !=
-            nextSegment.flatMap { chapterCommentTarget(for: $0, document: document) }
-    }
-
-    private static func text(
-        for range: NovelRenderedTextRange,
-        annotatedTextBySegment: [Int: String]
-    ) -> String? {
-        guard let text = annotatedTextBySegment[range.segmentIndex] else { return nil }
-        let startOffset = min(max(range.startOffset, 0), text.count)
-        let endOffset = min(max(range.endOffset, startOffset), text.count)
-        guard endOffset > startOffset,
-              let startIndex = text.index(text.startIndex, offsetBy: startOffset, limitedBy: text.endIndex),
-              let endIndex = text.index(text.startIndex, offsetBy: endOffset, limitedBy: text.endIndex) else {
-            return nil
-        }
-        return String(text[startIndex..<endIndex])
-    }
-
-    private static func startsAtParagraphBoundary(
-        viewportContext: NovelTextViewportContext,
-        viewportSurface: NovelTextViewportIndexSurface
-    ) -> Bool {
-        viewportContext.document.startsAtParagraphBoundary(surface: viewportSurface)
+            previousSegment.flatMap { chapterCommentTarget(for: $0, projection: projection) } !=
+            nextSegment.flatMap { chapterCommentTarget(for: $0, projection: projection) }
     }
 
     private static func annotatedSegments(
-        from document: NovelReaderProjection,
+        from projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings
     ) -> [NovelAnnotatedSegment] {
         var results: [NovelAnnotatedSegment] = []
@@ -697,8 +675,8 @@ public enum NovelTextLayout {
         var nextChapterOrdinal = 0
 
         let segmentInputs = zip(
-            document.segments.indices,
-            zip(document.segments, zip(document.segmentSemantics, document.segmentSources))
+            projection.segments.indices,
+            zip(projection.segments, zip(projection.segmentSemantics, projection.segmentSources))
         )
         for (index, input) in segmentInputs {
             let (segment, semanticAndSource) = input
@@ -889,18 +867,18 @@ public enum NovelTextLayout {
 
     private static func chapterCommentTarget(
         for annotatedSegment: NovelAnnotatedSegment,
-        document: NovelReaderProjection
+        projection: NovelReaderProjection
     ) -> ReaderChapterCommentTarget? {
         guard let ownerPostID = annotatedSegment.source?.ownerPostID,
               !ownerPostID.isEmpty else {
             return nil
         }
         return ReaderChapterCommentTarget(
-            threadID: document.threadID,
-            view: document.view,
+            threadID: projection.threadID,
+            view: projection.view,
             ownerPostID: ownerPostID,
             title: annotatedSegment.chapterTitle,
-            authorID: document.resolvedAuthorID
+            authorID: projection.resolvedAuthorID
         )
     }
 

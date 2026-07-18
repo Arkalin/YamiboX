@@ -2,13 +2,13 @@ import Foundation
 @preconcurrency import GRDB
 
 public actor FavoriteUpdateStore {
-    public static let didChangeNotification = Notification.Name("yamibox.favoriteUpdateStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
     private static let keptRunCount = 10
-    nonisolated(unsafe) private static var databasePoolCache: [String: DatabasePool] = [:]
-    private static let databasePoolCacheLock = NSLock()
 
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 
@@ -16,46 +16,11 @@ public actor FavoriteUpdateStore {
     /// `.standard` resolves the shared `yamibox.sqlite` pool; any other
     /// defaults suite gets its own temporary database keyed by `key`.
     public init(defaults: UserDefaults = .standard, key: String = "yamibox.favoriteUpdates") {
-        self.database = Self.openDatabase(defaults: defaults, key: key)
+        self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
     init(databasePool: DatabasePool) {
         self.database = databasePool
-    }
-
-    private static func openDatabase(defaults: UserDefaults, key: String) -> DatabasePool {
-        do {
-            if defaults === UserDefaults.standard {
-                return try cachedDatabasePool(rootDirectory: YamiboDatabase.defaultRootDirectory())
-            }
-            let idKey = "\(key).grdbDatabaseID"
-            let databaseID: String
-            if let existing = defaults.string(forKey: idKey), !existing.isEmpty {
-                databaseID = existing
-            } else {
-                databaseID = UUID().uuidString
-                defaults.set(databaseID, forKey: idKey)
-            }
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent("yamibo-x-favorite-updates", isDirectory: true)
-                .appendingPathComponent(databaseID, isDirectory: true)
-            return try cachedDatabasePool(rootDirectory: root)
-        } catch {
-            fatalError("Failed to open FavoriteUpdateStore database: \(error)")
-        }
-    }
-
-    private static func cachedDatabasePool(rootDirectory: URL) throws -> DatabasePool {
-        let key = rootDirectory.standardizedFileURL.path
-        databasePoolCacheLock.lock()
-        defer { databasePoolCacheLock.unlock() }
-        if let pool = databasePoolCache[key] {
-            return pool
-        }
-
-        let pool = try YamiboDatabase.openPool(rootDirectory: rootDirectory)
-        databasePoolCache[key] = pool
-        return pool
     }
 
     public func loadState() async -> FavoriteUpdateStoreState {
@@ -68,23 +33,33 @@ public actor FavoriteUpdateStore {
     }
 
     public func latestRun() async -> FavoriteUpdateRunSnapshot? {
-        try? await database.read { db in
-            guard let json = try String.fetchOne(
-                db,
-                sql: """
-                SELECT run_json FROM favorite_update_runs
-                ORDER BY updated_at DESC, run_id DESC
-                LIMIT 1
-                """
-            ) else {
-                return nil
+        do {
+            return try await database.read { db in
+                guard let json = try String.fetchOne(
+                    db,
+                    sql: """
+                    SELECT run_json FROM favorite_update_runs
+                    ORDER BY updated_at DESC, run_id DESC
+                    LIMIT 1
+                    """
+                ) else {
+                    return nil
+                }
+                return try Self.decode(FavoriteUpdateRunSnapshot.self, from: json)
             }
-            return try Self.decode(FavoriteUpdateRunSnapshot.self, from: json)
+        } catch {
+            YamiboLog.library.error("Failed to load latest favorite update run, returning none: \(error)")
+            return nil
         }
     }
 
     public func activeEvents() async -> [FavoriteUpdateEvent] {
-        (try? await database.read { db in try Self.activeEvents(in: db) }) ?? []
+        do {
+            return try await database.read { db in try Self.activeEvents(in: db) }
+        } catch {
+            YamiboLog.library.error("Failed to load active favorite update events, returning none: \(error)")
+            return []
+        }
     }
 
     public func saveRun(_ snapshot: FavoriteUpdateRunSnapshot) async throws {
@@ -433,7 +408,7 @@ public actor FavoriteUpdateStore {
         do {
             didMutate = try await database.write(updates)
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
         if didMutate {
             postChangeNotification()
@@ -566,10 +541,6 @@ public actor FavoriteUpdateStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 }

@@ -115,12 +115,20 @@ struct LikeWorkListView: View {
             )
         }
         .task { await load() }
-        .onReceive(NotificationCenter.default.publisher(for: LikeStore.didChangeNotification)) { notification in
-            guard let changeID = notification.userInfo?[LikeStore.changeIDUserInfoKey] as? String,
-                  changeID == likeDependencies.likeStore.changeID else {
-                return
+        // Appearance-scoped `.task` replacing the removed `.onReceive`
+        // bridge: while this list is visible the reaction is identical, and
+        // a change landing while it's covered (a pushed LikeWorkItemsView)
+        // is picked up by the sibling `.task { await load() }` re-running on
+        // reappear, so the state the user sees is unchanged.
+        .task {
+            for await changeID in likeDependencies.likeStore.changes() {
+                // Per-instance stream: the guard is kept as the explicit
+                // "only this exact store instance" contract.
+                guard changeID == likeDependencies.likeStore.changeID else {
+                    continue
+                }
+                Task { await load() }
             }
-            Task { await load() }
         }
         .destructiveConfirmationDialog(
             L10n.string("likes.delete_selected_works_title"),

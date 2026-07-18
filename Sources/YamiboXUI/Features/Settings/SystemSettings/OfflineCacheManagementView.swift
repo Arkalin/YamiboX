@@ -2,7 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct OfflineCacheManagementView: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: OfflineCacheManagementViewModel
     @State private var selectedGroupID: OfflineCacheGroupID?
 
     var body: some View {

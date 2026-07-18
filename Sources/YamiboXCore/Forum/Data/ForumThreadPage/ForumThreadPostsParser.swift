@@ -18,14 +18,14 @@ enum ForumThreadPostsParser {
             }
 
             let lastEditedText = lastEditedText(in: container, body: body)
-            let poll = try ForumThreadPollParser.poll(in: container, body: body)
-            let ratingBlock = try ForumThreadRatingParser.ratingBlock(in: container, postID: postID)
+            let poll = ForumThreadPollParser.poll(in: container, body: body)
+            let ratingBlock = ForumThreadRatingParser.ratingBlock(in: container, postID: postID)
             let comments = try ForumThreadCommentParser.comments(in: container, postID: postID)
             let attachments = ForumThreadAttachmentParser.footerAttachments(in: container, body: body)
             let manageActions = manageActions(in: container)
             let contentBody = try bodyWithoutFooterMetadata(from: body)
-            let contentHTML = try contentBody.html()
-            let images = try postImages(in: contentBody, container: container)
+            let contentHTML = contentBody.html()
+            let images = postImages(in: contentBody, container: container)
             let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(in: contentBody)
             let contentText = normalizedBodyText(from: contentBlocks)
             guard !contentText.isEmpty
@@ -120,7 +120,7 @@ enum ForumThreadPostsParser {
         ])
         let name = link?.normalizedText().nilIfBlank
             ?? L10n.string("forum.thread.unknown_author")
-        let uid = link.flatMap { ForumUserIDParser.userID(fromHref: (try? $0.attr("href")) ?? "") }
+        let uid = link.flatMap { ForumUserIDParser.userID(fromHref: $0.attr("href")) }
         return BlogReaderUser(uid: uid, name: name, avatarURL: container.firstURL("img[src]", attribute: "src"))
     }
 
@@ -173,9 +173,9 @@ enum ForumThreadPostsParser {
             return true
         }
         let classAndTitle = [
-            (try? container.className()) ?? "",
-            container.selectAll("[title]").map { (try? $0.attr("title")) ?? "" }.joined(separator: " "),
-            container.selectAll("[class]").map { (try? $0.className()) ?? "" }.joined(separator: " ")
+            container.className(),
+            container.selectAll("[title]").map { $0.attr("title") }.joined(separator: " "),
+            container.selectAll("[class]").map { $0.className() }.joined(separator: " ")
         ].joined(separator: " ").lowercased()
         return classAndTitle.contains("pin")
             || classAndTitle.contains("stick")
@@ -202,7 +202,7 @@ enum ForumThreadPostsParser {
 
     private static func isManageActionLink(_ link: Element, title: String) -> Bool {
         guard isManageActionTitle(title) else { return false }
-        let href = ((try? link.attr("href")) ?? "").lowercased()
+        let href = link.attr("href").lowercased()
         if href.contains("modcp")
             || href.contains("topicadmin")
             || href.contains("action=moderate")
@@ -214,7 +214,7 @@ enum ForumThreadPostsParser {
 
         let parentClassTokens = Set(
             link.parents()
-                .flatMap { ((try? $0.className().lowercased()) ?? "").split(whereSeparator: \.isWhitespace).map(String.init) }
+                .flatMap { $0.className().lowercased().split(whereSeparator: \.isWhitespace).map(String.init) }
         )
         return !parentClassTokens.isDisjoint(with: ["po", "pob", "manage", "postmanage"])
     }
@@ -256,23 +256,17 @@ enum ForumThreadPostsParser {
             }
         }
 
-        let bodyText = ((try? body.text()) ?? "")
+        let bodyText = body.text()
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return HTMLTextExtractor.firstMatch(
-            pattern: #"(本帖最后由\s+.+?\s+于\s+.+?\s+编辑|本帖最後由\s+.+?\s+於\s+.+?\s+編輯|最后编辑于\s*.+|最後編輯於\s*.+)"#,
-            in: bodyText
-        )?
-            .dropFirst()
-            .first?
-            .nilIfBlank
+        return DiscuzEditedDateParser.firstEditedNote(in: bodyText)
     }
 
     /// A detached copy of the post body with footer metadata (edit status, rating log,
     /// comments, polls) removed, so the content pipeline only sees the message itself.
     private static func bodyWithoutFooterMetadata(from body: Element) throws -> Element {
-        let document = try KannaSoup.parseBodyFragment(try body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
+        let document = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
         let copy = document.body() ?? document
-        try copy.select(
+        copy.select(
             [
                 ".pstatus",
                 ".lastedit",
@@ -292,15 +286,15 @@ enum ForumThreadPostsParser {
         return copy
     }
 
-    private static func postImages(in body: Element, container: Element) throws -> [ForumThreadPostImage] {
+    private static func postImages(in body: Element, container: Element) -> [ForumThreadPostImage] {
         let imageElements = body.selectAll("img") + container.selectAll(".img_one img")
-        return try imageElements.compactMap { image in
+        return imageElements.compactMap { image in
             guard let source = YamiboImageReferenceExtractor.forumPostImage.rawReference(from: image) else {
                 return nil
             }
             return ForumThreadPostImage(
                 url: source,
-                altText: try image.attr("alt")
+                altText: image.attr("alt")
             )
         }
     }

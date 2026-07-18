@@ -231,9 +231,14 @@ public final class ReaderPeripheralInputManager {
                 self.refreshKeyboardConnectionState()
             }
         })
-        monitorTasks.append(Task { [weak self] in
+        // `settingsStore` is captured directly (not through weak `self`) so
+        // the stream subscription can outlive `self` until deinit cancels the
+        // task — the same lifetime the old NotificationCenter loop had. No
+        // changeID guard here, as before: every settings change through the
+        // store this manager holds should reload, own writes included.
+        monitorTasks.append(Task { [weak self, settingsStore] in
             await self?.reloadSettings()
-            for await _ in NotificationCenter.default.notifications(named: SettingsStore.didChangeNotification) {
+            for await _ in settingsStore.changes() {
                 guard !Task.isCancelled else { return }
                 await self?.reloadSettings()
             }

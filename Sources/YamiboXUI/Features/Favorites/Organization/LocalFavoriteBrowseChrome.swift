@@ -11,7 +11,7 @@ import YamiboXCore
 /// otherwise the enclosing stack's spacing would still open a gap on both
 /// sides of it.
 struct LocalFavoriteBrowseChrome: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
     let cardsCount: Int
     /// Passed explicitly by the caller (root vs. collection detail) rather

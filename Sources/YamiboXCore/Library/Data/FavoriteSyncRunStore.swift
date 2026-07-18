@@ -12,14 +12,17 @@ public actor FavoriteSyncRunStore {
     private let decoder = JSONDecoder()
 
     public init(databasePool: DatabasePool? = nil) {
-        self.database = databasePool ?? Self.openDatabase()
+        // `.standard` is the resolver's "shared production pool" signal, so
+        // the nil-pool fallback and the convenience below stay one code path.
+        self.database = databasePool
+            ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.favoriteSyncRuns")
     }
 
     /// Isolated-storage convenience mirroring `FavoriteLibraryStore`: standard
     /// defaults use the shared database, any other suite gets its own pool in
     /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.favoriteSyncRuns") {
-        self.database = Self.openDatabase(defaults: defaults, key: key)
+        self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
     /// The most recently updated run, regardless of status; callers decide
@@ -47,7 +50,7 @@ public actor FavoriteSyncRunStore {
         do {
             json = String(data: try encoder.encode(snapshot), encoding: .utf8) ?? "{}"
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
         do {
             try await database.write { db in
@@ -75,7 +78,7 @@ public actor FavoriteSyncRunStore {
                 )
             }
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -85,37 +88,7 @@ public actor FavoriteSyncRunStore {
                 try db.execute(sql: "DELETE FROM favorite_sync_runs")
             }
         } catch {
-            throw YamiboError.persistenceFailed(error.localizedDescription)
-        }
-    }
-
-    private static func openDatabase() -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool()
-        } catch {
-            fatalError("Failed to open FavoriteSyncRunStore database: \(error)")
-        }
-    }
-
-    private static func openDatabase(defaults: UserDefaults, key: String) -> DatabasePool {
-        do {
-            if defaults === UserDefaults.standard {
-                return try YamiboDatabase.openPool()
-            }
-            let idKey = "\(key).grdbDatabaseID"
-            let databaseID: String
-            if let existing = defaults.string(forKey: idKey), !existing.isEmpty {
-                databaseID = existing
-            } else {
-                databaseID = UUID().uuidString
-                defaults.set(databaseID, forKey: idKey)
-            }
-            let root = FileManager.default.temporaryDirectory
-                .appendingPathComponent("yamibo-x-favorite-sync-runs", isDirectory: true)
-                .appendingPathComponent(databaseID, isDirectory: true)
-            return try YamiboDatabase.openPool(rootDirectory: root)
-        } catch {
-            fatalError("Failed to open FavoriteSyncRunStore database: \(error)")
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 }

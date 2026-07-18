@@ -196,7 +196,10 @@ public final class MangaReaderWorkflow {
         }
 
         for imageURL in membership.imageURLs {
-            guard await offlineCacheStore.offlineImageData(for: imageURL) != nil else {
+            // Existence check only — reading the actual bytes of every page
+            // just to decide offline readability would load the whole chapter
+            // into memory on each reader launch.
+            guard await offlineCacheStore.hasOfflineImage(for: imageURL) else {
                 return nil
             }
         }

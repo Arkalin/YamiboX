@@ -100,7 +100,7 @@ import Testing
                 totalPages: 1
             )
         ],
-        deleteError: YamiboError.favoriteDeleteFailed
+        deleteError: FavoriteActionError.favoriteDeleteFailed
     )
     let model = FavoriteBoardListViewModel(repositoryProvider: { stub })
 
@@ -109,7 +109,7 @@ import Testing
     await model.delete(board)
 
     #expect(model.boards?.map(\.fid) == ["30"])
-    #expect(model.actionErrorMessage == YamiboError.favoriteDeleteFailed.localizedDescription)
+    #expect(model.actionErrorMessage == FavoriteActionError.favoriteDeleteFailed.localizedDescription)
 }
 
 @MainActor

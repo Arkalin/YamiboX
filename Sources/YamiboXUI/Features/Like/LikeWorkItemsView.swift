@@ -129,12 +129,20 @@ struct LikeWorkItemsView: View {
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
         .task { await load() }
-        .onReceive(NotificationCenter.default.publisher(for: LikeStore.didChangeNotification)) { notification in
-            guard let changeID = notification.userInfo?[LikeStore.changeIDUserInfoKey] as? String,
-                  changeID == like.likeStore.changeID else {
-                return
+        // Appearance-scoped `.task` replacing the removed `.onReceive`
+        // bridge: sheets/covers presented from this view don't cancel it, so
+        // deletions made in them still refresh live, and anything missed
+        // while genuinely covered is caught by the sibling
+        // `.task { await load() }` re-running on reappear.
+        .task {
+            for await changeID in like.likeStore.changes() {
+                // Per-instance stream: the guard is kept as the explicit
+                // "only this exact store instance" contract.
+                guard changeID == like.likeStore.changeID else {
+                    continue
+                }
+                Task { await load() }
             }
-            Task { await load() }
         }
         .sheet(item: $presentedTextItem) { item in
             LikeTextDetailView(

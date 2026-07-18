@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import YamiboXCore
+import YamiboXTestSupport
 
 @Suite("Yamibo Image Pipeline", .serialized)
 struct YamiboImagePipelineTests {
@@ -229,13 +230,13 @@ private func waitForCachedData(
     in pipeline: YamiboImagePipeline,
     source: YamiboImageSource
 ) async throws {
-    for _ in 0 ..< 20 {
-        if pipeline.cachedData(for: source) != nil {
-            return
+    do {
+        try await waitForCondition(timeout: .seconds(1), pollInterval: .milliseconds(50)) {
+            pipeline.cachedData(for: source) != nil
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
+    } catch is TestWaitTimeoutError {
+        #expect(pipeline.cachedData(for: source) != nil)
     }
-    #expect(pipeline.cachedData(for: source) != nil)
 }
 
 private actor RecordingOfflineImageProvider: YamiboOfflineImageDataProviding {

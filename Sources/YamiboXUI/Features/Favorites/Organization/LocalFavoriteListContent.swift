@@ -6,7 +6,7 @@ import YamiboXCore
 /// (collections stay a pinned leading block only in manual sort order — see
 /// `LocalFavoriteLibraryProjection.mixedEntries`).
 struct LocalFavoriteListContent: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
     let showsCover: Bool

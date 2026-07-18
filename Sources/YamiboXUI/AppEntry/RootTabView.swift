@@ -86,11 +86,13 @@ public struct RootTabView: View {
         )
     }
 
+    // The changeID guards below survive the stream migration: each stream is
+    // already per-instance, but the comparison stays as the explicit "only
+    // the app context's own store instance schedules an upload" contract.
     private func observeFavoriteLibraryChanges() async {
-        for await notification in NotificationCenter.default.notifications(named: FavoriteLibraryStore.didChangeNotification) {
+        for await changeID in appModel.appContext.localFavoriteLibraryStore.changes() {
             guard !Task.isCancelled else { return }
-            guard let changeID = notification.userInfo?[FavoriteLibraryStore.changeIDUserInfoKey] as? String,
-                  changeID == appModel.appContext.localFavoriteLibraryStore.changeID else {
+            guard changeID == appModel.appContext.localFavoriteLibraryStore.changeID else {
                 continue
             }
             appModel.scheduleWebDAVUploadForLocalChange()
@@ -98,10 +100,9 @@ public struct RootTabView: View {
     }
 
     private func observeSettingsStoreChanges() async {
-        for await notification in NotificationCenter.default.notifications(named: SettingsStore.didChangeNotification) {
+        for await changeID in appModel.appContext.settingsStore.changes() {
             guard !Task.isCancelled else { return }
-            guard let changeID = notification.userInfo?[SettingsStore.changeIDUserInfoKey] as? String,
-                  changeID == appModel.appContext.settingsStore.changeID else {
+            guard changeID == appModel.appContext.settingsStore.changeID else {
                 continue
             }
             appModel.scheduleWebDAVUploadForLocalChange(touchesAppSettings: true)
@@ -118,10 +119,9 @@ public struct RootTabView: View {
         appContext: YamiboAppContext,
         onChange: @escaping @MainActor () -> Void
     ) async {
-        for await notification in NotificationCenter.default.notifications(named: ReadingProgressStore.didChangeNotification) {
+        for await changeID in appContext.readingProgressStore.changes() {
             guard !Task.isCancelled else { return }
-            guard let changeID = notification.userInfo?[ReadingProgressStore.changeIDUserInfoKey] as? String,
-                  changeID == appContext.readingProgressStore.changeID else {
+            guard changeID == appContext.readingProgressStore.changeID else {
                 continue
             }
             await MainActor.run(body: onChange)

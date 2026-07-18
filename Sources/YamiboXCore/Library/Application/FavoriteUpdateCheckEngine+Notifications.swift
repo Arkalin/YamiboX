@@ -1,12 +1,11 @@
 import Foundation
-import YamiboXCore
 
-extension FavoriteUpdateMonitor {
+extension FavoriteUpdateCheckEngine {
 
     // MARK: - Update notifications
 
     /// Whether detected updates are delivered as local notifications.
-    func notificationsEnabled() async -> Bool {
+    public func notificationsEnabled() async -> Bool {
         guard let settingsStore else { return false }
         return await settingsStore.load().favorites.updateNotificationsEnabled
     }
@@ -15,7 +14,7 @@ extension FavoriteUpdateMonitor {
     /// Enabling requests system authorization first, so the stored setting
     /// can only be true after a grant — a denied request leaves it off.
     @discardableResult
-    func setNotificationsEnabled(_ enabled: Bool) async -> Bool {
+    public func setNotificationsEnabled(_ enabled: Bool) async -> Bool {
         guard let settingsStore, let notifier else { return false }
         var effective = enabled
         if enabled {
@@ -45,7 +44,7 @@ extension FavoriteUpdateMonitor {
 
     /// True when the user's toggle is on but the system permission has since
     /// been revoked — deliveries are silently skipped in that state.
-    func notificationsBlockedBySystem() async -> Bool {
+    public func notificationsBlockedBySystem() async -> Bool {
         guard let notifier, await notificationsEnabled() else { return false }
         return await notifier.authorization() == .denied
     }

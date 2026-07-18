@@ -41,7 +41,7 @@ public actor WebDAVSyncService {
         if !allowingAccountMismatch {
             try validateAccount(of: remotePayloads, localUID: accountUID)
         }
-        let updatedAt = Date.now
+        let updatedAt = uploadStamp(absorbing: remotePayloads.values.map(\.info.updatedAt).max())
         let uploaded = try await uploadParticipants(
             participants,
             remotePayloads: remotePayloads,
@@ -92,12 +92,51 @@ public actor WebDAVSyncService {
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         try validateAccount(of: remotePayloads, localUID: accountUID)
         let newestRemoteUpdatedAt = remotePayloads.values.map(\.info.updatedAt).max()
-        let localUpdatedAt = settings.localUpdatedAt ?? .distantPast
+        // Per-dataset direction decision: a dataset whose remote payload and
+        // local bookkeeping both carry revisions compares by revision (immune
+        // to wall-clock skew between devices); any dataset missing a revision
+        // on either side falls back to the wall-clock comparison, which for a
+        // round with only pre-revision payloads reduces to the previous
+        // `newestRemoteUpdatedAt > localUpdatedAt` rule exactly.
+        let remoteIsAhead = remotePayloads.contains { datasetID, payload in
+            remotePayloadIsAheadOfLocalState(payload.info, datasetID: datasetID, settings: settings)
+        }
 
-        if let newestRemoteUpdatedAt, newestRemoteUpdatedAt > localUpdatedAt {
-            let applied = try await applyRemotePayloads(remotePayloads)
-            try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied)
-            return .downloaded
+        if let newestRemoteUpdatedAt, remoteIsAhead {
+            // The remote side is ahead of this device. Datasets with unsynced
+            // local edits (dirty) must not absorb the newer remote payload by
+            // plain replacement — `applyRemote` overwrites, which would
+            // silently drop those edits even though every dirty-tracked
+            // participant owns merge semantics. Dirty datasets instead take
+            // the same merge-and-upload path as the upload branch below;
+            // clean datasets absorb the remote payload as-is (skipping stamps
+            // already absorbed, same as the upload branch's convergence rule).
+            let dirtyParticipants = participants.filter {
+                $0.uploadsOnlyWhenMarkedDirty && settings.dirtyDatasetIDs.contains($0.datasetID)
+            }
+            let applied = try await applyRemotePayloads(
+                remotePayloads,
+                excludingDatasetIDs: Set(dirtyParticipants.map(\.datasetID)),
+                skippingPayloadsAlreadyAbsorbedPer: settings
+            )
+            guard !dirtyParticipants.isEmpty else {
+                try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied)
+                return .downloaded
+            }
+            let updatedAt = uploadStamp(absorbing: newestRemoteUpdatedAt)
+            let uploaded = try await uploadParticipants(
+                dirtyParticipants,
+                remotePayloads: remotePayloads,
+                settings: settings,
+                accountUID: accountUID,
+                updatedAt: updatedAt
+            )
+            try await updateSettingsAfterSync(
+                settings,
+                updatedAt: updatedAt,
+                outcomes: uploaded.merging(applied) { uploadedOutcome, _ in uploadedOutcome }
+            )
+            return .uploaded
         }
 
         let included = participants.filter {
@@ -110,7 +149,7 @@ public actor WebDAVSyncService {
         let applied = try await applyRemotePayloads(
             remotePayloads,
             excludingDatasetIDs: Set(included.map(\.datasetID)),
-            newerThan: settings.lastAppliedRemoteUpdatedAtByDatasetID
+            skippingPayloadsAlreadyAbsorbedPer: settings
         )
 
         if included.isEmpty {
@@ -126,7 +165,7 @@ public actor WebDAVSyncService {
             return .downloaded
         }
 
-        let updatedAt = Date.now
+        let updatedAt = uploadStamp(absorbing: newestRemoteUpdatedAt)
         let uploaded = try await uploadParticipants(
             included,
             remotePayloads: remotePayloads,
@@ -168,6 +207,20 @@ public actor WebDAVSyncService {
             settings.localUpdatedAt = date
         }
         try await settingsStore.save(settings)
+    }
+
+    /// Stamp for an upload produced by a round that also absorbed remote
+    /// payloads up to `newestRemoteUpdatedAt`. Wall clocks differ across
+    /// devices, so `.now` alone could sort the merged upload *before* the
+    /// remote payload it just absorbed; peers that already recorded that
+    /// remote stamp as applied would then skip the merged result and
+    /// convergence would stall until an unrelated later change. Nudging just
+    /// past the absorbed stamp keeps the ordering truthful. Revisions are the
+    /// primary ordering now; this stays as defense in depth for the wall-clock
+    /// fallback paths (pre-revision peers and payloads).
+    private nonisolated func uploadStamp(absorbing newestRemoteUpdatedAt: Date?) -> Date {
+        guard let newestRemoteUpdatedAt else { return .now }
+        return max(.now, newestRemoteUpdatedAt.addingTimeInterval(0.001))
     }
 
     private func currentAccountUID() async throws -> String {
@@ -235,6 +288,16 @@ public actor WebDAVSyncService {
         /// dataset: the payload's stamp when applied, the round's stamp when
         /// uploaded (after an upload, local content == remote content).
         var appliedRemoteUpdatedAt: Date
+        /// The revision this round minted for its own upload of the dataset,
+        /// nil when the dataset was applied rather than uploaded.
+        var uploadedRevision: UInt64?
+        /// The remote revision this device is now caught up to for the
+        /// dataset: the payload's revision when applied (nil for pre-revision
+        /// payloads), the freshly minted revision when uploaded — mirroring
+        /// `appliedRemoteUpdatedAt`, and for the same reason: without it the
+        /// next round would treat the device's own upload as unseen remote
+        /// news and re-apply it.
+        var appliedRemoteRevision: UInt64?
     }
 
     private func uploadParticipants(
@@ -258,35 +321,120 @@ public actor WebDAVSyncService {
             // absorb local changes made while the upload was in flight, so
             // they would never be flagged dirty and never uploaded.
             let fingerprint = await participant.localFingerprint()
-            try await client.uploadPayloadData(payloadData, settings: settings, fileName: participant.remoteFileName)
+            // Lamport-style mint: strictly above everything this device has
+            // authored or absorbed for the dataset, including the remote
+            // payload this very export just merged in, so the upload sorts
+            // after that payload on every peer regardless of wall clocks.
+            let revision = nextUploadRevision(
+                datasetID: participant.datasetID,
+                settings: settings,
+                absorbingRemoteRevision: remotePayloads[participant.datasetID]?.info.revision
+            )
+            let stampedData = WebDAVPayloadEnvelope.injectingSyncRevision(revision, into: payloadData)
+            try await client.uploadPayloadData(stampedData, settings: settings, fileName: participant.remoteFileName)
             outcomes[participant.datasetID] = DatasetSyncOutcome(
                 fingerprint: fingerprint,
-                appliedRemoteUpdatedAt: updatedAt
+                appliedRemoteUpdatedAt: updatedAt,
+                uploadedRevision: revision,
+                appliedRemoteRevision: revision
             )
         }
         return outcomes
     }
 
+    /// - Parameter settings: When non-nil, payloads this device has already
+    ///   absorbed per the settings' bookkeeping are skipped (revision
+    ///   comparison when both sides carry one, wall-clock fallback otherwise).
+    ///   The manual download path passes nil and applies unconditionally.
     private func applyRemotePayloads(
         _ remotePayloads: [String: RemotePayload],
         excludingDatasetIDs: Set<String> = [],
-        newerThan lastAppliedByDatasetID: [String: Date]? = nil
+        skippingPayloadsAlreadyAbsorbedPer settings: WebDAVSyncSettings? = nil
     ) async throws -> [String: DatasetSyncOutcome] {
         var outcomes: [String: DatasetSyncOutcome] = [:]
         for participant in participants {
             guard !excludingDatasetIDs.contains(participant.datasetID) else { continue }
             guard let payload = remotePayloads[participant.datasetID] else { continue }
-            if let lastAppliedByDatasetID,
-               payload.info.updatedAt <= lastAppliedByDatasetID[participant.datasetID] ?? .distantPast {
+            if let settings,
+               remotePayloadIsAlreadyAbsorbed(payload.info, datasetID: participant.datasetID, settings: settings) {
                 continue
             }
             try await participant.applyRemote(payload.data)
             outcomes[participant.datasetID] = DatasetSyncOutcome(
                 fingerprint: await participant.localFingerprint(),
-                appliedRemoteUpdatedAt: payload.info.updatedAt
+                appliedRemoteUpdatedAt: payload.info.updatedAt,
+                appliedRemoteRevision: payload.info.revision
             )
         }
         return outcomes
+    }
+
+    /// Whether the content of a fetched payload is already reflected in this
+    /// device's local state, per the settings' per-dataset bookkeeping. The
+    /// revision pair decides when both sides carry one; either side missing a
+    /// revision falls back to the previous wall-clock rule
+    /// (`updatedAt <= lastApplied`).
+    private nonisolated func remotePayloadIsAlreadyAbsorbed(
+        _ info: WebDAVRemotePayloadInfo,
+        datasetID: String,
+        settings: WebDAVSyncSettings
+    ) -> Bool {
+        if let remoteRevision = info.revision,
+           let lastAppliedRevision = settings.lastAppliedRemoteRevisionByDatasetID[datasetID] {
+            return remoteRevision <= lastAppliedRevision
+        }
+        return info.updatedAt <= settings.lastAppliedRemoteUpdatedAtByDatasetID[datasetID] ?? .distantPast
+    }
+
+    /// Whether a fetched payload carries content this device has not caught up
+    /// to, i.e. the download direction is warranted for the dataset. Revision
+    /// comparison when both sides carry one; either side missing a revision
+    /// falls back to the previous wall-clock rule
+    /// (`updatedAt > localUpdatedAt`).
+    private nonisolated func remotePayloadIsAheadOfLocalState(
+        _ info: WebDAVRemotePayloadInfo,
+        datasetID: String,
+        settings: WebDAVSyncSettings
+    ) -> Bool {
+        if let remoteRevision = info.revision,
+           let localRevision = highestKnownLocalRevision(datasetID: datasetID, settings: settings) {
+            return remoteRevision > localRevision
+        }
+        return info.updatedAt > settings.localUpdatedAt ?? .distantPast
+    }
+
+    /// Highest revision this device has authored (`localRevisionByDatasetID`)
+    /// or absorbed (`lastAppliedRemoteRevisionByDatasetID`) for the dataset,
+    /// nil when the dataset has no revision bookkeeping yet (pre-revision
+    /// install or never-synced dataset).
+    private nonisolated func highestKnownLocalRevision(
+        datasetID: String,
+        settings: WebDAVSyncSettings
+    ) -> UInt64? {
+        [
+            settings.localRevisionByDatasetID[datasetID],
+            settings.lastAppliedRemoteRevisionByDatasetID[datasetID],
+        ]
+        .compactMap(\.self)
+        .max()
+    }
+
+    /// Revision to stamp onto this round's upload of a dataset: strictly above
+    /// every revision this device has authored, previously absorbed, or is
+    /// absorbing from the remote payload merged into this very export.
+    /// Clamped rather than trapping on a (corrupt) `UInt64.max` input.
+    private nonisolated func nextUploadRevision(
+        datasetID: String,
+        settings: WebDAVSyncSettings,
+        absorbingRemoteRevision: UInt64?
+    ) -> UInt64 {
+        let highestKnown = [
+            highestKnownLocalRevision(datasetID: datasetID, settings: settings),
+            absorbingRemoteRevision,
+        ]
+        .compactMap(\.self)
+        .max() ?? 0
+        return min(highestKnown, .max - 1) + 1
     }
 
     private func validateAccount(of remotePayloads: [String: RemotePayload], localUID: String) throws {
@@ -319,6 +467,16 @@ public actor WebDAVSyncService {
                 updated.lastSyncedFingerprintByDatasetID[datasetID] = fingerprint
             }
             updated.lastAppliedRemoteUpdatedAtByDatasetID[datasetID] = outcome.appliedRemoteUpdatedAt
+            if let uploadedRevision = outcome.uploadedRevision {
+                updated.localRevisionByDatasetID[datasetID] = uploadedRevision
+            }
+            // Deliberately not cleared when a pre-revision payload was applied
+            // (`appliedRemoteRevision` nil): the stale entry is never compared
+            // against revision-less remotes, and keeping it preserves the
+            // monotonic floor for the next revision this device mints.
+            if let appliedRemoteRevision = outcome.appliedRemoteRevision {
+                updated.lastAppliedRemoteRevisionByDatasetID[datasetID] = appliedRemoteRevision
+            }
         }
         try await settingsStore.save(updated)
     }

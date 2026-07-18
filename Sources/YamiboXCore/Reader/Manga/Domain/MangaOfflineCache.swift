@@ -78,16 +78,7 @@ public struct MangaOfflineCacheWorkRequest: Hashable, Sendable {
         self.ownerName = ownerName.trimmingCharacters(in: .whitespacesAndNewlines)
         self.tid = tid.trimmingCharacters(in: .whitespacesAndNewlines)
         self.chapterTitle = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.targetImageURLs = Self.uniqueURLs(targetImageURLs)
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var output: [URL] = []
-        for url in urls where seen.insert(url.absoluteString).inserted {
-            output.append(url)
-        }
-        return output
+        self.targetImageURLs = targetImageURLs.removingDuplicateURLs()
     }
 }
 

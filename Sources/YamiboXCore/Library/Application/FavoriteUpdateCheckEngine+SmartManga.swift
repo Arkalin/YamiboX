@@ -1,7 +1,6 @@
 import Foundation
-import YamiboXCore
 
-extension FavoriteUpdateMonitor {
+extension FavoriteUpdateCheckEngine {
 
     // MARK: - Smart-manga directory check lane
 

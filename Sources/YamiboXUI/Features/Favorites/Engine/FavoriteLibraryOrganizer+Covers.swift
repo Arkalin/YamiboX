@@ -220,9 +220,9 @@ extension FavoriteLibraryOrganizer {
                 } catch {
                     YamiboLog.persistence.error("Failed to set automatic smartManga cover for \(group.directory.cleanBookName): \(error.localizedDescription)")
                 }
-                // `setAutomaticCover` posts `ContentCoverStore
-                // .didChangeNotification` on success, which this organizer
-                // already subscribes to (`coverUpdatesTask` →
+                // `setAutomaticCover` broadcasts through `ContentCoverStore
+                // .changes()` on success, which this organizer already
+                // subscribes to (`coverUpdatesTask` →
                 // `reloadContentCovers()`), so no manual state refresh is
                 // needed here.
             }

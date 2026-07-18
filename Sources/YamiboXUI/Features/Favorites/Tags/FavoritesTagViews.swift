@@ -47,10 +47,10 @@ struct LocalFavoriteTagSelectionDraft: Identifiable {
 struct FavoriteTagPickerView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let draft: LocalFavoriteTagSelectionDraft
 
-    @AppStorage("yamibox.favorite.tag.sort") private var sortRawValue = FavoriteTagSortOrder.manual.rawValue
+    @AppStorage(YamiboAppStorageKey.favoriteTagSortOrder) private var sortRawValue = FavoriteTagSortOrder.manual.rawValue
     @State private var selectedTagIDs: Set<String>
     @State private var searchText = ""
     @State private var editorDraft: FavoriteTagEditorDraft?

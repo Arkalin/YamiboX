@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import YamiboXCore
+import YamiboXTestSupport
 
 @MainActor
 final class NovelReaderCacheOperationModuleTests: XCTestCase {
@@ -113,8 +114,7 @@ final class NovelReaderCacheOperationModuleTests: XCTestCase {
             [1, 3],
             snapshot: makeSnapshot(cacheableViews: [1, 2, 3], cachedViews: [1, 2]),
             repository: repository,
-            summary: { _, result in "updated \(result.completedViews.count)" },
-            onFailure: { _ in XCTFail("Update should not fail") }
+            summary: { _, result in "updated \(result.completedViews.count)" }
         )
 
         try await waitFor {
@@ -158,8 +158,7 @@ final class NovelReaderCacheOperationModuleTests: XCTestCase {
             [1],
             snapshot: snapshot,
             repository: repository,
-            summary: { _, _ in "updated" },
-            onFailure: { _ in XCTFail("Update should not fail") }
+            summary: { _, _ in "updated" }
         )
         try await waitFor { module.state.isFinished && module.state.summaryMessage == "updated" }
 
@@ -331,12 +330,12 @@ private func waitFor(
     intervalNanoseconds: UInt64 = 10_000_000,
     condition: @escaping @MainActor @Sendable () async -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if await condition() {
-            return
-        }
-        try await Task.sleep(nanoseconds: intervalNanoseconds)
+    do {
+        try await waitForCondition(
+            timeout: .seconds(timeout),
+            pollInterval: .nanoseconds(Int64(intervalNanoseconds))
+        ) { await condition() }
+    } catch is TestWaitTimeoutError {
+        XCTFail("Timed out waiting for condition")
     }
-    XCTFail("Timed out waiting for condition")
 }

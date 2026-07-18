@@ -5,7 +5,7 @@ import YamiboXCore
 /// sheet/dialog presentation. Content rendering is delegated to the list and
 /// grid content views, which read the organizer and browse session directly.
 struct LocalFavoritesOrganizationView: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    @Bindable var organizer: FavoriteLibraryOrganizer
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     @ObservedObject private var selection: LocalFavoriteBrowseSession
@@ -160,9 +160,11 @@ struct LocalFavoritesOrganizationView: View {
             // `START_FAVORITES_SELECTION=1` launch hook (`START_TAB`'s
             // sibling): keeps the first favorite card selected so simulator
             // sessions without touch injection can screenshot the selection
-            // UI. Re-asserts on every derived-state publish because startup
-            // reloads can prune the selection away again.
-            .onReceive(organizer.$rootDerived) { derived in
+            // UI. Re-asserts on every derived-state change (`initial: true`
+            // covering the appearance-time value the old `$rootDerived`
+            // subscription emitted) because startup reloads can prune the
+            // selection away again.
+            .onChange(of: organizer.rootDerived, initial: true) { _, derived in
                 guard ProcessInfo.processInfo.environment["START_FAVORITES_SELECTION"] == "1",
                       !selection.isSelectionMode,
                       let firstCard = derived.cards.first else { return }

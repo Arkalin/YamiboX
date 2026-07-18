@@ -9,7 +9,7 @@ extension OfflineCacheStore {
         completesMatchingWork: Bool = true,
         preservesExistingImageReferencesWhenEmpty: Bool = false
     ) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         do {
             let normalized = try Self.normalizedNovelWorkRequest(request)
             let sourceData = try Self.encodeJSONData(sourcePage, context: "novel offline source page")
@@ -66,11 +66,11 @@ extension OfflineCacheStore {
 
             try ensureNovelSourcePagesDirectoryExists()
             try sourceData.write(to: sourceURL, options: [.atomic])
-            let document = try Self.projectionDocument(
+            let projection = try Self.projectionDocument(
                 from: sourcePage,
                 request: normalized
             )
-            let documentJSON = try Self.encodeNovelDocument(document)
+            let documentJSON = try Self.encodeNovelDocument(projection)
 
             let previousFiles = try await database.write { db in
                 // Resolved inside the write transaction: the actor can interleave other work
@@ -168,7 +168,7 @@ extension OfflineCacheStore {
         view: Int,
         authorID: String?
     ) async -> ForumThreadPage? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard let identity = novelEntryLookup(
             ownerTitle: ownerTitle,
             threadID: threadID,
@@ -208,7 +208,7 @@ extension OfflineCacheStore {
         view: Int,
         authorID: String?
     ) async -> NovelOfflineSourcePageSnapshot? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedThreadID.isEmpty else { return nil }
         let normalizedAuthorID = authorID?.mangaReaderTrimmedNonEmpty
@@ -346,7 +346,7 @@ extension OfflineCacheStore {
             encoder.outputFormatting = [.sortedKeys]
             return try encoder.encode(value)
         } catch {
-            throw YamiboError.persistenceFailed("Failed to encode \(context)")
+            throw YamiboPersistenceError(context: "Failed to encode \(context)", underlying: error)
         }
     }
 
@@ -403,14 +403,14 @@ extension OfflineCacheStore {
         )
     }
 
-    static func syntheticSourcePage(from document: NovelReaderProjection) -> ForumThreadPage {
-        let thread = ThreadIdentity(tid: document.threadID)
-        let authorID = document.resolvedAuthorID?.mangaReaderTrimmedNonEmpty ?? "offline"
-        let posts = document.segments.enumerated().map { index, segment in
+    static func syntheticSourcePage(from projection: NovelReaderProjection) -> ForumThreadPage {
+        let thread = ThreadIdentity(tid: projection.threadID)
+        let authorID = projection.resolvedAuthorID?.mangaReaderTrimmedNonEmpty ?? "offline"
+        let posts = projection.segments.enumerated().map { index, segment in
             ForumThreadPost(
-                postID: document.segmentSources.indices.contains(index)
-                    ? document.segmentSources[index]?.ownerPostID ?? "\(document.view)-\(index)"
-                    : "\(document.view)-\(index)",
+                postID: projection.segmentSources.indices.contains(index)
+                    ? projection.segmentSources[index]?.ownerPostID ?? "\(projection.view)-\(index)"
+                    : "\(projection.view)-\(index)",
                 author: BlogReaderUser(uid: authorID, name: "楼主"),
                 contentHTML: syntheticHTML(for: segment, index: index),
                 contentText: ""
@@ -418,9 +418,9 @@ extension OfflineCacheStore {
         }
         return ForumThreadPage(
             thread: thread,
-            title: document.threadID,
+            title: projection.threadID,
             posts: posts,
-            pageNavigation: ForumPageNavigation(currentPage: document.view, totalPages: document.maxView)
+            pageNavigation: ForumPageNavigation(currentPage: projection.view, totalPages: projection.maxView)
         )
     }
 
@@ -463,11 +463,17 @@ private extension String {
     }
 }
 
-private func novelPayloadPersistenceError(from error: Error) -> YamiboError {
+// Same contract as `offlineCachePersistenceError`: domain errors pass through
+// untouched, everything else is wrapped with the source error preserved as
+// `underlying` for logging.
+private func novelPayloadPersistenceError(from error: Error) -> any Error {
     if let error = error as? YamiboError {
         return error
     }
-    return YamiboError.persistenceFailed(error.localizedDescription)
+    if let error = error as? YamiboPersistenceError {
+        return error
+    }
+    return YamiboPersistenceError(context: error.localizedDescription, underlying: error)
 }
 
 private func novelPayloadOptionalDate(from value: Double?) -> Date? {

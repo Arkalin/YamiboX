@@ -15,7 +15,7 @@ enum LocalFavoriteLocationTriState: Equatable {
 /// everywhere, toggling a full one removes it (keeping each item's last
 /// location intact).
 struct LocalFavoriteSelectionMoveSheet: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
 
     @Environment(\.dismiss) private var dismiss

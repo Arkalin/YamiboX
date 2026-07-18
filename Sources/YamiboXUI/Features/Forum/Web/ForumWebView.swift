@@ -181,12 +181,17 @@ public struct IOSForumWebView: UIViewRepresentable {
         private func startObservingSessionChanges() {
             guard sessionObservationTask == nil else { return }
 
-            sessionObservationTask = Task { @MainActor [weak self] in
-                for await notification in NotificationCenter.default.notifications(named: SessionStore.didChangeNotification) {
+            // `sessionStore` is captured directly (not through `self`) so the
+            // stream can be obtained even after the coordinator goes away —
+            // mirroring how the old NotificationCenter loop outlived `self`
+            // until cancellation.
+            sessionObservationTask = Task { @MainActor [weak self, sessionStore] in
+                for await changeID in sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    guard let changeID = notification.userInfo?[SessionStore.changeIDUserInfoKey] as? String,
-                          changeID == sessionStore.changeID else {
+                    // Per-instance stream: the guard is kept as the explicit
+                    // "only this exact store instance" contract.
+                    guard changeID == sessionStore.changeID else {
                         continue
                     }
 
@@ -200,7 +205,10 @@ public struct IOSForumWebView: UIViewRepresentable {
         private func synchronizeWebViewSession(_ sessionState: SessionState, reloadIfNeeded: Bool) async {
             guard let webView else { return }
 
-            if let userAgent = sessionState.userAgent.nilIfEmpty,
+            // `nilIfBlank`, not `nilIfEmpty`: this file's deleted private
+            // `nilIfEmpty` copy trimmed whitespace, so the trimming variant is
+            // the behavior-preserving replacement.
+            if let userAgent = sessionState.userAgent.nilIfBlank,
                webView.customUserAgent != userAgent {
                 webView.customUserAgent = userAgent
             }
@@ -378,13 +386,6 @@ private extension WKHTTPCookieStore {
                 continuation.resume()
             }
         }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

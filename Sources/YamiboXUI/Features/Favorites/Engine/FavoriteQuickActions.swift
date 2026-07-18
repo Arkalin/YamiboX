@@ -180,7 +180,7 @@ enum FavoriteQuickActions {
         remoteRepository: any ForumThreadFavoriteRemoteOperating
     ) async throws -> RemotePushResult {
         guard let threadID = item.target.threadID else {
-            throw YamiboError.missingFavoriteThreadID
+            throw FavoriteActionError.missingFavoriteThreadID
         }
         if normalizedRemoteFavoriteID(item.remoteMapping?.yamiboFavoriteID) != nil {
             return .synced

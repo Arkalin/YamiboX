@@ -3,7 +3,7 @@ import YamiboXCore
 import UIKit
 
 struct SystemSettingsPeripheralPageTurnView: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: SettingsPeripheralsViewModel
     var peripheralInput: ReaderPeripheralInputManager?
     @State private var showsApplePencilHelp = false
     @State private var capturingAction: ReaderControlAction?
@@ -360,7 +360,7 @@ struct SystemSettingsPeripheralPageTurnView: View {
     private func keyboardBindingValueLabel(for action: ReaderControlAction) -> some View {
         if let code = viewModel.keyboard.bindings[action] {
             let name = peripheralInput?.displayName(forKeyCode: code)
-            Text(name ?? "键码 \(code)")
+            Text(name ?? L10n.string("settings.keyboard.key_code", String(code)))
                 .foregroundStyle(.secondary)
         } else {
             Text(L10n.string("settings.keyboard.unset"))

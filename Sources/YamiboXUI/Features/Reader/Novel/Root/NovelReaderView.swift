@@ -3,26 +3,32 @@ import YamiboXCore
 import UIKit
 
 public struct NovelReaderView: View {
-    @StateObject private var model: NovelReaderViewModel
+    /// `@State` (not `@StateObject`) because the view model is `@Observable`.
+    /// SwiftUI keeps the first instance for the view's lifetime; the
+    /// constructions on later `init` calls are discarded, which is safe here
+    /// because `NovelReaderViewModel.init` only stores its context and
+    /// dependencies and has no side effects (the reading workflow, repository
+    /// and lazy coordinators are all created later, on first use).
+    @State private var model: NovelReaderViewModel
     @State private var verticalScrollCoordinator = NovelReaderVerticalScrollCoordinator()
+    // The vertical restore state machine (scroll request, retry polling,
+    // positioning fingerprint) lives in its own @MainActor @Observable
+    // coordinator; the view only forwards events into it and renders its two
+    // tracked fields. `@State` keeps the first instance alive exactly like
+    // the previous `@StateObject` did; the per-init discards are inert (the
+    // coordinator's init only zero-fills state and starts no work).
+    @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showingSettings = false
-    @State private var showingCachePanel = false
-    @State private var showingCacheProgress = false
-    @State private var showingChapterSheet = false
-    @State private var showingChapterComments = false
+    // The six boolean-presented sheets are mutually exclusive (every setter
+    // is a chrome button, and chrome is disabled while any overlay is up),
+    // so a single optional enum replaces the six booleans. The item-driven
+    // covers (`forumThreadOverlayItem`, `imageBrowserItem`) stay separate.
+    @State private var presentedSheet: NovelReaderPresentedSheet?
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var imageBrowserItem: ImageBrowserItem?
     @State private var chapterCommentsTarget: ReaderChapterCommentTarget?
     @State private var chromeState = NovelReaderChromeState()
-    @State private var verticalScrollRequest: NovelReaderVerticalScrollRequest?
-    @State private var verticalScrollRequestCommandID: UInt64 = 0
-    @State private var verticalRestoreController = ReaderVerticalRestoreController()
-    @State private var verticalRestoreRetryTask: Task<Void, Never>?
-    @State private var verticalViewportPositionUpdateTask: Task<Void, Never>?
-    @State private var verticalViewportSampling = NovelReaderVerticalViewportSamplingBox()
-    @State private var lastVerticalPositioningFingerprint: NovelReaderVerticalPositioningFingerprint?
     @State private var isVerticalProgressScrubbing = false
     @State private var verticalTapSuppressionUntil: CFTimeInterval = 0
     @State private var verticalBoundaryPullState = NovelReaderVerticalBoundaryPullState.idle
@@ -34,7 +40,6 @@ public struct NovelReaderView: View {
     @State private var novelTextSelectionController = NovelTextSelectionController()
     @State private var likeHighlightController = NovelLikeHighlightController()
     @State private var likedNovelImageAnchors: Set<NovelImageLikeAnchor> = []
-    @State private var showingLikes = false
     @State private var likeFeedbackGenerator = UINotificationFeedbackGenerator()
     @State private var controlHandlerToken: UUID?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
@@ -43,7 +48,12 @@ public struct NovelReaderView: View {
 
     public init(context: NovelLaunchContext, dependencies: NovelReaderDependencies, appModel: YamiboAppModel) {
         let initialSettings = appModel.bootstrapState?.settings.novelReader
-        _model = StateObject(wrappedValue: NovelReaderViewModel(
+        // `State(initialValue:)` evaluates its argument on every init (unlike
+        // `StateObject(wrappedValue:)`'s autoclosure), so a view model is now
+        // built — and, past the first init, discarded — on each parent
+        // render. Accepted deliberately, mirroring `LocalFavoritesRootView`:
+        // the init is side-effect-free, so the extra constructions are inert.
+        _model = State(initialValue: NovelReaderViewModel(
             context: context,
             dependencies: dependencies,
             initialSettings: initialSettings,
@@ -197,12 +207,21 @@ public struct NovelReaderView: View {
             .onChange(of: model.settings.readingMode) { _, _ in
                 novelTextSelectionController.clearSelection()
             }
-            .onReceive(NotificationCenter.default.publisher(for: LikeStore.didChangeNotification)) { notification in
-                guard let changeID = notification.userInfo?[LikeStore.changeIDUserInfoKey] as? String,
-                      changeID == dependencies.like.likeStore.changeID else {
-                    return
+            // Appearance-scoped `.task` replacing the removed `.onReceive`
+            // bridge. The reader stays the visible full-screen surface for
+            // its whole session — its own panels are sheets/covers presented
+            // *from* it, which don't cancel this task — so like changes made
+            // anywhere in the session keep refreshing the anchors live,
+            // exactly as the Combine subscription did.
+            .task {
+                for await changeID in dependencies.like.likeStore.changes() {
+                    // Per-instance stream: the guard is kept as the explicit
+                    // "only this exact store instance" contract.
+                    guard changeID == dependencies.like.likeStore.changeID else {
+                        continue
+                    }
+                    Task { await loadLikedNovelImageAnchors() }
                 }
-                Task { await loadLikedNovelImageAnchors() }
             }
         }
     }
@@ -239,8 +258,7 @@ public struct NovelReaderView: View {
             onDisappear: {
                 appModel.peripheralInput.removeHandler(controlHandlerToken)
                 controlHandlerToken = nil
-                verticalRestoreRetryTask?.cancel()
-                verticalViewportPositionUpdateTask?.cancel()
+                verticalRestore.cancelPendingRestoreWork()
                 syncVerticalViewportBeforeSave()
                 Task {
                     await model.saveProgress()
@@ -253,12 +271,7 @@ public struct NovelReaderView: View {
     private func novelReaderPresentationModifier() -> NovelReaderPresentationModifier {
         NovelReaderPresentationModifier(
             model: model,
-            showingSettings: $showingSettings,
-            showingCachePanel: $showingCachePanel,
-            showingCacheProgress: $showingCacheProgress,
-            showingChapterSheet: $showingChapterSheet,
-            showingChapterComments: $showingChapterComments,
-            showingLikes: $showingLikes,
+            presentedSheet: $presentedSheet,
             forumThreadOverlayItem: $forumThreadOverlayItem,
             imageBrowserItem: $imageBrowserItem,
             chapterCommentsTarget: chapterCommentsTarget,
@@ -279,12 +292,7 @@ public struct NovelReaderView: View {
     private func readerStateObserverModifier() -> NovelReaderStateObserverModifier {
         NovelReaderStateObserverModifier(
             model: model,
-            showingSettings: $showingSettings,
-            showingCachePanel: $showingCachePanel,
-            showingCacheProgress: $showingCacheProgress,
-            showingChapterSheet: $showingChapterSheet,
-            showingChapterComments: $showingChapterComments,
-            showingLikes: $showingLikes,
+            presentedSheet: $presentedSheet,
             forumThreadOverlayItem: $forumThreadOverlayItem,
             imageBrowserItem: $imageBrowserItem,
             isStatusBarHidden: chromeState.mode == .immersiveHidden,
@@ -419,34 +427,11 @@ public struct NovelReaderView: View {
                     onImageTap: bindings.onImageTap,
                     onImageLongPress: bindings.onImageLongPress
                 )
-            } else if model.isTwoPageSpreadActive {
-                NovelReaderPresentationSpreadCollectionViewport(
-                    spreads: model.presentationSpreads,
-                    surfaces: model.novelReaderSurfaces,
-                    settings: effectivePagedSettings,
-                    refererURL: model.forumURL,
-                    offlineScope: model.inlineImageOfflineScope,
-                    topInset: pagedTopInset,
-                    bottomInset: layout.chromeInsets.bottom,
-                    selectionIndex: model.pagedViewportSelectionIndex,
-                    pagerIdentity: pagerIdentity,
-                    scrollAnimationRequest: pagedScrollAnimationRequest,
-                    displayReferenceProvider: bindings.displayReferenceProvider,
-                    selectionController: bindings.selectionController,
-                    likeHighlightController: bindings.likeHighlightController,
-                    likedImageAnchors: bindings.likedImageAnchors,
-                    isChromeVisible: bindings.isChromeVisible,
-                    canBoundaryPageTurn: bindings.canBoundaryPageTurn,
-                    onSelectionChange: bindings.onSelectionChange,
-                    onBoundaryPageTurn: bindings.onBoundaryPageTurn,
-                    onPageTapZone: bindings.onPageTapZone,
-                    onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
-                    onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
-                    onImageTap: bindings.onImageTap,
-                    onImageLongPress: bindings.onImageLongPress
-                )
             } else {
                 NovelReaderPagedCollectionViewport(
+                    itemSource: model.isTwoPageSpreadActive
+                        ? .spreads(model.presentationSpreads)
+                        : .surfaces,
                     surfaces: model.novelReaderSurfaces,
                     settings: effectivePagedSettings,
                     refererURL: model.forumURL,
@@ -484,7 +469,7 @@ public struct NovelReaderView: View {
             offlineScope: model.inlineImageOfflineScope,
             topInset: topInset,
             bottomInset: bottomInset,
-            scrollRequest: verticalScrollRequest,
+            scrollRequest: verticalRestore.verticalScrollRequest,
             displayReferenceProvider: { surfaceIdentity in
                 model.novelTextViewportDisplayReference(for: surfaceIdentity)
             },
@@ -496,20 +481,11 @@ public struct NovelReaderView: View {
                 model.updateNovelTextViewportVisibleSurfaceIdentities(surfaceIdentities)
             },
             onScrollRequestHandled: { request in
-                guard verticalRestoreController.scrollingRequest == request else {
-                    if verticalScrollRequest == request {
-                        verticalScrollRequest = nil
-                    }
-                    return
-                }
-                verticalScrollRequest = nil
-                if request.textAnchor != nil {
-                    verticalRestoreController.beginSettling(request, now: CACurrentMediaTime())
-                    verticalRestoreRetryTask?.cancel()
-                    verticalRestoreRetryTask = nil
-                    return
-                }
-                tryAdvanceVerticalRestore()
+                verticalRestore.handleScrollRequestHandled(
+                    request,
+                    model: model,
+                    scrollCoordinator: verticalScrollCoordinator
+                )
             },
             onScrollViewReady: { scrollView in
                 verticalScrollCoordinator.attach(scrollView: scrollView)
@@ -520,8 +496,14 @@ public struct NovelReaderView: View {
                 }
                 verticalScrollCoordinator.onViewportMetricsChange = {
                     Task { @MainActor in
-                        tryAdvanceVerticalRestore()
-                        applyVerticalViewportPositionUpdate(for: .viewportGeometryChanged)
+                        verticalRestore.tryAdvanceVerticalRestore(
+                            model: model,
+                            scrollCoordinator: verticalScrollCoordinator
+                        )
+                        verticalRestore.applyVerticalViewportPositionUpdate(
+                            for: .viewportGeometryChanged,
+                            model: model
+                        )
                     }
                 }
                 verticalScrollCoordinator.onBoundaryPullStateChange = { state in
@@ -531,21 +513,23 @@ public struct NovelReaderView: View {
                 }
             },
             onSurfaceFramesChange: { frames in
-                guard verticalViewportSampling.surfaceFrames != frames else { return }
-                verticalViewportSampling.surfaceFrames = frames
-                tryAdvanceVerticalRestore()
-                applyVerticalViewportPositionUpdate(for: .viewportGeometryChanged)
+                verticalRestore.handleSurfaceFramesChange(
+                    frames,
+                    model: model,
+                    scrollCoordinator: verticalScrollCoordinator
+                )
             },
             onTextViewportSampleChange: { sample in
-                guard verticalViewportSampling.textViewportSample != sample else { return }
-                verticalViewportSampling.textViewportSample = sample
-                applyVerticalViewportPositionUpdate(for: .textViewportSampleChanged)
+                verticalRestore.handleTextViewportSampleChange(sample, model: model)
             },
             onViewportChange: {
-                applyVerticalViewportPositionUpdate(for: .viewportGeometryChanged)
+                verticalRestore.applyVerticalViewportPositionUpdate(
+                    for: .viewportGeometryChanged,
+                    model: model
+                )
             },
             onScrollSettled: {
-                updateVerticalViewportPosition()
+                verticalRestore.updateVerticalViewportPosition(model: model)
             },
             onTap: {
                 handleVerticalTap()
@@ -575,7 +559,7 @@ public struct NovelReaderView: View {
             hasInitialLoadError: model.errorMessage != nil,
             isApplyingAppearanceSettings: model.isApplyingAppearanceSettings,
             isNavigatingNovelReaderProjection: model.isNavigatingNovelReaderProjection,
-            shouldConcealViewportContent: verticalRestoreController.shouldConcealViewportContent
+            shouldConcealViewportContent: verticalRestore.verticalRestoreController.shouldConcealViewportContent
         )
     }
 
@@ -897,29 +881,29 @@ public struct NovelReaderView: View {
     }
 
     private func openChapterDrawer() {
-        showingChapterSheet = true
+        presentedSheet = .chapterSheet
     }
 
     private func openChapterComments() {
         chapterCommentsTarget = model.currentChapterCommentTarget
-        showingChapterComments = true
+        presentedSheet = .chapterComments
     }
 
     private func openSettings() {
-        showingSettings = true
+        presentedSheet = .settings
     }
 
     private func openCachePanel() {
         if model.cache.hasOperationSession {
             model.cache.showProgressIfRunning()
-            showingCacheProgress = true
+            presentedSheet = .cacheProgress
         } else {
-            showingCachePanel = true
+            presentedSheet = .cachePanel
         }
     }
 
     private func openLikes() {
-        showingLikes = true
+        presentedSheet = .likes
     }
 
     // MARK: - Like capture
@@ -977,7 +961,12 @@ public struct NovelReaderView: View {
     }
 
     private func handleLikeAnchorOpen(_ payload: LikeAnchorPayload) {
-        showingLikes = false
+        // Was `showingLikes = false`, which could only ever dismiss the likes
+        // sheet; the guard keeps that per-sheet scoping now that a single
+        // enum drives all boolean-style sheets.
+        if presentedSheet == .likes {
+            presentedSheet = nil
+        }
         switch payload {
         case let .novelText(anchor):
             Task { await model.jumpToLikeAnchor(resumePoint(forTextLikeAnchor: anchor)) }
@@ -1037,56 +1026,18 @@ public struct NovelReaderView: View {
             chromeState = nextState
         }
 
-        if model.isLoading && model.novelReaderSurfaces.isEmpty {
-            lastVerticalPositioningFingerprint = nil
-            return
-        }
-
-        if model.errorMessage != nil && model.novelReaderSurfaces.isEmpty {
-            lastVerticalPositioningFingerprint = nil
-            return
-        }
-
-        guard !model.novelReaderSurfaces.isEmpty else {
-            lastVerticalPositioningFingerprint = nil
-            return
-        }
-
-        if currentVerticalPositioningFingerprint == nil {
-            lastVerticalPositioningFingerprint = nil
-        }
-    }
-
-    private var currentVerticalPositioningFingerprint: NovelReaderVerticalPositioningFingerprint? {
-        guard model.settings.readingMode == .vertical,
-              !model.novelReaderSurfaces.isEmpty,
-              let generation = model.novelReaderPresentation?.generation else {
-            return nil
-        }
-        return NovelReaderVerticalPositioningFingerprint(
-            generation: generation,
-            view: model.visibleView,
-            surfaceCount: model.novelReaderSurfaces.count,
-            surfaceIndex: model.selectedSurfaceIndex,
-            intraSurfaceProgressBucket: Int((model.currentSurfaceIntraProgress * 1000).rounded()),
-            readingMode: model.settings.readingMode
-        )
+        verticalRestore.synchronizePositioningFingerprintWithContentState(model: model)
     }
 
     // MARK: - Vertical position persistence and restore
-
-    private func rememberCurrentVerticalPositioningFingerprint() {
-        lastVerticalPositioningFingerprint = currentVerticalPositioningFingerprint
-    }
+    // Thin forwarders into `NovelReaderVerticalRestoreCoordinator`; kept so
+    // the many call sites across the view read the same as before the move.
 
     private func restoreVerticalPositionIfNeeded() {
-        guard let fingerprint = currentVerticalPositioningFingerprint else {
-            lastVerticalPositioningFingerprint = nil
-            return
-        }
-        guard lastVerticalPositioningFingerprint != fingerprint else { return }
-        lastVerticalPositioningFingerprint = fingerprint
-        requestVerticalScrollToCurrentPage()
+        verticalRestore.restoreVerticalPositionIfNeeded(
+            model: model,
+            scrollCoordinator: verticalScrollCoordinator
+        )
     }
 
     private func commitProgressSlider(_ targetIndex: Int) {
@@ -1225,33 +1176,27 @@ public struct NovelReaderView: View {
     }
 
     private var hasPresentedOverlay: Bool {
-        showingSettings ||
-            showingCachePanel ||
-            showingCacheProgress ||
-            showingChapterSheet ||
-            showingChapterComments ||
-            showingLikes ||
+        presentedSheet != nil ||
             forumThreadOverlayItem != nil ||
             imageBrowserItem != nil
     }
 
+    /// Deliberately excludes `imageBrowserItem`: the image browser overlays
+    /// the reader without forcing the chrome back on.
     private var hasChromePresentedOverlay: Bool {
-        showingSettings ||
-            showingCachePanel ||
-            showingCacheProgress ||
-            showingChapterSheet ||
-            showingChapterComments ||
-            showingLikes ||
+        presentedSheet != nil ||
             forumThreadOverlayItem != nil
     }
 
     private var canReceiveApplePencilPageTurn: Bool {
-        isPadDevice &&
-            model.settings.readingMode == .paged &&
-            !model.novelReaderSurfaces.isEmpty &&
-            !hasPresentedOverlay &&
-            !isDismissing &&
-            !chromeState.showsChrome
+        ReaderApplePencilPageTurnGate.canTurnPage(
+            isPadDevice: isPadDevice,
+            isPagedReadingMode: model.settings.readingMode == .paged,
+            hasReadableContent: !model.novelReaderSurfaces.isEmpty,
+            hasBlockingOverlay: hasPresentedOverlay,
+            isDismissing: isDismissing,
+            isChromeVisible: chromeState.showsChrome
+        )
     }
 
     private func beginVerticalProgressScrub() {
@@ -1272,175 +1217,18 @@ public struct NovelReaderView: View {
         verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
     }
 
-    private func makeVerticalScrollRequest() -> NovelReaderVerticalScrollRequest {
-        let resumePoint = model.currentNovelResumePoint
-        let textAnchor = resumePoint?.view == model.visibleView
-            ? resumePoint.map(NovelReaderVerticalTextAnchor.init(position:))
-            : nil
-        verticalScrollRequestCommandID &+= 1
-        let request = NovelReaderVerticalScrollRequest(
-            commandID: verticalScrollRequestCommandID,
-            view: model.visibleView,
-            surfaceIndex: model.selectedSurfaceIndex,
-            intraSurfaceProgress: model.currentSurfaceIntraProgress,
-            textAnchor: textAnchor
-        )
-        return request
-    }
-
-    private func requestVerticalScrollToCurrentPage() {
-        let request = makeVerticalScrollRequest()
-        beginVerticalRestoreScrolling(for: request)
-        verticalScrollRequest = request
-        scheduleVerticalRestoreRetry(for: request)
-    }
-
-    private func updateVerticalViewportPosition() {
-        guard model.settings.readingMode == .vertical else { return }
-        guard verticalRestoreController.canSampleViewport(now: CACurrentMediaTime()) else {
-            return
-        }
-
-        if let sample = verticalViewportSampling.textViewportSample {
-            model.updateVerticalViewportPosition(sample: sample)
-            rememberCurrentVerticalPositioningFingerprint()
-        }
-    }
-
-    private func applyVerticalViewportPositionUpdate(for trigger: NovelReaderVerticalViewportPositionUpdateTiming.Trigger) {
-        switch NovelReaderVerticalViewportPositionUpdateTiming.updateMode(for: trigger) {
-        case .immediate:
-            verticalViewportPositionUpdateTask?.cancel()
-            verticalViewportPositionUpdateTask = nil
-            updateVerticalViewportPosition()
-        case .deferred:
-            scheduleVerticalViewportPositionUpdate()
-        }
-    }
-
-    private func scheduleVerticalViewportPositionUpdate() {
-        verticalViewportPositionUpdateTask?.cancel()
-        verticalViewportPositionUpdateTask = Task {
-            try? await Task.sleep(for: .milliseconds(100))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                updateVerticalViewportPosition()
-                verticalViewportPositionUpdateTask = nil
-            }
-        }
-    }
-
-    private func applyVerticalFineTune(for request: NovelReaderVerticalScrollRequest) {
-        guard verticalRestoreController.scrollingRequest == request else {
-            return
-        }
-        guard request.view == nil || request.view == model.visibleView else {
-            return
-        }
-        if request.textAnchor != nil {
-            return
-        }
-        guard let frame = currentVerticalSurfaceFrames[request.surfaceIndex] else {
-            return
-        }
-        verticalRestoreController.beginFineTuning(request)
-        guard verticalScrollCoordinator.restoreOffset(
-            to: frame,
-            intraSurfaceProgress: request.intraSurfaceProgress
-        ) else {
-            verticalRestoreController.beginScrolling(to: request)
-            return
-        }
-        verticalRestoreController.beginSettling(request, now: CACurrentMediaTime())
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = nil
-    }
-
-    private func tryAdvanceVerticalRestore() {
-        refreshVerticalRestorePhase()
-        guard let request = verticalRestoreController.scrollingRequest else { return }
-        guard request.view == nil || request.view == model.visibleView else {
-            return
-        }
-        guard verticalScrollCoordinator.hasAttachedScrollView else {
-            return
-        }
-        let frames = currentVerticalSurfaceFrames
-        guard let frame = frames[request.surfaceIndex] else {
-            return
-        }
-        guard frame.height > 0 else {
-            return
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1))
-            applyVerticalFineTune(for: request)
-        }
-    }
-
     private func syncVerticalViewportBeforeSave() {
-        guard model.settings.readingMode == .vertical else { return }
-        tryAdvanceVerticalRestore()
-        guard verticalRestoreController.canSampleViewport(now: CACurrentMediaTime()) else {
-            return
-        }
-        updateVerticalViewportPosition()
-    }
-
-    private func beginVerticalRestoreScrolling(for request: NovelReaderVerticalScrollRequest) {
-        verticalRestoreController.beginScrolling(to: request)
-    }
-
-    private var currentVerticalSurfaceFrames: [Int: CGRect] {
-        verticalViewportSampling.surfaceFrames.compactMapValues { value in
-            value.documentView == model.visibleView ? value.frame : nil
-        }
-    }
-
-    private func refreshVerticalRestorePhase(now: CFTimeInterval = CACurrentMediaTime()) {
-        verticalRestoreController.refresh(now: now)
+        verticalRestore.syncVerticalViewportBeforeSave(
+            model: model,
+            scrollCoordinator: verticalScrollCoordinator
+        )
     }
 
     private func cancelVerticalRestoreForUserScroll() {
-        guard verticalRestoreController.activeRequest != nil else { return }
-        verticalRestoreController.cancel(now: CACurrentMediaTime())
-        verticalScrollRequest = nil
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = nil
-    }
-
-    private func reissueVerticalScrollRequest(_ request: NovelReaderVerticalScrollRequest) {
-        guard verticalRestoreController.scrollingRequest == request else { return }
-        verticalScrollRequest = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1))
-            guard verticalRestoreController.scrollingRequest == request else { return }
-            verticalScrollRequest = request
-        }
-    }
-
-    private func scheduleVerticalRestoreRetry(for request: NovelReaderVerticalScrollRequest) {
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = Task {
-            for attempt in 1 ... 10 {
-                try? await Task.sleep(for: .milliseconds(80))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard verticalRestoreController.scrollingRequest == request else { return }
-                    tryAdvanceVerticalRestore()
-                    if verticalRestoreController.scrollingRequest == request, attempt == 3 || attempt == 6 || attempt == 9 {
-                        reissueVerticalScrollRequest(request)
-                    }
-                }
-            }
-        }
+        verticalRestore.cancelVerticalRestoreForUserScroll()
     }
 
     private var windowSafeAreaInsets: UIEdgeInsets {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets ?? .zero
+        ReaderShellMetrics.windowSafeAreaInsets
     }
 }

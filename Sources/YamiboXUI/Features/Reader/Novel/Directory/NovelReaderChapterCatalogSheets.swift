@@ -11,7 +11,11 @@ struct NovelReaderChapterSheet: View {
     let onSelect: (NovelReaderChapter) -> Void
     let onSelectWebView: (Int) -> Void
 
-    @ObservedObject var model: NovelReaderViewModel
+    // Plain reference (was `@ObservedObject`): the `@Observable` model's
+    // tracked properties read in `body` register observation on their own.
+    // `navigation` stays `@ObservedObject` — the coordinator is still an
+    // `ObservableObject` with `@Published` state.
+    let model: NovelReaderViewModel
     @ObservedObject private var navigation: NovelReaderNavigationCoordinator
     @State private var showingWebPicker = false
 
@@ -194,7 +198,9 @@ private struct NovelReaderChapterWebNavigationButton: View {
 }
 
 private struct NovelReaderChapterWebPicker: View {
-    @ObservedObject var model: NovelReaderViewModel
+    // Plain reference (was `@ObservedObject`): the `@Observable` model's
+    // tracked properties read in `body` register observation on their own.
+    let model: NovelReaderViewModel
     @ObservedObject var navigation: NovelReaderNavigationCoordinator
     let onSelect: (Int) -> Void
 

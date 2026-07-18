@@ -175,7 +175,13 @@ private final class URLSessionTaskBox: @unchecked Sendable {
     }
 }
 
-private extension NSLock {
+/// Kept instead of Foundation's `NSLocking.withLock` because that overload
+/// constrains the result to `Sendable`, which some lock-protected values here
+/// don't satisfy (e.g. the plain `() -> Void` background-event completion
+/// handlers). One internal copy serves every offline-cache call site;
+/// call sites with a Sendable result may still resolve to either overload —
+/// the two behave identically.
+extension NSLock {
     func withLock<Value>(_ operation: () -> Value) -> Value {
         lock()
         defer { unlock() }

@@ -10,7 +10,7 @@ import YamiboXCore
 /// same actions plus reordering, so there is no functionality to preserve by
 /// working around that.
 struct LocalFavoriteCategoryTabBar: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
 
     @Environment(\.colorScheme) private var colorScheme

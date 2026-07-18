@@ -92,8 +92,8 @@ private struct MangaReaderSettingsPreviewSpread: View {
     let height: CGFloat
     let contentTopPadding: CGFloat
 
-    private var selectedMode: MangaReaderSettingsModeOption {
-        MangaReaderSettingsModeOption(settings)
+    private var selectedMode: ReaderSettingsReadingModeOption {
+        ReaderSettingsReadingModeOption(settings)
     }
 
     private var effectivePageScaleMode: MangaPageScaleMode {

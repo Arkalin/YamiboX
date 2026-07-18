@@ -9,7 +9,7 @@ enum MangaReaderProjectionBuilder {
         parserVersion: Int = MangaReaderProjection.parserVersion
     ) throws -> MangaReaderProjection {
         guard identity.authorID?.mangaReaderTrimmedNonEmpty != nil else {
-            throw YamiboError.parsingFailed(context: "漫画作者范围")
+            throw YamiboError.parsingFailed(context: L10n.string("parsing_context.manga_author_scope"))
         }
 
         let imageURLs = orderedImageURLs(from: page)

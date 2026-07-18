@@ -43,7 +43,7 @@ extension OfflineCacheStore {
     }
 
     func novelOfflineCacheEntry(id: OfflineCacheEntryID) async -> NovelOfflineCacheEntry? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard id.readerKind == .novel else { return nil }
         do {
             return try await database.read { db in
@@ -56,7 +56,7 @@ extension OfflineCacheStore {
     }
 
     func allNovelOfflineCacheEntries() async -> [NovelOfflineCacheEntry] {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 try Self.allNovelEntries(in: db)
@@ -72,7 +72,7 @@ extension OfflineCacheStore {
         threadID: String,
         authorID: String?
     ) async -> NovelOfflineCacheViewsSnapshot {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         guard let lookup = novelEntryLookup(
             ownerTitle: ownerTitle,
             threadID: threadID,
@@ -169,7 +169,7 @@ extension OfflineCacheStore {
     }
 
     private func removeNovelOfflineCacheEntry(entryKey: String) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         guard let entryKey = entryKey.mangaReaderTrimmedNonEmpty else { return }
         do {
             let files = try await database.write { db -> NovelPayloadFileNames in
@@ -212,7 +212,7 @@ extension OfflineCacheStore {
     }
 
     private func removeNovelOfflineCacheEntries(ownerName: String) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return }
         do {
             let files = try await database.write { db -> NovelPayloadFileNames in
@@ -243,7 +243,7 @@ extension OfflineCacheStore {
         _ request: NovelOfflineCacheWorkRequest
     ) throws -> NovelOfflineCacheWorkRequest {
         guard request.entryKey.mangaReaderTrimmedNonEmpty != nil else {
-            throw YamiboError.persistenceFailed("Novel offline cache entry is empty")
+            throw YamiboPersistenceError(context: "Novel offline cache entry is empty")
         }
         return NovelOfflineCacheWorkRequest(
             ownerTitle: novelDisplayOwnerTitle(ownerTitle: request.ownerTitle, threadID: request.threadID),
@@ -385,14 +385,14 @@ extension OfflineCacheStore {
     }
 
     private static func novelEntry(from row: Row, in db: Database) throws -> NovelOfflineCacheEntry {
-        var document = try decodeNovelDocument(row["document_json"] as String)
-        document.threadID = row["thread_id"] as String
-        document.view = row["view"] as Int
-        document.resolvedAuthorID = row["author_id"] as String?
+        var projection = try decodeNovelDocument(row["document_json"] as String)
+        projection.threadID = row["thread_id"] as String
+        projection.view = row["view"] as Int
+        projection.resolvedAuthorID = row["author_id"] as String?
         return NovelOfflineCacheEntry(
-            ownerTitle: (row["owner_title"] as String?) ?? novelDisplayOwnerTitle(ownerTitle: "", threadID: document.threadID),
+            ownerTitle: (row["owner_title"] as String?) ?? novelDisplayOwnerTitle(ownerTitle: "", threadID: projection.threadID),
             title: row["title"],
-            document: document,
+            document: projection,
             imageURLs: try novelImageURLs(entryKey: row["entry_key"], in: db),
             updatedAt: offlineCacheOptionalDate(from: row["updated_at"] as Double?) ?? Date(timeIntervalSince1970: 0)
         )
@@ -418,17 +418,17 @@ extension OfflineCacheStore {
         )
     }
 
-    static func encodeNovelDocument(_ document: NovelReaderProjection) throws -> String {
-        let data = try JSONEncoder().encode(document)
+    static func encodeNovelDocument(_ projection: NovelReaderProjection) throws -> String {
+        let data = try JSONEncoder().encode(projection)
         guard let value = String(data: data, encoding: .utf8) else {
-            throw YamiboError.persistenceFailed("Failed to encode novel offline cache document")
+            throw YamiboPersistenceError(context: "Failed to encode novel offline cache document")
         }
         return value
     }
 
     private static func decodeNovelDocument(_ value: String) throws -> NovelReaderProjection {
         guard let data = value.data(using: .utf8) else {
-            throw YamiboError.persistenceFailed("Failed to decode novel offline cache document")
+            throw YamiboPersistenceError(context: "Failed to decode novel offline cache document")
         }
         return try JSONDecoder().decode(NovelReaderProjection.self, from: data)
     }
@@ -448,19 +448,4 @@ extension OfflineCacheStore {
         return components.prefix(4).joined(separator: "_")
     }
 
-}
-
-private func offlineCacheTimeInterval(from date: Date) -> Double {
-    date.timeIntervalSince1970
-}
-
-private func offlineCacheOptionalDate(from value: Double?) -> Date? {
-    value.map(Date.init(timeIntervalSince1970:))
-}
-
-private func offlineCachePersistenceError(from error: Error) -> YamiboError {
-    if let error = error as? YamiboError {
-        return error
-    }
-    return YamiboError.persistenceFailed(error.localizedDescription)
 }

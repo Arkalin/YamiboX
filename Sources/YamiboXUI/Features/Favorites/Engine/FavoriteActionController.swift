@@ -79,8 +79,7 @@ final class FavoriteActionController {
         self.defaultTitle = defaultTitle
         self.dependencies = dependencies
         favoriteUpdatesTask = StoreChangeObservation.task(
-            named: FavoriteLibraryStore.didChangeNotification,
-            changeIDKey: FavoriteLibraryStore.changeIDUserInfoKey,
+            changes: { [store = dependencies.localFavoriteLibraryStore] in store.changes() },
             changeID: { [store = dependencies.localFavoriteLibraryStore] in store.changeID }
         ) { [weak self] in
             await self?.refreshFavorite()

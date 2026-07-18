@@ -1,5 +1,19 @@
 import Foundation
 
+/// Error layering after the domain split (this enum used to be the one
+/// central bucket for every failure in the app):
+///
+/// - Transport & session (network responses, HTML parsing, login/session
+///   state, search throttling) = `YamiboError` — this file.
+/// - Favorite operations (add/delete a thread favorite, favorite a board)
+///   = `FavoriteActionError` (Library/Domain/FavoriteActionError.swift).
+/// - Persistence (stores, caches, encode/decode of local data)
+///   = `YamiboPersistenceError` (Persistence/YamiboPersistenceError.swift),
+///   which also preserves the underlying error chain that the old
+///   `persistenceFailed(String)` case flattened away.
+///
+/// `underlying(String)` stays here: it is the transport layer's "wrap an
+/// arbitrary lower-level failure into a displayable message" escape hatch.
 public enum YamiboError: LocalizedError, Equatable, Sendable {
     case invalidResponse(statusCode: Int?)
     case invalidImageData
@@ -14,15 +28,6 @@ public enum YamiboError: LocalizedError, Equatable, Sendable {
     case loginVerificationRequired
     case offline
     case searchCooldown(seconds: Int)
-    case persistenceFailed(String)
-    case missingFavoriteDeleteToken
-    case missingFavoriteDeleteID
-    case favoriteDeleteFailed
-    case missingFavoriteAddToken
-    case missingFavoriteThreadID
-    case favoriteAddFailed
-    case missingForumBoardFavoriteToken
-    case forumBoardFavoriteFailed
     case missingForumSearchToken
     case underlying(String)
 
@@ -59,24 +64,6 @@ public enum YamiboError: LocalizedError, Equatable, Sendable {
             return L10n.string("error.offline")
         case let .searchCooldown(seconds):
             return L10n.string("error.search_cooldown", seconds)
-        case let .persistenceFailed(message):
-            return L10n.string("error.persistence_failed", message)
-        case .missingFavoriteDeleteToken:
-            return L10n.string("error.missing_favorite_delete_token")
-        case .missingFavoriteDeleteID:
-            return L10n.string("error.missing_favorite_delete_id")
-        case .favoriteDeleteFailed:
-            return L10n.string("error.favorite_delete_failed")
-        case .missingFavoriteAddToken:
-            return L10n.string("error.missing_favorite_add_token")
-        case .missingFavoriteThreadID:
-            return L10n.string("error.missing_favorite_thread_id")
-        case .favoriteAddFailed:
-            return L10n.string("error.favorite_add_failed")
-        case .missingForumBoardFavoriteToken:
-            return L10n.string("error.missing_forum_board_favorite_token")
-        case .forumBoardFavoriteFailed:
-            return L10n.string("error.forum_board_favorite_failed")
         case .missingForumSearchToken:
             return L10n.string("error.missing_forum_search_token")
         case let .underlying(message):

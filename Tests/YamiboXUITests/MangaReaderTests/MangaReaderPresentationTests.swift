@@ -738,14 +738,14 @@ private func waitForReaderResumeRoute(
     line: UInt = #line
 ) async throws {
     let persistedExpected = try persistedResumeRoute(expected)
-    for _ in 0..<20 {
-        if await store.load() == persistedExpected {
-            return
+    do {
+        try await waitForCondition(timeout: .milliseconds(500), pollInterval: .milliseconds(25)) {
+            await store.load() == persistedExpected
         }
-        try await Task.sleep(nanoseconds: 25_000_000)
+    } catch is TestWaitTimeoutError {
+        let loaded = await store.load()
+        XCTAssertEqual(loaded, persistedExpected, file: file, line: line)
     }
-    let loaded = await store.load()
-    XCTAssertEqual(loaded, persistedExpected, file: file, line: line)
 }
 
 private func persistedResumeRoute(_ route: ReaderResumeRoute?) throws -> ReaderResumeRoute? {

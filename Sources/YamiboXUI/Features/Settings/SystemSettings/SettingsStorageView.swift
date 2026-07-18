@@ -3,7 +3,11 @@ import YamiboXCore
 
 struct SettingsStorageView: View {
     let dependencies: SettingsDependencies
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: SettingsStorageViewModel
+    /// This page owns the navigation into the two management sub-pages, so it
+    /// carries their view models purely to hand them on.
+    let offlineCacheManagement: OfflineCacheManagementViewModel
+    let mangaDirectoryManagement: MangaDirectoryManagementViewModel
     /// Called after a successful reset, before `viewModel.resetApplication()`'s
     /// caller-provided completion runs — lets the owning navigation stack pop
     /// back out of Settings first, since the app state it just wiped includes
@@ -109,10 +113,10 @@ struct SettingsStorageView: View {
             WebDAVSyncSettingsView(dependencies: dependencies.webDAVSync)
         }
         .navigationDestination(isPresented: $showingOfflineCacheManagement) {
-            OfflineCacheManagementView(viewModel: viewModel)
+            OfflineCacheManagementView(viewModel: offlineCacheManagement)
         }
         .navigationDestination(isPresented: $showingMangaDirectoryManagement) {
-            MangaDirectoryManagementView(viewModel: viewModel)
+            MangaDirectoryManagementView(viewModel: mangaDirectoryManagement)
         }
         .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
             Button(L10n.string("common.ok")) {

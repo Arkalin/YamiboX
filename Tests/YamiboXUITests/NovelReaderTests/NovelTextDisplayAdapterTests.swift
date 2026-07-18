@@ -392,7 +392,7 @@ final class NovelTextDisplayAdapterTests: XCTestCase {
 
         XCTAssertThrowsError(
             try NovelTextLayout.layout(
-                document: document,
+                projection: document,
                 settings: NovelReaderAppearanceSettings(readingMode: .paged),
                 layout: NovelReaderLayout(width: 320, height: 568),
                 viewportSurfaceLayout: { _, _, _ in [] }

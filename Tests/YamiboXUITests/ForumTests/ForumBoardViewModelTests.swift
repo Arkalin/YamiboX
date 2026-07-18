@@ -191,7 +191,7 @@ final class ForumBoardViewModelTests: XCTestCase {
         let fetched = makeBoardPage(fid: "5", title: "動漫區", page: 1, threadIDs: ["fresh"])
         let repository = ForumBoardRepositoryStub(cached: nil, fetched: fetched)
         let model = ForumBoardViewModel(fid: "5", title: nil, repository: repository, settingsStore: settingsStore)
-        let saveCounter = SettingsStoreSaveCounter(changeID: settingsStore.changeID)
+        let saveCounter = SettingsStoreSaveCounter(store: settingsStore)
 
         await model.load()
 
@@ -218,7 +218,7 @@ final class ForumBoardViewModelTests: XCTestCase {
         let fetched = makeBoardPage(fid: "5", title: "動漫區", page: 1, threadIDs: ["fresh"])
         let repository = ForumBoardRepositoryStub(cached: nil, fetched: fetched)
         let model = ForumBoardViewModel(fid: "5", title: nil, repository: repository, settingsStore: settingsStore)
-        let saveCounter = SettingsStoreSaveCounter(changeID: settingsStore.changeID)
+        let saveCounter = SettingsStoreSaveCounter(store: settingsStore)
 
         await model.load()
         // The refresh runs on an unstructured Task; give a would-be write
@@ -238,7 +238,7 @@ final class ForumBoardViewModelTests: XCTestCase {
         let fetched = makeBoardPage(fid: "5", title: "動漫區", page: 1, threadIDs: ["fresh"])
         let repository = ForumBoardRepositoryStub(cached: nil, fetched: fetched)
         let model = ForumBoardViewModel(fid: "5", title: nil, repository: repository, settingsStore: settingsStore)
-        let saveCounter = SettingsStoreSaveCounter(changeID: settingsStore.changeID)
+        let saveCounter = SettingsStoreSaveCounter(store: settingsStore)
 
         await model.load()
         try await Task.sleep(nanoseconds: 200_000_000)
@@ -360,28 +360,33 @@ final class ForumBoardViewModelTests: XCTestCase {
     }
 }
 
-/// Counts `SettingsStore.didChangeNotification` posts from ONE specific
-/// store (matched by its `changeID`) — the observable signal that a save
-/// actually hit the store, used to prove the board-name snapshot refresh's
-/// diff guard writes exactly once / not at all.
+/// Counts `SettingsStore.changes()` elements from ONE specific store
+/// (matched by its `changeID`) — the observable signal that a save actually
+/// hit the store, used to prove the board-name snapshot refresh's diff
+/// guard writes exactly once / not at all.
 private final class SettingsStoreSaveCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var observedCount = 0
-    private var token: (any NSObjectProtocol)?
+    private var consumeTask: Task<Void, Never>?
 
-    init(changeID: String) {
-        token = NotificationCenter.default.addObserver(
-            forName: SettingsStore.didChangeNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] notification in
-            guard let self,
-                  notification.userInfo?[SettingsStore.changeIDUserInfoKey] as? String == changeID else {
-                return
+    init(store: SettingsStore) {
+        // The stream is obtained synchronously here so registration has
+        // completed by the time init returns — the same "no save can slip
+        // past between counter creation and observation" guarantee
+        // `addObserver` used to give; elements posted before the draining
+        // task first runs simply buffer.
+        let changes = store.changes()
+        let changeID = store.changeID
+        consumeTask = Task { [weak self] in
+            for await incoming in changes {
+                // Per-instance stream; the comparison stays as the explicit
+                // "count only this exact store instance" contract.
+                guard incoming == changeID else { continue }
+                guard let self else { return }
+                self.lock.lock()
+                self.observedCount += 1
+                self.lock.unlock()
             }
-            self.lock.lock()
-            self.observedCount += 1
-            self.lock.unlock()
         }
     }
 
@@ -392,9 +397,7 @@ private final class SettingsStoreSaveCounter: @unchecked Sendable {
     }
 
     deinit {
-        if let token {
-            NotificationCenter.default.removeObserver(token)
-        }
+        consumeTask?.cancel()
     }
 }
 
@@ -406,14 +409,15 @@ private func waitForBoardCondition(
     timeout: TimeInterval = 2,
     condition: @escaping () async -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if await condition() {
-            return
-        }
-        try await Task.sleep(nanoseconds: 20_000_000)
+    do {
+        try await waitForCondition(
+            timeout: .seconds(timeout),
+            pollInterval: .milliseconds(20),
+            condition
+        )
+    } catch is TestWaitTimeoutError {
+        XCTFail("Timed out waiting for condition")
     }
-    XCTFail("Timed out waiting for condition")
 }
 
 private actor ForumBoardRepositoryStub: ForumBoardPageLoading {

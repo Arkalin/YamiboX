@@ -201,7 +201,7 @@ public struct YamiboAccountService: Sendable {
         ]
 
         for selector in selectors {
-            guard let text = try? document.select(selector).first()?.text() else { continue }
+            guard let text = document.select(selector).first()?.text() else { continue }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 return trimmed
@@ -209,12 +209,6 @@ public struct YamiboAccountService: Sendable {
         }
 
         return L10n.string("error.login_failed")
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
     }
 }
 

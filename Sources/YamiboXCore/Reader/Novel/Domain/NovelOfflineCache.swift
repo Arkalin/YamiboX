@@ -30,7 +30,7 @@ public struct NovelOfflineCacheEntry: Codable, Hashable, Identifiable, Sendable 
             self.title = Self.defaultTitle(document: document)
         }
         self.document = document
-        self.imageURLs = Self.uniqueURLs(imageURLs)
+        self.imageURLs = imageURLs.removingDuplicateURLs()
         self.updatedAt = updatedAt
     }
 
@@ -58,12 +58,10 @@ public struct NovelOfflineCacheEntry: Codable, Hashable, Identifiable, Sendable 
             view: 1,
             authorID: authorID
         )
-        return [
-            "tid",
-            identity.threadID,
-            "author",
-            normalizedAuthorID(authorID) ?? "all"
-        ].joined(separator: "_")
+        return ReaderCacheKeyCodec.groupKey(
+            threadID: identity.threadID,
+            authorID: identity.authorID
+        )
     }
 
     public static func entryKey(
@@ -71,50 +69,29 @@ public struct NovelOfflineCacheEntry: Codable, Hashable, Identifiable, Sendable 
         view: Int,
         authorID: String?
     ) -> String {
-        let normalizedView = NovelReaderCacheIdentity(
+        let identity = NovelReaderCacheIdentity(
             threadID: threadID,
             view: view,
             authorID: authorID
-        ).view
-        return [
-            groupKey(threadID: threadID, authorID: authorID),
-            "view",
-            String(normalizedView)
-        ].joined(separator: "_")
+        )
+        return ReaderCacheKeyCodec.entryKey(
+            threadID: identity.threadID,
+            view: identity.view,
+            authorID: identity.authorID
+        )
     }
 
     static func entryKeyComponents(from key: String) -> NovelOfflineCacheEntryKeyComponents? {
-        let components = key.components(separatedBy: "_")
-        guard components.count == 6,
-              components[0] == "tid",
-              components[2] == "author",
-              components[4] == "view",
-              let view = Int(components[5]) else {
-            return nil
-        }
+        guard let components = ReaderCacheKeyCodec.components(from: key) else { return nil }
         return NovelOfflineCacheEntryKeyComponents(
-            threadID: components[1],
-            authorID: components[3] == "all" ? nil : components[3],
-            view: max(1, view)
+            threadID: components.threadID,
+            authorID: components.authorID,
+            view: components.view
         )
     }
 
     public static func defaultTitle(document: NovelReaderProjection) -> String {
         L10n.string("reader.page_number_spaced", document.view)
-    }
-
-    private static func normalizedAuthorID(_ authorID: String?) -> String? {
-        let value = authorID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return value.isEmpty ? nil : value
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var output: [URL] = []
-        for url in urls where seen.insert(url.absoluteString).inserted {
-            output.append(url)
-        }
-        return output
     }
 }
 
@@ -167,17 +144,8 @@ public struct NovelOfflineCacheWorkRequest: Hashable, Sendable {
         if self.authorID?.isEmpty == true {
             self.authorID = nil
         }
-        self.targetImageURLs = Self.uniqueURLs(targetImageURLs)
+        self.targetImageURLs = targetImageURLs.removingDuplicateURLs()
         self.retainsInlineImages = retainsInlineImages
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var output: [URL] = []
-        for url in urls where seen.insert(url.absoluteString).inserted {
-            output.append(url)
-        }
-        return output
     }
 }
 

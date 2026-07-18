@@ -3,7 +3,7 @@ import Foundation
 /// Parses the inline comment ("点评") list attached to a post.
 enum ForumThreadCommentParser {
     static func comments(in container: Element, postID: String) throws -> [ForumThreadPostComment] {
-        let roots = try (
+        let roots = (
             container.selectAll("#comment_\(postID)") + container.selectAll(".cm, [id^=comment_]")
         ).deduplicatedByDOMIdentity()
         var comments: [ForumThreadPostComment] = []
@@ -34,9 +34,9 @@ enum ForumThreadCommentParser {
             .compactMap { $0.normalizedText().nilIfBlank }
             .joined(separator: " ")
             .nilIfBlank
-        let messageDocument = try KannaSoup.parseBodyFragment(try messageElement.html(), baseURL: YamiboDomain.baseURL.absoluteString)
+        let messageDocument = try KannaSoup.parseBodyFragment(messageElement.html(), baseURL: YamiboDomain.baseURL.absoluteString)
         let messageBody = messageDocument.body() ?? messageDocument
-        try messageBody.select(".xg1, .time, .date").remove()
+        messageBody.select(".xg1, .time, .date").remove()
         let message = messageBody.normalizedText()
         guard !message.isEmpty else { return nil }
 
@@ -44,7 +44,7 @@ enum ForumThreadCommentParser {
         let authorName = (authorLink?.normalizedText() ?? "")
             .nilIfBlank
             ?? L10n.string("reader.comment_anonymous")
-        let uid = authorLink.flatMap { ForumUserIDParser.userID(fromHref: (try? $0.attr("href")) ?? "") }
+        let uid = authorLink.flatMap { ForumUserIDParser.userID(fromHref: $0.attr("href")) }
         let id = root.id().nilIfBlank.map { "\($0)-\(index)" }
             ?? "\(postID)-comment-\(index)"
         return ForumThreadPostComment(

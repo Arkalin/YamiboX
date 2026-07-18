@@ -87,7 +87,7 @@ import YamiboXTestSupport
 /// directory-scoped query, not just at `reload()` time. Mirrors
 /// `forumNovelDetailRefreshesReadingProgressWhenReadingProgressStoreChanges`'s
 /// polling style, since the update arrives asynchronously through
-/// `ReadingProgressStore.didChangeNotification`.
+/// `ReadingProgressStore.changes()`.
 @MainActor
 @Test func forumMangaDetailLiveUpdateUsesDirectoryLevelProgressAfterReload() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-live-progress")
@@ -616,7 +616,7 @@ import YamiboXTestSupport
 /// this detail page stays open underneath it) must refresh both `directory`
 /// and its derived `.smartManga` cover here too — not just on the Favorites
 /// tab (`FavoriteLibraryOrganizer`'s own `MangaDirectoryStore
-/// .didChangeNotification` listener). Before this listener existed, the
+/// .changes()` listener). Before this listener existed, the
 /// stale `cleanBookName` left `loadContentCover()` querying a cover key the
 /// rename had already moved away from, so the cover (and everything else
 /// derived from `directory`) never updated until some unrelated action
@@ -998,6 +998,8 @@ private final class RenameRecordingMangaOfflineCacheStore: MangaOfflineCacheStor
     }
 
     func offlineImageData(for imageURL: URL) async -> Data? { nil }
+
+    func hasOfflineImage(for imageURL: URL) async -> Bool { false }
 
     func saveOfflineImageData(_ data: Data, for imageURL: URL) async throws {}
 

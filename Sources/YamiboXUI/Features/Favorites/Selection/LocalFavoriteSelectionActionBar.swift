@@ -8,7 +8,7 @@ import YamiboXCore
 /// (i.e. nothing is selected — every action needs at least one selected
 /// entry).
 struct LocalFavoriteSelectionActionBar: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
 

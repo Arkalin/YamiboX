@@ -8,6 +8,9 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # Lets other workflows (release.yml) run this exact build-and-test job as
+  # their quality gate instead of maintaining a drifting copy of it.
+  workflow_call:
 
 jobs:
   build:

@@ -92,7 +92,7 @@ struct MangaReaderBottomChrome: View {
         }
         .padding(.top, layout.bottomChromeTopPadding)
         .padding(.horizontal, 12)
-        .padding(.bottom, max(bottomInset - 18, 8))
+        .padding(.bottom, layout.bottomPadding(forBottomInset: bottomInset))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .overlay {
             if let preview = centerProgressPreview {
@@ -134,9 +134,7 @@ private struct MangaReaderDirectoryProgressControl: View {
     let onShowDirectory: () -> Void
     let onJumpToLocalPage: (Int) -> Void
 
-    @State private var progressTickFeedbackGenerator = UISelectionFeedbackGenerator()
-    @State private var progressStartFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
-    @State private var progressCommitFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
+    @State private var scrubFeedback = ReaderProgressScrubFeedback()
 
     var body: some View {
         ReaderDirectoryProgressCapsule(
@@ -193,20 +191,7 @@ private struct MangaReaderDirectoryProgressControl: View {
     }
 
     private func triggerFeedback(_ haptics: [ReaderProgressScrubHaptic]) {
-        for haptic in haptics {
-            switch haptic {
-            case .start:
-                progressStartFeedbackGenerator.impactOccurred()
-                progressStartFeedbackGenerator.prepare()
-                progressTickFeedbackGenerator.prepare()
-            case .chapterTick:
-                progressTickFeedbackGenerator.selectionChanged()
-                progressTickFeedbackGenerator.prepare()
-            case .commit:
-                progressCommitFeedbackGenerator.impactOccurred()
-                progressCommitFeedbackGenerator.prepare()
-            }
-        }
+        scrubFeedback.trigger(haptics)
     }
 }
 

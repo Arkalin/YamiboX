@@ -11,7 +11,12 @@ public struct SettingsHomeView: View {
     private let onApplicationReset: @MainActor () async -> Void
     private let onClose: () -> Void
 
-    @StateObject private var viewModel: SystemSettingsViewModel
+    /// `@State` (not `@StateObject`) because the view model is `@Observable`.
+    /// SwiftUI keeps the first instance for the view's lifetime; the
+    /// constructions on later `init` calls are discarded, which is safe here
+    /// because `SystemSettingsViewModel.init` only wires objects together and
+    /// has no side effects.
+    @State private var viewModel: SystemSettingsViewModel
     @State private var searchText = ""
     @State private var pushedCategory: SettingsCategory?
     @State private var isAboutPushed = false
@@ -25,7 +30,7 @@ public struct SettingsHomeView: View {
         onApplicationReset: @escaping @MainActor () async -> Void,
         onClose: @escaping () -> Void
     ) {
-        _viewModel = StateObject(wrappedValue: SystemSettingsViewModel(dependencies: dependencies))
+        _viewModel = State(initialValue: SystemSettingsViewModel(dependencies: dependencies))
         self.dependencies = dependencies
         self.peripheralInput = peripheralInput
         self.onSignOut = onSignOut
@@ -155,15 +160,21 @@ public struct SettingsHomeView: View {
     private func categoryView(for category: SettingsCategory) -> some View {
         switch category {
         case .general:
-            SettingsGeneralView(viewModel: viewModel)
+            SettingsGeneralView(viewModel: viewModel.general)
         case .favorites:
-            SettingsFavoritesView(dependencies: dependencies, viewModel: viewModel)
+            SettingsFavoritesView(dependencies: dependencies, viewModel: viewModel.favorites)
         case .reading:
-            SettingsReadingView(viewModel: viewModel)
+            SettingsReadingView(viewModel: viewModel.reading)
         case .peripherals:
-            SystemSettingsPeripheralPageTurnView(viewModel: viewModel, peripheralInput: peripheralInput)
+            SystemSettingsPeripheralPageTurnView(viewModel: viewModel.peripherals, peripheralInput: peripheralInput)
         case .storage:
-            SettingsStorageView(dependencies: dependencies, viewModel: viewModel, onReset: handleApplicationReset)
+            SettingsStorageView(
+                dependencies: dependencies,
+                viewModel: viewModel.storage,
+                offlineCacheManagement: viewModel.offlineCacheManagement,
+                mangaDirectoryManagement: viewModel.mangaDirectoryManagement,
+                onReset: handleApplicationReset
+            )
         }
     }
 

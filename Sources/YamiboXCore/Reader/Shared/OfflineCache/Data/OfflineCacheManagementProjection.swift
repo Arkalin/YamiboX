@@ -3,7 +3,7 @@ import Foundation
 
 extension OfflineCacheStore {
     func offlineCacheManagementSnapshot() async -> OfflineCacheManagementSnapshot {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 try Self.managementSnapshot(
@@ -91,7 +91,7 @@ extension OfflineCacheStore {
         }
 
         let entries = try builders.values.map { builder in
-            try builder.entry(byteCount: builder.byteCount + imageByteCount(for: builder.imageURLStrings, in: db))
+            try builder.entry(byteCount: builder.byteCount + imageAssetByteCount(forImageURLStrings: builder.imageURLStrings, in: db))
         }
         let grouped = Dictionary(grouping: entries, by: \.id.groupID)
         let groups = try grouped.map { groupID, entries in
@@ -108,7 +108,7 @@ extension OfflineCacheStore {
             let groupEntryBytes = builders.values
                 .filter { $0.id.groupID == groupID }
                 .reduce(0) { $0 + $1.byteCount }
-            let byteCount = try groupEntryBytes + imageByteCount(for: groupURLStrings, in: db)
+            let byteCount = try groupEntryBytes + imageAssetByteCount(forImageURLStrings: groupURLStrings, in: db)
             let pendingCount = sortedEntries.filter { [.queued, .running, .paused].contains($0.state) }.count
             let failedCount = sortedEntries.filter { $0.state == .failed }.count
             let cachedCount = sortedEntries.filter { $0.state == .cached }.count
@@ -150,17 +150,6 @@ extension OfflineCacheStore {
         groupTitles[groupID] = OfflineCacheManagementGroupTitle(title: title, updatedAt: updatedAt)
     }
 
-    private static func imageByteCount(for imageURLStrings: Set<String>, in db: Database) throws -> Int {
-        var byteCount = 0
-        for imageURLString in imageURLStrings {
-            byteCount += try Int.fetchOne(
-                db,
-                sql: "SELECT byte_count FROM offline_cache_image_assets WHERE image_url = ?",
-                arguments: [imageURLString]
-            ) ?? 0
-        }
-        return byteCount
-    }
 }
 
 private struct OfflineCacheManagementGroupTitle {

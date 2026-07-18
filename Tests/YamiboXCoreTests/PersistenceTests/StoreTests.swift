@@ -1103,3 +1103,26 @@ private func makeTemporaryDirectory(prefix: String) -> URL {
     try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
     return baseURL
 }
+
+@Test func yamiboDatabaseQuarantinesCorruptFileAndRecreates() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("yamibo-corrupt-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let databaseURL = YamiboDatabase.databaseURL(rootDirectory: root)
+    try Data("this is not a sqlite database, but it is long enough to have a header".utf8)
+        .write(to: databaseURL)
+
+    // A corrupt file must not propagate as an error (the callers' fatalError
+    // path would crash-loop the app); it is quarantined and recreated.
+    let pool = try YamiboDatabase.openPool(rootDirectory: root)
+    let migrationsTableExists = try await pool.read { db in
+        try db.tableExists("grdb_migrations")
+    }
+    #expect(migrationsTableExists)
+
+    // The corpse is preserved for diagnosis rather than deleted.
+    let siblings = try FileManager.default.contentsOfDirectory(atPath: root.path)
+    #expect(siblings.contains { $0.contains(".corrupt-") })
+}

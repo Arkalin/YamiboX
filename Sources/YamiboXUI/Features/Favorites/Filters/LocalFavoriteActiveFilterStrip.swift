@@ -5,7 +5,7 @@ import YamiboXCore
 /// one-tap clearing. The caller (`LocalFavoriteBrowseChrome`) only includes
 /// this view while a filter is active, so it renders unconditionally.
 struct LocalFavoriteActiveFilterStrip: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {

@@ -26,14 +26,14 @@ package struct NovelChapterDirectoryEntry: Hashable, Sendable {
 
 package enum NovelChapterDirectoryExtractor {
     package static func entries(
-        from document: NovelReaderProjection,
+        from projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings
     ) -> [NovelChapterDirectoryEntry] {
         var seenIdentities: Set<NovelChapterIdentity> = []
-        return document.segments.indices.compactMap { index in
-            let segment = document.segments[index]
-            let semantics = document.semantics(forSegmentIndex: index)
-            let source = document.source(forSegmentIndex: index)
+        return projection.segments.indices.compactMap { index in
+            let segment = projection.segments[index]
+            let semantics = projection.semantics(forSegmentIndex: index)
+            let source = projection.source(forSegmentIndex: index)
             if source?.isAuthorReplyToOther == true, !settings.showsAuthorRepliesToOthers {
                 return nil
             }
@@ -47,14 +47,14 @@ package enum NovelChapterDirectoryExtractor {
             let anchor = semantics.textSegmentIdentity.map {
                 NovelChapterAnchor(
                     resumePoint: NovelResumePoint(
-                        view: document.view,
+                        view: projection.view,
                         chapterIdentity: chapterIdentity,
                         textSegmentIdentity: $0,
                         displayedTextOffset: 0,
                         chapterOrdinal: ordinal,
                         chapterTitle: title,
                         segmentProgress: 0,
-                        authorID: document.resolvedAuthorID,
+                        authorID: projection.resolvedAuthorID,
                         readingModeHint: settings.readingMode
                     )
                 )

@@ -25,7 +25,7 @@ struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(LikeLibraryWebDAVPayload.self, from: data)
-        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt)
+        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
     }
 
     func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
@@ -68,14 +68,19 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
 
     var version: Int
     var updatedAt: Date
+    /// Monotonic per-dataset sync revision, stamped into the envelope by the
+    /// sync service after export; nil for payloads written before revisions
+    /// existed (decode falls back to `updatedAt` comparisons then).
+    var syncRevision: UInt64?
     var items: [LikeItem]
     /// itemID -> deletedAt. Bare by design: deleted content has nothing left
     /// worth syncing, only the fact and time of deletion.
     var tombstones: [String: Date]
 
-    init(version: Int = Self.currentVersion, updatedAt: Date, items: [LikeItem], tombstones: [String: Date]) {
+    init(version: Int = Self.currentVersion, updatedAt: Date, syncRevision: UInt64? = nil, items: [LikeItem], tombstones: [String: Date]) {
         self.version = version
         self.updatedAt = updatedAt
+        self.syncRevision = syncRevision
         self.items = items
         self.tombstones = tombstones
     }
@@ -86,6 +91,7 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
     init(updatedAt: Date, localSnapshot: [LikeItem]) {
         self.version = Self.currentVersion
         self.updatedAt = updatedAt
+        self.syncRevision = nil
         self.items = localSnapshot.filter { $0.deletedAt == nil }
         self.tombstones = Dictionary(uniqueKeysWithValues: localSnapshot.compactMap { item in
             item.deletedAt.map { (item.id, $0) }
@@ -95,6 +101,7 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case version
         case updatedAt
+        case syncRevision
         case items
         case tombstones
     }
@@ -109,6 +116,7 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         }
         self.version = version
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.items = try container.decode([LikeItem].self, forKey: .items)
         self.tombstones = try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
     }
@@ -117,6 +125,7 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(syncRevision, forKey: .syncRevision)
         try container.encode(items, forKey: .items)
         try container.encode(tombstones, forKey: .tombstones)
     }

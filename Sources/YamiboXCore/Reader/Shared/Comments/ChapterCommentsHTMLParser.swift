@@ -18,8 +18,8 @@ enum ChapterCommentsHTMLParser {
     ) throws -> ChapterCommentsPage {
         let document = try KannaSoup.parse(html)
         var comments: [ChapterComment] = []
-        comments.append(contentsOf: try postComments(in: document, target: target))
-        comments.append(contentsOf: try ratingReasons(in: document, target: target))
+        comments.append(contentsOf: postComments(in: document, target: target))
+        comments.append(contentsOf: ratingReasons(in: document, target: target))
         let replies = try samePageReplies(in: document, target: target)
         comments.append(contentsOf: replies.comments)
         return ChapterCommentsPage(
@@ -63,12 +63,12 @@ enum ChapterCommentsHTMLParser {
         target: ReaderChapterCommentTarget
     ) throws -> [ChapterComment] {
         let document = try KannaSoup.parse(html)
-        let rows = try document.select(".post_box li.flex-box").array()
+        let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
         var pending: (author: String, metadata: String?)?
 
         for row in rows {
-            let values = try row.select("span.z, span.y").array().map { normalizeText(try $0.text()) }
+            let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
             if values.count >= 3, values[0].contains("积分") {
                 pending = (
                     author: values[1],
@@ -103,14 +103,14 @@ enum ChapterCommentsHTMLParser {
     private static func postComments(
         in document: Document,
         target: ReaderChapterCommentTarget
-    ) throws -> [ChapterComment] {
-        let rows = try document.select("#comment_\(target.ownerPostID) .pstl")
-        var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
-            let author = try row.select(".psta a.xi2, .psta a.xw1, .psta a").first()?.text() ?? ""
-            guard let bodyElement = try row.select(".psti").first() else { return nil }
-            let metadata = try bodyElement.select(".xg1").first()?.text()
-            try bodyElement.select(".xg1").remove()
-            let body = normalizeText(try bodyElement.text())
+    ) -> [ChapterComment] {
+        let rows = document.select("#comment_\(target.ownerPostID) .pstl")
+        var comments: [ChapterComment] = rows.array().enumerated().compactMap { offset, row in
+            let author = row.select(".psta a.xi2, .psta a.xw1, .psta a").first()?.text() ?? ""
+            guard let bodyElement = row.select(".psti").first() else { return nil }
+            let metadata = bodyElement.select(".xg1").first()?.text()
+            bodyElement.select(".xg1").remove()
+            let body = normalizeText(bodyElement.text())
             guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment:\(offset)",
@@ -121,19 +121,19 @@ enum ChapterCommentsHTMLParser {
                 postID: target.ownerPostID
             )
         }
-        comments.append(contentsOf: try mobilePostComments(in: document, target: target))
+        comments.append(contentsOf: mobilePostComments(in: document, target: target))
         return comments
     }
 
     private static func ratingReasons(
         in document: Document,
         target: ReaderChapterCommentTarget
-    ) throws -> [ChapterComment] {
-        let rows = try document.select("[id=ratelog_\(target.ownerPostID)] tr")
-        var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
-            let cells = try row.select("td")
-            let author = try cells.first()?.select("a").last()?.text() ?? ""
-            let reason = normalizeRatingReason(try row.select("td.xg1").first()?.text() ?? "")
+    ) -> [ChapterComment] {
+        let rows = document.select("[id=ratelog_\(target.ownerPostID)] tr")
+        var comments: [ChapterComment] = rows.array().enumerated().compactMap { offset, row in
+            let cells = row.select("td")
+            let author = cells.first()?.select("a").last()?.text() ?? ""
+            let reason = normalizeRatingReason(row.select("td.xg1").first()?.text() ?? "")
             guard !reason.isEmpty, !filteredRatingReasons.contains(reason) else {
                 return nil
             }
@@ -145,19 +145,19 @@ enum ChapterCommentsHTMLParser {
                 postID: target.ownerPostID
             )
         }
-        comments.append(contentsOf: try mobileRatingReasons(in: document, target: target))
+        comments.append(contentsOf: mobileRatingReasons(in: document, target: target))
         return comments
     }
 
     private static func mobilePostComments(
         in document: Document,
         target: ReaderChapterCommentTarget
-    ) throws -> [ChapterComment] {
-        let rows = try document.select("[id=comment_\(target.ownerPostID)] [id^=commentdetail_]")
-        return try rows.array().enumerated().compactMap { offset, row in
-            let author = try row.select("a").first()?.text() ?? ""
-            let metadata = try row.select(".mtime").first()?.text()
-            let body = normalizeText(try row.select(".mtxt").first()?.text() ?? "")
+    ) -> [ChapterComment] {
+        let rows = document.select("[id=comment_\(target.ownerPostID)] [id^=commentdetail_]")
+        return rows.array().enumerated().compactMap { offset, row in
+            let author = row.select("a").first()?.text() ?? ""
+            let metadata = row.select(".mtime").first()?.text()
+            let body = normalizeText(row.select(".mtxt").first()?.text() ?? "")
             guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment-mobile:\(offset)",
@@ -173,13 +173,13 @@ enum ChapterCommentsHTMLParser {
     private static func mobileRatingReasons(
         in document: Document,
         target: ReaderChapterCommentTarget
-    ) throws -> [ChapterComment] {
-        let rows = try document.select("[id=ratelog_\(target.ownerPostID)] li.flex-box")
-        return try rows.array().enumerated().compactMap { offset, row in
+    ) -> [ChapterComment] {
+        let rows = document.select("[id=ratelog_\(target.ownerPostID)] li.flex-box")
+        return rows.array().enumerated().compactMap { offset, row in
             let cells = row.children().array()
             guard cells.count >= 3 else { return nil }
-            let author = try cells[0].select("a").last()?.text() ?? ""
-            let reason = normalizeRatingReason(try cells[2].text())
+            let author = cells[0].select("a").last()?.text() ?? ""
+            let reason = normalizeRatingReason(cells[2].text())
             guard reason != "理由",
                   !reason.isEmpty,
                   !filteredRatingReasons.contains(reason) else {
@@ -199,7 +199,7 @@ enum ChapterCommentsHTMLParser {
         in document: Document,
         target: ReaderChapterCommentTarget
     ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
-        let messageNodes = try replyMessageNodes(in: document)
+        let messageNodes = replyMessageNodes(in: document)
         var foundTarget = false
         var comments: [ChapterComment] = []
 
@@ -237,7 +237,7 @@ enum ChapterCommentsHTMLParser {
         in document: Document,
         target: ReaderChapterCommentTarget
     ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
-        let messageNodes = try replyMessageNodes(in: document)
+        let messageNodes = replyMessageNodes(in: document)
         var comments: [ChapterComment] = []
 
         for message in messageNodes {
@@ -263,12 +263,12 @@ enum ChapterCommentsHTMLParser {
         return (comments, false)
     }
 
-    private static func replyMessageNodes(in document: Document) throws -> [Element] {
-        let nodes = try document.select(".message, [id^=postmessage_]").array()
+    private static func replyMessageNodes(in document: Document) -> [Element] {
+        let nodes = document.select(".message, [id^=postmessage_]").array()
         var uniqueNodes: [Element] = []
         for node in nodes {
             if !isPostMessageElement(node),
-               ((try? node.select("[id^=postmessage_]").isEmpty) == false) {
+               !node.select("[id^=postmessage_]").isEmpty {
                 continue
             }
             if uniqueNodes.contains(where: { $0.isSameDOMNode(as: node) }) {
@@ -280,10 +280,10 @@ enum ChapterCommentsHTMLParser {
     }
 
     private static func replyBody(from message: Element) throws -> String? {
-        let fragment = try KannaSoup.parseBodyFragment(try message.html())
+        let fragment = try KannaSoup.parseBodyFragment(message.html())
         guard let body = fragment.body() else { return nil }
-        try body.select(".quote, blockquote, i, .pstatus").remove()
-        let text = normalizeText(try body.text())
+        body.select(".quote, blockquote, i, .pstatus").remove()
+        let text = normalizeText(body.text())
         return text.isEmpty ? nil : text
     }
 
@@ -291,7 +291,7 @@ enum ChapterCommentsHTMLParser {
         guard let container = postContainer(for: message) else {
             return false
         }
-        if ((try? container.select("[title=楼主]").isEmpty) == false) {
+        if !container.select("[title=楼主]").isEmpty {
             return true
         }
         if let authorID = target.authorID,
@@ -337,12 +337,12 @@ enum ChapterCommentsHTMLParser {
     private static func postContainer(for element: Element) -> Element? {
         var current: Element? = element
         while let candidate = current {
-            if let id = try? candidate.attr("id"),
-               id.hasPrefix("post_") || id.hasPrefix("pid") {
+            let id = candidate.attr("id")
+            if id.hasPrefix("post_") || id.hasPrefix("pid") {
                 return candidate
             }
-            if ((try? candidate.select(".authi").isEmpty) == false),
-               ((try? candidate.select("[id^=postmessage_], .message").isEmpty) == false) {
+            if !candidate.select(".authi").isEmpty,
+               !candidate.select("[id^=postmessage_], .message").isEmpty {
                 return candidate
             }
             current = candidate.parent()
@@ -351,7 +351,7 @@ enum ChapterCommentsHTMLParser {
     }
 
     private static func postID(from element: Element) -> String? {
-        let raw = (try? element.attr("id"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let raw = element.attr("id").trimmingCharacters(in: .whitespacesAndNewlines)
         if let value = postID(fromRawID: raw, prefix: "postmessage_") {
             return value
         }
@@ -360,7 +360,7 @@ enum ChapterCommentsHTMLParser {
         }
         var current = element.parent()
         while let candidate = current {
-            let candidateID = (try? candidate.attr("id"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let candidateID = candidate.attr("id").trimmingCharacters(in: .whitespacesAndNewlines)
             if let value = postID(fromRawID: candidateID, prefix: "post_") {
                 return value
             }
@@ -373,7 +373,7 @@ enum ChapterCommentsHTMLParser {
     }
 
     private static func isPostMessageElement(_ element: Element) -> Bool {
-        let rawID = (try? element.attr("id"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawID = element.attr("id").trimmingCharacters(in: .whitespacesAndNewlines)
         return rawID.hasPrefix("postmessage_")
     }
 

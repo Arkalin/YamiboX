@@ -135,9 +135,3 @@ final class PrivateMessageViewModel {
         }
     }
 }
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
-}

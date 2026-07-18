@@ -160,9 +160,3 @@ final class BlogReaderViewModel {
         }
     }
 }
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
-}

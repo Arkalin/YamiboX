@@ -1,9 +1,63 @@
 import Foundation
+import Observation
 import YamiboXCore
 
-// MARK: - Offline cache management page
+/// State and commands for the offline cache management page and its
+/// per-group drill-down screen.
+@MainActor
+@Observable
+final class OfflineCacheManagementViewModel: SystemSettingsActivityReporting {
+    var offlineCacheManagementRows: [OfflineCacheManagementRow] = []
+    var selectedOfflineCacheGroupIDs: Set<OfflineCacheGroupID> = []
+    var isOfflineCacheManagementSelectionMode = false
+    var pendingOfflineCacheManagementConfirmation: OfflineCacheManagementConfirmation?
 
-extension SystemSettingsViewModel {
+    let dependencies: SettingsDependencies
+    let activity: SystemSettingsActivity
+
+    /// Deletions here shrink the Storage page's offline-cache figure, so this
+    /// page refreshes the shared usage model rather than a private counter.
+    private let storageUsage: SettingsStorageUsage
+
+    init(
+        dependencies: SettingsDependencies,
+        activity: SystemSettingsActivity,
+        storageUsage: SettingsStorageUsage
+    ) {
+        self.dependencies = dependencies
+        self.activity = activity
+        self.storageUsage = storageUsage
+    }
+
+    var offlineCacheManagementIsEmpty: Bool {
+        offlineCacheManagementRows.isEmpty
+    }
+
+    var selectedOfflineCacheGroupCount: Int {
+        selectedOfflineCacheGroupIDs.count
+    }
+
+    var offlineCacheManagementSelectionActionState: OfflineCacheManagementSelectionActionState {
+        OfflineCacheManagementSelectionActionState(
+            selectedGroupCount: selectedOfflineCacheGroupIDs.count,
+            canDelete: !selectedOfflineCacheGroupIDs.isEmpty
+                && activeAction != .clearingOfflineCache
+        )
+    }
+
+    var isOfflineCacheManagementSelectionComplete: Bool {
+        let visibleGroupIDs = Set(offlineCacheManagementRows.map(\.id))
+        return !visibleGroupIDs.isEmpty && visibleGroupIDs.isSubset(of: selectedOfflineCacheGroupIDs)
+    }
+
+    func restoreDefaultsAfterApplicationReset() {
+        offlineCacheManagementRows = []
+        selectedOfflineCacheGroupIDs = []
+        isOfflineCacheManagementSelectionMode = false
+        pendingOfflineCacheManagementConfirmation = nil
+    }
+
+    // MARK: - Loading
 
     func refreshOfflineCacheManagement() async {
         activeAction = .loading
@@ -11,6 +65,8 @@ extension SystemSettingsViewModel {
 
         await refreshOfflineCacheManagementRows()
     }
+
+    // MARK: - Deletion requests and confirmation
 
     func requestOfflineCacheGroupDeletion(id: OfflineCacheGroupID) {
         prepareOfflineCacheManagementConfirmation(groupIDs: [id])
@@ -41,6 +97,8 @@ extension SystemSettingsViewModel {
         await clearOfflineCache(groupIDs: confirmation.groupIDs, entryIDs: confirmation.entryIDs)
     }
 
+    // MARK: - Selection
+
     func setOfflineCacheManagementSelectionMode(_ isSelecting: Bool) {
         isOfflineCacheManagementSelectionMode = isSelecting
         if !isSelecting {
@@ -58,11 +116,6 @@ extension SystemSettingsViewModel {
         }
     }
 
-    var isOfflineCacheManagementSelectionComplete: Bool {
-        let visibleGroupIDs = Set(offlineCacheManagementRows.map(\.id))
-        return !visibleGroupIDs.isEmpty && visibleGroupIDs.isSubset(of: selectedOfflineCacheGroupIDs)
-    }
-
     func toggleAllOfflineCacheManagementRows() {
         let visibleGroupIDs = Set(offlineCacheManagementRows.map(\.id))
         guard !visibleGroupIDs.isEmpty else { return }
@@ -77,6 +130,8 @@ extension SystemSettingsViewModel {
     func offlineCacheManagementRow(id: OfflineCacheGroupID) -> OfflineCacheManagementRow? {
         offlineCacheManagementRows.first { $0.id == id }
     }
+
+    // MARK: - Private
 
     private func clearOfflineCache(groupIDs: [OfflineCacheGroupID], entryIDs: [OfflineCacheEntryID]) async -> Bool {
         let normalizedGroupIDs = normalizedOfflineCacheGroupIDs(groupIDs)
@@ -98,7 +153,7 @@ extension SystemSettingsViewModel {
             if selectedOfflineCacheGroupIDs.isEmpty {
                 isOfflineCacheManagementSelectionMode = false
             }
-            await refreshStorageUsage()
+            await storageUsage.refresh()
             await refreshOfflineCacheManagementRows()
             return true
         } catch {

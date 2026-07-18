@@ -1,10 +1,9 @@
 import XCTest
 @testable import YamiboXCore
 import YamiboXTestSupport
-@testable import YamiboXUI
 
 @MainActor
-final class FavoriteUpdateMonitorTests: XCTestCase {
+final class FavoriteUpdateCheckEngineTests: XCTestCase {
     func testUpdateCheckBuildsBaselineDetectsEventsAndHonorsFidFilter() async throws {
         let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-updates")
         _ = try YamiboTestDefaults.make(suiteName: suiteName)
@@ -35,7 +34,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
             ]
         ]
         var fetchedThreadIDs: [String] = []
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             pageFetcher: { item in
@@ -50,27 +49,27 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
                 return page
             }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
-        XCTAssertEqual(monitor.events.count, 0)
-        XCTAssertEqual(monitor.fidFilters.map(\.fid), ["50"])
-        XCTAssertEqual(monitor.categoryFilters.map(\.categoryID), [category.id])
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
+        XCTAssertEqual(engine.events.count, 0)
+        XCTAssertEqual(engine.fidFilters.map(\.fid), ["50"])
+        XCTAssertEqual(engine.categoryFilters.map(\.categoryID), [category.id])
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
-        XCTAssertEqual(monitor.events.count, 1)
-        XCTAssertEqual(monitor.events.first?.title, "更新主题")
-        XCTAssertEqual(monitor.events.first?.fid, "50")
-        XCTAssertEqual(monitor.events.first?.summary, .newReplies(count: 2))
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
+        XCTAssertEqual(engine.events.count, 1)
+        XCTAssertEqual(engine.events.first?.title, "更新主题")
+        XCTAssertEqual(engine.events.first?.fid, "50")
+        XCTAssertEqual(engine.events.first?.summary, .newReplies(count: 2))
 
-        await monitor.setFidFilter("50", enabled: false)
+        await engine.setFidFilter("50", enabled: false)
         let fetchCountBeforeDisabledRun = fetchedThreadIDs.count
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
         XCTAssertEqual(fetchedThreadIDs.count, fetchCountBeforeDisabledRun)
-        XCTAssertEqual(monitor.snapshot?.totalCount, 0)
+        XCTAssertEqual(engine.snapshot?.totalCount, 0)
     }
 
     func testUpdateCheckReportsFetchFailureAsFailedNotSkipped() async throws {
@@ -95,7 +94,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         ))
         try await localFavoriteLibraryStore.save(document)
 
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             // A non-offline failure (e.g. a parse error) is a genuine
@@ -104,13 +103,13 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
             // below for that distinct offline-specific contract.
             pageFetcher: { _ in throw YamiboError.parsingFailed(context: "test") }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
 
-        XCTAssertEqual(monitor.snapshot?.failedCount, 1)
-        XCTAssertEqual(monitor.snapshot?.skippedCount, 0)
+        XCTAssertEqual(engine.snapshot?.failedCount, 1)
+        XCTAssertEqual(engine.snapshot?.skippedCount, 0)
     }
 
     /// A network-unreachable fetch failure must not count toward any
@@ -146,7 +145,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         try await localFavoriteLibraryStore.save(document)
 
         var fetchedThreadIDs: [String] = []
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             pageFetcher: { item in
@@ -155,14 +154,14 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
                 throw YamiboError.offline
             }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.failed, in: monitor)
+        _ = await engine.startCheck()
+        try await waitForStatus(.failed, in: engine)
 
         XCTAssertEqual(fetchedThreadIDs.count, 1)
-        XCTAssertEqual(monitor.snapshot?.failedCount, 0)
-        XCTAssertEqual(monitor.snapshot?.errorMessage, YamiboError.offline.localizedDescription)
+        XCTAssertEqual(engine.snapshot?.failedCount, 0)
+        XCTAssertEqual(engine.snapshot?.errorMessage, YamiboError.offline.localizedDescription)
 
         let state = await favoriteUpdateStore.loadState()
         XCTAssertEqual(state.trackedTargets.count, 2)
@@ -204,7 +203,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         var fetchCount = 0
         var gateReached = false
         var gateOpen = false
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             pageFetcher: { _ in
@@ -219,10 +218,10 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
                 return page
             }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
 
         let readEvent = FavoriteUpdateEvent(
             target: .favorite(FavoriteItemTarget(kind: .normalThread, threadID: "961")),
@@ -239,7 +238,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         try await favoriteUpdateStore.insertEvent(readEvent)
         try await favoriteUpdateStore.insertEvent(dismissedEvent)
 
-        _ = await monitor.startCheck()
+        _ = await engine.startCheck()
         for _ in 0..<100 where !gateReached {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
@@ -261,7 +260,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         )
         try await favoriteUpdateStore.upsertTrackedTarget(storeOnlyTarget)
         gateOpen = true
-        try await waitForStatus(.completed, in: monitor)
+        try await waitForStatus(.completed, in: engine)
 
         let state = await favoriteUpdateStore.loadState()
         let persistedRead = try XCTUnwrap(state.events.first { $0.id == readEvent.id })
@@ -276,7 +275,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         XCTAssertNil(detected.dismissedAt)
         XCTAssertTrue(state.trackedTargets.contains { $0.id == storeOnlyTarget.id })
         XCTAssertTrue(state.trackedTargets.contains { $0.id == target.id })
-        XCTAssertEqual(Set(monitor.events.map(\.id)), [readEvent.id, storeOnlyEvent.id, detected.id])
+        XCTAssertEqual(Set(engine.events.map(\.id)), [readEvent.id, storeOnlyEvent.id, detected.id])
     }
 
     /// When the user dismisses a target's event mid-run and the same run then
@@ -313,7 +312,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         var fetchCount = 0
         var gateReached = false
         var gateOpen = false
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             pageFetcher: { _ in
@@ -328,16 +327,16 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
                 return page
             }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
-        let firstEventID = try XCTUnwrap(monitor.events.first?.id)
-        XCTAssertEqual(monitor.events.first?.summary, .newReplies(count: 2))
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
+        let firstEventID = try XCTUnwrap(engine.events.first?.id)
+        XCTAssertEqual(engine.events.first?.summary, .newReplies(count: 2))
 
-        _ = await monitor.startCheck()
+        _ = await engine.startCheck()
         for _ in 0..<100 where !gateReached {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
@@ -345,7 +344,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
 
         try await favoriteUpdateStore.dismissEvent(firstEventID)
         gateOpen = true
-        try await waitForStatus(.completed, in: monitor)
+        try await waitForStatus(.completed, in: engine)
 
         let state = await favoriteUpdateStore.loadState()
         let dismissed = try XCTUnwrap(state.events.first { $0.id == firstEventID })
@@ -354,7 +353,7 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         XCTAssertNotEqual(replacement.id, firstEventID)
         XCTAssertNil(replacement.readAt)
         XCTAssertEqual(replacement.summary, .newReplies(count: 3))
-        XCTAssertEqual(monitor.events.map(\.id), [replacement.id])
+        XCTAssertEqual(engine.events.map(\.id), [replacement.id])
     }
 
     /// Regression guard for the `.mangaTitle` dead-case cleanup. Two facts
@@ -390,19 +389,19 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
         try await localFavoriteLibraryStore.save(document)
 
         let page = try makeThreadPage(threadID: "962", postID: "p1", title: "漫画主题", replyCount: 1, pageCount: 1)
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             pageFetcher: { _ in page }
         )
-        await monitor.load()
+        await engine.load()
 
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
 
         let state = await favoriteUpdateStore.loadState()
         XCTAssertTrue(state.trackedTargets.isEmpty)
-        XCTAssertEqual(monitor.snapshot?.totalCount, 0)
+        XCTAssertEqual(engine.snapshot?.totalCount, 0)
     }
 
     // The smart-manga interval Picker's setter/getter round-trip: separate
@@ -423,74 +422,54 @@ final class FavoriteUpdateMonitorTests: XCTestCase {
             defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
             key: "settings"
         )
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: favoriteUpdateStore,
             libraryStore: localFavoriteLibraryStore,
             settingsStore: settingsStore
         )
 
-        let defaultInterval = await monitor.configuredMangaInterval()
+        let defaultInterval = await engine.configuredMangaInterval()
         XCTAssertEqual(defaultInterval, .threeDays)
 
-        await monitor.setConfiguredMangaInterval(.week)
-        await monitor.setConfiguredInterval(.day)
+        await engine.setConfiguredMangaInterval(.week)
+        await engine.setConfiguredInterval(.day)
 
-        let updatedMangaInterval = await monitor.configuredMangaInterval()
-        let updatedThreadInterval = await monitor.configuredInterval()
+        let updatedMangaInterval = await engine.configuredMangaInterval()
+        let updatedThreadInterval = await engine.configuredInterval()
         XCTAssertEqual(updatedMangaInterval, .week)
         XCTAssertEqual(updatedThreadInterval, .day)
     }
 
     private func waitForStatus(
         _ status: FavoriteUpdateRunStatus,
-        in monitor: FavoriteUpdateMonitor
+        in engine: FavoriteUpdateCheckEngine
     ) async throws {
-        for _ in 0..<100 {
-            if monitor.snapshot?.status == status {
-                return
+        do {
+            try await waitForMainActorCondition(timeout: .seconds(1), pollInterval: .milliseconds(10)) {
+                engine.snapshot?.status == status
             }
-            try await Task.sleep(nanoseconds: 10_000_000)
+        } catch is TestWaitTimeoutError {
+            XCTFail("Timed out waiting for favorite update status \(status)")
         }
-        XCTFail("Timed out waiting for favorite update status \(status)")
-    }
-
-    private func makeThreadPage(
-        threadID: String,
-        postID: String,
-        title: String,
-        replyCount: Int,
-        pageCount: Int
-    ) throws -> ForumThreadPage {
-        ForumThreadPage(
-            thread: ThreadIdentity(tid: threadID, fid: "50"),
-            title: title,
-            posts: [
-                ForumThreadPost(
-                    postID: postID,
-                    author: BlogReaderUser(uid: "u1", name: "作者"),
-                    contentHTML: "<p>正文</p>",
-                    contentText: "正文"
-                )
-            ],
-            pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: pageCount),
-            totalReplies: replyCount,
-            forumID: "50",
-            forumName: "测试板块"
-        )
     }
 }
 
-/// Builds a `FavoriteUpdateMonitor` backed by isolated per-test stores.
+/// Builds a `FavoriteUpdateCheckEngine` backed by isolated per-test stores.
 @MainActor
-private func makeUpdateMonitor(
+private func makeUpdateCheckEngine(
     updateStore: FavoriteUpdateStore,
     libraryStore: FavoriteLibraryStore,
     pageFetcher: ((FavoriteItem) async throws -> ForumThreadPage)? = nil,
     settingsStore: SettingsStore? = nil,
     mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
-    makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)? = nil
-) throws -> FavoriteUpdateMonitor {
-    let suiteName = YamiboTestDefaults.suiteName(prefix: "favorite-update-monitor-deps")
+    makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)? = nil,
+    // Optional-with-nil rather than a constructed default: default-argument
+    // expressions evaluate outside the function's @MainActor isolation, so a
+    // direct `= FavoriteUpdateActiveRunRegistry()` does not compile.
+    runRegistry: FavoriteUpdateActiveRunRegistry? = nil
+) throws -> FavoriteUpdateCheckEngine {
+    let runRegistry = runRegistry ?? FavoriteUpdateActiveRunRegistry()
+    let suiteName = YamiboTestDefaults.suiteName(prefix: "favorite-update-check-engine-deps")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
     let sessionStore = SessionStore(defaults: defaults, key: "session")
     let urlSession = YamiboNetworkConfiguration.makeSession()
@@ -498,7 +477,7 @@ private func makeUpdateMonitor(
         baseDirectory: FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
     )
-    return FavoriteUpdateMonitor(
+    return FavoriteUpdateCheckEngine(
         updateStore: updateStore,
         libraryStore: libraryStore,
         makeForumThreadReaderRepository: {
@@ -513,14 +492,15 @@ private func makeUpdateMonitor(
         settingsStore: settingsStore,
         pageFetcher: pageFetcher,
         mangaDirectoryStore: mangaDirectoryStore,
-        makeMangaDirectoryWorkflow: makeMangaDirectoryWorkflow
+        makeMangaDirectoryWorkflow: makeMangaDirectoryWorkflow,
+        runRegistry: runRegistry
     )
 }
 
 // MARK: - Smart-manga directory check lane
 
 @MainActor
-final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
+final class FavoriteUpdateCheckEngineSmartMangaTests: XCTestCase {
     private func makeSettingsStore(
         smartModeForumIDs: Set<String>,
         interval: SmartMangaUpdateCheckInterval = .day
@@ -556,15 +536,15 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
 
     private func waitForStatus(
         _ status: FavoriteUpdateRunStatus,
-        in monitor: FavoriteUpdateMonitor
+        in engine: FavoriteUpdateCheckEngine
     ) async throws {
-        for _ in 0..<100 {
-            if monitor.snapshot?.status == status {
-                return
+        do {
+            try await waitForMainActorCondition(timeout: .seconds(1), pollInterval: .milliseconds(10)) {
+                engine.snapshot?.status == status
             }
-            try await Task.sleep(nanoseconds: 10_000_000)
+        } catch is TestWaitTimeoutError {
+            XCTFail("Timed out waiting for favorite update status \(status)")
         }
-        XCTFail("Timed out waiting for favorite update status \(status)")
     }
 
     /// Backdates a tracked directory target's `lastCheckedAt` far enough
@@ -612,7 +592,7 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         ])
         let repository = RecordingMangaDirectoryRepository()
 
-        let monitor = try makeUpdateMonitor(
+        let engine = try makeUpdateCheckEngine(
             updateStore: updateStore,
             libraryStore: libraryStore,
             settingsStore: settingsStore,
@@ -621,9 +601,9 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
                 MangaDirectoryWorkflow(repository: repository, store: directoryStore, configuration: MangaDirectoryWorkflowConfiguration(searchForumID: forumID))
             }
         )
-        await monitor.load()
-        _ = await monitor.startCheck()
-        try await waitForStatus(.completed, in: monitor)
+        await engine.load()
+        _ = await engine.startCheck()
+        try await waitForStatus(.completed, in: engine)
 
         let state = await updateStore.loadState()
         let mangaTargets = state.trackedTargets.filter { $0.mode == .mangaDirectory }
@@ -637,7 +617,7 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         let searchRequests = await repository.searchRequestCount
         XCTAssertEqual(tagRequests, 0)
         XCTAssertEqual(searchRequests, 0)
-        XCTAssertTrue(monitor.events.filter { $0.mode == .mangaDirectory }.isEmpty)
+        XCTAssertTrue(engine.events.filter { $0.mode == .mangaDirectory }.isEmpty)
     }
 
     func testNewChapterDetectionMergesFavoritesAndBaselineNeverShrinksAcrossRetentionPruning() async throws {
@@ -669,35 +649,43 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
             ]
         )
 
-        func makeMonitor() throws -> FavoriteUpdateMonitor {
-            try makeUpdateMonitor(
+        // Shared across this test's engines: co-resident engines must share
+        // one run registry (see the engine's `runRegistry` doc; production
+        // wires one shared instance) or an idle sibling draining the change
+        // stream mistakes the live run for an orphan and races its
+        // interrupted-downgrade write against that run's own terminal save.
+        let runRegistry = FavoriteUpdateActiveRunRegistry()
+
+        func makeEngine() throws -> FavoriteUpdateCheckEngine {
+            try makeUpdateCheckEngine(
                 updateStore: updateStore,
                 libraryStore: libraryStore,
                 settingsStore: settingsStore,
                 mangaDirectoryStore: directoryStore,
                 makeMangaDirectoryWorkflow: { forumID in
                     MangaDirectoryWorkflow(repository: repository, store: directoryStore, configuration: MangaDirectoryWorkflowConfiguration(searchForumID: forumID))
-                }
+                },
+                runRegistry: runRegistry
             )
         }
 
         // Run 1: seeds the baseline from the two favorited chapters, no
         // network, no event.
-        let firstMonitor = try makeMonitor()
-        await firstMonitor.load()
-        _ = await firstMonitor.startCheck()
-        try await waitForStatus(.completed, in: firstMonitor)
-        XCTAssertTrue(firstMonitor.events.filter { $0.mode == .mangaDirectory }.isEmpty)
+        let firstEngine = try makeEngine()
+        await firstEngine.load()
+        _ = await firstEngine.startCheck()
+        try await waitForStatus(.completed, in: firstEngine)
+        XCTAssertTrue(firstEngine.events.filter { $0.mode == .mangaDirectory }.isEmpty)
 
         // Run 2: due; the workflow's tag refresh finds a new chapter "6003"
         // — ONE merged event for the directory, not one per favorite.
         try await backdateLastCheckedAt(cleanBookName: "连载测试漫画", in: updateStore)
-        let secondMonitor = try makeMonitor()
-        await secondMonitor.load()
-        _ = await secondMonitor.startCheck()
-        try await waitForStatus(.completed, in: secondMonitor)
+        let secondEngine = try makeEngine()
+        await secondEngine.load()
+        _ = await secondEngine.startCheck()
+        try await waitForStatus(.completed, in: secondEngine)
 
-        let mangaEvents = secondMonitor.events.filter { $0.mode == .mangaDirectory }
+        let mangaEvents = secondEngine.events.filter { $0.mode == .mangaDirectory }
         XCTAssertEqual(mangaEvents.count, 1)
         XCTAssertEqual(mangaEvents.first?.target, .mangaDirectory(cleanBookName: "连载测试漫画"))
         XCTAssertEqual(mangaEvents.first?.summary, .newChapters(count: 1))
@@ -715,11 +703,11 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
             makeChapter(tid: "6002", title: "第2话", chapterNumber: 2),
             makeChapter(tid: "6003", title: "第3话", chapterNumber: 3),
         ])
-        let thirdMonitor = try makeMonitor()
-        await thirdMonitor.load()
-        _ = await thirdMonitor.startCheck()
-        try await waitForStatus(.completed, in: thirdMonitor)
-        let thirdRunMangaEvents = thirdMonitor.events.filter { $0.mode == .mangaDirectory && $0.dismissedAt == nil }
+        let thirdEngine = try makeEngine()
+        await thirdEngine.load()
+        _ = await thirdEngine.startCheck()
+        try await waitForStatus(.completed, in: thirdEngine)
+        let thirdRunMangaEvents = thirdEngine.events.filter { $0.mode == .mangaDirectory && $0.dismissedAt == nil }
         XCTAssertEqual(thirdRunMangaEvents.count, 1, "pruning must not fabricate a spurious new-chapter event")
         XCTAssertEqual(thirdRunMangaEvents.first?.summary, .newChapters(count: 1), "the run-2 event must stay unchanged, not merged with a zero delta")
 
@@ -735,13 +723,13 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
             makeChapter(tid: "6002", title: "第2话", chapterNumber: 2),
             makeChapter(tid: "6003", title: "第3话", chapterNumber: 3),
         ])
-        let fourthMonitor = try makeMonitor()
-        await fourthMonitor.load()
-        _ = await fourthMonitor.startCheck()
-        try await waitForStatus(.completed, in: fourthMonitor)
+        let fourthEngine = try makeEngine()
+        await fourthEngine.load()
+        _ = await fourthEngine.startCheck()
+        try await waitForStatus(.completed, in: fourthEngine)
         // Still just the run-2-detected event (accumulated), no fresh
         // "6001 is new" report.
-        let finalEvents = fourthMonitor.events.filter { $0.mode == .mangaDirectory && $0.dismissedAt == nil }
+        let finalEvents = fourthEngine.events.filter { $0.mode == .mangaDirectory && $0.dismissedAt == nil }
         XCTAssertEqual(finalEvents.count, 1)
         XCTAssertEqual(finalEvents.first?.summary, .newChapters(count: 1))
     }
@@ -768,33 +756,41 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         ])
         let repository = RecordingMangaDirectoryRepository(searchError: YamiboError.floodControl)
 
-        func makeMonitor() throws -> FavoriteUpdateMonitor {
-            try makeUpdateMonitor(
+        // Shared across this test's engines: co-resident engines must share
+        // one run registry (see the engine's `runRegistry` doc; production
+        // wires one shared instance) or an idle sibling draining the change
+        // stream mistakes the live run for an orphan and races its
+        // interrupted-downgrade write against that run's own terminal save.
+        let runRegistry = FavoriteUpdateActiveRunRegistry()
+
+        func makeEngine() throws -> FavoriteUpdateCheckEngine {
+            try makeUpdateCheckEngine(
                 updateStore: updateStore,
                 libraryStore: libraryStore,
                 settingsStore: settingsStore,
                 mangaDirectoryStore: directoryStore,
                 makeMangaDirectoryWorkflow: { forumID in
                     MangaDirectoryWorkflow(repository: repository, store: directoryStore, configuration: MangaDirectoryWorkflowConfiguration(searchForumID: forumID))
-                }
+                },
+                runRegistry: runRegistry
             )
         }
 
-        let firstMonitor = try makeMonitor()
-        await firstMonitor.load()
-        _ = await firstMonitor.startCheck()
-        try await waitForStatus(.completed, in: firstMonitor)
+        let firstEngine = try makeEngine()
+        await firstEngine.load()
+        _ = await firstEngine.startCheck()
+        try await waitForStatus(.completed, in: firstEngine)
 
         try await backdateLastCheckedAt(cleanBookName: "冷却测试漫画", in: updateStore)
         let stateBeforeSkip = await updateStore.loadState()
         let beforeSkip = try XCTUnwrap(stateBeforeSkip.trackedTargets.first { $0.target == .mangaDirectory(cleanBookName: "冷却测试漫画") })
 
-        let secondMonitor = try makeMonitor()
-        await secondMonitor.load()
-        _ = await secondMonitor.startCheck()
-        try await waitForStatus(.completed, in: secondMonitor)
+        let secondEngine = try makeEngine()
+        await secondEngine.load()
+        _ = await secondEngine.startCheck()
+        try await waitForStatus(.completed, in: secondEngine)
 
-        XCTAssertTrue(secondMonitor.events.filter { $0.mode == .mangaDirectory }.isEmpty)
+        XCTAssertTrue(secondEngine.events.filter { $0.mode == .mangaDirectory }.isEmpty)
         let stateAfterSkip = await updateStore.loadState()
         let afterSkip = try XCTUnwrap(stateAfterSkip.trackedTargets.first { $0.target == .mangaDirectory(cleanBookName: "冷却测试漫画") })
         // A cooldown/flood-control hit is a pure skip: nothing about the
@@ -807,10 +803,10 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         // circuit breaker.
         await repository.setSearchError(YamiboError.underlying("boom"))
         try await backdateLastCheckedAt(cleanBookName: "冷却测试漫画", in: updateStore)
-        let thirdMonitor = try makeMonitor()
-        await thirdMonitor.load()
-        _ = await thirdMonitor.startCheck()
-        try await waitForStatus(.completed, in: thirdMonitor)
+        let thirdEngine = try makeEngine()
+        await thirdEngine.load()
+        _ = await thirdEngine.startCheck()
+        try await waitForStatus(.completed, in: thirdEngine)
 
         let stateAfterRealFailure = await updateStore.loadState()
         let afterRealFailure = try XCTUnwrap(stateAfterRealFailure.trackedTargets.first { $0.target == .mangaDirectory(cleanBookName: "冷却测试漫画") })
@@ -839,30 +835,38 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
             searchChapters: [makeChapter(tid: "8001", title: "第1话", chapterNumber: 1)]
         )
 
-        func makeMonitor() throws -> FavoriteUpdateMonitor {
-            try makeUpdateMonitor(
+        // Shared across this test's engines: co-resident engines must share
+        // one run registry (see the engine's `runRegistry` doc; production
+        // wires one shared instance) or an idle sibling draining the change
+        // stream mistakes the live run for an orphan and races its
+        // interrupted-downgrade write against that run's own terminal save.
+        let runRegistry = FavoriteUpdateActiveRunRegistry()
+
+        func makeEngine() throws -> FavoriteUpdateCheckEngine {
+            try makeUpdateCheckEngine(
                 updateStore: updateStore,
                 libraryStore: libraryStore,
                 settingsStore: settingsStore,
                 mangaDirectoryStore: directoryStore,
                 makeMangaDirectoryWorkflow: { forumID in
                     MangaDirectoryWorkflow(repository: repository, store: directoryStore, configuration: MangaDirectoryWorkflowConfiguration(searchForumID: forumID))
-                }
+                },
+                runRegistry: runRegistry
             )
         }
 
-        let firstMonitor = try makeMonitor()
-        await firstMonitor.load()
-        _ = await firstMonitor.startCheck()
-        try await waitForStatus(.completed, in: firstMonitor)
+        let firstEngine = try makeEngine()
+        await firstEngine.load()
+        _ = await firstEngine.startCheck()
+        try await waitForStatus(.completed, in: firstEngine)
 
         try await backdateLastCheckedAt(cleanBookName: "非标签漫画A", in: updateStore)
         try await backdateLastCheckedAt(cleanBookName: "非标签漫画B", in: updateStore)
 
-        let secondMonitor = try makeMonitor()
-        await secondMonitor.load()
-        _ = await secondMonitor.startCheck(nonTagMangaDirectoryCheckCap: 1)
-        try await waitForStatus(.completed, in: secondMonitor)
+        let secondEngine = try makeEngine()
+        await secondEngine.load()
+        _ = await secondEngine.startCheck(nonTagMangaDirectoryCheckCap: 1)
+        try await waitForStatus(.completed, in: secondEngine)
 
         // Cap of 1: exactly one non-tag directory's search actually ran.
         let searchRequests = await repository.searchRequestCount
@@ -912,23 +916,31 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         ])
         let repository = RecordingMangaDirectoryRepository(searchError: YamiboError.floodControl)
 
-        func makeMonitor() throws -> FavoriteUpdateMonitor {
-            try makeUpdateMonitor(
+        // Shared across this test's engines: co-resident engines must share
+        // one run registry (see the engine's `runRegistry` doc; production
+        // wires one shared instance) or an idle sibling draining the change
+        // stream mistakes the live run for an orphan and races its
+        // interrupted-downgrade write against that run's own terminal save.
+        let runRegistry = FavoriteUpdateActiveRunRegistry()
+
+        func makeEngine() throws -> FavoriteUpdateCheckEngine {
+            try makeUpdateCheckEngine(
                 updateStore: updateStore,
                 libraryStore: libraryStore,
                 settingsStore: settingsStore,
                 mangaDirectoryStore: directoryStore,
                 makeMangaDirectoryWorkflow: { forumID in
                     MangaDirectoryWorkflow(repository: repository, store: directoryStore, configuration: MangaDirectoryWorkflowConfiguration(searchForumID: forumID))
-                }
+                },
+                runRegistry: runRegistry
             )
         }
 
         // Run 1: seeds both baselines, zero network.
-        let firstMonitor = try makeMonitor()
-        await firstMonitor.load()
-        _ = await firstMonitor.startCheck()
-        try await waitForStatus(.completed, in: firstMonitor)
+        let firstEngine = try makeEngine()
+        await firstEngine.load()
+        _ = await firstEngine.startCheck()
+        try await waitForStatus(.completed, in: firstEngine)
         let tagRequestsAfterSeed = await repository.tagRequestCount
         let searchRequestsAfterSeed = await repository.searchRequestCount
         XCTAssertEqual(tagRequestsAfterSeed, 0)
@@ -941,17 +953,17 @@ final class FavoriteUpdateMonitorSmartMangaTests: XCTestCase {
         // order ("标签漫画A" before "标签漫画B"). A's empty tag result falls
         // back to a search that hits flood control; B must never even be
         // attempted.
-        let secondMonitor = try makeMonitor()
-        await secondMonitor.load()
-        _ = await secondMonitor.startCheck()
-        try await waitForStatus(.completed, in: secondMonitor)
+        let secondEngine = try makeEngine()
+        await secondEngine.load()
+        _ = await secondEngine.startCheck()
+        try await waitForStatus(.completed, in: secondEngine)
 
         let tagRequestsAfterRun2 = await repository.tagRequestCount
         let searchRequestsAfterRun2 = await repository.searchRequestCount
         XCTAssertEqual(tagRequestsAfterRun2, 1, "the second tag directory's tag-page lookup must never fire once the first hit flood control")
         XCTAssertEqual(searchRequestsAfterRun2, 1, "the second tag directory's fallback search must never fire once the first hit flood control")
-        XCTAssertTrue(secondMonitor.events.filter { $0.mode == .mangaDirectory }.isEmpty)
-        XCTAssertEqual(secondMonitor.snapshot?.skippedCount, 1, "only the first group should be recorded as skipped this run")
+        XCTAssertTrue(secondEngine.events.filter { $0.mode == .mangaDirectory }.isEmpty)
+        XCTAssertEqual(secondEngine.snapshot?.skippedCount, 1, "only the first group should be recorded as skipped this run")
 
         let state = await updateStore.loadState()
         let trackedB = try XCTUnwrap(state.trackedTargets.first { $0.target == .mangaDirectory(cleanBookName: "标签漫画B") })

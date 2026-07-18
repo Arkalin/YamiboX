@@ -10,10 +10,11 @@ public struct YamiboCheckInSnapshot: Codable, Equatable, Sendable {
 }
 
 public actor YamiboCheckInStore {
-    public static let didChangeNotification = Notification.Name("yamibox.checkInStore.didChange")
-    public static let changeIDUserInfoKey = "changeID"
-
-    public nonisolated let changeID = UUID().uuidString
+    private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    public nonisolated var changeID: String { changeBroadcaster.changeID }
+    /// Multicast change feed; each element is the `changeID` of the store
+    /// instance that made the change (see `StoreChangeBroadcaster`).
+    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let defaults: UserDefaults
     private let keyPrefix: String
@@ -104,10 +105,6 @@ public actor YamiboCheckInStore {
     }
 
     private nonisolated func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: [Self.changeIDUserInfoKey: changeID]
-        )
+        changeBroadcaster.post()
     }
 }

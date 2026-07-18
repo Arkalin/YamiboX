@@ -7,12 +7,7 @@
 /// `AppContinuityWorkflow`). Feature views and view models receive their
 /// `*Dependencies` package instead of this context.
 public final class YamiboAppContext: Sendable {
-    private static let resettableUserDefaultsKeys = [
-        "yamibox.favorite.filter",
-        "yamibox.favorite.sort",
-        "yamibox.favorite.tag.sort",
-        "yamibox.favorite.showHidden"
-    ]
+    private static let resettableUserDefaultsKeys = YamiboAppStorageKey.resettable
 
     let sessionStore: SessionStore
     let profileStore: YamiboProfileStore

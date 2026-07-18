@@ -21,7 +21,13 @@ permissions:
   contents: write
 
 jobs:
+  # A tag on an untested commit must not ship: run the same build-and-test
+  # workflow that gates main before anything is archived or published.
+  test:
+    uses: ./.github/workflows/swift.yml
+
   build-and-release:
+    needs: test
     runs-on: macos-26
 
     steps:

@@ -37,19 +37,11 @@ enum YamiboThreadMetadataHTMLParser {
 
         return YamiboThreadMetadata(
             tid: threadID(from: url) ?? threadID(from: html),
-            fid: sectionURL.flatMap(forumID(from:)) ?? forumID(from: html),
+            fid: sectionURL.flatMap(YamiboForumURLIdentity.forumID(from:)) ?? forumID(from: html),
             title: title,
-            authorID: authorURL.flatMap(userID(from:)) ?? userID(from: html),
+            authorID: authorURL.flatMap(YamiboForumURLIdentity.userID(from:)) ?? userID(from: html),
             sectionText: sectionLink?.normalizedText().nilIfBlank
         )
-    }
-
-    private static func forumID(from url: URL) -> String? {
-        url.queryItemValue("fid")
-            ?? HTMLTextExtractor.firstMatch(pattern: #"forum-(\d+)-\d+\.html"#, in: url.absoluteString)?
-            .dropFirst()
-            .first?
-            .nilIfBlank
     }
 
     private static func forumID(from text: String) -> String? {
@@ -65,14 +57,6 @@ enum YamiboThreadMetadataHTMLParser {
 
     private static func threadID(from text: String) -> String? {
         HTMLTextExtractor.firstMatch(pattern: #"(?:[?&;]tid=|thread-)(\d+)"#, in: text)?
-            .dropFirst()
-            .first?
-            .nilIfBlank
-    }
-
-    private static func userID(from url: URL) -> String? {
-        url.queryItemValue("uid")
-            ?? HTMLTextExtractor.firstMatch(pattern: #"space-uid-(\d+)"#, in: url.absoluteString)?
             .dropFirst()
             .first?
             .nilIfBlank
