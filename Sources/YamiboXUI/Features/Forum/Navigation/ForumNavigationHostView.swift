@@ -45,5 +45,13 @@ public struct ForumNavigationHostView: View {
             guard let request = appModel.forumNavigationRequest else { return }
             navigator.route(request.url, source: request.source, title: request.title)
         }
+        // `initial: true` also catches a Home Screen quick action tapped
+        // before this view ever mounted (cold launch): the scene delegate
+        // stamps the request while `RootTabView` is still bootstrapping, so
+        // there's no prior value for a plain `.onChange` to transition from.
+        .onChange(of: appModel.forumSearchRequest?.id, initial: true) { _, _ in
+            guard appModel.forumSearchRequest != nil else { return }
+            navigator.push(.search(fid: nil))
+        }
     }
 }
