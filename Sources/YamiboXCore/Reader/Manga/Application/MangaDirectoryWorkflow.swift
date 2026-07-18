@@ -232,7 +232,7 @@ public struct MangaDirectoryWorkflow: Sendable {
     ) async throws -> MangaDirectoryUpdateResult {
         try Task.checkCancellation()
         guard let resolvedSeedTID = normalizedNonEmpty(seedTID) else {
-            throw YamiboError.persistenceFailed("Directory reset requires a chapter to reseed from")
+            throw YamiboPersistenceError(context: "Directory reset requires a chapter to reseed from")
         }
 
         let seed = try await repository.loadDirectorySeed(for: resolvedSeedTID)
@@ -251,7 +251,7 @@ public struct MangaDirectoryWorkflow: Sendable {
         searchKeyword: String
     ) async throws -> MangaDirectory {
         guard let resolvedName = normalizedNonEmpty(cleanBookName) else {
-            throw YamiboError.persistenceFailed("Directory name is empty")
+            throw YamiboPersistenceError(context: "Directory name is empty")
         }
         let resolvedKeyword = normalizedNonEmpty(searchKeyword)
         let now = configuration.now()

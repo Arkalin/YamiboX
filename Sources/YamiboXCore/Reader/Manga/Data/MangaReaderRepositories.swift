@@ -100,15 +100,28 @@ public protocol MangaDirectoryPersisting: Sendable {
     func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory]
     func saveDirectory(_ directory: MangaDirectory) async throws
     func deleteDirectory(named name: String) async throws
-    /// Instance identity for filtering `MangaDirectoryStore
-    /// .didChangeNotification` (a static, type-level `Notification.Name`
-    /// reachable from any conformer) down to notifications this exact
-    /// instance posted — mirrors `ContentCoverStore`/`FavoriteLibraryStore`'s
-    /// own `changeID` pattern. Defaulted below for every conformer except the
-    /// real `MangaDirectoryStore`, which never posts through this protocol
-    /// and so never needs a listener to match against it.
+    /// Instance identity carried by every element of `changes()`, kept so
+    /// listeners can hold on to their existing "is this change from the
+    /// exact instance I observe?" guard — mirrors `ContentCoverStore`/
+    /// `FavoriteLibraryStore`'s own `changeID` pattern. Defaulted below for
+    /// every conformer except the real `MangaDirectoryStore`, which never
+    /// broadcasts through this protocol and so never needs a listener to
+    /// match against it.
     nonisolated var changeID: String { get }
+    /// Typed change feed replacing the retired `didChangeNotification`
+    /// string bus; each element is the `changeID` of the conforming instance
+    /// that made the change. Defaulted below so lightweight test fakes —
+    /// which never broadcast — don't all need updating.
+    nonisolated func changes() -> AsyncStream<String>
 }
+
+/// Shared sink backing the default `changes()`: nothing ever posts through
+/// it, so a listener on a non-broadcasting conformer parks until cancelled —
+/// the exact observable behavior of the old default, which subscribed to a
+/// notification no fake ever sent. One shared instance (not one per call)
+/// so the registered continuation stays alive for as long as the consumer
+/// keeps iterating.
+private let neverBroadcastingChangeSink = StoreChangeBroadcaster()
 
 public extension MangaDirectoryPersisting {
     func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory] {
@@ -122,6 +135,10 @@ public extension MangaDirectoryPersisting {
     }
 
     nonisolated var changeID: String { "" }
+
+    nonisolated func changes() -> AsyncStream<String> {
+        neverBroadcastingChangeSink.changes()
+    }
 }
 
 protocol MangaDirectoryRenaming: Sendable {

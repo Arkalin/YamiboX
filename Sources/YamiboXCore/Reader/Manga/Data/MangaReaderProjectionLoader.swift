@@ -60,7 +60,7 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
     let forumCacheStore: ForumCacheStore
     let offlineCacheStore: (any MangaOfflineCacheStoring)?
 
-    var authorScopeErrorContext: String { "漫画作者范围" }
+    var authorScopeErrorContext: String { L10n.string("parsing_context.manga_author_scope") }
 
     func makeIdentity(request: MangaReaderProjectionRequest, authorID: String) -> MangaReaderProjectionSourceIdentity {
         MangaReaderProjectionSourceIdentity(
