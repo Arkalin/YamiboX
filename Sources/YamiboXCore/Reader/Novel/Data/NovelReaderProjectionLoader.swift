@@ -92,7 +92,7 @@ private struct NovelProjectionAdapter: ReaderThreadPageProjectionAdapter {
     let forumCacheStore: ForumCacheStore
     let offlineCacheStore: (any NovelOfflineCacheStoring)?
 
-    var authorScopeErrorContext: String { "小说作者范围" }
+    var authorScopeErrorContext: String { L10n.string("parsing_context.novel_author_scope") }
 
     func makeIdentity(request: NovelPageRequest, authorID: String) -> NovelProjectionIdentity {
         NovelProjectionIdentity(threadID: request.threadID, view: request.view, authorID: authorID)

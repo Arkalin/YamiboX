@@ -44,24 +44,6 @@ public actor NovelReaderRepository {
         try await loadPage(NovelPageRequest(threadID: threadID, view: view, authorID: authorID))
     }
 
-    public func prefetchNextPage(from request: NovelPageRequest) async {
-        let current: NovelReaderProjection
-        do {
-            current = try await loadPage(request)
-        } catch {
-            return
-        }
-
-        guard current.view < current.maxView else { return }
-
-        let nextRequest = NovelPageRequest(
-            threadID: request.threadID,
-            view: current.view + 1,
-            authorID: current.resolvedAuthorID ?? request.authorID
-        )
-        _ = try? await loadPage(nextRequest)
-    }
-
     public func cachedViews(
         for threadID: String,
         authorID: String?
@@ -281,10 +263,10 @@ public actor NovelReaderRepository {
         }
     }
 
-    private static func inlineImageURLs(in document: NovelReaderProjection) -> [URL] {
+    private static func inlineImageURLs(in projection: NovelReaderProjection) -> [URL] {
         var seen: Set<String> = []
         var urls: [URL] = []
-        for segment in document.segments {
+        for segment in projection.segments {
             guard case let .image(url, _) = segment else { continue }
             if seen.insert(url.absoluteString).inserted {
                 urls.append(url)

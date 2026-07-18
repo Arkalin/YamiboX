@@ -14,6 +14,42 @@ package struct NovelReadingSpread: Identifiable, Equatable, Sendable {
         self.rightSurfaceIndex = rightSurfaceIndex
         self.chapterTitle = chapterTitle
     }
+
+    /// Pairs consecutive surfaces into two-page spreads, never pairing across
+    /// a document-view boundary (a view's trailing odd surface renders alone).
+    /// Lives on the spread type as the single pairing rule: the reading
+    /// session (ordinal bookkeeping) and the reading workflow (presentation
+    /// projection) each used to carry a private copy, and any drift between
+    /// them would desync spread selection from what is rendered.
+    package static func makeSpreads(from surfaces: [NovelTextViewportIndexSurface]) -> [NovelReadingSpread] {
+        guard !surfaces.isEmpty else { return [] }
+
+        var spreads: [NovelReadingSpread] = []
+        var surfaceCursor = 0
+
+        while surfaceCursor < surfaces.count {
+            let leftSurface = surfaces[surfaceCursor]
+            let candidateRightIndex = surfaceCursor + 1
+            let rightSurfaceIndex: Int? = if surfaces.indices.contains(candidateRightIndex),
+                                          surfaces[candidateRightIndex].documentView == leftSurface.documentView {
+                candidateRightIndex
+            } else {
+                nil
+            }
+
+            spreads.append(
+                NovelReadingSpread(
+                    index: spreads.count,
+                    leftSurfaceIndex: leftSurface.surfaceOrdinal,
+                    rightSurfaceIndex: rightSurfaceIndex,
+                    chapterTitle: leftSurface.chapterTitle
+                )
+            )
+            surfaceCursor += rightSurfaceIndex == nil ? 1 : 2
+        }
+
+        return spreads
+    }
 }
 
 package struct NovelReadingSnapshot: Equatable, Sendable {
@@ -55,7 +91,7 @@ package enum NovelReadingNavigationRequest: Equatable, Sendable {
 package struct NovelReadingSession: Sendable {
     public private(set) var snapshot: NovelReadingSnapshot
 
-    private var currentDocument: NovelReaderProjection
+    private var currentProjection: NovelReaderProjection
     private var layoutResult: NovelTextLayoutResult?
     private var surfaces: [NovelTextViewportIndexSurface]
     private var chapters: [NovelReaderChapter]
@@ -66,7 +102,7 @@ package struct NovelReadingSession: Sendable {
     private var preservedTextResumePoint: NovelResumePoint?
 
     init(
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         layoutResult: NovelTextLayoutResult,
         preferredSurfaceOrdinal: Int = 0,
         resumePoint: NovelResumePoint? = nil,
@@ -75,7 +111,7 @@ package struct NovelReadingSession: Sendable {
         pageTurnDirection: ReaderPageTurnDirection = .leftToRight
     ) {
         self.init(
-            unpaginatedDocument: document,
+            unpaginatedProjection: projection,
             currentAuthorID: currentAuthorID,
             usesPagedSpread: usesPagedSpread,
             pageTurnDirection: pageTurnDirection
@@ -83,14 +119,14 @@ package struct NovelReadingSession: Sendable {
         preservedTextResumePoint = resumePoint
         consumeCommittedLayoutResult(
             layoutResult,
-            for: document,
+            for: projection,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: resumePoint
         )
     }
 
     public init(
-        validating document: NovelReaderProjection,
+        validating projection: NovelReaderProjection,
         layoutResult: NovelTextLayoutResult,
         preferredSurfaceOrdinal: Int = 0,
         resumePoint: NovelResumePoint? = nil,
@@ -99,28 +135,28 @@ package struct NovelReadingSession: Sendable {
         pageTurnDirection: ReaderPageTurnDirection = .leftToRight
     ) throws {
         self.init(
-            unpaginatedDocument: document,
+            unpaginatedProjection: projection,
             currentAuthorID: currentAuthorID,
             usesPagedSpread: usesPagedSpread,
             pageTurnDirection: pageTurnDirection
         )
         preservedTextResumePoint = resumePoint
-        try validateCommittedLayoutResult(layoutResult, for: document)
+        try validateCommittedLayoutResult(layoutResult, for: projection)
         consumeCommittedLayoutResult(
             layoutResult,
-            for: document,
+            for: projection,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: resumePoint
         )
     }
 
     private init(
-        unpaginatedDocument document: NovelReaderProjection,
+        unpaginatedProjection projection: NovelReaderProjection,
         currentAuthorID: String?,
         usesPagedSpread: Bool,
         pageTurnDirection: ReaderPageTurnDirection
     ) {
-        self.currentDocument = document
+        self.currentProjection = projection
         self.layoutResult = nil
         self.surfaces = []
         self.chapters = []
@@ -132,12 +168,12 @@ package struct NovelReadingSession: Sendable {
         self.snapshot = NovelReadingSnapshot(
             selectedSurfaceOrdinal: 0,
             currentSurfaceIntraProgress: 0,
-            currentView: document.view,
-            maxView: document.maxView,
+            currentView: projection.view,
+            maxView: projection.maxView,
             currentChapterTitle: nil,
-            retainedChapterCount: document.retainedChapterCount,
-            filteredChapterCandidateCount: document.filteredChapterCandidateCount,
-            currentAuthorID: document.resolvedAuthorID ?? currentAuthorID
+            retainedChapterCount: projection.retainedChapterCount,
+            filteredChapterCandidateCount: projection.filteredChapterCandidateCount,
+            currentAuthorID: projection.resolvedAuthorID ?? currentAuthorID
         )
     }
 
@@ -156,7 +192,7 @@ package struct NovelReadingSession: Sendable {
         }
         consumeCommittedLayoutResult(
             layoutResult,
-            for: currentDocument,
+            for: currentProjection,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: preferredResumePoint
         )
@@ -164,7 +200,7 @@ package struct NovelReadingSession: Sendable {
 
     public mutating func consumeCommittedLayoutResult(
         _ layoutResult: NovelTextLayoutResult,
-        for document: NovelReaderProjection,
+        for projection: NovelReaderProjection,
         preferredSurfaceOrdinal: Int,
         preferredResumePoint: NovelResumePoint?,
         usesPagedSpread: Bool? = nil,
@@ -176,10 +212,10 @@ package struct NovelReadingSession: Sendable {
         if let pageTurnDirection {
             self.pageTurnDirection = pageTurnDirection
         }
-        currentDocument = document
+        currentProjection = projection
         applyCommittedLayoutResult(
             layoutResult,
-            for: document,
+            for: projection,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: preferredResumePoint
         )
@@ -273,21 +309,21 @@ package struct NovelReadingSession: Sendable {
     }
 
     public mutating func promotePrefetchedDocument(
-        document nextDocument: NovelReaderProjection,
+        document nextProjection: NovelReaderProjection,
         layoutResult: NovelTextLayoutResult,
         preferredSurfaceOrdinal: Int = 0,
         resumePoint: NovelResumePoint? = nil,
         usesPagedSpread: Bool? = nil
     ) throws {
-        let effectiveResumePoint = resumePoint?.view == nextDocument.view ? resumePoint : nil
-        try validateCommittedLayoutResult(layoutResult, for: nextDocument)
+        let effectiveResumePoint = resumePoint?.view == nextProjection.view ? resumePoint : nil
+        try validateCommittedLayoutResult(layoutResult, for: nextProjection)
         if let usesPagedSpread {
             self.usesPagedSpread = usesPagedSpread
         }
-        currentDocument = nextDocument
+        currentProjection = nextProjection
         applyCommittedLayoutResult(
             layoutResult,
-            for: nextDocument,
+            for: nextProjection,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: effectiveResumePoint
         )
@@ -302,7 +338,7 @@ package struct NovelReadingSession: Sendable {
               let chapterOrdinal = page.chapterOrdinal,
               let position = page.semanticTextPosition(
                 for: snapshot.currentSurfaceIntraProgress,
-                in: currentDocument
+                in: currentProjection
               ) else {
             return nil
         }
@@ -322,18 +358,18 @@ package struct NovelReadingSession: Sendable {
 
     public func currentPreviewSourceText() -> String {
         guard let page = selectedViewportSurface,
-              let document = document(for: page.documentView),
-              !document.segments.isEmpty else {
+              let projection = projection(for: page.documentView),
+              !projection.segments.isEmpty else {
             return ""
         }
 
         guard let currentPosition = page.semanticTextPosition(
             for: snapshot.currentSurfaceIntraProgress,
-            in: document
+            in: projection
         ) else {
             return ""
         }
-        return document.previewSourceText(from: currentPosition)
+        return projection.previewSourceText(from: currentPosition)
     }
 
     private func chapterTitle(
@@ -357,9 +393,9 @@ package struct NovelReadingSession: Sendable {
         return surfaces[normalizedIndex]
     }
 
-    private func document(for view: Int) -> NovelReaderProjection? {
-        if view == currentDocument.view {
-            return currentDocument
+    private func projection(for view: Int) -> NovelReaderProjection? {
+        if view == currentProjection.view {
+            return currentProjection
         }
         return nil
     }
@@ -395,17 +431,17 @@ package struct NovelReadingSession: Sendable {
 
     private func validateCommittedLayoutResult(
         _ layoutResult: NovelTextLayoutResult,
-        for document: NovelReaderProjection
+        for projection: NovelReaderProjection
     ) throws {
-        guard layoutResult.viewportIndex.documentView == document.view,
-              layoutResult.viewportContext.identity.documentView == document.view else {
+        guard layoutResult.viewportIndex.documentView == projection.view,
+              layoutResult.viewportContext.identity.documentView == projection.view else {
             throw NovelTextLayoutFailure.offsetMapping
         }
     }
 
     private mutating func applyCommittedLayoutResult(
         _ layoutResult: NovelTextLayoutResult,
-        for document: NovelReaderProjection,
+        for projection: NovelReaderProjection,
         preferredSurfaceOrdinal: Int,
         preferredResumePoint: NovelResumePoint?
     ) {
@@ -419,7 +455,7 @@ package struct NovelReadingSession: Sendable {
         )
         let effectiveResumePoint = pendingResumePoint ?? preferredResumePoint
         let resolvedTarget = effectiveResumePoint.flatMap { resolveResumePoint($0, in: surfaces) } ?? fallbackTarget
-        let spreads = makeSpreads(from: surfaces)
+        let spreads = NovelReadingSpread.makeSpreads(from: surfaces)
         let normalizedSurfaceOrdinal = normalizedPagedSurfaceOrdinal(
             resolvedTarget.surfaceOrdinal,
             surfaces: surfaces,
@@ -432,16 +468,16 @@ package struct NovelReadingSession: Sendable {
         snapshot = NovelReadingSnapshot(
             selectedSurfaceOrdinal: normalizedSurfaceOrdinal,
             currentSurfaceIntraProgress: resolvedTarget.intraSurfaceProgress,
-            currentView: document.view,
-            maxView: document.maxView,
+            currentView: projection.view,
+            maxView: projection.maxView,
             currentChapterTitle: chapterTitle(
                 forSurfaceOrdinal: normalizedSurfaceOrdinal,
                 surfaces: surfaces,
                 chapters: renderedChapters
             ),
-            retainedChapterCount: document.retainedChapterCount,
-            filteredChapterCandidateCount: document.filteredChapterCandidateCount,
-            currentAuthorID: document.resolvedAuthorID ?? snapshot.currentAuthorID
+            retainedChapterCount: projection.retainedChapterCount,
+            filteredChapterCandidateCount: projection.filteredChapterCandidateCount,
+            currentAuthorID: projection.resolvedAuthorID ?? snapshot.currentAuthorID
         )
         pendingResumePoint = nil
         preserveCurrentTextResumePointIfAvailable()
@@ -473,42 +509,12 @@ package struct NovelReadingSession: Sendable {
     }
 
     private func displayedViewCandidate(for preferredSurfaceOrdinal: Int, surfaces: [NovelTextViewportIndexSurface]) -> Int {
-        let spreads = makeSpreads(from: surfaces)
+        let spreads = NovelReadingSpread.makeSpreads(from: surfaces)
         let normalizedIndex = normalizedPagedSurfaceOrdinal(preferredSurfaceOrdinal, surfaces: surfaces, spreads: spreads)
         guard surfaces.indices.contains(normalizedIndex) else {
-            return currentDocument.view
+            return currentProjection.view
         }
         return surfaces[normalizedIndex].documentView
-    }
-
-    private func makeSpreads(from surfaces: [NovelTextViewportIndexSurface]) -> [NovelReadingSpread] {
-        guard !surfaces.isEmpty else { return [] }
-
-        var spreads: [NovelReadingSpread] = []
-        var surfaceCursor = 0
-
-        while surfaceCursor < surfaces.count {
-            let leftSurface = surfaces[surfaceCursor]
-            let candidateRightIndex = surfaceCursor + 1
-            let rightSurfaceIndex: Int? = if surfaces.indices.contains(candidateRightIndex),
-                                          surfaces[candidateRightIndex].documentView == leftSurface.documentView {
-                candidateRightIndex
-            } else {
-                nil
-            }
-
-            spreads.append(
-                NovelReadingSpread(
-                    index: spreads.count,
-                    leftSurfaceIndex: leftSurface.surfaceOrdinal,
-                    rightSurfaceIndex: rightSurfaceIndex,
-                    chapterTitle: leftSurface.chapterTitle
-                )
-            )
-            surfaceCursor += rightSurfaceIndex == nil ? 1 : 2
-        }
-
-        return spreads
     }
 
     private func spreadIndex(
@@ -624,13 +630,13 @@ package struct NovelReadingSession: Sendable {
         surfacesInView: [NovelTextViewportIndexSurface]
     ) -> NovelReaderResolvedSurfaceTarget? {
         let candidateSurfaces = surfacesInView.filter { surface in
-            surface.contains(textSegmentIdentity: textSegmentIdentity, in: currentDocument)
+            surface.contains(textSegmentIdentity: textSegmentIdentity, in: currentProjection)
         }
         let containingSurface = candidateSurfaces.first { surface in
             surface.contains(
                 textSegmentIdentity: textSegmentIdentity,
                 displayedTextOffset: displayedTextOffset,
-                in: currentDocument
+                in: currentProjection
             )
         }
         if let containingSurface {
@@ -640,7 +646,7 @@ package struct NovelReadingSession: Sendable {
                     displayedTextOffset: displayedTextOffset,
                     textSegmentIdentity: textSegmentIdentity,
                     fallbackProgress: resumePoint.segmentProgress,
-                    in: currentDocument
+                    in: currentProjection
                 ),
                 documentView: containingSurface.documentView
             )
@@ -649,11 +655,11 @@ package struct NovelReadingSession: Sendable {
             $0.distance(
                 from: displayedTextOffset,
                 textSegmentIdentity: textSegmentIdentity,
-                in: currentDocument
+                in: currentProjection
             ) < $1.distance(
                 from: displayedTextOffset,
                 textSegmentIdentity: textSegmentIdentity,
-                in: currentDocument
+                in: currentProjection
             )
         }) else {
             return nil
@@ -664,7 +670,7 @@ package struct NovelReadingSession: Sendable {
                 displayedTextOffset: displayedTextOffset,
                 textSegmentIdentity: textSegmentIdentity,
                 fallbackProgress: resumePoint.segmentProgress,
-                in: currentDocument
+                in: currentProjection
             ),
             documentView: nearestSurface.documentView
         )
@@ -699,7 +705,7 @@ package struct NovelReadingSession: Sendable {
         surfacesInView: [NovelTextViewportIndexSurface]
     ) -> NovelReaderResolvedSurfaceTarget? {
         guard let chapterSurface = surfacesInView.first(where: { surface in
-            surface.contains(chapterIdentity: chapterIdentity, in: currentDocument)
+            surface.contains(chapterIdentity: chapterIdentity, in: currentProjection)
         }) else {
             return nil
         }
@@ -715,17 +721,17 @@ package struct NovelReadingSession: Sendable {
         surfacesInView: [NovelTextViewportIndexSurface]
     ) -> NovelReaderResolvedSurfaceTarget? {
         guard let textSegmentIdentity = resumePoint.textSegmentIdentity,
-              let hiddenSegmentIndex = currentDocument.segmentSemantics.firstIndex(where: {
+              let hiddenSegmentIndex = currentProjection.segmentSemantics.firstIndex(where: {
                   $0?.textSegmentIdentity == textSegmentIdentity
               }),
-              currentDocument.source(forSegmentIndex: hiddenSegmentIndex)?.isAuthorReplyToOther == true else {
+              currentProjection.source(forSegmentIndex: hiddenSegmentIndex)?.isAuthorReplyToOther == true else {
             return nil
         }
 
         let visibleRanges = surfacesInView.flatMap { surface in
             surface.ranges.compactMap { range -> (surface: NovelTextViewportIndexSurface, range: NovelRenderedTextRange)? in
-                guard currentDocument.source(forSegmentIndex: range.segmentIndex)?.isAuthorReplyToOther != true,
-                      currentDocument.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity != nil else {
+                guard currentProjection.source(forSegmentIndex: range.segmentIndex)?.isAuthorReplyToOther != true,
+                      currentProjection.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity != nil else {
                     return nil
                 }
                 return (surface, range)
@@ -776,7 +782,7 @@ package struct NovelReadingSession: Sendable {
         displayedTextOffset: Int,
         fallbackProgress: Double
     ) -> NovelReaderResolvedSurfaceTarget? {
-        guard let textSegmentIdentity = currentDocument
+        guard let textSegmentIdentity = currentProjection
             .semantics(forSegmentIndex: range.segmentIndex)?
             .textSegmentIdentity else {
             return nil
@@ -787,7 +793,7 @@ package struct NovelReadingSession: Sendable {
                 displayedTextOffset: displayedTextOffset,
                 textSegmentIdentity: textSegmentIdentity,
                 fallbackProgress: fallbackProgress,
-                in: currentDocument
+                in: currentProjection
             ),
             documentView: surface.documentView
         )
@@ -803,7 +809,7 @@ package struct NovelReadingSession: Sendable {
         guard surface.contains(
             textSegmentIdentity: sample.textSegmentIdentity,
             displayedTextOffset: sample.displayedTextOffset,
-            in: currentDocument
+            in: currentProjection
         ) else {
             return nil
         }
@@ -814,7 +820,7 @@ package struct NovelReadingSession: Sendable {
                 displayedTextOffset: sample.displayedTextOffset,
                 textSegmentIdentity: sample.textSegmentIdentity,
                 fallbackProgress: 0,
-                in: currentDocument
+                in: currentProjection
             ),
             documentView: surface.documentView
         )

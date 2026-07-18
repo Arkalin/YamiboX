@@ -72,12 +72,12 @@ package extension NovelTextViewportDocument {
 
     func semanticTextPosition(
         containingDocumentOffset documentOffset: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelTextViewportSemanticTextPosition? {
         guard let segmentRange = textRangesBySegment.first(where: { _, range in
             documentOffset >= range.startOffset && documentOffset <= range.endOffset
         }),
-        let semantics = document.semantics(forSegmentIndex: segmentRange.key),
+        let semantics = projection.semantics(forSegmentIndex: segmentRange.key),
         let textSegmentIdentity = semantics.textSegmentIdentity else {
             return nil
         }
@@ -92,11 +92,11 @@ package extension NovelTextViewportDocument {
 
     func documentOffset(
         for position: NovelResumePoint,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Int? {
-        guard position.view == document.view,
+        guard position.view == projection.view,
               let textSegmentIdentity = position.textSegmentIdentity,
-              let segmentRange = segmentRange(for: textSegmentIdentity, in: document) else {
+              let segmentRange = segmentRange(for: textSegmentIdentity, in: projection) else {
             return nil
         }
         return segmentRange.startOffset + min(
@@ -160,11 +160,11 @@ package extension NovelTextViewportDocument {
         containingDocumentOffset documentOffset: Int,
         surfaceIdentity: NovelReaderSurfaceIdentity,
         documentView: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelTextViewportSample? {
         guard let position = semanticTextPosition(
             containingDocumentOffset: documentOffset,
-            in: document
+            in: projection
         ) else {
             return nil
         }
@@ -173,15 +173,15 @@ package extension NovelTextViewportDocument {
             documentView: documentView,
             textSegmentIdentity: position.textSegmentIdentity,
             displayedTextOffset: position.displayedTextOffset,
-            resolvedAuthorID: document.resolvedAuthorID
+            resolvedAuthorID: projection.resolvedAuthorID
         )
     }
 
     private func segmentRange(
         for textSegmentIdentity: NovelTextSegmentIdentity,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelRenderedTextRange? {
-        guard let segmentIndex = document.segmentSemantics.firstIndex(where: {
+        guard let segmentIndex = projection.segmentSemantics.firstIndex(where: {
             $0?.textSegmentIdentity == textSegmentIdentity
         }) else {
             return nil

@@ -199,7 +199,7 @@ package final class NovelTextViewportRuntimeTransaction {
 
     package let generation: UInt64
     package let result: NovelTextLayoutResult
-    let document: NovelReaderProjection?
+    let projection: NovelReaderProjection?
     let settings: NovelReaderAppearanceSettings
     let layout: NovelReaderLayout
     private(set) var semanticAttributedDocument: NSAttributedString?
@@ -214,14 +214,14 @@ package final class NovelTextViewportRuntimeTransaction {
     init(
         generation: UInt64,
         result: NovelTextLayoutResult,
-        document: NovelReaderProjection?,
+        projection: NovelReaderProjection?,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         candidate: NovelTextLayoutRuntimeCandidate
     ) {
         self.generation = generation
         self.result = result
-        self.document = document
+        self.projection = projection
         self.settings = settings
         self.layout = layout
         semanticAttributedDocument = candidate.semanticAttributedDocument
@@ -263,7 +263,7 @@ package final class NovelTextViewportRuntimeOwner {
     private var activeGeneration: UInt64 = 0
     private var nextGeneration: UInt64 = 1
     private var result: NovelTextLayoutResult?
-    private var document: NovelReaderProjection?
+    private var projection: NovelReaderProjection?
     private var settings = NovelReaderAppearanceSettings()
     private var layout = NovelReaderLayout(width: 1, height: 1)
     private var visibleSurfaceOrdinals = Set<Int>()
@@ -362,7 +362,7 @@ package final class NovelTextViewportRuntimeOwner {
         let transaction = NovelTextViewportRuntimeTransaction(
             generation: generation,
             result: result,
-            document: preparedInput.document,
+            projection: preparedInput.document,
             settings: preparedInput.settings,
             layout: preparedInput.layout,
             candidate: candidate
@@ -378,7 +378,7 @@ package final class NovelTextViewportRuntimeOwner {
         pendingTransaction = nil
         activeGeneration = transaction.generation
         result = transaction.result
-        document = transaction.document
+        projection = transaction.projection
         settings = transaction.settings
         layout = transaction.layout
         semanticAttributedDocumentCache = transaction.semanticAttributedDocument
@@ -431,7 +431,7 @@ package final class NovelTextViewportRuntimeOwner {
         supersedePendingTransaction()
         pendingTransaction = nil
         result = nil
-        document = nil
+        projection = nil
         visibleSurfaceOrdinals.removeAll(keepingCapacity: false)
         semanticAttributedDocumentCache = nil
         peakActivePlusCandidateGraphCount = 0
@@ -613,13 +613,13 @@ package final class NovelTextViewportRuntimeOwner {
         from start: NovelResumePoint,
         to end: NovelResumePoint
     ) -> NovelTextSelectionRange? {
-        guard let document, let result else { return nil }
+        guard let projection, let result else { return nil }
         var start = start
         var end = end
-        start.view = document.view
-        end.view = document.view
-        guard let startOffset = result.viewportContext.document.documentOffset(for: start, in: document),
-              let endOffset = result.viewportContext.document.documentOffset(for: end, in: document) else {
+        start.view = projection.view
+        end.view = projection.view
+        guard let startOffset = result.viewportContext.document.documentOffset(for: start, in: projection),
+              let endOffset = result.viewportContext.document.documentOffset(for: end, in: projection) else {
             return nil
         }
         return NovelTextSelectionRange(

@@ -96,12 +96,12 @@ private struct NovelReadingPreparedTransaction {
     let settings: NovelReaderAppearanceSettings
     let layout: NovelReaderLayout
     let usesPadPresentation: Bool
-    let currentDocument: NovelReaderProjection
-    let prefetchedDocument: NovelReaderProjection?
+    let currentProjection: NovelReaderProjection
+    let prefetchedProjection: NovelReaderProjection?
     let currentLoadSource: NovelReaderProjectionLoadSource
     let prefetchedLoadSource: NovelReaderProjectionLoadSource?
     let currentAuthorID: String?
-    let currentDocumentSurfaceCount: Int
+    let currentProjectionSurfaceCount: Int
 }
 
 /// Caller-isolated (non-`Sendable`): the workflow runs entirely in whatever
@@ -122,12 +122,12 @@ public final class NovelReadingWorkflow {
     /// assignment must keep it in sync or `shouldRebuildPresentation`'s
     /// accumulated-progress comparison drifts.
     private var lastPublishedSnapshot: NovelReadingSnapshot?
-    private var currentDocument: NovelReaderProjection?
-    private var prefetchedDocument: NovelReaderProjection?
+    private var currentProjection: NovelReaderProjection?
+    private var prefetchedProjection: NovelReaderProjection?
     private var currentLoadSource: NovelReaderProjectionLoadSource = .online
     private var prefetchedLoadSource: NovelReaderProjectionLoadSource?
     private var currentAuthorID: String?
-    private var currentDocumentSurfaceCount = 0
+    private var currentProjectionSurfaceCount = 0
     private var usesPadPresentation: Bool
     private let viewportRuntime: NovelTextViewportRuntimeOwner
     private var pendingRuntimeUpdateTask: Task<(NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)?, Error>?
@@ -223,12 +223,12 @@ public final class NovelReadingWorkflow {
     }
 
     public func cacheContext(forView view: Int) -> NovelReadingCacheContext {
-        if let currentDocument, currentDocument.view == view {
-            return cacheContext(for: currentDocument)
+        if let currentProjection, currentProjection.view == view {
+            return cacheContext(for: currentProjection)
         }
 
-        if let prefetchedDocument, prefetchedDocument.view == view {
-            return cacheContext(for: prefetchedDocument)
+        if let prefetchedProjection, prefetchedProjection.view == view {
+            return cacheContext(for: prefetchedProjection)
         }
 
         let authorID = currentAuthorID ?? context.authorID
@@ -236,7 +236,7 @@ public final class NovelReadingWorkflow {
     }
 
     public func canPromotePrefetchedDocument(forView view: Int) -> Bool {
-        prefetchedDocument?.view == max(1, view)
+        prefetchedProjection?.view == max(1, view)
     }
 
     package nonisolated(nonsending) func previewChapterDirectory(view: Int) async throws -> [NovelChapterDirectoryEntry] {
@@ -245,8 +245,8 @@ public final class NovelReadingWorkflow {
             view: view,
             authorID: cacheContext(forView: view).authorID
         )
-        let document = try await repository.loadPage(request)
-        return NovelChapterDirectoryExtractor.entries(from: document, settings: settings)
+        let projection = try await repository.loadPage(request)
+        return NovelChapterDirectoryExtractor.entries(from: projection, settings: settings)
     }
 
     package nonisolated(nonsending) func loadChapter(_ anchor: NovelChapterAnchor) async throws -> NovelReadingWorkflowState {
@@ -270,13 +270,14 @@ public final class NovelReadingWorkflow {
         let revision = (state.presentation?.revision ?? 0) + 1
         let nextState = NovelReadingWorkflowState(
             snapshot: session.snapshot,
-            presentation: makePresentation(
+            presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: session.snapshot,
                 layoutResult: viewportRuntime.currentResult,
                 generation: viewportRuntime.currentGeneration,
                 revision: revision,
                 settings: settings,
-                usesTwoPageSpread: usesPagedSpread(
+                fallbackLayout: layout,
+                usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
                     usesPadPresentation: usesPadPresentation
@@ -299,18 +300,18 @@ public final class NovelReadingWorkflow {
         pendingRuntimeUpdateTask?.cancel()
         pendingRuntimeUpdateTask = nil
         let requestSequence = runtimeUpdateRequestSequence
-        let document = currentDocument
+        let projection = currentProjection
         let task = Task.detached(priority: .userInitiated) {
             () async throws -> (NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)? in
             let preparedUpdate = try await preparation(update)
             try Task.checkCancellation()
-            guard let document else { return nil }
+            guard let projection else { return nil }
             let paginationLayout = preparedUpdate.layout.novelTextBoxLayout(
                 settings: preparedUpdate.settings,
                 usesPadPresentation: preparedUpdate.usesPadPresentation
             )
             let semanticInput = try NovelTextLayout.prepareInput(
-                document: document,
+                document: projection,
                 settings: preparedUpdate.settings,
                 layout: paginationLayout
             )
@@ -346,7 +347,7 @@ public final class NovelReadingWorkflow {
               !Task.isCancelled,
               var candidateSession = session,
               state != nil,
-              currentDocument == semanticInput.document else {
+              currentProjection == semanticInput.document else {
             return nil
         }
         let resumePoint = candidateSession.captureNovelReadingPosition()
@@ -357,7 +358,7 @@ public final class NovelReadingWorkflow {
             transaction.result,
             preferredSurfaceOrdinal: candidateSession.snapshot.selectedSurfaceOrdinal,
             preferredResumePoint: resumePoint,
-            usesPagedSpread: usesPagedSpread(
+            usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: update.settings,
                 layout: update.layout,
                 usesPadPresentation: update.usesPadPresentation
@@ -391,36 +392,59 @@ public final class NovelReadingWorkflow {
         layout: NovelReaderLayout,
         usesPadPresentation: Bool
     ) throws -> NovelReadingWorkflowState? {
-        guard let currentDocument else { return nil }
+        guard let currentProjection else { return nil }
+        // A runtime update re-presents the same document with new appearance
+        // inputs, so the load source and cached-views set are carried over
+        // from the current fields by omission. The prefetch pair must still be
+        // passed explicitly (its parameters have no carry-over default because
+        // nil is a meaningful "drop the prefetch" value there).
         let preparedTransaction = try makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
             settings: settings,
             layout: layout,
             usesPadPresentation: usesPadPresentation,
-            currentDocument: currentDocument,
-            prefetchedDocument: prefetchedDocument,
-            currentLoadSource: currentLoadSource,
+            currentProjection: currentProjection,
+            prefetchedProjection: prefetchedProjection,
             prefetchedLoadSource: prefetchedLoadSource,
-            currentAuthorID: candidateSession.snapshot.currentAuthorID ?? currentAuthorID,
-            cachedViews: state?.cachedViews ?? []
+            currentAuthorID: candidateSession.snapshot.currentAuthorID ?? currentAuthorID
         )
         return commit(preparedTransaction)
     }
 
+    /// Builds the pre-commit bundle that `commit(_:)` later writes to the
+    /// workflow's fields in a single step once the runtime transaction lands.
+    /// Parameters fall into two groups:
+    ///
+    /// - `nil`-defaulted parameters mean "this transaction leaves that
+    ///   dimension unchanged": omitting one resolves to the current field,
+    ///   which is exactly the value the omitting call sites used to pass
+    ///   explicitly. (Field mirroring is why these were parameters at all.)
+    /// - Required parameters are the dimensions at least one call site
+    ///   replaces with a pre-commit "next" value that must not be read from
+    ///   `self` (the freshly loaded/promoted document, its load source, …).
+    ///   `prefetchedProjection`/`prefetchedLoadSource`/`currentAuthorID` stay
+    ///   required even though the runtime-update path passes the current
+    ///   values, because `nil` is itself a meaningful next value for them
+    ///   ("drop the prefetch" / "no author"), so a nil-means-carry-over
+    ///   default would be ambiguous.
     private func makePreparedTransaction(
         runtime: NovelTextViewportRuntimeTransaction,
         session: NovelReadingSession,
-        settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout,
-        usesPadPresentation: Bool,
-        currentDocument: NovelReaderProjection,
-        prefetchedDocument: NovelReaderProjection?,
-        currentLoadSource: NovelReaderProjectionLoadSource,
+        settings: NovelReaderAppearanceSettings? = nil,
+        layout: NovelReaderLayout? = nil,
+        usesPadPresentation: Bool? = nil,
+        currentProjection: NovelReaderProjection,
+        prefetchedProjection: NovelReaderProjection?,
+        currentLoadSource: NovelReaderProjectionLoadSource? = nil,
         prefetchedLoadSource: NovelReaderProjectionLoadSource?,
         currentAuthorID: String?,
-        cachedViews: Set<Int>
+        cachedViews: Set<Int>? = nil
     ) throws -> NovelReadingPreparedTransaction {
+        let settings = settings ?? self.settings
+        let layout = layout ?? self.layout
+        let usesPadPresentation = usesPadPresentation ?? self.usesPadPresentation
+        let currentLoadSource = currentLoadSource ?? self.currentLoadSource
         let snapshot = session.snapshot
         try viewportRuntime.prepareInitialViewport(
             for: runtime,
@@ -428,20 +452,27 @@ public final class NovelReadingWorkflow {
         )
         let state = NovelReadingWorkflowState(
             snapshot: snapshot,
-            presentation: makePresentation(
+            presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
                 layoutResult: runtime.result,
                 generation: runtime.generation,
                 revision: 0,
                 settings: settings,
-                usesTwoPageSpread: usesPagedSpread(
+                // Deliberately the committed field, not the transaction's
+                // (possibly new) layout: this preserves the exact binding from
+                // when makePresentation was an instance method reading
+                // `self.layout`. It only matters as the readable-size fallback
+                // when `layoutResult` is nil, which a runtime transaction's
+                // non-optional `result` never is.
+                fallbackLayout: self.layout,
+                usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
                     usesPadPresentation: usesPadPresentation
                 ),
                 pageLoadSource: currentLoadSource
             ),
-            cachedViews: cachedViews
+            cachedViews: cachedViews ?? self.state?.cachedViews ?? []
         )
         return NovelReadingPreparedTransaction(
             runtime: runtime,
@@ -450,12 +481,12 @@ public final class NovelReadingWorkflow {
             settings: settings,
             layout: layout,
             usesPadPresentation: usesPadPresentation,
-            currentDocument: currentDocument,
-            prefetchedDocument: prefetchedDocument,
+            currentProjection: currentProjection,
+            prefetchedProjection: prefetchedProjection,
             currentLoadSource: currentLoadSource,
             prefetchedLoadSource: prefetchedLoadSource,
             currentAuthorID: currentAuthorID,
-            currentDocumentSurfaceCount: session.surfaceCount(in: snapshot.currentView)
+            currentProjectionSurfaceCount: session.surfaceCount(in: snapshot.currentView)
         )
     }
 
@@ -467,12 +498,12 @@ public final class NovelReadingWorkflow {
         layout = transaction.layout
         usesPadPresentation = transaction.usesPadPresentation
         session = transaction.session
-        currentDocument = transaction.currentDocument
-        prefetchedDocument = transaction.prefetchedDocument
+        currentProjection = transaction.currentProjection
+        prefetchedProjection = transaction.prefetchedProjection
         currentLoadSource = transaction.currentLoadSource
         prefetchedLoadSource = transaction.prefetchedLoadSource
         currentAuthorID = transaction.currentAuthorID
-        currentDocumentSurfaceCount = transaction.currentDocumentSurfaceCount
+        currentProjectionSurfaceCount = transaction.currentProjectionSurfaceCount
         state = transaction.state
         lastPublishedSnapshot = transaction.state.snapshot
         return transaction.state
@@ -491,7 +522,7 @@ public final class NovelReadingWorkflow {
         let previousSnapshot = session?.snapshot
         session?.selectSurface(surfaceIdentity.ordinal)
         guard session?.snapshot != previousSnapshot else { return nil }
-        return try? updateStateFromSession(cachedViews: state?.cachedViews ?? [])
+        return updateStateFromSession(cachedViews: state?.cachedViews ?? [])
     }
 
     public func restoreResumePointInCurrentDocument(
@@ -502,7 +533,7 @@ public final class NovelReadingWorkflow {
               session?.restoreResumePoint(resumePoint) == true else {
             return nil
         }
-        return try? updateStateFromSession(cachedViews: state.cachedViews)
+        return updateStateFromSession(cachedViews: state.cachedViews)
     }
 
     public func updateVerticalViewportPosition(
@@ -522,7 +553,7 @@ public final class NovelReadingWorkflow {
             intraSurfaceProgress: intraSurfaceProgress
         )
         guard session?.snapshot != previousSnapshot else { return nil }
-        return try? updateStateFromSession(cachedViews: state?.cachedViews ?? [])
+        return updateStateFromSession(cachedViews: state?.cachedViews ?? [])
     }
 
     @discardableResult
@@ -532,7 +563,7 @@ public final class NovelReadingWorkflow {
         let previousSnapshot = session?.snapshot
         session?.updateVerticalViewportPosition(sample: sample)
         guard shouldRebuildPresentation(afterSampleUpdateFrom: previousSnapshot) else { return nil }
-        return try? updateStateFromSession(cachedViews: state?.cachedViews ?? [])
+        return updateStateFromSession(cachedViews: state?.cachedViews ?? [])
     }
 
     @discardableResult
@@ -548,7 +579,7 @@ public final class NovelReadingWorkflow {
         let previousSnapshot = session?.snapshot
         session?.updateVerticalViewportPosition(sample: sample)
         guard shouldRebuildPresentation(afterSampleUpdateFrom: previousSnapshot) else { return nil }
-        return try? updateStateFromSession(cachedViews: state?.cachedViews ?? [])
+        return updateStateFromSession(cachedViews: state?.cachedViews ?? [])
     }
 
     /// TextKit-resolved viewport samples arrive at glyph precision, so a
@@ -578,13 +609,13 @@ public final class NovelReadingWorkflow {
         guard session != nil else { return nil }
         var request = session?.jumpRelativeSurface(delta)
         if case let .loadView(view, preferredSurfaceOrdinal, resumePoint) = request,
-           prefetchedDocument?.view == view {
+           prefetchedProjection?.view == view {
             request = .promotePrefetched(
                 preferredSurfaceOrdinal: preferredSurfaceOrdinal,
                 resumePoint: resumePoint
             )
         }
-        guard let state = try? updateStateFromSession(cachedViews: state?.cachedViews ?? []) else { return nil }
+        guard let state = updateStateFromSession(cachedViews: state?.cachedViews ?? []) else { return nil }
         return (state, request)
     }
 
@@ -630,20 +661,20 @@ public final class NovelReadingWorkflow {
         supersedePendingRuntimeUpdate()
         viewportRuntime.release()
         session = nil
-        currentDocument = nil
-        prefetchedDocument = nil
+        currentProjection = nil
+        prefetchedProjection = nil
         currentLoadSource = .online
         prefetchedLoadSource = nil
         currentAuthorID = nil
-        currentDocumentSurfaceCount = 0
+        currentProjectionSurfaceCount = 0
         prefetchInFlightView = nil
         prefetchCooldown = nil
         state = nil
         lastPublishedSnapshot = nil
     }
 
-    private func cacheContext(for document: NovelReaderProjection) -> NovelReadingCacheContext {
-        let authorID = document.resolvedAuthorID ?? currentAuthorID ?? context.authorID
+    private func cacheContext(for projection: NovelReaderProjection) -> NovelReadingCacheContext {
+        let authorID = projection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
         return NovelReadingCacheContext(authorID: authorID)
     }
 
@@ -668,21 +699,21 @@ public final class NovelReadingWorkflow {
 
     @discardableResult
     public nonisolated(nonsending) func prefetchIfNeeded(near surfaceIdentity: NovelReaderSurfaceIdentity) async -> NovelReadingWorkflowState? {
-        guard let currentDocument else { return nil }
+        guard let currentProjection else { return nil }
         guard surfaceIdentity.generation == viewportRuntime.currentGeneration,
               viewportRuntime.currentResult?.viewportIndex.surfaces.contains(where: {
                   $0.surfaceOrdinal == surfaceIdentity.ordinal
               }) == true else {
             return nil
         }
-        guard currentDocument.view < currentDocument.maxView else { return nil }
-        let thresholdIndex = max(currentDocumentSurfaceCount - 2, 0)
+        guard currentProjection.view < currentProjection.maxView else { return nil }
+        let thresholdIndex = max(currentProjectionSurfaceCount - 2, 0)
         guard surfaceIdentity.ordinal >= thresholdIndex else { return nil }
-        if let prefetchedDocument, prefetchedDocument.view == currentDocument.view + 1 {
+        if let prefetchedProjection, prefetchedProjection.view == currentProjection.view + 1 {
             return nil
         }
 
-        let targetView = currentDocument.view + 1
+        let targetView = currentProjection.view + 1
         guard prefetchInFlightView != targetView else { return nil }
         if let prefetchCooldown, prefetchCooldown.view == targetView, prefetchCooldown.until > now() {
             return nil
@@ -698,7 +729,7 @@ public final class NovelReadingWorkflow {
         let nextRequest = NovelPageRequest(
             threadID: context.threadID,
             view: targetView,
-            authorID: currentAuthorID ?? currentDocument.resolvedAuthorID ?? context.authorID
+            authorID: currentAuthorID ?? currentProjection.resolvedAuthorID ?? context.authorID
         )
         guard let nextLoad = try? await repository.loadPageResult(nextRequest) else {
             prefetchCooldown = (view: targetView, until: now().addingTimeInterval(Self.prefetchFailureCooldownInterval))
@@ -706,13 +737,13 @@ public final class NovelReadingWorkflow {
         }
         prefetchCooldown = nil
 
-        let nextDocument = nextLoad.projection
-        prefetchedDocument = nextDocument
+        let nextProjection = nextLoad.projection
+        prefetchedProjection = nextProjection
         prefetchedLoadSource = nextLoad.source
-        if nextDocument.maxView > (session?.snapshot.maxView ?? 0) {
-            session?.updateMaximumView(nextDocument.maxView)
+        if nextProjection.maxView > (session?.snapshot.maxView ?? 0) {
+            session?.updateMaximumView(nextProjection.maxView)
         }
-        return try? await updateStateFromSession(refreshCachedViews: false)
+        return await updateStateFromSession(refreshCachedViews: false)
     }
 
     @discardableResult
@@ -721,41 +752,40 @@ public final class NovelReadingWorkflow {
         resumePoint: NovelResumePoint?
     ) async throws -> NovelReadingWorkflowState? {
         supersedePendingRuntimeUpdate()
-        guard let nextDocument = prefetchedDocument,
+        guard let nextProjection = prefetchedProjection,
               var candidateSession = session else {
             return nil
         }
-        let effectiveResumePoint = resumePoint?.view == nextDocument.view ? resumePoint : nil
+        let effectiveResumePoint = resumePoint?.view == nextProjection.view ? resumePoint : nil
         let transaction = try prepareRuntimeTransaction(
-            document: nextDocument,
+            projection: nextProjection,
             settings: settings,
             layout: layout,
             usesPadPresentation: usesPadPresentation
         )
         try candidateSession.promotePrefetchedDocument(
-            document: nextDocument,
+            document: nextProjection,
             layoutResult: transaction.result,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             resumePoint: effectiveResumePoint,
-            usesPagedSpread: usesPagedSpread(
+            usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: settings,
                 layout: layout,
                 usesPadPresentation: usesPadPresentation
             )
         )
-        let nextAuthorID = nextDocument.resolvedAuthorID ?? currentAuthorID ?? context.authorID
+        let nextAuthorID = nextProjection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
+        // Promotion replaces the document dimensions (the prefetched page
+        // becomes current, the prefetch slot empties); appearance and the
+        // cached-views set carry over from the current fields by omission.
         let preparedTransaction = try makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
-            settings: settings,
-            layout: layout,
-            usesPadPresentation: usesPadPresentation,
-            currentDocument: nextDocument,
-            prefetchedDocument: nil,
+            currentProjection: nextProjection,
+            prefetchedProjection: nil,
             currentLoadSource: prefetchedLoadSource ?? .online,
             prefetchedLoadSource: nil,
-            currentAuthorID: candidateSession.snapshot.currentAuthorID ?? nextAuthorID,
-            cachedViews: state?.cachedViews ?? [],
+            currentAuthorID: candidateSession.snapshot.currentAuthorID ?? nextAuthorID
         )
         return commit(preparedTransaction)
     }
@@ -784,45 +814,45 @@ public final class NovelReadingWorkflow {
         let pageLoad = forceRefresh
             ? try await repository.loadPageIgnoringCacheResult(request)
             : try await repository.loadPageResult(request)
-        let document = pageLoad.projection
+        let projection = pageLoad.projection
         let preservedResumePoint = preferredResumePoint ?? captureNovelReadingPosition()
-        let nextAuthorID = document.resolvedAuthorID ?? currentAuthorID ?? context.authorID
+        let nextAuthorID = projection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
         let transaction = try prepareRuntimeTransaction(
-            document: document,
+            projection: projection,
             settings: settings,
             layout: layout,
             usesPadPresentation: usesPadPresentation
         )
         let candidateSession = try NovelReadingSession(
-            validating: document,
+            validating: projection,
             layoutResult: transaction.result,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             resumePoint: preservedResumePoint,
             currentAuthorID: nextAuthorID,
-            usesPagedSpread: usesPagedSpread(
+            usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: settings,
                 layout: layout,
                 usesPadPresentation: usesPadPresentation
             ),
             pageTurnDirection: settings.pageTurnDirection
         )
-        let documentCacheContext = cacheContext(for: document)
+        let projectionCacheContext = cacheContext(for: projection)
         let cachedViews = await repository.cachedViews(
             for: context.threadID,
-            authorID: documentCacheContext.authorID
+            authorID: projectionCacheContext.authorID
         )
+        // A fresh load replaces every document dimension plus the cached-views
+        // set (just refetched above); appearance carries over from the current
+        // fields by omission.
         let preparedTransaction = try makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
-            settings: settings,
-            layout: layout,
-            usesPadPresentation: usesPadPresentation,
-            currentDocument: document,
-            prefetchedDocument: nil,
+            currentProjection: projection,
+            prefetchedProjection: nil,
             currentLoadSource: pageLoad.source,
             prefetchedLoadSource: nil,
             currentAuthorID: candidateSession.snapshot.currentAuthorID ?? nextAuthorID,
-            cachedViews: cachedViews,
+            cachedViews: cachedViews
         )
         guard let nextState = commit(preparedTransaction) else {
             throw NovelTextLayoutFailure.textKitIndexing
@@ -830,13 +860,17 @@ public final class NovelReadingWorkflow {
         return nextState
     }
 
-    private nonisolated(nonsending) func updateStateFromSession(refreshCachedViews: Bool) async throws -> NovelReadingWorkflowState {
+    /// Returns nil when the session was torn down while this call was
+    /// suspended (e.g. the reader closed mid-prefetch); callers treat that as
+    /// "no state change", never as a programmer error — `close()` racing a
+    /// suspended prefetch is a legitimate user action, not a broken invariant.
+    private nonisolated(nonsending) func updateStateFromSession(refreshCachedViews: Bool) async -> NovelReadingWorkflowState? {
         guard let snapshot = session?.snapshot,
-              currentDocument != nil else {
-            preconditionFailure("Novel reading workflow has no active session")
+              currentProjection != nil else {
+            return nil
         }
         currentAuthorID = snapshot.currentAuthorID ?? currentAuthorID
-        currentDocumentSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
+        currentProjectionSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
         let cachedViews = if refreshCachedViews {
             await repository.cachedViews(
                 for: context.threadID,
@@ -845,18 +879,17 @@ public final class NovelReadingWorkflow {
         } else {
             state?.cachedViews ?? []
         }
-        guard let nextState = try updateStateFromSession(cachedViews: cachedViews) else {
-            preconditionFailure("Novel reading workflow has no active session")
-        }
-        return nextState
+        // The cached-views load above is a suspension point; the sync variant
+        // re-checks the session before touching state.
+        return updateStateFromSession(cachedViews: cachedViews)
     }
 
-    private func updateStateFromSession(cachedViews: Set<Int>) throws -> NovelReadingWorkflowState? {
+    private func updateStateFromSession(cachedViews: Set<Int>) -> NovelReadingWorkflowState? {
         guard let snapshot = session?.snapshot else {
             return nil
         }
         currentAuthorID = snapshot.currentAuthorID ?? currentAuthorID
-        currentDocumentSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
+        currentProjectionSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
         let generation = viewportRuntime.currentGeneration
         let previousPresentation = state?.presentation
         let revision = previousPresentation?.generation == generation
@@ -864,13 +897,14 @@ public final class NovelReadingWorkflow {
             : 0
         let nextState = NovelReadingWorkflowState(
             snapshot: snapshot,
-            presentation: makePresentation(
+            presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
                 layoutResult: viewportRuntime.currentResult,
                 generation: generation,
                 revision: revision,
                 settings: settings,
-                usesTwoPageSpread: usesPagedSpread(
+                fallbackLayout: layout,
+                usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
                     usesPadPresentation: usesPadPresentation
@@ -884,138 +918,8 @@ public final class NovelReadingWorkflow {
         return nextState
     }
 
-    private func makePresentation(
-        snapshot: NovelReadingSnapshot,
-        layoutResult: NovelTextLayoutResult?,
-        generation: UInt64,
-        revision: UInt64,
-        settings: NovelReaderAppearanceSettings,
-        usesTwoPageSpread: Bool,
-        pageLoadSource: NovelReaderProjectionLoadSource
-    ) -> NovelReaderPresentation {
-        let readableSize = layoutResult?.viewportContext.identity.layout.readableFrame.size ?? layout.readableFrame.size
-        let indexSurfaces = (layoutResult?.viewportIndex.surfaces ?? []).sorted { lhs, rhs in
-            lhs.surfaceOrdinal < rhs.surfaceOrdinal
-        }
-        let surfaces = indexSurfaces.enumerated().map { index, surface in
-            let presentationHeight = layoutResult?.layoutMetrics.surfaceHeight(for: surface.surfaceOrdinal) ?? readableSize.height
-            let nextSurface = indexSurfaces.indices.contains(index + 1) ? indexSurfaces[index + 1] : nil
-            let spacingAfter: CGFloat = {
-                guard let nextSurface else { return 0 }
-                return surface.externalBlocks.isEmpty && nextSurface.externalBlocks.isEmpty ? 0 : 14
-            }()
-            return NovelReaderSurface(
-                identity: NovelReaderSurfaceIdentity(
-                    generation: generation,
-                    ordinal: surface.surfaceOrdinal
-                ),
-                presentationIndex: index,
-                kind: surface.externalBlocks.isEmpty ? .text : .externalBlock,
-                documentView: surface.documentView,
-                chapterTitle: surface.chapterTitle,
-                presentationSize: CGSize(width: readableSize.width, height: presentationHeight),
-                presentationSpacingAfter: spacingAfter,
-                externalBlocks: surface.externalBlocks.map { externalBlock in
-                    NovelReaderExternalBlock(
-                        url: externalBlock.url,
-                        frame: externalBlock.frozenFrame.map {
-                            CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
-                        },
-                        chapterIdentity: externalBlock.chapterIdentity,
-                        imageSegmentIdentity: externalBlock.imageSegmentIdentity,
-                        chapterOrdinal: externalBlock.chapterOrdinal
-                    )
-                },
-                chapterCommentTarget: surface.chapterCommentTarget,
-                resolvedAuthorID: snapshot.currentAuthorID
-            )
-        }
-        let surfaceIdentityByOrdinal = Dictionary(
-            uniqueKeysWithValues: surfaces.map { ($0.identity.ordinal, $0.identity) }
-        )
-        let surfaceIndexByOrdinal = Dictionary(
-            uniqueKeysWithValues: surfaces.map { ($0.identity.ordinal, $0.presentationIndex) }
-        )
-        let spreads = makeSpreads(from: indexSurfaces).compactMap { spread -> NovelReaderPresentationSpread? in
-            guard let leftIdentity = surfaceIdentityByOrdinal[spread.leftSurfaceIndex] else {
-                return nil
-            }
-            return NovelReaderPresentationSpread(
-                index: spread.index,
-                leftSurfaceIndex: surfaceIndexByOrdinal[spread.leftSurfaceIndex] ?? spread.index,
-                leftSurfaceIdentity: leftIdentity,
-                rightSurfaceIndex: spread.rightSurfaceIndex.flatMap { surfaceIndexByOrdinal[$0] },
-                rightSurfaceIdentity: spread.rightSurfaceIndex.flatMap { surfaceIdentityByOrdinal[$0] },
-                chapterTitle: spread.chapterTitle
-            )
-        }
-        let selectedSurfaceIndex = surfaceIndexByOrdinal[snapshot.selectedSurfaceOrdinal]
-        let readingState = NovelReaderReadingState(
-            currentView: snapshot.currentView,
-            maxView: snapshot.maxView,
-            currentChapterTitle: snapshot.currentChapterTitle,
-            authorID: snapshot.currentAuthorID,
-            currentSurfaceIntraProgress: snapshot.currentSurfaceIntraProgress
-        )
-        let progressProjection = NovelReaderProgressProjection(
-            readingMode: settings.readingMode,
-            usesTwoPageSpread: usesTwoPageSpread,
-            pageTurnDirection: settings.pageTurnDirection,
-            surfaces: surfaces,
-            selectedSurfaceIndex: selectedSurfaceIndex ?? 0,
-            spreads: spreads,
-            readingState: readingState
-        )
-        return NovelReaderPresentation(
-            generation: generation,
-            revision: revision,
-            surfaces: surfaces,
-            selectedSurfaceIdentity: surfaceIdentityByOrdinal[snapshot.selectedSurfaceOrdinal],
-            spreads: spreads,
-            chapters: layoutResult?.viewportIndex.novelReaderChapters ?? [],
-            committedSettings: settings,
-            readingState: readingState,
-            pageLoadSource: pageLoadSource,
-            retainedChapterCount: snapshot.retainedChapterCount,
-            filteredChapterCandidateCount: snapshot.filteredChapterCandidateCount,
-            selectedSurfaceIndex: selectedSurfaceIndex,
-            progressProjection: progressProjection,
-            usesTwoPageSpread: usesTwoPageSpread
-        )
-    }
-
-    private func makeSpreads(from surfaces: [NovelTextViewportIndexSurface]) -> [NovelReadingSpread] {
-        guard !surfaces.isEmpty else { return [] }
-
-        var spreads: [NovelReadingSpread] = []
-        var surfaceCursor = 0
-
-        while surfaceCursor < surfaces.count {
-            let leftSurface = surfaces[surfaceCursor]
-            let candidateRightIndex = surfaceCursor + 1
-            let rightSurfaceIndex: Int? = if surfaces.indices.contains(candidateRightIndex),
-                                          surfaces[candidateRightIndex].documentView == leftSurface.documentView {
-                candidateRightIndex
-            } else {
-                nil
-            }
-
-            spreads.append(
-                NovelReadingSpread(
-                    index: spreads.count,
-                    leftSurfaceIndex: leftSurface.surfaceOrdinal,
-                    rightSurfaceIndex: rightSurfaceIndex,
-                    chapterTitle: leftSurface.chapterTitle
-                )
-            )
-            surfaceCursor += rightSurfaceIndex == nil ? 1 : 2
-        }
-
-        return spreads
-    }
-
     private func prepareRuntimeTransaction(
-        document: NovelReaderProjection,
+        projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         usesPadPresentation: Bool
@@ -1026,21 +930,10 @@ public final class NovelReadingWorkflow {
         )
         return try viewportRuntime.prepareTransaction(
             preparedInput: try NovelTextLayout.prepareInput(
-                document: document,
+                document: projection,
                 settings: settings,
                 layout: paginationLayout
             )
         )
-    }
-
-    private func usesPagedSpread(
-        settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout,
-        usesPadPresentation: Bool
-    ) -> Bool {
-        settings.readingMode == .paged &&
-            settings.showsTwoPagesInLandscapeOnPad &&
-            usesPadPresentation &&
-            layout.width > layout.height
     }
 }

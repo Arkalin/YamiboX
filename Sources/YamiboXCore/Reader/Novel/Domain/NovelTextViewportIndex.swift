@@ -193,10 +193,10 @@ package struct NovelTextViewportIndex: Hashable, Sendable {
     public func position(
         for textSegmentIdentity: NovelTextSegmentIdentity,
         displayedTextOffset: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelTextViewportIndexSurfacePosition? {
-        guard document.view == documentView,
-              let segmentIndex = document.segmentSemantics.firstIndex(where: {
+        guard projection.view == documentView,
+              let segmentIndex = projection.segmentSemantics.firstIndex(where: {
                   $0?.textSegmentIdentity == textSegmentIdentity
               }) else {
             return nil
@@ -259,10 +259,10 @@ package extension NovelTextViewportIndexSurface {
 
     func semanticTextPosition(
         for intraSurfaceProgress: Double,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelTextViewportSemanticTextPosition? {
         guard let rangePosition = textRangePosition(for: intraSurfaceProgress),
-              let semantics = document.semantics(forSegmentIndex: rangePosition.range.segmentIndex),
+              let semantics = projection.semantics(forSegmentIndex: rangePosition.range.segmentIndex),
               let textSegmentIdentity = semantics.textSegmentIdentity else {
             return nil
         }
@@ -280,20 +280,20 @@ package extension NovelTextViewportIndexSurface {
 
     func contains(
         textSegmentIdentity: NovelTextSegmentIdentity,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Bool {
         ranges.contains { range in
-            document.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
+            projection.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
         }
     }
 
     func contains(
         textSegmentIdentity: NovelTextSegmentIdentity,
         displayedTextOffset: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Bool {
         ranges.contains { range in
-            document.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity &&
+            projection.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity &&
                 range.contains(offset: displayedTextOffset)
         }
     }
@@ -311,10 +311,10 @@ package extension NovelTextViewportIndexSurface {
 
     func contains(
         chapterIdentity: NovelChapterIdentity,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Bool {
         ranges.contains { range in
-            document.semantics(forSegmentIndex: range.segmentIndex)?.chapterIdentity == chapterIdentity
+            projection.semantics(forSegmentIndex: range.segmentIndex)?.chapterIdentity == chapterIdentity
         } || externalBlocks.contains { block in
             block.chapterIdentity == chapterIdentity
         }
@@ -323,10 +323,10 @@ package extension NovelTextViewportIndexSurface {
     func distance(
         from displayedTextOffset: Int,
         textSegmentIdentity: NovelTextSegmentIdentity,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Int {
         let matchingRanges = ranges.filter { range in
-            document.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
+            projection.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
         }
         guard !matchingRanges.isEmpty else { return Int.max }
         return matchingRanges.map { $0.distance(toOffset: displayedTextOffset) }.min() ?? Int.max
@@ -336,11 +336,11 @@ package extension NovelTextViewportIndexSurface {
         displayedTextOffset: Int,
         textSegmentIdentity: NovelTextSegmentIdentity,
         fallbackProgress: Double,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Double {
         progress(
             matching: { range in
-                document.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
+                projection.semantics(forSegmentIndex: range.segmentIndex)?.textSegmentIdentity == textSegmentIdentity
             },
             offset: displayedTextOffset,
             fallbackProgress: fallbackProgress
@@ -349,7 +349,7 @@ package extension NovelTextViewportIndexSurface {
 
     func sample(
         displayOffset: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> NovelTextViewportSample? {
         guard !ranges.isEmpty else { return nil }
         let normalizedOffset = max(0, displayOffset)
@@ -359,7 +359,7 @@ package extension NovelTextViewportIndexSurface {
             let length = max(range.length, 0)
             let rangeEnd = runningOffset + length
             if normalizedOffset <= rangeEnd {
-                guard let textSegmentIdentity = document
+                guard let textSegmentIdentity = projection
                     .semantics(forSegmentIndex: range.segmentIndex)?
                     .textSegmentIdentity else {
                     return nil
@@ -369,17 +369,17 @@ package extension NovelTextViewportIndexSurface {
                         generation: 0,
                         ordinal: surfaceOrdinal
                     ),
-                    documentView: document.view,
+                    documentView: projection.view,
                     textSegmentIdentity: textSegmentIdentity,
                     displayedTextOffset: range.startOffset + min(max(normalizedOffset - runningOffset, 0), length),
-                    resolvedAuthorID: document.resolvedAuthorID
+                    resolvedAuthorID: projection.resolvedAuthorID
                 )
             }
             runningOffset = rangeEnd + 2
         }
 
         guard let lastRange = ranges.last,
-              let textSegmentIdentity = document
+              let textSegmentIdentity = projection
                   .semantics(forSegmentIndex: lastRange.segmentIndex)?
                   .textSegmentIdentity else {
             return nil
@@ -389,19 +389,19 @@ package extension NovelTextViewportIndexSurface {
                 generation: 0,
                 ordinal: surfaceOrdinal
             ),
-            documentView: document.view,
+            documentView: projection.view,
             textSegmentIdentity: textSegmentIdentity,
             displayedTextOffset: lastRange.endOffset,
-            resolvedAuthorID: document.resolvedAuthorID
+            resolvedAuthorID: projection.resolvedAuthorID
         )
     }
 
     func displayOffset(
         for textSegmentIdentity: NovelTextSegmentIdentity,
         displayedTextOffset: Int,
-        in document: NovelReaderProjection
+        in projection: NovelReaderProjection
     ) -> Int? {
-        guard let segmentIndex = document.segmentSemantics.firstIndex(where: {
+        guard let segmentIndex = projection.segmentSemantics.firstIndex(where: {
             $0?.textSegmentIdentity == textSegmentIdentity
         }) else {
             return nil

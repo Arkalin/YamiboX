@@ -44,7 +44,7 @@ public enum NovelReaderProjectionBuilder {
     ) throws -> NovelReaderProjection {
         let normalizedAuthorID = authorID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedAuthorID.isEmpty else {
-            throw YamiboError.parsingFailed(context: "小说作者范围")
+            throw YamiboError.parsingFailed(context: L10n.string("parsing_context.novel_author_scope"))
         }
 
         let parsed = try parseContent(
@@ -261,11 +261,11 @@ private enum NovelReaderPostHTMLProjectionParser {
         let fragment = try KannaSoup.parseBodyFragment(post.contentHTML, baseURL: YamiboDomain.baseURL.absoluteString)
         let body = fragment.body() ?? fragment
         let isReplyToOther = try isReplyToOther(in: body)
-        try body.select("i").remove()
+        body.select("i").remove()
 
-        let text = try readableText(from: body)
+        let text = readableText(from: body)
         let chapterTitle = chapterTitle(from: text)
-        var parsedSegments = try orderedSegments(from: body, chapterTitle: chapterTitle)
+        var parsedSegments = orderedSegments(from: body, chapterTitle: chapterTitle)
         parsedSegments.append(contentsOf: missingAttachmentImageSegments(post.images, contentHTML: post.contentHTML, chapterTitle: chapterTitle))
 
         return NovelReaderProjectedPost(
@@ -316,38 +316,38 @@ private enum NovelReaderPostHTMLProjectionParser {
     }
 
     private static func isReplyToOther(in body: Element) throws -> Bool {
-        let quoteCandidates = try body.select(".quote, blockquote").array()
+        let quoteCandidates = body.select(".quote, blockquote").array()
         guard quoteCandidates.contains(where: isDiscuzReplyQuote) else {
             return false
         }
 
-        let remainingFragment = try KannaSoup.parseBodyFragment(try body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
+        let remainingFragment = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
         let remainingBody = remainingFragment.body() ?? remainingFragment
-        try remainingBody.select(".quote").remove()
-        for blockquote in try remainingBody.select("blockquote") where isDiscuzReplyQuote(blockquote) {
-            try blockquote.remove()
+        remainingBody.select(".quote").remove()
+        for blockquote in remainingBody.select("blockquote") where isDiscuzReplyQuote(blockquote) {
+            blockquote.remove()
         }
-        try remainingBody.select("i, .pstatus").remove()
-        return !normalizeText(try remainingBody.text()).isEmpty
+        remainingBody.select("i, .pstatus").remove()
+        return !normalizeText(remainingBody.text()).isEmpty
     }
 
     private static func isDiscuzReplyQuote(_ element: Element) -> Bool {
         if element.hasClass("quote") {
             return true
         }
-        let text = normalizeText((try? element.text()) ?? "")
+        let text = normalizeText(element.text())
         return containsDiscuzQuoteHeader(text)
     }
 
-    private static func readableText(from body: Element) throws -> String {
+    private static func readableText(from body: Element) -> String {
         var value = ""
         for child in body.getChildNodes() {
-            try appendText(from: child, into: &value)
+            appendText(from: child, into: &value)
         }
         return normalizeText(value)
     }
 
-    private static func orderedSegments(from body: Element, chapterTitle: String?) throws -> [ParsedSegment] {
+    private static func orderedSegments(from body: Element, chapterTitle: String?) -> [ParsedSegment] {
         var segments: [ParsedSegment] = []
         var text: [StyledCharacter] = []
 
@@ -378,7 +378,7 @@ private enum NovelReaderPostHTMLProjectionParser {
             text.append(StyledCharacter(character: " ", isBold: isBold, isQuote: isQuote))
         }
 
-        func appendSegments(from node: Node, isBold: Bool, isQuote: Bool) throws {
+        func appendSegments(from node: Node, isBold: Bool, isQuote: Bool) {
             if let textNode = node as? TextNode {
                 appendText(
                     textNode
@@ -399,7 +399,7 @@ private enum NovelReaderPostHTMLProjectionParser {
                     return
                 }
                 if tagName == "img" {
-                    guard let url = try imageURL(from: element) else { return }
+                    guard let url = imageURL(from: element) else { return }
                     flushText()
                     segments.append(
                         ParsedSegment(
@@ -419,7 +419,7 @@ private enum NovelReaderPostHTMLProjectionParser {
                 }
 
                 for child in element.getChildNodes() {
-                    try appendSegments(from: child, isBold: nextBold, isQuote: nextQuote)
+                    appendSegments(from: child, isBold: nextBold, isQuote: nextQuote)
                 }
                 if usesInlineBoundarySpacing {
                     appendInlineBoundarySpace(isBold: isBold, isQuote: isQuote)
@@ -432,19 +432,19 @@ private enum NovelReaderPostHTMLProjectionParser {
             }
 
             for child in node.getChildNodes() {
-                try appendSegments(from: child, isBold: isBold, isQuote: isQuote)
+                appendSegments(from: child, isBold: isBold, isQuote: isQuote)
             }
         }
 
         for child in body.getChildNodes() {
-            try appendSegments(from: child, isBold: false, isQuote: false)
+            appendSegments(from: child, isBold: false, isQuote: false)
         }
         flushText()
 
         return segments
     }
 
-    private static func appendText(from node: Node, into value: inout String) throws {
+    private static func appendText(from node: Node, into value: inout String) {
         if let textNode = node as? TextNode {
             value += textNode
                 .getWholeText()
@@ -463,7 +463,7 @@ private enum NovelReaderPostHTMLProjectionParser {
             }
 
             for child in element.getChildNodes() {
-                try appendText(from: child, into: &value)
+                appendText(from: child, into: &value)
             }
 
             if blockBreakTags.contains(tagName) {
@@ -473,7 +473,7 @@ private enum NovelReaderPostHTMLProjectionParser {
         }
 
         for child in node.getChildNodes() {
-            try appendText(from: child, into: &value)
+            appendText(from: child, into: &value)
         }
     }
 
@@ -497,7 +497,7 @@ private enum NovelReaderPostHTMLProjectionParser {
     }
 
     private static func inlineFontWeightBoldState(for element: Element) -> Bool? {
-        let style = (try? element.attr("style"))?.lowercased() ?? ""
+        let style = element.attr("style").lowercased()
         guard !style.isEmpty else { return nil }
 
         for declaration in style.split(separator: ";") {
@@ -719,7 +719,7 @@ private enum NovelReaderPostHTMLProjectionParser {
         return Array(text[start ..< end])
     }
 
-    private static func imageURL(from image: Element) throws -> URL? {
+    private static func imageURL(from image: Element) -> URL? {
         YamiboImageReferenceExtractor.novelInline.url(from: image)
     }
 
