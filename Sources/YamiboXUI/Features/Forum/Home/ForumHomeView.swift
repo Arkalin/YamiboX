@@ -136,8 +136,13 @@ private struct ForumHomeCarouselView: View {
 
     @State private var selection = 0
     @State private var isUserInteracting = false
+    @State private var lastUserInteraction = Date.distantPast
+    @State private var lastAutoAdvance = Date.distantPast
+    @State private var autoAdvanceSelection: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private static let autoAdvanceDwell: TimeInterval = 3
 
     var body: some View {
         Group {
@@ -150,22 +155,42 @@ private struct ForumHomeCarouselView: View {
                     items: items,
                     selection: $selection,
                     isUserInteracting: $isUserInteracting,
+                    lastUserInteraction: $lastUserInteraction,
                     onTap: onTap
                 )
             } else {
                 fullWidthPager
             }
         }
+        .onChange(of: selection) { _, newValue in
+            // A selection change the timer didn't make is the user's (swipe
+            // settle, dot tap): restart the dwell so auto-advance never fires
+            // right on the heels of a manual move.
+            if newValue != autoAdvanceSelection {
+                lastUserInteraction = .now
+            }
+            autoAdvanceSelection = nil
+        }
         // Reduce Motion disables auto-advance entirely; the banners stay
         // swipeable by hand.
         .task(id: "\(items.map(\.id))-\(reduceMotion)") {
             guard items.count > 1, !reduceMotion else { return }
+            // Polls at 1s so a dwell that was reset by interaction is
+            // re-honored promptly; both guards must clear a full dwell.
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
                 guard !isUserInteracting else { continue }
+                let now = Date.now
+                guard now.timeIntervalSince(lastUserInteraction) >= Self.autoAdvanceDwell,
+                      now.timeIntervalSince(lastAutoAdvance) >= Self.autoAdvanceDwell else {
+                    continue
+                }
+                lastAutoAdvance = now
+                let next = (selection + 1) % items.count
+                autoAdvanceSelection = next
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    selection = (selection + 1) % items.count
+                    selection = next
                 }
             }
         }
@@ -181,6 +206,16 @@ private struct ForumHomeCarouselView: View {
         .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
         .frame(maxWidth: .infinity)
         .aspectRatio(2.63, contentMode: .fit)
+        // The page-style TabView exposes no scroll phase, so a parallel
+        // observer stamps touches to pause auto-advance mid-swipe; the
+        // selection onChange above catches the settle even if this gesture
+        // gets cancelled by the pager.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { _ in
+                    lastUserInteraction = .now
+                }
+        )
     }
 }
 
@@ -260,9 +295,11 @@ private struct ForumHomePeekCarouselView: View {
     let items: [ForumHomeCarouselItem]
     @Binding var selection: Int
     @Binding var isUserInteracting: Bool
+    @Binding var lastUserInteraction: Date
     let onTap: (ForumHomeCarouselItem) -> Void
 
     @State private var containerWidth: CGFloat?
+    @State private var indicatorWidth: CGFloat = 0
     // Index into the tripled strip, so the visible card always has a
     // neighbor on both sides; `selection` is this modulo `items.count`.
     @State private var scrolledLoopIndex: Int?
@@ -296,7 +333,16 @@ private struct ForumHomePeekCarouselView: View {
             .scrollIndicators(.hidden)
             .safeAreaPadding(.horizontal, layout.sideInset)
             .onScrollPhaseChange { _, newPhase in
-                isUserInteracting = newPhase != .idle
+                // `.animating` is a programmatic hop (auto-advance, dot tap),
+                // not the user's finger — treating it as interaction would
+                // let the timer's own animation keep resetting the dwell.
+                let isUserDriven = newPhase == .tracking
+                    || newPhase == .interacting
+                    || newPhase == .decelerating
+                isUserInteracting = isUserDriven
+                if isUserDriven {
+                    lastUserInteraction = .now
+                }
                 if newPhase == .idle {
                     recenterIntoMiddleCopy()
                 }
@@ -375,15 +421,28 @@ private struct ForumHomePeekCarouselView: View {
                 Capsule(style: .continuous)
                     .fill(index == selection ? ForumColors.brownEmphasis : ForumColors.tertiaryText.opacity(0.45))
                     .frame(width: index == selection ? 18 : 6, height: 6)
-                    .contentShape(Capsule())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            selection = index
-                        }
-                    }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: selection)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: selection)
+        // The 6pt dots themselves are hopeless tap targets, so the whole
+        // padded band is the control: a tap selects the nearest dot's banner
+        // directly (the original per-dot jump semantics, bigger target).
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            indicatorWidth = width
+        }
+        .onTapGesture { location in
+            guard !items.isEmpty, indicatorWidth > 0 else { return }
+            let slotWidth = indicatorWidth / CGFloat(items.count)
+            let tappedIndex = min(max(Int(location.x / slotWidth), 0), items.count - 1)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                selection = tappedIndex
+            }
+        }
         // The banner buttons themselves are the accessible elements; the dots
         // are a redundant visual affordance.
         .accessibilityHidden(true)
