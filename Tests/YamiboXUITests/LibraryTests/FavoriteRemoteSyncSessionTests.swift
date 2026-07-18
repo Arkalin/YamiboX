@@ -380,13 +380,13 @@ final class FavoriteRemoteSyncSessionTests: XCTestCase {
         _ status: FavoriteRemoteSyncTaskStatus,
         in session: FavoriteRemoteSyncSession
     ) async throws {
-        for _ in 0..<100 {
-            if session.snapshot?.status == status {
-                return
+        do {
+            try await waitForMainActorCondition(timeout: .seconds(1), pollInterval: .milliseconds(10)) {
+                session.snapshot?.status == status
             }
-            try await Task.sleep(nanoseconds: 10_000_000)
+        } catch is TestWaitTimeoutError {
+            XCTFail("Timed out waiting for remote sync status \(status)")
         }
-        XCTFail("Timed out waiting for remote sync status \(status)")
     }
 
     private func makeMangaDirectoryStore(suiteName: String) throws -> MangaDirectoryStore {

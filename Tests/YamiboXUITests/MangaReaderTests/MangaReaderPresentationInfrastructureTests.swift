@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-import XCTest
 @testable import YamiboXCore
 @testable import YamiboXUI
 
@@ -146,18 +145,6 @@ struct MangaReaderPresentationInfrastructureTests {
 }
 
 #if os(iOS)
-final class MangaImageSavePresentationStateXCTests: XCTestCase {
-    func testSuccessFeedbackIsAvailableWhileActionDialogDismisses() throws {
-        let page = try makePipelinePage()
-        var state = MangaImageSavePresentationState()
-
-        state.presentActions(for: page)
-        state.finishSave(with: .success)
-
-        XCTAssertEqual(state.feedback?.message, L10n.string("image.save_success_message"))
-    }
-}
-
 private enum MangaPipelineTestError: Error, Equatable {
     case loaderFailure
 }
@@ -226,7 +213,9 @@ private func makeMangaReaderPageImageLoader(dataLoader: RecordingMangaPipelineDa
     )
 }
 
-private func makePipelinePage() throws -> MangaReaderPageProjection {
+// internal(而非 private):拆分出去的 MangaImageSavePresentationStateXCTests.swift
+// 也使用该 fixture。
+func makePipelinePage() throws -> MangaReaderPageProjection {
     MangaReaderPageProjection(
         tid: "700",
         ownerPostID: "post-700",

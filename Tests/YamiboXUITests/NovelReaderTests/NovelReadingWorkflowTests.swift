@@ -286,7 +286,7 @@ final class NovelReadingWorkflowTests: XCTestCase {
             repository: repository,
             pagination: { document, settings, layout in
                 try NovelTextLayout.layout(
-                    document: document,
+                    projection: document,
                     settings: settings,
                     layout: layout,
                     viewportSurfaceLayout: { _, _, _ in
@@ -362,7 +362,7 @@ final class NovelReadingWorkflowTests: XCTestCase {
             repository: repository,
             pagination: { document, settings, layout in
                 try NovelTextLayout.layout(
-                    document: document,
+                    projection: document,
                     settings: settings,
                     layout: layout,
                     viewportSurfaceLayout: { context, _, _ in
@@ -3222,7 +3222,7 @@ private func currentWebpageViewportPagination(
     layout: NovelReaderLayout
 ) throws -> NovelTextLayoutResult {
     try NovelTextLayout.layout(
-        document: document,
+        projection: document,
         settings: settings,
         layout: layout,
         viewportSurfaceLayout: { context, _, _ in

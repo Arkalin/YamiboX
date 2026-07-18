@@ -8,8 +8,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDetectionDeliversNotificationWhenEnabled() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-enabled")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
         let enabled = await monitor.setNotificationsEnabled(true)
         XCTAssertTrue(enabled)
@@ -38,8 +38,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDeliveredBadgeCountReflectsMidRunReadDismissAndConcurrentInsert() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-midrun-badge")
         var pages = [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ]
         var fetchCount = 0
         var gateReached = false
@@ -100,8 +100,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDetectionSkipsNotificationWhenDisabled() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-disabled")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
 
         _ = await monitor.startCheck()
@@ -117,8 +117,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDetectionSkipsNotificationWhenAuthorizationRevoked() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-revoked")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
         try await fixture.persistNotificationsEnabled(true)
         fixture.notifier.authorizationState = .denied
@@ -151,8 +151,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDismissingEventRemovesDeliveredNotificationAndResetsBadge() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-dismiss")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
         await monitor.setNotificationsEnabled(true)
         _ = await monitor.startCheck()
@@ -174,8 +174,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testMarkingEventReadRemovesDeliveredNotificationAndResetsBadge() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-read")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
         await monitor.setNotificationsEnabled(true)
         _ = await monitor.startCheck()
@@ -197,8 +197,8 @@ final class FavoriteUpdateNotificationTests: XCTestCase {
     func testDisablingNotificationsClearsDeliveredNotifications() async throws {
         let fixture = try NotificationFixture(prefix: "favorite-update-notify-off")
         let monitor = try await fixture.makeLoadedMonitor(pages: [
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
-            try NotificationFixture.makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
+            try makeThreadPage(threadID: "960", postID: "p1", replyCount: 1, pageCount: 1),
+            try makeThreadPage(threadID: "960", postID: "p2", replyCount: 3, pageCount: 1)
         ])
         await monitor.setNotificationsEnabled(true)
         _ = await monitor.startCheck()
@@ -359,36 +359,12 @@ private final class NotificationFixture {
         _ status: FavoriteUpdateRunStatus,
         in monitor: FavoriteUpdateMonitor
     ) async throws {
-        for _ in 0..<100 {
-            if monitor.snapshot?.status == status {
-                return
+        do {
+            try await waitForMainActorCondition(timeout: .seconds(1), pollInterval: .milliseconds(10)) {
+                monitor.snapshot?.status == status
             }
-            try await Task.sleep(nanoseconds: 10_000_000)
+        } catch is TestWaitTimeoutError {
+            XCTFail("Timed out waiting for favorite update status \(status)")
         }
-        XCTFail("Timed out waiting for favorite update status \(status)")
-    }
-
-    static func makeThreadPage(
-        threadID: String,
-        postID: String,
-        replyCount: Int,
-        pageCount: Int
-    ) throws -> ForumThreadPage {
-        ForumThreadPage(
-            thread: ThreadIdentity(tid: threadID, fid: "50"),
-            title: "更新主题",
-            posts: [
-                ForumThreadPost(
-                    postID: postID,
-                    author: BlogReaderUser(uid: "u1", name: "作者"),
-                    contentHTML: "<p>正文</p>",
-                    contentText: "正文"
-                )
-            ],
-            pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: pageCount),
-            totalReplies: replyCount,
-            forumID: "50",
-            forumName: "测试板块"
-        )
     }
 }

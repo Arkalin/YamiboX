@@ -396,11 +396,9 @@ private func waitForMangaReaderCacheCondition(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
     condition: @escaping @MainActor () -> Bool
 ) async throws {
-    let start = ContinuousClock.now
-    while await MainActor.run(body: condition) == false {
-        if start.duration(to: .now) > .nanoseconds(Int64(timeoutNanoseconds)) {
-            throw YamiboError.underlying("Timed out waiting for condition")
-        }
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
+    try await waitForMainActorCondition(
+        timeout: .nanoseconds(Int64(timeoutNanoseconds)),
+        pollInterval: .milliseconds(10),
+        condition
+    )
 }

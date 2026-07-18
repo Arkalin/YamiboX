@@ -79,7 +79,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
     /// Fix for the stale-state gap this file's Phase H review flagged:
     /// `FavoriteLibraryOrganizer` did not subscribe to
-    /// `SettingsStore.didChangeNotification`, so toggling Smart Comic Mode
+    /// `SettingsStore.changes()`, so toggling Smart Comic Mode
     /// while the Favorites tab was already loaded left the merged-card
     /// grouping stale until an unrelated favorite/progress/cover change
     /// happened to trigger a reload. This proves the live subscription
@@ -733,7 +733,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
             defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
             key: "local-favorites"
         )
-        let recorder = FavoriteDeleteTestRecorder(error: YamiboError.favoriteDeleteFailed)
+        let recorder = FavoriteDeleteTestRecorder(error: FavoriteActionError.favoriteDeleteFailed)
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             remoteFavoriteDeleteHandler: { items in
@@ -2973,7 +2973,11 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.deleteCategory(id: second.id)
         XCTAssertFalse(organizer.categories.contains { $0.id == second.id })
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // 轮询等待 organizer 的异步持久化落盘(替代固定 50ms sleep 后直接断言)。
+        let expectedSelectedCategoryID = organizer.selectedCategoryID
+        try await waitForCondition {
+            await settingsStore.load().favorites.selectedCategoryID == expectedSelectedCategoryID
+        }
         let settings = await settingsStore.load()
         XCTAssertEqual(settings.favorites.selectedCategoryID, organizer.selectedCategoryID)
     }
@@ -3008,13 +3012,25 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         XCTAssertEqual(organizer.selectedCollection?.id, collection.id)
 
         organizer.closeCollection()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // 轮询等待 closeCollection 的异步持久化落盘(替代固定 50ms sleep)。
+        let expectedCategoryID = category.id
+        try await waitForCondition {
+            let favorites = await settingsStore.load().favorites
+            return favorites.selectedCategoryID == expectedCategoryID
+                && favorites.selectedCollectionID == nil
+        }
         var saved = await settingsStore.load()
         XCTAssertEqual(saved.favorites.selectedCategoryID, category.id)
         XCTAssertNil(saved.favorites.selectedCollectionID)
 
         organizer.openCollection(id: collection.id)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // 轮询等待 openCollection 的异步持久化落盘(替代固定 50ms sleep)。
+        let expectedCollectionID = collection.id
+        try await waitForCondition {
+            let favorites = await settingsStore.load().favorites
+            return favorites.selectedCategoryID == expectedCategoryID
+                && favorites.selectedCollectionID == expectedCollectionID
+        }
         saved = await settingsStore.load()
         XCTAssertEqual(saved.favorites.selectedCategoryID, category.id)
         XCTAssertEqual(saved.favorites.selectedCollectionID, collection.id)
@@ -3052,7 +3068,14 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         organizer.updateSortOrder(.lastReadAt)
         organizer.updateSortDescending(false)
         organizer.updateShowsCategoryCounts(true)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // 轮询等待四次 update 的异步持久化全部落盘(替代固定 50ms sleep)。
+        try await waitForCondition {
+            let favorites = await settingsStore.load().favorites
+            return favorites.layoutMode == .fixedGrid
+                && favorites.sortOrder == .lastReadAt
+                && favorites.sortDescending == false
+                && favorites.showsCategoryCounts == true
+        }
 
         let saved = await settingsStore.load()
         XCTAssertEqual(saved.favorites.layoutMode, .fixedGrid)
@@ -3568,19 +3591,17 @@ private func makeFavoriteBackgroundImageStore(suiteName: String) -> FavoriteBack
 
 /// Polls a `@MainActor` condition until it's true or the timeout elapses —
 /// for asserting on state that only updates asynchronously in response to a
-/// `NotificationCenter` subscription (e.g. `FavoriteLibraryOrganizer`'s
-/// `SettingsStore.didChangeNotification` listener), where a fixed
+/// store change-stream subscription (e.g. `FavoriteLibraryOrganizer`'s
+/// `SettingsStore.changes()` listener), where a fixed
 /// `Task.sleep` would be a flaky guess at how long that takes.
 @MainActor
 private func waitForOrganizerCondition(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
     condition: @escaping @MainActor () -> Bool
 ) async throws {
-    let start = ContinuousClock.now
-    while condition() == false {
-        if start.duration(to: .now) > .nanoseconds(Int64(timeoutNanoseconds)) {
-            throw YamiboError.underlying("Timed out waiting for condition")
-        }
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
+    try await waitForMainActorCondition(
+        timeout: .nanoseconds(Int64(timeoutNanoseconds)),
+        pollInterval: .milliseconds(10),
+        condition
+    )
 }
