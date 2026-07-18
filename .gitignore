@@ -19,3 +19,6 @@ DerivedData/
 *.xcuserstate
 
 docs/issues/
+
+# Release-notes local draft (rebuildable via /changelog)
+/CHANGELOG.md

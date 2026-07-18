@@ -46,6 +46,33 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved MARKETING_VERSION=${version}"
 
+      - name: Resolve release notes
+        id: notes
+        env:
+          RELEASE_NOTES_INPUT: ${{ github.event.inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+
+          # actions/checkout can rewrite the pushed tag as a lightweight ref
+          # (actions/checkout#290); re-fetch so the annotated message is intact.
+          git fetch origin "+refs/tags/${tag}:refs/tags/${tag}" --force 2>/dev/null || true
+
+          notes="${RELEASE_NOTES_INPUT:-}"
+          if [[ -z "${notes}" && "$(git for-each-ref "refs/tags/${tag}" --format='%(objecttype)')" == "tag" ]]; then
+            notes="$(git tag -l --format='%(contents)' "${tag}")"
+          fi
+
+          if [[ -n "${notes//[[:space:]]/}" ]]; then
+            {
+              echo "notes<<NOTES_EOF"
+              printf '%s\n' "${notes}"
+              echo "NOTES_EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "notes=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Archive (unsigned)
         run: |
           xcodebuild archive \
@@ -81,31 +108,32 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ steps.notes.outputs.notes }}
         run: |
           set -euo pipefail
-          gh release create "v${{ steps.version.outputs.version }}" \
-            "${{ steps.package.outputs.ipa_path }}#${{ steps.package.outputs.ipa_name }}" \
-            --repo "${{ github.repository }}" \
-            --title "v${{ steps.version.outputs.version }}" \
+          args=(
+            "${{ steps.package.outputs.ipa_path }}#${{ steps.package.outputs.ipa_name }}"
+            --repo "${{ github.repository }}"
+            --title "v${{ steps.version.outputs.version }}"
             --generate-notes
+          )
+          if [[ -n "${NOTES}" ]]; then
+            args+=(--notes "${NOTES}")
+          fi
+          gh release create "v${{ steps.version.outputs.version }}" "${args[@]}"
 
       - name: Register release in app-repo.json
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_NOTES_INPUT: ${{ github.event.inputs.release_notes }}
+          NOTES: ${{ steps.notes.outputs.notes }}
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
           tag="v${version}"
           download_url="https://github.com/${{ github.repository }}/releases/download/${tag}/${{ steps.package.outputs.ipa_name }}"
 
-          description="${RELEASE_NOTES_INPUT:-}"
-          if [[ -z "${description}" ]]; then
-            if [[ "$(git for-each-ref "refs/tags/${tag}" --format='%(objecttype)')" == "tag" ]]; then
-              description="$(git tag -l --format='%(contents:subject)' "${tag}")"
-            fi
-          fi
-          if [[ -z "${description}" ]]; then
+          description="${NOTES:-}"
+          if [[ -z "${description//[[:space:]]/}" ]]; then
             description="版本更新，详见 GitHub Release 说明"
           fi
 
@@ -117,6 +145,7 @@ jobs:
           import sys
 
           version, date, description, url, size = sys.argv[1:6]
+          description = description.strip()
           path = "app-repo.json"
 
           with open(path) as f:
