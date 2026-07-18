@@ -106,9 +106,13 @@ enum ForumThreadPollParser {
                         return tag == "tr" || tag == "li" || tag == "p" || element.hasClass("polloption")
                     }
                 ) ?? input.parent()
-                let rawText = (row ?? input).text()
+                let rowElement = row ?? input
+                let rawText = rowElement.text()
                 let inputValue = input.attr("value")
-                let optionText = optionTitle(from: rawText)
+                // The touch row keeps the option name alone inside `<label>`
+                // ("1.选项甲") — reading it avoids scrubbing the sibling
+                // `em.y` "65% (13票)" out of the merged row text.
+                let optionText = optionTitle(from: rowElement.firstText("label") ?? rawText)
                     ?? inputValue.nilIfBlank
                     ?? "\(index + 1)"
                 return ForumThreadPollOption(
@@ -125,7 +129,7 @@ enum ForumThreadPollParser {
         return rows.enumerated().compactMap { index, row in
             let text = row.normalizedText()
             guard text.contains("%"),
-                  let title = optionTitle(from: text) else {
+                  let title = optionTitle(from: row.firstText("label") ?? text) else {
                 return nil
             }
             return ForumThreadPollOption(
@@ -187,6 +191,8 @@ enum ForumThreadPollParser {
         let value = text
             .replacingOccurrences(of: #"\d+(?:\.\d+)?%\s*(?:\(\d+\))?"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\d+\s*(?:票|人|votes?)"#, with: "", options: [.regularExpression, .caseInsensitive])
+            // Emptied vote-count parentheses left over from the removals above.
+            .replacingOccurrences(of: #"[（(]\s*[)）]"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[\[\]☑✓○●•\-\d.、]+\s*"#, with: "", options: .regularExpression)
         return value.htmlNormalized.nilIfBlank
     }

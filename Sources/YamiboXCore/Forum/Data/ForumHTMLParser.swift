@@ -149,6 +149,9 @@ enum ForumHTMLParser {
         var items: [ForumHomeCarouselItem] = []
         var seen = Set<String>()
 
+        // `.yami-swiper` is emitted by the site's index-top plugin (hook markup,
+        // not fetchable as a template; the touch header does load Swiper's JS
+        // globally). `.dz-swiper` is the template's own carousel variant.
         for slide in document.selectAll(".yami-swiper .swiper-slide a[href], .dz-swiper .swiper-slide a[href]") {
             guard let targetURL = slide.attrURL("href"),
                   let imageURL = slide.firstURL("img[src]", attribute: "src") else {

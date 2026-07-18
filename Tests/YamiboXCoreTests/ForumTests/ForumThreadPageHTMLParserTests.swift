@@ -625,7 +625,7 @@ private extension ForumThreadTextBlock {
     // The touch template renders each option as "1.选项甲" + "65% (13票)"; the
     // title cleanup strips the numeric prefix, percentage, and vote count but
     // leaves the em's emptied parentheses behind.
-    #expect(poll.options.map(\.title) == ["选项甲()", "选项乙()"])
+    #expect(poll.options.map(\.title) == ["选项甲", "选项乙"])
     #expect(poll.options.map(\.voteCount) == [13, 7])
     #expect(poll.options.map(\.percentage) == [65, 35])
     // The touch template never pre-checks poll options for a user who has not
