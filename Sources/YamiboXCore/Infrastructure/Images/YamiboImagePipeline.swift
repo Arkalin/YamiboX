@@ -6,6 +6,11 @@ import Foundation
 /// pipeline owns *how* it is fetched: offline-cache lookup, current-session
 /// authentication headers, Referer, the shared bytes disk cache, and error
 /// mapping.
+/// `@unchecked Sendable`: the only mutable state is `offlineImagesStorage`,
+/// and every access goes through `offlineImagesLock` (see the `offlineImages`
+/// accessor); all other stored properties are immutable `let`s of Sendable or
+/// internally-synchronized (URLSession) types. Keep that invariant when
+/// adding state.
 public final class YamiboImagePipeline: @unchecked Sendable {
     public static let shared = YamiboImagePipeline()
 

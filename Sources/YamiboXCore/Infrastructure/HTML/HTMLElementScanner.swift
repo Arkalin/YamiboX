@@ -5,21 +5,22 @@ import Foundation
 /// Every HTML parser used to hand-roll the same fault-tolerant access idioms
 /// (`(try? select(...).first()?.text()) ?? ""`, manual trims, manual URL
 /// absolutization). These extensions are the one canonical spelling of those idioms:
-/// - selection never throws; failures collapse to empty results,
+/// - selection and extraction never throw (KannaSoup's API is non-throwing;
+///   absent values collapse to empty results),
 /// - extracted text is entity-decoded, whitespace-collapsed, and trimmed,
 /// - extracted URLs are absolutized against `YamiboDomain.baseURL`.
 ///
 /// Only high-frequency idioms live here. Low-frequency DOM operations
 /// (fragment re-parsing, node removal, sibling walks) keep using KannaSoup directly.
 extension Element {
-    /// All elements matching `selector`; selection failures yield an empty array.
+    /// All elements matching `selector`.
     func selectAll(_ selector: String) -> [Element] {
-        (try? select(selector).array()) ?? []
+        select(selector).array()
     }
 
     /// First element matching `selector`, or nil.
     func selectFirst(_ selector: String) -> Element? {
-        try? select(selector).first()
+        select(selector).first()
     }
 
     /// First element produced by any of `selectors`, tried in order.
@@ -64,27 +65,23 @@ extension Element {
 
     /// Entity-decoded, whitespace-collapsed, trimmed text of this element ("" when absent).
     func normalizedText() -> String {
-        ((try? text()) ?? "").htmlNormalized
+        text().htmlNormalized
     }
 
     /// Trimmed, non-blank value of attribute `name`, or nil.
     func attrText(_ name: String) -> String? {
-        ((try? attr(name)) ?? "").nilIfBlank
+        attr(name).nilIfBlank
     }
 
     /// Absolute URL parsed from attribute `name`, or nil.
     func attrURL(_ name: String) -> URL? {
-        HTMLTextExtractor.absoluteURL(from: (try? attr(name)) ?? "")
+        HTMLTextExtractor.absoluteURL(from: attr(name))
     }
 }
 
+// `nilIfBlank`, once part of this layer, now lives with `nilIfEmpty` in
+// Infrastructure/StringPresence.swift — presence checks are not HTML-specific.
 extension String {
-    /// Whitespace-trimmed value, or nil when the result is empty.
-    var nilIfBlank: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-
     /// HTML-entity-decoded, whitespace-collapsed, trimmed value.
     var htmlNormalized: String {
         HTMLTextExtractor.decodeHTMLEntities(self)

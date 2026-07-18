@@ -5,6 +5,10 @@ public protocol YamiboOrdinaryImageCacheClearing: Sendable {
     func removeAllCachedData() async
 }
 
+/// `@unchecked Sendable`: holds no mutable state of its own — both stored
+/// properties are immutable references to Nuke's `ImagePipeline`/`DataCache`,
+/// which are internally thread-safe. Keep any future state behind a lock or
+/// this annotation becomes a lie.
 final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
     static let shared = YamiboImageDataPipeline()
     static let defaultDataCacheLimitBytes = 512 * 1024 * 1024
@@ -123,6 +127,13 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     private static func mapUnderlyingError(_ error: Error) -> Error {
         if let yamiboError = error as? YamiboError {
             return yamiboError
+        }
+        // Favorite-action and persistence errors were `YamiboError` cases
+        // before the domain split and thus passed through the branch above
+        // unchanged; keep that destination so they are never re-wrapped into
+        // an `.underlying` string here.
+        if error is FavoriteActionError || error is YamiboPersistenceError {
+            return error
         }
         if let urlError = error as? URLError {
             switch urlError.code {

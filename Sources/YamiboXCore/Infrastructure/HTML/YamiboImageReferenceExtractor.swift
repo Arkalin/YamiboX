@@ -21,7 +21,7 @@ struct YamiboImageReferenceExtractor: Sendable {
     /// matching a rejected substring disqualifies the element entirely.
     func rawReference(from element: Element) -> String? {
         for attribute in attributes {
-            let value = ((try? element.attr(attribute)) ?? "")
+            let value = element.attr(attribute)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { continue }
             let lowercased = value.lowercased()
