@@ -9,7 +9,7 @@ struct ForumHomeView: View {
     var body: some View {
         Group {
             if model.isLoading && model.page == nil {
-                ForumContentLoadingView(layout: .fillsPage)
+                ForumHomeSkeletonView()
             } else if let error = model.errorMessage, model.page == nil {
                 LoadFailureView(message: error, retry: retry)
             } else if model.categories.isEmpty {
@@ -41,6 +41,53 @@ struct ForumHomeView: View {
 
     private func refresh() async {
         await model.refresh()
+    }
+}
+
+/// Content-shaped placeholder for the first load: a banner block and two
+/// board sections where the real page will appear, gently pulsing. Reads as
+/// "the page is coming" rather than a context-free spinner.
+private struct ForumHomeSkeletonView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isDimmed = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ForumColors.mutedFill)
+                    .aspectRatio(2.63, contentMode: .fit)
+
+                ForEach(0..<2, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(ForumColors.mutedFill)
+                            .frame(width: 96, height: 18)
+
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(ForumColors.creamSurface)
+                                .frame(height: 64)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+        .scrollDisabled(true)
+        .forumPageBackground()
+        .opacity(isDimmed ? 0.6 : 1)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+            value: isDimmed
+        )
+        .onAppear {
+            guard !reduceMotion else { return }
+            isDimmed = true
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.string("common.loading"))
     }
 }
 
