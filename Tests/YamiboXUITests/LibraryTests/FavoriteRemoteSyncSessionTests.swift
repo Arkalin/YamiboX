@@ -376,12 +376,22 @@ final class FavoriteRemoteSyncSessionTests: XCTestCase {
         XCTAssertEqual(savedItem?.title, rawTitle)
     }
 
+    /// 1 second used to be tight enough that the three tests below driving
+    /// the real `makeEngineRunner()` (not `runnerOverride`) — which each
+    /// take several genuine async hops (probe, route resolution, cover/
+    /// metadata fetch, import, persist) even with the HTTP layer mocked —
+    /// flaked on GitHub Actions' shared macOS runners while never once
+    /// failing locally: CI's failing-test list varied which 1-2 of the 3
+    /// timed out from run to run (all 3 once, 2 of 3 another time), the
+    /// signature of a too-tight deadline rather than a deterministic bug.
+    /// 5s matches the sibling `waitForOrganizerCondition` helper's own
+    /// margin (2s) with room to spare for this pipeline's extra hops.
     private func waitForStatus(
         _ status: FavoriteRemoteSyncTaskStatus,
         in session: FavoriteRemoteSyncSession
     ) async throws {
         do {
-            try await waitForMainActorCondition(timeout: .seconds(1), pollInterval: .milliseconds(10)) {
+            try await waitForMainActorCondition(timeout: .seconds(5), pollInterval: .milliseconds(10)) {
                 session.snapshot?.status == status
             }
         } catch is TestWaitTimeoutError {
