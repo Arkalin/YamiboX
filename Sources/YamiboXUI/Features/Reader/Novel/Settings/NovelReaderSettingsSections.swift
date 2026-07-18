@@ -13,19 +13,19 @@ struct NovelReaderTextSection: View {
     let onSelectTraditionalText: () -> Void
 
     var body: some View {
-        NovelReaderSettingsSection(title: L10n.string("reader.section.text"), palette: palette) {
+        ReaderSettingsSection(title: L10n.string("reader.section.text"), palette: palette) {
             NovelReaderFontScaleRow(
                 value: settings.fontScale,
                 palette: palette,
                 onChange: onFontScaleChange
             )
-            NovelReaderDivider(palette: palette)
+            ReaderSettingsDivider(palette: palette)
             NovelReaderFontPickerRow(
                 selectedFamily: settings.fontFamily,
                 palette: palette,
                 onSelect: onFontFamilyChange
             )
-            NovelReaderDivider(palette: palette)
+            ReaderSettingsDivider(palette: palette)
             NovelReaderTranslationPicker(
                 selectedModeRawValue: settings.translationMode.rawValue,
                 palette: palette,
@@ -45,7 +45,7 @@ struct NovelReaderLayoutSection: View {
     let onHorizontalPaddingChange: (Double) -> Void
 
     var body: some View {
-        NovelReaderSettingsSection(title: L10n.string("reader.section.layout"), palette: palette) {
+        ReaderSettingsSection(title: L10n.string("reader.section.layout"), palette: palette) {
             NovelReaderSliderRow(
                 title: L10n.string("reader.line_height"),
                 valueLabel: String(format: "%.2f", settings.lineHeightScale),
@@ -57,7 +57,7 @@ struct NovelReaderLayoutSection: View {
                 palette: palette,
                 onChange: onLineHeightChange
             )
-            NovelReaderDivider(palette: palette)
+            ReaderSettingsDivider(palette: palette)
             NovelReaderSliderRow(
                 title: L10n.string("reader.character_spacing"),
                 valueLabel: "\(Int((settings.characterSpacingScale * 100).rounded()))%",
@@ -69,7 +69,7 @@ struct NovelReaderLayoutSection: View {
                 palette: palette,
                 onChange: onCharacterSpacingChange
             )
-            NovelReaderDivider(palette: palette)
+            ReaderSettingsDivider(palette: palette)
             NovelReaderSliderRow(
                 title: L10n.string("reader.horizontal_padding"),
                 valueLabel: "\(Int(settings.horizontalPadding.rounded()))",
@@ -96,7 +96,7 @@ struct NovelReaderTextOptionsSection: View {
                 title: L10n.string("reader.justified_text"),
                 isOn: $usesJustifiedText
             )
-            NovelReaderDivider(palette: palette)
+            ReaderSettingsDivider(palette: palette)
             toggleRow(
                 title: L10n.string("reader.paragraph_first_line_indent"),
                 isOn: $indentsParagraphFirstLine
@@ -135,30 +135,34 @@ struct NovelReaderDisplaySection: View {
     let onPageTurnDirectionChange: (ReaderPageTurnDirection) -> Void
 
     var body: some View {
-        NovelReaderSettingsSection(title: L10n.string("reader.section.display"), palette: palette) {
+        ReaderSettingsSection(title: L10n.string("reader.section.display"), palette: palette) {
             NovelReaderThemePicker(
                 selectedStyle: settings.backgroundStyle,
                 colorScheme: colorScheme,
                 palette: palette,
                 onSelect: onBackgroundStyleChange
             )
-            NovelReaderDivider(palette: palette)
-            NovelReaderReadingModePicker(
-                settings: settings,
-                palette: palette,
-                onSelect: onReadingModeChange
-            )
+            ReaderSettingsDivider(palette: palette)
+            ReaderSettingsModePicker(
+                selection: ReaderSettingsReadingModeOption(settings),
+                palette: palette
+            ) { option in
+                // Scroll mode has no turn style; keep the current one so it
+                // is restored when the user returns to a paged mode.
+                onReadingModeChange(option.readingMode, option.pagedTurnStyle ?? settings.pagedTurnStyle)
+            }
             if settings.readingMode == .paged {
-                NovelReaderDivider(palette: palette)
-                NovelReaderPageTurnDirectionPicker(
-                    direction: settings.pageTurnDirection,
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsDirectionPicker(
+                    title: L10n.string("reader.page_turn_direction"),
+                    selection: settings.pageTurnDirection,
                     palette: palette,
                     onSelect: onPageTurnDirectionChange
                 )
             }
             if showsTwoPageToggle {
-                NovelReaderDivider(palette: palette)
-                NovelReaderToggleRow(
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
                     title: L10n.string("reader.two_pages_landscape"),
                     palette: palette,
                     isOn: $showsTwoPagesInLandscapeOnPad
@@ -176,8 +180,8 @@ struct NovelReaderMiscSection: View {
     let onShowsAuthorRepliesToOthersChange: (Bool) -> Void
 
     var body: some View {
-        NovelReaderSettingsSection(title: L10n.string("reader.section.other"), palette: palette) {
-            NovelReaderToggleRow(
+        ReaderSettingsSection(title: L10n.string("reader.section.other"), palette: palette) {
+            ReaderSettingsToggleRow(
                 title: L10n.string("reader.inline_images"),
                 palette: palette,
                 isOn: Binding(
@@ -185,8 +189,8 @@ struct NovelReaderMiscSection: View {
                     set: { onLoadsInlineImagesChange($0) }
                 )
             )
-            NovelReaderDivider(palette: palette)
-            NovelReaderToggleRow(
+            ReaderSettingsDivider(palette: palette)
+            ReaderSettingsToggleRow(
                 title: L10n.string("reader.author_replies_to_others"),
                 palette: palette,
                 isOn: Binding(

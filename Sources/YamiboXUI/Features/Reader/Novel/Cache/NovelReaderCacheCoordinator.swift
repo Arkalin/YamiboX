@@ -104,10 +104,7 @@ final class NovelReaderCacheCoordinator: ObservableObject {
             views,
             snapshot: operationSnapshot,
             repository: repository,
-            summary: operationSummary,
-            onFailure: { [weak self] error in
-                self?.reading.onError(error.localizedDescription)
-            }
+            summary: operationSummary
         )
     }
 

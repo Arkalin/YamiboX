@@ -3,31 +3,11 @@ import YamiboXCore
 
 #if os(iOS)
 
-struct NovelReaderSettingsSection<Content: View>: View {
-    let title: String
-    let palette: NovelReaderSheetPalette
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(palette.primaryText)
-                .padding(.horizontal, 4)
-
-            VStack(alignment: .leading, spacing: 16) {
-                content
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.cardBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(palette.divider, lineWidth: 1)
-            }
-        }
-    }
-}
+// The section card, divider, toggle row, mode/direction pickers, and the
+// round stepper button are shared with the Manga sheet — see
+// Reader/Shared/Settings. This file keeps only the Novel-specific rows
+// (typography, translation, background theme) and the mapping between Novel
+// settings and the shared option types.
 
 struct NovelReaderFontScaleRow: View {
     let value: Double
@@ -47,7 +27,12 @@ struct NovelReaderFontScaleRow: View {
             }
 
             HStack(spacing: 14) {
-                circleButton(systemName: "minus") {
+                // 44pt is the Novel sheet's original size; Manga uses 42pt.
+                ReaderSettingsStepperButton(
+                    systemName: "minus",
+                    palette: palette,
+                    diameter: 44
+                ) {
                     onChange(max(0.8, value - 0.1))
                 }
 
@@ -63,22 +48,15 @@ struct NovelReaderFontScaleRow: View {
                 )
                 .tint(YamiboColors.Site.orangeAccent)
 
-                circleButton(systemName: "plus") {
+                ReaderSettingsStepperButton(
+                    systemName: "plus",
+                    palette: palette,
+                    diameter: 44
+                ) {
                     onChange(min(2.3, value + 0.1))
                 }
             }
         }
-    }
-
-    private func circleButton(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
-                .frame(width: 44, height: 44)
-                .background(palette.segmentedBackground, in: Circle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -109,25 +87,6 @@ struct NovelReaderFontPickerRow: View {
                 }
             }
             .buttonStyle(.plain)
-        }
-    }
-}
-
-struct NovelReaderToggleRow: View {
-    let title: String
-    let palette: NovelReaderSheetPalette
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.title3)
-                .foregroundStyle(palette.primaryText)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
         }
     }
 }
@@ -208,203 +167,14 @@ struct NovelReaderSliderLeadingIcon: View {
     }
 }
 
-struct NovelReaderReadingModePicker: View {
-    let settings: NovelReaderAppearanceSettings
-    let palette: NovelReaderSheetPalette
-    let onSelect: (ReaderReadingMode, ReaderPagedTurnStyle) -> Void
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
-
-    private var selectedMode: NovelReaderReadingModeOption {
-        NovelReaderReadingModeOption(settings)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.string("reading_mode.title"))
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
-
-            LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(NovelReaderReadingModeOption.allCases, id: \.self) { option in
-                    NovelReaderReadingModeButton(
-                        option: option,
-                        isSelected: selectedMode == option,
-                        palette: palette
-                    ) {
-                        onSelect(option.readingMode, option.pagedTurnStyle ?? settings.pagedTurnStyle)
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct NovelReaderPageTurnDirectionPicker: View {
-    let direction: ReaderPageTurnDirection
-    let palette: NovelReaderSheetPalette
-    let onSelect: (ReaderPageTurnDirection) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.string("reader.page_turn_direction"))
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
-
-            HStack(spacing: 8) {
-                ForEach(ReaderPageTurnDirection.allCases, id: \.self) { option in
-                    NovelReaderPageTurnDirectionButton(
-                        direction: option,
-                        isSelected: direction == option,
-                        palette: palette
-                    ) {
-                        onSelect(option)
-                    }
-                }
-            }
-            .padding(6)
-            .background(palette.segmentedBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        }
-    }
-}
-
-private struct NovelReaderPageTurnDirectionButton: View {
-    let direction: ReaderPageTurnDirection
-    let isSelected: Bool
-    let palette: NovelReaderSheetPalette
-    let action: () -> Void
-
-    private var systemImageName: String {
-        switch direction {
-        case .leftToRight:
-            "arrow.right"
-        case .rightToLeft:
-            "arrow.left"
-        }
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Label(direction.title, systemImage: systemImageName)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(isSelected ? Color.white : palette.primaryText)
-                .background(
-                    isSelected ? palette.confirmButtonBackground : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(direction.title)
-    }
-}
-
-private struct NovelReaderReadingModeButton: View {
-    let option: NovelReaderReadingModeOption
-    let isSelected: Bool
-    let palette: NovelReaderSheetPalette
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: option.systemImageName)
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 24)
-
-                Text(option.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-            .foregroundStyle(isSelected ? Color.white : palette.primaryText)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 10)
-            .background(
-                isSelected ? palette.confirmButtonBackground : palette.segmentedBackground,
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(option.title)
-    }
-}
-
-private enum NovelReaderReadingModeOption: CaseIterable, Hashable {
-    case slide
-    case pageCurl
-    case quickFade
-    case scroll
-
+extension ReaderSettingsReadingModeOption {
+    /// Maps Novel settings onto the shared option; Manga keeps the same
+    /// shape of initializer next to its own settings type.
     init(_ settings: NovelReaderAppearanceSettings) {
-        switch settings.readingMode {
-        case .paged:
-            switch settings.pagedTurnStyle {
-            case .slide:
-                self = .slide
-            case .pageCurl:
-                self = .pageCurl
-            case .quickFade:
-                self = .quickFade
-            }
-        case .vertical:
-            self = .scroll
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .slide:
-            L10n.string("reading_mode.slide")
-        case .pageCurl:
-            L10n.string("reading_mode.page_curl")
-        case .quickFade:
-            L10n.string("reading_mode.quick_fade")
-        case .scroll:
-            L10n.string("reading_mode.scroll")
-        }
-    }
-
-    var systemImageName: String {
-        switch self {
-        case .slide:
-            "arrow.left.to.line.square"
-        case .pageCurl:
-            "doc"
-        case .quickFade:
-            "bolt.square"
-        case .scroll:
-            "text.page"
-        }
-    }
-
-    var readingMode: ReaderReadingMode {
-        switch self {
-        case .slide, .pageCurl, .quickFade:
-            .paged
-        case .scroll:
-            .vertical
-        }
-    }
-
-    var pagedTurnStyle: ReaderPagedTurnStyle? {
-        switch self {
-        case .slide:
-            .slide
-        case .pageCurl:
-            .pageCurl
-        case .quickFade:
-            .quickFade
-        case .scroll:
-            nil
-        }
+        self.init(
+            isPaged: settings.readingMode == .paged,
+            pagedTurnStyle: settings.pagedTurnStyle
+        )
     }
 }
 
@@ -487,14 +257,6 @@ struct NovelReaderThemePicker: View {
                 }
             }
         }
-    }
-}
-
-struct NovelReaderDivider: View {
-    let palette: NovelReaderSheetPalette
-
-    var body: some View {
-        Divider().overlay(palette.divider)
     }
 }
 

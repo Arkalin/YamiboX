@@ -4,7 +4,18 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
+/// How the paged viewport slices content into collection items: one surface
+/// per page, or presentation spreads pairing surfaces on wide layouts. The
+/// two modes previously lived in near-identical twin viewports whose shared
+/// ~280 lines (gestures, paging driver wiring, scroll delegation) had to be
+/// kept in sync by hand; only the item count and per-cell content differ.
+enum NovelReaderPagedItemSource: Equatable {
+    case surfaces
+    case spreads([NovelReaderPresentationSpread])
+}
+
 struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
+    let itemSource: NovelReaderPagedItemSource
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
     let refererURL: URL
@@ -28,13 +39,29 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     let onImageTap: (URL, String?) -> Void
     let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
 
-    private var contentIdentity: NovelReaderPagedViewportContentIdentity {
-        NovelReaderPagedViewportContentIdentity(
-            surfaces: surfaces,
-            settings: settings,
-            refererURL: refererURL,
-            topInset: topInset,
-            bottomInset: bottomInset
+    var itemCount: Int {
+        switch itemSource {
+        case .surfaces:
+            surfaces.count
+        case .spreads(let spreads):
+            spreads.count
+        }
+    }
+
+    private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity {
+        let spreads: [NovelReaderPresentationSpread] = switch itemSource {
+        case .surfaces: []
+        case .spreads(let spreads): spreads
+        }
+        return NovelReaderPagedSpreadViewportContentIdentity(
+            spreads: spreads,
+            content: NovelReaderPagedViewportContentIdentity(
+                surfaces: surfaces,
+                settings: settings,
+                refererURL: refererURL,
+                topInset: topInset,
+                bottomInset: bottomInset
+            )
         )
     }
 
@@ -101,7 +128,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         var parent: NovelReaderPagedCollectionViewport
         private let pagingDriver = ReaderPagedPagingDriver()
-        private var contentIdentity: NovelReaderPagedViewportContentIdentity?
+        private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
 
         var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
             pagingDriver.callbackScheduler
@@ -109,7 +136,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         private var pagingInputs: ReaderPagedPagingInputs {
             ReaderPagedPagingInputs(
-                itemCount: parent.surfaces.count,
+                itemCount: parent.itemCount,
                 selectionIndex: parent.selectionIndex,
                 pagedTurnStyle: parent.settings.pagedTurnStyle,
                 horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection,
@@ -132,13 +159,13 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 itemIndexForSelectionIndex: { [parent] selectionIndex in
                     parent.settings.pageTurnDirection.itemIndex(
                         forSelectionIndex: selectionIndex,
-                        itemCount: parent.surfaces.count
+                        itemCount: parent.itemCount
                     )
                 },
                 selectionIndexForItemIndex: { [parent] itemIndex in
                     parent.settings.pageTurnDirection.selectionIndex(
                         forItemIndex: itemIndex,
-                        itemCount: parent.surfaces.count
+                        itemCount: parent.itemCount
                     )
                 }
             )
@@ -149,7 +176,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         }
 
         func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-            parent.surfaces.count
+            parent.itemCount
         }
 
         func collectionView(
@@ -160,40 +187,64 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 withReuseIdentifier: Self.reuseIdentifier,
                 for: indexPath
             ) as! ReaderPagedPageTurnCell
-            let surfaceIndex = parent.settings.pageTurnDirection.selectionIndex(
+            let itemIndex = parent.settings.pageTurnDirection.selectionIndex(
                 forItemIndex: indexPath.item,
-                itemCount: parent.surfaces.count
+                itemCount: parent.itemCount
             )
-            let surface = parent.surfaces.indices.contains(surfaceIndex)
-                ? parent.surfaces[surfaceIndex]
-                : nil
-            let displayReference = surface.flatMap { parent.displayReferenceProvider($0.identity) }
             cell.backgroundColor = .clear
             cell.contentConfiguration = UIHostingConfiguration {
                 NovelReaderPagedPageSurfaceContainer(settings: parent.settings) {
-                    NovelReaderViewportSurfaceContent(
-                        surface: surface,
-                        displayReference: displayReference,
-                        selectionController: parent.selectionController,
-                        likeHighlightController: parent.likeHighlightController,
-                        likedImageAnchors: parent.likedImageAnchors,
-                        fallbackDocumentView: surface?.documentView,
-                        fallbackSurfaceIndex: surfaceIndex,
-                        settings: parent.settings,
-                        refererURL: parent.refererURL,
-                        offlineScope: parent.offlineScope,
-                        onImageTap: parent.onImageTap
-                    )
-                    .padding(.horizontal, parent.settings.horizontalPadding)
-                    .padding(.top, parent.topInset)
-                    .padding(.bottom, parent.bottomInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    pageContent(at: itemIndex)
                 }
                 .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
             }
             .margins(.all, 0)
             cell.resetPageTurnVisuals()
             return cell
+        }
+
+        @ViewBuilder
+        private func pageContent(at itemIndex: Int) -> some View {
+            switch parent.itemSource {
+            case .surfaces:
+                let surface = parent.surfaces.indices.contains(itemIndex)
+                    ? parent.surfaces[itemIndex]
+                    : nil
+                NovelReaderViewportSurfaceContent(
+                    surface: surface,
+                    displayReference: surface.flatMap { parent.displayReferenceProvider($0.identity) },
+                    selectionController: parent.selectionController,
+                    likeHighlightController: parent.likeHighlightController,
+                    likedImageAnchors: parent.likedImageAnchors,
+                    fallbackDocumentView: surface?.documentView,
+                    fallbackSurfaceIndex: itemIndex,
+                    settings: parent.settings,
+                    refererURL: parent.refererURL,
+                    offlineScope: parent.offlineScope,
+                    onImageTap: parent.onImageTap
+                )
+                .padding(.horizontal, parent.settings.horizontalPadding)
+                .padding(.top, parent.topInset)
+                .padding(.bottom, parent.bottomInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            case .spreads(let spreads):
+                if spreads.indices.contains(itemIndex) {
+                    NovelReaderPresentationSpreadContent(
+                        spread: spreads[itemIndex],
+                        surfaces: parent.surfaces,
+                        settings: parent.settings,
+                        refererURL: parent.refererURL,
+                        offlineScope: parent.offlineScope,
+                        topInset: parent.topInset,
+                        bottomInset: parent.bottomInset,
+                        displayReferenceProvider: parent.displayReferenceProvider,
+                        selectionController: parent.selectionController,
+                        likeHighlightController: parent.likeHighlightController,
+                        likedImageAnchors: parent.likedImageAnchors,
+                        onImageTap: parent.onImageTap
+                    )
+                }
+            }
         }
 
         func collectionView(
@@ -315,7 +366,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         func updateContentAndRequestSelectionScroll(
             in collectionView: UICollectionView,
-            contentIdentity nextContentIdentity: NovelReaderPagedViewportContentIdentity
+            contentIdentity nextContentIdentity: NovelReaderPagedSpreadViewportContentIdentity
         ) {
             let didChangeContentIdentity = contentIdentity != nextContentIdentity
             contentIdentity = nextContentIdentity

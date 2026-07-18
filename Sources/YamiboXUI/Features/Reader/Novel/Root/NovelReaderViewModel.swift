@@ -1,44 +1,63 @@
+import Observation
 import SwiftUI
 import YamiboXCore
 
 @MainActor
-public final class NovelReaderViewModel: ObservableObject {
-    @Published public private(set) var isLoading = false
-    @Published public private(set) var errorMessage: String?
-    @Published public private(set) var novelReaderPresentation: NovelReaderPresentation?
-    @Published public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
-    @Published public var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
-    @Published private(set) var isNavigatingNovelReaderProjection = false
-    @Published private(set) var isApplyingAppearanceSettings = false
-    @Published private var bootstrapSettings = NovelReaderAppearanceSettings()
-    private(set) var chromeProgressSnapshot = NovelReaderChromeProgressSnapshot.empty
+@Observable
+public final class NovelReaderViewModel {
+    // The properties below were `@Published` before the `@Observable`
+    // migration; they stay tracked so the views keep re-rendering on the
+    // exact same writes as before.
+    public private(set) var isLoading = false
+    public private(set) var errorMessage: String?
+    public private(set) var novelReaderPresentation: NovelReaderPresentation?
+    public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
+    public var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
+    private(set) var isNavigatingNovelReaderProjection = false
+    private(set) var isApplyingAppearanceSettings = false
+    private var bootstrapSettings = NovelReaderAppearanceSettings()
+    // Every `var` from here down was a plain (non-`@Published`) stored
+    // property under `ObservableObject`, so writes to it never invalidated
+    // views on their own; `@ObservationIgnored` keeps that notification
+    // surface strictly identical after the `@Observable` migration.
+    //
+    // `chromeProgressSnapshot` specifically: the chrome always repainted
+    // through the `novelReaderPresentation` write that accompanies every
+    // snapshot refresh (`syncFromWorkflowState` / `close()` co-write both),
+    // so leaving it untracked loses nothing.
+    @ObservationIgnored private(set) var chromeProgressSnapshot = NovelReaderChromeProgressSnapshot.empty
 
     public let context: NovelLaunchContext
 
     private let dependencies: NovelReaderDependencies
-    private var repository: NovelReaderRepository?
-    private var readingWorkflow: NovelReadingWorkflow?
-    private var appearanceSettingsApplicationSequence: UInt64 = 0
-    private var layout: NovelReaderLayout = .zero
-    private var latestRequestedLayout: NovelReaderLayout = .zero
-    private var layoutRequestSequence: UInt64 = 0
-    private var usesPadPresentation = false
-    private var currentStableResumePoint: NovelResumePoint?
+    @ObservationIgnored private var repository: NovelReaderRepository?
+    @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
+    @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
+    @ObservationIgnored private var layout: NovelReaderLayout = .zero
+    @ObservationIgnored private var latestRequestedLayout: NovelReaderLayout = .zero
+    @ObservationIgnored private var layoutRequestSequence: UInt64 = 0
+    @ObservationIgnored private var usesPadPresentation = false
+    @ObservationIgnored private var currentStableResumePoint: NovelResumePoint?
     private let runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
-    package var runtimeUpdatePreparation: NovelReadingWorkflowRuntimeUpdatePreparation = { $0 }
-    package var novelReaderPageDocumentNavigationOverlayPreparation: (@MainActor () async -> Void) = {
+    // The three package hooks are test seams (assigned, never rendered),
+    // so they stay unobserved like every other non-published property.
+    @ObservationIgnored package var runtimeUpdatePreparation: NovelReadingWorkflowRuntimeUpdatePreparation = { $0 }
+    @ObservationIgnored package var novelReaderPageDocumentNavigationOverlayPreparation: (@MainActor () async -> Void) = {
         await Task.yield()
         try? await Task.sleep(nanoseconds: 50_000_000)
     }
-    package var novelReaderPageDocumentNavigationStateDidChange: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored package var novelReaderPageDocumentNavigationStateDidChange: (@MainActor (Bool) -> Void)?
     private let progressSync: ProgressSyncModule
-    private var hasRecordedBrowsingHistoryVisit = false
+    @ObservationIgnored private var hasRecordedBrowsingHistoryVisit = false
     // The chapter-comments module is built by the composition root
     // (`NovelReaderDependencies`); the view model only sinks its snapshots.
     // It is driven exclusively from this main-actor view model, so its
     // caller-isolated onChange provably fires on the main actor.
-    private lazy var chapterCommentsModule = dependencies.makeChapterCommentsModule { [weak self] snapshot in
+    // (`@ObservationIgnored` on the lazy module/coordinator references:
+    // never published, and `lazy` storage cannot be rewritten into the
+    // macro's tracked accessors anyway.)
+    @ObservationIgnored private lazy var chapterCommentsModule = dependencies.makeChapterCommentsModule { [weak self] snapshot in
         MainActor.assumeIsolated {
             self?.chapterComments = snapshot
         }
@@ -46,7 +65,7 @@ public final class NovelReaderViewModel: ObservableObject {
 
     /// Offline-cache coordinator: owns cache/queue state and batch
     /// operations. Cache views bind it directly.
-    private(set) lazy var cache = NovelReaderCacheCoordinator(
+    @ObservationIgnored private(set) lazy var cache = NovelReaderCacheCoordinator(
         operationModule: dependencies.makeCacheOperationModule(),
         repository: dependencies.makeCacheOperationRepository(),
         offlineCacheStore: dependencies.offlineCacheStore,
@@ -70,7 +89,7 @@ public final class NovelReaderViewModel: ObservableObject {
     /// Wayfinding coordinator: owns chapter-catalog browsing and the
     /// nonlinear navigation history. Catalog and chrome views bind it
     /// directly.
-    private(set) lazy var navigation = NovelReaderNavigationCoordinator(
+    @ObservationIgnored private(set) lazy var navigation = NovelReaderNavigationCoordinator(
         reading: NovelReaderNavigationCoordinator.Reading(
             maxView: { [weak self] in self?.maxView ?? 1 },
             visibleView: { [weak self] in self?.visibleView ?? 1 },
