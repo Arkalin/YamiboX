@@ -10,57 +10,61 @@ struct LocalFavoriteGridCard: View {
     let actions: LocalFavoriteCardActions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LocalFavoriteGridCover(url: card.coverURL, title: card.resolvedTitle)
-            Text(card.resolvedTitle)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2, reservesSpace: true)
-            Text(card.sourceGroupLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            LocalFavoriteCardTimeLines(card: card)
-            LocalFavoriteTagChipRow(tags: card.tags)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        // A smart card is selectable like any other card — selecting it is
-        // equivalent to selecting every favorite archived under it, expanded
-        // transparently at bulk-operation time by
-        // `FavoriteLibraryOrganizer.expandedSelectionFavoriteIDs`; the id
-        // that lands in `selection.selectedFavoriteIDs` here is still just
-        // its own representative id.
-        .favoriteSelectionEmphasis(isSelectionMode: selection.isSelectionMode, isSelected: isSelected, cornerRadius: 8)
-        // Layered after `favoriteSelectionEmphasis`, not before: that
-        // modifier's `.opacity()` forces an offscreen compositing pass sized
-        // to the card's own frame, which clips any overlay poking past the
-        // card's edge — including this badge's outward corner offset.
-        .overlay(alignment: .topTrailing) {
-            if card.isModeOnMangaThread {
-                LocalFavoriteSmartCardBadge()
+        Button(action: handleTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                LocalFavoriteGridCover(url: card.coverURL, title: card.resolvedTitle)
+                Text(card.resolvedTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2, reservesSpace: true)
+                Text(card.sourceGroupLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                LocalFavoriteCardTimeLines(card: card)
+                LocalFavoriteTagChipRow(tags: card.tags)
             }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onTapGesture {
-            if selection.isSelectionMode {
-                // A smart card toggles into `selection.selectedFavoriteIDs`
-                // just like any other card — bulk operations expand it to
-                // every archived member at execution time (see the
-                // selection-emphasis comment above), including
-                // `deleteSelection` when `smartMangaBulkDeleteEnabled` is on;
-                // when it's off, `deleteSelection` excludes it there
-                // instead of here, so it still requires the dedicated
-                // "查看归档收藏" archive page.
-                selection.toggleFavoriteSelection(id: card.id)
-            } else {
-                actions.open(card, .resume)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // A smart card is selectable like any other card — selecting it is
+            // equivalent to selecting every favorite archived under it, expanded
+            // transparently at bulk-operation time by
+            // `FavoriteLibraryOrganizer.expandedSelectionFavoriteIDs`; the id
+            // that lands in `selection.selectedFavoriteIDs` here is still just
+            // its own representative id.
+            .favoriteSelectionEmphasis(isSelectionMode: selection.isSelectionMode, isSelected: isSelected, cornerRadius: 8)
+            // Layered after `favoriteSelectionEmphasis`, not before: that
+            // modifier's `.opacity()` forces an offscreen compositing pass sized
+            // to the card's own frame, which clips any overlay poking past the
+            // card's edge — including this badge's outward corner offset.
+            .overlay(alignment: .topTrailing) {
+                if card.isModeOnMangaThread {
+                    LocalFavoriteSmartCardBadge()
+                }
             }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        .buttonStyle(PressableCardStyle())
         .contextMenu {
             if !selection.isSelectionMode {
                 LocalFavoriteCardContextMenu(card: card, actions: actions)
             }
+        }
+    }
+
+    private func handleTap() {
+        if selection.isSelectionMode {
+            // A smart card toggles into `selection.selectedFavoriteIDs`
+            // just like any other card — bulk operations expand it to
+            // every archived member at execution time (see the
+            // selection-emphasis comment above), including
+            // `deleteSelection` when `smartMangaBulkDeleteEnabled` is on;
+            // when it's off, `deleteSelection` excludes it there
+            // instead of here, so it still requires the dedicated
+            // "查看归档收藏" archive page.
+            selection.toggleFavoriteSelection(id: card.id)
+        } else {
+            actions.open(card, .resume)
         }
     }
 

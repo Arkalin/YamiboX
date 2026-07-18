@@ -94,35 +94,37 @@ struct LocalFavoriteCollectionGridCard: View {
     let onMoveToCategory: (String) async -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LocalFavoriteCollectionMosaic(
-                color: collection.color.swiftUIColor,
-                tiles: previewTiles
-            )
-            Text(collection.name)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            Text(L10n.string("favorites.collection_summary", itemCount))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(collection.color.swiftUIColor.opacity(0.45), lineWidth: 1.5)
-        }
-        .favoriteSelectionEmphasis(isSelectionMode: isSelectionMode, isSelected: isSelected, cornerRadius: 8)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onTapGesture {
+        Button {
             if isSelectionMode {
                 onToggleSelection()
             } else {
                 onOpen()
             }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                LocalFavoriteCollectionMosaic(
+                    color: collection.color.swiftUIColor,
+                    tiles: previewTiles
+                )
+                Text(collection.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(L10n.string("favorites.collection_summary", itemCount))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(collection.color.swiftUIColor.opacity(0.45), lineWidth: 1.5)
+            }
+            .favoriteSelectionEmphasis(isSelectionMode: isSelectionMode, isSelected: isSelected, cornerRadius: 8)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        .buttonStyle(PressableCardStyle())
         .contextMenu {
             if !isSelectionMode {
                 LocalFavoriteCollectionContextMenu(

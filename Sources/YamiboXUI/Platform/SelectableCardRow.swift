@@ -50,7 +50,10 @@ private struct SelectableCardRowModifier: ViewModifier {
 
         return Group {
             if let onTap {
-                card.onTapGesture(perform: onTap)
+                // A real Button (not a bare tap gesture) so the row responds
+                // on touch-down like every other pressable card.
+                Button(action: onTap) { card }
+                    .buttonStyle(PressableCardStyle())
             } else {
                 card
             }
