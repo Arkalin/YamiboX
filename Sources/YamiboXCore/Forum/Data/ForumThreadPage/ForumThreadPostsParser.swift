@@ -168,6 +168,11 @@ enum ForumThreadPostsParser {
     }
 
     private static func isPinned(_ container: Element) -> Bool {
+        // Touch template marks stuck replies with a `settop.png` icon in the
+        // floor cell — there is no "置顶" text on the row itself.
+        if container.selectFirst("img[src*='settop']") != nil {
+            return true
+        }
         let text = container.normalizedText()
         if text.contains("置顶") || text.contains("置頂") {
             return true
@@ -188,6 +193,7 @@ enum ForumThreadPostsParser {
         for link in container.selectAll("a[href]") {
             let rawTitle = link.normalizedText().nilIfBlank ?? link.attrText("title")
             guard let rawTitle,
+                  !isInsideCommentList(link),
                   isManageActionLink(link, title: rawTitle),
                   let url = link.attrURL("href") else {
                 continue
@@ -197,7 +203,27 @@ enum ForumThreadPostsParser {
                 actions.append(action)
             }
         }
+        // The touch manage popup renders most actions as `<input … href="…">`
+        // buttons (only 编辑 is an `<a>`); titles live in the `value` attribute.
+        for input in container.selectAll(".manage input[href], .manage_popup input[href]") {
+            guard let rawTitle = input.attrText("value") ?? input.attrText("title"),
+                  !isInsideCommentList(input),
+                  isManageActionLink(input, title: rawTitle),
+                  let url = input.attrURL("href") else {
+                continue
+            }
+            let action = ForumThreadManageAction(title: rawTitle, url: url)
+            if seen.insert(action.id).inserted {
+                actions.append(action)
+            }
+        }
         return actions
+    }
+
+    /// The inline 点评 list carries its own moderator delete links — those are
+    /// comment actions, not post manage actions.
+    private static func isInsideCommentList(_ element: Element) -> Bool {
+        element.parents().contains { $0.id().hasPrefix("comment_") || $0.id().hasPrefix("commentdetail_") }
     }
 
     private static func isManageActionLink(_ link: Element, title: String) -> Bool {

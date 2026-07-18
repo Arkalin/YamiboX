@@ -4,8 +4,14 @@ enum BlogReaderHTMLParser {
     static func parsePage(from html: String, blogID: String, uidHint: String? = nil, titleHint: String? = nil) throws -> BlogReaderPage {
         try YamiboHTMLPageInspector.ensureReadable(html)
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
+        // Touch template `space_blog_view.htm`: the blog subject lives in
+        // `.view_tit` (its leading `em` is the category link); `li.mtit` is the
+        // AUTHOR row and must not be mistaken for a title.
         let title = firstNonBlank([
-            document.firstText(".blog_tit, .mtit, .bm_h h1, .vw .ph, h1"),
+            document.selectFirst(".view_tit").map { element in
+                element.ownText().htmlNormalized.nilIfBlank ?? element.normalizedText()
+            },
+            document.firstText(".blog_tit, .bm_h h1, h1"),
             titleHint,
             document.title().replacingOccurrences(of: "-  百合会", with: "")
         ]) ?? L10n.string("blog_reader.title")
@@ -19,15 +25,31 @@ enum BlogReaderHTMLParser {
             throw YamiboError.parsingFailed(context: L10n.string("context.blog_reader"))
         }
 
+        // View/reply counts render as a bare `<em>` pair after the eye/chat
+        // icons in `.authi .mtime .y` — there are no text labels on touch.
+        let counterValues = document.selectFirst(".authi .mtime .y")?
+            .selectAll("em")
+            .compactMap { Int($0.normalizedText()) } ?? []
+
         return BlogReaderPage(
             blogID: blogID,
             title: title,
-            author: author(in: root, document: document, uidHint: uidHint),
-            postedAtText: firstDateText(in: root) ?? firstDateText(in: document.body()),
+            author: author(
+                in: document.selectFirst(".authi") ?? root,
+                document: document,
+                uidHint: uidHint
+            ),
+            postedAtText: firstNonBlank([
+                document.selectFirst(".authi .mtime").map { $0.ownText().htmlNormalized },
+                firstDateText(in: root),
+                firstDateText(in: document.body())
+            ]),
             contentHTML: contentHTML,
             contentText: contentText,
-            viewCount: intAfterAny(labels: ["查看", "浏览", "瀏覽", "阅读", "閱讀"], in: pageText),
-            replyCount: intAfterAny(labels: ["回复", "回復", "评论", "評論"], in: pageText),
+            viewCount: counterValues.first
+                ?? intAfterAny(labels: ["查看", "浏览", "瀏覽", "阅读", "閱讀"], in: pageText),
+            replyCount: counterValues.dropFirst().first
+                ?? intAfterAny(labels: ["回复", "回復", "评论", "評論"], in: pageText),
             collectURL: actionURL(in: document, keywords: ["收藏"]),
             shareURL: actionURL(in: document, keywords: ["分享"]),
             inviteURL: actionURL(in: document, keywords: ["邀请", "邀請"]),
@@ -110,7 +132,7 @@ enum BlogReaderHTMLParser {
     }
 
     private static func commentContentElement(in container: Element) -> Element? {
-        for selector in [".comment_content", ".content", ".message", ".xg1 + div", "dd", "blockquote"] {
+        for selector in [".do_comment", ".comment_content", ".content", ".message", ".xg1 + div", "dd", "blockquote"] {
             if let element = container.selectAll(selector).last {
                 return element
             }
@@ -129,10 +151,13 @@ enum BlogReaderHTMLParser {
     private static func author(in element: Element?, document: Document, uidHint: String?) -> BlogReaderUser {
         let link = firstUserLink(in: element) ?? firstUserLink(in: document)
         let uid = link?.attrURL("href").flatMap(YamiboForumURLIdentity.userID(from:)) ?? uidHint?.nilIfBlank
+        // `.mmc` before any `.muser` scan — the `.muser` wrapper starts before
+        // its own `.mmc` child in document order and its text glues the name to
+        // the date and action labels.
         let name = firstNonBlank([
             link?.normalizedText(),
-            element?.firstText(".author, .username, .mmc, .muser"),
-            document.firstText(".author, .username, .mmc, .muser")
+            element?.firstText(".mmc, a[id^=author_], .author, .username"),
+            document.firstText(".mmc, a[id^=author_], .author, .username")
         ]) ?? L10n.string("user_space.unknown_user")
         let avatarSelectors = ["img[src*='avatar']", ".avatar img[src]", ".mimg img[src]"]
         return BlogReaderUser(
@@ -180,7 +205,9 @@ enum BlogReaderHTMLParser {
             ?? HTMLTextExtractor.matches(pattern: #"page=(\d+)"#, in: pager.html())
             .compactMap { $0.dropFirst().first.flatMap(Int.init) }
             .max()
-        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages)
+        // On the last page every `page=` link points backwards — never report
+        // fewer total pages than the page we are on.
+        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages.map { max($0, currentPage) })
     }
 
     private static func commentID(in element: Element) -> String? {

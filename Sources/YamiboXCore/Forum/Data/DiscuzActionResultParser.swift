@@ -30,7 +30,8 @@ enum DiscuzActionResultParser {
     /// (two of the three merged copies appended ", body" to the selector and
     /// thereby always sniffed the whole page text). The body text is only the
     /// fallback when no scoped container exists.
-    private static let messageContainers = ".jump_c, .alert_info, .messagetext, .showmessage, .wp"
+    /// `#messagetext` is the ajax showmessage node (it carries an id, not a class).
+    private static let messageContainers = ".jump_c, .alert_info, #messagetext, .messagetext, .showmessage, .wp"
 
     private static let loginRequiredMarkers = ["请先登录", "請先登錄", "请登录"]
     private static let successMarkers = ["已收藏", "收藏成功", "成功收藏"]
@@ -75,7 +76,10 @@ enum DiscuzActionResultParser {
         success: (_ message: String, _ hitSuccessMarker: Bool) -> String
     ) throws -> String {
         try YamiboHTMLPageInspector.ensureReadable(html)
-        let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
+        // inajax responses arrive as `<root><![CDATA[…]]></root>` — parse the
+        // payload, or the parser mangles the first tag and leaks a "]]>".
+        let body = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
+        let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
         let message = document.selectFirst(messageContainers)?.normalizedText()
             ?? document.body()?.normalizedText()
             ?? ""

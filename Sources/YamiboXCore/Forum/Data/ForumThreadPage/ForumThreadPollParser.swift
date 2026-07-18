@@ -138,7 +138,9 @@ enum ForumThreadPollParser {
     }
 
     private static func pollTitle(in pollElement: Element) -> String? {
-        if let text = pollElement.firstText(anyOf: ["h3", "h4", ".polltitle", ".xs2", ".pcht h4", "caption"]) {
+        // Touch template: the first `.poll_txt` line is the poll header
+        // ("多选投票: …, 共有 N 人参与投票").
+        if let text = pollElement.firstText(anyOf: [".poll_txt", "h3", "h4", ".polltitle", ".xs2", ".pcht h4", "caption"]) {
             return text
         }
         let text = pollElement.normalizedText()
@@ -149,7 +151,7 @@ enum ForumThreadPollParser {
     }
 
     private static func pollEndTime(in pollElement: Element) -> String? {
-        for selector in ["p", ".xg1", ".polltime", ".poll_time"] {
+        for selector in [".poll_txt", "p", ".xg1", ".polltime", ".poll_time"] {
             for element in pollElement.selectAll(selector) {
                 let text = element.normalizedText()
                 guard text.contains("结束")
@@ -159,7 +161,7 @@ enum ForumThreadPollParser {
                     continue
                 }
                 if let value = HTMLTextExtractor.firstMatch(
-                    pattern: #"(?:结束时间|結束時間|截止时间|截止時間|投票截止)[:：]?\s*(.+)$"#,
+                    pattern: #"(?:距结束还有|距結束還有|结束时间|結束時間|截止时间|截止時間|投票截止)[:：]?\s*(.+)$"#,
                     in: text
                 )?
                     .dropFirst()

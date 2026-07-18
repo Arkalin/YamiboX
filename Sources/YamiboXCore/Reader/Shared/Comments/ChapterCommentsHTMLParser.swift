@@ -326,11 +326,17 @@ enum ChapterCommentsHTMLParser {
             "[id^=postnum] em",
             "[id^=postnum]"
         ])
-        let time = container.firstText(anyOf: [
-            ".authi em",
-            ".pti .authi em",
-            ".mtime"
-        ])
+        // Touch pages keep the dateline as the `.mtime` cell's own text (its
+        // `span.y` child holds view/reply counters, and `.authi em` is the
+        // edit link or a counter there — PC-only sources, tried after).
+        let time = container.selectFirst(".authi .mtime, .mtime")
+            .map { $0.ownText().htmlNormalized }?
+            .nilIfBlank
+            ?? container.firstText(anyOf: [
+                ".authi em",
+                ".pti .authi em",
+                ".mtime"
+            ])
         return nilIfEmpty([floor, time].compactMap(\.self).joined(separator: " · "))
     }
 

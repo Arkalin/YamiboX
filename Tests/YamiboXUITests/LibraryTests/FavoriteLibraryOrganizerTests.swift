@@ -3461,12 +3461,11 @@ private final class LocalFavoriteDeleteTestURLProtocol: URLProtocol {
         if absoluteString.contains("do=favorite") {
             body = """
             <html><body>
-              <ul class="sclist">
-                <li>
-                  <a href="forum.php?mod=viewthread&tid=955&mobile=2">需要回查远端 ID 的收藏</a>
-                  <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=997">删除</a>
-                </li>
-              </ul>
+              <div class="findbox mt10 cl">
+                <ul>
+                  <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=997" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=955&amp;mobile=2">需要回查远端 ID 的收藏</a></li>
+                </ul>
+              </div>
             </body></html>
             """
         } else if absoluteString.contains("mod=faq") {

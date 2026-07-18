@@ -296,7 +296,7 @@ import Testing
     <head><title>搜索 -  百合会</title></head>
     <body>
       <div class="threadlist_box">
-        <p class="result">找到 2 筆搜尋結果</p>
+        <h2><em>结果: 找到 “<span class="emfont">搜索</span>” 相关内容 1234 个</em></h2>
         <div class="threadlist cl">
           <ul>
             <li class="list">
@@ -312,7 +312,7 @@ import Testing
               </a>
               <div class="threadlist_foot cl">
                 <ul>
-                  <li class="mr"><a href="forum.php?mod=forumdisplay&amp;fid=5&amp;filter=typeid&amp;typeid=3&amp;mobile=2">#動漫區</a></li>
+                  <li class="mr"><a href="forum.php?mod=forumdisplay&amp;fid=5&amp;mobile=2">#動漫區</a></li>
                   <li><i class="dm-eye-fill"></i>300</li>
                   <li><i class="dm-chat-s-fill"></i>12</li>
                 </ul>
@@ -334,17 +334,36 @@ import Testing
 
     #expect(page.query == "搜索")
     #expect(page.searchID == "99")
-    #expect(page.totalCount == 2)
+    #expect(page.totalCount == 1234)
     #expect(page.results.map(\.tid) == ["565409"])
     #expect(page.results.first?.authorName == "张瑞泽")
     #expect(page.results.first?.tag == "動漫區")
     #expect(page.pageNavigation == ForumPageNavigation(currentPage: 1, totalPages: 2))
 }
 
-@Test func parseForumSearchFailsWhenNoResultsAreAvailable() {
+/// A rendered no-match page (`.threadlist_box > h4`) is a legitimate empty
+/// search result; only pages without the search chrome are parse failures.
+@Test func parseForumSearchReturnsEmptyResultsForNoMatchPage() throws {
     let html = #"""
     <html>
-      <body><div class="searchlist">沒有找到搜尋結果</div></body>
+      <body>
+        <div class="threadlist_box">
+          <h2><em>结果: 找到 “<span class="emfont">missing</span>” 相关内容 0 个</em></h2>
+          <h4>对不起，没有找到匹配结果</h4>
+        </div>
+      </body>
+    </html>
+    """#
+
+    let page = try ForumHTMLParser.parseSearchPage(from: html, query: "missing")
+    #expect(page.results.isEmpty)
+    #expect(page.totalCount == 0)
+}
+
+@Test func parseForumSearchFailsWhenPageHasNoSearchChrome() {
+    let html = #"""
+    <html>
+      <body><div>意外页面</div></body>
     </html>
     """#
 
@@ -415,76 +434,137 @@ import Testing
     #expect(profile.infoRows.contains(where: { $0.label == "最后访问" && $0.value == "2026-2-24 00:49" }))
 }
 
+/// Fixtures mirror the live touch templates: `space_thread.htm` rows (author in
+/// `.threadlist_top`, subject in `.threadlist_tit em`, icon-keyed counts in
+/// `.threadlist_foot`, relative datelines), reply rows via `findpost` links with
+/// the own reply quoted, `space_blog_list.htm` rows (one anchor wrapping title
+/// AND excerpt), and `space_friend.htm` rows (avatar link first, name link
+/// last, `do=pm&subop=view` message link, `op=ignore` delete link).
 @Test func parseUserSpaceThreadsRepliesBlogsFriends() throws {
-    let listHTML = #"""
-    <html>
-      <body>
-        <div class="threadlist">
-          <li>
-            <a href="forum.php?mod=viewthread&amp;tid=565409&amp;mobile=2">主题标题</a>
-            <a href="home.php?mod=space&amp;uid=705216&amp;mobile=2">张瑞泽</a>
-            查看: 300 回复: 12 2026-01-02 10:00
-          </li>
-        </div>
-        <div class="bloglist">
-          <li>
-            <a href="home.php?mod=space&amp;do=blog&amp;id=88&amp;uid=705216&amp;mobile=2">日志标题</a>
-            <a href="home.php?mod=space&amp;uid=705216&amp;mobile=2">张瑞泽</a>
-            查看: 9 回复: 2 2026-01-03
-          </li>
-        </div>
-        <div class="friendlist">
-          <li>
-            <a href="home.php?mod=space&amp;uid=800001&amp;mobile=2">好友A</a>
-            <img src="https://bbs.yamibo.com/avatar-a.jpg">
-            <a href="home.php?mod=spacecp&amp;ac=pm&amp;op=showmsg&amp;touid=800001&amp;mobile=2">发消息</a>
-            <a href="home.php?mod=spacecp&amp;ac=friend&amp;op=delete&amp;uid=800001&amp;mobile=2">删除</a>
-          </li>
-        </div>
-        <div class="pg"><strong>1</strong><a href="home.php?page=2">2</a></div>
-      </body>
-    </html>
+    let threadsHTML = #"""
+    <html><body>
+      <div class="threadlist cl"><ul>
+        <li class="list">
+          <div class="threadlist_top cl">
+            <a href="home.php?mod=space&amp;uid=705216" class="mimg"><img src="https://bbs.yamibo.com/uc_server/avatar.php?uid=705216&amp;size=middle"></a>
+            <div class="muser"><h3><a href="home.php?mod=space&amp;uid=705216" class="mmc">张瑞泽</a></h3><span class="mtime">昨天 22:11</span></div>
+          </div>
+          <a href="forum.php?mod=viewthread&amp;tid=565409&amp;extra="><div class="threadlist_tit cl"><span class="micon">投票</span><em>主题标题</em></div></a>
+          <a href="forum.php?mod=viewthread&amp;tid=565409&amp;extra="><div class="threadlist_mes cl">正文摘要</div></a>
+          <div class="threadlist_foot cl"><ul>
+            <li class="mr"><a href="forum.php?mod=forumdisplay&amp;fid=5">#漫画讨论区</a></li>
+            <li><i class="dm-eye-fill"></i>300</li>
+            <li><i class="dm-chat-s-fill"></i>12</li>
+          </ul></div>
+        </li>
+      </ul></div>
+      <div class="pg"><strong>1</strong><a href="home.php?mod=space&amp;do=thread&amp;view=me&amp;page=2">2</a></div>
+    </body></html>
     """#
 
-    let threads = try UserSpaceHTMLParser.parseThreads(from: listHTML)
-    let replies = try UserSpaceHTMLParser.parseReplies(from: listHTML)
-    let blogs = try UserSpaceHTMLParser.parseBlogs(from: listHTML)
-    let friends = try UserSpaceHTMLParser.parseFriends(from: listHTML)
+    let repliesHTML = #"""
+    <html><body>
+      <div class="threadlist cl"><ul>
+        <li class="list">
+          <a href="forum.php?mod=redirect&amp;goto=findpost&amp;ptid=565409&amp;pid=9000001" target="_blank" class="mt10"><div class="threadlist_tit cl"><em>主题标题</em></div></a>
+          <a href="forum.php?mod=redirect&amp;goto=findpost&amp;ptid=565409&amp;pid=9000001" target="_blank"><div class="quote"><blockquote>我的回复内容</blockquote></div></a>
+        </li>
+      </ul></div>
+    </body></html>
+    """#
+
+    let blogsHTML = #"""
+    <html><body>
+      <div class="threadlist cl"><ul>
+        <li class="list">
+          <div class="threadlist_top cl">
+            <a href="home.php?mod=space&amp;uid=705216&amp;do=profile" class="avatar mimg z"><img src="https://bbs.yamibo.com/uc_server/avatar.php?uid=705216&amp;size=middle"></a>
+            <div class="muser"><h3><a href="home.php?mod=space&amp;uid=705216&amp;do=profile" id="author_88" class="mmc">张瑞泽</a></h3><div class="mtime"><span>3 天前</span></div></div>
+          </div>
+          <a href="home.php?mod=space&amp;uid=705216&amp;do=blog&amp;id=88">
+            <div class="threadlist_tit cl">日志标题</div>
+            <div class="threadlist_mes cl">日志摘要内容</div>
+          </a>
+        </li>
+      </ul></div>
+    </body></html>
+    """#
+
+    let friendsHTML = #"""
+    <html><body>
+      <div id="friend_ul" class="imglist mt10 cl"><ul>
+        <li>
+          <span class="mimg"><a href="home.php?mod=space&amp;uid=800001"><img src="https://bbs.yamibo.com/uc_server/avatar.php?uid=800001&amp;size=small"></a></span>
+          <a href="home.php?mod=spacecp&amp;ac=friend&amp;op=ignore&amp;uid=800001&amp;handlekey=delfriendhk_800001" class="dialog">删除</a>
+          <a href="home.php?mod=space&amp;do=pm&amp;subop=view&amp;touid=800001" class="mico">发消息</a>
+          <a href="home.php?mod=space&amp;uid=800001"><span>好友A</span></a>
+          <p class="mtxt"><i class="dm-chat-s"></i>最近的签名</p>
+        </li>
+      </ul></div>
+    </body></html>
+    """#
+
+    let threads = try UserSpaceHTMLParser.parseThreads(from: threadsHTML)
+    let replies = try UserSpaceHTMLParser.parseReplies(from: repliesHTML)
+    let blogs = try UserSpaceHTMLParser.parseBlogs(from: blogsHTML)
+    let friends = try UserSpaceHTMLParser.parseFriends(from: friendsHTML)
 
     #expect(threads.threads.map(\.tid) == ["565409"])
+    #expect(threads.threads.first?.title == "主题标题")
     #expect(threads.threads.first?.authorID == "705216")
+    #expect(threads.threads.first?.authorName == "张瑞泽")
+    #expect(threads.threads.first?.description == "正文摘要")
     #expect(threads.threads.first?.viewCount == 300)
-    #expect(replies.replies.map(\.threadID) == ["565409"])
-    #expect(blogs.blogs.map(\.blogID) == ["88"])
-    #expect(blogs.blogs.first?.replyCount == 2)
-    #expect(friends.friends.map(\.uid) == ["800001"])
-    #expect(friends.friends.first?.privateMessageURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=pm&op=showmsg&touid=800001&mobile=2")
-    #expect(friends.friends.first?.deleteURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=friend&op=delete&uid=800001&mobile=2")
+    #expect(threads.threads.first?.replyCount == 12)
+    #expect(threads.threads.first?.lastActivityText == "昨天 22:11")
     #expect(threads.pageNavigation == ForumPageNavigation(currentPage: 1, totalPages: 2))
+
+    #expect(replies.replies.map(\.threadID) == ["565409"])
+    #expect(replies.replies.first?.threadTitle == "主题标题")
+    #expect(replies.replies.first?.excerpt == "我的回复内容")
+
+    #expect(blogs.blogs.map(\.blogID) == ["88"])
+    #expect(blogs.blogs.first?.title == "日志标题")
+    #expect(blogs.blogs.first?.excerpt == "日志摘要内容")
+    #expect(blogs.blogs.first?.authorName == "张瑞泽")
+    #expect(blogs.blogs.first?.lastActivityText == "3 天前")
+
+    #expect(friends.friends.map(\.uid) == ["800001"])
+    #expect(friends.friends.first?.name == "好友A")
+    #expect(friends.friends.first?.privateMessageURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=space&do=pm&subop=view&touid=800001")
+    #expect(friends.friends.first?.deleteURL?.absoluteString.contains("op=ignore") == true)
 }
 
+/// The add-friend float is an ajax `<root><![CDATA[…]]></root>` envelope
+/// wrapping the desktop `spacecp_friend.htm` op=add form: dialog chrome in
+/// `h3.flb`, the username inside `td strong`, avatar in `th.avt`.
 @Test func parseUserSpaceAddFriendFormExtractsFormHashUserAndGroups() throws {
     let html = #"""
-    <html>
-      <body>
-        <form id="addfriendform_705216">
-          <input type="hidden" name="formhash" value="form123" />
-          <div class="mimg"><img src="https://bbs.yamibo.com/avatar.jpg"></div>
-          <h3><a href="home.php?mod=space&amp;uid=705216">张瑞泽</a></h3>
-          <select name="gid">
-            <option value="1">好友</option>
-            <option value="2">同好</option>
-          </select>
-        </form>
-      </body>
-    </html>
+    <?xml version="1.0" encoding="utf-8"?>
+    <root><![CDATA[<h3 class="flb"><em id="return_addfriendhk_705216">添加好友</em><span><a href="javascript:;" class="flbc">关闭</a></span></h3>
+    <form method="post" autocomplete="off" id="addform_705216" action="home.php?mod=spacecp&ac=friend&op=add&uid=705216">
+      <input type="hidden" name="referer" value="home.php" />
+      <input type="hidden" name="formhash" value="form123" />
+      <table cellspacing="0" cellpadding="0" class="tfm">
+        <tr>
+          <th width="60" class="avt"><a href="home.php?mod=space&uid=705216"><img src="https://bbs.yamibo.com/uc_server/avatar.php?uid=705216&size=middle" /></a></th>
+          <td valign="top">添加 <strong>张瑞泽</strong> 为好友<br />
+            <select name="gid" class="ps">
+              <option value="1">好友</option>
+              <option value="2">同好</option>
+            </select>
+          </td>
+        </tr>
+      </table>
+      <input type="hidden" name="addsubmit" value="true" />
+    </form>]]></root>
     """#
 
     let form = try UserSpaceHTMLParser.parseAddFriendForm(from: html, uid: "705216")
 
     #expect(form.uid == "705216")
     #expect(form.name == "张瑞泽")
-    #expect(form.avatarURL?.absoluteString == "https://bbs.yamibo.com/avatar.jpg")
+    #expect(form.avatarURL?.absoluteString.contains("avatar.php?uid=705216") == true)
     #expect(form.formHash == "form123")
     #expect(form.options == [
         UserSpaceAddFriendOption(id: 1, name: "好友"),
@@ -492,13 +572,12 @@ import Testing
     ])
 }
 
+/// The add-friend POST carries `inajax=1`, so the result is the touch
+/// showmessage ajax branch inside a CDATA envelope (`dt#messagetext`).
 @Test func parseUserSpaceAddFriendResultReturnsServerMessage() throws {
     let html = #"""
-    <html>
-      <body>
-        <div class="jump_c">好友请求已送出</div>
-      </body>
-    </html>
+    <?xml version="1.0" encoding="utf-8"?>
+    <root><![CDATA[<div class="tip"><dt id="messagetext"><p>好友请求已送出</p></dt></div>]]></root>
     """#
 
     #expect(try UserSpaceHTMLParser.parseAddFriendResult(from: html) == "好友请求已送出")
@@ -558,36 +637,46 @@ import Testing
     #expect(try UserSpaceHTMLParser.parsePrivateMessageSendResult(from: html) == "短消息发送成功")
 }
 
+/// Fixture mirrors the touch templates `space_blog_view.htm` +
+/// `space_comment_li.htm`: subject in `.view_tit` (leading `em` = category),
+/// author row in `li.mtit span.z`, icon+`em` counters in `li.mtime span.y`,
+/// body in `.message`, comments as `li#comment_<id>_li` with the text in
+/// `div.do_comment`.
 @Test func parseBlogReaderExtractsRootBlogActionsCommentsAndPager() throws {
     let html = #"""
     <html>
       <head><title>日志标题 -  百合会</title></head>
       <body>
-        <h1 class="ph">日志标题</h1>
-        <div id="blog_article">
-          <div class="muser">
-            <a href="home.php?mod=space&amp;uid=705216&amp;mobile=2" class="mmc">张瑞泽</a>
-            <img src="https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg" />
-            <span>2026-06-01 12:34</span>
-          </div>
-          <div class="blogcontent"><p>第一段正文</p><p>第二段 &amp; 细节</p></div>
-          <span>查看: 42</span><span>评论: 3</span>
-          <a href="home.php?mod=spacecp&amp;ac=favorite&amp;type=blog&amp;id=88&amp;mobile=2">收藏</a>
-          <a href="home.php?mod=spacecp&amp;ac=share&amp;type=blog&amp;id=88&amp;mobile=2">分享</a>
-          <a href="home.php?mod=spacecp&amp;ac=invite&amp;id=88&amp;mobile=2">邀请</a>
+        <div class="view_tit"><em>[<a href="home.php?mod=space&amp;uid=705216&amp;do=blog&amp;classid=3">随笔</a>]</em>日志标题</div>
+        <div class="plc">
+          <div class="avatar"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg" /></div>
+          <ul class="authi">
+            <li class="mtit"><span class="z"><a href="home.php?mod=space&amp;uid=705216&amp;do=profile">张瑞泽</a></span></li>
+            <li class="mtime"><span class="y"><i class="dm-eye"></i><em>42</em><i class="dm-chat-s"></i><em>3</em></span>2026-6-1 12:34</li>
+          </ul>
+          <div class="message"><p>第一段正文</p><p>第二段 &amp; 细节</p></div>
+          <div class="threadlist_foot cl"><ul>
+            <li><a href="home.php?mod=spacecp&amp;ac=favorite&amp;type=blog&amp;id=88&amp;mobile=2">收藏</a></li>
+            <li><a href="home.php?mod=spacecp&amp;ac=share&amp;type=blog&amp;id=88&amp;mobile=2">分享</a></li>
+            <li><a href="misc.php?mod=invite&amp;action=blog&amp;id=88&amp;mobile=2">邀请</a></li>
+          </ul></div>
         </div>
-        <ul id="comment_ul">
-          <li id="comment_9001">
-            <a href="home.php?mod=space&amp;uid=800001&amp;mobile=2" class="mmc">评论者</a>
-            <span>2026-06-02 08:00</span>
-            <div class="comment_content"><p>评论内容</p></div>
-            <a href="home.php?mod=spacecp&amp;ac=comment&amp;op=reply&amp;cid=9001&amp;mobile=2">回复</a>
+        <div class="doing_list"><ul>
+          <li id="comment_9001_li" class="doing_list_li list cl">
+            <div class="avatar l0"><a href="home.php?mod=space&amp;uid=800001"><img src="https://bbs.yamibo.com/uc_server/avatar.php?uid=800001&amp;size=small" /></a></div>
+            <div class="muser">
+              <h3><a href="home.php?mod=space&amp;uid=800001" id="author_9001" class="mmc">评论者</a></h3>
+              <div class="mtime"><span>2026-6-2 08:00</span><a href="home.php?mod=spacecp&amp;ac=comment&amp;op=reply&amp;cid=9001&amp;handlekey=replycommenthk_9001" id="c_9001_reply" class="y doing_gl dialog">回复</a></div>
+            </div>
+            <div id="comment_9001" class="do_comment"><p>评论内容</p></div>
           </li>
-        </ul>
-        <div class="pg">
-          <strong>1</strong>
-          <a href="home.php?mod=space&amp;do=blog&amp;id=88&amp;page=2&amp;mobile=2">2</a>
-          <label><span title="共 2 页"> / 2 页</span></label>
+        </ul></div>
+        <div class="pgs cl">
+          <div class="pg">
+            <strong>1</strong>
+            <a href="home.php?mod=space&amp;do=blog&amp;id=88&amp;page=2&amp;mobile=2">2</a>
+            <label><span title="共 2 页"> / 2 页</span></label>
+          </div>
         </div>
       </body>
     </html>
@@ -600,19 +689,20 @@ import Testing
     #expect(page.author.uid == "705216")
     #expect(page.author.name == "张瑞泽")
     #expect(page.author.avatarURL?.absoluteString == "https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg")
-    #expect(page.postedAtText == "2026-06-01 12:34")
+    #expect(page.postedAtText == "2026-6-1 12:34")
     #expect(page.contentText == "第一段正文 第二段 & 细节")
     #expect(page.viewCount == 42)
     #expect(page.replyCount == 3)
     #expect(page.collectURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=favorite&type=blog&id=88&mobile=2")
     #expect(page.shareURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=share&type=blog&id=88&mobile=2")
-    #expect(page.inviteURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=invite&id=88&mobile=2")
+    #expect(page.inviteURL?.absoluteString == "https://bbs.yamibo.com/misc.php?mod=invite&action=blog&id=88&mobile=2")
     #expect(page.comments.count == 1)
     #expect(page.comments.first?.commentID == "9001")
     #expect(page.comments.first?.author.uid == "800001")
     #expect(page.comments.first?.author.name == "评论者")
     #expect(page.comments.first?.contentText == "评论内容")
-    #expect(page.comments.first?.replyURL?.absoluteString == "https://bbs.yamibo.com/home.php?mod=spacecp&ac=comment&op=reply&cid=9001&mobile=2")
+    #expect(page.comments.first?.postedAtText == "2026-6-2 08:00")
+    #expect(page.comments.first?.replyURL?.absoluteString.contains("ac=comment&op=reply&cid=9001") == true)
     #expect(page.pageNavigation == ForumPageNavigation(currentPage: 1, totalPages: 2))
 }
 

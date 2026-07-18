@@ -221,14 +221,16 @@ struct MangaReaderTestsDirectoryRepository {
 }
 
 private func listHTML(tid: String, title: String, totalPages: Int) -> String {
-    let options = (1 ... max(1, totalPages))
-        .map { #"<option value="\#($0)">\#($0)</option>"# }
-        .joined()
+    // Multi-page tag lists paginate through the desktop `.pg` pager whose page
+    // count lives in the "共 N 页" label; single-page lists render no pager.
+    let pager = totalPages > 1
+        ? #"<div class="pg"><strong>1</strong><a href="misc.php?mod=tag&amp;id=12&amp;type=thread&amp;page=2">2</a><label><span title="共 \#(totalPages) 页"> / \#(totalPages) 页</span></label></div>"#
+        : ""
     return """
     <table>
-      \(options)
       \(listRowHTML(tid: tid, title: title, forumID: "30", forumName: "中文百合漫画区"))
     </table>
+    \(pager)
     """
 }
 
@@ -238,11 +240,14 @@ private func listRowHTML(
     forumID: String,
     forumName: String
 ) -> String {
+    // The date span carries the full timestamp as a tooltip (like the live
+    // desktop list rows) — total-page detection must stay anchored to the
+    // pager's 共N页 label instead of reading the first title attribute.
     """
     <tr>
-      <th><a href="forum.php?mod=viewthread&tid=\(tid)&mobile=2">\(title)</a></th>
+      <th><a href="forum.php?mod=viewthread&amp;tid=\(tid)&amp;mobile=2">\(title)</a></th>
       <td class="by"><a href="forum-\(forumID)-1.html">\(forumName)</a></td>
-      <td class="by"><cite><a href="space-uid-77.html">作者甲</a></cite><em><span>2026-01-02</span></em></td>
+      <td class="by"><cite><a href="space-uid-77.html">作者甲</a></cite><em><span title="2026-1-2 18:32">昨天 18:32</span></em></td>
     </tr>
     """
 }

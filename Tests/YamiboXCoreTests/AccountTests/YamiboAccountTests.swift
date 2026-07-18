@@ -110,7 +110,7 @@ private enum YamiboAccountTestError: Error {
             )
             return httpResponse(
                 url: request.url!,
-                body: "<html><body>欢迎回来</body></html>",
+                body: "<html><body><div class=\"jump_c\"><p>欢迎您回来，百合花蕾 arkalin，现在将转入登录前页面</p></div></body></html>",
                 headers: ["Set-Cookie": "EeqY_2132_auth=token; Path=/; Domain=bbs.yamibo.com"]
             )
         case ("/home.php", "GET"):

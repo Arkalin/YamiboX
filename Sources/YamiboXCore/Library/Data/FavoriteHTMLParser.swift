@@ -218,6 +218,8 @@ enum FavoriteHTMLParser {
                     .first
                     .flatMap(Int.init)
             }
-        return max(1, linkedPages.max() ?? parseCurrentPage(in: document))
+        // On the last page every `page=` link points backwards — never report
+        // fewer total pages than the current page.
+        return max(1, max(linkedPages.max() ?? 1, parseCurrentPage(in: document)))
     }
 }

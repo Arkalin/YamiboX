@@ -281,7 +281,15 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceThreads(uid, page):
             return userSpaceURL(uid: uid, doValue: "thread", page: page)
         case let .userSpaceReplies(uid, page):
-            return userSpaceURL(uid: uid, doValue: "thread", page: page, view: "reply")
+            // The reply tab is selected by `type=reply` (with `view=me`);
+            // `view=reply` is not a Discuz view and falls back to the thread list.
+            return userSpaceURL(
+                uid: uid,
+                doValue: "thread",
+                page: page,
+                view: "me",
+                extraItems: [.init(name: "type", value: "reply")]
+            )
         case let .userSpaceBlogs(uid, page):
             return userSpaceURL(uid: uid, doValue: "blog", page: page, view: "me")
         case let .userSpaceMyBlogs(uid, page):

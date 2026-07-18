@@ -6,20 +6,14 @@ import Testing
 struct BoardFavoriteParserTests {
     @Test func parsesBoardRowsWithDeleteIDsAndPagination() throws {
         let html = #"""
-        <div class="pg"><strong>1</strong> <a href="home.php?mod=space&do=favorite&type=forum&page=2">2</a> <span>共 2 页</span></div>
-        <ul class="sclist">
-          <li>
-            <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=456&type=forum&handlekey=a_delete_456">删除</a>
-            <a href="forum.php?mod=forumdisplay&fid=30&mobile=2">漫画交流区</a>
-          </li>
-          <li>
-            <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=789&type=forum">删除</a>
-            <a href="forum-44-1.html">小说交流区</a>
-          </li>
-          <li>
-            <a href="home.php?mod=space">不是板块</a>
-          </li>
-        </ul>
+        <div class="pg"><strong>1</strong> <a href="home.php?mod=space&amp;do=favorite&amp;type=forum&amp;page=2">2</a> <label><span title="共 2 页"> / 2 页</span></label></div>
+        <div class="findbox mt10 cl">
+          <ul>
+            <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=456&amp;type=forum&amp;handlekey=a_delete_456" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=forumdisplay&amp;fid=30&amp;mobile=2">漫画交流区</a></li>
+            <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=789&amp;type=forum" class="dialog mdel"><i class="dm-error"></i></a><a href="forum-44-1.html">小说交流区</a></li>
+            <li class="sclist"><a href="home.php?mod=space">不是板块</a></li>
+          </ul>
+        </div>
         """#
 
         let result = FavoriteHTMLParser.parseBoardFavoritePage(from: html)
@@ -38,11 +32,11 @@ struct BoardFavoriteParserTests {
 
     @Test func keepsBoardWhenDeleteLinkIsMissing() throws {
         let html = #"""
-        <ul class="sclist">
-          <li>
-            <a href="forum.php?mod=forumdisplay&fid=55">百合会</a>
-          </li>
-        </ul>
+        <div class="findbox mt10 cl">
+          <ul>
+            <li class="sclist"><a href="forum.php?mod=forumdisplay&amp;fid=55">百合会</a></li>
+          </ul>
+        </div>
         """#
 
         let result = FavoriteHTMLParser.parseBoardFavoritePage(from: html)

@@ -43,15 +43,14 @@ enum ForumThreadPageHTMLParser {
 
         let body = extractCData(from: html) ?? html
         let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
-        let ratings = ForumThreadRatingParser.ratingRows(in: document)
+        let ratings = ForumThreadRatingParser.ratingResultRows(in: document)
         guard !ratings.isEmpty else {
             throw YamiboError.parsingFailed(context: L10n.string("forum.thread.ratings_all"))
         }
 
-        let pageText = document.text()
         return ForumThreadRatingResultsPage(
             ratings: ratings,
-            totalScore: ForumThreadRatingParser.totalScore(pageText: pageText, ratings: ratings)
+            totalScore: ForumThreadRatingParser.resultsTotalScore(in: document, ratings: ratings)
         )
     }
 
@@ -125,10 +124,7 @@ enum ForumThreadPageHTMLParser {
 
     /// Payload of the `<root><![CDATA[...]]></root>` envelope Discuz wraps AJAX responses in.
     private static func extractCData(from html: String) -> String? {
-        guard let startRange = html.range(of: "<![CDATA[") else { return nil }
-        let contentStart = startRange.upperBound
-        guard let endRange = html.range(of: "]]>", range: contentStart ..< html.endIndex) else { return nil }
-        return String(html[contentStart ..< endRange.lowerBound])
+        HTMLTextExtractor.discuzAjaxPayload(from: html)
     }
 
     /// Human-readable status/error message embedded in a Discuz response, if any.

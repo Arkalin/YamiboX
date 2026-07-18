@@ -48,7 +48,9 @@ enum UserSpaceHTMLParser {
             ?? HTMLTextExtractor.matches(pattern: #"page=(\d+)"#, in: pager.html())
             .compactMap { $0.dropFirst().first.flatMap(Int.init) }
             .max()
-        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages)
+        // On the last page every `page=` link points backwards — never report
+        // fewer total pages than the page we are on.
+        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages.map { max($0, currentPage) })
     }
 
     /// Nearest ancestor that acts as a list row (`li`/`tr`/`dd`/`div`), or the

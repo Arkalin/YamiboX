@@ -29,12 +29,20 @@ enum ForumThreadAttachmentParser {
     /// Attachments listed in the post footer, excluding ones nested inside the message body.
     static func footerAttachments(in container: Element, body: Element) -> [ForumThreadAttachmentBlock] {
         let bodyElementID = body.id()
-        let candidates = container.selectAll(".pattl, .attach, .t_attach, [id^=attach_]")
-            .filter { element in
-                guard !bodyElementID.isEmpty else { return true }
-                return element.parents().contains { $0.id() == bodyElementID } != true
-            }
-        return candidates.compactMap(attachment(fromFooterElement:))
+        func outsideBody(_ element: Element) -> Bool {
+            guard !bodyElementID.isEmpty else { return true }
+            return element.parents().contains { $0.id() == bodyElementID } != true
+        }
+        // Touch template renders file attachments as a `ul.post_attlist`
+        // SIBLING of `.message` — each `li` has the same inner shape as the
+        // in-body block (`.link` name + metadata `<p>`s), so reuse that parser.
+        let touchItems = container.selectAll(".post_attlist li")
+            .filter(outsideBody)
+            .compactMap(attachmentListBlock(from:))
+        let legacyItems = container.selectAll(".pattl, .attach, .t_attach, [id^=attach_]")
+            .filter(outsideBody)
+            .compactMap(attachment(fromFooterElement:))
+        return touchItems + legacyItems
     }
 
     private static func attachment(fromFooterElement element: Element) -> ForumThreadAttachmentBlock? {

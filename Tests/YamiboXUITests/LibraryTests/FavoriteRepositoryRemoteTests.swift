@@ -84,9 +84,11 @@ final class FavoriteRepositoryThreadFavoriteTests: XCTestCase {
     func testFavoritePageParserReadsPagination() {
         let html = """
         <html><body>
-          <ul class="sclist">
-            <li><a href="forum.php?mod=viewthread&tid=900&mobile=2">收藏</a></li>
-          </ul>
+          <div class="findbox mt10 cl">
+            <ul>
+              <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=9001" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=900&amp;mobile=2">收藏</a></li>
+            </ul>
+          </div>
           <div class="pg"><a href="home.php?page=1">1</a><strong>2</strong><a href="home.php?page=3">3</a></div>
         </body></html>
         """

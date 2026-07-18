@@ -56,6 +56,18 @@ enum HTMLTextExtractor {
         URL(string: decodeHTMLEntities(href), relativeTo: baseURL)?.absoluteURL
     }
 
+    /// Payload of the `<root><![CDATA[…]]></root>` envelope Discuz wraps AJAX
+    /// responses in, or nil when the input is not such an envelope. Feeding the
+    /// raw envelope to the HTML parser destroys the first tag of the payload
+    /// and leaks a literal "]]>" text node into the body.
+    static func discuzAjaxPayload(from html: String) -> String? {
+        guard let startRange = html.range(of: "<![CDATA["),
+              let endRange = html.range(of: "]]>", range: startRange.upperBound ..< html.endIndex) else {
+            return nil
+        }
+        return String(html[startRange.upperBound ..< endRange.lowerBound])
+    }
+
     static func cachedRegex(pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
         regexCache.regex(pattern: pattern, options: options)
     }
