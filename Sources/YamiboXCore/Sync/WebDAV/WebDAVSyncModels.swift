@@ -19,6 +19,17 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     /// dataset. Lets the upload path apply newer remote data for datasets that
     /// are not locally dirty instead of discarding it.
     public var lastAppliedRemoteUpdatedAtByDatasetID: [String: Date]
+    /// Monotonic (Lamport-style) revision this device stamped onto its most
+    /// recent upload of each dataset. Revisions, not wall clocks, decide sync
+    /// direction whenever both sides carry one, so cross-device clock skew
+    /// cannot flip a comparison; the `updatedAt` fields above stay as the
+    /// fallback for pre-revision peers and for interval bookkeeping.
+    public var localRevisionByDatasetID: [String: UInt64]
+    /// Revision of the newest remote payload whose content this device has
+    /// absorbed (by applying it or by producing it through an upload), per
+    /// dataset. Revision-bearing counterpart of
+    /// `lastAppliedRemoteUpdatedAtByDatasetID`.
+    public var lastAppliedRemoteRevisionByDatasetID: [String: UInt64]
 
     public init(
         baseURLString: String = "",
@@ -30,7 +41,9 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         localUpdatedAt: Date? = nil,
         dirtyDatasetIDs: Set<String> = [],
         lastSyncedFingerprintByDatasetID: [String: String] = [:],
-        lastAppliedRemoteUpdatedAtByDatasetID: [String: Date] = [:]
+        lastAppliedRemoteUpdatedAtByDatasetID: [String: Date] = [:],
+        localRevisionByDatasetID: [String: UInt64] = [:],
+        lastAppliedRemoteRevisionByDatasetID: [String: UInt64] = [:]
     ) {
         self.baseURLString = baseURLString
         self.username = username
@@ -42,6 +55,46 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         self.dirtyDatasetIDs = dirtyDatasetIDs
         self.lastSyncedFingerprintByDatasetID = lastSyncedFingerprintByDatasetID
         self.lastAppliedRemoteUpdatedAtByDatasetID = lastAppliedRemoteUpdatedAtByDatasetID
+        self.localRevisionByDatasetID = localRevisionByDatasetID
+        self.lastAppliedRemoteRevisionByDatasetID = lastAppliedRemoteRevisionByDatasetID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case baseURLString
+        case username
+        case password
+        case isAutoSyncEnabled
+        case lastSyncedAt
+        case lastRemoteUpdatedAt
+        case localUpdatedAt
+        case dirtyDatasetIDs
+        case lastSyncedFingerprintByDatasetID
+        case lastAppliedRemoteUpdatedAtByDatasetID
+        case localRevisionByDatasetID
+        case lastAppliedRemoteRevisionByDatasetID
+    }
+
+    /// Every field decodes with `decodeIfPresent ?? default` (the same
+    /// tolerance pattern as `FavoriteLibrarySettings`): a stored blob written
+    /// before a field existed must keep decoding, because a decode failure
+    /// makes `UserDefaultsJSONStorage` degrade to defaults and would silently
+    /// drop the user's credentials along with all sync bookkeeping.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            baseURLString: try container.decodeIfPresent(String.self, forKey: .baseURLString) ?? "",
+            username: try container.decodeIfPresent(String.self, forKey: .username) ?? "",
+            password: try container.decodeIfPresent(String.self, forKey: .password) ?? "",
+            isAutoSyncEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAutoSyncEnabled) ?? false,
+            lastSyncedAt: try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt),
+            lastRemoteUpdatedAt: try container.decodeIfPresent(Date.self, forKey: .lastRemoteUpdatedAt),
+            localUpdatedAt: try container.decodeIfPresent(Date.self, forKey: .localUpdatedAt),
+            dirtyDatasetIDs: try container.decodeIfPresent(Set<String>.self, forKey: .dirtyDatasetIDs) ?? [],
+            lastSyncedFingerprintByDatasetID: try container.decodeIfPresent([String: String].self, forKey: .lastSyncedFingerprintByDatasetID) ?? [:],
+            lastAppliedRemoteUpdatedAtByDatasetID: try container.decodeIfPresent([String: Date].self, forKey: .lastAppliedRemoteUpdatedAtByDatasetID) ?? [:],
+            localRevisionByDatasetID: try container.decodeIfPresent([String: UInt64].self, forKey: .localRevisionByDatasetID) ?? [:],
+            lastAppliedRemoteRevisionByDatasetID: try container.decodeIfPresent([String: UInt64].self, forKey: .lastAppliedRemoteRevisionByDatasetID) ?? [:]
+        )
     }
 
     public var trimmedBaseURLString: String {

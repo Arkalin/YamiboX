@@ -181,6 +181,118 @@ import Testing
     #expect(decoded.records.first { $0.kind == .manga }?.manga?.chapterView == 2)
 }
 
+/// Payloads written before revisions existed carry no `syncRevision`; they
+/// must keep decoding (revision nil), and the service-injected envelope field
+/// must round-trip through each payload's decoder.
+@Test func webDAVPayloadEnvelopesTolerateMissingSyncRevisionAndRoundTripInjectedOnes() throws {
+    let exported = try JSONEncoder().encode(FavoriteLibraryWebDAVPayload(
+        updatedAt: Date(timeIntervalSince1970: 1),
+        accountUID: "uid",
+        library: FavoriteLibraryDocument()
+    ))
+    // Participants export without a revision, so the wire format is identical
+    // to what pre-revision builds wrote; decoding it must yield a nil
+    // revision instead of failing.
+    let exportedObject = try #require(JSONSerialization.jsonObject(with: exported) as? [String: Any])
+    #expect(exportedObject["syncRevision"] == nil)
+    let decodedLegacy = try JSONDecoder().decode(FavoriteLibraryWebDAVPayload.self, from: exported)
+    #expect(decodedLegacy.syncRevision == nil)
+
+    // The sync service stamps the revision into the exported envelope; the
+    // stamped payload must decode with the revision and unchanged content.
+    let stamped = WebDAVPayloadEnvelope.injectingSyncRevision(7, into: exported)
+    let decodedStamped = try JSONDecoder().decode(FavoriteLibraryWebDAVPayload.self, from: stamped)
+    #expect(decodedStamped.syncRevision == 7)
+    #expect(decodedStamped.library == decodedLegacy.library)
+    #expect(decodedStamped.updatedAt == decodedLegacy.updatedAt)
+    #expect(decodedStamped.accountUID == "uid")
+
+    let stampedProgress = WebDAVPayloadEnvelope.injectingSyncRevision(
+        9,
+        into: try JSONEncoder().encode(ReadingProgressWebDAVPayload(updatedAt: Date(timeIntervalSince1970: 2), records: []))
+    )
+    #expect(try JSONDecoder().decode(ReadingProgressWebDAVPayload.self, from: stampedProgress).syncRevision == 9)
+
+    let stampedLikes = WebDAVPayloadEnvelope.injectingSyncRevision(
+        11,
+        into: try JSONEncoder().encode(LikeLibraryWebDAVPayload(updatedAt: Date(timeIntervalSince1970: 3), items: [], tombstones: [:]))
+    )
+    #expect(try JSONDecoder().decode(LikeLibraryWebDAVPayload.self, from: stampedLikes).syncRevision == 11)
+
+    let stampedAppSettings = WebDAVPayloadEnvelope.injectingSyncRevision(
+        13,
+        into: try JSONEncoder().encode(AppSettingsWebDAVPayload(
+            updatedAt: Date(timeIntervalSince1970: 4),
+            appSettings: WebDAVSyncedAppSettings(homePage: .forum, webBrowser: WebBrowserSettings())
+        ))
+    )
+    #expect(try JSONDecoder().decode(AppSettingsWebDAVPayload.self, from: stampedAppSettings).syncRevision == 13)
+
+    // Non-JSON-object data degrades to the unstamped bytes instead of failing
+    // the round.
+    let notAnObject = Data("[1, 2, 3]".utf8)
+    #expect(WebDAVPayloadEnvelope.injectingSyncRevision(1, into: notAnObject) == notAnObject)
+}
+
+/// A settings blob stored by a pre-revision build has no revision dictionaries
+/// (and possibly none of the later bookkeeping fields at all). It must decode
+/// with defaults instead of failing — a decode failure would reset the store
+/// and silently drop the user's WebDAV credentials.
+@Test func webDAVSyncSettingsDecodePreRevisionBlobsPreservingCredentialsAndBookkeeping() throws {
+    let preRevisionBlob = Data(
+        """
+        {
+          "baseURLString": "https://dav.example.com",
+          "username": "admin",
+          "password": "secret",
+          "isAutoSyncEnabled": true,
+          "localUpdatedAt": 1000,
+          "dirtyDatasetIDs": ["favoriteLibrary"],
+          "lastSyncedFingerprintByDatasetID": {"favoriteLibrary": "abc"},
+          "lastAppliedRemoteUpdatedAtByDatasetID": {"favoriteLibrary": 900}
+        }
+        """.utf8
+    )
+    let decoded = try JSONDecoder().decode(WebDAVSyncSettings.self, from: preRevisionBlob)
+    #expect(decoded.baseURLString == "https://dav.example.com")
+    #expect(decoded.username == "admin")
+    #expect(decoded.password == "secret")
+    #expect(decoded.isAutoSyncEnabled)
+    #expect(decoded.localUpdatedAt == Date(timeIntervalSinceReferenceDate: 1000))
+    #expect(decoded.dirtyDatasetIDs == ["favoriteLibrary"])
+    #expect(decoded.lastSyncedFingerprintByDatasetID == ["favoriteLibrary": "abc"])
+    #expect(decoded.lastAppliedRemoteUpdatedAtByDatasetID == ["favoriteLibrary": Date(timeIntervalSinceReferenceDate: 900)])
+    #expect(decoded.localRevisionByDatasetID.isEmpty)
+    #expect(decoded.lastAppliedRemoteRevisionByDatasetID.isEmpty)
+
+    // Even older shape: only the credential fields exist.
+    let minimalBlob = Data(
+        """
+        {
+          "baseURLString": "https://dav.example.com",
+          "username": "admin",
+          "password": "secret",
+          "isAutoSyncEnabled": false
+        }
+        """.utf8
+    )
+    let minimal = try JSONDecoder().decode(WebDAVSyncSettings.self, from: minimalBlob)
+    #expect(minimal.username == "admin")
+    #expect(minimal.dirtyDatasetIDs.isEmpty)
+    #expect(minimal.localRevisionByDatasetID.isEmpty)
+    #expect(minimal.lastAppliedRemoteRevisionByDatasetID.isEmpty)
+
+    // Round-trip: the revision dictionaries survive encode/decode.
+    var withRevisions = decoded
+    withRevisions.localRevisionByDatasetID = ["favoriteLibrary": 3]
+    withRevisions.lastAppliedRemoteRevisionByDatasetID = ["favoriteLibrary": 5]
+    let roundTripped = try JSONDecoder().decode(
+        WebDAVSyncSettings.self,
+        from: try JSONEncoder().encode(withRevisions)
+    )
+    #expect(roundTripped == withRevisions)
+}
+
 @Test func localFirstWebDAVPayloadsRejectLegacyOrMissingVersions() throws {
     let legacyProgress = Data(
         """

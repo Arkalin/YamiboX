@@ -608,6 +608,396 @@ private enum WebDAVTestError: Error {
     #expect(putCount == 3)
 }
 
+@Test func webDAVAutomaticSyncMergesDirtyLocalEditsWithNewerRemoteInsteadOfOverwriting() async throws {
+    let fixture = try WebDAVSyncFixture(prefix: "webdav-dirty-merge-download")
+    try await fixture.settingsStore.save(WebDAVSyncSettings(
+        baseURLString: "https://\(fixture.host)",
+        username: "admin",
+        password: "secret",
+        isAutoSyncEnabled: true
+    ))
+    try await fixture.signIn(accountUID: "123")
+
+    // Local edit that has not been uploaded yet.
+    var localDocument = FavoriteLibraryDocument()
+    try localDocument.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .novelThread, threadID: "111"),
+        title: "本地未同步收藏",
+        locations: [.category(localDocument.defaultCategory.id)]
+    ))
+    try await fixture.localFavoriteLibraryStore.save(localDocument)
+
+    // Device B's newer remote library, which does not know the local edit.
+    var remoteDocument = FavoriteLibraryDocument()
+    try remoteDocument.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .normalThread, threadID: "222"),
+        title: "B设备收藏",
+        locations: [.category(remoteDocument.defaultCategory.id)]
+    ))
+    let remoteUpdatedAt = Date.now.addingTimeInterval(600)
+    let remoteFavoritePayload = try JSONEncoder().encode(FavoriteLibraryWebDAVPayload(
+        updatedAt: remoteUpdatedAt,
+        accountUID: "123",
+        library: remoteDocument
+    ))
+
+    var uploadedLibrary: FavoriteLibraryWebDAVPayload?
+    WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
+        switch request.httpMethod {
+        case "GET":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                return (remoteFavoritePayload, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        case "MKCOL":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        case "PUT":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                uploadedLibrary = try JSONDecoder().decode(
+                    FavoriteLibraryWebDAVPayload.self,
+                    from: try #require(request.webDAVBodyData())
+                )
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        default:
+            Issue.record("Unexpected method \(request.httpMethod ?? "nil")")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!)
+        }
+    }
+    defer { WebDAVTestURLProtocol.removeHandler(for: fixture.host) }
+
+    let service = fixture.makeService()
+    // Marks the favorite library dirty and stamps localUpdatedAt behind the
+    // remote payload, putting this round in the remote-is-newer branch.
+    try await service.markLocalDataChanged()
+
+    let result = try await service.synchronizeAutomatically()
+
+    #expect(result == .uploaded)
+    // Both sides survive locally: the dirty dataset was merged, not replaced.
+    let mergedLocal = try await fixture.localFavoriteLibraryStore.load()
+    #expect(mergedLocal.items.contains { $0.target.threadID == "111" })
+    #expect(mergedLocal.items.contains { $0.target.threadID == "222" })
+    // The merged result was uploaded and sorts strictly after the absorbed
+    // remote stamp, so other devices cannot skip it as already-applied.
+    let uploaded = try #require(uploadedLibrary)
+    #expect(uploaded.library.items.contains { $0.target.threadID == "111" })
+    #expect(uploaded.library.items.contains { $0.target.threadID == "222" })
+    #expect(uploaded.updatedAt > remoteUpdatedAt)
+    let settled = await fixture.settingsStore.load()
+    #expect(settled.dirtyDatasetIDs.isEmpty)
+}
+
+/// Clock-skew regression: device B's wall clock runs behind, so its upload
+/// carries an *older* `updatedAt` than this device's bookkeeping, but a
+/// *higher* revision. The date rule alone would discard it forever (direction
+/// says local-is-ahead, the absorbed filter says already-applied); the
+/// revision rule must download and absorb it.
+@Test func webDAVAutomaticSyncDownloadsHigherRevisionRemoteDespiteOlderWallClock() async throws {
+    let fixture = try WebDAVSyncFixture(prefix: "webdav-revision-beats-older-clock")
+    try await fixture.settingsStore.save(WebDAVSyncSettings(
+        baseURLString: "https://\(fixture.host)",
+        username: "admin",
+        password: "secret",
+        isAutoSyncEnabled: true
+    ))
+    try await fixture.signIn(accountUID: "123")
+
+    var localDocument = FavoriteLibraryDocument()
+    let localTarget = FavoriteItemTarget(kind: .novelThread, threadID: "111")
+    try localDocument.upsertItem(FavoriteItem(
+        target: localTarget,
+        title: "本机收藏",
+        locations: [.category(localDocument.defaultCategory.id)]
+    ))
+    try await fixture.localFavoriteLibraryStore.save(localDocument)
+
+    // Round 1: seed revision bookkeeping through a normal upload round
+    // against an empty remote, and verify revision 1 was stamped into the
+    // uploaded envelope.
+    var uploadedFavoritePayload: FavoriteLibraryWebDAVPayload?
+    WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
+        switch request.httpMethod {
+        case "GET":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        case "MKCOL":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        case "PUT":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                uploadedFavoritePayload = try JSONDecoder().decode(
+                    FavoriteLibraryWebDAVPayload.self,
+                    from: try #require(request.webDAVBodyData())
+                )
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        default:
+            Issue.record("Unexpected method \(request.httpMethod ?? "nil")")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!)
+        }
+    }
+    defer { WebDAVTestURLProtocol.removeHandler(for: fixture.host) }
+
+    let service = fixture.makeService()
+    try await service.markLocalDataChanged()
+    let seededResult = try await service.synchronizeAutomatically()
+    #expect(seededResult == .uploaded)
+    let seededUpload = try #require(uploadedFavoritePayload)
+    #expect(seededUpload.syncRevision == 1)
+    let seededSettings = await fixture.settingsStore.load()
+    let firstUploadUpdatedAt = try #require(seededSettings.localUpdatedAt)
+    #expect(seededSettings.localRevisionByDatasetID["favoriteLibrary"] == 1)
+    #expect(seededSettings.lastAppliedRemoteRevisionByDatasetID["favoriteLibrary"] == 1)
+
+    // Device B (clock an hour behind) merged this device's upload, added
+    // thread 222, and uploaded revision 5 with an older wall-clock stamp.
+    let remoteUpdatedAt = firstUploadUpdatedAt.addingTimeInterval(-3600)
+    var remoteDocument = FavoriteLibraryDocument()
+    try remoteDocument.upsertItem(FavoriteItem(
+        target: localTarget,
+        title: "本机收藏",
+        locations: [.category(remoteDocument.defaultCategory.id)]
+    ))
+    try remoteDocument.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .normalThread, threadID: "222"),
+        title: "B设备新收藏",
+        locations: [.category(remoteDocument.defaultCategory.id)]
+    ))
+    let remoteFavoritePayload = try JSONEncoder().encode(FavoriteLibraryWebDAVPayload(
+        updatedAt: remoteUpdatedAt,
+        accountUID: "123",
+        syncRevision: 5,
+        library: remoteDocument
+    ))
+    var putPathsAfterSeeding: [String] = []
+    WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
+        switch request.httpMethod {
+        case "GET":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                return (remoteFavoritePayload, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        case "MKCOL", "PUT":
+            putPathsAfterSeeding.append(request.url?.path ?? "")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        default:
+            Issue.record("Unexpected method \(request.httpMethod ?? "nil")")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!)
+        }
+    }
+
+    let result = try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+
+    #expect(result == .downloaded)
+    #expect(putPathsAfterSeeding.isEmpty)
+    let favorites = try await fixture.localFavoriteLibraryStore.load()
+    #expect(favorites.items.contains { $0.target.threadID == "222" })
+    let convergedSettings = await fixture.settingsStore.load()
+    #expect(convergedSettings.lastAppliedRemoteRevisionByDatasetID["favoriteLibrary"] == 5)
+    #expect(convergedSettings.lastAppliedRemoteUpdatedAtByDatasetID["favoriteLibrary"] == remoteUpdatedAt)
+    #expect(convergedSettings.dirtyDatasetIDs.isEmpty)
+
+    // Refetching the same revision-5 payload is a no-op: absorbed by
+    // revision, regardless of the wall-clock stamps involved.
+    let repeated = try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+    #expect(repeated == .skipped)
+    #expect(putPathsAfterSeeding.isEmpty)
+    let settledSettings = await fixture.settingsStore.load()
+    #expect(settledSettings == convergedSettings)
+}
+
+/// Mixed-version regression: a pre-revision peer keeps uploading payloads
+/// without `syncRevision`. Those payloads must converge through the wall-clock
+/// fallback exactly as before, and the next revision this device mints must
+/// stay monotonic across the revision-less interlude.
+@Test func webDAVAutomaticSyncFallsBackToWallClockForPreRevisionRemotePayloads() async throws {
+    let fixture = try WebDAVSyncFixture(prefix: "webdav-pre-revision-fallback")
+    try await fixture.settingsStore.save(WebDAVSyncSettings(
+        baseURLString: "https://\(fixture.host)",
+        username: "admin",
+        password: "secret",
+        isAutoSyncEnabled: true
+    ))
+    try await fixture.signIn(accountUID: "123")
+
+    var localDocument = FavoriteLibraryDocument()
+    let localTarget = FavoriteItemTarget(kind: .novelThread, threadID: "111")
+    try localDocument.upsertItem(FavoriteItem(
+        target: localTarget,
+        title: "本机收藏",
+        locations: [.category(localDocument.defaultCategory.id)]
+    ))
+    try await fixture.localFavoriteLibraryStore.save(localDocument)
+
+    // Round 1: seed revision bookkeeping (revision 1) against an empty remote.
+    WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
+        switch request.httpMethod {
+        case "GET":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        case "MKCOL", "PUT":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        default:
+            Issue.record("Unexpected method \(request.httpMethod ?? "nil")")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!)
+        }
+    }
+    defer { WebDAVTestURLProtocol.removeHandler(for: fixture.host) }
+
+    let service = fixture.makeService()
+    try await service.markLocalDataChanged()
+    let seededResult = try await service.synchronizeAutomatically()
+    #expect(seededResult == .uploaded)
+    let seededSettings = await fixture.settingsStore.load()
+    let firstUploadUpdatedAt = try #require(seededSettings.localUpdatedAt)
+
+    // An old-version device uploads a newer (by date) payload with no
+    // revision: thread 222 arrives, this device's copy of 111 is included.
+    let legacyRemoteUpdatedAt = firstUploadUpdatedAt.addingTimeInterval(3600)
+    var remoteDocument = FavoriteLibraryDocument()
+    try remoteDocument.upsertItem(FavoriteItem(
+        target: localTarget,
+        title: "本机收藏",
+        locations: [.category(remoteDocument.defaultCategory.id)]
+    ))
+    try remoteDocument.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .normalThread, threadID: "222"),
+        title: "旧版设备收藏",
+        locations: [.category(remoteDocument.defaultCategory.id)]
+    ))
+    let legacyRemotePayload = try JSONEncoder().encode(FavoriteLibraryWebDAVPayload(
+        updatedAt: legacyRemoteUpdatedAt,
+        accountUID: "123",
+        library: remoteDocument
+    ))
+    var uploadedFavoritePayload: FavoriteLibraryWebDAVPayload?
+    WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
+        switch request.httpMethod {
+        case "GET":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                return (legacyRemotePayload, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        case "MKCOL":
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        case "PUT":
+            if request.url?.path.hasSuffix("yamibox-favorite-library-v1.json") == true {
+                uploadedFavoritePayload = try JSONDecoder().decode(
+                    FavoriteLibraryWebDAVPayload.self,
+                    from: try #require(request.webDAVBodyData())
+                )
+            }
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        default:
+            Issue.record("Unexpected method \(request.httpMethod ?? "nil")")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!)
+        }
+    }
+
+    // Round 2 (clean): the revision-less payload lands through the date
+    // fallback path, exactly as it did before revisions existed.
+    let downloadResult = try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+    #expect(downloadResult == .downloaded)
+    let downloadedFavorites = try await fixture.localFavoriteLibraryStore.load()
+    #expect(downloadedFavorites.items.contains { $0.target.threadID == "222" })
+    let downloadedSettings = await fixture.settingsStore.load()
+    #expect(downloadedSettings.lastAppliedRemoteUpdatedAtByDatasetID["favoriteLibrary"] == legacyRemoteUpdatedAt)
+    // The revision floor from round 1 is deliberately retained: it is never
+    // compared against revision-less payloads and keeps future mints monotonic.
+    #expect(downloadedSettings.lastAppliedRemoteRevisionByDatasetID["favoriteLibrary"] == 1)
+
+    // Round 3 (dirty): a local edit merges with the revision-less remote and
+    // the re-upload mints the next monotonic revision with a stamp past the
+    // absorbed date (skew guard still in force on the fallback path).
+    var editedDocument = try await fixture.localFavoriteLibraryStore.load()
+    try editedDocument.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .normalThread, threadID: "333"),
+        title: "本机新增收藏",
+        locations: [.category(editedDocument.defaultCategory.id)]
+    ))
+    try await fixture.localFavoriteLibraryStore.save(editedDocument)
+    try await service.markLocalDataChanged()
+
+    let uploadResult = try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+
+    #expect(uploadResult == .uploaded)
+    let uploaded = try #require(uploadedFavoritePayload)
+    #expect(uploaded.syncRevision == 2)
+    #expect(uploaded.updatedAt > legacyRemoteUpdatedAt)
+    #expect(uploaded.library.items.contains { $0.target.threadID == "222" })
+    #expect(uploaded.library.items.contains { $0.target.threadID == "333" })
+    let mergedFavorites = try await fixture.localFavoriteLibraryStore.load()
+    #expect(mergedFavorites.items.contains { $0.target.threadID == "222" })
+    #expect(mergedFavorites.items.contains { $0.target.threadID == "333" })
+    let settledSettings = await fixture.settingsStore.load()
+    #expect(settledSettings.localRevisionByDatasetID["favoriteLibrary"] == 2)
+    #expect(settledSettings.lastAppliedRemoteRevisionByDatasetID["favoriteLibrary"] == 2)
+    #expect(settledSettings.dirtyDatasetIDs.isEmpty)
+}
+
+@Test func favoriteLibraryMergerToleratesDuplicateItemIDsFromMalformedPayloads() async throws {
+    let document = try decodeDocumentWithDuplicateItems(olderTitle: "旧标题", newerTitle: "新标题")
+    #expect(document.items.count == 2)
+
+    let payload = FavoriteLibraryWebDAVPayload(
+        updatedAt: Date(timeIntervalSince1970: 5_000),
+        accountUID: "123",
+        library: document
+    )
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: payload,
+        remote: payload,
+        updatedAt: Date(timeIntervalSince1970: 6_000)
+    )
+
+    let mergedItems = merged.library.items.filter { $0.target.threadID == "777" }
+    #expect(mergedItems.count == 1)
+    #expect(mergedItems.first?.title == "新标题")
+}
+
+@Test func favoriteLibraryDocumentInitializerDeduplicatesItemsByTargetID() async throws {
+    let decoded = try decodeDocumentWithDuplicateItems(olderTitle: "旧标题", newerTitle: "新标题")
+    #expect(decoded.items.count == 2)
+
+    let rebuilt = FavoriteLibraryDocument(
+        categories: decoded.categories,
+        collections: decoded.collections,
+        items: decoded.items,
+        tags: decoded.tags
+    )
+
+    let rebuiltItems = rebuilt.items.filter { $0.target.threadID == "777" }
+    #expect(rebuiltItems.count == 1)
+    #expect(rebuiltItems.first?.title == "新标题")
+}
+
+/// Builds a document that (illegally) carries two items with the same target
+/// id, as decoded from a payload written by a buggy or older peer — the
+/// normalizing initializer forbids constructing this state in-process, so the
+/// duplicate is spliced into the encoded JSON before decoding.
+private func decodeDocumentWithDuplicateItems(
+    olderTitle: String,
+    newerTitle: String
+) throws -> FavoriteLibraryDocument {
+    var document = FavoriteLibraryDocument()
+    try document.upsertItem(FavoriteItem(
+        target: FavoriteItemTarget(kind: .novelThread, threadID: "777"),
+        title: olderTitle,
+        locations: [.category(document.defaultCategory.id)]
+    ))
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as? [String: Any]
+    )
+    var items = try #require(object["items"] as? [[String: Any]])
+    var duplicate = try #require(items.first)
+    duplicate["title"] = newerTitle
+    duplicate["updatedAt"] = try #require(duplicate["updatedAt"] as? Double) + 1_000
+    items.append(duplicate)
+    object["items"] = items
+    return try JSONDecoder().decode(
+        FavoriteLibraryDocument.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+}
+
 private struct WebDAVSyncFixture {
     let suiteName: String
     let host: String

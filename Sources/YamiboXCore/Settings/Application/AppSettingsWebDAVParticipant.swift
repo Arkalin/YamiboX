@@ -19,7 +19,11 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(AppSettingsWebDAVPayload.self, from: data)
-        return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, accountUID: payload.accountUID)
+        return WebDAVRemotePayloadInfo(
+            updatedAt: payload.updatedAt,
+            accountUID: payload.accountUID,
+            revision: payload.syncRevision
+        )
     }
 
     func mergeAndExport(remoteData _: Data?, updatedAt: Date, accountUID: String) async throws -> Data {
@@ -86,17 +90,24 @@ struct AppSettingsWebDAVPayload: Codable, Equatable, Sendable {
     var version: Int
     var updatedAt: Date
     var accountUID: String?
+    /// Monotonic per-dataset sync revision, stamped into the envelope by the
+    /// sync service after export; nil for payloads written before revisions
+    /// existed. Optional, so the synthesized Codable decodes old payloads
+    /// (`decodeIfPresent`) and omits the key when nil.
+    var syncRevision: UInt64?
     var appSettings: WebDAVSyncedAppSettings
 
     init(
         version: Int = Self.currentVersion,
         updatedAt: Date,
         accountUID: String? = nil,
+        syncRevision: UInt64? = nil,
         appSettings: WebDAVSyncedAppSettings
     ) {
         self.version = version
         self.updatedAt = updatedAt
         self.accountUID = accountUID
+        self.syncRevision = syncRevision
         self.appSettings = appSettings
     }
 }

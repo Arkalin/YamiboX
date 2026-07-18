@@ -72,12 +72,12 @@ final class YamiboAppModelWebDAVTests: XCTestCase {
         in store: WebDAVSyncSettingsStore,
         timeout: TimeInterval = 1
     ) async throws -> Date? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let localUpdatedAt = await store.load().localUpdatedAt {
-                return localUpdatedAt
+        do {
+            try await waitForCondition(timeout: .seconds(timeout), pollInterval: .milliseconds(20)) {
+                await store.load().localUpdatedAt != nil
             }
-            try await Task.sleep(nanoseconds: 20_000_000)
+        } catch is TestWaitTimeoutError {
+            // 与原实现一致:超时后返回最终读到的值(可能为 nil),由调用方断言。
         }
         return await store.load().localUpdatedAt
     }
