@@ -63,6 +63,7 @@ struct LocalFavoriteListContent: View {
                         LocalFavoriteItemRow(
                             card: card,
                             showsCover: showsCover,
+                            showsSmartCardBadge: organizer.smartMangaBadgeEnabled,
                             isSelectionMode: selection.isSelectionMode,
                             isSelected: selection.selectedFavoriteIDs.contains(card.id),
                             onToggleSelection: { selection.toggleFavoriteSelection(id: card.id) },

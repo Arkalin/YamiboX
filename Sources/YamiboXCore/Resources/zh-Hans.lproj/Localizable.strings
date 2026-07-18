@@ -902,6 +902,7 @@
 "settings.favorite_background" = "收藏页背景";
 "settings.favorite_background.custom" = "自定义";
 "settings.favorite_background.default" = "默认";
+"settings.favorite_smart_manga_badge" = "显示智能漫画标识";
 "settings.favorite_add_sync_default" = "新增收藏默认动作";
 "settings.favorite_add_sync_prompt" = "新增收藏时询问是否同步";
 "settings.favorite_remove_sync_default" = "移除收藏默认动作";

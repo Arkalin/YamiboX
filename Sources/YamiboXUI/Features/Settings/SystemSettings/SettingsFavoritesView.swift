@@ -84,6 +84,12 @@ struct SettingsFavoritesView: View {
                     )
                 }
                 .disabled(viewModel.isBusy)
+
+                Toggle(
+                    L10n.string("settings.favorite_smart_manga_badge"),
+                    isOn: favoriteSmartMangaBadgeBinding
+                )
+                .disabled(viewModel.isBusy)
             }
 
             Section {
@@ -309,6 +315,13 @@ struct SettingsFavoritesView: View {
         Binding(
             get: { viewModel.favoriteSmartMangaBulkDeleteEnabled },
             set: { viewModel.updateFavoriteSmartMangaBulkDeleteEnabled($0) }
+        )
+    }
+
+    private var favoriteSmartMangaBadgeBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.favoriteSmartMangaBadgeEnabled },
+            set: { viewModel.updateFavoriteSmartMangaBadgeEnabled($0) }
         )
     }
 

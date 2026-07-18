@@ -209,6 +209,42 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         XCTAssertEqual(organizer.backgroundImageData, imageData)
     }
 
+    /// The "显示智能漫画标识" switch flipped from Settings must reach an
+    /// already-loaded Favorites tab through the same live-refresh
+    /// subscription proven above — `smartMangaBadgeEnabled` is observable
+    /// state the card views read to show or hide the sparkles badge, so a
+    /// stale snapshot would keep badges on screen until an unrelated reload.
+    func testSettingsStoreChangeLiveRefreshesSmartMangaBadgeFlagWithoutManualReload() async throws {
+        let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-badge-live-refresh")
+        _ = try YamiboTestDefaults.make(suiteName: suiteName)
+        let settingsStore = SettingsStore(
+            defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
+            key: "settings"
+        )
+
+        let organizer = try makeOrganizer(settingsStore: settingsStore)
+        await organizer.load()
+        // Same lost-update race as the manga-directory live-refresh test
+        // above: `load()` fires `persistNavigationState()`'s unstructured
+        // load-modify-save Task, which on fresh settings actually saves
+        // (nil → default category id) — let it settle before this test's own
+        // load-modify-save below, or its stale snapshot (badge still on)
+        // can land after ours and clobber the flip.
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertTrue(organizer.smartMangaBadgeEnabled)
+
+        // Exactly what the Settings UI's toggle does: save the settings blob
+        // — no call to `organizer.reload()` in between.
+        var settings = await settingsStore.load()
+        settings.favorites.smartMangaBadgeEnabled = false
+        try await settingsStore.save(settings)
+
+        try await waitForOrganizerCondition {
+            !organizer.smartMangaBadgeEnabled
+        }
+    }
+
     /// Pluggable-reader-config decision #1: merged-card grouping is purely
     /// configuration-driven for ANY board — an arbitrary fid ("99", no
     /// factory entry) configured `.manga(smartEnabled: true)` merges its

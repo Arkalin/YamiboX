@@ -269,6 +269,18 @@ import YamiboXTestSupport
     #expect(favorites.selectedCollectionID == nil)
 }
 
+/// Migration path for the "显示智能漫画标识" switch: settings persisted before
+/// the field existed must decode with the badge on (its default), and an
+/// explicit off must survive a round trip.
+@Test func favoriteLibrarySettingsSmartMangaBadgeDefaultsOnAndRoundTrips() throws {
+    let missingKey = try JSONDecoder().decode(FavoriteLibrarySettings.self, from: Data("{}".utf8))
+    #expect(missingKey.smartMangaBadgeEnabled)
+
+    let encoded = try JSONEncoder().encode(FavoriteLibrarySettings(smartMangaBadgeEnabled: false))
+    let decoded = try JSONDecoder().decode(FavoriteLibrarySettings.self, from: encoded)
+    #expect(!decoded.smartMangaBadgeEnabled)
+}
+
 @Test func appSettingsPersistsHomePageWhenEncodingAndDecoding() throws {
     let settings = AppSettings(system: SystemSettings(homePage: .favorites))
 

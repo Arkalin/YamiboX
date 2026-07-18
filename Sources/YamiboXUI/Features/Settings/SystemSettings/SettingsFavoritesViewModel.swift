@@ -21,6 +21,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     var favoriteRemoveRemotePromptEnabled = true
     var favoriteRemoveRemoteDefault = false
     var favoriteSmartMangaBulkDeleteEnabled = true
+    var favoriteSmartMangaBadgeEnabled = true
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
@@ -41,6 +42,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         favoriteRemoveRemotePromptEnabled = settings.favorites.removeRemotePromptEnabled
         favoriteRemoveRemoteDefault = settings.favorites.removeRemoteDefault
         favoriteSmartMangaBulkDeleteEnabled = settings.favorites.smartMangaBulkDeleteEnabled
+        favoriteSmartMangaBadgeEnabled = settings.favorites.smartMangaBadgeEnabled
     }
 
     /// Application reset restores only the background here: the display and
@@ -189,6 +191,12 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     func updateFavoriteSmartMangaBulkDeleteEnabled(_ value: Bool) {
         persistSettingsAtomically(\.favoriteSmartMangaBulkDeleteEnabled, to: value) {
             $0.favorites.smartMangaBulkDeleteEnabled = value
+        }
+    }
+
+    func updateFavoriteSmartMangaBadgeEnabled(_ value: Bool) {
+        persistSettingsAtomically(\.favoriteSmartMangaBadgeEnabled, to: value) {
+            $0.favorites.smartMangaBadgeEnabled = value
         }
     }
 }

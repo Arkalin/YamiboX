@@ -7,6 +7,9 @@ import YamiboXCore
 struct LocalFavoriteItemRow: View {
     let card: FavoriteCardProjection
     let showsCover: Bool
+    /// Mirrors `settings.favorites.smartMangaBadgeEnabled` (the "显示智能漫画
+    /// 标识" Settings switch) — badge only, never any other smart-card gate.
+    let showsSmartCardBadge: Bool
     let isSelectionMode: Bool
     let isSelected: Bool
     let onToggleSelection: () -> Void
@@ -100,7 +103,7 @@ struct LocalFavoriteItemRow: View {
         // `LocalFavoriteGridCard` — its `.opacity()` would otherwise clip
         // this badge's outward corner offset.
         .overlay(alignment: .topTrailing) {
-            if card.isModeOnMangaThread {
+            if showsSmartCardBadge, card.isModeOnMangaThread {
                 LocalFavoriteSmartCardBadge()
             }
         }

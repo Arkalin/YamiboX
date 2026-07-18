@@ -366,6 +366,12 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     /// original behavior where only the dedicated "查看归档收藏" archive page
     /// can delete an individual archived member.
     public var smartMangaBulkDeleteEnabled: Bool
+    /// Whether smart-comic cards show the sparkles corner badge
+    /// (`LocalFavoriteSmartCardBadge`). Purely visual: turning it off hides
+    /// the badge without affecting any smart-card behavior (merged grouping,
+    /// archive page, bulk-delete gating all stay keyed off
+    /// `isModeOnMangaThread` as before).
+    public var smartMangaBadgeEnabled: Bool
 
     public init(
         background: FavoriteBackgroundSettings = .init(),
@@ -383,7 +389,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
         updateCheckInterval: FavoriteUpdateCheckInterval = .off,
         updateNotificationsEnabled: Bool = false,
         smartMangaUpdateCheckInterval: SmartMangaUpdateCheckInterval = .threeDays,
-        smartMangaBulkDeleteEnabled: Bool = true
+        smartMangaBulkDeleteEnabled: Bool = true,
+        smartMangaBadgeEnabled: Bool = true
     ) {
         self.background = background
         self.layoutMode = layoutMode
@@ -401,6 +408,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
         self.updateNotificationsEnabled = updateNotificationsEnabled
         self.smartMangaUpdateCheckInterval = smartMangaUpdateCheckInterval
         self.smartMangaBulkDeleteEnabled = smartMangaBulkDeleteEnabled
+        self.smartMangaBadgeEnabled = smartMangaBadgeEnabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -421,7 +429,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
             updateCheckInterval: try container.decodeIfPresent(FavoriteUpdateCheckInterval.self, forKey: .updateCheckInterval) ?? .off,
             updateNotificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .updateNotificationsEnabled) ?? false,
             smartMangaUpdateCheckInterval: try container.decodeIfPresent(SmartMangaUpdateCheckInterval.self, forKey: .smartMangaUpdateCheckInterval) ?? .threeDays,
-            smartMangaBulkDeleteEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBulkDeleteEnabled) ?? true
+            smartMangaBulkDeleteEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBulkDeleteEnabled) ?? true,
+            smartMangaBadgeEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBadgeEnabled) ?? true
         )
     }
 

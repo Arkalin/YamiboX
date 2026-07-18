@@ -126,6 +126,7 @@ struct LocalFavoriteGridEntryCell: View {
         case let .card(card):
             LocalFavoriteGridCard(
                 card: card,
+                showsSmartCardBadge: organizer.smartMangaBadgeEnabled,
                 selection: selection,
                 actions: actions
             )
