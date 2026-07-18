@@ -498,7 +498,7 @@ private actor FailingProjectionStore: MangaReaderProjectionPersisting {
     }
 
     func save(_ projection: MangaReaderProjection) async throws {
-        throw YamiboError.persistenceFailed("projection save failed")
+        throw YamiboPersistenceError(context: "projection save failed")
     }
 
     func clearAll() async throws {}

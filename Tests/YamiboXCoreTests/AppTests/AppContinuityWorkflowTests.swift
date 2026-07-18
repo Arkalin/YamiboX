@@ -130,12 +130,11 @@ private func waitForReaderResumeRoute(
     equals expected: ReaderResumeRoute?,
     timeout: TimeInterval = 1
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if await store.load() == expected {
-            return
+    do {
+        try await waitForCondition(timeout: .seconds(timeout), pollInterval: .milliseconds(20)) {
+            await store.load() == expected
         }
-        try await Task.sleep(nanoseconds: 20_000_000)
+    } catch is TestWaitTimeoutError {
+        #expect(await store.load() == expected)
     }
-    #expect(await store.load() == expected)
 }
