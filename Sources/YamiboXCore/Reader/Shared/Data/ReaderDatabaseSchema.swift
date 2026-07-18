@@ -174,16 +174,27 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
         }
     }
 
+    /// Every offline-cache table, ordered so child tables are wiped before the
+    /// parents their foreign keys reference. `OfflineCacheStore.clearAll()` and
+    /// `erase(in:)` below previously each maintained this list by hand; a table
+    /// added to the schema but only to one of the two wipe paths would leave
+    /// stale rows behind, so both now share this single source of truth.
+    static let offlineCacheTableNamesInDeletionOrder: [String] = [
+        "offline_cache_completed_images",
+        "offline_cache_work_images",
+        "offline_cache_works",
+        "offline_cache_novel_entry_images",
+        "offline_cache_novel_entries",
+        "offline_cache_manga_entry_images",
+        "offline_cache_manga_entries",
+        "offline_cache_image_assets",
+        "offline_cache_queue_state"
+    ]
+
     static func erase(in db: Database) throws {
-        try db.execute(sql: "DELETE FROM offline_cache_completed_images")
-        try db.execute(sql: "DELETE FROM offline_cache_work_images")
-        try db.execute(sql: "DELETE FROM offline_cache_works")
-        try db.execute(sql: "DELETE FROM offline_cache_novel_entry_images")
-        try db.execute(sql: "DELETE FROM offline_cache_novel_entries")
-        try db.execute(sql: "DELETE FROM offline_cache_manga_entry_images")
-        try db.execute(sql: "DELETE FROM offline_cache_manga_entries")
-        try db.execute(sql: "DELETE FROM offline_cache_image_assets")
-        try db.execute(sql: "DELETE FROM offline_cache_queue_state")
+        for table in offlineCacheTableNamesInDeletionOrder {
+            try db.execute(sql: "DELETE FROM \(table)")
+        }
         try db.execute(sql: "DELETE FROM manga_directory_chapters")
         try db.execute(sql: "DELETE FROM manga_directories")
         try db.execute(sql: "DELETE FROM reading_progress")

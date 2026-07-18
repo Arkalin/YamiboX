@@ -173,11 +173,3 @@ public final class OfflineCacheContinuedProcessingCoordinator: OfflineCacheQueue
     }
     #endif
 }
-
-private extension NSLock {
-    func withLock<Value>(_ operation: () -> Value) -> Value {
-        lock()
-        defer { unlock() }
-        return operation()
-    }
-}

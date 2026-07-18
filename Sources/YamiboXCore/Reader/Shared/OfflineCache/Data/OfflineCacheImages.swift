@@ -17,7 +17,7 @@ extension OfflineCacheStore: YamiboOfflineImageDataProviding {
 
 extension OfflineCacheStore {
     func offlineImageData(for imageURL: URL) async -> Data? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         let imageURLString = imageURL.absoluteString
         let fileName: String?
         do {
@@ -39,8 +39,40 @@ extension OfflineCacheStore {
         return await offlineImageData(imageURLString: imageURLString, fileName: fileName)
     }
 
+    /// Existence-only variant of `offlineImageData(for:)`: a point lookup on
+    /// the `image_url` primary key plus a file-existence probe, mirroring
+    /// `isMembershipComplete`. It never reads file contents, so completeness
+    /// reconciliation over a chapter's worth of images stays O(images) cheap
+    /// metadata checks instead of loading every cached image into memory.
+    /// Deliberately read-only: unlike `offlineImageData(for:)` it does not
+    /// delete the DB row when the file has gone missing, the same trade-off
+    /// `isMembershipComplete` already makes for its cached/uncached decisions.
+    func hasOfflineImage(for imageURL: URL) async -> Bool {
+        await ensureQueueRecoveredBestEffort()
+        let imageURLString = imageURL.absoluteString
+        let fileName: String?
+        do {
+            fileName = try await database.read { db in
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT file_name FROM offline_cache_image_assets WHERE image_url = ?",
+                    arguments: [imageURLString]
+                )
+            }
+        } catch {
+            YamiboLog.offlineCache.error("Failed to resolve offline image file name for \(imageURLString): \(error)")
+            return false
+        }
+        guard let fileName else {
+            return false
+        }
+        return fileManager.fileExists(
+            atPath: imagesDirectory.appendingPathComponent(fileName, isDirectory: false).path
+        )
+    }
+
     func novelOfflineImageData(for imageURL: URL, threadID: String) async -> Data? {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         let imageURLString = imageURL.absoluteString
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedThreadID.isEmpty else { return nil }
@@ -91,7 +123,7 @@ extension OfflineCacheStore {
     }
 
     func saveOfflineImageData(_ data: Data, for imageURL: URL) async throws {
-        try await recoverQueueStateAfterRestart()
+        try await ensureQueueRecovered()
         do {
             let imageURLString = imageURL.absoluteString
             let fileName = imageFileName(for: imageURL)
@@ -161,7 +193,7 @@ extension OfflineCacheStore {
     }
 
     func mangaOfflineCacheDiskUsageByOwner() async -> [MangaOfflineCacheOwnerUsage] {
-        try? await recoverQueueStateAfterRestart()
+        await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
                 var imageURLsByOwner: [String: Set<String>] = [:]
@@ -186,14 +218,10 @@ extension OfflineCacheStore {
                 var usage: [MangaOfflineCacheOwnerUsage] = []
                 for ownerName in Set(imageURLsByOwner.keys).union(byteCountByOwner.keys) {
                     var byteCount = byteCountByOwner[ownerName] ?? 0
-                    let imageURLs = imageURLsByOwner[ownerName] ?? []
-                    for imageURL in imageURLs {
-                        byteCount += try Int.fetchOne(
-                            db,
-                            sql: "SELECT byte_count FROM offline_cache_image_assets WHERE image_url = ?",
-                            arguments: [imageURL]
-                        ) ?? 0
-                    }
+                    byteCount += try Self.imageAssetByteCount(
+                        forImageURLStrings: imageURLsByOwner[ownerName] ?? [],
+                        in: db
+                    )
                     usage.append(MangaOfflineCacheOwnerUsage(ownerName: ownerName, byteCount: byteCount))
                 }
                 return usage.sorted { $0.ownerName.localizedStandardCompare($1.ownerName) == .orderedAscending }
@@ -236,6 +264,30 @@ extension OfflineCacheStore {
             guard fileManager.fileExists(atPath: fileURL.path) else { return false }
         }
         return true
+    }
+
+    /// Sums `byte_count` over a set of image URLs with one indexed
+    /// `SUM ... WHERE image_url IN (...)` query per chunk, replacing the
+    /// one-SELECT-per-URL loops that dominated management-snapshot and
+    /// disk-usage builds. Chunked (same 200 bound as `ContentCoverStore`)
+    /// because SQLite caps bound parameters per statement — historically 999 —
+    /// and callers can pass a whole library's worth of URLs. Takes a `Set` so
+    /// each URL contributes once, which matches both the replaced loops and
+    /// the table's `image_url` primary key.
+    static func imageAssetByteCount(forImageURLStrings imageURLStrings: Set<String>, in db: Database) throws -> Int {
+        let allURLStrings = Array(imageURLStrings)
+        let chunkSize = 200
+        var total = 0
+        for start in stride(from: 0, to: allURLStrings.count, by: chunkSize) {
+            let chunk = Array(allURLStrings[start ..< min(start + chunkSize, allURLStrings.count)])
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+            total += try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(SUM(byte_count), 0) FROM offline_cache_image_assets WHERE image_url IN (\(placeholders))",
+                arguments: StatementArguments(chunk)
+            ) ?? 0
+        }
+        return total
     }
 
     static func removeUnreferencedImages(
@@ -297,11 +349,4 @@ extension OfflineCacheStore {
         }
         try db.execute(sql: "DELETE FROM offline_cache_image_assets WHERE image_url = ?", arguments: [imageURLString])
     }
-}
-
-private func offlineCachePersistenceError(from error: Error) -> YamiboError {
-    if let error = error as? YamiboError {
-        return error
-    }
-    return YamiboError.persistenceFailed(error.localizedDescription)
 }

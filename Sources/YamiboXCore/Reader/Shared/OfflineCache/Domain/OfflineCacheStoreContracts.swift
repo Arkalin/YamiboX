@@ -6,6 +6,11 @@ public protocol OfflineCacheUpdateObserving: Sendable {
 
 public protocol OfflineCacheImageAssetStoring: Sendable {
     func offlineImageData(for imageURL: URL) async -> Data?
+    /// Whether a cached copy of `imageURL` exists, without loading its bytes.
+    /// "Is this image already cached?" checks used to go through
+    /// `offlineImageData(for:)`, which reads the entire file into memory just
+    /// to discard it — per image, per reconciliation pass.
+    func hasOfflineImage(for imageURL: URL) async -> Bool
     func saveOfflineImageData(_ data: Data, for imageURL: URL) async throws
 }
 
