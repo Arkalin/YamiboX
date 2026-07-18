@@ -932,13 +932,24 @@ public struct NovelReaderView: View {
         novelTextSelectionController.configureLikeCapture(
             workKey: .novel(threadID: model.context.threadID),
             service: NovelTextLikeCaptureService(likeStore: dependencies.like.likeStore),
-            onCaptured: { _ in
+            onLikeActionVisible: {
+                likeFeedbackGenerator.prepare()
+            },
+            onCaptured: { outcome in
+                // Paint the highlight and fire the haptic on the same tick.
+                switch outcome {
+                case .added(let item), .merged(let item), .alreadyLiked(let item):
+                    likeHighlightController.applyCapturedItem(item)
+                }
                 likeFeedbackGenerator.notificationOccurred(.success)
             }
         )
     }
 
     private func handleImageLongPress(_ anchor: NovelImageLikeAnchor, imageURL: URL) {
+        // The async capture below gives the Taptic Engine time to spin up
+        // before the success haptic fires.
+        likeFeedbackGenerator.prepare()
         let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
         let likeStore = dependencies.like.likeStore
         let likeImageStore = dependencies.like.likeImageStore

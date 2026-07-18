@@ -155,6 +155,9 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     // resolve to a semantic position (no chapter title on that content).
     private func makeLikeAction() -> UIAction? {
         guard selectionController?.canLike == true else { return nil }
+        // The menu is about to offer "add to likes" — give the reader a
+        // chance to prepare its haptic generator before the user can tap it.
+        selectionController?.noteLikeActionOffered()
         return UIAction(title: L10n.string("likes.add_to_likes")) { [weak self] _ in
             self?.selectionController?.likeSelection()
         }

@@ -80,6 +80,21 @@ final class NovelLikeHighlightController {
         try? await likeStore?.delete(id: item.id)
     }
 
+    /// Optimistically paints a just-captured like on the same runloop tick as
+    /// its success haptic — the store-change notification round trip that
+    /// `reload()` waits on lands a frame or more later, which decouples the
+    /// visual from the haptic. The eventual `reload()` reconciles.
+    func applyCapturedItem(_ item: LikeItem) {
+        guard item.kind == .text else { return }
+        items.removeAll { $0.id == item.id }
+        items.append(item)
+        cachedGeneration = nil
+        rangesByItemID.removeAll()
+        for view in registeredViews.allObjects {
+            view.setNeedsDisplay()
+        }
+    }
+
     private func refreshIfNeeded(using displayReference: NovelTextViewportDisplayReference) {
         guard cachedGeneration != displayReference.generation else { return }
         cachedGeneration = displayReference.generation

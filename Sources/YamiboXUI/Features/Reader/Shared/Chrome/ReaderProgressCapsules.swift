@@ -236,6 +236,9 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         if dragStartProgressFraction == nil {
+                            // Touch-down: spin the Taptic Engine up before the
+                            // first haptic of this scrub fires.
+                            prepareFeedbackGenerators()
                             dragStartProgressFraction = displayedProgressFraction
                         }
                         let targetFraction = ReaderProgressDragMapping.value(
@@ -255,6 +258,13 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
         }
         .frame(width: totalWidth)
         .frame(height: layout.verticalScrubberHeight)
+        .onAppear(perform: prepareFeedbackGenerators)
+    }
+
+    private func prepareFeedbackGenerators() {
+        progressStartFeedbackGenerator.prepare()
+        progressTickFeedbackGenerator.prepare()
+        progressCommitFeedbackGenerator.prepare()
     }
 
     private var displayedProgressFraction: Double {

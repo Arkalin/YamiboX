@@ -156,6 +156,13 @@ private struct MangaReaderDirectoryProgressControl: View {
                 commitHorizontalCapsuleScrub()
             }
         )
+        .onAppear(perform: prepareFeedbackGenerators)
+    }
+
+    private func prepareFeedbackGenerators() {
+        progressStartFeedbackGenerator.prepare()
+        progressTickFeedbackGenerator.prepare()
+        progressCommitFeedbackGenerator.prepare()
     }
 
     private var sliderHasAvailableRange: Bool {
@@ -171,6 +178,11 @@ private struct MangaReaderDirectoryProgressControl: View {
 
     private func handleHorizontalCapsuleScrub(locationX: CGFloat, width: CGFloat) {
         guard progressChromePresentation.supportsHorizontalScrub, width > 0 else { return }
+        if scrubState.phase != .scrubbing {
+            // Touch-down: spin the Taptic Engine up before the first haptic
+            // of this scrub fires.
+            prepareFeedbackGenerators()
+        }
         let fraction = min(max(locationX / width, 0), 1)
         var nextState = scrubState
         let update = nextState.update(value: Double(fraction), context: progress.scrubContext)

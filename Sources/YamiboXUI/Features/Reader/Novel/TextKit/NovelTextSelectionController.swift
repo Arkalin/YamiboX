@@ -24,6 +24,7 @@ final class NovelTextSelectionController {
     private var likeWorkKey: LikeWorkKey?
     private var likeCaptureService: NovelTextLikeCaptureService?
     private var onLikeCaptured: ((LikeCaptureOutcome) -> Void)?
+    private var onLikeActionOffered: (() -> Void)?
 
     var hasSelection: Bool {
         selectionRangeValue != nil
@@ -161,11 +162,20 @@ final class NovelTextSelectionController {
     func configureLikeCapture(
         workKey: LikeWorkKey,
         service: NovelTextLikeCaptureService,
+        onLikeActionVisible: @escaping () -> Void = {},
         onCaptured: @escaping (LikeCaptureOutcome) -> Void
     ) {
         likeWorkKey = workKey
         likeCaptureService = service
+        onLikeActionOffered = onLikeActionVisible
         onLikeCaptured = onCaptured
+    }
+
+    /// Called when the edit menu offers the like action, before the user can
+    /// possibly tap it — the hook the reader uses to `prepare()` its haptic
+    /// generator so the success haptic doesn't fire on a cold Taptic Engine.
+    func noteLikeActionOffered() {
+        onLikeActionOffered?()
     }
 
     func likeSelection() {
