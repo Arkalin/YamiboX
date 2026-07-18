@@ -125,6 +125,13 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
 
     private let imageView = UIImageView()
     private var lastLayoutSize: CGSize = .zero
+    /// `layoutSubviews` runs inside the SwiftUI render commit and `resetZoom`
+    /// inside `onDisappear`, and their zoom mutations fire
+    /// `scrollViewDidZoom` synchronously — publishing the factor straight
+    /// into `@State` from there is "Modifying state during view update". The
+    /// scheduler defers publishes born in those scopes to the next runloop
+    /// turn, while gesture-driven zoom keeps reporting synchronously.
+    private let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
 
     init() {
         super.init(frame: .zero)
@@ -164,36 +171,42 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     func stepZoom(zoomIn: Bool) {
-        let factor = ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
-        let next = ImageBrowserZoomMath.steppedFactor(from: factor, zoomIn: zoomIn)
-        setZoomScale(minimumZoomScale * next, animated: !UIAccessibility.isReduceMotionEnabled)
+        callbackScheduler.performViewUpdate {
+            let factor = ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
+            let next = ImageBrowserZoomMath.steppedFactor(from: factor, zoomIn: zoomIn)
+            setZoomScale(minimumZoomScale * next, animated: !UIAccessibility.isReduceMotionEnabled)
+        }
     }
 
     func resetZoom(animated: Bool) {
-        setZoomScale(minimumZoomScale, animated: animated)
+        callbackScheduler.performViewUpdate {
+            setZoomScale(minimumZoomScale, animated: animated)
+        }
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let image = currentImage, bounds.width > 0, bounds.height > 0 else { return }
-        if bounds.size != lastLayoutSize {
-            // Preserve the user's zoom factor relative to fit across container
-            // size changes (rotation, split view), re-fitting on first layout.
-            let previousFactor = ImageBrowserZoomMath.normalizedFactor(
-                zoomScale: zoomScale,
-                fitScale: minimumZoomScale
-            )
-            let hadLayout = lastLayoutSize != .zero
-            lastLayoutSize = bounds.size
+        callbackScheduler.performViewUpdate {
+            if bounds.size != lastLayoutSize {
+                // Preserve the user's zoom factor relative to fit across container
+                // size changes (rotation, split view), re-fitting on first layout.
+                let previousFactor = ImageBrowserZoomMath.normalizedFactor(
+                    zoomScale: zoomScale,
+                    fitScale: minimumZoomScale
+                )
+                let hadLayout = lastLayoutSize != .zero
+                lastLayoutSize = bounds.size
 
-            let fit = ImageBrowserZoomMath.fitScale(imageSize: image.size, containerSize: bounds.size)
-            minimumZoomScale = fit
-            maximumZoomScale = fit * ImageBrowserZoomMath.maximumZoomFactor
-            let factor = hadLayout ? ImageBrowserZoomMath.clampedFactor(previousFactor) : 1
-            zoomScale = fit * factor
-            reportZoomFactor()
+                let fit = ImageBrowserZoomMath.fitScale(imageSize: image.size, containerSize: bounds.size)
+                minimumZoomScale = fit
+                maximumZoomScale = fit * ImageBrowserZoomMath.maximumZoomFactor
+                let factor = hadLayout ? ImageBrowserZoomMath.clampedFactor(previousFactor) : 1
+                zoomScale = fit * factor
+                reportZoomFactor()
+            }
+            recenterContent()
         }
-        recenterContent()
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -233,9 +246,11 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     private func reportZoomFactor() {
-        onZoomFactorChange?(
-            ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
-        )
+        guard let onZoomFactorChange else { return }
+        let factor = ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
+        callbackScheduler.publish {
+            onZoomFactorChange(factor)
+        }
     }
 }
 #endif

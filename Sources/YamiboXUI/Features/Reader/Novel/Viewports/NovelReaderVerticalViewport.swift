@@ -69,8 +69,12 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         collectionView.register(NovelReaderVerticalViewportCell.self, forCellWithReuseIdentifier: NovelReaderVerticalViewportCell.reuseIdentifier)
         let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
-            guard let collectionView else { return }
-            coordinator?.publishLayout(from: collectionView)
+            guard let coordinator, let collectionView else { return }
+            // Layout can run inside the SwiftUI render commit; defer the
+            // frame/viewport publishes out of the update transaction.
+            coordinator.callbackScheduler.performViewUpdate {
+                coordinator.publishLayout(from: collectionView)
+            }
         }
         context.coordinator.tapGesture.cancelsTouchesInView = false
         context.coordinator.tapGesture.delegate = context.coordinator

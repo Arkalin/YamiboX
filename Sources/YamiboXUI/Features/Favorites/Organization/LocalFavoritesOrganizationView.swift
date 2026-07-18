@@ -606,13 +606,9 @@ struct LocalFavoritesOrganizationView: View {
     // MARK: - Dialogs
 
     private var dialogBinding: Binding<Bool> {
-        Binding(
-            get: { routes.dialog != nil },
-            set: { isPresented in
-                if !isPresented {
-                    routes.dialog = nil
-                }
-            }
+        .presentation(
+            isPresented: { routes.dialog != nil },
+            clearOnDismiss: { routes.dialog = nil }
         )
     }
 
@@ -708,13 +704,9 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { combinedErrorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    clearErrorMessages()
-                }
-            }
+        .presentation(
+            isPresented: { combinedErrorMessage != nil },
+            clearOnDismiss: { clearErrorMessages() }
         )
     }
 

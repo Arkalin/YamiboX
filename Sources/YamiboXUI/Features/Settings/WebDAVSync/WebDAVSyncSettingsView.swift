@@ -203,14 +203,23 @@ public struct WebDAVSyncSettingsView: View {
             .task {
                 await viewModel.load()
             }
-            .alert(L10n.string("common.operation_failed"), isPresented: .constant(viewModel.errorMessage != nil), actions: {
-                Button(L10n.string("common.ok")) {
-                    viewModel.errorMessage = nil
+            .alert(
+                L10n.string("common.operation_failed"),
+                isPresented: .presentation(
+                    isPresented: { viewModel.errorMessage != nil },
+                    clearOnDismiss: { viewModel.errorMessage = nil }
+                ),
+                actions: {
+                    Button(L10n.string("common.ok")) {}
+                },
+                message: {
+                    Text(viewModel.errorMessage ?? "")
                 }
-            }, message: {
-                Text(viewModel.errorMessage ?? "")
-            })
-            .alert(L10n.string("webdav.account_mismatch_title"), isPresented: $viewModel.isShowingAccountMismatchConfirmation, actions: {
+            )
+            .alert(L10n.string("webdav.account_mismatch_title"), isPresented: .presentation(
+                isPresented: { viewModel.isShowingAccountMismatchConfirmation },
+                clearOnDismiss: { viewModel.isShowingAccountMismatchConfirmation = false }
+            ), actions: {
                 Button(L10n.string("webdav.account_mismatch_overwrite"), role: .destructive) {
                     Task {
                         let didSync = await viewModel.continueSync(allowingAccountMismatch: true)

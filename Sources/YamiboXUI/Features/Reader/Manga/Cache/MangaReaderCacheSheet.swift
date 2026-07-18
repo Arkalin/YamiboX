@@ -105,13 +105,9 @@ struct MangaReaderCacheSheet: View {
             .sensoryFeedback(.selection, trigger: selectedTIDs)
             .alert(
                 L10n.string("manga.offline_cache.add_favorite_title"),
-                isPresented: Binding(
-                    get: { model.prompt != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            model.clearPrompt()
-                        }
-                    }
+                isPresented: .presentation(
+                    isPresented: { model.prompt != nil },
+                    clearOnDismiss: { model.clearPrompt() }
                 ),
                 presenting: model.prompt
             ) { _ in

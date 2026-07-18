@@ -41,13 +41,9 @@ struct SettingsGeneralView: View {
     }
 
     private var errorIsPresented: Binding<Bool> {
-        Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    viewModel.errorMessage = nil
-                }
-            }
+        .presentation(
+            isPresented: { viewModel.errorMessage != nil },
+            clearOnDismiss: { viewModel.errorMessage = nil }
         )
     }
 

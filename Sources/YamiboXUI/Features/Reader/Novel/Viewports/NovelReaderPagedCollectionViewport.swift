@@ -103,8 +103,12 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         collectionView.addGestureRecognizer(quickFadePanRecognizer)
         let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
-            guard let collectionView else { return }
-            coordinator?.scrollToPendingSelectionIfPossible(in: collectionView, animated: false)
+            guard let coordinator, let collectionView else { return }
+            // Layout can run inside the SwiftUI render commit; defer callbacks
+            // published by the selection scroll out of the update transaction.
+            coordinator.callbackScheduler.performViewUpdate {
+                _ = coordinator.scrollToPendingSelectionIfPossible(in: collectionView, animated: false)
+            }
         }
         context.coordinator.updateGestureState(in: collectionView)
         selectionController?.configure(mode: .paged)

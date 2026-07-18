@@ -59,13 +59,9 @@ public struct AboutView: View {
     }
 
     private var updateAlertIsPresented: Binding<Bool> {
-        Binding(
-            get: { updateViewModel.alert != nil },
-            set: { isPresented in
-                if !isPresented {
-                    updateViewModel.alert = nil
-                }
-            }
+        .presentation(
+            isPresented: { updateViewModel.alert != nil },
+            clearOnDismiss: { updateViewModel.alert = nil }
         )
     }
 
