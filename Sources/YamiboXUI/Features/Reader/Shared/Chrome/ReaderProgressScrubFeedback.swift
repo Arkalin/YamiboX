@@ -13,6 +13,14 @@ struct ReaderProgressScrubFeedback {
     private let startGenerator = UIImpactFeedbackGenerator(style: .light)
     private let commitGenerator = UIImpactFeedbackGenerator(style: .medium)
 
+    /// Spins the Taptic Engine up ahead of the first haptic — call on
+    /// appearance and on scrub touch-down so the opening tick lands crisply.
+    func prepare() {
+        startGenerator.prepare()
+        tickGenerator.prepare()
+        commitGenerator.prepare()
+    }
+
     func trigger(_ haptics: [ReaderProgressScrubHaptic]) {
         for haptic in haptics {
             switch haptic {

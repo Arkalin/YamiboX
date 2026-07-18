@@ -207,16 +207,17 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
 
     @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
         guard let image = currentImage else { return }
+        let animated = !UIAccessibility.isReduceMotionEnabled
         let factor = ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
         if factor > 1.05 {
-            setZoomScale(minimumZoomScale, animated: true)
+            setZoomScale(minimumZoomScale, animated: animated)
         } else {
             let rect = ImageBrowserZoomMath.doubleTapZoomRect(
                 tapPoint: recognizer.location(in: imageView),
                 imageSize: image.size,
                 containerSize: bounds.size
             )
-            zoom(to: rect, animated: true)
+            zoom(to: rect, animated: animated)
         }
     }
 

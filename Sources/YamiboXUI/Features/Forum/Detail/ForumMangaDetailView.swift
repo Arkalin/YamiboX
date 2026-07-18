@@ -411,6 +411,7 @@ private struct ForumMangaHeaderActions: View {
     private var favoriteButton: some View {
         Button(action: onFavoriteTap) {
             Image(systemName: isFavorited ? "star.fill" : "star")
+                .contentTransition(.symbolEffect(.replace))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(ForumColors.brownEmphasis)
                 .frame(minWidth: 42, minHeight: 38)
@@ -478,6 +479,8 @@ private struct ForumMangaChapterRow: View {
     let currentReadProgressText: String?
     let onTap: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -493,7 +496,7 @@ private struct ForumMangaChapterRow: View {
                     ))
                     .font(.subheadline.weight(isFocused || isCurrentRead ? .semibold : .regular))
                     .foregroundStyle(isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let subtitleText {
                         Text(subtitleText)

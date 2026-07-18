@@ -34,6 +34,32 @@ final class ImageBrowserSwipeDismissGestureTests: XCTestCase {
         ))
     }
 
+    func testSwipeDownDismissDecidesOnProjectedEndpoint() {
+        // A decisive short flick dismisses even though the finger traveled
+        // well under the committed distance: 60 + 900·0.15 = 195 ≥ 150.
+        XCTAssertTrue(ImageBrowserSwipeDismissGesture.shouldDismiss(
+            translation: CGPoint(x: 0, y: 60),
+            velocity: CGPoint(x: 0, y: 900),
+            zoomScale: 1,
+            minimumZoomScale: 1
+        ))
+        // Released while moving back up: cancels even from far past the
+        // committed distance — the velocity's sign wins over raw position.
+        XCTAssertFalse(ImageBrowserSwipeDismissGesture.shouldDismiss(
+            translation: CGPoint(x: 0, y: 200),
+            velocity: CGPoint(x: 0, y: -800),
+            zoomScale: 1,
+            minimumZoomScale: 1
+        ))
+        // Twitch-level travel never dismisses regardless of velocity.
+        XCTAssertFalse(ImageBrowserSwipeDismissGesture.shouldDismiss(
+            translation: CGPoint(x: 0, y: 30),
+            velocity: CGPoint(x: 0, y: 2000),
+            zoomScale: 1,
+            minimumZoomScale: 1
+        ))
+    }
+
     func testSwipeDownDismissVisualProgressIsClamped() {
         XCTAssertEqual(ImageBrowserSwipeDismissGesture.progress(for: -40), 0)
         XCTAssertEqual(ImageBrowserSwipeDismissGesture.progress(for: 75), 0.5)

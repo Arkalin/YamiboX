@@ -42,6 +42,11 @@ struct NovelReaderBottomChrome: View {
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
+        .onAppear(perform: prepareFeedbackGenerators)
+    }
+
+    private func prepareFeedbackGenerators() {
+        scrubFeedback.prepare()
     }
 
     private var chromeLayout: ReaderBottomChromeLayoutPresentation {
@@ -137,6 +142,10 @@ struct NovelReaderBottomChrome: View {
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         .multilineTextAlignment(.center)
+        // Page counters roll digit-by-digit as pages turn instead of
+        // hard-swapping the whole line.
+        .contentTransition(.numericText())
+        .animation(.snappy(duration: 0.18), value: summary.pageProgressLine)
 
         if readingMode == .vertical {
             content
@@ -253,6 +262,11 @@ struct NovelReaderBottomChrome: View {
 
     private func handleHorizontalCapsuleScrub(locationX: CGFloat, width: CGFloat) {
         guard progressChromePresentation.supportsHorizontalScrub, width > 0 else { return }
+        if scrubState.phase != .scrubbing {
+            // Touch-down: spin the Taptic Engine up before the first haptic
+            // of this scrub fires.
+            prepareFeedbackGenerators()
+        }
         let fraction = min(max(locationX / width, 0), 1)
         let update = scrubState.update(value: Double(fraction), context: scrubContext)
         triggerFeedback(update.haptics)

@@ -260,6 +260,7 @@ private struct ForumNovelChapterSectionView: View {
 }
 
 private struct ForumNovelChapterRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let chapter: ForumNovelChapterSummary
     let action: () -> Void
 
@@ -275,7 +276,7 @@ private struct ForumNovelChapterRow: View {
                     Text(chapter.title)
                         .font(.subheadline)
                         .foregroundStyle(chapter.isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let progressText = chapter.progressText {
                         Text(progressText)
@@ -483,6 +484,7 @@ private struct ForumNovelHeaderActions: View {
     private var favoriteButton: some View {
         Button(action: onFavoriteTap) {
             Image(systemName: isFavorited ? "star.fill" : "star")
+                .contentTransition(.symbolEffect(.replace))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(ForumColors.brownEmphasis)
                 .frame(minWidth: 42, minHeight: 38)
