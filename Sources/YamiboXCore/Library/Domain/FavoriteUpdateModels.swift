@@ -315,9 +315,3 @@ public struct FavoriteUpdateStoreState: Codable, Hashable, Sendable {
         self.categoryFilters = categoryFilters
     }
 }
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
-}
