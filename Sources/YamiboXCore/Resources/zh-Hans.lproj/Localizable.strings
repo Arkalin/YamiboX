@@ -1045,3 +1045,6 @@
 "history.favorite.add" = "收藏";
 "history.favorite.remove" = "取消收藏";
 "history.section.days_ago" = "%@ 天前";
+"settings.keyboard.key_code" = "键码 %@";
+"parsing_context.novel_author_scope" = "小说作者范围";
+"parsing_context.manga_author_scope" = "漫画作者范围";
