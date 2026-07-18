@@ -313,7 +313,7 @@ final class ForumThreadReaderViewModel {
         pendingFavoriteLocations = nil
         do {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboError.persistenceFailed("Local favorite library store is unavailable")
+                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
             let result = try await FavoriteQuickActions.addFavorite(
                 threadID: context.thread.tid,
@@ -353,7 +353,7 @@ final class ForumThreadReaderViewModel {
     private func performFavoriteRemoval(_ favorite: Favorite, removeRemote: Bool) async {
         do {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboError.persistenceFailed("Local favorite library store is unavailable")
+                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
             try await FavoriteQuickActions.removeFavorite(
                 favorite,
@@ -375,7 +375,7 @@ final class ForumThreadReaderViewModel {
     private func performFavoriteRelocate(_ locations: [FavoriteLocation]) async {
         do {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboError.persistenceFailed("Local favorite library store is unavailable")
+                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
             try await FavoriteQuickActions.relocateFavorite(
                 threadID: context.thread.tid,
