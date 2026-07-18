@@ -626,8 +626,18 @@ final class ReaderPagedPagingDriver {
         inputs: ReaderPagedPagingInputs,
         onTransitionCompletion: (() -> Void)? = nil
     ) -> Bool {
-        guard !animated || inputs.pagedTurnStyle != .quickFade || !isPerformingQuickFadeTransition else {
-            return false
+        if animated, inputs.pagedTurnStyle == .quickFade, isPerformingQuickFadeTransition {
+            // A rapid second turn mid-fade must not be swallowed: perform it
+            // as an immediate cut underneath the in-flight snapshot, which
+            // keeps fading out over the newest target page.
+            return performSelectionTransition(
+                to: selectionIndex,
+                targetContentOffsetX: targetContentOffsetX,
+                in: collectionView,
+                animated: false,
+                inputs: inputs,
+                onTransitionCompletion: onTransitionCompletion
+            )
         }
 
         let targetOffset = CGPoint(x: targetContentOffsetX, y: collectionView.contentOffset.y)
