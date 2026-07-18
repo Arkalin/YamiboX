@@ -2,7 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct SettingsReadingView: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: SettingsReadingViewModel
     @State private var pendingConfirmation: SystemSettingsConfirmation?
 
     var body: some View {

@@ -8,7 +8,7 @@ import YamiboXCore
 /// drill-down screen (a directory has no sub-items worth managing
 /// individually here).
 struct MangaDirectoryManagementView: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: MangaDirectoryManagementViewModel
 
     var body: some View {
         ScrollView {

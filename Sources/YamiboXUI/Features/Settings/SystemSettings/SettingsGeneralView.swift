@@ -3,7 +3,9 @@ import YamiboXCore
 
 struct SettingsGeneralView: View {
     @Environment(\.openURL) private var openURL
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    // Plain stored reference: @Observable registers exactly the properties
+    // `body` reads, so no property wrapper is needed for observation.
+    let viewModel: SettingsGeneralViewModel
 
     var body: some View {
         Form {

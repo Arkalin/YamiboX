@@ -3,7 +3,7 @@ import SwiftUI
 import YamiboXCore
 
 struct SettingsFavoritesView: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: SettingsFavoritesViewModel
 
     @StateObject private var favoriteRemoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
@@ -14,7 +14,7 @@ struct SettingsFavoritesView: View {
     @State private var favoriteBackgroundPickerPurpose = FavoriteBackgroundPickerPurpose.initial
     @State private var favoriteBackgroundEditorDraft: FavoriteBackgroundEditorDraft?
 
-    init(dependencies: SettingsDependencies, viewModel: SystemSettingsViewModel) {
+    init(dependencies: SettingsDependencies, viewModel: SettingsFavoritesViewModel) {
         self.viewModel = viewModel
         _favoriteRemoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession(
             libraryStore: dependencies.library.localFavoriteLibraryStore,

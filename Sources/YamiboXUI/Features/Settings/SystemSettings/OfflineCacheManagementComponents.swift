@@ -4,7 +4,7 @@ import YamiboXCore
 /// Drill-down detail of one cached work, pushed from the management list
 /// (hierarchy navigation, not a self-contained modal task).
 struct OfflineCacheManagementGroupScreen: View {
-    @ObservedObject var viewModel: SystemSettingsViewModel
+    let viewModel: OfflineCacheManagementViewModel
     let groupID: OfflineCacheGroupID
     @Environment(\.dismiss) private var dismiss
 
@@ -164,7 +164,7 @@ private struct OfflineCacheManagementEntryRowView: View {
 }
 
 struct OfflineCacheManagementSelectAllButton: View {
-    let viewModel: SystemSettingsViewModel
+    let viewModel: OfflineCacheManagementViewModel
 
     var body: some View {
         SelectAllToolbarButton(
@@ -210,7 +210,7 @@ struct OfflineCacheManagementEmptyState: View {
 }
 
 extension View {
-    func offlineCacheManagementAlert(viewModel: SystemSettingsViewModel) -> some View {
+    func offlineCacheManagementAlert(viewModel: OfflineCacheManagementViewModel) -> some View {
         destructiveConfirmationAlert(
             item: Binding(
                 get: { viewModel.pendingOfflineCacheManagementConfirmation },

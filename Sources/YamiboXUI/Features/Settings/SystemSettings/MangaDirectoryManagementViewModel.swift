@@ -1,9 +1,59 @@
 import Foundation
+import Observation
 import YamiboXCore
 
-// MARK: - Manga directory management page
+/// State and commands for the manga directory management page.
+@MainActor
+@Observable
+final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
+    var mangaDirectoryManagementRows: [MangaDirectoryManagementRow] = []
+    var selectedMangaDirectoryIDs: Set<String> = []
+    var isMangaDirectoryManagementSelectionMode = false
+    var pendingMangaDirectoryManagementConfirmation: MangaDirectoryManagementConfirmation?
 
-extension SystemSettingsViewModel {
+    let dependencies: SettingsDependencies
+    let activity: SystemSettingsActivity
+
+    /// Deletions here shrink the Storage page's manga-directory figure, so
+    /// this page refreshes the shared usage model rather than a private
+    /// counter.
+    private let storageUsage: SettingsStorageUsage
+
+    init(
+        dependencies: SettingsDependencies,
+        activity: SystemSettingsActivity,
+        storageUsage: SettingsStorageUsage
+    ) {
+        self.dependencies = dependencies
+        self.activity = activity
+        self.storageUsage = storageUsage
+    }
+
+    var mangaDirectoryManagementIsEmpty: Bool {
+        mangaDirectoryManagementRows.isEmpty
+    }
+
+    var selectedMangaDirectoryCount: Int {
+        selectedMangaDirectoryIDs.count
+    }
+
+    var mangaDirectoryManagementCanDeleteSelected: Bool {
+        !selectedMangaDirectoryIDs.isEmpty && activeAction != .clearingMangaDirectory
+    }
+
+    var isMangaDirectoryManagementSelectionComplete: Bool {
+        let visibleIDs = Set(mangaDirectoryManagementRows.map(\.id))
+        return !visibleIDs.isEmpty && visibleIDs.isSubset(of: selectedMangaDirectoryIDs)
+    }
+
+    func restoreDefaultsAfterApplicationReset() {
+        mangaDirectoryManagementRows = []
+        selectedMangaDirectoryIDs = []
+        isMangaDirectoryManagementSelectionMode = false
+        pendingMangaDirectoryManagementConfirmation = nil
+    }
+
+    // MARK: - Loading
 
     func refreshMangaDirectoryManagement() async {
         activeAction = .loading
@@ -11,6 +61,8 @@ extension SystemSettingsViewModel {
 
         await refreshMangaDirectoryManagementRows()
     }
+
+    // MARK: - Deletion requests and confirmation
 
     func requestMangaDirectoryDeletion(id: String) {
         prepareMangaDirectoryManagementConfirmation(ids: [id])
@@ -33,6 +85,8 @@ extension SystemSettingsViewModel {
         await clearMangaDirectories(ids: confirmation.directoryIDs)
     }
 
+    // MARK: - Selection
+
     func setMangaDirectoryManagementSelectionMode(_ isSelecting: Bool) {
         isMangaDirectoryManagementSelectionMode = isSelecting
         if !isSelecting {
@@ -50,11 +104,6 @@ extension SystemSettingsViewModel {
         }
     }
 
-    var isMangaDirectoryManagementSelectionComplete: Bool {
-        let visibleIDs = Set(mangaDirectoryManagementRows.map(\.id))
-        return !visibleIDs.isEmpty && visibleIDs.isSubset(of: selectedMangaDirectoryIDs)
-    }
-
     /// Selecting every visible row and deleting the selection is how this
     /// screen supports "clear all" — the same select-all-then-delete flow the
     /// offline cache management screen already uses, rather than a second,
@@ -69,6 +118,8 @@ extension SystemSettingsViewModel {
             selectedMangaDirectoryIDs.formUnion(visibleIDs)
         }
     }
+
+    // MARK: - Private
 
     /// Refreshes rows/selection/confirmation unconditionally, even when a
     /// directory partway through the batch fails to delete — the refresh's
@@ -94,7 +145,7 @@ extension SystemSettingsViewModel {
         }
 
         pendingMangaDirectoryManagementConfirmation = nil
-        await refreshStorageUsage()
+        await storageUsage.refresh()
         await refreshMangaDirectoryManagementRows()
         if selectedMangaDirectoryIDs.isEmpty {
             isMangaDirectoryManagementSelectionMode = false

@@ -44,7 +44,7 @@ struct MangaDirectoryManagementRowView: View {
 }
 
 struct MangaDirectoryManagementSelectAllButton: View {
-    let viewModel: SystemSettingsViewModel
+    let viewModel: MangaDirectoryManagementViewModel
 
     var body: some View {
         SelectAllToolbarButton(
@@ -66,7 +66,7 @@ struct MangaDirectoryManagementEmptyState: View {
 }
 
 extension View {
-    func mangaDirectoryManagementAlert(viewModel: SystemSettingsViewModel) -> some View {
+    func mangaDirectoryManagementAlert(viewModel: MangaDirectoryManagementViewModel) -> some View {
         destructiveConfirmationAlert(
             item: Binding(
                 get: { viewModel.pendingMangaDirectoryManagementConfirmation },
