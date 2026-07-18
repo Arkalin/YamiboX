@@ -47,21 +47,20 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
         // Codable decoding bypasses `FavoriteLibraryDocument`'s normalizing
         // initializer; rebuild through it so a malformed remote payload
         // (duplicate target ids, dangling locations) cannot persist invariant
-        // violations into the local store.
-        try await store.save(FavoriteLibraryDocument(
-            categories: payload.library.categories,
-            collections: payload.library.collections,
-            items: payload.library.items,
-            tags: payload.library.tags
-        ))
+        // violations into the local store. Carries the remote's own deletion
+        // tombstones through too (not the public 4-param initializer, which
+        // would silently reset them) — this device is adopting the remote's
+        // full history here, and dropping its tombstones would let a still-
+        // stale third peer revive something the remote already knows is gone.
+        try await store.save(payload.library.rebuiltPreservingTombstones())
     }
 
     // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
     // a favorite library can grow large, and the fingerprint is persisted inside
     // the (already UserDefaults-backed) WebDAVSyncSettings blob. Fingerprints the
-    // locally stored document only (categories/collections/items/tags) — the
-    // upload's tombstones/clocks are sync bookkeeping derived at merge time, not
-    // local state this participant tracks between syncs.
+    // locally stored document — including its deletion tombstones and each
+    // item's per-field clocks, both genuinely local state now (see
+    // `FavoriteLibraryDocument`'s and `FavoriteItem`'s doc comments).
     func localFingerprint() async -> String? {
         let document: FavoriteLibraryDocument
         do {
@@ -85,8 +84,16 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
 
 struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
     // Still v2 after FavoriteItem dropped coverURL (covers moved to the
-    // content_cover table): decoding tolerates the removed keys and the app
-    // is pre-release, so no format break is needed.
+    // content_cover table), after deletion tombstones moved from a separate
+    // `FavoriteLibraryWebDAVTombstones` wrapper field (which never had
+    // anything writing to it) into `library` itself, and after this same
+    // envelope's `clocks` field was dropped once `FavoriteItem` grew its own
+    // per-field `locationsUpdatedAt`/`tagIDsUpdatedAt`/`displayNameUpdatedAt`/
+    // `remoteMappingUpdatedAt` (see `FavoriteItem`'s doc comment — the old
+    // `FavoriteLibraryWebDAVClocks` had the identical "never actually
+    // written from local state" flaw as the old tombstones field): decoding
+    // tolerates the removed keys and the app is pre-release, so no format
+    // break is needed.
     static let currentVersion = 2
 
     var version: Int
@@ -97,25 +104,19 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
     /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var library: FavoriteLibraryDocument
-    var tombstones: FavoriteLibraryWebDAVTombstones
-    var clocks: FavoriteLibraryWebDAVClocks
 
     init(
         version: Int = Self.currentVersion,
         updatedAt: Date,
         accountUID: String? = nil,
         syncRevision: UInt64? = nil,
-        library: FavoriteLibraryDocument,
-        tombstones: FavoriteLibraryWebDAVTombstones = FavoriteLibraryWebDAVTombstones(),
-        clocks: FavoriteLibraryWebDAVClocks = FavoriteLibraryWebDAVClocks()
+        library: FavoriteLibraryDocument
     ) {
         self.version = version
         self.updatedAt = updatedAt
         self.accountUID = accountUID
         self.syncRevision = syncRevision
         self.library = library
-        self.tombstones = tombstones
-        self.clocks = clocks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -124,8 +125,6 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         case accountUID
         case syncRevision
         case library
-        case tombstones
-        case clocks
     }
 
     init(from decoder: any Decoder) throws {
@@ -141,34 +140,6 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
         self.accountUID = try container.decodeIfPresent(String.self, forKey: .accountUID)
         self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.library = try container.decode(FavoriteLibraryDocument.self, forKey: .library)
-        self.tombstones = try container.decodeIfPresent(FavoriteLibraryWebDAVTombstones.self, forKey: .tombstones) ?? FavoriteLibraryWebDAVTombstones()
-        self.clocks = try container.decodeIfPresent(FavoriteLibraryWebDAVClocks.self, forKey: .clocks) ?? FavoriteLibraryWebDAVClocks()
-    }
-}
-
-struct FavoriteLibraryWebDAVTombstones: Codable, Equatable, Sendable {
-    var removedLocationsByTargetID: [String: Set<FavoriteLocation>]
-    var removedTagIDsByTargetID: [String: Set<String>]
-
-    init(
-        removedLocationsByTargetID: [String: Set<FavoriteLocation>] = [:],
-        removedTagIDsByTargetID: [String: Set<String>] = [:]
-    ) {
-        self.removedLocationsByTargetID = removedLocationsByTargetID
-        self.removedTagIDsByTargetID = removedTagIDsByTargetID
-    }
-}
-
-struct FavoriteLibraryWebDAVClocks: Codable, Equatable, Sendable {
-    var displayNameUpdatedAtByTargetID: [String: Date]
-    var remoteMappingUpdatedAtByTargetID: [String: Date]
-
-    init(
-        displayNameUpdatedAtByTargetID: [String: Date] = [:],
-        remoteMappingUpdatedAtByTargetID: [String: Date] = [:]
-    ) {
-        self.displayNameUpdatedAtByTargetID = displayNameUpdatedAtByTargetID
-        self.remoteMappingUpdatedAtByTargetID = remoteMappingUpdatedAtByTargetID
     }
 }
 
@@ -187,80 +158,99 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             return upload
         }
 
-        let tombstones = FavoriteLibraryWebDAVTombstones(
-            removedLocationsByTargetID: unionSetDictionary(local.tombstones.removedLocationsByTargetID, remote.tombstones.removedLocationsByTargetID),
-            removedTagIDsByTargetID: unionSetDictionary(local.tombstones.removedTagIDsByTargetID, remote.tombstones.removedTagIDsByTargetID)
+        let (categories, deletedCategoryIDs) = mergeCategories(local: local.library, remote: remote.library)
+        let (collections, deletedCollectionIDs) = mergeCollections(
+            local: local.library,
+            remote: remote.library,
+            validCategoryIDs: Set(categories.map(\.id))
         )
-        let clocks = FavoriteLibraryWebDAVClocks(
-            displayNameUpdatedAtByTargetID: maxDateDictionary(local.clocks.displayNameUpdatedAtByTargetID, remote.clocks.displayNameUpdatedAtByTargetID),
-            remoteMappingUpdatedAtByTargetID: maxDateDictionary(local.clocks.remoteMappingUpdatedAtByTargetID, remote.clocks.remoteMappingUpdatedAtByTargetID)
-        )
-        let mergedItems = mergeItems(local: local, remote: remote, tombstones: tombstones, clocks: clocks)
+        let (tags, deletedTagIDs) = mergeTags(local: local.library, remote: remote.library)
+        let (items, deletedItemIDs) = mergeItems(local: local.library, remote: remote.library)
+        // Internal 8-param initializer, not the public one: the public one
+        // always starts a document with no tombstones, which would silently
+        // drop every one of the three sides' deletions computed just above.
         let mergedLibrary = FavoriteLibraryDocument(
-            categories: mergeCategories(local.library.categories, remote.library.categories),
-            collections: mergeCollections(local.library.collections, remote.library.collections),
-            items: mergedItems,
-            tags: mergeTags(local.library.tags, remote.library.tags)
+            categories: categories,
+            collections: collections,
+            items: items,
+            tags: tags,
+            deletedItemIDs: deletedItemIDs,
+            deletedCategoryIDs: deletedCategoryIDs,
+            deletedCollectionIDs: deletedCollectionIDs,
+            deletedTagIDs: deletedTagIDs
         )
 
         return FavoriteLibraryWebDAVPayload(
             version: FavoriteLibraryWebDAVPayload.currentVersion,
             updatedAt: updatedAt,
             accountUID: local.accountUID ?? remote.accountUID,
-            library: mergedLibrary,
-            tombstones: tombstones,
-            clocks: clocks
+            library: mergedLibrary
         )
     }
 
     private func mergeItems(
-        local: FavoriteLibraryWebDAVPayload,
-        remote: FavoriteLibraryWebDAVPayload,
-        tombstones: FavoriteLibraryWebDAVTombstones,
-        clocks: FavoriteLibraryWebDAVClocks
-    ) -> [FavoriteItem] {
+        local: FavoriteLibraryDocument,
+        remote: FavoriteLibraryDocument
+    ) -> (items: [FavoriteItem], deletedItemIDs: [String: Date]) {
         // `uniquingKeysWith` rather than `uniqueKeysWithValues`: Codable
         // decoding bypasses the document initializer's normalization, so a
         // payload written by an older/buggy peer (or edited by hand) can
         // carry duplicate target ids — that must degrade to keep-newest, not
         // crash every future sync round.
-        let localByID = Dictionary(local.library.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
-        let remoteByID = Dictionary(remote.library.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
-        return Set(localByID.keys).union(remoteByID.keys).compactMap { targetID in
+        let localByID = Dictionary(local.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
+        let remoteByID = Dictionary(remote.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
+        var deletedItemIDs = maxDateDictionary(local.deletedItemIDs, remote.deletedItemIDs)
+
+        let items = Set(localByID.keys).union(remoteByID.keys).compactMap { targetID -> FavoriteItem? in
             guard var item = localByID[targetID] ?? remoteByID[targetID] else { return nil }
             if let remoteItem = remoteByID[targetID], localByID[targetID] == nil {
                 item = remoteItem
             } else if let localItem = localByID[targetID], let remoteItem = remoteByID[targetID] {
-                item.locations = Array(
-                    Set(localItem.locations)
-                        .union(remoteItem.locations)
-                        .subtracting(tombstones.removedLocationsByTargetID[targetID, default: []])
-                )
-                item.tagIDs = Array(
-                    Set(localItem.tagIDs)
-                        .union(remoteItem.tagIDs)
-                        .subtracting(tombstones.removedTagIDsByTargetID[targetID, default: []])
-                ).sorted()
-                item.displayName = choose(
-                    local: localItem.displayName,
-                    remote: remoteItem.displayName,
-                    localDate: local.clocks.displayNameUpdatedAtByTargetID[targetID],
-                    remoteDate: remote.clocks.displayNameUpdatedAtByTargetID[targetID]
-                )
+                // Each of these four fields merges independently by its own
+                // dedicated clock, not a shared decision keyed off the
+                // item's overall `updatedAt` — otherwise a device that
+                // legitimately only edited (say) `tagIDs` could have that
+                // edit silently overwritten by a peer whose only, unrelated,
+                // but chronologically later edit touched `locations`, and
+                // vice versa. This is last-writer-wins, not a union: a value
+                // removed on one device (e.g. moving a favorite out of a
+                // category) must actually disappear from the merged result,
+                // not get re-added by the other side's stale copy — see the
+                // git history for why a naive union-plus-tombstone design
+                // (where the tombstone was never actually written) silently
+                // undid every such removal on the very next sync round.
+                // Ties favor local, mirroring `newerItem`'s tie-breaking.
+                item.locations = localItem.locationsUpdatedAt >= remoteItem.locationsUpdatedAt ? localItem.locations : remoteItem.locations
+                item.locationsUpdatedAt = max(localItem.locationsUpdatedAt, remoteItem.locationsUpdatedAt)
+                item.tagIDs = localItem.tagIDsUpdatedAt >= remoteItem.tagIDsUpdatedAt ? localItem.tagIDs : remoteItem.tagIDs
+                item.tagIDsUpdatedAt = max(localItem.tagIDsUpdatedAt, remoteItem.tagIDsUpdatedAt)
+                item.displayName = localItem.displayNameUpdatedAt >= remoteItem.displayNameUpdatedAt ? localItem.displayName : remoteItem.displayName
+                item.displayNameUpdatedAt = max(localItem.displayNameUpdatedAt, remoteItem.displayNameUpdatedAt)
+                item.remoteMapping = localItem.remoteMappingUpdatedAt >= remoteItem.remoteMappingUpdatedAt ? localItem.remoteMapping : remoteItem.remoteMapping
+                item.remoteMappingUpdatedAt = max(localItem.remoteMappingUpdatedAt, remoteItem.remoteMappingUpdatedAt)
                 item.contentUpdatedAt = maxDate(localItem.contentUpdatedAt, remoteItem.contentUpdatedAt)
                 item.forumID = localItem.forumID ?? remoteItem.forumID
                 item.forumName = localItem.forumName ?? remoteItem.forumName
-                item.remoteMapping = choose(
-                    local: localItem.remoteMapping,
-                    remote: remoteItem.remoteMapping,
-                    localDate: local.clocks.remoteMappingUpdatedAtByTargetID[targetID],
-                    remoteDate: remote.clocks.remoteMappingUpdatedAtByTargetID[targetID]
-                )
                 item.updatedAt = max(localItem.updatedAt, remoteItem.updatedAt)
+            }
+            if let deletedAt = deletedItemIDs[targetID] {
+                // `>=`, not `>`: every other tie-break in this merger favors
+                // survival/local on an exact timestamp match (`newerItem`,
+                // each per-field clock comparison above), so a resurrection
+                // racing its own tombstone to the same instant should
+                // resolve the same way.
+                guard item.updatedAt >= deletedAt else { return nil }
+                // Resurrected after the deletion (the same thread was
+                // favorited again — `FavoriteItemTarget.id` is content-
+                // derived, so it reuses the old id): the tombstone no longer
+                // applies and must not keep suppressing this id forever.
+                deletedItemIDs.removeValue(forKey: targetID)
             }
             return item.locations.isEmpty ? nil : item
         }
         .sorted { $0.id < $1.id }
+
+        return (items, deletedItemIDs)
     }
 
     private static func newerItem(_ lhs: FavoriteItem, _ rhs: FavoriteItem) -> FavoriteItem {
@@ -280,42 +270,60 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         }
     }
 
-    private func mergeCategories(_ local: [FavoriteCategory], _ remote: [FavoriteCategory]) -> [FavoriteCategory] {
-        keyedByID(local + remote)
+    // Category/collection/tag ids are random UUIDs that are never reused
+    // (unlike an item's content-derived target id), so once tombstoned an id
+    // is excluded permanently — no resurrection reconciliation needed.
+
+    private func mergeCategories(
+        local: FavoriteLibraryDocument,
+        remote: FavoriteLibraryDocument
+    ) -> (categories: [FavoriteCategory], deletedIDs: [String: Date]) {
+        let deletedIDs = maxDateDictionary(local.deletedCategoryIDs, remote.deletedCategoryIDs)
+        let categories = keyedByID(local.categories + remote.categories)
+            .filter { deletedIDs[$0.id] == nil }
             .sorted {
                 if $0.isDefault != $1.isDefault { return $0.isDefault }
                 if $0.manualOrder != $1.manualOrder { return $0.manualOrder < $1.manualOrder }
                 return $0.id < $1.id
             }
+        return (categories, deletedIDs)
     }
 
-    private func mergeCollections(_ local: [LocalFavoriteCollection], _ remote: [LocalFavoriteCollection]) -> [LocalFavoriteCollection] {
-        keyedByID(local + remote)
+    private func mergeCollections(
+        local: FavoriteLibraryDocument,
+        remote: FavoriteLibraryDocument,
+        validCategoryIDs: Set<String>
+    ) -> (collections: [LocalFavoriteCollection], deletedIDs: [String: Date]) {
+        let deletedIDs = maxDateDictionary(local.deletedCollectionIDs, remote.deletedCollectionIDs)
+        let collections = keyedByID(local.collections + remote.collections)
+            // `deleteCategory` only cascade-tombstones the collections it
+            // knows about; a collection a peer created (under the same
+            // category) concurrently with — but never synced before — that
+            // deletion has no tombstone of its own. Falling back to "its
+            // category still exists post-merge" catches that case too,
+            // mirroring `normalizedItem`'s location-validity filter.
+            .filter { deletedIDs[$0.id] == nil && validCategoryIDs.contains($0.categoryID) }
             .sorted {
                 if $0.categoryID != $1.categoryID { return $0.categoryID < $1.categoryID }
                 if $0.manualOrder != $1.manualOrder { return $0.manualOrder < $1.manualOrder }
                 return $0.id < $1.id
             }
+        return (collections, deletedIDs)
     }
 
-    private func mergeTags(_ local: [FavoriteTag], _ remote: [FavoriteTag]) -> [FavoriteTag] {
-        keyedByID(local + remote)
+    private func mergeTags(
+        local: FavoriteLibraryDocument,
+        remote: FavoriteLibraryDocument
+    ) -> (tags: [FavoriteTag], deletedIDs: [String: Date]) {
+        let deletedIDs = maxDateDictionary(local.deletedTagIDs, remote.deletedTagIDs)
+        let tags = keyedByID(local.tags + remote.tags)
+            .filter { deletedIDs[$0.id] == nil }
             .sorted {
                 if $0.manualOrder != $1.manualOrder { return $0.manualOrder < $1.manualOrder }
                 return $0.id < $1.id
             }
+        return (tags, deletedIDs)
     }
-}
-
-private func unionSetDictionary<Value: Hashable>(
-    _ lhs: [String: Set<Value>],
-    _ rhs: [String: Set<Value>]
-) -> [String: Set<Value>] {
-    var result = lhs
-    for (key, values) in rhs {
-        result[key, default: []].formUnion(values)
-    }
-    return result
 }
 
 private func maxDateDictionary(_ lhs: [String: Date], _ rhs: [String: Date]) -> [String: Date] {
@@ -335,17 +343,4 @@ private func keyedByID<Value: Identifiable>(_ values: [Value]) -> [Value] where 
         byID[value.id] = value
     }
     return Array(byID.values)
-}
-
-private func choose<Value>(
-    local: Value?,
-    remote: Value?,
-    localDate: Date?,
-    remoteDate: Date?
-) -> Value? {
-    guard localDate != remoteDate else { return local ?? remote }
-    if let remoteDate, localDate == nil || remoteDate > localDate! {
-        return remote
-    }
-    return local
 }

@@ -5,6 +5,37 @@ import YamiboXTestSupport
 
 @MainActor
 final class FavoriteLibraryOrganizerTests: XCTestCase {
+    /// `moveItems`/`replaceTags` must only bump their field's merge clock
+    /// when the edit is a genuine change — a no-op (the move sheet's
+    /// tri-state "include" toggle re-applied to an item that's already a
+    /// member, or the tag editor's "done" button tapped without changing the
+    /// selection) must not spuriously outrun a real, unsynced edit from
+    /// another device in the next `FavoriteLibraryWebDAVMerger` round.
+    func testMoveItemsAndReplaceTagsDoNotBumpFieldClocksOnNoOpEdits() throws {
+        var document = FavoriteLibraryDocument()
+        let category = document.createCategory(name: "分类")
+        let tag = document.createTag(name: "标签", color: .blue)
+        let target = FavoriteItemTarget(kind: .normalThread, threadID: "9201")
+        let baseDate = Date(timeIntervalSince1970: 1100)
+        let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(category.id)], tagIDs: [tag.id], updatedAt: baseDate)
+        document.upsertItem(item)
+        let locationsUpdatedAtBefore = try XCTUnwrap(document.items.first).locationsUpdatedAt
+        let tagIDsUpdatedAtBefore = try XCTUnwrap(document.items.first).tagIDsUpdatedAt
+
+        // Already a member of `category` — including it again is a no-op.
+        document.moveItems(ids: [target.id], to: .category(category.id), removing: nil)
+        XCTAssertEqual(try XCTUnwrap(document.items.first).locationsUpdatedAt, locationsUpdatedAtBefore)
+
+        // Tag set unchanged — re-confirming the same selection is a no-op.
+        document.replaceTags(for: [target.id], with: [tag.id])
+        XCTAssertEqual(try XCTUnwrap(document.items.first).tagIDsUpdatedAt, tagIDsUpdatedAtBefore)
+
+        // A genuine change still bumps the clock.
+        let otherCategory = document.createCategory(name: "另一分类")
+        document.moveItems(ids: [target.id], to: .category(otherCategory.id), removing: .category(category.id))
+        XCTAssertNotEqual(try XCTUnwrap(document.items.first).locationsUpdatedAt, locationsUpdatedAtBefore)
+    }
+
     func testSourceGroupFilterCountsRespectSearchAndTags() async throws {
         let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-source-filter")
         _ = try YamiboTestDefaults.make(suiteName: suiteName)

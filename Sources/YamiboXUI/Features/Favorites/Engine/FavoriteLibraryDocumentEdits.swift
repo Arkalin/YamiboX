@@ -18,7 +18,10 @@ extension FavoriteLibraryDocument {
                 locations.removeAll { $0 == source }
             }
             locations.append(destination)
-            item.locations = Self.normalizedLocations(locations)
+            let normalized = Self.normalizedLocations(locations)
+            guard normalized != item.locations else { return item }
+            item.locations = normalized
+            item.locationsUpdatedAt = .now
             item.updatedAt = .now
             return item
         }
@@ -37,6 +40,7 @@ extension FavoriteLibraryDocument {
             }
             var item = item
             item.locations.removeAll { $0 == source }
+            item.locationsUpdatedAt = .now
             item.updatedAt = .now
             return item
         }
@@ -49,9 +53,10 @@ extension FavoriteLibraryDocument {
         let validTagIDs = Set(tags.map(\.id))
         let normalizedTagIDs = tagIDs.filter { validTagIDs.contains($0) }.sorted()
         items = items.map { item in
-            guard selectedIDs.contains(item.id) else { return item }
+            guard selectedIDs.contains(item.id), item.tagIDs != normalizedTagIDs else { return item }
             var item = item
             item.tagIDs = normalizedTagIDs
+            item.tagIDsUpdatedAt = .now
             item.updatedAt = .now
             return item
         }

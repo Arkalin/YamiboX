@@ -28,7 +28,7 @@ extension FavoriteLibraryDocument {
         collections[index].color = color
     }
 
-    public mutating func moveCollection(id collectionID: String, toCategoryID categoryID: String) {
+    public mutating func moveCollection(id collectionID: String, toCategoryID categoryID: String, date: Date = .now) {
         guard categories.contains(where: { $0.id == categoryID }),
               let index = collections.firstIndex(where: { $0.id == collectionID }) else {
             return
@@ -38,6 +38,7 @@ extension FavoriteLibraryDocument {
         collections[index].categoryID = categoryID
         collections[index].manualOrder = ((collections.filter { $0.categoryID == categoryID }.map(\.manualOrder).max() ?? -1) + 1)
         items = items.map { item in
+            guard item.locations.contains(.collection(categoryID: previousCategoryID, collectionID: collectionID)) else { return item }
             var item = item
             item.locations = item.locations.map { location in
                 location == .collection(categoryID: previousCategoryID, collectionID: collectionID)
@@ -45,6 +46,8 @@ extension FavoriteLibraryDocument {
                     : location
             }
             item.locations = FavoriteItem.normalizedLocations(item.locations)
+            item.locationsUpdatedAt = date
+            item.updatedAt = date
             return item
         }
     }
@@ -59,15 +62,18 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    public mutating func dissolveCollection(id collectionID: String) {
+    public mutating func dissolveCollection(id collectionID: String, date: Date = .now) {
         guard let collection = collections.first(where: { $0.id == collectionID }) else { return }
         let parentLocation = FavoriteLocation.category(collection.categoryID)
         collections.removeAll { $0.id == collectionID }
+        deletedCollectionIDs[collectionID] = date
         items = items.map { item in
             var item = item
             if item.locations.contains(.collection(categoryID: collection.categoryID, collectionID: collectionID)) {
                 item.locations.removeAll { $0 == .collection(categoryID: collection.categoryID, collectionID: collectionID) }
                 item.locations = FavoriteItem.normalizedLocations(item.locations + [parentLocation])
+                item.locationsUpdatedAt = date
+                item.updatedAt = date
             }
             return item
         }

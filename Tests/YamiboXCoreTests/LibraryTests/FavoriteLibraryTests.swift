@@ -70,6 +70,67 @@ import Testing
     }
 }
 
+/// An item persisted before `locationsUpdatedAt`/`tagIDsUpdatedAt`/
+/// `displayNameUpdatedAt`/`remoteMappingUpdatedAt` existed has none of those
+/// keys. Decoding must default each to the item's own `updatedAt` rather
+/// than failing — a decode failure here would corrupt every existing user's
+/// favorites on first launch after the update. Builds the legacy blob by
+/// encoding a real item and stripping the four new keys, rather than
+/// hand-writing JSON, so this doesn't depend on knowing every nested type's
+/// exact (synthesized) wire format.
+@Test func favoriteItemDecodesPreFieldClockBlobsDefaultingToUpdatedAt() throws {
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "321")
+    let item = try FavoriteItem(
+        target: target,
+        title: "旧收藏",
+        locations: [.category(FavoriteCategory.defaultID)],
+        updatedAt: Date(timeIntervalSince1970: 50)
+    )
+    var object = try #require(
+        JSONSerialization.jsonObject(with: try JSONEncoder().encode(item)) as? [String: Any]
+    )
+    for key in ["locationsUpdatedAt", "tagIDsUpdatedAt", "displayNameUpdatedAt", "remoteMappingUpdatedAt"] {
+        #expect(object[key] != nil)
+        object.removeValue(forKey: key)
+    }
+    let legacyItem = try JSONSerialization.data(withJSONObject: object)
+
+    let decoded = try JSONDecoder().decode(FavoriteItem.self, from: legacyItem)
+    #expect(decoded.updatedAt == item.updatedAt)
+    #expect(decoded.locationsUpdatedAt == item.updatedAt)
+    #expect(decoded.tagIDsUpdatedAt == item.updatedAt)
+    #expect(decoded.displayNameUpdatedAt == item.updatedAt)
+    #expect(decoded.remoteMappingUpdatedAt == item.updatedAt)
+}
+
+/// Every mutator that touches `locations`/`tagIDs` must bump only its own
+/// dedicated clock, not the others — `FavoriteLibraryWebDAVMerger` relies on
+/// this independence to keep concurrent edits to different fields on
+/// different devices from clobbering each other (see the merger's own doc
+/// comment on why `locations`/`tagIDs` stopped sharing the item's overall
+/// `updatedAt`).
+@Test func locationAndTagMutatorsBumpOnlyTheirOwnFieldClock() throws {
+    var document = FavoriteLibraryDocument()
+    let category = document.createCategory(name: "分类")
+    let tag = document.createTag(name: "标签", color: .blue)
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9106")
+    let baseDate = Date(timeIntervalSince1970: 1000)
+    let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(document.defaultCategory.id)], updatedAt: baseDate)
+    document.upsertItem(item)
+    let tagIDsUpdatedAtBeforeLocationEdit = try #require(document.items.first).tagIDsUpdatedAt
+
+    document.addLocation(.category(category.id), to: target, date: baseDate.addingTimeInterval(1))
+    var current = try #require(document.items.first)
+    #expect(current.locationsUpdatedAt == baseDate.addingTimeInterval(1))
+    #expect(current.tagIDsUpdatedAt == tagIDsUpdatedAtBeforeLocationEdit)
+
+    let locationsUpdatedAtBeforeTagEdit = current.locationsUpdatedAt
+    document.assignTag(id: tag.id, to: target, date: baseDate.addingTimeInterval(2))
+    current = try #require(document.items.first)
+    #expect(current.tagIDsUpdatedAt == baseDate.addingTimeInterval(2))
+    #expect(current.locationsUpdatedAt == locationsUpdatedAtBeforeTagEdit)
+}
+
 @Test func localFirstFavoriteLibraryPersistsItemMetadataLocationsTagsAndRemoteMapping() async throws {
     let suiteName = "LocalFirstFavoriteLibraryTests.\(UUID().uuidString)"
     let suite = try #require(UserDefaults(suiteName: suiteName))
@@ -194,6 +255,36 @@ import Testing
     #expect(storedItem.remoteMapping?.yamiboFavoriteID == "remote-321")
 }
 
+/// `addLocation`/`removeLocation` must only bump `locationsUpdatedAt` on a
+/// genuine change — a no-op add (already a member) or a no-op remove (not a
+/// member) must not spuriously outrun a real, unsynced edit from another
+/// device in the next `FavoriteLibraryWebDAVMerger` round. `addLocation` is
+/// called unconditionally on every full pull-sync
+/// (`FavoriteRemoteSync.swift`'s `apply { doc in doc.addLocation(...) }`),
+/// so a missing guard here is live, not theoretical.
+@Test func addAndRemoveLocationDoNotBumpLocationsClockOnNoOpEdits() throws {
+    var document = FavoriteLibraryDocument()
+    let category = document.createCategory(name: "分类")
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9107")
+    let baseDate = Date(timeIntervalSince1970: 1200)
+    let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(category.id)], updatedAt: baseDate)
+    document.upsertItem(item)
+    let locationsUpdatedAtBefore = try #require(document.items.first).locationsUpdatedAt
+
+    // Already a member — no-op add.
+    document.addLocation(.category(category.id), to: target, date: baseDate.addingTimeInterval(1))
+    #expect(try #require(document.items.first).locationsUpdatedAt == locationsUpdatedAtBefore)
+
+    // Not a member — no-op remove.
+    let otherCategory = document.createCategory(name: "另一分类")
+    document.removeLocation(.category(otherCategory.id), from: target, date: baseDate.addingTimeInterval(2))
+    #expect(try #require(document.items.first).locationsUpdatedAt == locationsUpdatedAtBefore)
+
+    // A genuine add still bumps the clock.
+    document.addLocation(.category(otherCategory.id), to: target, date: baseDate.addingTimeInterval(3))
+    #expect(try #require(document.items.first).locationsUpdatedAt == baseDate.addingTimeInterval(3))
+}
+
 @Test func favoriteLibraryStoreUpdatePersistsTransformAndReturnsItsResult() async throws {
     let suiteName = "FavoriteLibraryStoreUpdateTests.\(UUID().uuidString)"
     let suite = try #require(UserDefaults(suiteName: suiteName))
@@ -241,6 +332,174 @@ import Testing
 
     let loaded = try await store.load()
     #expect(loaded.items.map(\.id) == [target.id])
+}
+
+/// Every whole-record deletion path must record a tombstone —
+/// `FavoriteLibraryWebDAVMerger` relies on these to keep a deletion from
+/// being silently revived by a stale peer's union-by-id copy of the same id
+/// (see `FavoriteLibraryDocument`'s `deletedItemIDs`/etc. doc comment).
+@Test func favoriteLibraryDocumentDeletionsRecordTombstones() throws {
+    let date = Date(timeIntervalSince1970: 500)
+    var document = FavoriteLibraryDocument()
+    let category = document.createCategory(name: "分类")
+    let collection = document.createCollection(categoryID: category.id, name: "合集")
+    let tag = document.createTag(name: "标签", color: .blue)
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9101")
+    let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(category.id)], updatedAt: date)
+    document.upsertItem(item)
+
+    document.dissolveCollection(id: collection.id, date: date.addingTimeInterval(1))
+    #expect(document.deletedCollectionIDs[collection.id] == date.addingTimeInterval(1))
+
+    document.deleteTag(id: tag.id, date: date.addingTimeInterval(2))
+    #expect(document.deletedTagIDs[tag.id] == date.addingTimeInterval(2))
+
+    document.removeItem(target: target, date: date.addingTimeInterval(3))
+    #expect(document.deletedItemIDs[target.id] == date.addingTimeInterval(3))
+
+    document.deleteCategory(id: category.id, date: date.addingTimeInterval(4))
+    #expect(document.deletedCategoryIDs[category.id] == date.addingTimeInterval(4))
+}
+
+/// `retargetItem` abandons `oldTarget.id` (target ids double as item ids) —
+/// that id must be tombstoned like any other item removal, or a stale peer
+/// still holding the pre-retarget copy would be revived as a duplicate
+/// favorite on the next sync. If `newTarget.id` happens to carry a stale
+/// tombstone from an earlier deletion, retargeting into it must clear that
+/// tombstone too, or the retargeted favorite would fail its own resurrection
+/// check and vanish on the next merge.
+@Test func retargetItemTombstonesTheAbandonedIDAndClearsAnyStaleTombstoneOnTheNewID() throws {
+    var document = FavoriteLibraryDocument()
+    let oldTarget = FavoriteItemTarget(kind: .normalThread, threadID: "9104")
+    let newTarget = FavoriteItemTarget(kind: .novelThread, threadID: "9104")
+    let date = Date(timeIntervalSince1970: 700)
+
+    // newTarget.id previously belonged to a deleted item.
+    let previouslyDeleted = try FavoriteItem(target: newTarget, title: "旧收藏", locations: [.category(document.defaultCategory.id)], updatedAt: date)
+    document.upsertItem(previouslyDeleted)
+    document.removeItem(target: newTarget, date: date.addingTimeInterval(1))
+    #expect(document.deletedItemIDs[newTarget.id] != nil)
+
+    let item = try FavoriteItem(target: oldTarget, title: "待重定向", locations: [.category(document.defaultCategory.id)], updatedAt: date.addingTimeInterval(2))
+    document.upsertItem(item)
+
+    document.retargetItem(from: oldTarget, to: newTarget, date: date.addingTimeInterval(3))
+
+    #expect(document.deletedItemIDs[oldTarget.id] == date.addingTimeInterval(3))
+    #expect(document.deletedItemIDs[newTarget.id] == nil)
+    #expect(document.items.map(\.id) == [newTarget.id])
+    #expect(document.items.first?.updatedAt == date.addingTimeInterval(3))
+}
+
+/// `assignTag`/`unassignTag` must bump `item.updatedAt` like every other
+/// locations/tagIDs mutator — `FavoriteLibraryWebDAVMerger` resolves tagIDs
+/// by last-writer-wins on this timestamp, so a silent non-bump would let a
+/// stale peer's copy win the tie and undo the (un)assignment on next sync.
+@Test func assignAndUnassignTagBumpUpdatedAt() throws {
+    var document = FavoriteLibraryDocument()
+    let tag = document.createTag(name: "标签", color: .blue)
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9105")
+    let baseDate = Date(timeIntervalSince1970: 800)
+    let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(document.defaultCategory.id)], updatedAt: baseDate)
+    document.upsertItem(item)
+
+    document.assignTag(id: tag.id, to: target, date: baseDate.addingTimeInterval(1))
+    #expect(document.items.first?.tagIDs == [tag.id])
+    #expect(document.items.first?.updatedAt == baseDate.addingTimeInterval(1))
+
+    document.unassignTag(id: tag.id, from: target, date: baseDate.addingTimeInterval(2))
+    #expect(document.items.first?.tagIDs.isEmpty == true)
+    #expect(document.items.first?.updatedAt == baseDate.addingTimeInterval(2))
+}
+
+/// Re-favoriting a thread reuses its (content-derived) target id — the
+/// tombstone `removeItem` wrote for the earlier un-favorite must not keep
+/// blackholing it once it's alive again.
+@Test func upsertItemClearsAnyStaleDeletionTombstoneForTheSameTarget() throws {
+    var document = FavoriteLibraryDocument()
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9102")
+    let first = try FavoriteItem(target: target, title: "收藏", locations: [.category(document.defaultCategory.id)])
+    document.upsertItem(first)
+    document.removeItem(target: target)
+    #expect(document.deletedItemIDs[target.id] != nil)
+
+    let readded = try FavoriteItem(target: target, title: "重新收藏", locations: [.category(document.defaultCategory.id)])
+    document.upsertItem(readded)
+
+    #expect(document.deletedItemIDs[target.id] == nil)
+    #expect(document.items.map(\.id) == [target.id])
+}
+
+/// `FavoriteLibraryStore.save` routes every write through `canonicalized()`,
+/// which reconstructs the document to re-sort collections/tags — it must
+/// carry deletion tombstones through that reconstruction rather than reset
+/// them, or every tombstone would vanish the moment it's first persisted.
+@Test func favoriteLibraryStoreRoundTripsDeletionTombstonesThroughSave() async throws {
+    let suiteName = "FavoriteLibraryStoreTombstoneTests.\(UUID().uuidString)"
+    let suite = try #require(UserDefaults(suiteName: suiteName))
+    let store = FavoriteLibraryStore(defaults: suite, key: "library")
+    let date = Date(timeIntervalSince1970: 600)
+
+    try await store.update { document in
+        let category = document.createCategory(name: "待删除分类")
+        let tag = document.createTag(name: "待删除标签", color: .blue)
+        let target = FavoriteItemTarget(kind: .normalThread, threadID: "9103")
+        let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(category.id)], updatedAt: date)
+        document.upsertItem(item)
+        document.removeItem(target: target, date: date.addingTimeInterval(1))
+        document.deleteTag(id: tag.id, date: date.addingTimeInterval(2))
+        document.deleteCategory(id: category.id, date: date.addingTimeInterval(3))
+    }
+
+    let reloaded = try await store.load()
+    #expect(reloaded.deletedItemIDs.isEmpty == false)
+    #expect(reloaded.deletedTagIDs.isEmpty == false)
+    #expect(reloaded.deletedCategoryIDs.isEmpty == false)
+}
+
+/// A document persisted by an older build has no `deletedItemIDs`/etc. keys
+/// at all (added when whole-record deletions started being tombstoned).
+/// Decoding must default them to empty rather than failing — a decode
+/// failure here would corrupt `FavoriteLibraryStore.load()` for every
+/// existing user on first launch after the update.
+@Test func favoriteLibraryDocumentDecodesPreTombstoneBlobsWithEmptyDefaults() throws {
+    let legacyDocument = Data(
+        """
+        {
+          "categories": [],
+          "collections": [],
+          "items": [],
+          "tags": []
+        }
+        """.utf8
+    )
+    let decoded = try JSONDecoder().decode(FavoriteLibraryDocument.self, from: legacyDocument)
+    #expect(decoded.categories.isEmpty)
+    #expect(decoded.deletedItemIDs.isEmpty)
+    #expect(decoded.deletedCategoryIDs.isEmpty)
+    #expect(decoded.deletedCollectionIDs.isEmpty)
+    #expect(decoded.deletedTagIDs.isEmpty)
+}
+
+/// `normalizedItem` cross-validates `tagIDs` against the live `tags` array,
+/// mirroring the validation `locations` already gets against valid
+/// categories/collections — a dangling tag id (one with no matching entry
+/// in `tags`, e.g. surviving a peer's deletion via `FavoriteLibraryWebDAVMerger`'s
+/// last-writer-wins `tagIDs` merge) must be dropped, not just deduplicated.
+@Test func favoriteLibraryDocumentStripsTagIDsNotPresentInTags() throws {
+    var document = FavoriteLibraryDocument()
+    let tag = document.createTag(name: "标签", color: .blue)
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9302")
+    let item = try FavoriteItem(
+        target: target,
+        title: "收藏",
+        locations: [.category(document.defaultCategory.id)],
+        tagIDs: [tag.id, "dangling-tag-id"]
+    )
+    document.upsertItem(item)
+
+    let stored = try #require(document.items.first)
+    #expect(stored.tagIDs == [tag.id])
 }
 
 @Test func favoriteLibraryStoreConcurrentUpdatesLoseNoWrites() async throws {
