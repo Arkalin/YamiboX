@@ -36,17 +36,20 @@ struct MangaReaderSettingsPalette {
             bodyBackground = sheetBackground
             heroBackground = sheetBackground
             cardBackground = Color.white.opacity(0.075)
-            primaryText = Color.white.opacity(0.92)
+            primaryText = ReaderSettingsPaletteTokens.darkPrimaryText
             secondaryText = Color.white.opacity(0.66)
             segmentedBackground = Color.white.opacity(0.07)
             selectedControlBackground = controlAccent
             selectedControlText = Color.white
-            divider = Color.white.opacity(0.08)
+            divider = ReaderSettingsPaletteTokens.divider(isDark: true)
             cardStroke = Color.white.opacity(0.10)
             previewFrameBackground = Color.black.opacity(0.26)
             previewPageBackground = Color(red: 0.88, green: 0.88, blue: 0.84)
             neutralPanel = Color.black.opacity(0.16)
-            confirmButtonBackground = sheetBackground.mix(with: Color(red: 0.44, green: 0.39, blue: 0.30), amount: 0.58)
+            confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
+                blendingInto: sheetBackground,
+                isDark: true
+            )
         } else {
             let heroSurfaceBackground = Color.white
             heroBackground = heroSurfaceBackground
@@ -57,14 +60,14 @@ struct MangaReaderSettingsPalette {
             segmentedBackground = Color.black.opacity(0.045)
             selectedControlBackground = controlAccent
             selectedControlText = Color.white
-            divider = Color.black.opacity(0.08)
+            divider = ReaderSettingsPaletteTokens.divider(isDark: false)
             cardStroke = Color.black.opacity(0.08)
             previewFrameBackground = Color.black.opacity(0.08)
             previewPageBackground = Color.white
             neutralPanel = Color.black.opacity(0.08)
-            confirmButtonBackground = heroSurfaceBackground.mix(
-                with: Color(red: 0.31, green: 0.26, blue: 0.18),
-                amount: 0.72
+            confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
+                blendingInto: heroSurfaceBackground,
+                isDark: false
             )
         }
 
@@ -75,5 +78,10 @@ struct MangaReaderSettingsPalette {
     }
 }
 
+extension MangaReaderSettingsPalette: ReaderSettingsPalette {
+    /// Manga cards are outlined with the dedicated `cardStroke` (0.10 white
+    /// in dark mode) rather than the softer divider Novel uses.
+    var sectionStroke: Color { cardStroke }
+}
 
 #endif

@@ -38,7 +38,7 @@ private struct MangaReaderSettingsDisplaySection: View {
     let palette: MangaReaderSettingsPalette
 
     var body: some View {
-        MangaReaderSettingsCardSection(
+        ReaderSettingsSection(
             title: L10n.string("manga.settings.section.display"),
             palette: palette
         ) {
@@ -46,8 +46,8 @@ private struct MangaReaderSettingsDisplaySection: View {
                 value: $settings.brightness,
                 palette: palette
             )
-            MangaReaderSettingsDivider(palette: palette)
-            MangaReaderSettingsToggleRow(
+            ReaderSettingsDivider(palette: palette)
+            ReaderSettingsToggleRow(
                 title: L10n.string("manga.double_tap_zoom"),
                 palette: palette,
                 isOn: $settings.zoomEnabled
@@ -63,43 +63,50 @@ private struct MangaReaderSettingsPagingSection: View {
     let usesTwoPageSpread: Bool
 
     var body: some View {
-        MangaReaderSettingsCardSection(
+        ReaderSettingsSection(
             title: L10n.string("manga.settings.section.paging"),
             palette: palette
         ) {
-            MangaReaderModePicker(
-                settings: $settings,
+            ReaderSettingsModePicker(
+                selection: ReaderSettingsReadingModeOption(settings),
                 palette: palette
-            )
+            ) { option in
+                settings.selectMode(option)
+            }
 
             if settings.usesPagedMode {
                 if isPadDevice {
-                    MangaReaderSettingsDivider(palette: palette)
-                    MangaReaderSettingsToggleRow(
+                    ReaderSettingsDivider(palette: palette)
+                    ReaderSettingsToggleRow(
                         title: L10n.string("reader.two_pages_landscape"),
                         palette: palette,
                         isOn: $settings.showsTwoPagesInLandscapeOnPad
                     )
                 }
-                MangaReaderSettingsDivider(palette: palette)
-                MangaReaderDirectionPicker(
-                    direction: $settings.pageTurnDirection,
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsDirectionPicker(
+                    title: L10n.string("manga.page_turn_direction"),
+                    selection: settings.pageTurnDirection,
                     palette: palette
-                )
-                MangaReaderSettingsDivider(palette: palette)
+                ) { direction in
+                    settings.pageTurnDirection = direction
+                }
+                ReaderSettingsDivider(palette: palette)
                 if !usesTwoPageSpread {
-                    MangaReaderPageScaleModeMenuRow(
-                        scaleMode: $settings.pageScaleMode,
+                    MangaReaderSettingsMenuRow(
+                        title: L10n.string("manga.page_scale_mode"),
+                        selection: $settings.pageScaleMode,
                         palette: palette
                     )
-                    MangaReaderSettingsDivider(palette: palette)
+                    ReaderSettingsDivider(palette: palette)
                 }
-                MangaReaderPageEdgeFillMenuRow(
-                    edgeFillStyle: $settings.pageEdgeFillStyle,
+                MangaReaderSettingsMenuRow(
+                    title: L10n.string("manga.page_edge_fill"),
+                    selection: $settings.pageEdgeFillStyle,
                     palette: palette
                 )
-                MangaReaderSettingsDivider(palette: palette)
-                MangaReaderSettingsToggleRow(
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
                     title: L10n.string("manga.ignores_top_safe_area"),
                     palette: palette,
                     isOn: $settings.ignoresTopSafeArea

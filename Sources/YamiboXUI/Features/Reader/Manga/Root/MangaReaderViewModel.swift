@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import YamiboXCore
 
@@ -101,51 +102,51 @@ struct MangaReaderViewModelDependencies {
 }
 
 @MainActor
-public final class MangaReaderViewModel: ObservableObject {
-    // internal(set): the +Directory extension file republishes presentation.
-    @Published public internal(set) var presentation: MangaReaderPresentation
-    @Published public private(set) var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
-    @Published public private(set) var chapterCommentsState: ReaderChapterCommentsState = .idle
-    @Published public private(set) var isLoadingMoreChapterComments = false
-    @Published public private(set) var chapterCommentsLoadMoreError: String?
-    @Published public private(set) var chapterCommentsRefreshError: String?
-    @Published public private(set) var likedPageIDs: Set<String> = []
-    @Published private var navigationHistory = ReaderNavigationHistory<MangaReadingPosition>()
-    private var linearReadingHistoryExpiration = ReaderNavigationLinearReadingExpiration<MangaReadingPosition>()
+@Observable
+public final class MangaReaderViewModel {
+    // The properties below were `@Published` before the `@Observable`
+    // migration; they stay tracked so the views keep re-rendering on the
+    // exact same writes as before.
+    public private(set) var presentation: MangaReaderPresentation
+    public private(set) var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
+    public private(set) var chapterCommentsState: ReaderChapterCommentsState = .idle
+    public private(set) var isLoadingMoreChapterComments = false
+    public private(set) var chapterCommentsLoadMoreError: String?
+    public private(set) var chapterCommentsRefreshError: String?
+    public private(set) var likedPageIDs: Set<String> = []
+    // Stays a tracked (observable) property on the view model (not on the
+    // navigation coordinator) because MangaReaderView observes only this
+    // object; the coordinator reads and writes it through its Reading
+    // closures.
+    private var navigationHistory = ReaderNavigationHistory<MangaReadingPosition>()
 
     public let context: MangaLaunchContext
-    private(set) var imageLoader: MangaReaderPageImageLoader?
+    // Every `var` below was a plain (non-`@Published`) stored property
+    // under `ObservableObject`, so writes to it never invalidated views;
+    // `@ObservationIgnored` keeps that notification surface strictly
+    // identical after the `@Observable` migration. The two task handles are
+    // additionally *required* to be ignored: the nonisolated `deinit`
+    // cancels them, and the macro would otherwise turn them into
+    // main-actor-isolated computed properties unreachable from `deinit`.
+    @ObservationIgnored private(set) var imageLoader: MangaReaderPageImageLoader?
 
     let dependencies: MangaReaderViewModelDependencies
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
-    private var chapterCommentsRepository: ReaderChapterCommentsRepository?
-    var workflow: MangaReaderWorkflow?
-    private var hasPrepared = false
-    private var committedSettings = MangaReaderSettings()
-    // Directory lane state, owned by MangaReaderViewModel+Directory.swift.
-    var directoryCooldownExpiresAt: Date?
-    var forcedSearchShortcutExpiresAt: Date?
-    var directoryTickTask: Task<Void, Never>?
-    var directoryMutationTask: Task<Void, Never>?
-    var automaticDirectoryUpdateTask: Task<Void, Never>?
-    private var chapterJumpTask: Task<Void, Never>?
-    private var adjacentPrefetchTask: Task<Void, Never>?
-    private var readerContentGeneration = 0
-    private var navigationRequestGeneration = 0
-    private var currentStableReadingPosition: MangaReadingPosition?
-    private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
-    var directoryMutationGeneration = 0
-    private var chapterJumpGeneration = 0
-    var offlineCacheOwnerName: String?
-    private var likeChangeObservationTask: Task<Void, Never>?
-    private var autoThreadCoverResolutionTask: Task<Void, Never>?
-    /// `"\(entry.id)|\(entry.title)"` of the last browsing-history row this
-    /// session recorded — re-records when the directory identity or title
-    /// changes mid-session (synthetic directory resolving into a real one,
-    /// or an in-reader rename), absorbing the superseded row by its old id.
-    private var recordedBrowsingHistoryKey: String?
-    private var recordedBrowsingHistoryEntryID: String?
-    private lazy var chapterCommentsModule = ReaderChapterCommentsModule(
+    @ObservationIgnored private var chapterCommentsRepository: ReaderChapterCommentsRepository?
+    @ObservationIgnored private var workflow: MangaReaderWorkflow?
+    @ObservationIgnored private var hasPrepared = false
+    @ObservationIgnored private var committedSettings = MangaReaderSettings()
+    @ObservationIgnored private var chapterJumpTask: Task<Void, Never>?
+    @ObservationIgnored private var adjacentPrefetchTask: Task<Void, Never>?
+    @ObservationIgnored private var readerContentGeneration = 0
+    @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
+    @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
+    @ObservationIgnored private var chapterJumpGeneration = 0
+    @ObservationIgnored private var offlineCacheOwnerName: String?
+    // The lazy module/coordinator references are ignored for the same
+    // reason (never published) — and `lazy` storage cannot be rewritten
+    // into the macro's tracked accessors anyway.
+    @ObservationIgnored private lazy var chapterCommentsModule = ReaderChapterCommentsModule(
         adapter: ReaderChapterCommentsModule.Adapter(
             loadInitial: { [weak self] target in
                 guard let self else {
@@ -171,14 +172,104 @@ public final class MangaReaderViewModel: ObservableObject {
         }
     )
 
+    /// Wayfinding coordinator: sequences back/forward restores and records
+    /// nonlinear jumps into `navigationHistory`. The restore itself stays
+    /// here (`performNavigationRestoreAttempt`) because it republishes
+    /// reader content.
+    @ObservationIgnored private lazy var navigation = MangaReaderNavigationCoordinator(
+        reading: MangaReaderNavigationCoordinator.Reading(
+            navigationHistory: { [weak self] in self?.navigationHistory ?? ReaderNavigationHistory() },
+            setNavigationHistory: { [weak self] navigationHistory in self?.navigationHistory = navigationHistory },
+            stableReadingPosition: { [weak self] in self?.currentStableReadingPosition },
+            restorePosition: { [weak self] targetPosition in
+                await self?.performNavigationRestoreAttempt(to: targetPosition) ?? .aborted
+            },
+            scheduleAdjacentPrefetch: { [weak self] globalIndex in
+                self?.scheduleAdjacentPrefetch(around: globalIndex)
+            }
+        )
+    )
+
+    /// Like module: owns like/unlike capture and the LikeStore change
+    /// observation; `likedPageIDs` above is its published output.
+    @ObservationIgnored private lazy var likeModule = MangaReaderLikeModule(
+        reading: MangaReaderLikeModule.Reading(
+            isSmartModeEnabled: context.isSmartModeEnabled,
+            forumID: context.forumID,
+            currentDirectoryCleanBookName: { [weak self] in self?.workflow?.currentDirectoryCleanBookName() },
+            makeLikeDependencies: dependencies.makeLikeDependencies,
+            imageSource: { [weak self] page in
+                self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
+            },
+            setLikedPageIDs: { [weak self] likedPageIDs in self?.likedPageIDs = likedPageIDs }
+        )
+    )
+
+    /// Cover module: manual set/restore plus the mode-off automatic
+    /// `.thread(tid:)` cover resolution after prepare.
+    @ObservationIgnored private lazy var coverModule = MangaReaderCoverModule(
+        reading: MangaReaderCoverModule.Reading(
+            isSmartModeEnabled: context.isSmartModeEnabled,
+            chapterTID: context.chapterTID,
+            displayTitle: context.displayTitle,
+            currentDirectoryCleanBookName: { [weak self] in self?.workflow?.currentDirectoryCleanBookName() },
+            makeContentCoverStore: dependencies.makeContentCoverStore,
+            makeThreadCoverPageRepository: dependencies.makeThreadCoverPageRepository,
+            imageSource: { [weak self] page in
+                self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
+            },
+            isReaderLoaded: { [weak self] in
+                guard let self, case .loaded = self.presentation.state else { return false }
+                return true
+            }
+        )
+    )
+
+    /// Session browsing-history row bookkeeping ("打开即记" plus mid-session
+    /// identity re-records).
+    @ObservationIgnored private lazy var browsingHistoryRecorder = MangaReaderBrowsingHistoryRecorder(
+        context: context,
+        reading: MangaReaderBrowsingHistoryRecorder.Reading(
+            currentDirectoryFavoriteIdentity: { [weak self] in self?.workflow?.currentDirectoryFavoriteIdentity() },
+            makeBrowsingHistoryStore: dependencies.makeBrowsingHistoryStore
+        )
+    )
+
+    /// Directory command lane: update/search, reset, rename, chapter
+    /// deletion, the automatic post-load update, and the panel countdowns.
+    /// internal so the command forwarders in MangaReaderDirectoryLane.swift
+    /// can reach it.
+    @ObservationIgnored private(set) lazy var directoryLane = MangaReaderDirectoryLane(
+        dependencies: dependencies,
+        reader: MangaReaderDirectoryLane.Reader(
+            workflow: { [weak self] in self?.workflow },
+            presentation: { [weak self] in
+                // The placeholder is unreachable in practice: the lane only
+                // outlives the view model inside an already-guarded task,
+                // and every lane path checks `workflow()` (nil by then).
+                self?.presentation ?? MangaReaderPresentation(
+                    state: .loading(MangaReaderLoadingPresentation(title: ""))
+                )
+            },
+            setPresentation: { [weak self] presentation in self?.presentation = presentation },
+            progressSnapshot: { [weak self] presentation in self?.progressSnapshot(from: presentation) },
+            publishPresentation: { [weak self] nextPresentation, previousProgressSnapshot in
+                self?.publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
+            },
+            invalidateReaderContent: { [weak self] in self?.invalidateReaderContent() },
+            offlineCacheOwnerName: { [weak self] in self?.offlineCacheOwnerName }
+        )
+    )
+
     deinit {
-        directoryTickTask?.cancel()
-        directoryMutationTask?.cancel()
-        automaticDirectoryUpdateTask?.cancel()
+        // Only the handles this view model still owns; the extracted
+        // modules (directory lane, like, cover) cancel their own task
+        // handles in their own deinits. Both handles must stay
+        // `@ObservationIgnored`: this nonisolated deinit could not touch
+        // them if the `@Observable` macro rewrote them into tracked
+        // (main-actor computed) properties.
         chapterJumpTask?.cancel()
         adjacentPrefetchTask?.cancel()
-        likeChangeObservationTask?.cancel()
-        autoThreadCoverResolutionTask?.cancel()
     }
 
     public convenience init(
@@ -249,96 +340,14 @@ public final class MangaReaderViewModel: ObservableObject {
         presentation = await workflow.prepare()
         currentStableReadingPosition = stableReadingPosition(from: presentation)
         updateOfflineCacheOwnerName(from: presentation)
-        refreshDirectoryPanelTiming(errorMessage: nil)
+        directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
         if workflow.shouldAutoUpdateDirectoryAfterPrepare {
-            startAutomaticDirectoryUpdate()
+            directoryLane.startAutomaticDirectoryUpdate()
         }
-        await refreshLikedPageIDs()
-        observeLikeChangesIfNeeded()
-        startAutoThreadCoverResolutionIfNeeded()
-        syncBrowsingHistoryRecordIfNeeded()
-    }
-
-    /// Records this session's browsing-history row once `.loaded` (decision
-    /// #5's "打开即记"), then keeps the row's *identity* in sync: the
-    /// directory identity can change mid-session (a synthetic
-    /// single-chapter directory resolving into a real one via the automatic
-    /// update, or an in-reader rename), and the debounced
-    /// `updatePosition` refreshes would otherwise target a row id that no
-    /// longer matches — freezing the old row and spawning a duplicate on
-    /// the next open. Re-recording under the new identity absorbs the
-    /// superseded row by its old id. Called from `prepare()` and from
-    /// `publishPresentation` (identity-stable page turns early-return on the
-    /// key check).
-    ///
-    /// Identity forks on `context.isSmartModeEnabled` — never on a proxy
-    /// signal like a non-nil directory name, which a mode-off
-    /// pseudo-directory also produces (the trap three smart-comic-mode
-    /// phases each hit once):
-    /// - Mode on: one directory-level `.mangaTitle` row per manga (decision
-    ///   #2), absorbing the directory members' single-thread rows (decision
-    ///   #13) — the loaded directory panel has the member list.
-    /// - Mode off: this thread's own `.mangaThread` row, exactly like a
-    ///   normal post (smart-comic-mode "mode off = plain thread" principle).
-    /// Position/chapter refreshes ride the debounced progress saves via
-    /// `FavoriteLibraryProgressSyncAdapter`. Preview sessions never record.
-    private func syncBrowsingHistoryRecordIfNeeded() {
-        guard !context.isPreview,
-              case let .loaded(loaded) = presentation.state else {
-            return
-        }
-        let currentPage = loaded.currentPage
-        let entry: BrowsingHistoryEntry
-        let absorbedThreadIDs: [String]
-        if context.isSmartModeEnabled {
-            let cleanBookName = normalizedDirectoryName(loaded.directoryTitle)
-                ?? normalizedDirectoryName(context.directoryName)
-                ?? context.displayTitle
-            let target = FavoriteContentTarget(
-                mangaID: workflow?.currentDirectoryFavoriteIdentity() ?? cleanBookName,
-                mangaCleanBookName: cleanBookName
-            )
-            entry = BrowsingHistoryEntry(
-                target: target,
-                title: cleanBookName,
-                forumID: context.forumID,
-                pageIndex: currentPage?.localIndex,
-                pageCount: currentPage?.chapterPageCount,
-                chapterTitle: currentPage?.chapterTitle,
-                chapterThreadID: currentPage?.tid ?? context.chapterTID,
-                lastVisitTime: .now
-            )
-            absorbedThreadIDs = loaded.directoryPanel.displayChapters.map(\.tid)
-        } else {
-            entry = BrowsingHistoryEntry(
-                target: .mangaThread(threadID: context.chapterTID),
-                title: context.displayTitle,
-                forumID: context.forumID,
-                pageIndex: currentPage?.localIndex,
-                pageCount: currentPage?.chapterPageCount,
-                chapterTitle: currentPage?.chapterTitle,
-                lastVisitTime: .now
-            )
-            absorbedThreadIDs = []
-        }
-
-        let recordKey = "\(entry.id)|\(entry.title)"
-        guard recordKey != recordedBrowsingHistoryKey else { return }
-        let supersededEntryID = recordedBrowsingHistoryEntryID.flatMap { $0 == entry.id ? nil : $0 }
-        recordedBrowsingHistoryKey = recordKey
-        recordedBrowsingHistoryEntryID = entry.id
-        guard let browsingHistoryStore = dependencies.makeBrowsingHistoryStore() else { return }
-        Task {
-            do {
-                try await browsingHistoryStore.record(
-                    entry,
-                    absorbingThreadIDs: absorbedThreadIDs,
-                    absorbingEntryIDs: supersededEntryID.map { [$0] } ?? []
-                )
-            } catch {
-                YamiboLog.reader.warning("Failed to record manga browsing-history visit for \(entry.id, privacy: .public): \(error)")
-            }
-        }
+        await likeModule.refreshLikedPageIDs()
+        likeModule.observeLikeChangesIfNeeded()
+        coverModule.startAutoThreadCoverResolutionIfNeeded()
+        browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
     }
 
     public func retryInitialLoad() async {
@@ -347,13 +356,11 @@ public final class MangaReaderViewModel: ObservableObject {
         imageLoader = nil
         hasPrepared = false
         offlineCacheOwnerName = nil
-        resetNavigationHistory()
+        navigation.resetHistory()
         currentStableReadingPosition = nil
         lastQueuedProgressSnapshot = nil
-        recordedBrowsingHistoryKey = nil
-        recordedBrowsingHistoryEntryID = nil
-        directoryCooldownExpiresAt = nil
-        forcedSearchShortcutExpiresAt = nil
+        browsingHistoryRecorder.reset()
+        directoryLane.resetCooldownState()
         presentation = presentationWithCommittedSettings(
             MangaReaderPresentation(
                 state: .loading(MangaReaderLoadingPresentation(title: Self.presentationTitle(for: context)))
@@ -375,7 +382,7 @@ public final class MangaReaderViewModel: ObservableObject {
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
         let direction: ReaderNavigationLinearReadingDirection =
             (previousGlobalIndex.map { globalIndex < $0 } ?? false) ? .backward : .forward
-        recordLinearReadingForNavigationHistory(direction: direction)
+        navigation.recordLinearReading(direction: direction)
         scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? globalIndex)
     }
 
@@ -385,7 +392,7 @@ public final class MangaReaderViewModel: ObservableObject {
               let currentPage = loaded.currentPage else {
             return
         }
-        let navigationGeneration = beginNavigationRequest()
+        let navigationGeneration = navigation.beginNavigationRequest()
         let sourcePosition = currentStableReadingPosition
         let itemCount = max(currentPage.chapterPageCount, 1)
         let targetLocalIndex = min(max(localIndex, 0), itemCount - 1)
@@ -401,8 +408,8 @@ public final class MangaReaderViewModel: ObservableObject {
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         let nextPresentation = workflow.jumpToLoadedPage(at: targetPage.globalIndex)
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-        if isCurrentNavigationRequest(navigationGeneration) {
-            recordSuccessfulNonlinearNavigation(from: sourcePosition, to: targetPosition)
+        if navigation.isCurrentNavigationRequest(navigationGeneration) {
+            navigation.recordSuccessfulNonlinearNavigation(from: sourcePosition, to: targetPosition)
         }
         scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? targetPage.globalIndex)
     }
@@ -446,7 +453,7 @@ public final class MangaReaderViewModel: ObservableObject {
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         let nextPresentation = workflow.jumpToLoadedPage(at: targetGlobalIndex, animated: true)
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-        recordLinearReadingForNavigationHistory(direction: delta >= 0 ? .forward : .backward)
+        navigation.recordLinearReading(direction: delta >= 0 ? .forward : .backward)
         scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? targetGlobalIndex)
     }
 
@@ -525,207 +532,58 @@ public final class MangaReaderViewModel: ObservableObject {
 
     // MARK: - Manga cover
 
-    private var mangaCoverKey: ContentCoverKey? {
-        // Smart Comic Mode off (design decisions #2's 总原则 and #16): this
-        // chapter is read exactly like a normal thread, so the cover entry
-        // writes the same `.thread(tid:)` key `ImageBrowserCoverActions`
-        // uses for a normal thread's "设为封面" action, keyed by this
-        // chapter's own thread id. This branches on `context
-        // .isSmartModeEnabled` directly rather than, say, whether
-        // `workflow?.currentDirectoryCleanBookName()` happens to be
-        // non-nil — the mode-off synthesized single-chapter pseudo-
-        // directory (`MangaReaderWorkflow.standaloneDirectory`) has a
-        // non-nil cleanBookName too, which is exactly the proxy-signal trap
-        // that caused the Like-feature and AppContinuityWorkflow bugs in
-        // earlier phases.
-        guard context.isSmartModeEnabled else {
-            return .thread(tid: context.chapterTID)
-        }
-        guard let cleanBookName = workflow?.currentDirectoryCleanBookName()?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !cleanBookName.isEmpty else {
-            return nil
-        }
-        return .smartManga(cleanBookName: cleanBookName)
-    }
-
+    // Thin forwarders: MangaReaderView's long-press action dialog and the
+    // cover tests keep calling the model; MangaReaderCoverModule owns the
+    // logic and the auto-resolution task.
     var canSetMangaCover: Bool {
-        mangaCoverKey != nil && dependencies.makeContentCoverStore() != nil
+        coverModule.canSetMangaCover
     }
 
     func hasManualMangaCover() async -> Bool {
-        guard let key = mangaCoverKey, let store = dependencies.makeContentCoverStore() else { return false }
-        return await store.cover(for: key)?.manualCoverURL != nil
+        await coverModule.hasManualMangaCover()
     }
 
     func setMangaCover(page: MangaReaderPageProjection) async -> Bool {
-        guard let key = mangaCoverKey, let store = dependencies.makeContentCoverStore() else { return false }
-        do {
-            try await store.setManualCover(imageSource(for: page).url, for: key)
-            return true
-        } catch {
-            YamiboLog.library.error("Failed to set manual manga cover: \(error.localizedDescription)")
-            return false
-        }
+        await coverModule.setMangaCover(page: page)
     }
 
     func restoreAutomaticMangaCover() async -> Bool {
-        guard let key = mangaCoverKey, let store = dependencies.makeContentCoverStore() else { return false }
-        do {
-            try await store.clearManualCover(for: key)
-            return true
-        } catch {
-            YamiboLog.library.error("Failed to clear manual manga cover: \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    /// Smart Comic Mode off (design decisions #2's 总原则 and #16): this
-    /// chapter is read exactly like a normal thread, so it gets the same
-    /// automatic `.thread(tid:)` cover resolution `ForumThreadReaderViewModel`
-    /// already performs for normal threads — reusing the same
-    /// `ThreadCoverResolver` mechanism. `ForumThreadReaderViewModel` hangs its
-    /// call off adding the thread to favorites (it has no other lifecycle
-    /// hook); the manga reader has no favorite-toggle action of its own, so
-    /// opening the reader (a successful `prepare()`) is its closest
-    /// equivalent trigger. Like that reference call site, this doesn't check
-    /// for an existing cover first — it unconditionally overwrites the
-    /// automatic cover, same as `setAutomaticCover` always does.
-    ///
-    /// Mode-on chapters never do this: their cover comes from the existing
-    /// smartManga backfill mechanism elsewhere (design decision #13, a later
-    /// phase), not from the reader itself.
-    private func startAutoThreadCoverResolutionIfNeeded() {
-        guard !context.isSmartModeEnabled,
-              case .loaded = presentation.state,
-              autoThreadCoverResolutionTask == nil else {
-            return
-        }
-        autoThreadCoverResolutionTask = Task { @MainActor [weak self] in
-            await self?.performAutoThreadCoverResolution()
-        }
-    }
-
-    private func performAutoThreadCoverResolution() async {
-        defer { autoThreadCoverResolutionTask = nil }
-        guard let coverStore = dependencies.makeContentCoverStore(),
-              let repository = await dependencies.makeThreadCoverPageRepository() else {
-            return
-        }
-        let tid = context.chapterTID
-        guard let coverCandidate = await ThreadCoverResolver().resolve(
-            thread: ThreadIdentity(tid: tid),
-            title: context.displayTitle,
-            repository: repository
-        ) else {
-            return
-        }
-        do {
-            _ = try await coverStore.setAutomaticCover(coverCandidate, for: .thread(tid: tid))
-        } catch {
-            YamiboLog.library.error("Failed to set automatic cover for manga chapter thread \(tid) while Smart Comic Mode is off: \(error.localizedDescription)")
-        }
+        await coverModule.restoreAutomaticMangaCover()
     }
 
     // MARK: - Like
 
-    private var likeWorkKey: LikeWorkKey? {
-        // Smart Comic Mode off means this chapter is treated exactly like a normal thread
-        // (see smart-comic-mode-design-decisions #2's 总原则) — the reader's directory in that
-        // state is a synthesized single-chapter stand-in (MangaReaderWorkflow.standaloneDirectory),
-        // not a real MangaDirectory, so it must not be usable as a manga-title Like identity.
-        guard context.isSmartModeEnabled else { return nil }
-        guard let cleanBookName = workflow?.currentDirectoryCleanBookName()?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !cleanBookName.isEmpty else {
-            return nil
-        }
-        return .mangaTitle(cleanBookName: cleanBookName)
-    }
-
+    // Thin forwarders: MangaReaderView and the likes sheet keep calling the
+    // model; MangaReaderLikeModule owns the logic and the LikeStore change
+    // observation.
     var canShowLikes: Bool {
-        likeWorkKey != nil && dependencies.makeLikeDependencies() != nil
+        likeModule.canShowLikes
     }
 
     var likeSheetContext: (workKey: LikeWorkKey, like: LikeDependencies)? {
-        guard let workKey = likeWorkKey, let like = dependencies.makeLikeDependencies() else { return nil }
-        return (workKey, like)
+        likeModule.likeSheetContext
     }
 
     func likePage(_ page: MangaReaderPageProjection) async -> LikeCaptureOutcome? {
-        guard let workKey = likeWorkKey, let like = dependencies.makeLikeDependencies() else { return nil }
-        let anchor = MangaImageLikeAnchor(chapterTID: page.tid, pageLocalIndex: page.localIndex, forumID: context.forumID)
-        let source = imageSource(for: page)
-        let service = MangaImageLikeCaptureService(likeStore: like.likeStore, likeImageStore: like.likeImageStore)
-        let outcome = try? await service.like(
-            workKey: workKey,
-            anchor: anchor,
-            sourceImageURL: source.url,
-            imageData: { try await YamiboImagePipeline.shared.data(for: source) }
-        )
-        await refreshLikedPageIDs()
-        return outcome
+        await likeModule.likePage(page)
     }
 
-    // Returns the existing Like Item for this page, if any, so the long-press
-    // action sheet can offer "remove like" instead of "add to likes".
     func isPageLiked(_ page: MangaReaderPageProjection) async -> LikeItem? {
-        guard let workKey = likeWorkKey, let like = dependencies.makeLikeDependencies() else { return nil }
-        let items = await like.likeStore.likes(for: workKey)
-        return items.first { item in
-            guard case let .mangaImage(anchor) = item.anchor else { return false }
-            return anchor.chapterTID == page.tid && anchor.pageLocalIndex == page.localIndex
-        }
+        await likeModule.isPageLiked(page)
     }
 
     func unlikePage(_ item: LikeItem) async -> Bool {
-        guard let like = dependencies.makeLikeDependencies() else { return false }
-        do {
-            // Terminal write: shield against the long-press confirmation dialog's
-            // Task being cancelled mid-delete (e.g. the user closes the reader).
-            try await Task {
-                try await like.likeStore.delete(id: item.id)
-                try await like.likeImageStore.delete(id: item.id)
-            }.value
-        } catch {
-            return false
-        }
-        await refreshLikedPageIDs()
-        return true
-    }
-
-    private func refreshLikedPageIDs() async {
-        guard let workKey = likeWorkKey, let like = dependencies.makeLikeDependencies() else {
-            likedPageIDs = []
-            return
-        }
-        let items = await like.likeStore.likes(for: workKey)
-        likedPageIDs = Set(items.compactMap { item -> String? in
-            guard case let .mangaImage(anchor) = item.anchor else { return nil }
-            return "\(anchor.chapterTID)#\(anchor.pageLocalIndex)"
-        })
-    }
-
-    private func observeLikeChangesIfNeeded() {
-        guard likeChangeObservationTask == nil, let like = dependencies.makeLikeDependencies() else { return }
-        let changeID = like.likeStore.changeID
-        likeChangeObservationTask = Task { [weak self] in
-            for await notification in NotificationCenter.default.notifications(named: LikeStore.didChangeNotification) {
-                guard let receivedChangeID = notification.userInfo?[LikeStore.changeIDUserInfoKey] as? String,
-                      receivedChangeID == changeID else {
-                    continue
-                }
-                await self?.refreshLikedPageIDs()
-            }
-        }
+        await likeModule.unlikePage(item)
     }
 
     // Returns false when there's no prepared workflow, so the caller can fall back to presenting a fresh reader.
     // This is a nonlinear jump like any other (`jumpToPage`, chapter directory), so it is recorded the same way,
-    // making it eligible for the chrome's back/forward history.
+    // making it eligible for the chrome's back/forward history. It stays on
+    // the view model (not the Like module) because it is a reader-content
+    // navigation that merely originates from the likes sheet.
     func jumpToLikedMangaPage(tid: String, localIndex: Int) async -> Bool {
         guard let workflow else { return false }
-        let navigationGeneration = beginNavigationRequest()
+        let navigationGeneration = navigation.beginNavigationRequest()
         let sourcePosition = currentStableReadingPosition
         let targetPosition = MangaReadingPosition(tid: tid, localIndex: localIndex)
         adjacentPrefetchTask?.cancel()
@@ -734,8 +592,8 @@ public final class MangaReaderViewModel: ObservableObject {
         do {
             let nextPresentation = try await workflow.jumpToPosition(targetPosition)
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-            if isCurrentNavigationRequest(navigationGeneration) {
-                recordSuccessfulNonlinearNavigation(from: sourcePosition, to: targetPosition)
+            if navigation.isCurrentNavigationRequest(navigationGeneration) {
+                navigation.recordSuccessfulNonlinearNavigation(from: sourcePosition, to: targetPosition)
             }
             scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? 0)
             return true
@@ -768,7 +626,7 @@ public final class MangaReaderViewModel: ObservableObject {
         committedSettings = normalizedSettings
         if let workflow {
             presentation = workflow.applySettings(normalizedSettings)
-            refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
+            directoryLane.refreshDirectoryPanelTiming(errorMessage: directoryLane.currentDirectoryPanelErrorMessage)
         } else {
             presentation = presentationWithCommittedSettings(presentation)
         }
@@ -791,7 +649,7 @@ public final class MangaReaderViewModel: ObservableObject {
         invalidateReaderContent()
         chapterJumpGeneration += 1
         let generation = chapterJumpGeneration
-        let navigationGeneration = beginNavigationRequest()
+        let navigationGeneration = navigation.beginNavigationRequest()
         let sourcePosition = currentStableReadingPosition
         chapterJumpTask = Task { @MainActor [weak self] in
             await self?.performJumpToChapter(
@@ -804,20 +662,22 @@ public final class MangaReaderViewModel: ObservableObject {
         await chapterJumpTask?.value
     }
 
+    // Thin forwarders: the chrome and the navigation tests keep calling the
+    // model; MangaReaderNavigationCoordinator owns history sequencing.
     public var canNavigateBack: Bool {
-        currentStableReadingPosition != nil && navigationHistory.canGoBack
+        navigation.canNavigateBack
     }
 
     public var canNavigateForward: Bool {
-        currentStableReadingPosition != nil && navigationHistory.canGoForward
+        navigation.canNavigateForward
     }
 
     public func navigateBack() async {
-        await restoreNavigationAnchor(direction: .back)
+        await navigation.navigateBack()
     }
 
     public func navigateForward() async {
-        await restoreNavigationAnchor(direction: .forward)
+        await navigation.navigateForward()
     }
 
     private func performJumpToChapter(
@@ -838,19 +698,19 @@ public final class MangaReaderViewModel: ObservableObject {
             let nextPresentation = try await workflow.jumpToChapter(chapter)
             guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-            if isCurrentNavigationRequest(navigationGeneration) {
-                recordSuccessfulNonlinearNavigation(
+            if navigation.isCurrentNavigationRequest(navigationGeneration) {
+                navigation.recordSuccessfulNonlinearNavigation(
                     from: sourcePosition,
                     to: MangaReadingPosition(tid: chapter.tid, localIndex: 0)
                 )
             }
-            refreshDirectoryPanelTiming(errorMessage: nil)
+            directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
             return
         } catch {
             guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
             YamiboLog.reader.error("Jumping to manga chapter failed: \(error.localizedDescription)")
-            refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            directoryLane.refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
         }
     }
 
@@ -928,7 +788,7 @@ public final class MangaReaderViewModel: ObservableObject {
             )
             guard !Task.isCancelled, readerContentGeneration == generation else { return }
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-            recordLinearReadingForNavigationHistory(direction: delta >= 0 ? .forward : .backward)
+            navigation.recordLinearReading(direction: delta >= 0 ? .forward : .backward)
             scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? 0)
         } catch is CancellationError {
             return
@@ -946,30 +806,14 @@ public final class MangaReaderViewModel: ObservableObject {
         readerContentGeneration += 1
     }
 
-    private func beginNavigationRequest() -> Int {
-        navigationRequestGeneration += 1
-        return navigationRequestGeneration
-    }
-
-    private func isCurrentNavigationRequest(_ generation: Int) -> Bool {
-        navigationRequestGeneration == generation
-    }
-
     private func cancelReaderTasks() {
-        directoryTickTask?.cancel()
-        directoryTickTask = nil
-        directoryMutationTask?.cancel()
-        directoryMutationTask = nil
-        automaticDirectoryUpdateTask?.cancel()
-        automaticDirectoryUpdateTask = nil
+        directoryLane.cancelTasks()
         chapterJumpTask?.cancel()
         chapterJumpTask = nil
         adjacentPrefetchTask?.cancel()
         adjacentPrefetchTask = nil
-        likeChangeObservationTask?.cancel()
-        likeChangeObservationTask = nil
-        autoThreadCoverResolutionTask?.cancel()
-        autoThreadCoverResolutionTask = nil
+        likeModule.cancelObservation()
+        coverModule.cancelAutoThreadCoverResolution()
         readerContentGeneration += 1
     }
 
@@ -985,7 +829,7 @@ public final class MangaReaderViewModel: ObservableObject {
         // Directory identity/title can change through any presentation
         // update (automatic directory update, rename); identity-stable
         // updates early-return on the record-key check inside.
-        syncBrowsingHistoryRecordIfNeeded()
+        browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
         let nextProgressSnapshot = progressSnapshot(from: nextPresentation)
         guard nextProgressSnapshot != previousProgressSnapshot
             || nextProgressSnapshot != lastQueuedProgressSnapshot else {
@@ -1010,7 +854,7 @@ public final class MangaReaderViewModel: ObservableObject {
             offlineCacheOwnerName = nil
             return
         }
-        offlineCacheOwnerName = normalizedDirectoryName(loaded.directoryTitle)
+        offlineCacheOwnerName = Self.normalizedDirectoryName(loaded.directoryTitle)
     }
 
     private func currentPageIndex(in presentation: MangaReaderPresentation) -> Int? {
@@ -1031,106 +875,29 @@ public final class MangaReaderViewModel: ObservableObject {
         return MangaReadingPosition(tid: currentPage.tid, localIndex: currentPage.localIndex)
     }
 
-    private enum NavigationRestoreDirection {
-        case back
-        case forward
-    }
-
-    private func restoreNavigationAnchor(direction: NavigationRestoreDirection) async {
-        guard let sourcePosition = currentStableReadingPosition else { return }
-        let navigationGeneration = beginNavigationRequest()
-
-        while let targetPosition = navigationTarget(for: direction) {
-            guard let workflow else { return }
-            adjacentPrefetchTask?.cancel()
-            readerContentGeneration += 1
-            let previousProgressSnapshot = progressSnapshot(from: presentation)
-            do {
-                let nextPresentation = try await workflow.jumpToPosition(targetPosition)
-                publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-                guard isCurrentNavigationRequest(navigationGeneration) else { return }
-                commitNavigationRestore(direction: direction, sourcePosition: sourcePosition)
-                scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? 0)
-                return
-            } catch is CancellationError {
-                return
-            } catch {
-                YamiboLog.reader.warning("Restoring manga navigation history target failed, discarding and trying next: \(error.localizedDescription)")
-                guard isCurrentNavigationRequest(navigationGeneration) else { return }
-                discardNavigationTarget(for: direction)
-            }
-        }
-    }
-
-    private func navigationTarget(for direction: NavigationRestoreDirection) -> MangaReadingPosition? {
-        switch direction {
-        case .back:
-            navigationHistory.peekBack()
-        case .forward:
-            navigationHistory.peekForward()
-        }
-    }
-
-    private func commitNavigationRestore(
-        direction: NavigationRestoreDirection,
-        sourcePosition: MangaReadingPosition
-    ) {
-        switch direction {
-        case .back:
-            navigationHistory.commitBack(from: sourcePosition)
-        case .forward:
-            navigationHistory.commitForward(from: sourcePosition)
-        }
-        armLinearReadingHistoryExpirationIfNeeded()
-    }
-
-    private func discardNavigationTarget(for direction: NavigationRestoreDirection) {
-        switch direction {
-        case .back:
-            navigationHistory.discardBackCandidate()
-        case .forward:
-            navigationHistory.discardForwardCandidate()
-        }
-        resetLinearReadingHistoryExpirationIfHistoryIsEmpty()
-    }
-
-    private func recordSuccessfulNonlinearNavigation(
-        from sourcePosition: MangaReadingPosition?,
+    /// One attempt of a back/forward restore, on behalf of the navigation
+    /// coordinator: moves reader content to `targetPosition` and reports
+    /// how the attempt ended. Lives here (not on the coordinator) because a
+    /// restore is a reader-content republish — prefetch cancellation,
+    /// content generation, and presentation publishing are this view
+    /// model's own lifecycle.
+    private func performNavigationRestoreAttempt(
         to targetPosition: MangaReadingPosition
-    ) {
-        guard let sourcePosition, sourcePosition != targetPosition else { return }
-        navigationHistory.recordNonlinearJump(from: sourcePosition, to: targetPosition)
-        armLinearReadingHistoryExpirationIfNeeded()
-    }
-
-    private func recordLinearReadingForNavigationHistory(direction: ReaderNavigationLinearReadingDirection) {
-        guard navigationHistory.canGoBack || navigationHistory.canGoForward else {
-            linearReadingHistoryExpiration.reset()
-            return
+    ) async -> MangaReaderNavigationCoordinator.RestoreAttemptOutcome {
+        guard let workflow else { return .aborted }
+        adjacentPrefetchTask?.cancel()
+        readerContentGeneration += 1
+        let previousProgressSnapshot = progressSnapshot(from: presentation)
+        do {
+            let nextPresentation = try await workflow.jumpToPosition(targetPosition)
+            publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
+            return .restored(prefetchIndex: currentPageIndex(in: nextPresentation) ?? 0)
+        } catch is CancellationError {
+            return .aborted
+        } catch {
+            YamiboLog.reader.warning("Restoring manga navigation history target failed, discarding and trying next: \(error.localizedDescription)")
+            return .failed
         }
-        guard let position = currentStableReadingPosition else { return }
-        if linearReadingHistoryExpiration.recordLinearReading(at: position, direction: direction) {
-            navigationHistory.clear()
-        }
-    }
-
-    private func armLinearReadingHistoryExpirationIfNeeded() {
-        guard navigationHistory.canGoBack || navigationHistory.canGoForward,
-              let position = currentStableReadingPosition else {
-            linearReadingHistoryExpiration.reset()
-            return
-        }
-        linearReadingHistoryExpiration.arm(at: position)
-    }
-
-    private func resetNavigationHistory() {
-        navigationHistory = ReaderNavigationHistory()
-        linearReadingHistoryExpiration.reset()
-    }
-
-    private func resetLinearReadingHistoryExpirationIfHistoryIsEmpty() {
-        guard !navigationHistory.canGoBack, !navigationHistory.canGoForward else { return }
-        linearReadingHistoryExpiration.reset()
     }
 
     func progressSnapshot(from presentation: MangaReaderPresentation) -> MangaReaderProgressSnapshot? {
@@ -1139,7 +906,7 @@ public final class MangaReaderViewModel: ObservableObject {
             return nil
         }
 
-        let directoryName = normalizedDirectoryName(loaded.directoryTitle) ?? normalizedDirectoryName(context.directoryName)
+        let directoryName = Self.normalizedDirectoryName(loaded.directoryTitle) ?? Self.normalizedDirectoryName(context.directoryName)
         let progress = MangaProgressReadingPosition(
             threadID: context.originalThreadID,
             chapterThreadID: currentPage.tid,
@@ -1178,7 +945,10 @@ public final class MangaReaderViewModel: ObservableObject {
         return nextPresentation
     }
 
-    private func normalizedDirectoryName(_ directoryName: String?) -> String? {
+    // static (like `normalizedNonEmpty` below) so the browsing-history
+    // recorder can share the exact same normalization instead of keeping a
+    // drifting copy.
+    static func normalizedDirectoryName(_ directoryName: String?) -> String? {
         let normalized = directoryName?.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized?.isEmpty == false ? normalized : nil
     }
