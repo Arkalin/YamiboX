@@ -5,7 +5,7 @@ import YamiboXCore
 /// the remote sync session, and the update monitor, and routes resolved open
 /// targets into the app-level readers or a full-screen thread overlay.
 struct LocalFavoritesRootView: View {
-    @StateObject private var organizer: FavoriteLibraryOrganizer
+    @State private var organizer: FavoriteLibraryOrganizer
     @StateObject private var remoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
     @State private var threadOverlayItem: ForumThreadOverlayItem?
@@ -15,7 +15,7 @@ struct LocalFavoritesRootView: View {
     let appModel: YamiboAppModel
 
     init(dependencies: LibraryDependencies, appModel: YamiboAppModel) {
-        _organizer = StateObject(wrappedValue: FavoriteLibraryOrganizer(
+        _organizer = State(initialValue: FavoriteLibraryOrganizer(
             libraryStore: dependencies.localFavoriteLibraryStore,
             readingProgressStore: dependencies.readingProgressStore,
             settingsStore: dependencies.settingsStore,

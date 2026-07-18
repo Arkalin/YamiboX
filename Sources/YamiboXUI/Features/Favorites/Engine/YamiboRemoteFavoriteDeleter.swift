@@ -23,7 +23,7 @@ struct YamiboRemoteFavoriteDeleter {
             do {
                 let remoteFavoriteID = try await remoteFavoriteID(for: item, repository: repository)
                 try await repository.deleteFavorite(remoteFavoriteID: remoteFavoriteID)
-            } catch YamiboError.missingFavoriteDeleteID {
+            } catch FavoriteActionError.missingFavoriteDeleteID {
                 // The remote favorite is already gone (deleted on the website,
                 // or the mapping never resolved) — nothing to delete remotely,
                 // but the local removal this call is part of must still proceed.
@@ -47,13 +47,13 @@ struct YamiboRemoteFavoriteDeleter {
             return remoteFavoriteID
         }
         guard let threadID = item.target.threadID else {
-            throw YamiboError.missingFavoriteDeleteID
+            throw FavoriteActionError.missingFavoriteDeleteID
         }
         if let remoteFavorite = try await repository.remoteFavorite(forThreadID: threadID, maxPages: 30),
            let remoteFavoriteID = remoteFavorite.remoteFavoriteID?.trimmingCharacters(in: .whitespacesAndNewlines),
            !remoteFavoriteID.isEmpty {
             return remoteFavoriteID
         }
-        throw YamiboError.missingFavoriteDeleteID
+        throw FavoriteActionError.missingFavoriteDeleteID
     }
 }

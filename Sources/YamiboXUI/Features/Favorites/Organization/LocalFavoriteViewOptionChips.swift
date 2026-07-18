@@ -6,7 +6,7 @@ import YamiboXCore
 /// filter, and sort icon-only buttons trailing (filter moved here from the
 /// navigation bar so all three view-affecting controls live together).
 struct LocalFavoriteViewOptionChips: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
     let cardsCount: Int
 

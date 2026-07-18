@@ -5,7 +5,7 @@ import YamiboXCore
 /// the organizer, sync session, and update monitor it operates on.
 struct LocalFavoritesSheetContent: View {
     let sheet: LocalFavoritesRoutes.Sheet
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     let routes: LocalFavoritesRoutes

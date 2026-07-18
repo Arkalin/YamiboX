@@ -4,7 +4,7 @@ import YamiboXCore
 /// Filter sheet behind the toolbar filter button: multi-select source groups
 /// (Android's forum filter) and tags in one place.
 struct LocalFavoriteFilterSheet: View {
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
 
     @Environment(\.dismiss) private var dismiss

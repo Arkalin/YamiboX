@@ -6,7 +6,7 @@ struct LocalFavoriteCategoryManagementSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pendingDeleteCategory: FavoriteCategory?
 
-    @ObservedObject var organizer: FavoriteLibraryOrganizer
+    let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
 
     var body: some View {

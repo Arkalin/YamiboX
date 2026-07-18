@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import YamiboXCore
 
 enum CategoryMoveDirection: Sendable {
@@ -42,11 +43,12 @@ struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
 /// (cards, counts, visible collections) is recomputed exclusively by
 /// `refreshDerivedState()` whenever an input changes.
 @MainActor
-final class FavoriteLibraryOrganizer: ObservableObject {
-    @Published private(set) var document = FavoriteLibraryDocument() {
+@Observable
+final class FavoriteLibraryOrganizer {
+    private(set) var document = FavoriteLibraryDocument() {
         didSet { refreshDerivedState() }
     }
-    @Published var selectedCategoryID = FavoriteCategory.defaultID {
+    var selectedCategoryID = FavoriteCategory.defaultID {
         didSet {
             selection.clearSelection()
             if let selectedCollectionID,
@@ -57,7 +59,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
             persistNavigationState()
         }
     }
-    @Published internal(set) var selectedCollectionID: String? {
+    internal(set) var selectedCollectionID: String? {
         didSet {
             selection.clearSelection()
             refreshDerivedState()
@@ -74,19 +76,19 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     /// deliberately not persisted through `SettingsStore` (see
     /// `persistNavigationState()`): this scope is a live identity, not
     /// durable navigation state worth restoring across launches.
-    @Published private(set) var selectedMergedGroupCleanBookName: String? = nil {
+    private(set) var selectedMergedGroupCleanBookName: String? = nil {
         didSet {
             selection.clearSelection()
             refreshDerivedState()
         }
     }
-    @Published var filter = LocalFavoriteFilterState() {
+    var filter = LocalFavoriteFilterState() {
         didSet {
             guard filter != oldValue else { return }
             refreshDerivedState()
         }
     }
-    @Published private(set) var derived = LocalFavoriteDerivedState()
+    private(set) var derived = LocalFavoriteDerivedState()
     /// `derived` scoped as if no collection were open, regardless of
     /// `selectedCollectionID`. The root favorites screen renders from this
     /// (never from `derived`) because `NavigationStack` keeps the root view
@@ -95,21 +97,21 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     /// while `selectedCollectionID` is still set — reading the same
     /// collection-scoped `derived` there would show the collection page
     /// duplicated behind itself. See `LocalFavoritesOrganizationView`.
-    @Published private(set) var rootDerived = LocalFavoriteDerivedState()
-    @Published private(set) var display = FavoriteLibraryDisplayState()
+    private(set) var rootDerived = LocalFavoriteDerivedState()
+    private(set) var display = FavoriteLibraryDisplayState()
     /// Backs `LocalFavoritesRootBackground` — only ever consumed by the root
     /// favorites screen (see `LocalFavoritesOrganizationView`), never by the
     /// pushed collection/merged-group detail pages.
-    @Published private(set) var backgroundSettings = FavoriteBackgroundSettings()
-    @Published private(set) var backgroundImageData: Data?
-    @Published var errorMessage: String?
+    private(set) var backgroundSettings = FavoriteBackgroundSettings()
+    private(set) var backgroundImageData: Data?
+    var errorMessage: String?
     /// Short-lived toast feedback (single-item sync results and similar).
-    @Published var transientMessage: String?
+    var transientMessage: String?
     /// Non-nil while a delete-everywhere action waits for the user's "also
     /// delete from Yamibo?" answer (`removeRemotePromptEnabled`). The view
     /// renders it as a confirmation dialog; both confirm variants route back
     /// through `confirmRemoveRemotePrompt`, dismissal aborts the delete.
-    @Published var removeRemotePrompt: LocalFavoriteRemoveRemotePrompt?
+    var removeRemotePrompt: LocalFavoriteRemoveRemotePrompt?
 
     /// Selection and search-mode session shared with the views.
     let selection = LocalFavoriteBrowseSession()
@@ -124,7 +126,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
     let remoteDeleter: YamiboRemoteFavoriteDeleter
 
-    private var readingProgress: [ReadingProgressRecord] = []
+    @ObservationIgnored private var readingProgress: [ReadingProgressRecord] = []
     /// Resolved cover URLs and text-cover-forced flags for everything the
     /// cards can display, keyed by the SAME `ContentCoverKey` each card's
     /// `contentCoverKey` resolves — per-favorite `.thread(tid:)` entries
@@ -135,7 +137,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     /// here once let a smart card's text-cover toggle write a `.thread` row
     /// its own display never read).
     // Cover lane state, owned by FavoriteLibraryOrganizer+Covers.swift.
-    var coverLookup = ContentCoverLookup()
+    @ObservationIgnored var coverLookup = ContentCoverLookup()
     /// Bumped by every `coverLookup` write, including `toggleTextCover`'s
     /// optimistic update. `reload()`/`reloadContentCovers()`/
     /// `reloadBoardReaderSettings()`/`reloadMangaDirectories()` each capture
@@ -150,30 +152,30 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     /// toggle's late-arriving notification-driven reload clobber the second
     /// toggle's just-applied state back to "not forced". Skipping a stale
     /// refresh is harmless — the next change notification settles it.
-    var coverLookupRevision = 0
+    @ObservationIgnored var coverLookupRevision = 0
     /// tid → resolved `MangaDirectory`, for virtual favorites grouping
     /// (smart-comic-mode decision #3/#5). Populated only at `load()`/
     /// `reload()` via one batched `MangaDirectoryStore.directories
     /// (containingTIDs:)` call — never recomputed per render (the design
     /// doc's performance constraint #2).
-    var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
+    @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
     /// Snapshot of the per-board reader configuration taken at the same
     /// load/reload as `mangaDirectoriesByTID`, so the two are always
     /// consistent with each other for a given derivation.
-    var boardReaderSettings = BoardReaderSettings()
+    @ObservationIgnored var boardReaderSettings = BoardReaderSettings()
     /// Snapshot of `settings.favorites.smartMangaBulkDeleteEnabled`, kept
     /// live alongside `boardReaderSettings` (see `settingsUpdatesTask`) so
     /// `hasDeletableSelection` and `LocalFavoriteCardActions.standard(...)`
     /// — both synchronous reads — see a change made from Settings without
     /// waiting for an unrelated reload.
-    private(set) var smartMangaBulkDeleteEnabled = true
-    private var libraryUpdatesTask: Task<Void, Never>?
-    private var progressUpdatesTask: Task<Void, Never>?
-    private var coverUpdatesTask: Task<Void, Never>?
-    private var settingsUpdatesTask: Task<Void, Never>?
-    private var mangaDirectoryUpdatesTask: Task<Void, Never>?
-    var mangaCoverBackfillTask: Task<Void, Never>?
-    var attemptedMangaCoverTargetIDs: Set<String> = []
+    @ObservationIgnored private(set) var smartMangaBulkDeleteEnabled = true
+    @ObservationIgnored private var libraryUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var progressUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var coverUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var settingsUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var mangaDirectoryUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored var mangaCoverBackfillTask: Task<Void, Never>?
+    @ObservationIgnored var attemptedMangaCoverTargetIDs: Set<String> = []
 
     init(
         libraryStore: FavoriteLibraryStore,
@@ -199,22 +201,19 @@ final class FavoriteLibraryOrganizer: ObservableObject {
             overrideHandler: remoteFavoriteDeleteHandler
         )
         libraryUpdatesTask = StoreChangeObservation.task(
-            named: FavoriteLibraryStore.didChangeNotification,
-            changeIDKey: FavoriteLibraryStore.changeIDUserInfoKey,
+            changes: { [store = libraryStore] in store.changes() },
             changeID: { [store = libraryStore] in store.changeID }
         ) { [weak self] in
             await self?.reload()
         }
         progressUpdatesTask = StoreChangeObservation.task(
-            named: ReadingProgressStore.didChangeNotification,
-            changeIDKey: ReadingProgressStore.changeIDUserInfoKey,
+            changes: { [store = readingProgressStore] in store.changes() },
             changeID: { [store = readingProgressStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadReadingProgress()
         }
         coverUpdatesTask = StoreChangeObservation.task(
-            named: ContentCoverStore.didChangeNotification,
-            changeIDKey: ContentCoverStore.changeIDUserInfoKey,
+            changes: { [store = contentCoverStore] in store.changes() },
             changeID: { [store = contentCoverStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadContentCovers()
@@ -226,8 +225,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
         // modeled/consumed correctly, but nothing here reacted to it
         // changing live.
         settingsUpdatesTask = StoreChangeObservation.task(
-            named: SettingsStore.didChangeNotification,
-            changeIDKey: SettingsStore.changeIDUserInfoKey,
+            changes: { [store = settingsStore] in store.changes() },
             changeID: { [store = settingsStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadBoardReaderSettings()
@@ -241,8 +239,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
         // full reload.
         if let mangaDirectoryStore {
             mangaDirectoryUpdatesTask = StoreChangeObservation.task(
-                named: MangaDirectoryStore.didChangeNotification,
-                changeIDKey: MangaDirectoryStore.changeIDUserInfoKey,
+                changes: { [store = mangaDirectoryStore] in store.changes() },
                 changeID: { [store = mangaDirectoryStore] in store.changeID }
             ) { [weak self] in
                 await self?.reloadMangaDirectories()
@@ -354,27 +351,29 @@ final class FavoriteLibraryOrganizer: ObservableObject {
             showsCategoryCounts: settings.favorites.showsCategoryCounts
         )
         await applyBackgroundSettings(settings.favorites.background)
-        var restoredFilter = filter
-        restoredFilter.sortOrder = settings.favorites.sortOrder
-        restoredFilter.sortDescending = settings.favorites.sortDescending
-        filter = restoredFilter
-        document = loadedDocument
-        let savedCollection = settings.favorites.selectedCollectionID.flatMap { savedID in
-            loadedDocument.collections.first { $0.id == savedID }
-        }
-        if let savedCollection {
-            selectedCategoryID = savedCollection.categoryID
-        } else if let savedCategoryID = settings.favorites.selectedCategoryID,
-                  loadedDocument.categories.contains(where: { $0.id == savedCategoryID }) {
-            selectedCategoryID = savedCategoryID
-        }
-        if !loadedDocument.categories.contains(where: { $0.id == selectedCategoryID }) {
-            selectedCategoryID = loadedDocument.defaultCategory.id
-        }
-        if let savedCollection, savedCollection.categoryID == selectedCategoryID {
-            selectedCollectionID = savedCollection.id
-        } else {
-            selectedCollectionID = nil
+        withCoalescedDerivedRefresh {
+            var restoredFilter = filter
+            restoredFilter.sortOrder = settings.favorites.sortOrder
+            restoredFilter.sortDescending = settings.favorites.sortDescending
+            filter = restoredFilter
+            document = loadedDocument
+            let savedCollection = settings.favorites.selectedCollectionID.flatMap { savedID in
+                loadedDocument.collections.first { $0.id == savedID }
+            }
+            if let savedCollection {
+                selectedCategoryID = savedCollection.categoryID
+            } else if let savedCategoryID = settings.favorites.selectedCategoryID,
+                      loadedDocument.categories.contains(where: { $0.id == savedCategoryID }) {
+                selectedCategoryID = savedCategoryID
+            }
+            if !loadedDocument.categories.contains(where: { $0.id == selectedCategoryID }) {
+                selectedCategoryID = loadedDocument.defaultCategory.id
+            }
+            if let savedCollection, savedCollection.categoryID == selectedCategoryID {
+                selectedCollectionID = savedCollection.id
+            } else {
+                selectedCollectionID = nil
+            }
         }
         scheduleMangaCoverBackfill(for: loadedDocument.items)
     }
@@ -406,19 +405,21 @@ final class FavoriteLibraryOrganizer: ObservableObject {
             coverLookup = threadCovers.merging(smartCovers)
             coverLookupRevision += 1
         }
-        document = loadedDocument
-        if !loadedDocument.categories.contains(where: { $0.id == selectedCategoryID }) {
-            selectedCategoryID = loadedDocument.defaultCategory.id
-        }
-        if let selectedCollectionID,
-           !loadedDocument.collections.contains(where: { $0.id == selectedCollectionID && $0.categoryID == selectedCategoryID }) {
-            self.selectedCollectionID = nil
-        }
-        // Tags removed by another device (WebDAV) must not linger as an
-        // invisible active filter.
-        let validTagIDs = Set(loadedDocument.tags.map(\.id))
-        if !filter.selectedTagIDs.isSubset(of: validTagIDs) {
-            filter.selectedTagIDs.formIntersection(validTagIDs)
+        withCoalescedDerivedRefresh {
+            document = loadedDocument
+            if !loadedDocument.categories.contains(where: { $0.id == selectedCategoryID }) {
+                selectedCategoryID = loadedDocument.defaultCategory.id
+            }
+            if let selectedCollectionID,
+               !loadedDocument.collections.contains(where: { $0.id == selectedCollectionID && $0.categoryID == selectedCategoryID }) {
+                self.selectedCollectionID = nil
+            }
+            // Tags removed by another device (WebDAV) must not linger as an
+            // invisible active filter.
+            let validTagIDs = Set(loadedDocument.tags.map(\.id))
+            if !filter.selectedTagIDs.isSubset(of: validTagIDs) {
+                filter.selectedTagIDs.formIntersection(validTagIDs)
+            }
         }
         scheduleMangaCoverBackfill(for: loadedDocument.items)
     }
@@ -429,7 +430,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     }
 
     /// Re-derives `coverLookup` in response to *any*
-    /// `ContentCoverStore.didChangeNotification` — including ones this same
+    /// `ContentCoverStore.changes()` element — including ones this same
     /// organizer's own `toggleTextCover` just caused, since that call posts
     /// through the store like any other writer. `loadContentCovers`/
     /// `smartMangaCoverLookup` read one key at a time, each its own `await`,
@@ -450,7 +451,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     /// Re-derives only the Smart Comic Mode-dependent slice of state
     /// (`boardReaderSettings`/`mangaDirectoriesByTID`/`coverLookup`'s
     /// `.smartManga` slice) in response to *any*
-    /// `SettingsStore.didChangeNotification` — mirroring `reload()`'s
+    /// `SettingsStore.changes()` element — mirroring `reload()`'s
     /// deliberately narrower approach (see the comment at `reload()`):
     /// this must never re-apply `settings.favorites` (sort order/layout/
     /// selected category/collection), or an unrelated settings save made
@@ -478,7 +479,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     }
 
     /// Re-derives `backgroundSettings`/`backgroundImageData` in response to
-    /// *any* `SettingsStore.didChangeNotification`, mirroring
+    /// *any* `SettingsStore.changes()` element, mirroring
     /// `reloadBoardReaderSettings()`'s diff-guarded shape — this is the only
     /// path that keeps the root favorites background in sync with an edit
     /// made from Settings, since the favorites tab's `FavoriteLibraryOrganizer`
@@ -491,7 +492,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
     }
 
     /// Re-derives `smartMangaBulkDeleteEnabled` in response to *any*
-    /// `SettingsStore.didChangeNotification`, mirroring
+    /// `SettingsStore.changes()` element, mirroring
     /// `reloadFavoriteBackground()`'s diff-guarded shape — kept in sync live
     /// so toggling the Settings switch while Favorites is already open
     /// immediately updates `hasDeletableSelection`/the long-press menu
@@ -509,7 +510,7 @@ final class FavoriteLibraryOrganizer: ObservableObject {
 
     /// Re-derives the manga-directory-dependent slice of state
     /// (`mangaDirectoriesByTID`/`coverLookup`'s `.smartManga` slice) in
-    /// response to `MangaDirectoryStore.didChangeNotification` -- e.g.
+    /// response to `MangaDirectoryStore.changes()` -- e.g.
     /// resolving a previously-unresolved manga favorite's directory for the
     /// first time (`saveDirectory`), or renaming a directory from the manga
     /// reader's directory page (`renameDirectory`). Without this, a newly-
@@ -818,7 +819,35 @@ final class FavoriteLibraryOrganizer: ObservableObject {
 
     // MARK: - Derivation
 
+    /// While true, `refreshDerivedState()` records that a refresh is due
+    /// instead of running it. `load()`/`reload()` assign several
+    /// derivation inputs in sequence (filter, document, category,
+    /// collection), each of whose `didSet` requests a refresh — without
+    /// coalescing, one load runs the full-library derivation 4–6 times for
+    /// one visible outcome.
+    @ObservationIgnored private var isCoalescingDerivedRefresh = false
+    @ObservationIgnored private var needsCoalescedDerivedRefresh = false
+
+    private func withCoalescedDerivedRefresh(_ mutations: () -> Void) {
+        // A nested batch folds into the outer one.
+        if isCoalescingDerivedRefresh {
+            mutations()
+            return
+        }
+        isCoalescingDerivedRefresh = true
+        mutations()
+        isCoalescingDerivedRefresh = false
+        if needsCoalescedDerivedRefresh {
+            needsCoalescedDerivedRefresh = false
+            refreshDerivedState()
+        }
+    }
+
     func refreshDerivedState() {
+        guard !isCoalescingDerivedRefresh else {
+            needsCoalescedDerivedRefresh = true
+            return
+        }
         derived = LocalFavoriteLibraryDerivation.derive(
             LocalFavoriteLibraryDerivation.Inputs(
                 document: document,
