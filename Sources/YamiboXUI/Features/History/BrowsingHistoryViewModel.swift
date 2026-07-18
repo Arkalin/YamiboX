@@ -49,8 +49,8 @@ final class BrowsingHistoryViewModel {
     /// `confirmFavoriteLocationSelection`, so a plain (non-long-press) heart
     /// tap still falls through to `addFavorite`'s default-category behavior.
     @ObservationIgnored private var pendingFavoriteLocations: [FavoriteLocation]?
-    /// Debounces the reload storms this page is exposed to: store-change
-    /// notifications fire every ~350ms while a reader opened from here keeps
+    /// Debounces the reload storms this page is exposed to: store change
+    /// signals fire every ~350ms while a reader opened from here keeps
     /// saving positions, and the search field fires per keystroke.
     @ObservationIgnored private var pendingReloadTask: Task<Void, Never>?
     /// Drops stale reload results when a newer reload has since started.
@@ -122,16 +122,21 @@ final class BrowsingHistoryViewModel {
 
     /// Follows history-store changes (recording readers, deletes from this
     /// page) and favorite-library changes (heart state) for the lifetime of
-    /// the page.
+    /// the page. No changeID guards in these three observers, as before:
+    /// every change through the instances this page holds should refresh it,
+    /// its own writes included.
     func observeHistoryChanges() async {
-        for await _ in NotificationCenter.default.notifications(named: BrowsingHistoryStore.didChangeNotification) {
+        // A nil store means the history feature is disabled and nothing can
+        // ever write through it, so there is no change source to follow.
+        guard let browsingHistoryStore else { return }
+        for await _ in browsingHistoryStore.changes() {
             guard !Task.isCancelled else { return }
             scheduleReload()
         }
     }
 
     func observeFavoriteChanges() async {
-        for await _ in NotificationCenter.default.notifications(named: FavoriteLibraryStore.didChangeNotification) {
+        for await _ in favoriteLibraryStore.changes() {
             guard !Task.isCancelled else { return }
             await refreshFavoritedThreadIDs()
         }
@@ -142,7 +147,7 @@ final class BrowsingHistoryViewModel {
     /// showing (and filtering by) the stale mapping until some history
     /// change happened to trigger a reload.
     func observeSettingsChanges() async {
-        for await _ in NotificationCenter.default.notifications(named: SettingsStore.didChangeNotification) {
+        for await _ in settingsStore.changes() {
             guard !Task.isCancelled else { return }
             scheduleReload()
         }

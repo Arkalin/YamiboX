@@ -74,16 +74,14 @@ final class ForumMangaDetailViewModel {
                 await makeForumThreadReaderRepository()
             }
         readingProgressUpdatesTask = StoreChangeObservation.task(
-            named: ReadingProgressStore.didChangeNotification,
-            changeIDKey: ReadingProgressStore.changeIDUserInfoKey,
+            changes: { [store = dependencies.readingProgressStore] in store.changes() },
             changeID: { [store = dependencies.readingProgressStore] in store.changeID }
         ) { [weak self] in
             guard let self else { return }
             readingProgress = await self.loadReadingProgress()
         }
         contentCoverUpdatesTask = StoreChangeObservation.task(
-            named: ContentCoverStore.didChangeNotification,
-            changeIDKey: ContentCoverStore.changeIDUserInfoKey,
+            changes: { [store = dependencies.contentCoverStore] in store.changes() },
             changeID: { [store = dependencies.contentCoverStore] in store.changeID }
         ) { [weak self] in
             guard let self else { return }
@@ -98,8 +96,7 @@ final class ForumMangaDetailViewModel {
         // Mirrors `FavoriteLibraryOrganizer.reloadMangaDirectories()`'s
         // listener for the Favorites tab.
         mangaDirectoryUpdatesTask = StoreChangeObservation.task(
-            named: MangaDirectoryStore.didChangeNotification,
-            changeIDKey: MangaDirectoryStore.changeIDUserInfoKey,
+            changes: { [store = dependencies.mangaDirectoryStore] in store.changes() },
             changeID: { [store = dependencies.mangaDirectoryStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadDirectoryAfterExternalChange()
@@ -579,8 +576,8 @@ final class ForumMangaDetailViewModel {
     }
 
     /// Re-resolves `directory` (and its derived `contentCover`/
-    /// `readingProgress`) in response to `MangaDirectoryStore
-    /// .didChangeNotification` fired by a rename or update performed
+    /// `readingProgress`) in response to a `MangaDirectoryStore
+    /// .changes()` element fired by a rename or update performed
     /// elsewhere while this page stays open. Looks the directory back up by
     /// `context.thread.tid` — stable across a rename, unlike `cleanBookName`
     /// itself (the directory's own primary key) — rather than trusting the
