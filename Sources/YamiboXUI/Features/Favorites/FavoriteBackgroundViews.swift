@@ -100,8 +100,13 @@ struct FavoriteBackgroundEditorView: View {
     let onApply: (FavoriteBackgroundEditorDraft) async -> Bool
 
     @Environment(\.colorScheme) private var colorScheme
-    @GestureState private var dragTranslation: CGSize = .zero
-    @GestureState private var magnification = 1.0
+    /// The reset transactions match the `withAnimation` in the gesture `onEnded`s,
+    /// so a rubber-banded overshoot springs back smoothly instead of snapping
+    /// when the gesture state clears.
+    @GestureState(resetTransaction: Transaction(animation: .gestureSettle))
+    private var dragTranslation: CGSize = .zero
+    @GestureState(resetTransaction: Transaction(animation: .gestureSettle))
+    private var magnification = 1.0
     @State private var isApplying = false
 
     var body: some View {
@@ -191,8 +196,14 @@ struct FavoriteBackgroundEditorView: View {
             }
             .onEnded { value in
                 guard draft.imageSize != .zero else { return }
+                // Land where the flick was heading (projected momentum),
+                // clamped back inside the croppable bounds.
+                let projection = GesturePhysics.project(
+                    value.velocity,
+                    decelerationRate: GesturePhysics.DecelerationRate.fast
+                )
                 let proposedOffset = clampedOffset(
-                    baseOffset(containerSize: containerSize) + value.translation,
+                    baseOffset(containerSize: containerSize) + value.translation + projection,
                     containerSize: containerSize,
                     scale: draft.settings.scale
                 )
@@ -202,8 +213,10 @@ struct FavoriteBackgroundEditorView: View {
                     scale: draft.settings.scale,
                     proposedOffset: proposedOffset
                 )
-                draft.settings.offsetX = offsets.offsetX
-                draft.settings.offsetY = offsets.offsetY
+                withAnimation(.gestureSettle) {
+                    draft.settings.offsetX = offsets.offsetX
+                    draft.settings.offsetY = offsets.offsetY
+                }
             }
     }
 
@@ -213,15 +226,17 @@ struct FavoriteBackgroundEditorView: View {
                 state = value
             }
             .onEnded { value in
-                draft.settings.scale = FavoriteBackgroundSettings.clampScale(draft.settings.scale * value)
                 let offsets = FavoriteBackgroundLayout.normalizedOffsets(
                     imageSize: draft.imageSize,
                     containerSize: containerSize,
-                    scale: draft.settings.scale,
+                    scale: FavoriteBackgroundSettings.clampScale(draft.settings.scale * value),
                     proposedOffset: baseOffset(containerSize: containerSize)
                 )
-                draft.settings.offsetX = offsets.offsetX
-                draft.settings.offsetY = offsets.offsetY
+                withAnimation(.gestureSettle) {
+                    draft.settings.scale = FavoriteBackgroundSettings.clampScale(draft.settings.scale * value)
+                    draft.settings.offsetX = offsets.offsetX
+                    draft.settings.offsetY = offsets.offsetY
+                }
             }
     }
 
@@ -239,7 +254,7 @@ struct FavoriteBackgroundEditorView: View {
             containerSize: containerSize,
             settings: currentSettings
         )
-        let offset = clampedOffset(
+        let offset = rubberBandedOffset(
             baseFrame.offset + dragTranslation,
             containerSize: containerSize,
             scale: currentSettings.scale
@@ -270,6 +285,37 @@ struct FavoriteBackgroundEditorView: View {
         return CGSize(
             width: min(overflowX, max(-overflowX, offset.width)),
             height: min(overflowY, max(-overflowY, offset.height))
+        )
+    }
+
+    /// Live-drag variant of `clampedOffset`: edges give with rubber-band
+    /// resistance while the finger is down; `onEnded` clamps and the reset
+    /// transaction springs the overshoot back.
+    private func rubberBandedOffset(
+        _ offset: CGSize,
+        containerSize: CGSize,
+        scale: Double
+    ) -> CGSize {
+        let frame = FavoriteBackgroundLayout.renderedFrame(
+            imageSize: draft.imageSize,
+            containerSize: containerSize,
+            settings: FavoriteBackgroundSettings(scale: scale)
+        )
+        let overflowX = max(0, (frame.size.width - containerSize.width) / 2)
+        let overflowY = max(0, (frame.size.height - containerSize.height) / 2)
+        return CGSize(
+            width: GesturePhysics.rubberBanded(
+                offset.width,
+                lower: -overflowX,
+                upper: overflowX,
+                dimension: containerSize.width
+            ),
+            height: GesturePhysics.rubberBanded(
+                offset.height,
+                lower: -overflowY,
+                upper: overflowY,
+                dimension: containerSize.height
+            )
         )
     }
 }
