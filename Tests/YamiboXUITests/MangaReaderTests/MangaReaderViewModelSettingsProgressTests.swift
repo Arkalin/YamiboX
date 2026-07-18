@@ -444,6 +444,48 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
         XCTAssertEqual(fixture.model.chapterCommentsState, .unsupported)
     }
 
+    func testCurrentForumTargetURLUsesCurrentChapterNotLaunchThread() async throws {
+        let fixture = try await makeFixture()
+
+        await fixture.model.prepare()
+
+        // Launch context's originalThreadID is "700"; the chapter on screen is
+        // thread "701" — 打开原帖 must anchor on the latter's owner post.
+        XCTAssertEqual(
+            fixture.model.currentForumTargetURL.absoluteString,
+            "https://bbs.yamibo.com/forum.php?goto=findpost&mobile=2&mod=redirect&pid=post-701&ptid=701"
+        )
+    }
+
+    func testCurrentForumTargetURLFollowsChapterAcrossBoundaryJump() async throws {
+        let current = try makeFixtureDocument(tid: "701", pageCount: 4)
+        let next = try makeFixtureDocument(tid: "702", pageCount: 3)
+        let fixture = try await makeFixture(
+            initialPage: 3,
+            document: current,
+            appSettings: AppSettings(manga: MangaReaderSettings(readingMode: .paged)),
+            documents: [current, next],
+            directory: makeFixtureDirectory(tids: ["701", "702"])
+        )
+
+        await fixture.model.prepare()
+        await fixture.model.jumpRelativePage(1, usesTwoPageSpread: false)
+
+        XCTAssertEqual(
+            fixture.model.currentForumTargetURL.absoluteString,
+            "https://bbs.yamibo.com/forum.php?goto=findpost&mobile=2&mod=redirect&pid=post-702&ptid=702"
+        )
+    }
+
+    func testCurrentForumTargetURLFallsBackToLaunchThreadBeforeContentLoads() async throws {
+        let fixture = try await makeFixture()
+
+        XCTAssertEqual(
+            fixture.model.currentForumTargetURL.absoluteString,
+            "https://bbs.yamibo.com/forum.php?mobile=2&mod=viewthread&page=1&tid=700"
+        )
+    }
+
     func testJumpToPagePublishesViewportPlacementForSharedScrubberCommit() async throws {
         let fixture = try await makeFixture()
 

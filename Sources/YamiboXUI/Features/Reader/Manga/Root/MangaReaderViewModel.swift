@@ -523,6 +523,31 @@ public final class MangaReaderViewModel {
         )
     }
 
+    /// 打开原帖 target: the thread of the chapter currently on screen, not the
+    /// launch context's `originalThreadID` — a smart manga directory spans
+    /// many threads, so the entry chapter goes stale as soon as the reader
+    /// crosses a chapter boundary. Anchors on the chapter's owner post
+    /// (mirroring `NovelReaderViewModel.currentForumTargetURL`); before
+    /// content loads there is no current page yet, so the launch thread keeps
+    /// the button working from a loading/error screen.
+    public var currentForumTargetURL: URL {
+        guard let target = currentChapterCommentTarget else {
+            return YamiboRoute.threadByID(
+                tid: context.originalThreadID,
+                page: 1,
+                authorID: nil,
+                reverse: false
+            ).url
+        }
+        return YamiboRoute.findPostURL(threadID: target.threadID, postID: target.ownerPostID)
+            ?? YamiboRoute.threadByID(
+                tid: target.threadID,
+                page: target.view,
+                authorID: nil,
+                reverse: false
+            ).url
+    }
+
     func imageSource(for page: MangaReaderPageProjection) -> YamiboImageSource {
         let scope = offlineCacheOwnerName.flatMap { ownerName in
             YamiboImageOfflineScope(tid: page.tid, ownerName: ownerName)

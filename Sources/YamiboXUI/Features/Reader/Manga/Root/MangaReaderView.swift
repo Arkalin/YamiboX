@@ -505,16 +505,12 @@ public struct MangaReaderView: View {
     }
 
     /// 打开原帖 layers the thread over the reader instead of dismissing it —
-    /// closing the overlay drops straight back into the page being read.
+    /// closing the overlay drops straight back into the page being read. The
+    /// target follows the chapter currently on screen, not the launch chapter.
     private func openOriginalPost() {
         guard !isDismissing else { return }
         forumThreadOverlayItem = ForumThreadOverlayItem(
-            url: YamiboRoute.threadByID(
-                tid: context.originalThreadID,
-                page: 1,
-                authorID: nil,
-                reverse: false
-            ).url,
+            url: model.currentForumTargetURL,
             title: context.displayTitle
         )
     }
