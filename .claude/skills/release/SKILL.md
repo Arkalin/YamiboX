@@ -1,6 +1,6 @@
 ---
 name: release
-description: 发布 YamiboX 新版本——把本地 CHANGELOG.md 的 Unreleased 内容定稿为发布说明，bump MARKETING_VERSION，创建以说明为 message 的 annotated tag 并 push，由 GitHub Actions 完成构建、GitHub Release 与 app-repo.json 注册。Use when 用户说"发布新版本""发个 release""打 tag 发版"。
+description: 发布 YamiboX 新版本——把本地 CHANGELOG.md 的 Unreleased 内容定稿为发布说明，bump MARKETING_VERSION 和 CURRENT_PROJECT_VERSION（构建号），创建以说明为 message 的 annotated tag 并 push，由 GitHub Actions 完成构建、GitHub Release 与 app-repo.json 注册。Use when 用户说"发布新版本""发个 release""打 tag 发版"。
 ---
 
 # 发布新版本
@@ -16,8 +16,10 @@ description: 发布 YamiboX 新版本——把本地 CHANGELOG.md 的 Unreleased
 ## 发布步骤
 
 1. **定版本号**：当前版本取自 pbxproj 的 `MARKETING_VERSION`。按 Unreleased 内容建议 bump（只有修复 → patch；有新功能 → minor），向用户确认版本号和发布说明全文，确认后才继续。
-2. **bump 版本**：把 `YamiboX.xcodeproj/project.pbxproj` 里所有 `MARKETING_VERSION = <旧版本>;` 替换为新版本（共 2 处，用 replace_all）。
-3. **commit**：`chore: bump version to X.Y.Z`（遵循仓库 commit 规范）。
+2. **bump 版本**：`YamiboX.xcodeproj/project.pbxproj` 里两个字段都要改，各 2 处（用 replace_all）：
+   - `MARKETING_VERSION`：改成新版本号。
+   - `CURRENT_PROJECT_VERSION`（构建号，即 `CFBundleVersion`）：不随 `MARKETING_VERSION` 重置，在当前值基础上 **+1**，即使这次只是 patch。
+3. **commit**：`chore: bump version to X.Y.Z (build N)`（遵循仓库 commit 规范）。
 4. **打 annotated tag**：把发布说明（Unreleased 段的条目行，不含 `## Unreleased` 标题）写入 scratchpad 临时文件，然后 `git tag -a vX.Y.Z -F <临时文件>`。tag message 就是最终发布说明。
 5. **push**：`git push origin main vX.Y.Z`。tag push 触发 release workflow。
 6. **善后 CHANGELOG.md**：把 `## Unreleased` 标题改为 `## vX.Y.Z - <今天日期>`，在其上方新建空的 `## Unreleased` 段，`last-scanned` 更新为发布 commit 的 sha。
