@@ -106,9 +106,13 @@ enum ForumThreadPollParser {
                         return tag == "tr" || tag == "li" || tag == "p" || element.hasClass("polloption")
                     }
                 ) ?? input.parent()
-                let rawText = (row ?? input).text()
+                let rowElement = row ?? input
+                let rawText = rowElement.text()
                 let inputValue = input.attr("value")
-                let optionText = optionTitle(from: rawText)
+                // The touch row keeps the option name alone inside `<label>`
+                // ("1.选项甲") — reading it avoids scrubbing the sibling
+                // `em.y` "65% (13票)" out of the merged row text.
+                let optionText = optionTitle(from: rowElement.firstText("label") ?? rawText)
                     ?? inputValue.nilIfBlank
                     ?? "\(index + 1)"
                 return ForumThreadPollOption(
@@ -125,7 +129,7 @@ enum ForumThreadPollParser {
         return rows.enumerated().compactMap { index, row in
             let text = row.normalizedText()
             guard text.contains("%"),
-                  let title = optionTitle(from: text) else {
+                  let title = optionTitle(from: row.firstText("label") ?? text) else {
                 return nil
             }
             return ForumThreadPollOption(
@@ -138,7 +142,9 @@ enum ForumThreadPollParser {
     }
 
     private static func pollTitle(in pollElement: Element) -> String? {
-        if let text = pollElement.firstText(anyOf: ["h3", "h4", ".polltitle", ".xs2", ".pcht h4", "caption"]) {
+        // Touch template: the first `.poll_txt` line is the poll header
+        // ("多选投票: …, 共有 N 人参与投票").
+        if let text = pollElement.firstText(anyOf: [".poll_txt", "h3", "h4", ".polltitle", ".xs2", ".pcht h4", "caption"]) {
             return text
         }
         let text = pollElement.normalizedText()
@@ -149,7 +155,7 @@ enum ForumThreadPollParser {
     }
 
     private static func pollEndTime(in pollElement: Element) -> String? {
-        for selector in ["p", ".xg1", ".polltime", ".poll_time"] {
+        for selector in [".poll_txt", "p", ".xg1", ".polltime", ".poll_time"] {
             for element in pollElement.selectAll(selector) {
                 let text = element.normalizedText()
                 guard text.contains("结束")
@@ -159,7 +165,7 @@ enum ForumThreadPollParser {
                     continue
                 }
                 if let value = HTMLTextExtractor.firstMatch(
-                    pattern: #"(?:结束时间|結束時間|截止时间|截止時間|投票截止)[:：]?\s*(.+)$"#,
+                    pattern: #"(?:距结束还有|距結束還有|结束时间|結束時間|截止时间|截止時間|投票截止)[:：]?\s*(.+)$"#,
                     in: text
                 )?
                     .dropFirst()
@@ -185,6 +191,8 @@ enum ForumThreadPollParser {
         let value = text
             .replacingOccurrences(of: #"\d+(?:\.\d+)?%\s*(?:\(\d+\))?"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\d+\s*(?:票|人|votes?)"#, with: "", options: [.regularExpression, .caseInsensitive])
+            // Emptied vote-count parentheses left over from the removals above.
+            .replacingOccurrences(of: #"[（(]\s*[)）]"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[\[\]☑✓○●•\-\d.、]+\s*"#, with: "", options: .regularExpression)
         return value.htmlNormalized.nilIfBlank
     }

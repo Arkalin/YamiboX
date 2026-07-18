@@ -133,13 +133,19 @@ public enum ForumRouteResolver {
     private static func privateMessageID(from url: URL) -> String? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let items = components.queryItems ?? []
-        guard items.value(named: "mod") == "spacecp",
-              items.value(named: "ac") == "pm",
-              items.value(named: "op") == "showmsg",
-              let uid = items.value(named: "touid")?.nilIfBlank else {
-            return nil
+        guard let uid = items.value(named: "touid")?.nilIfBlank else { return nil }
+        // Touch-template form: home.php?mod=space&do=pm&subop=view&touid=…
+        if items.value(named: "mod") == "space",
+           items.value(named: "do") == "pm" {
+            return uid
         }
-        return uid
+        // Legacy desktop form: home.php?mod=spacecp&ac=pm&op=showmsg&touid=…
+        if items.value(named: "mod") == "spacecp",
+           items.value(named: "ac") == "pm",
+           items.value(named: "op") == "showmsg" {
+            return uid
+        }
+        return nil
     }
 
     private static func messageCenterTab(from url: URL) -> MessageCenterTab? {

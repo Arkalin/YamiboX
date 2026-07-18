@@ -9,29 +9,43 @@ import Testing
         <html>
         <head><title>普通讨论 - 百合会</title></head>
         <body>
-          <div id="pt"><a href="forum.php?mod=forumdisplay&amp;fid=123">原创小说</a></div>
+          <div class="header cl">
+            <div class="mz"><a href="javascript:history.back();"><i class="dm-c-left"></i></a></div>
+            <h2><a href="forum.php?mod=forumdisplay&amp;fid=123&amp;">原创小说</a></h2>
+          </div>
           <input type="hidden" name="formhash" value="form123" />
-          <div id="post_1001">
-            <div class="authi">
-              <em title="楼主">楼主</em>
-              <a class="author" href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主名</a>
-              <em>发表于 2026-6-1 10:00</em>
+          <div class="viewthread">
+            <div class="plc cl" id="pid1001">
+              <div class="avatar"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/00/00/42_avatar_small.jpg" /></div>
+              <div class="display pi pione" href="#replybtn_1001">
+                <ul class="authi">
+                  <li class="mtit">
+                    <span class="y">1<sup>#</sup></span>
+                    <span class="z"><a href="home.php?mod=space&amp;uid=42">楼主名</a></span>
+                  </li>
+                  <li class="mtime"><span class="y"><i class="dm-eye"></i><em>321</em><i class="dm-chat-s"></i><em>45</em></span>2026-6-1 10:00</li>
+                </ul>
+                <div class="message">
+                  第一段<br>第二段
+                  <i class="pstatus">本帖最后由 楼主名 于 2026-6-2 12:00 编辑</i>
+                </div>
+              </div>
             </div>
-            <div class="message" id="postmessage_1001">
-              第一段<br>第二段
-              <i class="pstatus">本帖最后由 楼主名 于 2026-6-2 12:00 编辑</i>
+            <div class="plc cl" id="pid1002">
+              <div class="avatar"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/00/00/77_avatar_small.jpg" /></div>
+              <div class="display pi" href="#replybtn_1002">
+                <ul class="authi">
+                  <li class="mtit">
+                    <span class="y">2<sup>#</sup></span>
+                    <span class="z"><a href="home.php?mod=space&amp;uid=77">读者甲</a></span>
+                  </li>
+                  <li class="mtime">2026-6-1 10:05</li>
+                </ul>
+                <div class="message">回复内容</div>
+              </div>
             </div>
           </div>
-          <div class="thread-meta"><span>查看: 321</span><span>回复: 45</span></div>
-          <div id="pid1002">
-            <div class="authi">
-              <a class="author" href="space-uid-77.html">读者甲</a>
-              <em>2#</em>
-              <em>发表于 2026-6-1 10:05</em>
-            </div>
-            <div class="message">回复内容</div>
-          </div>
-          <div class="pg"><strong>1</strong><a>2</a><span>/ 3 页</span></div>
+          <div class="pg"><strong>1</strong><a href="forum.php?mod=viewthread&amp;tid=700&amp;page=2">2</a><label><span title="共 3 页"> / 3 页</span></label></div>
         </body>
         </html>
         """#,
@@ -44,7 +58,7 @@ import Testing
     #expect(page.posts[0].postID == "1001")
     #expect(page.posts[0].author.uid == "42")
     #expect(page.posts[0].author.name == "楼主名")
-    #expect(page.posts[0].floorText == "楼主")
+    #expect(page.posts[0].floorText == "1#")
     #expect(page.posts[0].postedAtText == "2026-6-1 10:00")
     #expect(page.posts[0].lastEditedText == "本帖最后由 楼主名 于 2026-6-2 12:00 编辑")
     #expect(page.posts[0].contentText == "第一段\n第二段")
@@ -549,13 +563,19 @@ private extension ForumThreadTextBlock {
             </div>
             <div class="message" id="postmessage_4001">
               正文
-              <div class="pcht">
-                <h4>你喜欢哪一项？</h4>
-                <p>投票截止：2026-07-01 12:00</p>
-                <table>
-                  <tr><td><input type="checkbox" name="pollanswers[]" value="11"></td><td>选项甲 65% 13 票</td></tr>
-                  <tr><td><input type="checkbox" name="pollanswers[]" value="12" checked="checked"></td><td>选项乙 35% 7 票</td></tr>
-                </table>
+              <div class="poll cl">
+                <form id="poll" name="poll" method="post" action="forum.php?mod=misc&amp;action=votepoll&amp;fid=123&amp;tid=704&amp;pollsubmit=yes&amp;quickforward=yes&amp;mobile=2">
+                  <input type="hidden" name="formhash" value="form123" />
+                  <div class="poll_txt">多选投票: 最多可选 2 项, 共有 20 人参与投票</div>
+                  <div class="poll_txt">距结束还有: 4 天 12 小时 30 分钟</div>
+                  <div class="poll_box">
+                    <p><input type="checkbox" id="option_1" name="pollanswers[]" value="11" /><label for="option_1">1.选项甲</label><em class="y">65% (13票)</em></p>
+                    <hr class="l">
+                    <p><input type="checkbox" id="option_2" name="pollanswers[]" value="12" /><label for="option_2">2.选项乙</label><em class="y">35% (7票)</em></p>
+                    <hr class="l">
+                    <input type="submit" name="pollsubmit" id="pollsubmit" value="提交" class="formdialog btn_pn" />
+                  </div>
+                </form>
               </div>
             </div>
             <div id="ratelog_4001">
@@ -566,16 +586,25 @@ private extension ForumThreadTextBlock {
                 <li class="flex-box mli p0"><div><a href="forum.php?mod=misc&amp;action=viewratings&amp;tid=704&amp;pid=4001&amp;mobile=2">查看全部评分</a></div></li>
               </ul>
             </div>
-            <div id="comment_4001" class="cm">
-              <div class="pstl xs1 cl">
-                <div class="psta vm"><a href="home.php?mod=space&amp;uid=88&amp;mobile=2" class="xi2 xw1">点评者</a></div>
-                <div class="psti">点评内容 <span class="xg1">发表于 2026-06-02 08:00</span></div>
+            <ul class="post_attlist">
+              <li class="b_t p5"><em class="tit"><a href="forum.php?mod=attachment&amp;aid=777"><span class="link">章节.txt</span><p class="pl5 f_9">2026-6-1 10:05 上传</p><p class="pl5 f_9">17.93 KB, 下载次数: 122</p></a></em></li>
+            </ul>
+            <div id="comment_4001">
+              <h3 class="psth xs1"><span class="icon_ring vm"></span>点评</h3>
+              <div class="plc p0 cl" id="commentdetail_9001">
+                <div class="avatar l0"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/00/00/88_avatar_small.jpg"></div>
+                <div class="display pi">
+                  <ul class="authi">
+                    <li class="mtit">
+                      <span class="y">180.100.1.1</span>
+                      <span class="z"><a href="home.php?mod=space&amp;uid=88" class="xi2 xw1">点评者</a></span>
+                    </li>
+                    <li class="mtime">发表于 2026-6-2 08:00</li>
+                    <li class="mtxt mt5">点评内容</li>
+                  </ul>
+                </div>
               </div>
             </div>
-            <dl class="t_attach">
-              <dt><a href="forum.php?mod=attachment&amp;aid=xyz&amp;mobile=2">附加资料.pdf</a></dt>
-              <dd>128 KB · 4 次下载</dd>
-            </dl>
           </div>
         </body>
         </html>
@@ -588,15 +617,20 @@ private extension ForumThreadTextBlock {
     #expect(post.contentText == "正文")
 
     let poll = try #require(post.poll)
-    #expect(poll.title == "你喜欢哪一项？")
-    #expect(poll.endTimeText == "2026-07-01 12:00")
+    #expect(poll.title == "多选投票: 最多可选 2 项, 共有 20 人参与投票")
+    #expect(poll.endTimeText == "4 天 12 小时 30 分钟")
     #expect(poll.type == .multipleChoice)
     #expect(poll.status == .notVoted)
     #expect(poll.options.map(\.id) == ["11", "12"])
+    // The touch template renders each option as "1.选项甲" + "65% (13票)"; the
+    // title cleanup strips the numeric prefix, percentage, and vote count but
+    // leaves the em's emptied parentheses behind.
     #expect(poll.options.map(\.title) == ["选项甲", "选项乙"])
     #expect(poll.options.map(\.voteCount) == [13, 7])
     #expect(poll.options.map(\.percentage) == [65, 35])
-    #expect(poll.options.map(\.isSelected) == [false, true])
+    // The touch template never pre-checks poll options for a user who has not
+    // voted yet, so no option reports selected.
+    #expect(poll.options.map(\.isSelected) == [false, false])
 
     let ratingBlock = try #require(post.ratingBlock)
     #expect(ratingBlock.participantCount == 2)
@@ -610,12 +644,13 @@ private extension ForumThreadTextBlock {
     #expect(post.comments.first?.author.uid == "88")
     #expect(post.comments.first?.author.name == "点评者")
     #expect(post.comments.first?.message == "点评内容")
-    #expect(post.comments.first?.postedAtText == "发表于 2026-06-02 08:00")
+    #expect(post.comments.first?.postedAtText == "发表于 2026-6-2 08:00")
 
     #expect(post.attachments.count == 1)
-    #expect(post.attachments.first?.fileName == "附加资料.pdf")
-    #expect(post.attachments.first?.url.absoluteString == "https://bbs.yamibo.com/forum.php?mod=attachment&aid=xyz&mobile=2")
-    #expect(post.attachments.first?.statInfo == "128 KB")
+    #expect(post.attachments.first?.fileName == "章节.txt")
+    #expect(post.attachments.first?.url.absoluteString == "https://bbs.yamibo.com/forum.php?mod=attachment&aid=777")
+    #expect(post.attachments.first?.uploadInfo == "2026-6-1 10:05 上传")
+    #expect(post.attachments.first?.statInfo == "17.93 KB, 下载次数: 122")
 }
 
 @Test func forumThreadPageParserExtractsRatingResultsPopout() throws {
@@ -623,28 +658,36 @@ private extension ForumThreadTextBlock {
         from: #"""
         <html>
         <body>
-          <div class="ratl">
-            <table>
-              <tr><th>参与人数 3</th><th>积分 +9</th><th>理由</th></tr>
-              <tr>
-                <td><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></td>
-                <td>+2</td>
-                <td>有效评分理由</td>
-              </tr>
-              <tr>
-                <td><a href="space-uid-88.html">读者乙</a></td>
-                <td>+7</td>
-                <td>好萌</td>
-              </tr>
-            </table>
-          </div>
+          <div class="o pns">积分 +9 点</div>
+          <ul class="post_box cl">
+            <li class="flex-box mli">
+              <div class="flex-2 xs1 xg1"><span class="z">积分</span><span class="z">用户名</span></div>
+              <div class="flex-3 xs1 xg1"><span class="y">时间</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex-2 xs1 xg1"><span class="z">积分 + 2 点</span><span class="z">读者甲</span></div>
+              <div class="flex-3 xs1 xg1"><span class="y">2026-7-1 12:00</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex xs1 xg1"><span class="z">有效评分理由</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex-2 xs1 xg1"><span class="z">积分 + 7 点</span><span class="z">读者乙</span></div>
+              <div class="flex-3 xs1 xg1"><span class="y">2026-7-2 09:30</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex xs1 xg1"><span class="z">好萌</span></div>
+            </li>
+          </ul>
         </body>
         </html>
         """#
     )
 
     #expect(page.totalScore == 9)
-    #expect(page.ratings.map(\.user.uid) == ["77", "88"])
+    // The viewratings float renders bare user names without profile links, so
+    // no uid can be extracted from its rows.
+    #expect(page.ratings.map(\.user.uid) == [nil, nil])
     #expect(page.ratings.map(\.user.name) == ["读者甲", "读者乙"])
     #expect(page.ratings.map(\.scoreText) == ["+2", "+7"])
     #expect(page.ratings.map(\.reason) == ["有效评分理由", "好萌"])
@@ -654,22 +697,26 @@ private extension ForumThreadTextBlock {
     let page = try ForumThreadPageHTMLParser.parseRatingResults(
         from: #"""
         <root><![CDATA[
-          <div class="ratl">
-            <table>
-              <tr><th>参与人数 1</th><th>积分 +5</th><th>理由</th></tr>
-              <tr>
-                <td><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></td>
-                <td>+5</td>
-                <td>有效评分理由</td>
-              </tr>
-            </table>
-          </div>
+          <div class="o pns">积分 +5 点</div>
+          <ul class="post_box cl">
+            <li class="flex-box mli">
+              <div class="flex-2 xs1 xg1"><span class="z">积分</span><span class="z">用户名</span></div>
+              <div class="flex-3 xs1 xg1"><span class="y">时间</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex-2 xs1 xg1"><span class="z">积分 + 5 点</span><span class="z">读者甲</span></div>
+              <div class="flex-3 xs1 xg1"><span class="y">2026-7-1 12:00</span></div>
+            </li>
+            <li class="flex-box mli">
+              <div class="flex xs1 xg1"><span class="z">有效评分理由</span></div>
+            </li>
+          </ul>
         ]]></root>
         """#
     )
 
     #expect(page.totalScore == 5)
-    #expect(page.ratings.map(\.user.uid) == ["77"])
+    #expect(page.ratings.map(\.user.uid) == [nil])
     #expect(page.ratings.map(\.user.name) == ["读者甲"])
     #expect(page.ratings.map(\.scoreText) == ["+5"])
     #expect(page.ratings.map(\.reason) == ["有效评分理由"])
@@ -717,7 +764,7 @@ private extension ForumThreadTextBlock {
         <html>
         <body>
           <form>
-            <select>
+            <select id="polloptionid">
               <option value="11">选项甲</option>
               <option value="12" selected="selected">选项乙</option>
             </select>
@@ -726,7 +773,7 @@ private extension ForumThreadTextBlock {
             <li><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></li>
             <li><a href="space-uid-88.html">读者乙</a></li>
           </ul>
-          <div class="pg"><a>1</a><strong>2</strong><span>/ 5 页</span></div>
+          <div class="pg"><a>1</a><strong>2</strong><label><span title="共 5 页"> / 5 页</span></label></div>
         </body>
         </html>
         """#,
@@ -791,21 +838,39 @@ private extension ForumThreadTextBlock {
         from: #"""
         <html>
         <body>
-          <div id="post_5001" class="plc stickpost">
-            <div class="authi">
-              <em title="置顶帖">置顶帖</em>
-              <a class="author" href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主名</a>
-              <a href="forum.php?mod=post&amp;action=edit&amp;tid=705&amp;pid=5001&amp;mobile=2">编辑</a>
-              <a href="forum.php?mod=topicadmin&amp;action=moderate&amp;tid=705&amp;pid=5001&amp;mobile=2">管理</a>
-              <a href="forum.php?mod=topicadmin&amp;action=moderate&amp;tid=705&amp;pid=5001&amp;mobile=2">管理</a>
+          <div class="plc cl" id="pid5001">
+            <div class="avatar"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/00/00/09_avatar_small.jpg" /></div>
+            <div class="display pi" href="#replybtn_5001">
+              <ul class="authi">
+                <li class="mtit">
+                  <span class="y"><img src="https://bbs.yamibo.com/static/image/mobile/settop.png" class="vm" /> 来自 5#</span>
+                  <span class="z"><a href="home.php?mod=space&amp;uid=9">作者</a></span>
+                </li>
+                <li class="mtime">
+                  <em class="mgl"><a href="#moption_5001" class="popup">管理</a></em>
+                  <div id="moption_5001" popup="true" class="manage" style="display:none">
+                    <div class="manage_popup">
+                      <a class="button" href="forum.php?mod=post&amp;action=edit&amp;tid=705&amp;pid=5001">编辑</a>
+                      <input type="button" value="删除主题" class="dialog button" href="forum.php?mod=topicadmin&amp;action=moderate&amp;tid=705&amp;pid=5001" />
+                    </div>
+                  </div>
+                  2026-6-1 10:00
+                </li>
+              </ul>
+              <div class="message">正文</div>
             </div>
-            <div class="message" id="postmessage_5001">正文</div>
           </div>
-          <div id="post_5002">
-            <div class="authi">
-              <a class="author" href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a>
+          <div class="plc cl" id="pid5002">
+            <div class="display pi" href="#replybtn_5002">
+              <ul class="authi">
+                <li class="mtit">
+                  <span class="y">6<sup>#</sup></span>
+                  <span class="z"><a href="home.php?mod=space&amp;uid=77">读者甲</a></span>
+                </li>
+                <li class="mtime">2026-6-1 10:05</li>
+              </ul>
+              <div class="message">普通回复</div>
             </div>
-            <div class="message" id="postmessage_5002">普通回复</div>
           </div>
         </body>
         </html>
@@ -817,10 +882,10 @@ private extension ForumThreadTextBlock {
     #expect(page.posts.count == 2)
     #expect(page.posts[0].isPinned)
     #expect(page.posts[1].isPinned == false)
-    #expect(page.posts[0].manageActions.map(\.title) == ["编辑", "管理"])
+    #expect(page.posts[0].manageActions.map(\.title) == ["编辑", "删除主题"])
     #expect(page.posts[0].manageActions.map(\.url.absoluteString) == [
-        "https://bbs.yamibo.com/forum.php?mod=post&action=edit&tid=705&pid=5001&mobile=2",
-        "https://bbs.yamibo.com/forum.php?mod=topicadmin&action=moderate&tid=705&pid=5001&mobile=2"
+        "https://bbs.yamibo.com/forum.php?mod=post&action=edit&tid=705&pid=5001",
+        "https://bbs.yamibo.com/forum.php?mod=topicadmin&action=moderate&tid=705&pid=5001"
     ])
     #expect(page.posts[1].manageActions.isEmpty)
 }

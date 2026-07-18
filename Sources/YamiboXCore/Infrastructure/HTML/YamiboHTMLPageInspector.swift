@@ -19,7 +19,13 @@ enum YamiboHTMLPageInspector {
             "您需要先登录",
             "需要登录后才能",
             "登录后才能继续",
-            "登录后才能查看"
+            "登录后才能查看",
+            // A not-logged-in action often REDIRECTS to the login page instead
+            // of printing any of the phrases above — recognize that page by
+            // structure (touch template `member/login.htm`).
+            "pg_logging",
+            "id=\"loginform\"",
+            "请输入用户名/Email/UID"
         ]
         return markers.contains { html.localizedCaseInsensitiveContains($0) }
     }

@@ -63,7 +63,7 @@ import Testing
           <div class="plc p0 cl" id="commentdetail_1">
             <ul>
               <li><a>读者甲</a></li>
-              <li class="mtime">2025-5-25 19:58</li>
+              <li class="mtime">发表于 2025-5-25 19:58</li>
               <li class="mtxt mt5">悠宇把自己开发成了0</li>
             </ul>
           </div>
@@ -108,7 +108,7 @@ import Testing
     #expect(page.comments.map(\.source) == [.postComment, .ratingReason, .ratingReason])
     #expect(page.comments.map(\.authorName) == ["读者甲", "seccyzwvvk", "3504822324"])
     #expect(page.comments.map(\.body) == ["悠宇把自己开发成了0", "翻译大大辛苦了", "感谢款待"])
-    #expect(page.comments.first?.metadata == "2025-5-25 19:58")
+    #expect(page.comments.first?.metadata == "发表于 2025-5-25 19:58")
 }
 
 @Test func chapterCommentsParserIncludesMobileRepliesBetweenOwnerPosts() throws {

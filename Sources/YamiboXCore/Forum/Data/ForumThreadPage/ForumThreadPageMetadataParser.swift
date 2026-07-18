@@ -21,13 +21,20 @@ enum ForumThreadPageMetadataParser {
     }
 
     static func threadStats(in document: Document) -> (totalViews: Int?, totalReplies: Int?) {
+        // Touch pages carry no textual labels: the first post's
+        // `.authi .mtime span.y` holds a bare `<em>` pair — views, then replies.
+        if let counters = document.selectFirst(".plc .authi .mtime span.y") {
+            let values = counters.selectAll("em").compactMap { Int($0.normalizedText()) }
+            if values.count >= 2 {
+                return (totalViews: values[0], totalReplies: values[1])
+            }
+        }
         let candidateText = [
             ".thread-meta",
             ".thread_stats",
             ".threadstats",
             ".thread_info",
             ".thread-info",
-            ".threadlist_foot",
             ".vwthd",
             ".ts",
             ".hm",

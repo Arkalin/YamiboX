@@ -77,12 +77,11 @@ final class StubURLProtocol: URLProtocol {
                         statusCode: 200,
                         body: """
                         <html><body>
-                          <ul class="sclist">
-                            <li>
-                              <a href="forum.php?mod=viewthread&tid=704&mobile=2">远端收藏</a>
-                              <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=8801">删除</a>
-                            </li>
-                          </ul>
+                          <div class="findbox mt10 cl">
+                            <ul>
+                              <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=8801" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=704&amp;mobile=2">远端收藏</a></li>
+                            </ul>
+                          </div>
                         </body></html>
                         """
                     )
@@ -95,13 +94,12 @@ final class StubURLProtocol: URLProtocol {
                             statusCode: 200,
                             body: """
                             <html><body>
-                              <ul class="sclist">
-                                <li>
-                                  <a href="forum.php?mod=viewthread&tid=805&mobile=2">第二页收藏</a>
-                                  <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=9902">删除</a>
-                                </li>
-                              </ul>
-                              <div class="pg"><a href="home.php?mod=space&do=favorite&type=thread&page=1">1</a><strong>2</strong></div>
+                              <div class="findbox mt10 cl">
+                                <ul>
+                                  <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=9902" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=805&amp;mobile=2">第二页收藏</a></li>
+                                </ul>
+                              </div>
+                              <div class="pg"><a href="home.php?mod=space&amp;do=favorite&amp;type=thread&amp;page=1">1</a><strong>2</strong></div>
                             </body></html>
                             """
                         )
@@ -112,10 +110,12 @@ final class StubURLProtocol: URLProtocol {
                         statusCode: 200,
                         body: """
                         <html><body>
-                          <ul class="sclist">
-                            <li><a href="forum.php?mod=viewthread&tid=804&mobile=2">第一页收藏</a></li>
-                          </ul>
-                          <div class="pg"><strong>1</strong><a href="home.php?mod=space&do=favorite&type=thread&page=2">2</a></div>
+                          <div class="findbox mt10 cl">
+                            <ul>
+                              <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=9901" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=804&amp;mobile=2">第一页收藏</a></li>
+                            </ul>
+                          </div>
+                          <div class="pg"><strong>1</strong><a href="home.php?mod=space&amp;do=favorite&amp;type=thread&amp;page=2">2</a></div>
                         </body></html>
                         """
                     )
@@ -334,11 +334,11 @@ final class StubURLProtocol: URLProtocol {
                 ? """
                 <html><body>
                   <div class="plc cl" id="pid2701">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                   <div class="plc cl" id="pid2703">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第二章<br>正文</div>
                   </div>
                 </body></html>
@@ -346,15 +346,15 @@ final class StubURLProtocol: URLProtocol {
                 : """
                 <html><body>
                   <div class="plc cl" id="pid2701">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                   <div class="plc cl" id="pid2702">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=77&mobile=2">读者甲</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></li></ul>
                     <div class="message">楼间回复</div>
                   </div>
                   <div class="plc cl" id="pid2703">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第二章<br>正文</div>
                   </div>
                 </body></html>
@@ -367,7 +367,7 @@ final class StubURLProtocol: URLProtocol {
                 ? """
                 <html><body>
                   <div class="plc cl" id="pid2801">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                 </body></html>
@@ -375,11 +375,11 @@ final class StubURLProtocol: URLProtocol {
                 : """
                 <html><body>
                   <div class="plc cl" id="pid2801">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                   <div class="plc cl" id="pid2802">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=77&mobile=2">读者甲</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></li></ul>
                     <div class="message">楼间回复</div>
                   </div>
                 </body></html>
@@ -393,7 +393,7 @@ final class StubURLProtocol: URLProtocol {
                 body = """
                 <html><body>
                   <div class="plc cl" id="pid2901">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                 </body></html>
@@ -402,11 +402,11 @@ final class StubURLProtocol: URLProtocol {
                 body = """
                 <html><body>
                   <div class="plc cl" id="pid2901">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=42&mobile=2">楼主</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a></li></ul>
                     <div class="message">第一章<br>正文</div>
                   </div>
                   <div class="plc cl" id="pid2902">
-                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&uid=77&mobile=2">读者甲</a></li></ul>
+                    <ul class="authi"><li class="mtit"><a href="home.php?mod=space&amp;uid=77&amp;mobile=2">读者甲</a></li></ul>
                     <div class="message">真实全帖页回复</div>
                   </div>
                   <div class="pg"><strong>4</strong><a href="forum.php?mod=viewthread&amp;tid=29&amp;page=5&amp;mobile=2">5</a></div>

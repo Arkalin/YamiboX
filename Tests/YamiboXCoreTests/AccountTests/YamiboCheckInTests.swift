@@ -97,7 +97,7 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
         return .response(
             YamiboCheckInStubResponse(
                 statusCode: 200,
-                body: #"<a class="btna">今日已打卡</a>"#
+                body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div><table><tbody id="tablebody"><tr><td class="day today on">18</td></tr></tbody></table>"#
             )
         )
     }, for: testID)
@@ -148,7 +148,7 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
             return .response(
                 YamiboCheckInStubResponse(
                     statusCode: 200,
-                    body: #"<a class="btna">点击打卡</a><a href="plugin.php?id=zqlj_sign&amp;sign=abc123">立即签到</a>"#
+                    body: #"<div class="signbtn"><a href="plugin.php?id=zqlj_sign&amp;sign=abc123" class="btna">点击打卡</a></div><table><tbody id="tablebody"><tr><td class="day today">18</td></tr></tbody></table>"#
                 )
             )
         }
@@ -160,7 +160,7 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
         return .response(
             YamiboCheckInStubResponse(
                 statusCode: 200,
-                body: #"<a class="btna">今日已打卡</a>"#
+                body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div><table><tbody id="tablebody"><tr><td class="day today on">18</td></tr></tbody></table>"#
             )
         )
     }, for: testID)
@@ -238,7 +238,7 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
         .response(
             YamiboCheckInStubResponse(
                 statusCode: 200,
-                body: #"<a class="btna">点击打卡</a>"#
+                body: #"<div class="signbtn"><a href="javascript:;" class="btna">点击打卡</a></div><table><tbody id="tablebody"><tr><td class="day today">18</td></tr></tbody></table>"#
             )
         )
     }, for: testID)
@@ -283,14 +283,14 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
                 return .response(
                     YamiboCheckInStubResponse(
                         statusCode: 200,
-                        body: #"<a class="btna">点击打卡</a><a href="plugin.php?id=zqlj_sign&sign=late">立即签到</a>"#
+                        body: #"<div class="signbtn"><a href="plugin.php?id=zqlj_sign&amp;sign=late" class="btna">点击打卡</a></div><table><tbody id="tablebody"><tr><td class="day today">18</td></tr></tbody></table>"#
                     )
                 )
             }
             return .response(
                 YamiboCheckInStubResponse(
                     statusCode: 200,
-                    body: "<html>still not checked in</html>"
+                    body: #"<div class="signbtn"><a href="plugin.php?id=zqlj_sign&amp;sign=late" class="btna">点击打卡</a></div><table><tbody id="tablebody"><tr><td class="day today">18</td></tr></tbody></table>"#
                 )
             )
         }

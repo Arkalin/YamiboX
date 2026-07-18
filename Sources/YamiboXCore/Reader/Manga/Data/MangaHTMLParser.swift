@@ -17,12 +17,15 @@ enum MangaHTMLParser {
             return max
         }
 
-        let titlePage = HTMLTextExtractor.firstMatch(pattern: #"title=["'][^"']*(\d+)[^"']*["']"#, in: html)?
+        // Anchor to the pager's "共 N 页" label — a bare first-title-attribute
+        // scan would read row timestamp tooltips as page counts and drive the
+        // directory loader through dozens of bogus page fetches.
+        let labeledPage = HTMLTextExtractor.firstMatch(pattern: #"共\s*(\d+)\s*[页頁]"#, in: html)?
             .dropFirst()
-            .compactMap(Int.init)
-            .max()
-        if let titlePage {
-            return titlePage
+            .first
+            .flatMap(Int.init)
+        if let labeledPage {
+            return labeledPage
         }
 
         let linkedPages = HTMLTextExtractor.matches(pattern: #">(\d+)</a>"#, in: html)

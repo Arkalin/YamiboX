@@ -10,7 +10,11 @@ enum ForumThreadCommentParser {
         var seen: Set<String> = []
 
         for root in roots {
-            let rows = root.selectAll(".pstl, li, .comment")
+            // Touch template renders one `div#commentdetail_<id>` per comment;
+            // the `.pstl` rows are the legacy PC shape. A bare `li` scan would
+            // split each touch comment into its three `.authi` lines.
+            let touchRows = root.selectAll("[id^=commentdetail_]")
+            let rows = touchRows.isEmpty ? root.selectAll(".pstl, .comment") : touchRows
             let commentRows = rows.isEmpty ? [root] : rows
             for (index, row) in commentRows.enumerated() {
                 guard let comment = try comment(in: row, root: root, postID: postID, index: index),
@@ -29,8 +33,9 @@ enum ForumThreadCommentParser {
         postID: String,
         index: Int
     ) throws -> ForumThreadPostComment? {
-        let messageElement = row.selectFirst(".psti, .comment_content, .message") ?? row
-        let metadataText = messageElement.selectAll(".xg1, .time, .date")
+        let messageElement = row.selectFirst(".mtxt, .psti, .comment_content, .message") ?? row
+        let metadataText = row.firstText(".mtime")
+            ?? messageElement.selectAll(".xg1, .time, .date")
             .compactMap { $0.normalizedText().nilIfBlank }
             .joined(separator: " ")
             .nilIfBlank
@@ -40,7 +45,7 @@ enum ForumThreadCommentParser {
         let message = messageBody.normalizedText()
         guard !message.isEmpty else { return nil }
 
-        let authorLink = row.selectFirst(".psta a[href*='uid='], .psta a[href*='space-uid-'], .psta a, a[href*='uid='], a[href*='space-uid-']")
+        let authorLink = row.selectFirst(".mtit .z a, .psta a[href*='uid='], .psta a[href*='space-uid-'], .psta a, a[href*='uid='], a[href*='space-uid-']")
         let authorName = (authorLink?.normalizedText() ?? "")
             .nilIfBlank
             ?? L10n.string("reader.comment_anonymous")

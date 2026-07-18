@@ -117,10 +117,27 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
     }
 
     private static func isAlreadyCheckedIn(in html: String) -> Bool {
-        html.contains(#"class="btna">今日已打卡</a>"#)
+        // Structural checks first (sign-plugin calendar marks today `.on`, the
+        // sign button loses its `sign=` href); the literal marker is a fallback
+        // in case the plugin's markup drifts.
+        if let document = try? KannaSoup.parse(html) {
+            if let today = document.selectFirst("#tablebody .day.today"), today.hasClass("on") {
+                return true
+            }
+            if let button = document.selectFirst(".signbtn a.btna"),
+               button.normalizedText().contains("已打卡") {
+                return true
+            }
+        }
+        return html.contains(#"class="btna">今日已打卡</a>"#)
     }
 
     private static func extractCheckInURL(from html: String) -> URL? {
+        if let document = try? KannaSoup.parse(html),
+           let href = document.selectFirst(".signbtn a.btna[href*='sign=']")?.attrText("href"),
+           let url = HTMLTextExtractor.absoluteURL(from: href) {
+            return url
+        }
         guard html.contains(#"class="btna">点击打卡</a>"#) else {
             return nil
         }

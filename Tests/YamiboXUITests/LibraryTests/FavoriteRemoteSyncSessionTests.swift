@@ -434,12 +434,11 @@ private final class FavoriteSyncWiringTestURLProtocol: URLProtocol {
         if absoluteString.contains("do=favorite") {
             body = """
             <html><body>
-              <ul class="sclist">
-                <li>
-                  <a href="forum.php?mod=viewthread&tid=\(Self.newChapterTID)&mobile=2">\(Self.newChapterTitle)</a>
-                  <a class="mdel" href="home.php?mod=spacecp&ac=favorite&op=delete&favid=\(Self.remoteFavoriteID)">删除</a>
-                </li>
-              </ul>
+              <div class="findbox mt10 cl">
+                <ul>
+                  <li class="sclist"><a href="home.php?mod=spacecp&amp;ac=favorite&amp;op=delete&amp;favid=\(Self.remoteFavoriteID)" class="dialog mdel"><i class="dm-error"></i></a><a href="forum.php?mod=viewthread&amp;tid=\(Self.newChapterTID)&amp;mobile=2">\(Self.newChapterTitle)</a></li>
+                </ul>
+              </div>
             </body></html>
             """
         } else if absoluteString.contains("mod=viewthread"), absoluteString.contains("tid=\(Self.newChapterTID)") {
@@ -447,7 +446,7 @@ private final class FavoriteSyncWiringTestURLProtocol: URLProtocol {
             <html>
             <head><title>\(Self.newChapterTitle) - \(Self.forumName) - 百合会</title></head>
             <body>
-              <a href="forum.php?mod=forumdisplay&fid=\(Self.forumID)&mobile=2">\(Self.forumName)</a>
+              <a href="forum.php?mod=forumdisplay&amp;fid=\(Self.forumID)&amp;mobile=2">\(Self.forumName)</a>
               <div id="post_1">
                 <div class="authi">
                   <a class="author" href="home.php?mod=space&amp;uid=88&amp;mobile=2">作者名</a>

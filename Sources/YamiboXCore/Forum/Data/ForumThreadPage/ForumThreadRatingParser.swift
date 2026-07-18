@@ -26,6 +26,67 @@ enum ForumThreadRatingParser {
         element.selectAll("li, tr").compactMap(ratingRow)
     }
 
+    /// Rows of the standalone viewratings float. Its `li.flex-box.mli` rows put
+    /// the score BEFORE the user name (sibling `.z` cells, no profile links)
+    /// and each reason in its own following single-cell row — a different shape
+    /// from the in-thread `#ratelog_` block handled by `ratingRows`.
+    static func ratingResultRows(in document: Document) -> [ForumThreadRating] {
+        let rows = document.selectAll("li.mli")
+        guard !rows.isEmpty else { return ratingRows(in: document) }
+
+        var results: [(user: BlogReaderUser, scoreText: String, reason: String?)] = []
+        for row in rows {
+            let text = row.normalizedText()
+            guard !text.contains("参与人数"),
+                  !text.contains("參與人數"),
+                  !text.contains("查看全部"),
+                  !(text.contains("用户名") || text.contains("用戶名")) else {
+                continue
+            }
+            let cellTexts = row.selectAll(".z").map { $0.normalizedText() }
+            if let scoreIndex = cellTexts.firstIndex(where: { floatScoreText(inCell: $0) != nil }),
+               let score = floatScoreText(inCell: cellTexts[scoreIndex]) {
+                let name = cellTexts.dropFirst(scoreIndex + 1).first { !$0.isEmpty }
+                    ?? cellTexts.prefix(scoreIndex).last { !$0.isEmpty }
+                let uid = row.selectFirst("a[href*='uid='], a[href*='space-uid-']")
+                    .flatMap { ForumUserIDParser.userID(fromHref: $0.attr("href")) }
+                results.append((
+                    user: BlogReaderUser(
+                        uid: uid,
+                        name: name ?? L10n.string("forum.thread.unknown_author"),
+                        avatarURL: nil
+                    ),
+                    scoreText: score,
+                    reason: nil
+                ))
+            } else if !results.isEmpty, results[results.count - 1].reason == nil,
+                      let reason = (cellTexts.first { !$0.isEmpty } ?? text).nilIfBlank {
+                results[results.count - 1].reason = reason
+            }
+        }
+        return results.map { ForumThreadRating(user: $0.user, scoreText: $0.scoreText, reason: $0.reason) }
+    }
+
+    /// Total of a viewratings float: the `.o.pns` header total when present.
+    static func resultsTotalScore(in document: Document, ratings: [ForumThreadRating]) -> Int {
+        if let headerText = document.firstText(".o.pns, .o"),
+           let value = HTMLTextExtractor.firstMatch(pattern: #"([+-]?\d+)"#, in: headerText)?
+               .first
+               .flatMap(Int.init) {
+            return value
+        }
+        return totalScore(pageText: document.text(), ratings: ratings)
+    }
+
+    /// Signed score inside a float cell ("积分 + 2 点" → "+2").
+    private static func floatScoreText(inCell text: String) -> String? {
+        guard let match = HTMLTextExtractor.firstMatch(pattern: #"([+-])\s*(\d+)"#, in: text)?.dropFirst(),
+              match.count >= 2 else {
+            return nil
+        }
+        return match.joined()
+    }
+
     /// Total score of a rating-results page: the explicitly printed total when present,
     /// otherwise the sum of the individual scores.
     static func totalScore(pageText: String, ratings: [ForumThreadRating]) -> Int {

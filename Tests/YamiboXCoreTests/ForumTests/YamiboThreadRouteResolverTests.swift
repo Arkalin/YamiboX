@@ -482,7 +482,13 @@ struct YamiboThreadRouteResolverTests {
             <head><title>章节标题 - 文学区 - 百合会</title></head>
             <body>
               <div class="header"><h2><a href="forum.php?mod=forumdisplay&amp;fid=49&amp;mobile=2">文学区</a></h2></div>
-              <a href="home.php?mod=space&amp;uid=88&amp;mobile=2" class="mmc">作者</a>
+              <div class="plc cl" id="pid1">
+                <div class="display pi">
+                  <ul class="authi">
+                    <li class="mtit"><span class="z"><a href="home.php?mod=space&amp;uid=88">作者</a></span></li>
+                  </ul>
+                </div>
+              </div>
             </body>
             </html>
             """#
