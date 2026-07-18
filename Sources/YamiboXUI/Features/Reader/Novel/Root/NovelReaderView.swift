@@ -626,7 +626,11 @@ public struct NovelReaderView: View {
             .padding(.top, direction == .previous ? verticalBoundaryPullTopPadding(topInset: topInset) : 0)
             .padding(.bottom, direction == .next ? verticalBoundaryPullBottomPadding(bottomInset: bottomInset) : 0)
             .opacity(0.45 + 0.55 * progress)
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : .opacity.combined(with: .scale(scale: 0.96))
+            )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -770,7 +774,7 @@ public struct NovelReaderView: View {
     private func toggleChrome() {
         guard !model.novelReaderSurfaces.isEmpty else { return }
         guard !hasPresentedOverlay else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             chromeState.toggleChrome()
         }
     }
@@ -781,7 +785,7 @@ public struct NovelReaderView: View {
             // Loading/error: Menu still flips the chrome state so a
             // controller user keeps an escape hatch wherever chrome renders.
             if event == .menu {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
                     chromeState.toggleChrome()
                 }
             }
@@ -811,7 +815,7 @@ public struct NovelReaderView: View {
     /// and tuck the chrome away, mirroring the tap-zone mental model.
     private func hideChromeForControlReading() {
         guard chromeState.showsChrome else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             chromeState.hideChrome()
         }
     }
@@ -833,7 +837,7 @@ public struct NovelReaderView: View {
     private func enterImmersiveMode() {
         guard !model.novelReaderSurfaces.isEmpty else { return }
         guard !hasPresentedOverlay else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             chromeState.hideChrome()
         }
     }
@@ -1030,7 +1034,7 @@ public struct NovelReaderView: View {
             usesVerticalReadingMode: model.settings.readingMode == .vertical
         )
         if previousState != nextState {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
                 chromeState = nextState
             }
         } else {

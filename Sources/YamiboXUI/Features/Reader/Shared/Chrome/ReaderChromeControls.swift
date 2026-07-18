@@ -90,16 +90,30 @@ private struct ReaderChromeAnchoredPopupVisibilityModifier: ViewModifier {
     let isVisible: Bool
     private let presentation = ReaderChromeVisibilityAnimationPresentation.anchoredPopup
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func body(content: Content) -> some View {
         content
             .scaleEffect(
-                isVisible ? 1 : presentation.hiddenScale,
+                // Reduce Motion collapses the scale-pop to a pure cross-fade.
+                isVisible || reduceMotion ? 1 : presentation.hiddenScale,
                 anchor: presentation.anchor?.unitPoint ?? .bottomTrailing
             )
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
-            .animation(.easeInOut(duration: presentation.duration), value: isVisible)
+            // A popup the user summons reads livelier as a gentle spring
+            // than as a fixed-duration ease; the parameters live in the
+            // presentation so chrome animation values stay centralized.
+            .animation(
+                {
+                    if let spring = presentation.spring, !reduceMotion {
+                        return .spring(response: spring.response, dampingFraction: spring.dampingFraction)
+                    }
+                    return .easeInOut(duration: presentation.duration)
+                }(),
+                value: isVisible
+            )
     }
 }
 

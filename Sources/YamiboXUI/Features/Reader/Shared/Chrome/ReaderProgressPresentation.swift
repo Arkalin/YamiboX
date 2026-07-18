@@ -247,23 +247,34 @@ public enum ReaderChromePopupAnchor: Equatable, Sendable {
 }
 
 public struct ReaderChromeVisibilityAnimationPresentation: Equatable, Sendable {
+    /// Spring parameters for presentations whose show/hide should feel
+    /// physical (the scale-pop popup). `nil` means a plain ease over
+    /// `duration`; Reduce Motion always falls back to that ease.
+    public struct SpringPresentation: Equatable, Sendable {
+        public var response: Double
+        public var dampingFraction: Double
+    }
+
     public var kind: ReaderChromeVisibilityAnimationKind
     public var duration: Double
     public var hiddenScale: CGFloat
     public var anchor: ReaderChromePopupAnchor?
+    public var spring: SpringPresentation?
 
     public static let fade = ReaderChromeVisibilityAnimationPresentation(
         kind: .fade,
         duration: 0.2,
         hiddenScale: 1,
-        anchor: nil
+        anchor: nil,
+        spring: nil
     )
 
     public static let anchoredPopup = ReaderChromeVisibilityAnimationPresentation(
         kind: .anchoredPopup,
         duration: 0.2,
         hiddenScale: 0.88,
-        anchor: .bottomTrailing
+        anchor: .bottomTrailing,
+        spring: SpringPresentation(response: 0.34, dampingFraction: 0.82)
     )
 }
 
