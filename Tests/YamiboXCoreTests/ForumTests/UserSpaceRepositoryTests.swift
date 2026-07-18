@@ -142,9 +142,9 @@ private final class PrivateMessageRepositoryTestURLProtocol: URLProtocol {
         switch (request.url?.path, request.httpMethod) {
         case ("/home.php", "GET"):
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            #expect(items.first(where: { $0.name == "mod" })?.value == "spacecp")
-            #expect(items.first(where: { $0.name == "ac" })?.value == "pm")
-            #expect(items.first(where: { $0.name == "op" })?.value == "showmsg")
+            #expect(items.first(where: { $0.name == "mod" })?.value == "space")
+            #expect(items.first(where: { $0.name == "do" })?.value == "pm")
+            #expect(items.first(where: { $0.name == "subop" })?.value == "view")
             #expect(items.first(where: { $0.name == "touid" })?.value == "800001")
             return userSpaceRepositoryHTTPResponse(url: request.url!, body: privateMessagePageHTML())
         case ("/home.php", "POST"):
@@ -225,18 +225,25 @@ private func addFriendFormHTML() -> String {
 }
 
 private func privateMessagePageHTML() -> String {
+    // Mirrors the touch template's conversation view (`space_pm.htm`
+    // subop=view branch + `space_pm_node.htm` bubbles).
     #"""
     <html>
       <body>
-        <form action="home.php?mod=spacecp&amp;ac=pm&amp;op=send&amp;pmid=900&amp;touid=800001&amp;mobile=2">
+        <div class="header cl"><h2>与 好友A 对话中</h2></div>
+        <div class="msgbox b_m">
+          <div class="friend_msg cl">
+            <div class="avat z"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/80/00/01_avatar_small.jpg" class="vm"></div>
+            <div class="dialog_green z">
+              <div class="dialog_c">你好</div>
+              <div class="date">半小时前</div>
+            </div>
+          </div>
+        </div>
+        <form id="pmform" class="pmform" name="pmform" method="post" action="home.php?mod=spacecp&amp;ac=pm&amp;op=send&amp;pmid=900&amp;daterange=2&amp;pmsubmit=yes&amp;mobile=2">
           <input type="hidden" name="formhash" value="hash123" />
+          <input type="hidden" name="touid" value="800001" />
         </form>
-        <ul class="pmlist">
-          <li id="pm_1">
-            <a href="home.php?mod=space&amp;uid=800001&amp;mobile=2">好友A</a>
-            <div class="content">你好</div>
-          </li>
-        </ul>
       </body>
     </html>
     """#

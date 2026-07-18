@@ -51,9 +51,13 @@ import Testing
 }
 
 @Test func forumRouteResolverResolvesPrivateMessageURLs() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/home.php?mod=spacecp&ac=pm&op=showmsg&touid=800001&mobile=2"))
+    // Touch-template conversation links (`space_pm.htm`).
+    let touchURL = try #require(URL(string: "https://bbs.yamibo.com/home.php?mod=space&do=pm&subop=view&touid=800001&mobile=2"))
+    // Legacy desktop conversation links.
+    let legacyURL = try #require(URL(string: "https://bbs.yamibo.com/home.php?mod=spacecp&ac=pm&op=showmsg&touid=800001&mobile=2"))
 
-    #expect(ForumRouteResolver.resolve(url: url) == .privateMessage(uid: "800001", name: nil))
+    #expect(ForumRouteResolver.resolve(url: touchURL) == .privateMessage(uid: "800001", name: nil))
+    #expect(ForumRouteResolver.resolve(url: legacyURL) == .privateMessage(uid: "800001", name: nil))
 }
 
 @Test func forumRouteResolverResolvesMessageCenterURLs() throws {
@@ -211,9 +215,9 @@ import Testing
     #expect(addFriendItems.value(named: "handlekey") == "addfriendhk_705216")
     #expect(addFriendItems.value(named: "inajax") == "1")
     let privateMessageItems = try #require(URLComponents(url: privateMessageURL, resolvingAgainstBaseURL: false)?.queryItems)
-    #expect(privateMessageItems.value(named: "mod") == "spacecp")
-    #expect(privateMessageItems.value(named: "ac") == "pm")
-    #expect(privateMessageItems.value(named: "op") == "showmsg")
+    #expect(privateMessageItems.value(named: "mod") == "space")
+    #expect(privateMessageItems.value(named: "do") == "pm")
+    #expect(privateMessageItems.value(named: "subop") == "view")
     #expect(privateMessageItems.value(named: "touid") == "800001")
     #expect(privateMessageItems.value(named: "page") == "2")
     let privateMessageSendItems = try #require(URLComponents(url: privateMessageSendURL, resolvingAgainstBaseURL: false)?.queryItems)

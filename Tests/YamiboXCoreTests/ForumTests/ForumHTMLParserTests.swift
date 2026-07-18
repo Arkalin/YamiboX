@@ -353,21 +353,48 @@ import Testing
     }
 }
 
+/// Fixture mirrors the live touch template (`space_profile.htm`): the credit
+/// value `<span>` comes BEFORE its label inside `.user_box li`, and the
+/// `.myinfo_list li` rows have no colon between label and `<span>` value.
 @Test func parseUserSpaceProfileExtractsIdentityStatsAndInfoRows() throws {
     let html = #"""
     <html>
-      <head><title>张瑞泽 -  百合会</title></head>
+      <head><title>张瑞泽的个人资料 -  百合会 -  Powered by Discuz!</title></head>
       <body>
-        <div class="profile">
-          <img class="avatar" src="https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_big.jpg">
-          <h2 class="username">张瑞泽</h2>
-          <p>总积分: 155 积分: 29 对象: 377</p>
-          <div class="signature">百合签名</div>
-          <ul class="pf_l">
-            <li>UID: 705216</li>
-            <li>用户组: 百合花蕾</li>
-            <li>个人主页: <a href="https://example.com">https://example.com</a></li>
-          </ul>
+        <style>.user_avatar {background-image:url(https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_big.jpg) !important}</style>
+        <div class="header cl">
+          <div class="mz"><a href="javascript:history.back();"></a></div>
+          <h2>我的资料</h2>
+        </div>
+        <div class="userinfo">
+          <div class="user_avatar">
+            <div class="avatar_bg">
+              <div class="avatar_m"><img src="https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg" /></div>
+              <h2 class="name">张瑞泽</h2>
+            </div>
+          </div>
+          <div class="user_box cl">
+            <ul>
+              <li><span>155</span>总积分</li>
+              <li><span>29 点</span>积分</li>
+              <li><span>377 个</span>对象</li>
+            </ul>
+          </div>
+          <div class="myinfo_list cl">
+            <ul>
+              <li><b>个人签名</b></li>
+              <li class="sig">百合签名</li>
+            </ul>
+          </div>
+          <div class="myinfo_list cl">
+            <ul>
+              <li><b>个人资料</b><span class="mtxt">在线</span></li>
+              <li>UID<span>705216</span></li>
+              <li>用户组<span style="color:#FF00FF">百合花蕾</span></li>
+              <li>个人主页<span><a href="https://example.com">https://example.com</a></span></li>
+              <li>最后访问<span>2026-2-24 00:49</span></li>
+            </ul>
+          </div>
         </div>
       </body>
     </html>
@@ -382,7 +409,10 @@ import Testing
     #expect(profile.partner == 377)
     #expect(profile.signature == "百合签名")
     #expect(profile.userGroup == "百合花蕾")
+    #expect(profile.avatarURL?.absoluteString.contains("_avatar_middle") == true)
+    #expect(profile.avatarBackgroundURL?.absoluteString.contains("_avatar_big") == true)
     #expect(profile.infoRows.contains(UserSpaceInfoRow(label: "UID", value: "705216")))
+    #expect(profile.infoRows.contains(where: { $0.label == "最后访问" && $0.value == "2026-2-24 00:49" }))
 }
 
 @Test func parseUserSpaceThreadsRepliesBlogsFriends() throws {

@@ -319,10 +319,10 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceNotices(page):
             return userSpaceURL(uid: nil, doValue: "notice", page: page)
         case .userSpaceSendPrivateMessage:
+            // Compose entry used by the touch template itself (no `op`).
             return Self.makeURL(path: "/home.php", queryItems: [
                 .init(name: "mod", value: "spacecp"),
                 .init(name: "ac", value: "pm"),
-                .init(name: "op", value: "showmsg"),
                 .init(name: "mobile", value: "2")
             ])
         case let .privateMessage(uid, page):
@@ -482,10 +482,12 @@ public enum YamiboRoute: Sendable {
     }
 
     private func privateMessageURL(uid: String, page: Int?) -> URL {
+        // Touch conversation view (`space_pm.htm` subop=view branch). The
+        // desktop `spacecp&ac=pm&op=showmsg` form has no touch template.
         var items: [URLQueryItem] = [
-            .init(name: "mod", value: "spacecp"),
-            .init(name: "ac", value: "pm"),
-            .init(name: "op", value: "showmsg"),
+            .init(name: "mod", value: "space"),
+            .init(name: "do", value: "pm"),
+            .init(name: "subop", value: "view"),
             .init(name: "touid", value: uid),
             .init(name: "mobile", value: "2")
         ]
