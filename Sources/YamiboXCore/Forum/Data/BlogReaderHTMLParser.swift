@@ -7,11 +7,11 @@ enum BlogReaderHTMLParser {
         let title = firstNonBlank([
             document.firstText(".blog_tit, .mtit, .bm_h h1, .vw .ph, h1"),
             titleHint,
-            try? document.title().replacingOccurrences(of: "-  百合会", with: "")
+            document.title().replacingOccurrences(of: "-  百合会", with: "")
         ]) ?? L10n.string("blog_reader.title")
         let root = rootBlogElement(in: document)
         let content = contentElement(in: root, document: document)
-        let contentHTML = ((try? content?.html()) ?? "").nilIfBlank ?? ((try? root?.html()) ?? "")
+        let contentHTML = (content?.html() ?? "").nilIfBlank ?? (root?.html() ?? "")
         let contentText = content?.normalizedText() ?? root?.normalizedText() ?? ""
         let pageText = document.body()?.normalizedText() ?? ""
 
@@ -80,7 +80,7 @@ enum BlogReaderHTMLParser {
             let commentID = commentID(in: container)
             let user = author(in: container, document: document, uidHint: nil)
             let content = commentContentElement(in: container) ?? container
-            let contentHTML = ((try? content.html()) ?? "").nilIfBlank ?? ((try? container.html()) ?? "")
+            let contentHTML = content.html().nilIfBlank ?? container.html()
             let contentText = content.normalizedText()
             guard !contentText.isEmpty else { continue }
             let key = commentID ?? "\(user.uid ?? "")|\(user.name)|\(contentText)"
@@ -119,8 +119,8 @@ enum BlogReaderHTMLParser {
     }
 
     private static func looksLikeRootBlog(_ element: Element) -> Bool {
-        let id = (try? element.attr("id")) ?? ""
-        let className = (try? element.className()) ?? ""
+        let id = element.attr("id")
+        let className = element.className()
         return id.localizedCaseInsensitiveContains("blog_article")
             || className.localizedCaseInsensitiveContains("blog_article")
             || className.localizedCaseInsensitiveContains("blogcontent")
@@ -128,7 +128,7 @@ enum BlogReaderHTMLParser {
 
     private static func author(in element: Element?, document: Document, uidHint: String?) -> BlogReaderUser {
         let link = firstUserLink(in: element) ?? firstUserLink(in: document)
-        let uid = link?.attrURL("href").flatMap(userID(from:)) ?? uidHint?.nilIfBlank
+        let uid = link?.attrURL("href").flatMap(YamiboForumURLIdentity.userID(from:)) ?? uidHint?.nilIfBlank
         let name = firstNonBlank([
             link?.normalizedText(),
             element?.firstText(".author, .username, .mmc, .muser"),
@@ -177,23 +177,18 @@ enum BlogReaderHTMLParser {
             .dropFirst()
             .first
             .flatMap(Int.init)
-            ?? HTMLTextExtractor.matches(pattern: #"page=(\d+)"#, in: (try? pager.html()) ?? "")
+            ?? HTMLTextExtractor.matches(pattern: #"page=(\d+)"#, in: pager.html())
             .compactMap { $0.dropFirst().first.flatMap(Int.init) }
             .max()
         return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages)
     }
 
     private static func commentID(in element: Element) -> String? {
-        let id = (try? element.attr("id")) ?? ""
+        let id = element.attr("id")
         return HTMLTextExtractor.firstMatch(pattern: #"comment[_-]?(\d+)"#, in: id)?
             .dropFirst()
             .first?
             .nilIfBlank
-    }
-
-    private static func userID(from url: URL) -> String? {
-        url.queryItemValue("uid")
-            ?? HTMLTextExtractor.firstMatch(pattern: #"space-uid-(\d+)"#, in: url.absoluteString)?.dropFirst().first
     }
 
     private static func firstDateText(in element: Element?) -> String? {

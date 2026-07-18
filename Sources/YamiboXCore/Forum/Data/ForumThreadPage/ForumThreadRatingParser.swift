@@ -3,8 +3,8 @@ import Foundation
 /// Parses rating ("评分") data: the per-post rating log, the full rating-results
 /// popout rows, and the rate-options form.
 enum ForumThreadRatingParser {
-    static func ratingBlock(in container: Element, postID: String) throws -> ForumThreadRatingBlock? {
-        let candidates = try (
+    static func ratingBlock(in container: Element, postID: String) -> ForumThreadRatingBlock? {
+        let candidates = (
             container.selectAll("#ratelog_\(postID)") + container.selectAll("[id^=ratelog_], .ratelog, .ratl")
         ).deduplicatedByDOMIdentity()
         guard let element = candidates.first else { return nil }
@@ -12,8 +12,8 @@ enum ForumThreadRatingParser {
         let allRatingsURL = element.firstURL("a[href*='action=viewratings']")
         let ratings = ratingRows(in: element)
         guard !ratings.isEmpty || allRatingsURL != nil else { return nil }
-        let totalScore = explicitTotalScore(in: try element.text()) ?? ratings.compactMap(scoreValue).reduce(0, +)
-        let participantCount = participantCount(in: try element.text()) ?? ratings.count
+        let totalScore = explicitTotalScore(in: element.text()) ?? ratings.compactMap(scoreValue).reduce(0, +)
+        let participantCount = participantCount(in: element.text()) ?? ratings.count
         return ForumThreadRatingBlock(
             participantCount: participantCount,
             totalScore: totalScore,
@@ -71,7 +71,7 @@ enum ForumThreadRatingParser {
             .map { $0.normalizedText() }
             .joined(separator: " ")
             .nilIfBlank
-        let uid = userLink.flatMap { ForumUserIDParser.userID(fromHref: (try? $0.attr("href")) ?? "") }
+        let uid = userLink.flatMap { ForumUserIDParser.userID(fromHref: $0.attr("href")) }
         return ForumThreadRating(
             user: BlogReaderUser(uid: uid, name: userName, avatarURL: nil),
             scoreText: scoreText,

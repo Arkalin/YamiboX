@@ -98,7 +98,7 @@ public actor FavoriteRepository {
         resolveRemoteFavorite: Bool = true
     ) async throws -> Favorite? {
         guard let tid = threadID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
-            throw YamiboError.missingFavoriteThreadID
+            throw FavoriteActionError.missingFavoriteThreadID
         }
         let formHash = try await ensureFormHash(preferred: preferredFormHash)
         let responseHTML = try await client.fetchHTML(for: .threadFavorite(tid: tid, formHash: formHash))
@@ -107,7 +107,7 @@ public actor FavoriteRepository {
             throw YamiboError.notAuthenticated
         }
         guard isFavoriteAddSuccess(responseHTML) else {
-            throw YamiboError.favoriteAddFailed
+            throw FavoriteActionError.favoriteAddFailed
         }
 
         guard resolveRemoteFavorite else { return nil }
@@ -149,8 +149,8 @@ public actor FavoriteRepository {
         if isLoginPage(formHTML) {
             throw YamiboError.notAuthenticated
         }
-        guard let formHash = extractFormHash(from: formHTML) else {
-            throw YamiboError.missingFavoriteDeleteToken
+        guard let formHash = DiscuzFormHashParser.formHash(inHTML: formHTML) else {
+            throw FavoriteActionError.missingFavoriteDeleteToken
         }
 
         let responseHTML = try await client.submitForm(
@@ -168,7 +168,7 @@ public actor FavoriteRepository {
             throw YamiboError.notAuthenticated
         }
         guard isFavoriteDeleteSuccess(responseHTML) else {
-            throw YamiboError.favoriteDeleteFailed
+            throw FavoriteActionError.favoriteDeleteFailed
         }
     }
 
@@ -201,11 +201,6 @@ public actor FavoriteRepository {
             || html.contains("指定的搜索词长度")
     }
 
-    private func extractFormHash(from html: String) -> String? {
-        HTMLTextExtractor.firstMatch(pattern: #"name=["']formhash["']\s+value=["']([^"']+)["']"#, in: html)?.dropFirst().first
-            ?? HTMLTextExtractor.firstMatch(pattern: #"formhash=([a-zA-Z0-9]+)"#, in: html)?.dropFirst().first
-    }
-
     private func ensureFormHash(preferred: String?) async throws -> String {
         if let formHash = preferred?.trimmingCharacters(in: .whitespacesAndNewlines),
            !formHash.isEmpty {
@@ -216,8 +211,8 @@ public actor FavoriteRepository {
         if isLoginPage(profileHTML) {
             throw YamiboError.notAuthenticated
         }
-        guard let formHash = extractFormHash(from: profileHTML) else {
-            throw YamiboError.missingFavoriteAddToken
+        guard let formHash = DiscuzFormHashParser.formHash(inHTML: profileHTML) else {
+            throw FavoriteActionError.missingFavoriteAddToken
         }
         return formHash
     }
@@ -248,10 +243,4 @@ public actor FavoriteRepository {
         return markers.contains { html.localizedCaseInsensitiveContains($0) }
     }
 
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
 }

@@ -34,7 +34,7 @@ enum FavoriteHTMLParser {
         ]
 
         for selector in selectors {
-            let items = (try? document.select(selector)) ?? Elements()
+            let items = document.select(selector)
             guard !items.isEmpty else { continue }
 
             for item in items {
@@ -48,12 +48,12 @@ enum FavoriteHTMLParser {
             )
         }
 
-        let links = (try? document.select("a[href*='viewthread'], a[href*='thread-']")) ?? Elements()
+        let links = document.select("a[href*='viewthread'], a[href*='thread-']")
         for link in links {
-            let href = ((try? link.attr("href")) ?? "")
+            let href = link.attr("href")
             guard let url = HTMLTextExtractor.absoluteURL(from: href) else { continue }
             guard let threadID = YamiboThreadURLCanonicalizer.threadID(from: url) else { continue }
-            let title = ((try? link.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty, seen.insert(threadID).inserted else { continue }
             favorites.append(Favorite(title: title, threadID: threadID))
         }
@@ -98,7 +98,7 @@ enum FavoriteHTMLParser {
         ]
 
         for selector in selectors {
-            let items = (try? document.select(selector)) ?? Elements()
+            let items = document.select(selector)
             guard !items.isEmpty else { continue }
 
             for item in items {
@@ -112,7 +112,7 @@ enum FavoriteHTMLParser {
             )
         }
 
-        let links = (try? document.select("a[href*='forumdisplay'], a[href*='forum-']")) ?? Elements()
+        let links = document.select("a[href*='forumdisplay'], a[href*='forum-']")
         for link in links {
             guard let board = boardFavorite(fromLink: link, remoteFavoriteID: nil, seen: &seen) else { continue }
             boards.append(board)
@@ -135,20 +135,20 @@ enum FavoriteHTMLParser {
         remoteFavoriteID: String?,
         seen: inout Set<String>
     ) -> BoardFavorite? {
-        let href = ((try? link.attr("href")) ?? "")
+        let href = link.attr("href")
         guard let url = HTMLTextExtractor.absoluteURL(from: href) else { return nil }
         guard let fid = boardID(from: url) else { return nil }
 
-        let title = ((try? link.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, seen.insert(fid).inserted else { return nil }
 
         return BoardFavorite(fid: fid, title: title, remoteFavoriteID: remoteFavoriteID)
     }
 
     private static func findBoardLink(in item: Element) -> Element? {
-        let candidates = (try? item.select("a[href*='forumdisplay'], a[href*='forum-']")) ?? Elements()
+        let candidates = item.select("a[href*='forumdisplay'], a[href*='forum-']")
         return candidates.first { element in
-            let className = ((try? element.className()) ?? "")
+            let className = element.className()
             return !className.localizedCaseInsensitiveContains("mdel")
         }
     }
@@ -162,11 +162,11 @@ enum FavoriteHTMLParser {
 
     private static func parseFavorite(from item: Element, seen: inout Set<String>) -> Favorite? {
         guard let link = findFavoriteLink(in: item) else { return nil }
-        let href = ((try? link.attr("href")) ?? "")
+        let href = link.attr("href")
         guard let url = HTMLTextExtractor.absoluteURL(from: href) else { return nil }
         guard let threadID = YamiboThreadURLCanonicalizer.threadID(from: url) else { return nil }
 
-        let title = ((try? link.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, seen.insert(threadID).inserted else { return nil }
 
         let remoteFavoriteID = extractRemoteFavoriteID(from: item)
@@ -174,21 +174,21 @@ enum FavoriteHTMLParser {
     }
 
     private static func findFavoriteLink(in item: Element) -> Element? {
-        let candidates = (try? item.select("a[href*='viewthread'], a[href*='thread-']")) ?? Elements()
+        let candidates = item.select("a[href*='viewthread'], a[href*='thread-']")
         return candidates.first { element in
-            let className = ((try? element.className()) ?? "")
+            let className = element.className()
             return !className.localizedCaseInsensitiveContains("mdel")
         }
     }
 
     private static func extractRemoteFavoriteID(from item: Element) -> String? {
-        let deleteLink = (try? item.select("a.mdel, a[href*='favid=']"))?.first()
-        let href = ((try? deleteLink?.attr("href")) ?? "")
+        let deleteLink = item.select("a.mdel, a[href*='favid=']").first()
+        let href = deleteLink?.attr("href") ?? ""
         return HTMLTextExtractor.firstMatch(pattern: #"favid=(\d+)"#, in: href)?.dropFirst().first
     }
 
     private static func parseCurrentPage(in document: Document) -> Int {
-        let currentText = ((try? document.select(".pg strong").first()?.text()) ?? "")
+        let currentText = document.select(".pg strong").first()?.text() ?? ""
         return HTMLTextExtractor.firstMatch(pattern: #"(\d+)"#, in: currentText)?
             .dropFirst()
             .first
@@ -196,8 +196,8 @@ enum FavoriteHTMLParser {
     }
 
     private static func parseTotalPages(in document: Document) -> Int {
-        guard let pager = try? document.select(".pg").first() else { return 1 }
-        let pagerText = ((try? pager.text()) ?? "")
+        guard let pager = document.select(".pg").first() else { return 1 }
+        let pagerText = pager.text()
         let explicitTotal = HTMLTextExtractor.firstMatch(pattern: #"共\s*(\d+)\s*页"#, in: pagerText)?
             .dropFirst()
             .first
@@ -210,9 +210,9 @@ enum FavoriteHTMLParser {
             return max(1, explicitTotal)
         }
 
-        let linkedPages = ((try? pager.select("a[href*='page=']").array()) ?? [])
+        let linkedPages = pager.select("a[href*='page=']").array()
             .compactMap { element -> Int? in
-                let href = (try? element.attr("href")) ?? ""
+                let href = element.attr("href")
                 return HTMLTextExtractor.firstMatch(pattern: #"page=(\d+)"#, in: href)?
                     .dropFirst()
                     .first

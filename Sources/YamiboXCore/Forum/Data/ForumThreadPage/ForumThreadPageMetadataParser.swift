@@ -1,7 +1,8 @@
 import Foundation
 
 /// Parses page-level metadata of a thread page: pagination, view/reply counters,
-/// owning forum (breadcrumb), and the Discuz form hash needed for POST actions.
+/// and the owning forum (breadcrumb). The Discuz form hash needed for POST
+/// actions comes from the shared `DiscuzFormHashParser`.
 enum ForumThreadPageMetadataParser {
     static func pageNavigation(in document: Document) -> ForumPageNavigation? {
         guard let pager = document.selectFirst(".pg") else { return nil }
@@ -33,12 +34,12 @@ enum ForumThreadPageMetadataParser {
             "#thread_subject"
         ]
             .compactMap { selector in
-                ((try? document.select(selector).text()) ?? "").nilIfBlank
+                document.select(selector).text().nilIfBlank
             }
             .joined(separator: " ")
 
         let fallbackText = candidateText.nilIfBlank
-            ?? ((try? document.body()?.text()) ?? "")
+            ?? (document.body()?.text() ?? "")
         return (
             totalViews: intAfterAny(labels: ["查看", "浏览", "瀏覽", "阅读", "閱讀", "views", "view"], in: fallbackText),
             totalReplies: intAfterAny(labels: ["回复", "回復", "回覆", "评论", "評論", "replies", "reply", "comments", "comment"], in: fallbackText)
@@ -82,16 +83,6 @@ enum ForumThreadPageMetadataParser {
             }
         }
         return nil
-    }
-
-    static func formHash(in document: Document, html: String) -> String? {
-        if let formHash = document.selectFirst("input[name=formhash]")?.attrText("value") {
-            return formHash
-        }
-        return HTMLTextExtractor.firstMatch(pattern: #"formhash=([A-Za-z0-9]+)"#, in: html)?
-            .dropFirst()
-            .first?
-            .nilIfBlank
     }
 
     private static func intAfterAny(labels: [String], in text: String) -> Int? {

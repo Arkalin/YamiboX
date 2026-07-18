@@ -4,15 +4,15 @@ import Foundation
 /// into `ForumThreadTextStyle`. The color/size conversions are pure string functions.
 enum ForumThreadTextStyleParser {
     /// Style carried by a `<font color=... size=... style=...>` element.
-    static func style(fromFontElement element: Element) throws -> ForumThreadTextStyle {
+    static func style(fromFontElement element: Element) -> ForumThreadTextStyle {
         var result = ForumThreadTextStyle()
-        if let color = normalizedColorHex(try element.attr("color")) {
+        if let color = normalizedColorHex(element.attr("color")) {
             result.foregroundHex = color
         }
-        if let fontSize = relativeFontSize(fromHTMLSize: try element.attr("size")) {
+        if let fontSize = relativeFontSize(fromHTMLSize: element.attr("size")) {
             result.relativeFontSize = fontSize
         }
-        return result.merged(with: style(fromStyleAttribute: try element.attr("style")))
+        return result.merged(with: style(fromStyleAttribute: element.attr("style")))
     }
 
     /// Style carried by a CSS `style` attribute (color, background-color, font-size).

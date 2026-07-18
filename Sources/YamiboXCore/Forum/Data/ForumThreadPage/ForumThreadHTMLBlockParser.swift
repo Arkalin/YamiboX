@@ -7,14 +7,14 @@ import Foundation
 /// (recursive normalization plus splitting long text blocks for lazy rendering).
 enum ForumThreadHTMLBlockParser {
     static func parseBlocks(in body: Element) throws -> [ForumThreadContentBlock] {
-        let copy = try KannaSoup.parseBodyFragment(try body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
-        try sanitize(copy.body() ?? copy)
+        let copy = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
+        sanitize(copy.body() ?? copy)
         return normalizeBlocks(try ForumThreadBlockBuilder().parse(nodes: (copy.body() ?? copy).getChildNodes()))
     }
 
     static func parseBlocks(fromHTML html: String) throws -> [ForumThreadContentBlock] {
         let document = try KannaSoup.parseBodyFragment(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        try sanitize(document.body() ?? document)
+        sanitize(document.body() ?? document)
         return normalizeBlocks(try ForumThreadBlockBuilder().parse(nodes: (document.body() ?? document).getChildNodes()))
     }
 
@@ -24,12 +24,12 @@ enum ForumThreadHTMLBlockParser {
         ForumThreadTextNormalizer.normalize(value).text
     }
 
-    private static func sanitize(_ element: Element) throws {
-        try element.select("font.jammer, .jammer").remove()
-        for styledElement in try element.select("[style]").array() {
-            let style = try styledElement.attr("style").lowercased().replacingOccurrences(of: " ", with: "")
+    private static func sanitize(_ element: Element) {
+        element.select("font.jammer, .jammer").remove()
+        for styledElement in element.select("[style]").array() {
+            let style = styledElement.attr("style").lowercased().replacingOccurrences(of: " ", with: "")
             if style.contains("display:none") {
-                try styledElement.remove()
+                styledElement.remove()
             }
         }
     }

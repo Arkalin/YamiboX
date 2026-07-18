@@ -13,7 +13,7 @@ enum ForumHTMLParser {
         return ForumHomePage(
             categories: categories,
             carouselItems: parseCarouselItems(in: document),
-            formHash: parseFormHash(in: document, html: html),
+            formHash: DiscuzFormHashParser.formHash(in: document, html: html),
             fetchedAt: fetchedAt
         )
     }
@@ -31,7 +31,7 @@ enum ForumHTMLParser {
             .replacingOccurrences(of: " -  百合会.*", with: "", options: .regularExpression)
         let headerTitle = document.firstText(".header h2")
         let top = document.selectFirst(".forumdisplay-top")
-        let statsText = ((try? top?.select("p").text()) ?? "").htmlNormalized
+        let statsText = (top?.select("p").text() ?? "").htmlNormalized
         let resolvedTitle = title?.nilIfBlank ?? documentTitle
         let board = ForumBoardSummary(
             fid: fid,
@@ -50,33 +50,17 @@ enum ForumHTMLParser {
             pageNavigation: parsePageNavigation(in: document),
             filters: parseFilterOptions(in: document),
             orders: parseOrderOptions(in: document),
-            formHash: parseFormHash(in: document, html: html),
+            formHash: DiscuzFormHashParser.formHash(in: document, html: html),
             fetchedAt: fetchedAt
         )
     }
 
     static func parseBoardFavoriteResult(from html: String) throws -> String {
-        try YamiboHTMLPageInspector.ensureReadable(html)
-
-        let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        let message = document.selectFirst(".jump_c, .alert_info, .messagetext, .showmessage, .wp")?.normalizedText()
-            ?? document.body()?.normalizedText()
-            ?? ""
-
-        if message.contains("请先登录") || message.contains("請先登錄") || message.contains("请登录") {
-            throw YamiboError.notAuthenticated
-        }
-        if message.contains("失败") || message.contains("失敗") || message.contains("错误") || message.contains("錯誤") {
-            throw YamiboError.forumBoardFavoriteFailed
-        }
-        if message.contains("已收藏") || message.contains("收藏成功") || message.contains("成功收藏") {
-            return message
-        }
-
-        guard !message.isEmpty else {
-            throw YamiboError.forumBoardFavoriteFailed
-        }
-        return L10n.string("forum.board.favorite_success")
+        try DiscuzActionResultParser.successMessage(
+            from: html,
+            failureError: FavoriteActionError.forumBoardFavoriteFailed,
+            fallbackSuccessMessage: L10n.string("forum.board.favorite_success")
+        )
     }
 
     static func parseSearchPage(from html: String, query: String) throws -> ForumSearchPage {
@@ -103,7 +87,7 @@ enum ForumHTMLParser {
 
         for (index, header) in document.selectAll(".forumlist .subforumshow").enumerated() {
             let targetSelector = header.attrText("href") ?? ""
-            let title = ((try? header.select("h2").text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = header.select("h2").text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { continue }
 
             let rawID = targetSelector
@@ -128,14 +112,14 @@ enum ForumHTMLParser {
             guard let link = row.selectFirst("a.murl[href*='fid=']")
                 ?? row.selectFirst("a[href*='mod=forumdisplay'][href*='fid=']"),
                 let url = link.attrURL("href"),
-                let fid = forumID(from: url),
+                let fid = YamiboForumURLIdentity.forumID(from: url),
                 seenFIDs.insert(fid).inserted else {
                 continue
             }
 
             let titleElement = link.selectFirst(".mtit")
-            let todayText = ((try? titleElement?.select(".mnum").text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            var name = ((try? titleElement?.text()) ?? (try? link.text()) ?? "")
+            let todayText = (titleElement?.select(".mnum").text() ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            var name = (titleElement?.text() ?? link.text())
                 .replacingOccurrences(of: todayText, with: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty {
@@ -143,7 +127,7 @@ enum ForumHTMLParser {
             }
             guard !name.isEmpty else { continue }
 
-            let detail = ((try? link.select(".mtxt").text()) ?? "").nilIfBlank
+            let detail = link.select(".mtxt").text().nilIfBlank
             boards.append(
                 ForumBoardSummary(
                     fid: fid,
@@ -242,7 +226,7 @@ enum ForumHTMLParser {
         var seen = Set<String>()
 
         for link in document.selectAll("a[href*='viewthread'][href*='tid='], a[href*='thread-']") {
-            let title = ((try? link.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty,
                   let url = link.attrURL("href"),
                   let tid = threadID(from: url),
@@ -269,7 +253,7 @@ enum ForumHTMLParser {
             }
 
             let titleContainer = row.selectFirst(".threadlist_tit")
-            let marker = ((try? titleContainer?.select(".micon").text()) ?? "").htmlNormalized
+            let marker = (titleContainer?.select(".micon").text() ?? "").htmlNormalized
             let title = ((titleContainer?.selectFirst("em") ?? titleLink)
                 .normalizedText()
                 .replacingOccurrences(of: marker, with: ""))
@@ -287,7 +271,7 @@ enum ForumHTMLParser {
                     url: url,
                     fid: fid,
                     authorName: authorLink?.normalizedText().nilIfBlank,
-                    authorID: authorURL.flatMap(userID(from:)),
+                    authorID: authorURL.flatMap(YamiboForumURLIdentity.userID(from:)),
                     authorAvatarURL: row.firstURL(".mimg img[src]", attribute: "src"),
                     description: row.firstText(".threadlist_mes"),
                     tag: footerStats.tag,
@@ -390,33 +374,11 @@ enum ForumHTMLParser {
         return options
     }
 
-    private static func parseFormHash(in document: Document, html: String) -> String? {
-        if let value = document.selectFirst("input[name=formhash]")?.attrText("value") {
-            return value
-        }
-
-        return HTMLTextExtractor.firstMatch(pattern: #"formhash=([A-Za-z0-9]+)"#, in: html)?
-            .dropFirst()
-            .first?
-            .nilIfBlank
-    }
-
-    private static func forumID(from url: URL) -> String? {
-        url.queryItemValue("fid")
-            ?? HTMLTextExtractor.firstMatch(pattern: #"forum-(\d+)-\d+\.html"#, in: url.absoluteString)?
-            .dropFirst()
-            .first
-    }
-
     private static func threadID(from url: URL) -> String? {
         url.queryItemValue("tid")
             ?? HTMLTextExtractor.firstMatch(pattern: #"thread-(\d+)-\d+-\d+\.html"#, in: url.absoluteString)?
             .dropFirst()
             .first
-    }
-
-    private static func userID(from url: URL) -> String? {
-        url.queryItemValue("uid")
     }
 
     private static func todayCount(from text: String) -> Int? {

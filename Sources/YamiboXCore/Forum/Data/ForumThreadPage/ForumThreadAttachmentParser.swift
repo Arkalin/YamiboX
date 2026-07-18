@@ -4,22 +4,22 @@ import Foundation
 /// the attachment entries rendered in the post footer.
 enum ForumThreadAttachmentParser {
     /// Attachment described by an in-body `ul.post_attlist` element, or nil.
-    static func attachmentListBlock(from element: Element) throws -> ForumThreadAttachmentBlock? {
-        guard let link = try element.select("a[href]").first(),
-              let url = HTMLTextExtractor.absoluteURL(from: try link.attr("href")) else {
+    static func attachmentListBlock(from element: Element) -> ForumThreadAttachmentBlock? {
+        guard let link = element.select("a[href]").first(),
+              let url = HTMLTextExtractor.absoluteURL(from: link.attr("href")) else {
             return nil
         }
-        let fileName = try link.select(".link").first()?.text().nilIfBlank
+        let fileName = link.select(".link").first()?.text().nilIfBlank
             ?? link.select(".tit").first()?.ownText().nilIfBlank
             ?? link.text().split(separator: "\n").map(String.init).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
                 .nilIfBlank
         guard let fileName else { return nil }
 
-        let metadata = try link.select("p").array()
-            .compactMap { try $0.text().nilIfBlank }
+        let metadata = link.select("p").array()
+            .compactMap { $0.text().nilIfBlank }
         return ForumThreadAttachmentBlock(
             url: url,
-            iconURL: try link.select("img[src]").first().flatMap { HTMLTextExtractor.absoluteURL(from: try $0.attr("src")) },
+            iconURL: link.select("img[src]").first().flatMap { HTMLTextExtractor.absoluteURL(from: $0.attr("src")) },
             fileName: fileName,
             uploadInfo: metadata.first,
             statInfo: metadata.dropFirst().first

@@ -33,7 +33,7 @@ enum MangaHTMLParser {
     static func findTagIDsMobile(in html: String) -> [String] {
         guard let document = try? KannaSoup.parse(html) else { return [] }
         return Array(Set(document.selectAll("a[href*='mod=tag']").compactMap { element in
-            let href = (try? element.attr("href")) ?? ""
+            let href = element.attr("href")
             return HTMLTextExtractor.firstMatch(pattern: #"id=(\d+)"#, in: href)?.dropFirst().first
         }))
         .sorted()
@@ -46,8 +46,8 @@ enum MangaHTMLParser {
         guard let document = try? KannaSoup.parse(html) else { return [] }
         guard let message = document.selectFirst(".message") else { return [] }
         return message.selectAll("a[href*='tid='], a[href*='thread-']").compactMap { link in
-            let href = (try? link.attr("href")) ?? ""
-            let title = ((try? link.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let href = link.attr("href")
+            let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard
                 let tid = MangaTitleCleaner.extractTid(from: href),
                 let url = HTMLTextExtractor.absoluteURL(from: href, baseURL: baseURL)
@@ -101,13 +101,13 @@ enum MangaHTMLParser {
 
     static func isAnnouncement(from html: String) -> Bool {
         guard let document = try? KannaSoup.parse(html) else { return false }
-        let label = (try? document.select(".view_tit em").text()) ?? ""
+        let label = document.select(".view_tit em").text()
         return label.contains("公告")
     }
 
     static func extractImageURLs(from html: String, baseURL: URL = YamiboDomain.baseURL) -> [URL] {
         guard let document = try? KannaSoup.parse(html) else { return [] }
-        let images = (try? document.select(".img_one img, .message img:not([src*='smiley'])")) ?? Elements()
+        let images = document.select(".img_one img, .message img:not([src*='smiley'])")
         var urls: [URL] = []
         var seen = Set<String>()
 
@@ -125,7 +125,7 @@ enum MangaHTMLParser {
             return title
         }
         guard let document = try? KannaSoup.parse(html) else { return nil }
-        let text = (try? document.select(".view_tit").text()) ?? ""
+        let text = document.select(".view_tit").text()
         return text.nilIfBlank
     }
 

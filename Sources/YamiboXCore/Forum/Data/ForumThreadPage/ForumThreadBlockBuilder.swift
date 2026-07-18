@@ -65,14 +65,14 @@ final class ForumThreadBlockBuilder {
             commitText()
             appendBlock(.horizontalRule, seed: "hr")
         case "img":
-            try appendImage(from: element)
+            appendImage(from: element)
         case "blockquote":
             try appendQuote(from: element)
         case "div":
             try parseDiv(element)
         case "pre":
             commitText()
-            appendBlock(.code(try element.text()), seed: "code-\(try element.text())")
+            appendBlock(.code(element.text()), seed: "code-\(element.text())")
         case "table":
             try parseTable(element)
         case "ul":
@@ -104,7 +104,7 @@ final class ForumThreadBlockBuilder {
                 try parseChildren(of: element)
             }
         case "span":
-            try withTextStyle(ForumThreadTextStyleParser.style(fromStyleAttribute: try element.attr("style"))) {
+            try withTextStyle(ForumThreadTextStyleParser.style(fromStyleAttribute: element.attr("style"))) {
                 try parseChildren(of: element)
             }
         case "p":
@@ -126,13 +126,13 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseDiv(_ element: Element) throws {
-        let classes = try element.className().lowercased()
+        let classes = element.className().lowercased()
         if classes.contains("showcollapse_box") {
             commitText()
-            let titleNode = try element.select(".showcollapse_title").first()
-            let title = try titleNode?.text().nilIfBlank
-            try titleNode?.remove()
-            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: try element.html())
+            let titleNode = element.select(".showcollapse_title").first()
+            let title = titleNode?.text().nilIfBlank
+            titleNode?.remove()
+            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: element.html())
             appendBlock(
                 .collapse(title: title, contentBlocks: contentBlocks),
                 seed: "collapse-\(title ?? "")"
@@ -142,13 +142,13 @@ final class ForumThreadBlockBuilder {
 
         if classes.contains("locked-content") {
             commitText()
-            let costText = try element.select(".locked-tip").text()
+            let costText = element.select(".locked-tip").text()
             let cost = HTMLTextExtractor.firstMatch(pattern: #"(\d+)"#, in: costText)?
                 .dropFirst()
                 .first
                 .flatMap(Int.init)
-            try element.select(".locked-tip").remove()
-            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: try element.html())
+            element.select(".locked-tip").remove()
+            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: element.html())
             appendBlock(
                 .locked(cost: cost, contentBlocks: contentBlocks),
                 seed: "locked-\(costText)"
@@ -163,7 +163,7 @@ final class ForumThreadBlockBuilder {
 
         if classes.contains("blockcode") {
             commitText()
-            appendBlock(.code(try element.text()), seed: "code-\(try element.text())")
+            appendBlock(.code(element.text()), seed: "code-\(element.text())")
             return
         }
 
@@ -171,7 +171,7 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseBlockContainer(_ element: Element) throws {
-        let alignment = try textAlignment(from: element) ?? currentAlignment
+        let alignment = textAlignment(from: element) ?? currentAlignment
         try withTextAlignment(alignment) {
             appendLineBreak(maxConsecutive: 1)
             try parseChildren(of: element)
@@ -180,9 +180,9 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseTable(_ element: Element) throws {
-        let rows = try element.select("tr").array()
-        let isDataTable = try rows.contains { row in
-            try row.select("td, th").array().count > 1
+        let rows = element.select("tr").array()
+        let isDataTable = rows.contains { row in
+            row.select("td, th").array().count > 1
         }
         guard isDataTable else {
             appendLineBreak(maxConsecutive: 1)
@@ -195,11 +195,11 @@ final class ForumThreadBlockBuilder {
         let tableRows = try rows.map { row in
             try row.select("td, th").array().map { cell in
                 let tagName = cell.tagName().lowercased()
-                let hasStrongText = !(try cell.select("strong, b").array().isEmpty)
+                let hasStrongText = !cell.select("strong, b").array().isEmpty
                 let isHeader = tagName == "th" || hasStrongText
                 return ForumThreadTableCell(
                     isHeader: isHeader,
-                    blocks: try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: try cell.html())
+                    blocks: try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: cell.html())
                 )
             }
         }
@@ -207,9 +207,9 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseUnorderedList(_ element: Element) throws {
-        let classes = try element.className().lowercased()
+        let classes = element.className().lowercased()
         if classes.contains("post_attlist"),
-           let attachment = try ForumThreadAttachmentParser.attachmentListBlock(from: element) {
+           let attachment = ForumThreadAttachmentParser.attachmentListBlock(from: element) {
             commitText()
             appendBlock(.attachment(attachment), seed: "attachment-\(attachment.fileName)")
             return
@@ -221,7 +221,7 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseLink(_ element: Element) throws {
-        guard let url = HTMLTextExtractor.absoluteURL(from: try element.attr("href")) else {
+        guard let url = HTMLTextExtractor.absoluteURL(from: element.attr("href")) else {
             try parseChildren(of: element)
             return
         }
@@ -234,8 +234,8 @@ final class ForumThreadBlockBuilder {
         if end > start {
             links.append(PendingTextLink(start: start, length: end - start, url: url))
         } else {
-            appendText(try element.text())
-            let linkTextLength = max(try element.text().count, 0)
+            appendText(element.text())
+            let linkTextLength = max(element.text().count, 0)
             if linkTextLength > 0 {
                 links.append(PendingTextLink(start: start, length: linkTextLength, url: url))
             }
@@ -244,13 +244,13 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseRuby(_ element: Element) throws {
-        let rubyText = try element.children()
+        let rubyText = element.children()
             .array()
             .filter { $0.tagName().lowercased() == "rt" }
-            .map { try $0.text() }
+            .map { $0.text() }
             .joined()
             .nilIfBlank
-        let baseText = try element.getChildNodes()
+        let baseText = element.getChildNodes()
             .filter { node in
                 guard let childElement = node as? Element else { return true }
                 return childElement.tagName().lowercased() != "rt"
@@ -260,7 +260,7 @@ final class ForumThreadBlockBuilder {
                     return textNode.text()
                 }
                 if let childElement = node as? Element {
-                    return try childElement.text()
+                    return childElement.text()
                 }
                 return ""
             }
@@ -287,14 +287,14 @@ final class ForumThreadBlockBuilder {
     private func appendQuote(from element: Element) throws {
         commitText()
         appendBlock(
-            .quote(try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: try quoteContentHTML(from: element))),
-            seed: "quote-\(try element.text().prefix(32))"
+            .quote(try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: quoteContentHTML(from: element))),
+            seed: "quote-\(element.text().prefix(32))"
         )
     }
 
-    private func quoteContentHTML(from element: Element) throws -> String {
+    private func quoteContentHTML(from element: Element) -> String {
         guard element.tagName().lowercased() != "blockquote" else {
-            return try element.html()
+            return element.html()
         }
 
         let directChildren = element.children().array()
@@ -311,13 +311,13 @@ final class ForumThreadBlockBuilder {
         }
 
         if blockquoteChildren.count == 1, hasOnlyWhitespaceOutsideBlockquote {
-            return try blockquoteChildren[0].html()
+            return blockquoteChildren[0].html()
         }
 
-        return try element.html()
+        return element.html()
     }
 
-    private func appendImage(from element: Element) throws {
+    private func appendImage(from element: Element) {
         guard let url = YamiboImageReferenceExtractor.forumContent.url(from: element) else {
             return
         }
@@ -327,7 +327,7 @@ final class ForumThreadBlockBuilder {
             .image(
                 ForumThreadImageBlock(
                     url: url,
-                    altText: try element.attr("alt"),
+                    altText: element.attr("alt"),
                     linkURL: currentLinkURL,
                     isEmoticon: YamiboImageReferenceExtractor.isEmoticonURL(url)
                 )
@@ -447,8 +447,8 @@ final class ForumThreadBlockBuilder {
         }
     }
 
-    private func textAlignment(from element: Element) throws -> ForumThreadTextAlignment? {
-        switch try element.attr("align").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    private func textAlignment(from element: Element) -> ForumThreadTextAlignment? {
+        switch element.attr("align").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "center":
             return .center
         case "right":

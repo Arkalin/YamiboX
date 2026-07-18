@@ -3,8 +3,8 @@ import Foundation
 /// Parses poll ("投票") data: the poll block embedded in a post and the
 /// poll-voters popout (options, selected option, voter list).
 enum ForumThreadPollParser {
-    static func poll(in container: Element, body: Element) throws -> ForumThreadPoll? {
-        let candidates = try (
+    static func poll(in container: Element, body: Element) -> ForumThreadPoll? {
+        let candidates = (
             body.selectAll("#poll, .poll, .polls, .pcht") + container.selectAll("#poll, .poll, .polls, .pcht")
         ).deduplicatedByDOMIdentity()
         guard let pollElement = candidates.first(where: { element in
@@ -15,7 +15,7 @@ enum ForumThreadPollParser {
         }
 
         let inputElements = pollElement.selectAll("input[type=radio], input[type=checkbox]")
-        let isMultipleChoice = inputElements.contains { (((try? $0.attr("type")) ?? "").lowercased() == "checkbox") }
+        let isMultipleChoice = inputElements.contains { $0.attr("type").lowercased() == "checkbox" }
         let status: ForumThreadPollStatus = inputElements.isEmpty
             ? .voted
             : .notVoted
@@ -83,7 +83,7 @@ enum ForumThreadPollParser {
 
         for link in document.selectAll("a[href*='uid='], a[href*='space-uid-']") {
             let name = link.normalizedText().nilIfBlank
-            let uid = ForumUserIDParser.userID(fromHref: (try? link.attr("href")) ?? "")
+            let uid = ForumUserIDParser.userID(fromHref: link.attr("href"))
             guard let name, uid != nil || !name.isEmpty else { continue }
             let key = uid ?? name
             guard seen.insert(key).inserted else { continue }
@@ -106,8 +106,8 @@ enum ForumThreadPollParser {
                         return tag == "tr" || tag == "li" || tag == "p" || element.hasClass("polloption")
                     }
                 ) ?? input.parent()
-                let rawText = (try? (row ?? input).text()) ?? ""
-                let inputValue = (try? input.attr("value")) ?? ""
+                let rawText = (row ?? input).text()
+                let inputValue = input.attr("value")
                 let optionText = optionTitle(from: rawText)
                     ?? inputValue.nilIfBlank
                     ?? "\(index + 1)"
@@ -116,7 +116,7 @@ enum ForumThreadPollParser {
                     title: optionText,
                     voteCount: voteCount(in: rawText),
                     percentage: percentage(in: rawText),
-                    isSelected: !((try? input.attr("checked")) ?? "").isEmpty
+                    isSelected: !input.attr("checked").isEmpty
                 )
             }
         }

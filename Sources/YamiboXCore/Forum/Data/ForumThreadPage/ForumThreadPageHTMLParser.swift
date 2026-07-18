@@ -34,7 +34,7 @@ enum ForumThreadPageHTMLParser {
             totalReplies: stats.totalReplies,
             forumID: ForumThreadPageMetadataParser.forumID(in: document),
             forumName: ForumThreadPageMetadataParser.forumName(in: document),
-            formHash: ForumThreadPageMetadataParser.formHash(in: document, html: html)
+            formHash: DiscuzFormHashParser.formHash(in: document, html: html)
         )
     }
 
@@ -48,7 +48,7 @@ enum ForumThreadPageHTMLParser {
             throw YamiboError.parsingFailed(context: L10n.string("forum.thread.ratings_all"))
         }
 
-        let pageText = try document.text()
+        let pageText = document.text()
         return ForumThreadRatingResultsPage(
             ratings: ratings,
             totalScore: ForumThreadRatingParser.totalScore(pageText: pageText, ratings: ratings)
