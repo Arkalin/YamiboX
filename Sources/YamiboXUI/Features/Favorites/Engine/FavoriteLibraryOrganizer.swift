@@ -59,7 +59,7 @@ final class FavoriteLibraryOrganizer {
             persistNavigationState()
         }
     }
-    internal(set) var selectedCollectionID: String? {
+    var selectedCollectionID: String? {
         didSet {
             selection.clearSelection()
             refreshDerivedState()
