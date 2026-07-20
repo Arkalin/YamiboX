@@ -43,6 +43,10 @@ public struct NovelReaderView: View {
     @State private var likeFeedbackGenerator = UINotificationFeedbackGenerator()
     @State private var controlHandlerToken: UUID?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
+    /// Scene-local window safe-area insets reported by
+    /// `ReaderWindowSafeAreaInsetsProbe`; seeded from the key-window
+    /// backstop for the frames before the reader attaches to its window.
+    @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
     private let appModel: YamiboAppModel
     private let dependencies: NovelReaderDependencies
 
@@ -188,6 +192,7 @@ public struct NovelReaderView: View {
             }
             .disabled(hasPresentedOverlay)
             .allowsHitTesting(!hasPresentedOverlay)
+            .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
             .onChange(of: pagedPagerIdentity, initial: true) { _, newValue in
                 controlPagedPagerIdentity = newValue
             }
@@ -621,13 +626,19 @@ public struct NovelReaderView: View {
     }
 
     private func verticalBoundaryPullTopPadding(topInset: CGFloat) -> CGFloat {
-        let chromeAvoidance = chromeState.showsChrome ? max(topChromeHeight, topInset + 140) : 0
-        return max(chromeAvoidance, topInset, 24) + 8
+        verticalBands.boundaryPullTopPadding(
+            topInset: topInset,
+            isChromeVisible: chromeState.showsChrome,
+            measuredTopChromeHeight: topChromeHeight
+        )
     }
 
     private func verticalBoundaryPullBottomPadding(bottomInset: CGFloat) -> CGFloat {
-        let chromeAvoidance = chromeState.showsChrome ? max(bottomChromeHeight, bottomInset + 210) + 55 : 0
-        return max(chromeAvoidance, bottomInset, 24) + 8
+        verticalBands.boundaryPullBottomPadding(
+            bottomInset: bottomInset,
+            isChromeVisible: chromeState.showsChrome,
+            measuredBottomChromeHeight: bottomChromeHeight
+        )
     }
 
     private func verticalBoundaryPullText(
@@ -659,7 +670,7 @@ public struct NovelReaderView: View {
             trailing: horizontalPadding
         )
         let chromeInsets = model.settings.readingMode == .paged
-            ? NovelReaderLayoutInsets(top: 48)
+            ? NovelReaderLayoutInsets(top: verticalBands.pagedTopBandHeight)
             : .zero
         return NovelReaderLayout(
             containerSize: proxy.size,
@@ -674,14 +685,14 @@ public struct NovelReaderView: View {
         // Keep pagination based on the status-bar-visible safe area so immersive status bar changes
         // do not move text or alter rendered page counts.
         guard isPadDevice else { return rawTopInset }
-        return readerPadVisibleStatusBarTopInset
+        return verticalBands.padVisibleStatusBarTopInset
     }
 
     private func readerContentTopInset(for layoutTopInset: CGFloat, rawTopInset: CGFloat) -> CGFloat {
         guard isPadDevice else { return layoutTopInset }
         return rawTopInset > 0
             ? layoutTopInset
-            : layoutTopInset + readerPadVisibleStatusBarTopInset
+            : layoutTopInset + verticalBands.padVisibleStatusBarTopInset
     }
 
     private func readerPagedContentTopInset(for layoutTopInset: CGFloat) -> CGFloat {
@@ -1243,7 +1254,9 @@ public struct NovelReaderView: View {
         verticalRestore.cancelVerticalRestoreForUserScroll()
     }
 
-    private var windowSafeAreaInsets: UIEdgeInsets {
-        ReaderShellMetrics.windowSafeAreaInsets
+    /// The vertical band definitions shared by pagination, the paged
+    /// viewports and the chrome; see `NovelReaderVerticalBandsPresentation`.
+    private var verticalBands: NovelReaderVerticalBandsPresentation {
+        NovelReaderVerticalBandsPresentation()
     }
 }

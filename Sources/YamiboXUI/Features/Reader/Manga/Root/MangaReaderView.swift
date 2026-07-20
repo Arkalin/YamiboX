@@ -34,6 +34,10 @@ public struct MangaReaderView: View {
     @State private var controlPageTurnBridge = MangaPagedControlPageTurnBridge()
     @State private var controlUsesTwoPageSpread = false
     @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
+    /// Scene-local window safe-area insets reported by
+    /// `ReaderWindowSafeAreaInsetsProbe`; seeded from the key-window
+    /// backstop for the frames before the reader attaches to its window.
+    @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
 
     public init(context: MangaLaunchContext, dependencies: MangaReaderDependencies, appModel: YamiboAppModel) {
         self.context = context
@@ -194,6 +198,7 @@ public struct MangaReaderView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!isChromeVisible)
         .persistentSystemOverlays(isChromeVisible ? .automatic : .hidden)
         .sheet(isPresented: $isDirectoryPresented) {
@@ -608,10 +613,6 @@ public struct MangaReaderView: View {
                 forumID: context.forumID
             )
         )
-    }
-
-    private var windowSafeAreaInsets: UIEdgeInsets {
-        ReaderShellMetrics.windowSafeAreaInsets
     }
 
     private func mangaChromeSummary(

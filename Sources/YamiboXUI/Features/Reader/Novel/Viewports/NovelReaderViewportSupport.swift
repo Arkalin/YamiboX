@@ -53,8 +53,6 @@ struct NovelReaderSurfaceSelectionTag: Hashable {
     let index: Int
 }
 
-let readerPadVisibleStatusBarTopInset: CGFloat = 32
-
 struct NovelReaderVerticalSurfaceFramePreferenceKey: PreferenceKey {
     static var defaultValue: [Int: NovelReaderVerticalSurfaceFrameValue] { [:] }
 
