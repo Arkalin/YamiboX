@@ -23,7 +23,8 @@ public final class YamiboAppContext: Sendable {
     /// Public for change-ID observation in the app-entry layer.
     public let readingProgressStore: ReadingProgressStore
     let browsingHistoryStore: BrowsingHistoryStore
-    let contentCoverStore: ContentCoverStore
+    /// Public for change-ID observation in the app-entry layer.
+    public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
     let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     private let likeStore: LikeStore
@@ -376,6 +377,7 @@ public final class YamiboAppContext: Sendable {
                 ReadingProgressWebDAVParticipant(store: readingProgressStore),
                 AppSettingsWebDAVParticipant(store: settingsStore),
                 LikeLibraryWebDAVParticipant(store: likeStore),
+                ContentCoverWebDAVParticipant(store: contentCoverStore),
             ],
             client: WebDAVClient(session: session)
         )
