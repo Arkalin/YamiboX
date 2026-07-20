@@ -85,6 +85,17 @@ final class ImageBrowserZoomMathTests: XCTestCase {
         )
     }
 
+    func testEngagedZoomIgnoresFitLevelFactorsIncludingFloatingPointError() {
+        XCTAssertFalse(ImageBrowserZoomMath.isEngagedZoom(factor: 1))
+        // Aspect-fit zoom scales are floating-point quotients, so the resting
+        // factor can land a hair off 1 — that must still count as fit.
+        XCTAssertFalse(ImageBrowserZoomMath.isEngagedZoom(factor: 1 + .ulpOfOne))
+        XCTAssertFalse(ImageBrowserZoomMath.isEngagedZoom(factor: 1.01))
+        XCTAssertFalse(ImageBrowserZoomMath.isEngagedZoom(factor: 0.9))
+        XCTAssertTrue(ImageBrowserZoomMath.isEngagedZoom(factor: 1.02))
+        XCTAssertTrue(ImageBrowserZoomMath.isEngagedZoom(factor: ImageBrowserZoomMath.maximumZoomFactor))
+    }
+
     func testCenteringInsetsCenterUndersizedContentAndVanishWhenContentFills() {
         let letterboxed = ImageBrowserZoomMath.centeringInsets(
             contentSize: CGSize(width: 500, height: 250),

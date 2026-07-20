@@ -315,23 +315,25 @@ private struct ImageBrowserContentView: View {
         if mode == .multiple, items.count > 1 {
             // Page position lives in the toolbar ("N / M"): with dozens of
             // forum images the page-dot indicator would overflow the screen.
+            let selectedIndex = items.firstIndex { $0.id == selectedItemID } ?? 0
             TabView(selection: $selectedItemID) {
-                ForEach(items) { item in
-                    pageView(for: item)
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    pageView(for: item, pageDistance: abs(index - selectedIndex))
                         .tag(item.id)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
         } else if let item = items.first {
-            pageView(for: item)
+            pageView(for: item, pageDistance: 0)
         } else {
             ImageBrowserFailureView(retry: nil)
         }
     }
 
-    private func pageView(for item: ImageBrowserItem) -> some View {
+    private func pageView(for item: ImageBrowserItem, pageDistance: Int) -> some View {
         ImageBrowserPageView(
             item: item,
+            pageDistance: pageDistance,
             dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
             dismissRecognitionDistance: dismissRecognitionDistance,
             onSingleTap: onSingleTap,
@@ -352,6 +354,9 @@ private struct ImageBrowserContentView: View {
 
 private struct ImageBrowserPageView: View {
     let item: ImageBrowserItem
+    /// Pages away from the current selection (0 = the visible page); drives
+    /// windowed loading, since `.page` `TabView` builds every page up front.
+    let pageDistance: Int
     let dismissesViaSystemZoomTransition: Bool
     let dismissRecognitionDistance: CGFloat
     let onSingleTap: () -> Void
@@ -393,13 +398,28 @@ private struct ImageBrowserPageView: View {
                     .onTapGesture(perform: onSingleTap)
             }
         }
-        .task(id: "\(item.source.cacheKey)#\(attempt)") {
+        .task(id: "\(item.source.cacheKey)#\(attempt)#\(isWithinLoadWindow)") {
             await load()
+        }
+        .onChange(of: pageDistance) { _, _ in
+            if !isWithinKeepWindow {
+                image = nil
+            }
         }
     }
 
+    /// Only pages near the selection load — without the window, a dozens-of-
+    /// images forum gallery would download and decode everything the moment
+    /// the browser opens.
+    private var isWithinLoadWindow: Bool { pageDistance <= 2 }
+
+    /// Loaded pages slightly beyond the load window keep their image so quick
+    /// back-and-forth flips don't thrash; farther ones release it and reload
+    /// from the pipeline cache on revisit.
+    private var isWithinKeepWindow: Bool { pageDistance <= 4 }
+
     private func load() async {
-        guard image == nil else { return }
+        guard isWithinLoadWindow, image == nil else { return }
         if let localDataProvider = item.localDataProvider,
            let localData = await localDataProvider(),
            let localImage = UIImage(data: localData) {
@@ -409,6 +429,9 @@ private struct ImageBrowserPageView: View {
         do {
             image = try await YamiboUIImagePipeline.shared.image(for: item.source)
         } catch {
+            // Leaving the load window cancels the task mid-flight; that is
+            // routine paging, not a failure the retry UI should surface.
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
             YamiboLog.reader.warning("Failed to load image for browser item \(item.id): \(error)")
             didFail = true
         }
@@ -428,18 +451,31 @@ private struct ImageBrowserZoomableImagePage: View {
     let onSwipeDownCommit: () -> Void
     let onSwipeDownDismiss: () -> Void
 
+    /// Live swipe-dismiss drag. `engagementOrigin` records the raw
+    /// translation at the moment the vertical-dominance gate passed;
+    /// `translation` is measured from there, so the image starts following
+    /// from directly under the finger instead of jumping by the recognition
+    /// distance the moment the gesture engages.
+    private struct SwipeDismissDrag: Equatable {
+        var engagementOrigin: CGSize?
+        var translation: CGSize = .zero
+    }
+
     @State private var zoomProxy = ImageBrowserZoomProxy()
     @State private var zoomFactor: CGFloat = 1
     @State private var isSwipeDismissCommitted = false
     @State private var committedTranslation: CGSize = .zero
     @State private var exitOffset: CGFloat = 0
     @State private var imageOpacity: CGFloat = 1
+    /// Snapshot of the last `updating` tick for `onEnded`, which runs after
+    /// `@GestureState` has already reset and so cannot read `drag` itself.
+    @State private var lastDrag = SwipeDismissDrag()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// `@GestureState` (rather than `@State`) so a system-cancelled drag —
     /// incoming call, notification-center grab — springs back automatically
     /// instead of wedging the image at a stale offset.
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.22, dampingFraction: 0.86)))
-    private var dragTranslation: CGSize = .zero
+    private var drag = SwipeDismissDrag()
 
     var body: some View {
         GeometryReader { geometry in
@@ -475,17 +511,17 @@ private struct ImageBrowserZoomableImagePage: View {
     }
 
     private var isZoomedIn: Bool {
-        zoomFactor > 1.01
+        ImageBrowserZoomMath.isEngagedZoom(factor: zoomFactor)
     }
 
     private var swipeOffset: CGSize {
         isSwipeDismissCommitted
             ? CGSize(width: committedTranslation.width, height: committedTranslation.height + exitOffset)
-            : dragTranslation
+            : drag.translation
     }
 
     private var swipeProgress: CGFloat {
-        isSwipeDismissCommitted ? 1 : ImageBrowserSwipeDismissGesture.progress(for: dragTranslation.height)
+        isSwipeDismissCommitted ? 1 : ImageBrowserSwipeDismissGesture.progress(for: drag.translation.height)
     }
 
     /// Detaches the dismiss drag entirely while zoomed in, so it never
@@ -497,32 +533,39 @@ private struct ImageBrowserZoomableImagePage: View {
 
     private func swipeDismissGesture(containerSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: dismissRecognitionDistance)
-            .updating($dragTranslation) { value, state, _ in
+            .updating($drag) { value, state, _ in
+                // Mirror every tick — including non-engaged ones — so
+                // `onEnded` never acts on a stale snapshot left behind by an
+                // earlier, system-cancelled drag.
+                defer { lastDrag = state }
                 guard !isSwipeDismissCommitted, !isZoomedIn else { return }
-                let translation = CGPoint(x: value.translation.width, y: value.translation.height)
                 // Gate on downward intent only until the drag engages; once
                 // the image is following the finger, losing momentary
                 // vertical dominance must not snap it back to zero mid-drag.
-                if state == .zero {
+                if state.engagementOrigin == nil {
                     guard ImageBrowserSwipeDismissGesture.canBegin(
-                        translation: translation,
+                        translation: CGPoint(x: value.translation.width, y: value.translation.height),
                         zoomScale: zoomFactor,
                         minimumZoomScale: 1
                     ) else {
                         return
                     }
+                    state.engagementOrigin = value.translation
                 }
+                guard let origin = state.engagementOrigin else { return }
                 // Track both axes so the image stays under the finger during
                 // a diagonal drag, Photos-style; progress/commit still key
                 // off the vertical component alone.
-                state = CGSize(
-                    width: value.translation.width,
-                    height: max(value.translation.height, 0)
+                state.translation = CGSize(
+                    width: value.translation.width - origin.width,
+                    height: max(value.translation.height - origin.height, 0)
                 )
             }
             .onEnded { value in
-                guard !isSwipeDismissCommitted, !isZoomedIn else { return }
-                let translation = CGPoint(x: value.translation.width, y: value.translation.height)
+                let finalDrag = lastDrag
+                lastDrag = SwipeDismissDrag()
+                guard !isSwipeDismissCommitted, !isZoomedIn, finalDrag.engagementOrigin != nil else { return }
+                let translation = CGPoint(x: finalDrag.translation.width, y: finalDrag.translation.height)
                 let velocity = CGPoint(x: value.velocity.width, y: value.velocity.height)
                 guard ImageBrowserSwipeDismissGesture.shouldDismiss(
                     translation: translation,

@@ -55,6 +55,14 @@ enum ImageBrowserZoomMath {
         clampedFactor(zoomIn ? factor * accessibilityZoomStep : factor / accessibilityZoomStep)
     }
 
+    /// Whether a zoom factor counts as "zoomed in" for gesture routing. One
+    /// shared predicate keeps both sides of the fence flipping together: the
+    /// scroll view starts accepting its pan at exactly the factor where the
+    /// SwiftUI layer detaches the dismiss drag.
+    static func isEngagedZoom(factor: CGFloat) -> Bool {
+        factor > 1.01
+    }
+
     /// Insets that keep undersized content centered in the container — the
     /// standard `UIScrollView` centering trick, applied on zoom and layout.
     static func centeringInsets(contentSize: CGSize, containerSize: CGSize) -> UIEdgeInsets {
@@ -236,6 +244,21 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
 
     @objc private func handleSingleTap() {
         onSingleTap?()
+    }
+
+    /// At minimum zoom the scroll view has nothing to scroll — but the
+    /// aspect-fit `zoomScale` is a floating-point quotient, so `contentSize`
+    /// can land a hair *above* `bounds` (≈1e-13 pt, roughly 1 in 20 image
+    /// sizes). UIScrollView's can-scroll check has no tolerance: that hair is
+    /// enough for its pan to consider itself scrollable and swallow every
+    /// drag on the page, killing both the pager's page swipe and the dismiss
+    /// drag. Refuse the pan outright until the user actually zooms in.
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard super.gestureRecognizerShouldBegin(gestureRecognizer) else { return false }
+        guard gestureRecognizer === panGestureRecognizer else { return true }
+        return ImageBrowserZoomMath.isEngagedZoom(
+            factor: ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
+        )
     }
 
     private func recenterContent() {
