@@ -55,21 +55,21 @@ struct SettingsStorageView: View {
                 .disabled(viewModel.isBusy)
 
                 Button {
-                    pendingConfirmation = .clearContentCoverCache
-                } label: {
-                    SystemSettingsRow(
-                        title: L10n.string("settings.clear_content_cover_cache"),
-                        value: viewModel.contentCoverCacheLabel
-                    )
-                }
-                .disabled(viewModel.isBusy)
-
-                Button {
                     pendingConfirmation = .clearOtherCaches
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.clear_other_caches"),
                         showsChevron: false
+                    )
+                }
+                .disabled(viewModel.isBusy)
+
+                Button {
+                    pendingConfirmation = .clearContentCoverCache
+                } label: {
+                    SystemSettingsRow(
+                        title: L10n.string("settings.clear_content_cover_cache"),
+                        value: viewModel.contentCoverCacheLabel
                     )
                 }
                 .disabled(viewModel.isBusy)

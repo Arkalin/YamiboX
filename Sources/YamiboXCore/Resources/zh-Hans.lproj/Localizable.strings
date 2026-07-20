@@ -843,7 +843,7 @@
 "reading_mode.title" = "阅读模式";
 "reading_mode.vertical" = "纵向滚动";
 "settings.auto_sign_in" = "自动签到";
-"settings.clear_content_cover_cache" = "清理封面索引缓存";
+"settings.clear_content_cover_cache" = "清理封面索引";
 "settings.clear_content_cover_cache_message" = "将清除本地记录的自动与手动封面索引，封面会在下次打开时重新拉取。";
 "settings.clear_image_cache" = "清理图片缓存";
 "settings.clear_image_cache_message" = "将清除应用临时图片缓存数据，包括阅读图片和头像；不会删除漫画离线缓存或其他阅读缓存。";
@@ -851,7 +851,7 @@
 "settings.clear_other_caches_message" = "将清除系统网络缓存、签到记录缓存和收藏更新追踪缓存。";
 "settings.clear_web_reader_cache" = "清理网页/阅读器缓存";
 "settings.clear_web_reader_cache_message" = "将清除论坛网页、小说和漫画阅读排版的本地渲染缓存，重新打开时会重新从服务器加载。";
-"settings.confirm_clear_content_cover_cache" = "确认清理封面索引缓存";
+"settings.confirm_clear_content_cover_cache" = "确认清理封面索引";
 "settings.confirm_clear_image_cache" = "确认清除图片缓存";
 "settings.confirm_clear_other_caches" = "确认清理其他缓存";
 "settings.confirm_clear_web_reader_cache" = "确认清理网页/阅读器缓存";

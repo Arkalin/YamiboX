@@ -181,16 +181,16 @@ enum SettingsSearchRegistry {
             keywords: ["清除", "缓存", "空间", "图片"]
         ),
         SettingsSearchEntry(
-            id: "storage.clear_content_cover_cache",
-            title: L10n.string("settings.clear_content_cover_cache"),
-            category: .storage,
-            keywords: ["清理", "缓存", "空间", "封面", "索引"]
-        ),
-        SettingsSearchEntry(
             id: "storage.clear_other_caches",
             title: L10n.string("settings.clear_other_caches"),
             category: .storage,
             keywords: ["清理", "缓存", "其他", "签到", "收藏更新", "网络"]
+        ),
+        SettingsSearchEntry(
+            id: "storage.clear_content_cover_cache",
+            title: L10n.string("settings.clear_content_cover_cache"),
+            category: .storage,
+            keywords: ["清理", "缓存", "空间", "封面", "索引"]
         ),
         SettingsSearchEntry(
             id: "storage.manga_directory",
