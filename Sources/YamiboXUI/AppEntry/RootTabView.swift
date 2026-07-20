@@ -7,6 +7,7 @@ public struct RootTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var clipboardForumLinkPasteboardReader = ClipboardForumLinkPasteboardReader()
+    @State private var appUpdateLaunchPrompter = AppUpdateLaunchPrompter()
 
     public init(appModel: YamiboAppModel, initialTab: AppTab = .forum) {
         self.appModel = appModel
@@ -14,7 +15,7 @@ public struct RootTabView: View {
 
     public var body: some View {
         Group {
-            if appModel.isBootstrapping && appModel.bootstrapState == nil {
+            if isShowingBootstrapPlaceholder {
                 ProgressView(L10n.string("app.initializing"))
                     .transition(.opacity)
             } else {
@@ -24,9 +25,12 @@ public struct RootTabView: View {
         }
         // Cross-fade from the bootstrap placeholder into the tab content
         // instead of hard-swapping frames.
-        .animation(.easeInOut(duration: 0.25), value: appModel.isBootstrapping && appModel.bootstrapState == nil)
+        .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
         .task {
             await appModel.bootstrapIfNeeded()
+        }
+        .task {
+            await appUpdateLaunchPrompter.checkForUpdateIfNeeded()
         }
         .task {
             await observeFavoriteLibraryChanges()
@@ -57,6 +61,17 @@ public struct RootTabView: View {
             }
         }
         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !appModel.hasActiveReaderPresentation))
+        // Deferred rather than dropped while the placeholder or a restored
+        // reader covers the tab content: the prompt state persists and the
+        // alert presents once this surface is visible again.
+        .modifier(AppUpdateLaunchPromptAlert(
+            prompter: appUpdateLaunchPrompter,
+            isActive: !isShowingBootstrapPlaceholder && !appModel.hasActiveReaderPresentation
+        ))
+    }
+
+    private var isShowingBootstrapPlaceholder: Bool {
+        appModel.isBootstrapping && appModel.bootstrapState == nil
     }
 
     private var content: some View {
@@ -187,6 +202,42 @@ private struct ClipboardForumLinkPromptAlert: ViewModifier {
                     appModel.dismissClipboardForumLinkPrompt()
                 }
             }
+        )
+    }
+}
+
+private struct AppUpdateLaunchPromptAlert: ViewModifier {
+    let prompter: AppUpdateLaunchPrompter
+    let isActive: Bool
+
+    @Environment(\.openURL) private var openURL
+
+    func body(content: Content) -> some View {
+        content
+            .alert(
+                prompter.prompt?.title ?? "",
+                isPresented: promptIsPresented,
+                presenting: isActive ? prompter.prompt : nil
+            ) { prompt in
+                Button(L10n.string("app_update.open_download")) {
+                    openURL(prompt.downloadURL)
+                }
+                Button(L10n.string("app_update.copy_source")) {
+                    UIPasteboard.general.string = AppUpdateChecker.defaultSourceURL.absoluteString
+                }
+                Button(L10n.string("app_update.skip_version")) {
+                    prompter.skipPromptedVersion()
+                }
+                Button(L10n.string("app_update.later"), role: .cancel) {}
+            } message: { prompt in
+                Text(prompt.message)
+            }
+    }
+
+    private var promptIsPresented: Binding<Bool> {
+        .presentation(
+            isPresented: { isActive && prompter.prompt != nil },
+            clearOnDismiss: { prompter.dismissPrompt() }
         )
     }
 }
