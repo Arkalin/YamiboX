@@ -288,7 +288,7 @@ struct AboutUpdateAlert: Identifiable, Equatable {
         case .upToDate:
             L10n.string("app_update.up_to_date_message")
         case let .updateAvailable(version):
-            updateAvailableMessage(for: version)
+            version.updateAvailableAlertMessage
         case .sourceDoesNotContainCurrentApp:
             L10n.string("app_update.error.source_missing")
         case let .failure(message):
@@ -303,18 +303,6 @@ struct AboutUpdateAlert: Identifiable, Equatable {
         return nil
     }
 
-    private func updateAvailableMessage(for version: AppSourceVersion) -> String {
-        var parts = [
-            L10n.string("app_update.available_message", version.version)
-        ]
-        if let size = version.size, size > 0 {
-            parts.append(L10n.string("app_update.size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))
-        }
-        if let description = version.localizedDescription, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(description)
-        }
-        return parts.joined(separator: "\n\n")
-    }
 }
 
 private struct AppIconView: View {

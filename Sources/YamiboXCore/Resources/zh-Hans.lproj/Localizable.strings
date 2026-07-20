@@ -17,8 +17,10 @@
 "app_update.error.network" = "检查更新失败：%@";
 "app_update.error.source_missing" = "软件源中没有找到当前 App。";
 "app_update.failed_title" = "检查更新失败";
+"app_update.later" = "稍后再说";
 "app_update.open_download" = "打开下载地址";
 "app_update.size" = "大小：%@";
+"app_update.skip_version" = "忽略此版本";
 "app_update.up_to_date_message" = "当前已是最新版本。";
 "app_update.up_to_date_title" = "无需更新";
 "app.home.favorites" = "收藏";
