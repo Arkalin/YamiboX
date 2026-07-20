@@ -138,7 +138,14 @@ jobs:
           tag="v${version}"
           download_url="https://github.com/${{ github.repository }}/releases/download/${tag}/${{ steps.package.outputs.ipa_name }}"
 
-          description="${NOTES:-}"
+          # The notes are Markdown for the GitHub Release: each line ends with a
+          # "(shorthash[, …] · @author[, …])" group (GitHub auto-links the SHAs and
+          # the @handles) under "### 新增/变更/修复" category headings. The in-app
+          # update popup (localizedDescription) is plain text, so strip that trailing
+          # group and turn each "### X" heading into "【X】" before storing it.
+          description="$(printf '%s\n' "${NOTES:-}" | sed -E \
+            -e 's/[[:space:]]*\([0-9a-fA-F]{7,}[^)]*\)[[:space:]]*$//' \
+            -e 's/^###[[:space:]]+(.*[^[:space:]])[[:space:]]*$/【\1】/')"
           if [[ -z "${description//[[:space:]]/}" ]]; then
             description="版本更新，详见 GitHub Release 说明"
           fi
