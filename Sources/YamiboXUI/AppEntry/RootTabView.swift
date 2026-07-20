@@ -37,6 +37,9 @@ public struct RootTabView: View {
         .task {
             await observeReadingProgressChanges()
         }
+        .task {
+            await observeContentCoverChanges()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
@@ -117,6 +120,19 @@ public struct RootTabView: View {
     private func observeReadingProgressChanges() async {
         await Self.observeReadingProgressChanges(appContext: appModel.appContext) {
             appModel.scheduleWebDAVUploadForReadingProgressChange()
+        }
+    }
+
+    /// Covers changed alone (manual cover set, text-cover toggle) touch no
+    /// other synced store, so without this stream those edits would sit
+    /// unmarked until some unrelated change or backgrounding flushed them.
+    private func observeContentCoverChanges() async {
+        for await changeID in appModel.appContext.contentCoverStore.changes() {
+            guard !Task.isCancelled else { return }
+            guard changeID == appModel.appContext.contentCoverStore.changeID else {
+                continue
+            }
+            appModel.scheduleWebDAVUploadForLocalChange()
         }
     }
 

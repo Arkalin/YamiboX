@@ -177,6 +177,47 @@ public actor ContentCoverStore {
         }
     }
 
+    /// Full-table snapshot in a stable (target_type, target_id) order, for the
+    /// WebDAV participant's export/fingerprint paths. Throws rather than
+    /// degrading to `[]` like the read paths above: a sync round that mistook
+    /// a read failure for "no local covers" would upload an empty dataset.
+    public func allCovers() async throws -> [ContentCover] {
+        try await database.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
+                FROM content_cover
+                ORDER BY target_type, target_id
+                """
+            )
+            return rows.compactMap { row -> ContentCover? in
+                guard let targetType = ContentCoverTargetType(rawValue: row["target_type"] as String) else { return nil }
+                return ContentCover(
+                    key: ContentCoverKey(targetType: targetType, targetID: row["target_id"]),
+                    automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
+                    manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
+                    dynamicEnabled: row["dynamic_enabled"],
+                    textCoverForced: row["text_cover_forced"],
+                    updatedAt: Date(timeIntervalSince1970: row["updated_at"])
+                )
+            }
+        }
+    }
+
+    /// Replaces the whole table with `covers` in one transaction, for the
+    /// WebDAV participant's merge/apply paths. Rows whose key trims to empty
+    /// are dropped, matching the guard every single-row write above applies.
+    public func replaceAll(_ covers: [ContentCover]) async throws {
+        try await database.write { db in
+            try db.execute(sql: "DELETE FROM content_cover")
+            for cover in covers where !cover.key.targetID.isEmpty {
+                try Self.upsert(cover, in: db)
+            }
+        }
+        postChangeNotification()
+    }
+
     @discardableResult
     public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
