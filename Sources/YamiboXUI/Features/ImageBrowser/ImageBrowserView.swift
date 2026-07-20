@@ -369,34 +369,31 @@ private struct ImageBrowserPageView: View {
     @State private var attempt = 0
 
     var body: some View {
-        Group {
-            if let image {
-                ImageBrowserZoomableImagePage(
-                    image: image,
-                    title: item.title,
-                    dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
-                    dismissRecognitionDistance: dismissRecognitionDistance,
-                    onSingleTap: onSingleTap,
-                    onSwipeDownProgressChange: onSwipeDownProgressChange,
-                    onSwipeDownCommit: onSwipeDownCommit,
-                    onSwipeDownDismiss: onSwipeDownDismiss
-                )
-            } else if didFail {
-                ImageBrowserFailureView {
+        // The page keeps one constant subtree — the zoomable page is always
+        // mounted (with a nil image while loading) and the loading/failure
+        // states are opacity-toggled overlays. Structural edits here would
+        // land exactly when the pager settles (windowed loads and evictions
+        // fire on selection changes) and `TabView(.page)` freezes its page
+        // animation mid-flight when a page's subtree changes shape.
+        ImageBrowserZoomableImagePage(
+            image: image,
+            title: item.title,
+            dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
+            dismissRecognitionDistance: dismissRecognitionDistance,
+            onSingleTap: onSingleTap,
+            onSwipeDownProgressChange: onSwipeDownProgressChange,
+            onSwipeDownCommit: onSwipeDownCommit,
+            onSwipeDownDismiss: onSwipeDownDismiss
+        )
+        .overlay {
+            ImageBrowserPageStatusOverlay(
+                isLoading: image == nil && !didFail,
+                didFail: didFail,
+                retry: {
                     didFail = false
                     attempt += 1
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onSingleTap)
-            } else {
-                ProgressView(L10n.string("image.loading"))
-                    .tint(.white)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onSingleTap)
-            }
+            )
         }
         .task(id: "\(item.source.cacheKey)#\(attempt)#\(isWithinLoadWindow)") {
             await load()
@@ -438,11 +435,37 @@ private struct ImageBrowserPageView: View {
     }
 }
 
+/// Loading/failure chrome for one page, mounted permanently and toggled via
+/// opacity so state flips never change the page's view-tree shape (see the
+/// structural-stability note in `ImageBrowserPageView.body`).
+private struct ImageBrowserPageStatusOverlay: View {
+    let isLoading: Bool
+    let didFail: Bool
+    let retry: () -> Void
+
+    var body: some View {
+        ZStack {
+            ProgressView(L10n.string("image.loading"))
+                .tint(.white)
+                .foregroundStyle(.white.opacity(0.8))
+                .opacity(isLoading ? 1 : 0)
+                .accessibilityHidden(!isLoading)
+
+            ImageBrowserFailureView(retry: retry)
+                .opacity(didFail ? 1 : 0)
+                .accessibilityHidden(!didFail)
+        }
+        // Invisible states must not steal the page's taps (chrome toggle) or
+        // drags; only the failure state exposes a tappable retry button.
+        .allowsHitTesting(didFail)
+    }
+}
+
 /// One zoomable page: the `UIScrollView` container handles zooming and
 /// panning, while the swipe-down-to-dismiss drag stays a SwiftUI gesture on
 /// top, active only at minimum zoom (see `swipeDismissGestureMask`).
 private struct ImageBrowserZoomableImagePage: View {
-    let image: UIImage
+    let image: UIImage?
     let title: String
     let dismissesViaSystemZoomTransition: Bool
     let dismissRecognitionDistance: CGFloat
@@ -602,10 +625,11 @@ private struct ImageBrowserZoomableImagePage: View {
             return
         }
 
-        let imageHeight = ImageContentGeometry.aspectFitFrame(
-            imageSize: image.size,
-            containerSize: containerSize
-        ).height
+        // A still-loading page has no image to measure; the container-height
+        // floor below already gives the fly-away a sensible travel distance.
+        let imageHeight = image.map {
+            ImageContentGeometry.aspectFitFrame(imageSize: $0.size, containerSize: containerSize).height
+        } ?? 0
         let exitDistance = max(
             containerSize.height - committedTranslation.height + imageHeight * 0.35,
             containerSize.height * 0.45

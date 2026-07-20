@@ -100,7 +100,12 @@ final class ImageBrowserZoomProxy {
 /// `TabView(.page)`; once zoomed in, its pan takes over and pans the content,
 /// handing off to the pager only at the content edge.
 struct ImageBrowserZoomableScrollView: UIViewRepresentable {
-    let image: UIImage
+    /// `nil` while the page's image is still loading (or evicted by the
+    /// pager's keep window): the scroll view stays mounted showing nothing,
+    /// so load completion is a property change instead of a view-tree edit —
+    /// `TabView(.page)` halts its page-settle animation mid-flight when a
+    /// page's subtree changes shape during the swipe.
+    let image: UIImage?
     let proxy: ImageBrowserZoomProxy
     let onSingleTap: () -> Void
     let onZoomFactorChange: (CGFloat) -> Void
@@ -169,11 +174,12 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
         fatalError("init(coder:) is not supported")
     }
 
-    func configure(image: UIImage) {
+    func configure(image: UIImage?) {
         currentImage = image
         imageView.image = image
-        imageView.frame = CGRect(origin: .zero, size: image.size)
-        contentSize = image.size
+        let size = image?.size ?? .zero
+        imageView.frame = CGRect(origin: .zero, size: size)
+        contentSize = size
         lastLayoutSize = .zero
         setNeedsLayout()
     }
