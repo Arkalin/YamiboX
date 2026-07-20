@@ -103,33 +103,16 @@ struct ImageBrowserView: View {
                 onSwipeDownDismiss: commitSwipeDownDismiss
             )
             .ignoresSafeArea()
+            .contextMenu {
+                imageActionsMenu
+            }
 
             ImageBrowserToolbar(
                 title: currentItem?.title ?? "",
                 pagePosition: pagePosition,
                 isChromeVisible: isChromeVisible,
-                canPerformImageAction: currentItem != nil && !isPreparingAction,
-                isPreparingAction: isPreparingAction,
                 swipeDismissProgress: swipeDismissProgress,
                 isSwipeDismissCommitted: isSwipeDismissCommitted,
-                copyImage: {
-                    Task {
-                        await copyImage()
-                    }
-                },
-                shareable: currentShareable,
-                saveImage: {
-                    Task {
-                        await saveImage()
-                    }
-                },
-                coverActions: coverActions,
-                performCoverAction: { action in
-                    Task {
-                        await performCoverAction(action)
-                    }
-                },
-                onJumpToOriginal: onJumpToOriginal,
                 onDismiss: onDismiss
             )
         }
@@ -168,6 +151,58 @@ struct ImageBrowserView: View {
 
     private var currentItem: ImageBrowserItem? {
         items.first { $0.id == selectedItemID } ?? items.first
+    }
+
+    /// Image actions presented from a long-press context menu on the image
+    /// itself (replacing the old toolbar ellipsis menu). Long-press needs a
+    /// stationary hold, so it never competes with the pager's swipe, the
+    /// zoom pan/pinch, the dismiss drag, or the tap gestures. Re-entrancy
+    /// while an action runs is guarded inside `performImageAction`.
+    @ViewBuilder
+    private var imageActionsMenu: some View {
+        if currentItem != nil {
+            Button {
+                Task {
+                    await copyImage()
+                }
+            } label: {
+                Label(L10n.string("image.copy"), systemImage: "doc.on.doc")
+            }
+
+            if let currentShareable {
+                ShareLink(item: currentShareable, preview: SharePreview(currentShareable.title)) {
+                    Label(L10n.string("common.share"), systemImage: "square.and.arrow.up")
+                }
+            }
+
+            Button {
+                Task {
+                    await saveImage()
+                }
+            } label: {
+                Label(L10n.string("image.save_to_photos"), systemImage: "square.and.arrow.down")
+            }
+
+            if !coverActions.isEmpty {
+                Divider()
+                ForEach(coverActions) { action in
+                    Button {
+                        Task {
+                            await performCoverAction(action)
+                        }
+                    } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                    }
+                }
+            }
+
+            if let onJumpToOriginal {
+                Divider()
+                Button(action: onJumpToOriginal) {
+                    Label(L10n.string("likes.jump_to_original"), systemImage: "book.closed")
+                }
+            }
+        }
     }
 
     private var pagePosition: (index: Int, count: Int)? {
@@ -676,16 +711,8 @@ private struct ImageBrowserToolbar: View {
     let title: String
     let pagePosition: (index: Int, count: Int)?
     let isChromeVisible: Bool
-    let canPerformImageAction: Bool
-    let isPreparingAction: Bool
     let swipeDismissProgress: CGFloat
     let isSwipeDismissCommitted: Bool
-    let copyImage: () -> Void
-    let shareable: ImageBrowserShareableImage?
-    let saveImage: () -> Void
-    let coverActions: [ImageBrowserCoverAction]
-    let performCoverAction: (ImageBrowserCoverAction) -> Void
-    let onJumpToOriginal: (() -> Void)?
     let onDismiss: () -> Void
 
     var body: some View {
@@ -709,55 +736,6 @@ private struct ImageBrowserToolbar: View {
                 }
 
                 Spacer(minLength: 12)
-
-                Menu {
-                    Button(action: copyImage) {
-                        Label(L10n.string("image.copy"), systemImage: "doc.on.doc")
-                    }
-
-                    if let shareable {
-                        ShareLink(item: shareable, preview: SharePreview(shareable.title)) {
-                            Label(L10n.string("common.share"), systemImage: "square.and.arrow.up")
-                        }
-                    }
-
-                    Button(action: saveImage) {
-                        Label(L10n.string("image.save_to_photos"), systemImage: "square.and.arrow.down")
-                    }
-
-                    if !coverActions.isEmpty {
-                        Divider()
-                        ForEach(coverActions) { action in
-                            Button {
-                                performCoverAction(action)
-                            } label: {
-                                Label(action.title, systemImage: action.systemImage)
-                            }
-                        }
-                    }
-
-                    if let onJumpToOriginal {
-                        Divider()
-                        Button(action: onJumpToOriginal) {
-                            Label(L10n.string("likes.jump_to_original"), systemImage: "book.closed")
-                        }
-                    }
-                } label: {
-                    Group {
-                        if isPreparingAction {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "ellipsis")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .frame(width: 44, height: 44)
-                    .background(.black.opacity(0.58), in: Circle())
-                }
-                .disabled(!canPerformImageAction)
-                .accessibilityLabel(L10n.string("common.more"))
 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
