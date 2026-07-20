@@ -20,6 +20,9 @@ struct LocalFavoriteFilterState: Equatable {
 struct FavoriteLibraryDisplayState: Equatable {
     var layoutMode: FavoriteLibraryLayoutMode = .rowCard
     var showsCategoryCounts = true
+    /// iPad-only card-width multiplier for the grid layouts; see
+    /// `FavoriteLibrarySettings.gridCardScale`.
+    var gridCardScale = FavoriteLibrarySettings.defaultGridCardScale
 }
 
 /// One slot of a collection's 4-tile preview mosaic: a member's own cover

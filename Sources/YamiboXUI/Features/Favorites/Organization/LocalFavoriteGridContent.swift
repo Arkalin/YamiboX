@@ -1,11 +1,15 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 /// Fixed-grid and staggered layouts for the favorites screen. Collections
 /// and favorite items share one grid, merged into the sort order the user
 /// picked (collections stay a pinned leading block only in manual sort
 /// order — see `LocalFavoriteLibraryProjection.mixedEntries`). Column counts
-/// adapt to the available width with two columns on iPhone.
+/// adapt to the available width with two columns on iPhone. On iPad both
+/// layouts multiply their base card width by the persisted
+/// `display.gridCardScale`, adjustable live with a two-finger pinch here or
+/// from the slider in Settings → Favorites → Appearance.
 struct LocalFavoriteGridContent: View {
     let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
@@ -20,9 +24,23 @@ struct LocalFavoriteGridContent: View {
     let isCollectionDetail: Bool
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
 
-    private let gridColumns = [
-        GridItem(.adaptive(minimum: 130), spacing: 12, alignment: .top)
-    ]
+    /// Base card widths at scale 1.0 — the historical fixed constants.
+    private static let fixedGridBaseMinimumCardWidth: Double = 130
+    private static let staggeredBaseCardWidth: Double = 170
+
+    /// Live pinch magnification relative to the gesture's start, layered on
+    /// top of the committed scale while the pinch is in flight.
+    /// `@GestureState` so an interrupted/cancelled pinch always snaps back
+    /// to the committed value instead of freezing a half-applied zoom.
+    @GestureState private var pinchMagnification: Double?
+
+    private var gridColumns: [GridItem] {
+        [GridItem(
+            .adaptive(minimum: Self.fixedGridBaseMinimumCardWidth * effectiveCardScale),
+            spacing: 12,
+            alignment: .top
+        )]
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -62,6 +80,11 @@ struct LocalFavoriteGridContent: View {
                     }
                 }
                 .padding(.vertical, 12)
+                // Retargetable spring so the column reflow a pinch (or a
+                // Settings-slider change applied on return) triggers glides
+                // instead of snapping cell-by-cell. Scoped by value: inert
+                // during plain scrolling and selection.
+                .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.9), value: effectiveCardScale)
             }
             // ScrollView clips its content to its own bounds by default —
             // independent of `favoriteSelectionEmphasis`'s opacity group
@@ -74,9 +97,47 @@ struct LocalFavoriteGridContent: View {
             // so the documented tradeoff — overflowed content no longer
             // participates in hit-testing — is a non-issue.
             .scrollClipDisabled()
+            // Two-finger card resizing rides alongside the scroll pan; the
+            // `.subviews` mask keeps the gesture fully out of the way on
+            // iPhone (idiom never changes at runtime, so the ternary is
+            // stable for the view's whole life).
+            .simultaneousGesture(
+                cardResizePinchGesture,
+                including: isCardScaleAdjustable ? .all : .subviews
+            )
         }
         .sensoryFeedback(.selection, trigger: selection.selectedFavoriteIDs)
         .sensoryFeedback(.selection, trigger: selection.selectedCollectionIDs)
+    }
+
+    // MARK: - Card scale
+
+    /// Card sizing is adjustable on iPad only; iPhone always renders the
+    /// layouts at their base widths (see `FavoriteLibrarySettings.gridCardScale`).
+    private var isCardScaleAdjustable: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    /// The committed scale with any in-flight pinch layered on top, clamped
+    /// live so pinching past a bound stops growing/shrinking at the bound
+    /// rather than overshooting and snapping back on release.
+    private var effectiveCardScale: Double {
+        guard isCardScaleAdjustable else { return FavoriteLibrarySettings.defaultGridCardScale }
+        let committed = organizer.display.gridCardScale
+        guard let pinchMagnification else { return committed }
+        return FavoriteLibrarySettings.clampGridCardScale(committed * pinchMagnification)
+    }
+
+    private var cardResizePinchGesture: some Gesture {
+        MagnifyGesture()
+            .updating($pinchMagnification) { value, state, _ in
+                state = Double(value.magnification)
+            }
+            .onEnded { value in
+                organizer.updateGridCardScale(
+                    organizer.display.gridCardScale * Double(value.magnification)
+                )
+            }
     }
 
     private var gridEntries: [FavoriteMixedEntry] {
@@ -84,8 +145,9 @@ struct LocalFavoriteGridContent: View {
     }
 
     /// Two waterfall columns on iPhone widths, more as the width grows.
+    /// The scaled target card width widens or narrows the columns on iPad.
     private func staggeredColumnCount(for width: CGFloat) -> Int {
-        max(2, Int((width - 32 + 12) / (170 + 12)))
+        max(2, Int((width - 32 + 12) / (Self.staggeredBaseCardWidth * effectiveCardScale + 12)))
     }
 
     private var cardActions: LocalFavoriteCardActions {

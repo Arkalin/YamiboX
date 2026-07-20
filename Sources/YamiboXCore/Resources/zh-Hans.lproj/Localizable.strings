@@ -902,6 +902,8 @@
 "settings.favorite_background" = "收藏页背景";
 "settings.favorite_background.custom" = "自定义";
 "settings.favorite_background.default" = "默认";
+"settings.favorite_grid_card_scale" = "网格卡片大小";
+"settings.favorite_grid_card_scale.footer" = "卡片大小仅作用于固定网格和瀑布流布局，也可以在收藏页中直接用双指捏合调整。";
 "settings.favorite_smart_manga_badge" = "显示智能漫画标识";
 "settings.favorite_add_sync_default" = "新增收藏默认动作";
 "settings.favorite_add_sync_prompt" = "新增收藏时询问是否同步";

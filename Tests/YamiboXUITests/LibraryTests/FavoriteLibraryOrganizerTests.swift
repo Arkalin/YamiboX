@@ -3120,6 +3120,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         )
         try await settingsStore.save(AppSettings(favorites: FavoriteLibrarySettings(
             layoutMode: .staggered,
+            gridCardScale: 1.6,
             sortOrder: .displayTitle,
             sortDescending: true,
             showsCategoryCounts: false
@@ -3127,18 +3128,23 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
         await organizer.load()
         XCTAssertEqual(organizer.display.layoutMode, .staggered)
+        XCTAssertEqual(organizer.display.gridCardScale, 1.6)
         XCTAssertEqual(organizer.filter.sortOrder, .displayTitle)
         XCTAssertTrue(organizer.filter.sortDescending)
         XCTAssertFalse(organizer.display.showsCategoryCounts)
 
         organizer.updateLayoutMode(.fixedGrid)
+        // 低于下限的捏合结果按下限收敛后再持久化。
+        organizer.updateGridCardScale(0.5)
         organizer.updateSortOrder(.lastReadAt)
         organizer.updateSortDescending(false)
         organizer.updateShowsCategoryCounts(true)
-        // 轮询等待四次 update 的异步持久化全部落盘(替代固定 50ms sleep)。
+        XCTAssertEqual(organizer.display.gridCardScale, FavoriteLibrarySettings.minimumGridCardScale)
+        // 轮询等待五次 update 的异步持久化全部落盘(替代固定 50ms sleep)。
         try await waitForCondition {
             let favorites = await settingsStore.load().favorites
             return favorites.layoutMode == .fixedGrid
+                && favorites.gridCardScale == FavoriteLibrarySettings.minimumGridCardScale
                 && favorites.sortOrder == .lastReadAt
                 && favorites.sortDescending == false
                 && favorites.showsCategoryCounts == true
@@ -3146,6 +3152,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
         let saved = await settingsStore.load()
         XCTAssertEqual(saved.favorites.layoutMode, .fixedGrid)
+        XCTAssertEqual(saved.favorites.gridCardScale, FavoriteLibrarySettings.minimumGridCardScale)
         XCTAssertEqual(saved.favorites.sortOrder, .lastReadAt)
         XCTAssertFalse(saved.favorites.sortDescending)
         XCTAssertTrue(saved.favorites.showsCategoryCounts)

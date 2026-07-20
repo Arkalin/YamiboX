@@ -330,8 +330,23 @@ public enum SmartMangaUpdateCheckInterval: String, Codable, Hashable, CaseIterab
 }
 
 public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
+    public static let minimumGridCardScale = 0.7
+    public static let maximumGridCardScale = 2.5
+    public static let defaultGridCardScale = 1.0
+
+    public static func clampGridCardScale(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultGridCardScale }
+        return min(maximumGridCardScale, max(minimumGridCardScale, value))
+    }
+
     public var background: FavoriteBackgroundSettings
     public var layoutMode: FavoriteLibraryLayoutMode
+    /// Card-width multiplier for the fixed-grid and staggered layouts,
+    /// adjustable on iPad only (pinch on the favorites page, or the slider in
+    /// Settings → Favorites → Appearance). iPhone always renders at 1.0 —
+    /// the layouts ignore this value there — so a synced/restored settings
+    /// blob from an iPad can never squeeze or blow up the iPhone grid.
+    public var gridCardScale: Double
     public var sortOrder: LocalFavoriteLibrarySortOrder
     public var sortDescending: Bool
     public var selectedCategoryID: String?
@@ -376,6 +391,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     public init(
         background: FavoriteBackgroundSettings = .init(),
         layoutMode: FavoriteLibraryLayoutMode = .rowCard,
+        gridCardScale: Double = FavoriteLibrarySettings.defaultGridCardScale,
         sortOrder: LocalFavoriteLibrarySortOrder = .organization,
         sortDescending: Bool = false,
         selectedCategoryID: String? = nil,
@@ -394,6 +410,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     ) {
         self.background = background
         self.layoutMode = layoutMode
+        self.gridCardScale = Self.clampGridCardScale(gridCardScale)
         self.sortOrder = sortOrder
         self.sortDescending = sortDescending
         self.selectedCategoryID = Self.normalizedID(selectedCategoryID)
@@ -416,6 +433,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
         self.init(
             background: try container.decodeIfPresent(FavoriteBackgroundSettings.self, forKey: .background) ?? .init(),
             layoutMode: try container.decodeIfPresent(FavoriteLibraryLayoutMode.self, forKey: .layoutMode) ?? .rowCard,
+            gridCardScale: try container.decodeIfPresent(Double.self, forKey: .gridCardScale) ?? Self.defaultGridCardScale,
             sortOrder: try container.decodeIfPresent(LocalFavoriteLibrarySortOrder.self, forKey: .sortOrder) ?? .organization,
             sortDescending: try container.decodeIfPresent(Bool.self, forKey: .sortDescending) ?? false,
             selectedCategoryID: try container.decodeIfPresent(String.self, forKey: .selectedCategoryID),

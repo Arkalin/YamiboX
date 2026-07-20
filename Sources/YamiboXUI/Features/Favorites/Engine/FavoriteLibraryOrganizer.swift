@@ -355,7 +355,8 @@ final class FavoriteLibraryOrganizer {
         coverLookupRevision += 1
         display = FavoriteLibraryDisplayState(
             layoutMode: settings.favorites.layoutMode,
-            showsCategoryCounts: settings.favorites.showsCategoryCounts
+            showsCategoryCounts: settings.favorites.showsCategoryCounts,
+            gridCardScale: FavoriteLibrarySettings.clampGridCardScale(settings.favorites.gridCardScale)
         )
         await applyBackgroundSettings(settings.favorites.background)
         withCoalescedDerivedRefresh {
@@ -798,6 +799,21 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
+    /// Commits a grid card scale (pinch end on the favorites page). Values
+    /// are clamped here so gesture math never persists an out-of-range or
+    /// non-finite multiplier.
+    func updateGridCardScale(_ value: Double) {
+        let clamped = FavoriteLibrarySettings.clampGridCardScale(value)
+        guard clamped != display.gridCardScale else { return }
+        let previous = display.gridCardScale
+        display.gridCardScale = clamped
+        persistViewPreferences {
+            if self.display.gridCardScale == clamped {
+                self.display.gridCardScale = previous
+            }
+        }
+    }
+
     func updateShowsCategoryCounts(_ value: Bool) {
         guard value != display.showsCategoryCounts else { return }
         let previous = display.showsCategoryCounts
@@ -979,6 +995,7 @@ final class FavoriteLibraryOrganizer {
             var settings = await settingsStore.load()
             settings.favorites.layoutMode = display.layoutMode
             settings.favorites.showsCategoryCounts = display.showsCategoryCounts
+            settings.favorites.gridCardScale = display.gridCardScale
             settings.favorites.sortOrder = sortOrder
             settings.favorites.sortDescending = sortDescending
             do {

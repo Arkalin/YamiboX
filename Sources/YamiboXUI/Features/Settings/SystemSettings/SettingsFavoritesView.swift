@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 struct SettingsFavoritesView: View {
@@ -73,7 +74,7 @@ struct SettingsFavoritesView: View {
                 .disabled(viewModel.isBusy)
             }
 
-            Section(L10n.string("settings.section.appearance")) {
+            Section {
                 Button {
                     openFavoriteBackgroundEditorOrPicker()
                 } label: {
@@ -85,11 +86,21 @@ struct SettingsFavoritesView: View {
                 }
                 .disabled(viewModel.isBusy)
 
+                if isPadDevice {
+                    favoriteGridCardScaleRow
+                }
+
                 Toggle(
                     L10n.string("settings.favorite_smart_manga_badge"),
                     isOn: favoriteSmartMangaBadgeBinding
                 )
                 .disabled(viewModel.isBusy)
+            } header: {
+                Text(L10n.string("settings.section.appearance"))
+            } footer: {
+                if isPadDevice {
+                    Text(L10n.string("settings.favorite_grid_card_scale.footer"))
+                }
             }
 
             Section {
@@ -253,6 +264,58 @@ struct SettingsFavoritesView: View {
         case .interrupted:
             return L10n.string("favorites.sync.status.interrupted")
         }
+    }
+
+    /// The grid card size is an iPad-only concept (see
+    /// `FavoriteLibrarySettings.gridCardScale`); iPhone hides the slider
+    /// entirely rather than offering a control that does nothing.
+    private var isPadDevice: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var favoriteGridCardScaleRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L10n.string("settings.favorite_grid_card_scale"))
+                Spacer()
+                Text(favoriteGridCardScalePercentLabel)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(
+                value: favoriteGridCardScaleBinding,
+                in: FavoriteLibrarySettings.minimumGridCardScale...FavoriteLibrarySettings.maximumGridCardScale,
+                step: 0.05
+            ) {
+                Text(L10n.string("settings.favorite_grid_card_scale"))
+            } minimumValueLabel: {
+                // Denser grid of smaller cards at the low end…
+                Image(systemName: "square.grid.3x3")
+                    .foregroundStyle(.secondary)
+            } maximumValueLabel: {
+                // …fewer, larger cards at the high end.
+                Image(systemName: "square.grid.2x2")
+                    .foregroundStyle(.secondary)
+            } onEditingChanged: { isEditing in
+                if !isEditing {
+                    viewModel.commitFavoriteGridCardScale()
+                }
+            }
+        }
+        .disabled(viewModel.isBusy)
+    }
+
+    private var favoriteGridCardScalePercentLabel: String {
+        "\(Int((viewModel.favoriteGridCardScale * 100).rounded()))%"
+    }
+
+    /// Drag ticks only preview in memory; the commit happens once in
+    /// `onEditingChanged(false)` — see `commitFavoriteGridCardScale()`.
+    private var favoriteGridCardScaleBinding: Binding<Double> {
+        Binding(
+            get: { viewModel.favoriteGridCardScale },
+            set: { viewModel.previewFavoriteGridCardScale($0) }
+        )
     }
 
     private var favoriteLayoutModeBinding: Binding<FavoriteLibraryLayoutMode> {

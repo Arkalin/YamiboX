@@ -29,6 +29,7 @@ final class SettingsFavoritesViewModelTests: XCTestCase {
         let fixture = try makeSystemSettingsFixture()
         try await fixture.settingsStore.save(AppSettings(favorites: FavoriteLibrarySettings(
             layoutMode: .staggered,
+            gridCardScale: 1.3,
             sortOrder: .displayTitle,
             sortDescending: true,
             showsCategoryCounts: false
@@ -39,6 +40,7 @@ final class SettingsFavoritesViewModelTests: XCTestCase {
         await settings.load()
 
         XCTAssertEqual(viewModel.favoriteLayoutMode, .staggered)
+        XCTAssertEqual(viewModel.favoriteGridCardScale, 1.3)
         XCTAssertEqual(viewModel.favoriteSortOrder, .displayTitle)
         XCTAssertTrue(viewModel.favoriteSortDescending)
         XCTAssertFalse(viewModel.favoriteShowsCategoryCounts)
@@ -59,6 +61,39 @@ final class SettingsFavoritesViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.favoriteSortOrder, .lastReadAt)
         XCTAssertFalse(viewModel.favoriteSortDescending)
         XCTAssertTrue(viewModel.favoriteShowsCategoryCounts)
+    }
+
+    /// The grid card size slider previews drag ticks in memory only; the
+    /// single commit on drag end persists the previewed value (clamped) as
+    /// part of the display unit.
+    func testFavoriteGridCardScalePreviewsInMemoryAndCommitsOnce() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        try await fixture.settingsStore.save(AppSettings(favorites: FavoriteLibrarySettings(
+            gridCardScale: 1.3
+        )))
+
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        let viewModel = settings.favorites
+        await settings.load()
+        XCTAssertEqual(viewModel.favoriteGridCardScale, 1.3)
+
+        viewModel.previewFavoriteGridCardScale(1.8)
+        XCTAssertEqual(viewModel.favoriteGridCardScale, 1.8)
+        let storedDuringDrag = await fixture.settingsStore.load()
+        XCTAssertEqual(storedDuringDrag.favorites.gridCardScale, 1.3)
+
+        // 超出上限的值在预览阶段即收敛到上限。
+        viewModel.previewFavoriteGridCardScale(9)
+        XCTAssertEqual(viewModel.favoriteGridCardScale, FavoriteLibrarySettings.maximumGridCardScale)
+
+        viewModel.previewFavoriteGridCardScale(1.8)
+        viewModel.commitFavoriteGridCardScale()
+
+        try await waitForSettings {
+            let loaded = await fixture.settingsStore.load()
+            return loaded.favorites.gridCardScale == 1.8
+        }
+        XCTAssertEqual(viewModel.favoriteGridCardScale, 1.8)
     }
 
     func testFavoriteSmartMangaBulkDeleteSettingLoadsAndPersists() async throws {

@@ -281,6 +281,33 @@ import YamiboXTestSupport
     #expect(!decoded.smartMangaBadgeEnabled)
 }
 
+/// Migration path for the iPad grid card size: settings persisted before the
+/// field existed must decode at the default 1.0, out-of-range stored values
+/// clamp instead of failing, and an in-range value survives a round trip.
+@Test func favoriteLibrarySettingsGridCardScaleDefaultsClampsAndRoundTrips() throws {
+    let missingKey = try JSONDecoder().decode(FavoriteLibrarySettings.self, from: Data("{}".utf8))
+    #expect(missingKey.gridCardScale == FavoriteLibrarySettings.defaultGridCardScale)
+
+    let oversized = try JSONDecoder().decode(
+        FavoriteLibrarySettings.self,
+        from: Data(#"{"gridCardScale": 9.5}"#.utf8)
+    )
+    #expect(oversized.gridCardScale == FavoriteLibrarySettings.maximumGridCardScale)
+
+    let undersized = try JSONDecoder().decode(
+        FavoriteLibrarySettings.self,
+        from: Data(#"{"gridCardScale": 0.1}"#.utf8)
+    )
+    #expect(undersized.gridCardScale == FavoriteLibrarySettings.minimumGridCardScale)
+
+    #expect(FavoriteLibrarySettings(gridCardScale: .nan).gridCardScale
+        == FavoriteLibrarySettings.defaultGridCardScale)
+
+    let encoded = try JSONEncoder().encode(FavoriteLibrarySettings(gridCardScale: 1.4))
+    let decoded = try JSONDecoder().decode(FavoriteLibrarySettings.self, from: encoded)
+    #expect(decoded.gridCardScale == 1.4)
+}
+
 @Test func appSettingsPersistsHomePageWhenEncodingAndDecoding() throws {
     let settings = AppSettings(system: SystemSettings(homePage: .favorites))
 

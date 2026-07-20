@@ -9,6 +9,7 @@ import YamiboXCore
 final class SettingsFavoritesViewModel: AppSettingsPersisting {
     var favoriteBackground = FavoriteBackgroundSettings()
     var favoriteLayoutMode: FavoriteLibraryLayoutMode = .rowCard
+    var favoriteGridCardScale = FavoriteLibrarySettings.defaultGridCardScale
     var favoriteSortOrder: LocalFavoriteLibrarySortOrder = .organization
     var favoriteSortDescending = false
     var favoriteShowsCategoryCounts = true
@@ -34,6 +35,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     func applyLoadedSettings(_ settings: AppSettings) {
         favoriteBackground = settings.favorites.background
         favoriteLayoutMode = settings.favorites.layoutMode
+        favoriteGridCardScale = FavoriteLibrarySettings.clampGridCardScale(settings.favorites.gridCardScale)
         favoriteSortOrder = settings.favorites.sortOrder
         favoriteSortDescending = settings.favorites.sortDescending
         favoriteShowsCategoryCounts = settings.favorites.showsCategoryCounts
@@ -148,11 +150,29 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         }
     }
 
-    /// The display quad persists as a unit (all four current values, read at
+    /// Live slider tracking for the iPad grid card size: updates only the
+    /// in-memory value so a drag does not enqueue one save per tick.
+    /// `commitFavoriteGridCardScale()` persists once when the drag ends.
+    func previewFavoriteGridCardScale(_ value: Double) {
+        favoriteGridCardScale = FavoriteLibrarySettings.clampGridCardScale(value)
+    }
+
+    /// Persists the slider value on drag end. The optimistic value and the
+    /// committed value coincide here (the drag already previewed it), so a
+    /// failed save keeps showing the dragged value alongside the error
+    /// message rather than yanking the knob back mid-look.
+    func commitFavoriteGridCardScale() {
+        persistSettings(\.favoriteGridCardScale, to: favoriteGridCardScale) { [self] settings in
+            applyFavoriteLibraryDisplaySettings(to: &settings)
+        }
+    }
+
+    /// The display fields persist as a unit (all current values, read at
     /// persist time) so rapid edits across different display fields cannot
     /// resurrect a stale sibling value from an earlier in-flight save.
     private func applyFavoriteLibraryDisplaySettings(to settings: inout AppSettings) {
         settings.favorites.layoutMode = favoriteLayoutMode
+        settings.favorites.gridCardScale = favoriteGridCardScale
         settings.favorites.sortOrder = favoriteSortOrder
         settings.favorites.sortDescending = favoriteSortDescending
         settings.favorites.showsCategoryCounts = favoriteShowsCategoryCounts
