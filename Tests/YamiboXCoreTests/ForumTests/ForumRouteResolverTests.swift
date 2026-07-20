@@ -197,6 +197,8 @@ import Testing
 
     #expect(try #require(URLComponents(url: profileURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "do") == "profile")
     #expect(try #require(URLComponents(url: threadURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "do") == "thread")
+    #expect(try #require(URLComponents(url: threadURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "view") == "me")
+    #expect(try #require(URLComponents(url: threadURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "order") == "dateline")
     #expect(try #require(URLComponents(url: threadURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "page") == "2")
     #expect(try #require(URLComponents(url: replyURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "view") == "me")
     #expect(try #require(URLComponents(url: replyURL, resolvingAgainstBaseURL: false)?.queryItems).value(named: "type") == "reply")

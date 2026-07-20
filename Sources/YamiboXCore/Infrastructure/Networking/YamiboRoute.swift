@@ -279,7 +279,16 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceProfile(uid):
             return userSpaceURL(uid: uid, doValue: "profile", page: nil)
         case let .userSpaceThreads(uid, page):
-            return userSpaceURL(uid: uid, doValue: "thread", page: page)
+            // `view=me` is required: without it Discuz serves the OWN-threads
+            // list empty (verified against the live site; other users' uids
+            // happen to default sensibly, one's own does not).
+            return userSpaceURL(
+                uid: uid,
+                doValue: "thread",
+                page: page,
+                view: "me",
+                extraItems: [.init(name: "order", value: "dateline")]
+            )
         case let .userSpaceReplies(uid, page):
             // The reply tab is selected by `type=reply` (with `view=me`);
             // `view=reply` is not a Discuz view and falls back to the thread list.
@@ -293,7 +302,8 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceBlogs(uid, page):
             return userSpaceURL(uid: uid, doValue: "blog", page: page, view: "me")
         case let .userSpaceMyBlogs(uid, page):
-            return userSpaceURL(uid: uid, doValue: "blog", page: page)
+            // Same `view=me` requirement as the thread list.
+            return userSpaceURL(uid: uid, doValue: "blog", page: page, view: "me")
         case let .userSpaceFriendBlogs(page):
             return userSpaceURL(uid: nil, doValue: "blog", page: page, view: "we")
         case let .userSpaceViewAllBlogs(filter, page):
