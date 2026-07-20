@@ -76,7 +76,7 @@ final class ForumBoardViewModelTests: XCTestCase {
         XCTAssertEqual(requests.last?.orderBy, "lastpost")
     }
 
-    func testPagingCanRestorePreviousBoardSnapshot() async throws {
+    func testGoToPageFetchesRequestedPage() async throws {
         let first = makeBoardPage(fid: "5", title: "動漫區", page: 1, threadIDs: ["first"])
         let second = makeBoardPage(fid: "5", title: "動漫區", page: 2, threadIDs: ["second"])
         let repository = ForumBoardRepositoryStub(cached: nil, fetchedPages: [first, second])
@@ -85,53 +85,10 @@ final class ForumBoardViewModelTests: XCTestCase {
         await model.load()
         await model.goToPage(2)
 
-        XCTAssertTrue(model.canRestorePreviousPage)
         XCTAssertEqual(model.currentPage, 2)
         XCTAssertEqual(model.threads.map(\.tid), ["second"])
-
-        XCTAssertTrue(model.restorePreviousPage())
-
-        XCTAssertFalse(model.canRestorePreviousPage)
-        XCTAssertEqual(model.currentPage, 1)
-        XCTAssertEqual(model.threads.map(\.tid), ["first"])
         let requests = await repository.requests()
         XCTAssertEqual(requests.map(\.page), [1, 2])
-    }
-
-    func testSelectingFilterClearsBoardPageHistory() async throws {
-        let first = makeBoardPage(
-            fid: "5",
-            title: "動漫區",
-            page: 1,
-            filters: [ForumFilterOption(id: "400", title: "动画讨论")],
-            threadIDs: ["first"]
-        )
-        let second = makeBoardPage(
-            fid: "5",
-            title: "動漫區",
-            page: 2,
-            filters: [ForumFilterOption(id: "400", title: "动画讨论")],
-            threadIDs: ["second"]
-        )
-        let filtered = makeBoardPage(
-            fid: "5",
-            title: "動漫區",
-            page: 1,
-            filters: [ForumFilterOption(id: "400", title: "动画讨论")],
-            threadIDs: ["filtered"]
-        )
-        let repository = ForumBoardRepositoryStub(cached: nil, fetchedPages: [first, second, filtered])
-        let model = ForumBoardViewModel(fid: "5", title: "動漫區", repository: repository)
-
-        await model.load()
-        await model.goToPage(2)
-        await model.selectFilter(id: "400")
-
-        XCTAssertFalse(model.canRestorePreviousPage)
-        XCTAssertFalse(model.restorePreviousPage())
-        XCTAssertEqual(model.currentPage, 1)
-        XCTAssertEqual(model.selectedFilterID, "400")
-        XCTAssertEqual(model.threads.map(\.tid), ["filtered"])
     }
 
     func testAddFavoriteUsesCurrentPageFormHash() async throws {
@@ -340,7 +297,7 @@ final class ForumBoardViewModelTests: XCTestCase {
         XCTAssertEqual(model.threads.map(\.tid), ["fresh"])
     }
 
-    func testPagingFailureClearsCurrentPageAndCanRestorePreviousSnapshot() async throws {
+    func testPagingFailureClearsCurrentPageAndShowsError() async throws {
         let first = makeBoardPage(fid: "5", title: "動漫區", page: 1, threadIDs: ["first"])
         let repository = ForumBoardRepositoryStub(cached: nil, fetched: first)
         let model = ForumBoardViewModel(fid: "5", title: "動漫區", repository: repository)
@@ -351,12 +308,7 @@ final class ForumBoardViewModelTests: XCTestCase {
 
         XCTAssertNil(model.page)
         XCTAssertNotNil(model.errorMessage)
-        XCTAssertTrue(model.canRestorePreviousPage)
-
-        XCTAssertTrue(model.restorePreviousPage())
-        XCTAssertEqual(model.currentPage, 1)
-        XCTAssertEqual(model.threads.map(\.tid), ["first"])
-        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.currentPage, 2)
     }
 }
 

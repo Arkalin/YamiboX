@@ -9,9 +9,6 @@ struct ForumPageNavigationBar: View {
     let navigation: ForumPageNavigation?
     let currentPage: Int
     let goToPage: (Int) -> Void
-    /// Shows the undo-jump button when set (screens that offer "go back to
-    /// where I was" after a manual page jump).
-    var restorePreviousPage: (() -> Void)? = nil
     /// Hides the whole bar for single-page content instead of rendering a
     /// disabled pager.
     var hidesOnSinglePage = false
@@ -19,13 +16,6 @@ struct ForumPageNavigationBar: View {
     var body: some View {
         if let navigation, isVisible(navigation) {
             HStack(spacing: 12) {
-                if let restorePreviousPage {
-                    Button(action: restorePreviousPage) {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                    .accessibilityLabel(L10n.string("forum.page_navigation.undo_jump"))
-                }
-
                 Button {
                     goToPage(currentPage - 1)
                 } label: {
