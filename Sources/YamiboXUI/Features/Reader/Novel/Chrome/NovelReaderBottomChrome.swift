@@ -131,7 +131,10 @@ struct NovelReaderBottomChrome: View {
             progressText: progress.secondaryText ?? ""
         )
 
-        let content = VStack(spacing: 2) {
+        // Two caption2 lines with this spacing is load-bearing:
+        // `NovelReaderVerticalBandsPresentation.pagedProgressSummaryHeight`
+        // mirrors exactly that to reserve the paged text band above us.
+        let content = VStack(spacing: chromeLayout.progressSummaryLineSpacing) {
             Text(summary.pageProgressLine)
             if !summary.webProgressLine.isEmpty {
                 Text(summary.webProgressLine)

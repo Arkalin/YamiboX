@@ -670,7 +670,10 @@ public struct NovelReaderView: View {
             trailing: horizontalPadding
         )
         let chromeInsets = model.settings.readingMode == .paged
-            ? NovelReaderLayoutInsets(top: verticalBands.pagedTopBandHeight)
+            ? NovelReaderLayoutInsets(
+                top: verticalBands.pagedTopBandHeight,
+                bottom: verticalBands.pagedContentBottomReserve(forBottomInset: bottomInset)
+            )
             : .zero
         return NovelReaderLayout(
             containerSize: proxy.size,

@@ -195,6 +195,34 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public func bottomPadding(forBottomInset bottomInset: CGFloat) -> CGFloat {
         max(bottomInset - 18, 8)
     }
+
+    /// Line spacing inside the two-line progress summary. Shared between
+    /// the summary's `VStack` and the paged bottom-band reservation so the
+    /// reserved height and the rendered height cannot drift.
+    public var progressSummaryLineSpacing: CGFloat { 2 }
+
+    /// Breathing room between the last content-text line and the top of
+    /// the progress summary in paged mode.
+    public var pagedProgressSummaryContentGap: CGFloat { 8 }
+
+    /// The extra bottom inset paged pagination must reserve — beyond the
+    /// safe area, which layout subtracts separately — so content text ends
+    /// above the progress summary that renders at
+    /// `bottomPadding(forBottomInset:)` off the screen bottom.
+    /// `pagedProgressSummaryMovesBelowContentText` states the contract;
+    /// this is the geometry that enforces it.
+    public func pagedContentBottomReserve(
+        forBottomInset bottomInset: CGFloat,
+        progressSummaryHeight: CGFloat
+    ) -> CGFloat {
+        max(
+            bottomPadding(forBottomInset: bottomInset)
+                + progressSummaryHeight
+                + pagedProgressSummaryContentGap
+                - bottomInset,
+            0
+        )
+    }
     public var horizontalAlignment: ReaderBottomChromeHorizontalAlignment { .trailing }
     public var progressTextLeadsIcon: Bool { true }
     public var progressFillHasVerticalTrailingEdge: Bool { true }
@@ -224,6 +252,10 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var directoryCapsuleContentUsesAccentColor: Bool { true }
     public var bottomProgressSummaryUsesPageCenter: Bool { true }
     public var verticalProgressSummaryUsesLiquidGlass: Bool { true }
+    /// Contract flag only — the geometry that keeps the paged summary below
+    /// the content text is `pagedContentBottomReserve(forBottomInset:progressSummaryHeight:)`,
+    /// consumed by `NovelReaderVerticalBandsPresentation` and fed into
+    /// pagination via `NovelReaderView.readerLayout`.
     public var pagedProgressSummaryMovesBelowContentText: Bool { true }
     public var verticalChapterTitleCapsuleWrapsContent: Bool { true }
     public var capsuleChapterTickRoundedEdgeInset: CGFloat { 6 }

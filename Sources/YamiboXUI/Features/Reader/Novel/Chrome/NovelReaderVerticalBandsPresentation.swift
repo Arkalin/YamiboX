@@ -5,11 +5,16 @@ import YamiboXCore
 import UIKit
 
 /// Single owner of the novel reader's vertical partitioning: the paged top
-/// chrome band, the pinned iPad top inset, and the boundary-pull badge
-/// avoidance paddings — previously copied inline at each call site
-/// (`NovelReaderView` had its own `48`, its own `32`, and its own
-/// `140`/`210`/`55`/`24`/`8`), which is how they were free to drift.
+/// chrome band, the paged bottom progress-summary band, the pinned iPad top
+/// inset, and the boundary-pull badge avoidance paddings.
+///
+/// Pagination (`NovelReaderView.readerLayout`), the paged viewports and the
+/// bottom chrome must all read these definitions instead of carrying their
+/// own copies — the paged progress summary overlapping the last text line
+/// was exactly the drift that per-site constants allowed.
 struct NovelReaderVerticalBandsPresentation: Equatable, Sendable {
+    private let bottomChromeLayout = ReaderBottomChromeLayoutPresentation()
+
     init() {}
 
     // MARK: - Paged top band
@@ -23,6 +28,29 @@ struct NovelReaderVerticalBandsPresentation: Equatable, Sendable {
     /// immersive status-bar hiding neither moves text nor changes rendered
     /// page counts.
     var padVisibleStatusBarTopInset: CGFloat { 32 }
+
+    // MARK: - Paged bottom band
+
+    /// Height of the two-line page/web progress summary that
+    /// `NovelReaderBottomChrome.progressSummary` renders below the content
+    /// text in paged mode. Derived from caption2 font metrics so it tracks
+    /// Dynamic Type deterministically — pagination must never depend on a
+    /// measured, after-the-fact chrome height or layout would feed back
+    /// into itself.
+    var pagedProgressSummaryHeight: CGFloat {
+        let lineHeight = ceil(UIFont.preferredFont(forTextStyle: .caption2).lineHeight)
+        return lineHeight * 2 + bottomChromeLayout.progressSummaryLineSpacing
+    }
+
+    /// The extra bottom inset paged pagination reserves beyond the safe
+    /// area so the last text line ends above the progress summary. This is
+    /// what makes `pagedProgressSummaryMovesBelowContentText` actually true.
+    func pagedContentBottomReserve(forBottomInset bottomInset: CGFloat) -> CGFloat {
+        bottomChromeLayout.pagedContentBottomReserve(
+            forBottomInset: bottomInset,
+            progressSummaryHeight: pagedProgressSummaryHeight
+        )
+    }
 
     // MARK: - Boundary-pull badge avoidance (vertical mode)
 

@@ -6,9 +6,57 @@ import UIKit
 // The vertical band definitions are the single source of truth shared by
 // pagination (`NovelReaderView.readerLayout`), the paged viewports and the
 // bottom chrome. These tests pin the geometric contract that used to be
-// scattered as per-site constants.
+// scattered as per-site constants — most importantly that the paged text
+// band ends above the two-line progress summary.
 
 private let bands = NovelReaderVerticalBandsPresentation()
+private let bottomChrome = ReaderBottomChromeLayoutPresentation()
+
+@Test func pagedTextBandEndsAboveProgressSummaryOnEveryInsetProfile() {
+    // 0 = inset-less device, 20 = iPad home indicator, 34 = iPhone home
+    // indicator, 60 = hypothetical future hardware.
+    for bottomInset: CGFloat in [0, 8, 20, 34, 60] {
+        let reserve = bands.pagedContentBottomReserve(forBottomInset: bottomInset)
+        // Pagination subtracts safe area and chrome reserve separately, so
+        // the last text line ends `bottomInset + reserve` above the screen
+        // bottom; the summary's top edge sits at its bottom padding plus
+        // its own height.
+        let textClearance = bottomInset + reserve
+        let summaryTop = bottomChrome.bottomPadding(forBottomInset: bottomInset)
+            + bands.pagedProgressSummaryHeight
+        #expect(
+            textClearance - summaryTop >= bottomChrome.pagedProgressSummaryContentGap,
+            "bottomInset \(bottomInset): text clearance \(textClearance) must clear summary top \(summaryTop) by the gap"
+        )
+    }
+}
+
+@Test func pagedBottomReserveIsNeverNegative() {
+    for bottomInset: CGFloat in [0, 20, 34, 100, 500] {
+        #expect(bands.pagedContentBottomReserve(forBottomInset: bottomInset) >= 0)
+    }
+    // Pure-function clamp: a huge inset with no summary would otherwise go
+    // negative (padding 82 + 0 + 8 − 100).
+    #expect(bottomChrome.pagedContentBottomReserve(forBottomInset: 100, progressSummaryHeight: 0) == 0)
+}
+
+@Test func pagedBottomReserveComposesPaddingSummaryAndGap() {
+    let height: CGFloat = 30
+    // iPad-like: inset 20 → chrome bottom padding max(20−18, 8) = 8.
+    #expect(bottomChrome.pagedContentBottomReserve(forBottomInset: 20, progressSummaryHeight: height)
+        == 8 + height + bottomChrome.pagedProgressSummaryContentGap - 20)
+    // iPhone-like: inset 34 → padding 16.
+    #expect(bottomChrome.pagedContentBottomReserve(forBottomInset: 34, progressSummaryHeight: height)
+        == 16 + height + bottomChrome.pagedProgressSummaryContentGap - 34)
+}
+
+@Test func progressSummaryHeightTracksCaptionTwoMetrics() {
+    let lineHeight = ceil(UIFont.preferredFont(forTextStyle: .caption2).lineHeight)
+    #expect(bands.pagedProgressSummaryHeight
+        == lineHeight * 2 + bottomChrome.progressSummaryLineSpacing)
+    // Two readable lines can't be shorter than this on any content size.
+    #expect(bands.pagedProgressSummaryHeight > 20)
+}
 
 @Test func pagedTopBandAndPadStatusBarInsetKeepFrozenValues() {
     // Frozen pagination inputs: changing either re-paginates every saved
