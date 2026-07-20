@@ -12,13 +12,6 @@ extension ForumRepository: ForumSearchPageLoading {}
 @MainActor
 @Observable
 final class ForumSearchViewModel {
-    private struct PageSnapshot {
-        var page: ForumSearchPage?
-        var errorMessage: String?
-        var currentPage: Int
-        var currentSearchID: String?
-    }
-
     var query = ""
     var page: ForumSearchPage?
     var errorMessage: String?
@@ -31,27 +24,6 @@ final class ForumSearchViewModel {
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumSearchPageLoading
     @ObservationIgnored private let formHashProvider: @Sendable () async -> String?
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private lazy var pageNavigator = ForumPageNavigator<PageSnapshot>(
-        capture: { [unowned self] in
-            PageSnapshot(
-                page: page,
-                errorMessage: errorMessage,
-                currentPage: currentPage,
-                currentSearchID: currentSearchID
-            )
-        },
-        restore: { [unowned self] snapshot in
-            generation += 1
-            page = snapshot.page
-            errorMessage = snapshot.errorMessage
-            currentPage = snapshot.currentPage
-            currentSearchID = snapshot.currentSearchID
-            // The generation bump turns any in-flight search stale; its
-            // generation-guarded defer will no longer clear the spinner, so
-            // the restore clears it here (mirroring ForumBoardViewModel).
-            isLoading = false
-        }
-    )
 
     init(forumID: String?, dependencies: ForumDependencies) {
         self.forumID = forumID
@@ -90,35 +62,21 @@ final class ForumSearchViewModel {
         return L10n.string("forum.search.result_count", totalCount)
     }
 
-    var canRestorePreviousPage: Bool {
-        pageNavigator.canRestorePreviousPage
-    }
-
     func searchFirstPage() async {
-        pageNavigator.reset()
         currentPage = 1
         currentSearchID = nil
-        await search(pageNumber: 1, recordsHistory: false)
+        await search(pageNumber: 1)
     }
 
     func goToPage(_ pageNumber: Int) async {
         let nextPage = max(1, pageNumber)
         guard nextPage != currentPage else { return }
-        await search(pageNumber: nextPage, recordsHistory: true)
+        await search(pageNumber: nextPage)
     }
 
-    @discardableResult
-    func restorePreviousPage() -> Bool {
-        pageNavigator.restorePreviousPage()
-    }
-
-    private func search(pageNumber: Int, recordsHistory: Bool) async {
+    private func search(pageNumber: Int) async {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return }
-
-        if recordsHistory {
-            pageNavigator.recordCurrentPage()
-        }
 
         generation += 1
         let requestGeneration = generation
@@ -162,9 +120,6 @@ final class ForumSearchViewModel {
             errorMessage = nil
         } catch {
             guard requestGeneration == generation else { return }
-            if recordsHistory {
-                pageNavigator.discardLastRecord()
-            }
             page = nil
             currentPage = pageNumber
             errorMessage = error.localizedDescription

@@ -445,7 +445,6 @@
 "forum.search.loading" = "搜索中…";
 "forum.search.placeholder" = "搜索标题或论坛链接";
 "forum.search.result_count" = "找到 %d 笔搜索结果";
-"forum.page_navigation.undo_jump" = "返回跳转前的页码";
 "forum.search.title" = "论坛搜索";
 "forum.thread.author" = "作者";
 "forum.thread.collapse_title" = "点击展开 / 收起";

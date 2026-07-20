@@ -47,9 +47,6 @@ struct ForumBoardView: View {
             retry: retry,
             refresh: refresh,
             goToPage: goToPage,
-            restorePreviousPage: model.canRestorePreviousPage
-                ? { _ = model.restorePreviousPage() }
-                : nil,
             selectFilter: selectFilter,
             selectOrder: selectOrder,
             onSubBoardTap: onSubBoardTap,
@@ -60,9 +57,6 @@ struct ForumBoardView: View {
         .forumPageBackground()
         .tint(ForumColors.brownDeep)
         .navigationTitle(model.title)
-        // The system back button always pops the screen; undoing an in-page
-        // page jump is an explicit control in the pagination bar instead of
-        // a hijacked back button (which also killed edge-swipe back).
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: onSearchTap) {
@@ -176,7 +170,6 @@ private struct ForumBoardBodyView: View {
     let retry: () -> Void
     let refresh: () async -> Void
     let goToPage: (Int) -> Void
-    let restorePreviousPage: (() -> Void)?
     let selectFilter: @Sendable (String?) -> Void
     let selectOrder: @Sendable (String?) -> Void
     let onSubBoardTap: (ForumBoardSummary) -> Void
@@ -203,7 +196,6 @@ private struct ForumBoardBodyView: View {
                 isRefreshing: isRefreshing,
                 refresh: refresh,
                 goToPage: goToPage,
-                restorePreviousPage: restorePreviousPage,
                 filters: filters,
                 orders: orders,
                 selectFilter: selectFilter,
@@ -232,7 +224,6 @@ private struct ForumBoardContentView: View {
     let isRefreshing: Bool
     let refresh: () async -> Void
     let goToPage: (Int) -> Void
-    let restorePreviousPage: (() -> Void)?
     let filters: [ForumFilterOption]
     let orders: [ForumOrderOption]
     let selectFilter: @Sendable (String?) -> Void
@@ -273,8 +264,7 @@ private struct ForumBoardContentView: View {
                     ForumPageNavigationBar(
                         navigation: pageNavigation,
                         currentPage: pageNavigation.currentPage,
-                        goToPage: goToPage,
-                        restorePreviousPage: restorePreviousPage
+                        goToPage: goToPage
                     )
                     .padding(.top, 4)
                 }

@@ -30,14 +30,6 @@ extension ForumRepository: ForumBoardPageLoading {}
 @MainActor
 @Observable
 final class ForumBoardViewModel {
-    private struct PageSnapshot {
-        var page: ForumBoardPage?
-        var errorMessage: String?
-        var currentPage: Int
-        var selectedFilterID: String?
-        var selectedOrderOptionID: String?
-    }
-
     var page: ForumBoardPage?
     var errorMessage: String?
     var favoriteMessage: String?
@@ -62,27 +54,6 @@ final class ForumBoardViewModel {
     /// previous one, so a slow earlier write can never land after — and
     /// silently undo — a later one.
     @ObservationIgnored private var boardReaderWriteTask: Task<Void, Never>?
-    @ObservationIgnored private lazy var pageNavigator = ForumPageNavigator<PageSnapshot>(
-        capture: { [unowned self] in
-            PageSnapshot(
-                page: page,
-                errorMessage: errorMessage,
-                currentPage: currentPage,
-                selectedFilterID: selectedFilterID,
-                selectedOrderOptionID: selectedOrderOptionID
-            )
-        },
-        restore: { [unowned self] snapshot in
-            generation += 1
-            page = snapshot.page
-            errorMessage = snapshot.errorMessage
-            currentPage = snapshot.currentPage
-            selectedFilterID = snapshot.selectedFilterID
-            selectedOrderOptionID = snapshot.selectedOrderOptionID
-            isLoading = false
-            isRefreshing = false
-        }
-    )
 
     init(fid: String, title: String?, initialPage: Int = 1, dependencies: ForumDependencies) {
         self.fid = fid
@@ -128,10 +99,6 @@ final class ForumBoardViewModel {
 
     var pageNavigation: ForumPageNavigation? {
         page?.pageNavigation
-    }
-
-    var canRestorePreviousPage: Bool {
-        pageNavigator.canRestorePreviousPage
     }
 
     var filters: [ForumFilterOption] {
@@ -200,7 +167,6 @@ final class ForumBoardViewModel {
     func goToPage(_ page: Int) async {
         let nextPage = max(1, page)
         guard nextPage != currentPage else { return }
-        pageNavigator.recordCurrentPage()
         generation += 1
         let requestGeneration = generation
         let requestOrderOption = selectedOrderOption
@@ -229,7 +195,6 @@ final class ForumBoardViewModel {
         guard selectedFilterID != id else { return }
         selectedFilterID = id
         currentPage = 1
-        pageNavigator.reset()
         await reloadForOptionChange()
     }
 
@@ -237,13 +202,7 @@ final class ForumBoardViewModel {
         guard selectedOrderOptionID != id else { return }
         selectedOrderOptionID = id
         currentPage = 1
-        pageNavigator.reset()
         await reloadForOptionChange()
-    }
-
-    @discardableResult
-    func restorePreviousPage() -> Bool {
-        pageNavigator.restorePreviousPage()
     }
 
     func addFavorite() async {

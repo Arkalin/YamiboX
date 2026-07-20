@@ -31,9 +31,6 @@ struct ForumSearchView: View {
             errorMessage: model.errorMessage,
             submit: submit,
             goToPage: goToPage,
-            restorePreviousPage: model.canRestorePreviousPage
-                ? { _ = model.restorePreviousPage() }
-                : nil,
             onThreadTap: onThreadTap,
             onAuthorTap: onAuthorTap
         )
@@ -73,7 +70,6 @@ private struct ForumSearchBodyView: View {
     let errorMessage: String?
     let submit: () -> Void
     let goToPage: (Int) -> Void
-    let restorePreviousPage: (() -> Void)?
     let onThreadTap: (ForumThreadSummary) -> Void
     let onAuthorTap: (String, String?) -> Void
 
@@ -111,8 +107,7 @@ private struct ForumSearchBodyView: View {
                         ForumPageNavigationBar(
                             navigation: pageNavigation,
                             currentPage: currentPage,
-                            goToPage: goToPage,
-                            restorePreviousPage: restorePreviousPage
+                            goToPage: goToPage
                         )
                         .padding(.top, 4)
                     }
