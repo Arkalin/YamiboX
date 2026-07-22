@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 @testable import YamiboXCore
 
 private final class WebDAVTestURLProtocol: URLProtocol {
@@ -44,6 +45,44 @@ private final class WebDAVTestURLProtocol: URLProtocol {
             client?.urlProtocolDidFinishLoading(self)
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+/// Answers every request with a 404 delivered `responseDelay` later, off the
+/// URLProtocol work queue, and records each request's arrival time. Used by
+/// the concurrency test: the shared serial work queue stays free, so request
+/// overlap (or its absence) is visible in the arrival spread.
+private final class DelayedNotFoundURLProtocol: URLProtocol {
+    static let responseDelay: TimeInterval = 0.15
+    private static let arrivals = OSAllocatedUnfairLock<[TimeInterval]>(initialState: [])
+
+    static func reset() {
+        arrivals.withLock { $0.removeAll() }
+    }
+
+    static func arrivalTimes() -> [TimeInterval] {
+        arrivals.withLock { $0 }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.arrivals.withLock { $0.append(ProcessInfo.processInfo.systemUptime) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + Self.responseDelay) { [weak self] in
+            guard let self, let url = self.request.url else { return }
+            let response = HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: Data())
+            self.client?.urlProtocolDidFinishLoading(self)
         }
     }
 
@@ -180,11 +219,12 @@ private enum WebDAVTestError: Error {
     )
     try await fixture.appSettingsStore.save(localSettings)
 
-    var getPaths: [String] = []
+    // Dataset GETs run concurrently now, so the handler records under a lock.
+    let getPaths = OSAllocatedUnfairLock<[String]>(initialState: [])
     WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
         #expect(request.httpMethod == "GET")
         let path = try #require(request.url?.path)
-        getPaths.append(path)
+        getPaths.withLock { $0.append(path) }
         if path.hasSuffix("yamibox-app-settings-v1.json") {
             return (
                 try JSONEncoder().encode(remotePayload),
@@ -197,7 +237,7 @@ private enum WebDAVTestError: Error {
 
     _ = try await fixture.makeService().download(using: fixture.settings)
 
-    #expect(!getPaths.contains { $0.hasSuffix("yamibo-sync-v1.json") })
+    #expect(!getPaths.withLock { $0 }.contains { $0.hasSuffix("yamibo-sync-v1.json") })
     let loadedSettings = await fixture.appSettingsStore.load()
     #expect(loadedSettings.system.homePage == .favorites)
     #expect(loadedSettings.webBrowser.showsNavigationBar == false)
@@ -270,9 +310,9 @@ private enum WebDAVTestError: Error {
     ))
     try await fixture.signIn(accountUID: "123")
 
-    var requestCount = 0
+    let requestCount = OSAllocatedUnfairLock(initialState: 0)
     WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
-        requestCount += 1
+        requestCount.withLock { $0 += 1 }
         return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
     }
     defer { WebDAVTestURLProtocol.removeHandler(for: fixture.host) }
@@ -280,7 +320,7 @@ private enum WebDAVTestError: Error {
     let result = try await fixture.makeService().synchronizeAutomatically()
 
     #expect(result == .skipped)
-    #expect(requestCount == 0)
+    #expect(requestCount.withLock { $0 } == 0)
 }
 
 @Test func webDAVAutomaticSyncBypassesMinimumIntervalForForegroundAndBackgroundCheckpoints() async throws {
@@ -296,9 +336,10 @@ private enum WebDAVTestError: Error {
     ))
     try await fixture.signIn(accountUID: "123")
 
-    var requestCount = 0
+    // Dataset GETs run concurrently now, so the handler counts under a lock.
+    let requestCount = OSAllocatedUnfairLock(initialState: 0)
     WebDAVTestURLProtocol.setHandler(for: fixture.host) { request in
-        requestCount += 1
+        requestCount.withLock { $0 += 1 }
         return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
     }
     defer { WebDAVTestURLProtocol.removeHandler(for: fixture.host) }
@@ -309,7 +350,50 @@ private enum WebDAVTestError: Error {
     // round in the companion test); with nothing dirty and no remote payloads
     // it reports .skipped instead of stamping a phantom upload.
     #expect(result == .skipped)
-    #expect(requestCount > 0)
+    #expect(requestCount.withLock { $0 } > 0)
+}
+
+/// The per-dataset GETs of one sync round must overlap: the startup round
+/// blocks the bootstrap placeholder, so a serial fetch loop would stack the
+/// full request latency once per dataset. Overlap is proven through arrival
+/// times rather than an in-flight gauge because URLProtocol delivers every
+/// `startLoading` on one shared serial work queue — a stub that blocks in the
+/// handler serializes even genuinely concurrent requests. Responses are
+/// instead delivered after a delay off that queue: a serial caller cannot
+/// produce two arrivals inside one delay window, a concurrent one lands all
+/// of them nearly at once.
+@Test func webDAVSyncFetchesDatasetPayloadsConcurrently() async throws {
+    let fixture = try WebDAVSyncFixture(prefix: "webdav-concurrent-fetch")
+    try await fixture.settingsStore.save(WebDAVSyncSettings(
+        baseURLString: "https://\(fixture.host)",
+        username: "admin",
+        password: "secret",
+        isAutoSyncEnabled: true
+    ))
+    try await fixture.signIn(accountUID: "123")
+
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [DelayedNotFoundURLProtocol.self]
+    let service = WebDAVSyncService(
+        settingsStore: fixture.settingsStore,
+        sessionStore: fixture.sessionStore,
+        participants: [
+            FavoriteLibraryWebDAVParticipant(store: fixture.localFavoriteLibraryStore),
+            ReadingProgressWebDAVParticipant(store: fixture.readingProgressStore),
+            AppSettingsWebDAVParticipant(store: fixture.appSettingsStore),
+        ],
+        client: WebDAVClient(session: URLSession(configuration: configuration))
+    )
+
+    DelayedNotFoundURLProtocol.reset()
+    let result = try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+
+    #expect(result == .skipped)
+    let arrivals = DelayedNotFoundURLProtocol.arrivalTimes()
+    #expect(arrivals.count == 3)
+    let earliestArrival = try #require(arrivals.min())
+    let latestArrival = try #require(arrivals.max())
+    #expect(latestArrival - earliestArrival < DelayedNotFoundURLProtocol.responseDelay)
 }
 
 @Test func webDAVAutomaticSyncAppliesNewerRemoteDataForCleanDatasetsWhenLocalTimestampIsAhead() async throws {

@@ -243,17 +243,31 @@ public actor WebDAVSyncService {
         var info: WebDAVRemotePayloadInfo
     }
 
+    /// Per-dataset GETs run concurrently: every sync round starts with this
+    /// fetch, and the startup round sits on the app-launch critical path (the
+    /// bootstrap placeholder stays up until it finishes), so the round's fetch
+    /// latency must be the slowest single request, not the sum over all
+    /// datasets — on a high-latency WebDAV server the difference is tens of
+    /// seconds. Any fetch failing fails the round exactly as the previous
+    /// serial loop did; the group cancels the requests still in flight.
     private func fetchRemotePayloads(settings: WebDAVSyncSettings) async throws -> [String: RemotePayload] {
-        var payloads: [String: RemotePayload] = [:]
-        for participant in participants {
-            if let payload = try await fetchRemotePayloadIfPresent(for: participant, settings: settings) {
-                payloads[participant.datasetID] = payload
+        try await withThrowingTaskGroup(of: (String, RemotePayload?).self) { group in
+            for participant in participants {
+                group.addTask {
+                    (participant.datasetID, try await self.fetchRemotePayloadIfPresent(for: participant, settings: settings))
+                }
             }
+            var payloads: [String: RemotePayload] = [:]
+            for try await (datasetID, payload) in group {
+                if let payload {
+                    payloads[datasetID] = payload
+                }
+            }
+            return payloads
         }
-        return payloads
     }
 
-    private func fetchRemotePayloadIfPresent(
+    private nonisolated func fetchRemotePayloadIfPresent(
         for participant: any WebDAVSyncParticipant,
         settings: WebDAVSyncSettings
     ) async throws -> RemotePayload? {
