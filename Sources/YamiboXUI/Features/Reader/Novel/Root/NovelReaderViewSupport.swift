@@ -249,6 +249,7 @@ struct NovelReaderChromeHeightObserverModifier: ViewModifier {
 struct NovelReaderOfflineFallbackBanner: View {
     let message: String
     let retry: () -> Void
+    let dismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -269,6 +270,14 @@ struct NovelReaderOfflineFallbackBanner: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .accessibilityLabel(L10n.string("common.retry"))
+
+            Button(action: dismiss) {
+                Label(L10n.string("common.close"), systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel(L10n.string("common.close"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

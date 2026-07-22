@@ -34,6 +34,9 @@ public struct NovelReaderView: View {
     @State private var verticalBoundaryPullState = NovelReaderVerticalBoundaryPullState.idle
     @State private var isHandlingVerticalBoundaryPull = false
     @State private var isDismissing = false
+    /// Reader-session-scoped: once dismissed the banner stays gone until the
+    /// reader is closed and reopened (this view is recreated).
+    @State private var isOfflineBannerDismissed = false
     @State private var topChromeHeight: CGFloat = 0
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
@@ -115,14 +118,26 @@ public struct NovelReaderView: View {
                 }
                 .opacity(loadingOverlayPresentation.isPresented ? 0 : 1)
 
+                // Chrome-visible only, and only once the top chrome has
+                // reported its height: on the first chrome frame
+                // `topChromeHeight` is still 0 and the banner would sit on
+                // top of the close button.
                 if let sourceStatusText = model.sourceStatusText,
-                   !model.novelReaderSurfaces.isEmpty {
+                   !model.novelReaderSurfaces.isEmpty,
+                   !isOfflineBannerDismissed,
+                   chromeState.showsChrome,
+                   topChromeHeight > 0 {
                     VStack(spacing: 0) {
                         NovelReaderOfflineFallbackBanner(
                             message: sourceStatusText,
-                            retry: refreshReader
+                            retry: refreshReader,
+                            dismiss: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isOfflineBannerDismissed = true
+                                }
+                            }
                         )
-                        .padding(.top, topInset + (chromeState.showsChrome ? topChromeHeight + 6 : 12))
+                        .padding(.top, topInset + topChromeHeight + 6)
                         .padding(.horizontal, 12)
 
                         Spacer(minLength: 0)
