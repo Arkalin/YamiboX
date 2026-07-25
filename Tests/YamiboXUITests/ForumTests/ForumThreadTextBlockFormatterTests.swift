@@ -13,6 +13,13 @@ private var expectedBaseBodyFontSize: CGFloat {
     UIFontMetrics(forTextStyle: .body).scaledValue(for: 17)
 }
 
+/// Authored colors reach the view as scheme-adaptive colors (see
+/// `ForumThreadAuthorColorAdapter`), so they are compared by resolved value
+/// rather than by `Color` identity.
+private func resolved(_ color: Color?, _ style: UIUserInterfaceStyle) -> ResolvedColor? {
+    color.map { ResolvedColor($0, style) }
+}
+
 @Test func textBlockFormatterAppliesStyleRunsToCharacterRanges() throws {
     let block = ForumThreadTextBlock(
         text: "abcdef",
@@ -35,7 +42,11 @@ private var expectedBaseBodyFontSize: CGFloat {
     #expect(String(attributed.characters) == "abcdef")
     let boldRange = try #require(attributed.range(of: "bc"))
     #expect(attributed[boldRange].runs.allSatisfy { $0.font == Font.system(size: expectedBaseBodyFontSize).bold() })
-    #expect(attributed[boldRange].runs.allSatisfy { $0.foregroundColor == Color(red: 1, green: 0, blue: 0) })
+    let expectedRed = resolved(
+        ForumThreadAuthorColorAdapter.colors(for: ForumThreadTextStyle(foregroundHex: "#FF0000")).foreground,
+        .light
+    )
+    #expect(attributed[boldRange].runs.allSatisfy { resolved($0.foregroundColor, .light) == expectedRed })
 
     // The second run is clamped to the end of the text.
     let decoratedRange = try #require(attributed.range(of: "ef"))
@@ -80,6 +91,27 @@ private var expectedBaseBodyFontSize: CGFloat {
     #expect(attributed[linkRange].runs.allSatisfy { $0.link == url })
     #expect(attributed[linkRange].runs.allSatisfy { $0.foregroundColor == ForumColors.brownPrimary })
     #expect(attributed[linkRange].runs.allSatisfy { $0.underlineStyle == .single })
+}
+
+@Test func textBlockFormatterFixesLinkColorOverAnAuthoredHighlight() throws {
+    let url = try #require(URL(string: "https://bbs.yamibo.com/thread-3-1-1.html"))
+    let block = ForumThreadTextBlock(
+        text: "tap here",
+        links: [ForumThreadTextLink(start: 4, length: 4, url: url)],
+        styleRuns: [
+            ForumThreadTextStyleRun(start: 0, length: 8, style: ForumThreadTextStyle(backgroundHex: "#FFFFFF"))
+        ]
+    )
+
+    let attributed = ForumThreadTextBlockFormatter(block: block).attributedText
+
+    // The theme link color is picked for the app's surfaces; on the author's
+    // white highlight its dark-scheme value measures 2.28:1, so the link has
+    // to take a fixed color instead.
+    let linkRange = try #require(attributed.range(of: "here"))
+    let expected = resolved(ForumThreadAuthorColorAdapter.linkColor(onBackgroundHex: "#FFFFFF"), .dark)
+    #expect(attributed[linkRange].runs.allSatisfy { resolved($0.foregroundColor, .dark) == expected })
+    #expect(attributed[linkRange].runs.allSatisfy { resolved($0.foregroundColor, .light) == expected })
 }
 
 @Test func textBlockFormatterSplitsRubySegmentsAndKeepsStyles() {

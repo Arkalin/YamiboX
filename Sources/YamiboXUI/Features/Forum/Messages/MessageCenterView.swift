@@ -237,7 +237,7 @@ private struct MessageCenterPrivateMessageRowView: View {
             if let timeText = message.timeText {
                 Text(timeText)
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.brownLight)
+                    .foregroundStyle(ForumColors.tertiaryText)
                     .lineLimit(1)
             }
         }
@@ -268,7 +268,7 @@ private struct MessageCenterNoticeRowView: View {
                 if let timeText = notice.timeText {
                     Text(timeText)
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.brownLight)
+                        .foregroundStyle(ForumColors.tertiaryText)
                 }
                 Text(notice.contentText)
                     .font(.subheadline)

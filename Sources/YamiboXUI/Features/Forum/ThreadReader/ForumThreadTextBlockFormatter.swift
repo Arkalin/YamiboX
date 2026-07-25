@@ -16,10 +16,11 @@ struct ForumThreadTextBlockFormatter {
                 continue
             }
             attributed[range].font = font(for: run.style)
-            if let foregroundColor = Color(forumThreadHex: run.style.foregroundHex) {
+            let colors = ForumThreadAuthorColorAdapter.colors(for: run.style)
+            if let foregroundColor = colors.foreground {
                 attributed[range].foregroundColor = foregroundColor
             }
-            if let backgroundColor = Color(forumThreadHex: run.style.backgroundHex) {
+            if let backgroundColor = colors.background {
                 attributed[range].backgroundColor = backgroundColor
             }
             if run.style.isUnderline {
@@ -34,10 +35,24 @@ struct ForumThreadTextBlockFormatter {
                 continue
             }
             attributed[range].link = link.url
-            attributed[range].foregroundColor = ForumColors.brownPrimary
+            attributed[range].foregroundColor = ForumThreadAuthorColorAdapter.linkColor(
+                onBackgroundHex: authoredBackgroundHex(under: link)
+            )
             attributed[range].underlineStyle = .single
         }
         return attributed
+    }
+
+    /// The authored background a link is painted over, if any. A link inside a
+    /// highlighted run needs a fixed color for the same reason the run's own
+    /// text does — the scheme-adaptive link color is picked for the app's
+    /// surfaces, not for the author's.
+    private func authoredBackgroundHex(under link: ForumThreadTextLink) -> String? {
+        block.styleRuns.first { run in
+            run.style.backgroundHex != nil
+                && run.start < link.start + link.length
+                && link.start < run.start + run.length
+        }?.style.backgroundHex
     }
 
     /// The block split into ruby and plain segments, each carrying its slice
@@ -163,20 +178,5 @@ final class ForumThreadTextBlockFormatterCache {
         if let rubySegments {
             cachedRubySegments = rubySegments
         }
-    }
-}
-
-private extension Color {
-    init?(forumThreadHex hex: String?) {
-        guard let hex else { return nil }
-        let normalized = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard normalized.count == 6,
-              let value = UInt64(normalized, radix: 16) else {
-            return nil
-        }
-        let red = Double((value >> 16) & 0xFF) / 255
-        let green = Double((value >> 8) & 0xFF) / 255
-        let blue = Double(value & 0xFF) / 255
-        self.init(red: red, green: green, blue: blue)
     }
 }

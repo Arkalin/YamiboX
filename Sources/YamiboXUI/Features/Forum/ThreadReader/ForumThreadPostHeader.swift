@@ -36,7 +36,7 @@ struct ForumThreadPostHeader: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(ForumColors.brownLight)
+                .foregroundStyle(ForumColors.tertiaryText)
             }
 
             Spacer(minLength: 0)

@@ -177,7 +177,7 @@ private struct PrivateMessageBubbleView: View {
                 if let postedAtText = message.postedAtText {
                     Text(postedAtText)
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.brownLight)
+                        .foregroundStyle(ForumColors.tertiaryText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
