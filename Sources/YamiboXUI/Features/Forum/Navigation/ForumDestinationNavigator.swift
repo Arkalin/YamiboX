@@ -101,6 +101,7 @@ final class ForumDestinationNavigator {
         title: String?,
         containingFid: String?,
         intent: YamiboThreadRouteIntent = .contentRoute,
+        readerOverride: YamiboThreadReaderOverride? = nil,
         isDiscussionView: Bool = false
     ) {
         if mode == .readerOverlay {
@@ -115,6 +116,7 @@ final class ForumDestinationNavigator {
                         threadURL: url,
                         title: title,
                         intent: intent,
+                        readerOverride: readerOverride,
                         tapContext: YamiboThreadTapContext(containingFid: containingFid)
                     )
                 )
@@ -173,6 +175,18 @@ final class ForumDestinationNavigator {
         }
     }
 
+    /// Same menu for a board's 置顶 rows. Announcement rows are filtered out by
+    /// the row itself (no `threadID`, so nothing to apply a reader to); this
+    /// only decides whether the stack can honor a choice at all.
+    func pinnedReaderOverrideHandler(
+        containingFid: String?
+    ) -> ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)? {
+        guard mode == .forumTab else { return nil }
+        return { item, readerOverride in
+            self.openPinnedItem(item, containingFid: containingFid, readerOverride: readerOverride)
+        }
+    }
+
     func pushThreadLink(
         url: URL,
         title: String?,
@@ -209,9 +223,18 @@ final class ForumDestinationNavigator {
         push(.messageCenter(tab: tab))
     }
 
-    func openPinnedItem(_ item: ForumPinnedItem, containingFid: String?) {
+    func openPinnedItem(
+        _ item: ForumPinnedItem,
+        containingFid: String?,
+        readerOverride: YamiboThreadReaderOverride? = nil
+    ) {
         if item.threadID != nil {
-            openThread(item.url, title: item.title, containingFid: containingFid)
+            openThread(
+                item.url,
+                title: item.title,
+                containingFid: containingFid,
+                readerOverride: readerOverride
+            )
         } else {
             push(.web(item.url))
         }

@@ -21,6 +21,7 @@ struct ForumDestinationScreen: View {
                 onPinnedTap: { navigator.openPinnedItem($0, containingFid: fid) },
                 onThreadTap: { navigator.openThread($0, containingFid: fid) },
                 onThreadReaderOverrideTap: navigator.threadReaderOverrideHandler(containingFid: fid),
+                onPinnedReaderOverrideTap: navigator.pinnedReaderOverrideHandler(containingFid: fid),
                 onAuthorTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onSearchTap: {
                     navigator.push(.search(fid: fid))

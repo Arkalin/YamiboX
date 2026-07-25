@@ -6,6 +6,7 @@ struct ForumBoardView: View {
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
     let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
+    let onPinnedReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
     let onSearchTap: () -> Void
     let onPostThreadTap: () -> Void
@@ -19,6 +20,7 @@ struct ForumBoardView: View {
         onPinnedTap: @escaping (ForumPinnedItem) -> Void,
         onThreadTap: @escaping (ForumThreadSummary) -> Void,
         onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)? = nil,
+        onPinnedReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)? = nil,
         onAuthorTap: @escaping (String, String?) -> Void,
         onSearchTap: @escaping () -> Void,
         onPostThreadTap: @escaping () -> Void
@@ -28,6 +30,7 @@ struct ForumBoardView: View {
         self.onPinnedTap = onPinnedTap
         self.onThreadTap = onThreadTap
         self.onThreadReaderOverrideTap = onThreadReaderOverrideTap
+        self.onPinnedReaderOverrideTap = onPinnedReaderOverrideTap
         self.onAuthorTap = onAuthorTap
         self.onSearchTap = onSearchTap
         self.onPostThreadTap = onPostThreadTap
@@ -56,6 +59,7 @@ struct ForumBoardView: View {
             onPinnedTap: onPinnedTap,
             onThreadTap: onThreadTap,
             onThreadReaderOverrideTap: onThreadReaderOverrideTap,
+            onPinnedReaderOverrideTap: onPinnedReaderOverrideTap,
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
@@ -180,6 +184,7 @@ private struct ForumBoardBodyView: View {
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
     let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
+    let onPinnedReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
@@ -209,6 +214,7 @@ private struct ForumBoardBodyView: View {
                 onPinnedTap: onPinnedTap,
                 onThreadTap: onThreadTap,
                 onThreadReaderOverrideTap: onThreadReaderOverrideTap,
+                onPinnedReaderOverrideTap: onPinnedReaderOverrideTap,
                 onAuthorTap: onAuthorTap
             )
         } else {
@@ -238,6 +244,7 @@ private struct ForumBoardContentView: View {
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
     let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
+    let onPinnedReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
@@ -250,7 +257,11 @@ private struct ForumBoardContentView: View {
                 }
 
                 if !pinnedItems.isEmpty {
-                    ForumPinnedSectionView(items: pinnedItems, onTap: onPinnedTap)
+                    ForumPinnedSectionView(
+                        items: pinnedItems,
+                        onTap: onPinnedTap,
+                        onReaderOverrideTap: onPinnedReaderOverrideTap
+                    )
                 }
 
                 if threads.isEmpty {
@@ -520,6 +531,7 @@ private struct ForumSubBoardSectionView: View {
 private struct ForumPinnedSectionView: View {
     let items: [ForumPinnedItem]
     let onTap: (ForumPinnedItem) -> Void
+    let onReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -534,9 +546,20 @@ private struct ForumPinnedSectionView: View {
                     kind: item.kind,
                     onTap: {
                         onTap(item)
-                    }
+                    },
+                    onReaderOverrideTap: readerOverrideTap(for: item)
                 )
             }
+        }
+    }
+
+    /// Only rows that actually open a thread get the reading-mode menu — an
+    /// announcement row (no `threadID`) opens a web page, so there is nothing
+    /// for a reader choice to apply to.
+    private func readerOverrideTap(for item: ForumPinnedItem) -> ((YamiboThreadReaderOverride) -> Void)? {
+        guard item.threadID != nil, let onReaderOverrideTap else { return nil }
+        return { readerOverride in
+            onReaderOverrideTap(item, readerOverride)
         }
     }
 }
@@ -546,6 +569,7 @@ private struct ForumPinnedRowView: View {
     let title: String
     let kind: ForumPinnedItem.Kind
     let onTap: () -> Void
+    var onReaderOverrideTap: ((YamiboThreadReaderOverride) -> Void)?
 
     var body: some View {
         Button(action: onTap) {
@@ -568,6 +592,7 @@ private struct ForumPinnedRowView: View {
             .forumCardBackground(fill: kind == .announcement ? ForumColors.announcementBackground : ForumColors.pinnedBackground)
         }
         .buttonStyle(.plain)
+        .forumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap)
         .accessibilityIdentifier("forum-pinned-row-\(id)")
     }
 }
