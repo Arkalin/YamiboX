@@ -10,6 +10,7 @@ enum YamiboColors {
         /// Declared here so the two spellings cannot drift apart.
         static let brownPrimaryLightHex: UInt32 = 0x6D3A2B
         static let brownPrimaryDarkHex: UInt32 = 0xD6A083
+        static let creamBackgroundLightHex: UInt32 = 0xFFF3D6
         static let creamSurfaceDarkHex: UInt32 = 0x241B15
         static let textDarkLightHex: UInt32 = 0x2E1A0E
         static let textDarkDarkHex: UInt32 = 0xF4E7D1
@@ -18,7 +19,7 @@ enum YamiboColors {
         static let brownPrimary = Color(light: brownPrimaryLightHex, dark: brownPrimaryDarkHex)
         static let brownEmphasis = Color(light: 0x4E2A1B, dark: 0xD6A083)
         static let brownLight = Color(light: 0xCCB8A8, dark: 0x8F6F5E)
-        static let creamBackground = Color(light: 0xFFF3D6, dark: 0x17110D)
+        static let creamBackground = Color(light: creamBackgroundLightHex, dark: 0x17110D)
         static let creamSurface = Color(light: 0xFFF7E0, dark: creamSurfaceDarkHex)
         static let orangeAccent = Color(light: 0xF59E2A, dark: 0xF0A33A)
         static let textDark = Color(light: textDarkLightHex, dark: textDarkDarkHex)
@@ -41,8 +42,16 @@ enum YamiboColors {
         static let navBarIconUnselected = Color(light: 0xD29D7C, dark: 0xA97B63)
 
         static let border = brownPrimary.opacity(0.18)
-        static let secondaryText = brownPrimary.opacity(0.68)
-        static let tertiaryText = brownLight
+        /// The two supporting text weights. Both used to be spelled in terms
+        /// of the decorative browns — `brownPrimary` at 68%, and `brownLight`
+        /// verbatim — which left them at 3.71:1 and 1.73:1 as caption text on
+        /// `creamBackground`, the deepest surface they land on in light mode.
+        /// These are that same muted character re-lit to clear 4.5:1 there and
+        /// on `creamSurface`, the palest one they land on in dark mode.
+        /// `brownLight` keeps its old value for the borders and dividers that
+        /// are its remaining job.
+        static let secondaryText = Color(light: 0x7A5C4D, dark: 0xAE8C7A)
+        static let tertiaryText = Color(light: 0x85674E, dark: 0xA1806F)
         static let mutedFill = brownPrimary.opacity(0.10)
         static let accentFill = orangeAccent.opacity(0.15)
 

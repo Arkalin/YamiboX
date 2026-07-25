@@ -75,7 +75,7 @@ private struct ForumThreadSummaryMetaView: View {
             if let lastActivityText {
                 Text(lastActivityText)
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.brownLight)
+                    .foregroundStyle(ForumColors.tertiaryText)
                     .lineLimit(1)
             }
         }

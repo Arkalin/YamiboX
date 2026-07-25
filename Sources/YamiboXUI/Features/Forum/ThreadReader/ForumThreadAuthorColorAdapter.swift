@@ -5,14 +5,16 @@ import YamiboXCore
 /// Re-lights the colors forum authors write into their posts so they stay
 /// readable on the app's own surfaces.
 ///
-/// Post markup carries fixed sRGB values, picked by their authors against the
-/// site's light skin, and the reader paints them onto a dark card in dark
-/// mode. Applied verbatim `color="black"` measures 1.24:1 there, and a
-/// `[backcolor]` highlight leaves the theme's near-white body ink on the
-/// author's light background at 1.14:1 — both far under the 4.5:1 floor for
-/// body text. So foregrounds are lightened for the dark scheme only, and a run
-/// carrying its own background gets an ink derived from that background rather
-/// than the scheme-adaptive one.
+/// Post markup carries fixed sRGB values, and the reader paints them onto
+/// surfaces their authors never saw. Applied verbatim `color="black"` measures
+/// 1.24:1 on the dark card, `color="white"` measures 1.07:1 on the cream one,
+/// and a `[backcolor]` highlight leaves the theme's scheme-adaptive body ink on
+/// the author's own background at 1.14:1 — all far under the 4.5:1 floor for
+/// body text. So each foreground is relit per scheme, and only in the scheme
+/// that needs it: no single color clears both surfaces, and the one where the
+/// author's choice already works is left exactly alone. A run carrying its own
+/// background instead takes an ink derived from that background, which cannot
+/// be scheme-adaptive when the background it has to sit on is not.
 enum ForumThreadAuthorColorAdapter {
     /// The colors one style run contributes; `nil` means "inherit the theme".
     struct RunColors {
@@ -52,36 +54,58 @@ enum ForumThreadAuthorColorAdapter {
     /// someone writing `#333333` meant "the normal text color", not a grey.
     private static let achromaticSaturation: Double = 0.10
     private static let nearBlackLightness: Double = 0.25
+    private static let nearWhiteLightness: Double = 0.75
 
+    /// The worst-case surface a text block sits on in each scheme: the palest
+    /// dark one and the deepest light one. Clearing these clears the rest —
+    /// quotes, table cells, and the page background sit on the other side of
+    /// each pair.
     private static let darkSurface = RGBColor(hex: ForumColors.creamSurfaceDarkHex)
+    private static let lightSurface = RGBColor(hex: ForumColors.creamBackgroundLightHex)
     private static let inkOnDarkSurface = RGBColor(hex: ForumColors.textDarkDarkHex)
     private static let inkOnLightSurface = RGBColor(hex: ForumColors.textDarkLightHex)
 
     private static func adaptedForeground(hex: String?) -> Color? {
         guard let authored = RGBColor(forumThreadHex: hex) else { return nil }
-        return Color(light: authored, dark: lightenedForDarkSurface(authored))
+        return Color(
+            light: relit(authored, on: lightSurface, fallbackInk: inkOnLightSurface),
+            dark: relit(authored, on: darkSurface, fallbackInk: inkOnDarkSurface)
+        )
     }
 
-    /// The post card is the lightest surface a text block sits on, so a color
-    /// that clears contrast there also clears quotes, table cells, and the
-    /// page background, which are all deeper.
-    private static func lightenedForDarkSurface(_ color: RGBColor) -> RGBColor {
-        guard RGBColor.contrast(color, darkSurface) < minimumContrast else { return color }
+    /// Moves an authored color away from `surface` until it clears the floor.
+    /// Which way it moves follows the surface: text on the dark card gets
+    /// lighter, text on the cream page gets darker.
+    private static func relit(
+        _ color: RGBColor,
+        on surface: RGBColor,
+        fallbackInk: RGBColor
+    ) -> RGBColor {
+        guard RGBColor.contrast(color, surface) < minimumContrast else { return color }
+        // Move away from the surface, towards whichever extreme it sits
+        // further from: white for the dark card, black for the cream page.
+        // The near end has no room — nothing is readably darker than #17110D.
+        let towardsLight = RGBColor.contrast(.white, surface) >= RGBColor.contrast(.black, surface)
         var hsl = color.hsl
-        if hsl.saturation <= achromaticSaturation, hsl.lightness <= nearBlackLightness {
-            return inkOnDarkSurface
+        // An achromatic color at the far end from the surface is the author
+        // saying "the normal text color" rather than naming a grey, so it
+        // reads as body text instead of washing out to a flat grey.
+        if hsl.saturation <= achromaticSaturation {
+            if towardsLight ? hsl.lightness <= nearBlackLightness : hsl.lightness >= nearWhiteLightness {
+                return fallbackInk
+            }
         }
         // Hue and saturation are the author's expression, so only lightness
         // moves, and only far enough to clear the floor. Contrast against a
-        // fixed dark surface rises monotonically with lightness, so bisecting
-        // on it converges on the least invasive value.
-        var tooDark = hsl.lightness
-        var readable = 1.0
+        // fixed surface is monotonic in lightness on either side of it, so
+        // bisecting converges on the least invasive value.
+        var unreadable = hsl.lightness
+        var readable = towardsLight ? 1.0 : 0.0
         for _ in 0 ..< 20 {
-            let candidate = (tooDark + readable) / 2
+            let candidate = (unreadable + readable) / 2
             hsl.lightness = candidate
-            if RGBColor.contrast(RGBColor(hsl: hsl), darkSurface) < minimumContrast {
-                tooDark = candidate
+            if RGBColor.contrast(RGBColor(hsl: hsl), surface) < minimumContrast {
+                unreadable = candidate
             } else {
                 readable = candidate
             }
@@ -105,6 +129,9 @@ private struct HSLColor {
 }
 
 private struct RGBColor {
+    static let white = RGBColor(hex: 0xFFFFFF)
+    static let black = RGBColor(hex: 0x000000)
+
     var red: Double
     var green: Double
     var blue: Double

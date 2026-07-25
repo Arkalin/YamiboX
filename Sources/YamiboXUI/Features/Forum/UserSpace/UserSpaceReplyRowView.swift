@@ -20,7 +20,7 @@ struct UserSpaceReplyRowView: View {
                 if let lastActivityText = reply.lastActivityText {
                     Text(lastActivityText)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.brownLight)
+                        .foregroundStyle(ForumColors.tertiaryText)
                 }
             }
             .padding(13)

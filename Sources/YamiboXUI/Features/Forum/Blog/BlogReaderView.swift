@@ -204,7 +204,7 @@ private struct BlogReaderAuthorRow: View {
                 if let postedAtText {
                     Text(postedAtText)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.brownLight)
+                        .foregroundStyle(ForumColors.tertiaryText)
                 }
             }
             Spacer()
@@ -388,7 +388,7 @@ private struct BlogReaderCommentRow: View {
                     if let postedAtText = comment.postedAtText {
                         Text(postedAtText)
                             .font(.caption)
-                            .foregroundStyle(ForumColors.brownLight)
+                            .foregroundStyle(ForumColors.tertiaryText)
                     }
                 }
                 Spacer()

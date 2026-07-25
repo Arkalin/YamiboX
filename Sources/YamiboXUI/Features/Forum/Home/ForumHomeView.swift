@@ -419,7 +419,7 @@ private struct ForumHomePeekCarouselView: View {
         HStack(spacing: 5) {
             ForEach(items.indices, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(index == selection ? ForumColors.brownEmphasis : ForumColors.tertiaryText.opacity(0.45))
+                    .fill(index == selection ? ForumColors.brownEmphasis : ForumColors.brownLight.opacity(0.45))
                     .frame(width: index == selection ? 18 : 6, height: 6)
             }
         }
