@@ -23,7 +23,7 @@ enum ForumThreadPostsParser {
             let comments = try ForumThreadCommentParser.comments(in: container, postID: postID)
             let attachments = ForumThreadAttachmentParser.footerAttachments(in: container, body: body)
             let manageActions = manageActions(in: container)
-            let contentBody = try bodyWithoutFooterMetadata(from: body)
+            let contentBody = try bodyWithoutFooterMetadata(from: body, container: container)
             let contentHTML = contentBody.html()
             let images = postImages(in: contentBody, container: container)
             let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(in: contentBody)
@@ -288,9 +288,11 @@ enum ForumThreadPostsParser {
     }
 
     /// A detached copy of the post body with footer metadata (edit status, rating log,
-    /// comments, polls) removed, so the content pipeline only sees the message itself.
-    private static func bodyWithoutFooterMetadata(from body: Element) throws -> Element {
-        let document = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
+    /// comments, polls) removed and the post's image attachments appended, so the
+    /// content pipeline sees every part of the message the web page shows.
+    private static func bodyWithoutFooterMetadata(from body: Element, container: Element) throws -> Element {
+        let fragment = ([body.html()] + attachmentImagesHTML(in: container, body: body)).joined()
+        let document = try KannaSoup.parseBodyFragment(fragment, baseURL: YamiboDomain.baseURL.absoluteString)
         let copy = document.body() ?? document
         copy.select(
             [
@@ -312,10 +314,45 @@ enum ForumThreadPostsParser {
         return copy
     }
 
+    /// Markup for the image attachments Discuz renders *outside* the message body.
+    ///
+    /// Only images embedded with `[attachimg]` land inside `.message`; an image
+    /// uploaded without that tag is emitted after it — `<ul class="img_one">` in the
+    /// touch template (what the app requests, see
+    /// `template/oyeeh_com_baihe_f_x35/touch/forum/viewthread.htm`), `.pattl` in the
+    /// desktop one. The site's own lightbox treats both as post images
+    /// (`children: '.message a.orange, .img_one a.orange'`), so they belong in the
+    /// content pipeline; parsing only `.message` used to drop them entirely.
+    ///
+    /// Only the `<img>` elements are lifted, not their wrappers: the surrounding
+    /// markup is a download link plus upload/size chatter that
+    /// `ForumThreadAttachmentParser` already reports separately.
+    private static func attachmentImagesHTML(in container: Element, body: Element) -> [String] {
+        var seen = Set(
+            body.selectAll("img").compactMap {
+                YamiboImageReferenceExtractor.forumPostImage.rawReference(from: $0)
+            }
+        )
+        let candidates = container.selectAll(".img_one img")
+            + container.selectAll(".pattl img[id^=aimg_]")
+        return candidates.compactMap { image in
+            guard let reference = YamiboImageReferenceExtractor.forumPostImage.rawReference(from: image),
+                  seen.insert(reference).inserted else {
+                return nil
+            }
+            return image.outerHtml()
+        }
+    }
+
     private static func postImages(in body: Element, container: Element) -> [ForumThreadPostImage] {
+        // `body` is the content copy, so it already carries whatever
+        // `attachmentImagesHTML` appended; the container scan stays as a safety net
+        // and is deduplicated against it.
         let imageElements = body.selectAll("img") + container.selectAll(".img_one img")
+        var seen: Set<String> = []
         return imageElements.compactMap { image in
-            guard let source = YamiboImageReferenceExtractor.forumPostImage.rawReference(from: image) else {
+            guard let source = YamiboImageReferenceExtractor.forumPostImage.rawReference(from: image),
+                  seen.insert(source).inserted else {
                 return nil
             }
             return ForumThreadPostImage(

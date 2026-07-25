@@ -929,3 +929,171 @@ private extension ForumThreadTextBlock {
     #expect(textBlocks.allSatisfy { $0.text.count <= 320 })
     #expect(textBlocks.map(\.text).joined() == longText)
 }
+
+@Test func forumThreadPageParserRendersTouchImageAttachmentsOutsideMessageBody() throws {
+    // Verbatim shape of a real touch-template response (bbs.yamibo.com tid=552056,
+    // fetched anonymously with the app's iPhone User-Agent + `mobile=2`): an image
+    // uploaded without an `[attachimg]` tag is emitted in a `<ul class="img_one">`
+    // that is a SIBLING of `.message`, and the wrapping `<a class="orange" />` is
+    // self-closing. Parsing only `.message` used to drop those images entirely, so
+    // the post rendered as text with no picture.
+    let page = try ForumThreadPageHTMLParser.parsePage(
+        from: #"""
+        <html>
+        <head><title>推荐帖 - 百合会</title></head>
+        <body>
+          <div class="plc cl" id="pid41122360">
+            <div class="display pi pione" href="#replybtn_41122360">
+              <ul class="authi">
+                <li class="mtit">
+                  <span class="y">1<sup>#</sup></span>
+                  <span class="z"><a href="home.php?mod=space&amp;uid=397633&amp;mobile=2">怜toki怜</a></span>
+                </li>
+                <li class="mtime">2026-6-8 21:32</li>
+              </ul>
+              <div class="message">
+                为了让更多人了解到toki的魅力，特开此帖来推荐toki的漫画。
+              </div>
+              <ul class="img_one">
+                <li>
+                  <a href="data/attachment/forum/202411/27/193802jn78ttt9sm00b8nt.jpg" class="orange" />
+                  <img id="aimg_1325664" src="data/attachment/forum/202411/27/193802jn78ttt9sm00b8nt.jpg" alt="toki.jpg" loading="lazy" />
+                  </a>
+                </li>
+                <li>
+                  <a href="data/attachment/forum/202411/27/195022ugwnm56li013ll5v.jpg" class="orange" />
+                  <img id="aimg_1325677" src="data/attachment/forum/202411/27/195022ugwnm56li013ll5v.jpg" alt="toki角色曲专辑封面" loading="lazy" />
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </body>
+        </html>
+        """#,
+        thread: ThreadIdentity(tid: "552056"),
+        fallbackTitle: nil
+    )
+
+    let post = try #require(page.posts.first)
+    let imageBlocks = post.contentBlocks.compactMap { block -> ForumThreadImageBlock? in
+        guard case let .image(imageBlock) = block.kind else { return nil }
+        return imageBlock
+    }
+    #expect(imageBlocks.map(\.url.absoluteString) == [
+        "https://bbs.yamibo.com/data/attachment/forum/202411/27/193802jn78ttt9sm00b8nt.jpg",
+        "https://bbs.yamibo.com/data/attachment/forum/202411/27/195022ugwnm56li013ll5v.jpg"
+    ])
+    #expect(imageBlocks.map(\.altText) == ["toki.jpg", "toki角色曲专辑封面"])
+    #expect(imageBlocks.allSatisfy { !$0.isEmoticon })
+    // The text stays first, matching the order the web page renders.
+    guard case .text = post.contentBlocks.first?.kind else {
+        Issue.record("expected the message text to remain the first block")
+        return
+    }
+    // The cover/gallery projection must not gain duplicates from the container scan.
+    #expect(post.images.map(\.url) == [
+        "data/attachment/forum/202411/27/193802jn78ttt9sm00b8nt.jpg",
+        "data/attachment/forum/202411/27/195022ugwnm56li013ll5v.jpg"
+    ])
+}
+
+@Test func forumThreadPageParserRendersDesktopPattlAttachmentImage() throws {
+    // Desktop-template counterpart (bbs.yamibo.com tid=562255): the attachment image
+    // lives in `.pattl`, outside `td.t_f`. The filetype icon in the same block has no
+    // `aimg_` id and must not be mistaken for post content.
+    let page = try ForumThreadPageHTMLParser.parsePage(
+        from: #"""
+        <html>
+        <head><title>【安达与岛村】画了新衣服 - 百合会</title></head>
+        <body>
+          <div id="post_41340705">
+            <div class="authi">
+              <a class="author" href="home.php?mod=space&amp;uid=397633">作者</a>
+              <em>发表于 2025-9-27 13:13</em>
+            </div>
+            <div class="pct"><div class="pcb"><div class="t_fsz">
+              <table cellspacing="0" cellpadding="0"><tr><td class="t_f" id="postmessage_41340705">
+                喜欢这次的新衣服，画了！<font class="jammer">6 C3 e5 k4 j9 B</font><br />
+              </td></tr></table>
+              <div class="pattl">
+                <dl class="tattl attm">
+                  <dd>
+                    <p class="mbn">
+                      <img src="static/image/filetype/image.gif" alt="" />
+                      <a href="forum.php?mod=attachment&amp;aid=MTQ3MDg3NQ%3D%3D&amp;nothumb=yes" id="aid1470875" class="xw1">安岛.jpg</a>
+                      <em class="xg1">(4.86 MB, 下载次数: 28)</em>
+                    </p>
+                    <div class="mbn savephotop">
+                      <img id="aimg_1470875" aid="1470875"
+                           src="data/attachment/forum/202509/27/131322t41ryo645761ktov.jpg"
+                           zoomfile="data/attachment/forum/202509/27/131322t41ryo645761ktov.jpg"
+                           file="data/attachment/forum/202509/27/131322t41ryo645761ktov.jpg"
+                           class="zoom" alt="安岛.jpg" title="安岛.jpg" />
+                    </div>
+                  </dd>
+                </dl>
+              </div>
+            </div></div></div>
+          </div>
+        </body>
+        </html>
+        """#,
+        thread: ThreadIdentity(tid: "562255"),
+        fallbackTitle: nil
+    )
+
+    let post = try #require(page.posts.first)
+    let imageBlocks = post.contentBlocks.compactMap { block -> ForumThreadImageBlock? in
+        guard case let .image(imageBlock) = block.kind else { return nil }
+        return imageBlock
+    }
+    #expect(imageBlocks.map(\.url.absoluteString) == [
+        "https://bbs.yamibo.com/data/attachment/forum/202509/27/131322t41ryo645761ktov.jpg"
+    ])
+    #expect(post.contentText == "喜欢这次的新衣服，画了！")
+}
+
+@Test func forumThreadPageParserDoesNotDuplicateInlineAttachImgImages() throws {
+    // When the poster does use `[attachimg]`, Discuz renders the image inside
+    // `.message` and repeats nothing outside it — but a template that lists the same
+    // file in both places must still yield one block, not two.
+    let page = try ForumThreadPageHTMLParser.parsePage(
+        from: #"""
+        <html>
+        <head><title>贴图 - 百合会</title></head>
+        <body>
+          <div class="plc cl" id="pid1002">
+            <div class="display pi pione" href="#replybtn_1002">
+              <ul class="authi">
+                <li class="mtit"><span class="y">1<sup>#</sup></span>
+                  <span class="z"><a href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主名</a></span>
+                </li>
+                <li class="mtime">2026-6-1 10:00</li>
+              </ul>
+              <div class="message">
+                正文
+                <img id="aimg_1" src="data/attachment/forum/202411/27/inline.jpg" alt="inline.jpg" />
+              </div>
+              <ul class="img_one">
+                <li>
+                  <img id="aimg_1" src="data/attachment/forum/202411/27/inline.jpg" alt="inline.jpg" />
+                </li>
+              </ul>
+            </div>
+          </div>
+        </body>
+        </html>
+        """#,
+        thread: ThreadIdentity(tid: "704"),
+        fallbackTitle: nil
+    )
+
+    let post = try #require(page.posts.first)
+    let imageBlocks = post.contentBlocks.compactMap { block -> ForumThreadImageBlock? in
+        guard case let .image(imageBlock) = block.kind else { return nil }
+        return imageBlock
+    }
+    #expect(imageBlocks.count == 1)
+    #expect(post.images.count == 1)
+}
