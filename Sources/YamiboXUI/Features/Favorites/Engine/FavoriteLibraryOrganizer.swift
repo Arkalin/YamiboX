@@ -105,9 +105,9 @@ final class FavoriteLibraryOrganizer {
     /// views read it in `body` to show or hide the sparkles badge and must
     /// re-render when the Settings switch flips.
     private(set) var smartMangaBadgeEnabled = true
-    /// Backs `LocalFavoritesRootBackground` — only ever consumed by the root
-    /// favorites screen (see `LocalFavoritesOrganizationView`), never by the
-    /// pushed collection/merged-group detail pages.
+    /// Backs `LocalFavoritesBackground` — consumed by every favorites page
+    /// (see `LocalFavoritesOrganizationView`): the root screen and the pushed
+    /// collection/merged-group detail pages alike.
     private(set) var backgroundSettings = FavoriteBackgroundSettings()
     private(set) var backgroundImageData: Data?
     var errorMessage: String?

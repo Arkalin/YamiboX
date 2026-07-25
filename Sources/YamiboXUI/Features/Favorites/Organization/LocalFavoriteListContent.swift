@@ -81,7 +81,7 @@ struct LocalFavoriteListContent: View {
         .listStyle(.plain)
         .listSectionSpacing(12)
         .contentMargins(.top, 12, for: .scrollContent)
-        // Lets `LocalFavoritesRootBackground`'s `FavoriteBackgroundLayer`
+        // Lets `LocalFavoritesBackground`'s `FavoriteBackgroundLayer`
         // show through instead of List's opaque default row/canvas fills.
         .scrollContentBackground(.hidden)
         .background(Color.clear)

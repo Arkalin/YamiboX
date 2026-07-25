@@ -44,10 +44,7 @@ struct LocalFavoritesOrganizationView: View {
 
     var body: some View {
         NavigationStack {
-            LocalFavoritesRootBackground(
-                settings: organizer.backgroundSettings,
-                imageData: organizer.backgroundImageData
-            ) {
+            backgrounded {
                 content(derived: organizer.rootDerived, isCollectionDetail: false)
                     .overlay { emptyStateOverlay(derived: organizer.rootDerived, isCollectionDetail: false) }
             }
@@ -195,42 +192,44 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     private var collectionDetail: some View {
-        content(derived: organizer.derived, isCollectionDetail: true)
-            .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
-            .searchable(
-                text: $organizer.filter.searchText,
-                prompt: L10n.string("favorites.search.placeholder")
-            )
-            .navigationTitle(
-                selection.isSelectionMode
-                    ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
-                    : (organizer.selectedCollection?.name ?? "")
-            )
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(selection.isSelectionMode)
-            .toolbar {
-                if selection.isSelectionMode {
-                    selectionToolbarContent
-                } else {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        collectionDetailMenu
-                    }
+        backgrounded {
+            content(derived: organizer.derived, isCollectionDetail: true)
+                .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
+        }
+        .searchable(
+            text: $organizer.filter.searchText,
+            prompt: L10n.string("favorites.search.placeholder")
+        )
+        .navigationTitle(
+            selection.isSelectionMode
+                ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
+                : (organizer.selectedCollection?.name ?? "")
+        )
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(selection.isSelectionMode)
+        .toolbar {
+            if selection.isSelectionMode {
+                selectionToolbarContent
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    collectionDetailMenu
                 }
             }
-            .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
-                if selection.isSelectionMode && !usesSystemSelectionBottomToolbar {
-                    LocalFavoriteSelectionActionBar(
-                        organizer: organizer,
-                        selection: selection,
-                        routes: routes
-                    )
-                    .selectionBottomToolbarCapsule()
-                }
+        }
+        .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        .safeAreaInset(edge: .bottom) {
+            if selection.isSelectionMode && !usesSystemSelectionBottomToolbar {
+                LocalFavoriteSelectionActionBar(
+                    organizer: organizer,
+                    selection: selection,
+                    routes: routes
+                )
+                .selectionBottomToolbarCapsule()
             }
-            .transientMessage(organizer.transientMessage) {
-                organizer.transientMessage = nil
-            }
+        }
+        .transientMessage(organizer.transientMessage) {
+            organizer.transientMessage = nil
+        }
     }
 
     /// Collection actions in the detail page's toolbar (the in-content header
@@ -307,41 +306,54 @@ struct LocalFavoritesOrganizationView: View {
     /// — that flag only affects the category tab bar and empty-state
     /// copy/icon, both of which read fine for this page too.
     private var mergedGroupDetail: some View {
-        content(derived: organizer.derived, isCollectionDetail: true)
-            .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
-            .searchable(
-                text: $organizer.filter.searchText,
-                prompt: L10n.string("favorites.search.placeholder")
-            )
-            .navigationTitle(
-                selection.isSelectionMode
-                    ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
-                    : (organizer.selectedMergedGroupCleanBookName ?? "")
-            )
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(selection.isSelectionMode)
-            .toolbar {
-                if selection.isSelectionMode {
-                    selectionToolbarContent
-                }
+        backgrounded {
+            content(derived: organizer.derived, isCollectionDetail: true)
+                .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
+        }
+        .searchable(
+            text: $organizer.filter.searchText,
+            prompt: L10n.string("favorites.search.placeholder")
+        )
+        .navigationTitle(
+            selection.isSelectionMode
+                ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
+                : (organizer.selectedMergedGroupCleanBookName ?? "")
+        )
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(selection.isSelectionMode)
+        .toolbar {
+            if selection.isSelectionMode {
+                selectionToolbarContent
             }
-            .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
-                if selection.isSelectionMode && !usesSystemSelectionBottomToolbar {
-                    LocalFavoriteSelectionActionBar(
-                        organizer: organizer,
-                        selection: selection,
-                        routes: routes
-                    )
-                    .selectionBottomToolbarCapsule()
-                }
+        }
+        .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        .safeAreaInset(edge: .bottom) {
+            if selection.isSelectionMode && !usesSystemSelectionBottomToolbar {
+                LocalFavoriteSelectionActionBar(
+                    organizer: organizer,
+                    selection: selection,
+                    routes: routes
+                )
+                .selectionBottomToolbarCapsule()
             }
-            .transientMessage(organizer.transientMessage) {
-                organizer.transientMessage = nil
-            }
+        }
+        .transientMessage(organizer.transientMessage) {
+            organizer.transientMessage = nil
+        }
     }
 
     // MARK: - Content
+
+    /// Every page of this screen — the root and both pushed detail pages —
+    /// draws the user's favorites background, so the pairing of settings and
+    /// image data lives here instead of being repeated per call site.
+    private func backgrounded(@ViewBuilder _ content: () -> some View) -> some View {
+        LocalFavoritesBackground(
+            settings: organizer.backgroundSettings,
+            imageData: organizer.backgroundImageData,
+            content: content
+        )
+    }
 
     /// `derived` and `isCollectionDetail` are passed explicitly by the two
     /// call sites (root vs. pushed collection detail) rather than read
