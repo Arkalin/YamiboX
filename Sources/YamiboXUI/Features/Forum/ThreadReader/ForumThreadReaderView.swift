@@ -33,6 +33,7 @@ struct ForumThreadReaderView: View {
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
             isFavorited: model.isFavorited,
+            isReverseOrder: model.isReverseOrder,
             refresh: refresh,
             retry: model.retry,
             goToPage: goToPage,
@@ -57,14 +58,29 @@ struct ForumThreadReaderView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task {
-                        await model.refresh()
+                Menu {
+                    Button {
+                        Task {
+                            await model.refresh()
+                        }
+                    } label: {
+                        Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
                     }
+                    .disabled(model.isLoading)
+
+                    Toggle(isOn: authorOnlyBinding) {
+                        Label(L10n.string("forum.thread.author_only"), systemImage: "person")
+                    }
+                    .disabled(model.isLoading)
+
+                    Toggle(isOn: reverseOrderBinding) {
+                        Label(L10n.string("forum.thread.reverse_order"), systemImage: "arrow.up.arrow.down")
+                    }
+                    .disabled(model.isLoading)
                 } label: {
-                    Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
+                    Image(systemName: "ellipsis.circle")
                 }
-                .disabled(model.isLoading)
+                .accessibilityLabel(L10n.string("common.more"))
             }
         }
         .alert(
@@ -129,6 +145,35 @@ struct ForumThreadReaderView: View {
         Task {
             await model.presentFavoriteLocationPicker()
         }
+    }
+
+    /// Both menu toggles read back from the model rather than local state:
+    /// `setAuthorOnly` can refuse (unresolvable thread starter), and the
+    /// checkmark must follow what actually loaded.
+    private var authorOnlyBinding: Binding<Bool> {
+        Binding(
+            get: {
+                model.isAuthorOnly
+            },
+            set: { isEnabled in
+                Task {
+                    await model.setAuthorOnly(isEnabled)
+                }
+            }
+        )
+    }
+
+    private var reverseOrderBinding: Binding<Bool> {
+        Binding(
+            get: {
+                model.isReverseOrder
+            },
+            set: { isEnabled in
+                Task {
+                    await model.setReverseOrder(isEnabled)
+                }
+            }
+        )
     }
 
     private var favoriteErrorBinding: Binding<Bool> {
