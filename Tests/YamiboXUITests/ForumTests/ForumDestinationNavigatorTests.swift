@@ -73,6 +73,26 @@ import YamiboXTestSupport
     #expect(try makeNavigator(mode: .readerOverlay).threadReaderOverrideHandler(containingFid: "49") == nil)
 }
 
+@MainActor
+@Test func pinnedReaderOverrideHandlerIsOnlyOfferedInTheForumTab() throws {
+    #expect(try makeNavigator(mode: .forumTab).pinnedReaderOverrideHandler(containingFid: "49") != nil)
+    #expect(try makeNavigator(mode: .readerOverlay).pinnedReaderOverrideHandler(containingFid: "49") == nil)
+}
+
+/// 公告类置顶行背后没有帖子，长按菜单不该出现在那里；即使调用方硬塞一个
+/// 阅读方式，也必须还是打开网页——绝不能去解析成阅读器（测试用的 resolver
+/// 工厂会 fatalError，所以走到那条路就直接崩）。
+@MainActor
+@Test func openPinnedItemKeepsAnnouncementRowsOnTheWebPageDespiteAReaderOverride() throws {
+    let navigator = try makeNavigator(mode: .forumTab)
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=announcement&id=17")!
+    let announcement = ForumPinnedItem(id: "announcement-17", kind: .announcement, title: "欢迎光临。", url: url)
+
+    navigator.openPinnedItem(announcement, containingFid: "5", readerOverride: .manga)
+
+    #expect(navigator.path == [.web(url)])
+}
+
 /// Threads of the reader's own work opened inside the overlay must stay
 /// discussion companions, or their plain-thread history rows would absorb the
 /// work's main-form row (browsing-history decision #14 / finding P1-B).

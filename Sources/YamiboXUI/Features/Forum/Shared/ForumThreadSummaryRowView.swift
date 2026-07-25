@@ -46,14 +46,27 @@ struct ForumThreadSummaryRowView: View {
         }
         .padding(13)
         .forumCardBackground()
-        .modifier(ForumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap))
+        .forumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap)
         .accessibilityIdentifier("forum-thread-row-\(thread.tid)")
+    }
+}
+
+extension View {
+    /// Long-press menu for opening one thread with a reader other than the one
+    /// its board is configured for. Shared by every row that can open a thread
+    /// (summary cards and pinned rows); pass `nil` where no thread is behind
+    /// the row — an announcement links to a web page, which has no reading
+    /// mode to choose.
+    func forumThreadReaderOverrideContextMenu(
+        onSelect: ((YamiboThreadReaderOverride) -> Void)?
+    ) -> some View {
+        modifier(ForumThreadReaderOverrideContextMenu(onSelect: onSelect))
     }
 }
 
 /// Applies the reading-mode context menu only when a handler exists: an
 /// always-present `.contextMenu` whose body happens to be empty still turns
-/// every long press on the card into a menu-less preview.
+/// every long press on the row into a menu-less preview.
 private struct ForumThreadReaderOverrideContextMenu: ViewModifier {
     let onSelect: ((YamiboThreadReaderOverride) -> Void)?
 
