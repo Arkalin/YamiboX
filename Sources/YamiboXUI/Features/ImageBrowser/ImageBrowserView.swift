@@ -400,8 +400,12 @@ private struct ImageBrowserPageView: View {
     let onSwipeDownDismiss: () -> Void
 
     @State private var image: UIImage?
+    @State private var animatedData: Data?
+    @State private var animationFrame: UIImage?
     @State private var didFail = false
     @State private var attempt = 0
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
 
     var body: some View {
         // The page keeps one constant subtree — the zoomable page is always
@@ -412,6 +416,7 @@ private struct ImageBrowserPageView: View {
         // animation mid-flight when a page's subtree changes shape.
         ImageBrowserZoomableImagePage(
             image: image,
+            animationFrame: animationFrame,
             title: item.title,
             dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
             dismissRecognitionDistance: dismissRecognitionDistance,
@@ -433,9 +438,14 @@ private struct ImageBrowserPageView: View {
         .task(id: "\(item.source.cacheKey)#\(attempt)#\(isWithinLoadWindow)") {
             await load()
         }
+        .task(id: animationIdentity) {
+            await playAnimation()
+        }
         .onChange(of: pageDistance) { _, _ in
             if !isWithinKeepWindow {
                 image = nil
+                animatedData = nil
+                animationFrame = nil
             }
         }
     }
@@ -450,22 +460,44 @@ private struct ImageBrowserPageView: View {
     /// from the pipeline cache on revisit.
     private var isWithinKeepWindow: Bool { pageDistance <= 4 }
 
+    /// Only the page the reader is actually looking at animates; pages held in
+    /// the keep window are off-screen, and decoding frames for them would be
+    /// invisible work.
+    private var animationIdentity: String {
+        "\(item.source.cacheKey)#\(animatedData?.count ?? 0)#\(pageDistance == 0)#\(isPlaybackActive)"
+    }
+
+    private var isPlaybackActive: Bool {
+        scenePhase == .active && playsAnimatedImages
+    }
+
     private func load() async {
         guard isWithinLoadWindow, image == nil else { return }
         if let localDataProvider = item.localDataProvider,
            let localData = await localDataProvider(),
            let localImage = UIImage(data: localData) {
             image = localImage
+            animatedData = YamiboAnimatedImage.isAnimated(localData) ? localData : nil
             return
         }
         do {
-            image = try await YamiboUIImagePipeline.shared.image(for: item.source)
+            let loaded = try await YamiboUIImagePipeline.shared.displayImage(for: item.source)
+            image = loaded.image
+            animatedData = loaded.animatedData
         } catch {
             // Leaving the load window cancels the task mid-flight; that is
             // routine paging, not a failure the retry UI should surface.
             guard !Task.isCancelled, !(error is CancellationError) else { return }
             YamiboLog.reader.warning("Failed to load image for browser item \(item.id): \(error)")
             didFail = true
+        }
+    }
+
+    private func playAnimation() async {
+        animationFrame = nil
+        guard let animatedData, let image, pageDistance == 0, isPlaybackActive else { return }
+        for await frame in YamiboAnimatedImage.frames(of: animatedData, scale: image.scale) {
+            animationFrame = frame
         }
     }
 }
@@ -501,6 +533,8 @@ private struct ImageBrowserPageStatusOverlay: View {
 /// top, active only at minimum zoom (see `swipeDismissGestureMask`).
 private struct ImageBrowserZoomableImagePage: View {
     let image: UIImage?
+    /// The animated payload's current frame, or `nil` for a still image.
+    let animationFrame: UIImage?
     let title: String
     let dismissesViaSystemZoomTransition: Bool
     let dismissRecognitionDistance: CGFloat
@@ -539,6 +573,7 @@ private struct ImageBrowserZoomableImagePage: View {
         GeometryReader { geometry in
             ImageBrowserZoomableScrollView(
                 image: image,
+                animationFrame: animationFrame,
                 proxy: zoomProxy,
                 onSingleTap: onSingleTap,
                 onZoomFactorChange: { zoomFactor = $0 }
