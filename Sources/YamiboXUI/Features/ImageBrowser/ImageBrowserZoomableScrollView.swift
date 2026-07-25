@@ -106,6 +106,11 @@ struct ImageBrowserZoomableScrollView: UIViewRepresentable {
     /// `TabView(.page)` halts its page-settle animation mid-flight when a
     /// page's subtree changes shape during the swipe.
     let image: UIImage?
+    /// The current frame of an animated payload, `nil` for a still image. It
+    /// stays separate from `image` because zoom, content size and insets are
+    /// all derived from `image`: re-configuring the container on every frame
+    /// would reset the reader's zoom twenty times a second.
+    let animationFrame: UIImage?
     let proxy: ImageBrowserZoomProxy
     let onSingleTap: () -> Void
     let onZoomFactorChange: (CGFloat) -> Void
@@ -113,6 +118,7 @@ struct ImageBrowserZoomableScrollView: UIViewRepresentable {
     func makeUIView(context: Context) -> ImageBrowserZoomScrollView {
         let view = ImageBrowserZoomScrollView()
         view.configure(image: image)
+        view.displayFrame(animationFrame)
         applyCallbacks(to: view)
         return view
     }
@@ -122,6 +128,7 @@ struct ImageBrowserZoomableScrollView: UIViewRepresentable {
         if uiView.currentImage !== image {
             uiView.configure(image: image)
         }
+        uiView.displayFrame(animationFrame)
     }
 
     private func applyCallbacks(to view: ImageBrowserZoomScrollView) {
@@ -182,6 +189,15 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
         contentSize = size
         lastLayoutSize = .zero
         setNeedsLayout()
+    }
+
+    /// Swaps only the displayed bitmap. Animation frames share the poster
+    /// frame's pixel size, so every layout input stays valid and the reader's
+    /// zoom and pan survive playback untouched.
+    func displayFrame(_ frame: UIImage?) {
+        let displayed = frame ?? currentImage
+        guard imageView.image !== displayed else { return }
+        imageView.image = displayed
     }
 
     func stepZoom(zoomIn: Bool) {
