@@ -125,7 +125,11 @@ final class ForumDestinationNavigator {
         }
     }
 
-    func openThread(_ thread: ForumThreadSummary, containingFid: String?) {
+    func openThread(
+        _ thread: ForumThreadSummary,
+        containingFid: String?,
+        readerOverride: YamiboThreadReaderOverride? = nil
+    ) {
         if mode == .readerOverlay {
             pushThreadLink(
                 url: thread.url,
@@ -145,6 +149,7 @@ final class ForumDestinationNavigator {
                         title: thread.title,
                         authorID: thread.authorID,
                         threadFid: thread.fid,
+                        readerOverride: readerOverride,
                         tapContext: YamiboThreadTapContext(containingFid: containingFid)
                     )
                 )
@@ -152,6 +157,19 @@ final class ForumDestinationNavigator {
             } catch {
                 actionErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// The thread card long-press menu's one-off reading-mode handler, or
+    /// `nil` where the stack cannot honor the choice: a reader-overlay stack
+    /// never launches a second full reader (every thread opens as a native
+    /// thread page there), so offering the menu would promise nothing.
+    func threadReaderOverrideHandler(
+        containingFid: String?
+    ) -> ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)? {
+        guard mode == .forumTab else { return nil }
+        return { thread, readerOverride in
+            self.openThread(thread, containingFid: containingFid, readerOverride: readerOverride)
         }
     }
 

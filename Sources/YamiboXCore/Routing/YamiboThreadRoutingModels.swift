@@ -30,6 +30,29 @@ public enum YamiboThreadRouteIntent: String, Codable, Hashable, Sendable {
     case nativeThreadReader
 }
 
+/// A one-off reading-mode choice made at the tap site (论坛帖子卡片长按菜单).
+///
+/// It outranks every classification input for this navigation only — the
+/// board's `BoardReaderSettings` entry, `knownThreadKind`, and the fetched
+/// thread metadata — and is never persisted: the board keeps whatever mode it
+/// was configured with, so the next plain tap behaves exactly as before.
+public enum YamiboThreadReaderOverride: String, Codable, Hashable, Sendable {
+    case plainThread
+    case novel
+    case manga
+
+    var threadKind: YamiboThreadKind {
+        switch self {
+        case .plainThread:
+            .regular
+        case .novel:
+            .novel
+        case .manga:
+            .manga
+        }
+    }
+}
+
 public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
     public var threadURL: URL
     public var threadID: String?
@@ -39,6 +62,9 @@ public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
     public var targetPostID: String?
     public var knownThreadKind: YamiboThreadKind?
     public var intent: YamiboThreadRouteIntent
+    /// Set only by an explicit per-tap reading-mode choice; `nil` keeps the
+    /// normal configuration-driven classification.
+    public var readerOverride: YamiboThreadReaderOverride?
     public var tapContext: YamiboThreadTapContext
 
     public init(
@@ -50,6 +76,7 @@ public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
         targetPostID: String? = nil,
         knownThreadKind: YamiboThreadKind? = nil,
         intent: YamiboThreadRouteIntent = .contentRoute,
+        readerOverride: YamiboThreadReaderOverride? = nil,
         tapContext: YamiboThreadTapContext = YamiboThreadTapContext()
     ) {
         self.threadURL = threadURL
@@ -60,6 +87,7 @@ public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
         self.targetPostID = targetPostID?.nilIfBlank
         self.knownThreadKind = knownThreadKind
         self.intent = intent
+        self.readerOverride = readerOverride
         self.tapContext = tapContext
     }
 }

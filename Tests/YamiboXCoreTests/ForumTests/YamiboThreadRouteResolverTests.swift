@@ -294,6 +294,161 @@ struct YamiboThreadRouteResolverTests {
     #expect(context.title == "撤销配置的帖子")
 }
 
+// 帖子卡片长按菜单（临时选择阅读方式）：一次性选择压过板块配置。fid 49 出厂
+// 配置为小说板块，选择「普通帖子」后这一次必须落到原生帖子阅读器。
+@Test func yamiboThreadRouteResolverReaderOverrideOpensNovelBoardThreadAsPlainThread() async throws {
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient())
+    let request = YamiboThreadRouteRequest(
+        threadURL: try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1000&mobile=2")),
+        title: "小说板块里的普通帖",
+        readerOverride: .plainThread,
+        tapContext: YamiboThreadTapContext(containingFid: "49")
+    )
+
+    let target = try await resolver.resolve(request)
+
+    guard case let .thread(payload) = target else {
+        Issue.record("Expected native thread reader target, got \(target)")
+        return
+    }
+    #expect(payload.thread.tid == "1000")
+    #expect(payload.thread.fid == "49")
+    #expect(payload.title == "小说板块里的普通帖")
+}
+
+// The reverse direction: an unconfigured board's thread opens as a novel for
+// this one tap.
+@Test func yamiboThreadRouteResolverReaderOverrideOpensPlainBoardThreadAsNovel() async throws {
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient())
+    let request = YamiboThreadRouteRequest(
+        threadURL: try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1001&mobile=2")),
+        title: "普通板块里的小说帖",
+        authorID: "705400",
+        threadFid: "999999",
+        readerOverride: .novel
+    )
+
+    let target = try await resolver.resolve(request)
+
+    guard case let .novel(payload) = target else {
+        Issue.record("Expected novel detail target, got \(target)")
+        return
+    }
+    #expect(payload.thread.tid == "1001")
+    #expect(payload.thread.fid == "999999")
+    #expect(payload.authorID == "705400")
+}
+
+// A 漫画 override classifies as manga but never fabricates a Smart Comic Mode
+// bit the board does not have: an unconfigured board still opens the single
+// thread directly instead of a directory-backed detail page.
+@Test func yamiboThreadRouteResolverReaderOverrideOpensPlainBoardThreadDirectlyAsManga() async throws {
+    let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-override-manga-smart-off")
+    let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient(), settingsStore: settingsStore)
+    let request = YamiboThreadRouteRequest(
+        threadURL: try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1002&mobile=2")),
+        title: "普通板块里的漫画帖",
+        readerOverride: .manga,
+        tapContext: YamiboThreadTapContext(containingFid: "99")
+    )
+
+    let target = try await resolver.resolve(request)
+
+    guard case let .mangaDirect(payload) = target else {
+        Issue.record("Expected direct-to-reader manga target, got \(target)")
+        return
+    }
+    #expect(payload.thread.tid == "1002")
+    #expect(payload.thread.fid == "99")
+}
+
+// On a board that *is* configured as smart manga, the same override keeps the
+// board's own entry point — the detail page.
+@Test func yamiboThreadRouteResolverReaderOverrideKeepsSmartMangaBoardsOnTheDetailPage() async throws {
+    let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-override-manga-smart-on")
+    let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")
+    var settings = await settingsStore.load()
+    settings.boardReader.setEntry(.init(mode: .manga(smartEnabled: true)), forumID: "99")
+    try await settingsStore.save(settings)
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient(), settingsStore: settingsStore)
+    let request = YamiboThreadRouteRequest(
+        threadURL: try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1003&mobile=2")),
+        title: "智能漫画板块的帖子",
+        readerOverride: .manga,
+        tapContext: YamiboThreadTapContext(containingFid: "99")
+    )
+
+    let target = try await resolver.resolve(request)
+
+    guard case let .manga(payload) = target else {
+        Issue.record("Expected manga detail target, got \(target)")
+        return
+    }
+    #expect(payload.thread.tid == "1003")
+    #expect(payload.thread.fid == "99")
+}
+
+// 「临时」的核心保证：一次性选择既不写入板块配置，也不影响下一次普通点击。
+@Test func yamiboThreadRouteResolverReaderOverrideNeverPersistsTheBoardConfiguration() async throws {
+    let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-override-not-persisted")
+    let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")
+    var settings = await settingsStore.load()
+    settings.boardReader.setEntry(.init(mode: .novel), forumID: "99")
+    try await settingsStore.save(settings)
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient(), settingsStore: settingsStore)
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1004&mobile=2"))
+    let overriddenRequest = YamiboThreadRouteRequest(
+        threadURL: url,
+        title: "小说板块的帖子",
+        readerOverride: .manga,
+        tapContext: YamiboThreadTapContext(containingFid: "99")
+    )
+
+    let overriddenTarget = try await resolver.resolve(overriddenRequest)
+    guard case .mangaDirect = overriddenTarget else {
+        Issue.record("Expected direct-to-reader manga target, got \(overriddenTarget)")
+        return
+    }
+
+    #expect(await settingsStore.load().boardReader.entry(forumID: "99")?.mode == .novel)
+
+    let plainTarget = try await resolver.resolve(
+        YamiboThreadRouteRequest(
+            threadURL: url,
+            title: "小说板块的帖子",
+            tapContext: YamiboThreadTapContext(containingFid: "99")
+        )
+    )
+    guard case .novel = plainTarget else {
+        Issue.record("Expected the board configuration to still drive plain taps, got \(plainTarget)")
+        return
+    }
+}
+
+// An override settles the classification on its own, so the metadata fetch a
+// missing fid would otherwise trigger must not happen.
+@Test func yamiboThreadRouteResolverReaderOverrideSkipsThreadMetadataFetch() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=1005&mobile=2"))
+    YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+        Issue.record("Reader override must classify without fetching \(request.url?.absoluteString ?? "")")
+        return yamiboThreadRouteHTTPResponse(url: request.url!, body: "")
+    }
+
+    let target = try await resolver.resolve(
+        YamiboThreadRouteRequest(threadURL: url, title: "无板块信息的帖子", readerOverride: .novel)
+    )
+
+    guard case let .novel(payload) = target else {
+        Issue.record("Expected novel detail target, got \(target)")
+        return
+    }
+    #expect(payload.thread.tid == "1005")
+}
+
 @Test func yamiboThreadRouteResolverNativeThreadIntentBypassesNovelClassification() async throws {
     let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClient())
     let request = YamiboThreadRouteRequest(

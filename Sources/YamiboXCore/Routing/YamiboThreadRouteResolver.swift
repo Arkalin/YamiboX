@@ -17,7 +17,10 @@ public actor YamiboThreadRouteResolver {
         let targetPostID = request.targetPostID ?? postID(from: requestURL)
         let baseInitialPage = pageNumber(from: requestURL) ?? pageNumber(from: canonicalURL) ?? 1
 
-        if request.intent == .nativeThreadReader {
+        // A 普通帖子 override lands in exactly the same place as the native
+        // thread reader intent: no classification, no metadata fetch, and the
+        // findpost page lookup stays best-effort.
+        if request.intent == .nativeThreadReader || request.readerOverride == .plainThread {
             let tid = request.threadID
                 ?? threadID(from: canonicalURL)
                 ?? MangaTitleCleaner.extractTid(from: canonicalURL.absoluteString)
@@ -55,8 +58,11 @@ public actor YamiboThreadRouteResolver {
             settings: settings
         )
 
+        // An override already settles the classification, so the metadata
+        // round-trip it exists to inform would be pure latency.
         let metadata: YamiboThreadMetadata?
-        if shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
+        if request.readerOverride == nil,
+           shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
             do {
                 metadata = try await loadMetadata(for: requestURL)
             } catch let fallback as YamiboThreadRouteResolverWebFallback {
@@ -75,14 +81,18 @@ public actor YamiboThreadRouteResolver {
         let title = request.title ?? metadata?.title
         let authorID = request.authorID ?? metadata?.authorID
         let thread = ThreadIdentity(tid: tid, fid: fid)
-        let kind = metadata == nil
-            ? initialKind
-            : kindForKnownInputs(
+        let kind: YamiboThreadKind = if let readerOverride = request.readerOverride {
+            readerOverride.threadKind
+        } else if metadata == nil {
+            initialKind
+        } else {
+            kindForKnownInputs(
                 fid: fid,
                 knownThreadKind: request.knownThreadKind,
                 title: [title, metadata?.sectionText].compactMap { $0 }.joined(separator: " "),
                 settings: settings
             )
+        }
 
         switch kind {
         case .novel:
@@ -111,7 +121,11 @@ public actor YamiboThreadRouteResolver {
             // board's smart bit only decides which entry point: detail page
             // (`.manga`) when smart is on, direct single-chapter reading
             // (`.mangaDirect`) otherwise. The strict rule applies — an
-            // unconfigured or missing fid never reports smart-enabled.
+            // unconfigured or missing fid never reports smart-enabled. A
+            // per-tap 漫画 override overrides the classification only, not
+            // this bit: it never turns Smart Comic Mode on for a board the
+            // user did not configure that way, so it opens the thread on its
+            // own exactly like an unconfigured manga thread.
             guard settings.isSmartComicModeEnabled(forumID: fid) else {
                 return .mangaDirect(payload)
             }
