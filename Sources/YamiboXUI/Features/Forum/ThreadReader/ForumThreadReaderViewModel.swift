@@ -3,8 +3,18 @@ import Observation
 import YamiboXCore
 
 protocol ForumThreadPageLoading: Sendable {
-    func cachedThreadPage(context: ThreadNovelLaunchContext, page: Int) async -> ForumThreadPage?
-    func fetchThreadPage(context: ThreadNovelLaunchContext, page: Int) async throws -> ForumThreadPage
+    func cachedThreadPage(
+        context: ThreadNovelLaunchContext,
+        page: Int,
+        authorID: String?,
+        reverse: Bool
+    ) async -> ForumThreadPage?
+    func fetchThreadPage(
+        context: ThreadNovelLaunchContext,
+        page: Int,
+        authorID: String?,
+        reverse: Bool
+    ) async throws -> ForumThreadPage
     func fetchRatingResults(threadID: String, postID: String) async throws -> ForumThreadRatingResultsPage
     func fetchRateOptions(threadID: String, postID: String) async throws -> ForumThreadRateOptionsPage
     func fetchPollVoters(threadID: String, optionID: String?, page: Int) async throws -> ForumThreadPollVotersPage
@@ -43,6 +53,10 @@ final class ForumThreadReaderViewModel {
     /// initial top-of-page render can't overwrite the saved anchor before
     /// the restore scroll happens.
     var restoredAnchorPostID: String?
+    /// 只看楼主 — pages are requested scoped to `threadAuthorID`.
+    var isAuthorOnly = false
+    /// 倒序浏览 — pages are requested newest-first (Discuz `ordertype=1`).
+    var isReverseOrder = false
 
     let context: ThreadNovelLaunchContext
 
@@ -57,9 +71,15 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private let progressSync: ProgressSyncModule?
     @ObservationIgnored private var latestVisibleAnchorPostID: String?
     @ObservationIgnored private var generation = 0
+    /// The thread starter's uid, needed to scope 只看楼主. Captured from the
+    /// first post of an unfiltered forward-ordered page 1 — the only place it
+    /// shows up — and resolved on demand when this session never loaded that
+    /// page (a resumed session opens deep into the thread).
+    @ObservationIgnored private var threadAuthorID: String?
 
     init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies) {
         self.context = context
+        threadAuthorID = context.authorID
         repositoryProvider = {
             await dependencies.makeForumThreadReaderRepository()
         }
@@ -104,6 +124,7 @@ final class ForumThreadReaderViewModel {
         settingsStore: SettingsStore? = nil
     ) {
         self.context = context
+        threadAuthorID = context.authorID
         repositoryProvider = {
             repository
         }
@@ -206,6 +227,40 @@ final class ForumThreadReaderViewModel {
         let nextPage = max(1, page)
         guard nextPage != currentPage else { return }
         await loadPage(nextPage)
+    }
+
+    /// Turns 只看楼主 on or off. Both directions restart at page 1: a filtered
+    /// thread paginates over a different set of posts, so the page the reader
+    /// is on means nothing in the other mode.
+    ///
+    /// Enabling needs the thread starter's uid; when this session has never
+    /// seen page 1 it is resolved first, and the toggle stays off if even that
+    /// fails rather than silently loading the unfiltered thread.
+    func setAuthorOnly(_ isEnabled: Bool) async {
+        guard isEnabled != isAuthorOnly else { return }
+        if isEnabled, threadAuthorID == nil {
+            generation += 1
+            let requestGeneration = generation
+            isLoading = true
+            let resolved = await resolveThreadAuthorID()
+            guard requestGeneration == generation else { return }
+            isLoading = false
+            guard let resolved else {
+                transientMessage = L10n.string("forum.thread.author_only_unavailable")
+                return
+            }
+            threadAuthorID = resolved
+        }
+        isAuthorOnly = isEnabled
+        await reloadAfterViewModeChange()
+    }
+
+    /// Turns 倒序浏览 on or off, restarting at page 1 for the same reason
+    /// `setAuthorOnly` does — reversed page 1 holds the newest replies.
+    func setReverseOrder(_ isEnabled: Bool) async {
+        guard isEnabled != isReverseOrder else { return }
+        isReverseOrder = isEnabled
+        await reloadAfterViewModeChange()
     }
 
     func clearFavoriteError() {
@@ -596,27 +651,47 @@ final class ForumThreadReaderViewModel {
         }
         let previousLoadedPage = self.page == nil ? nil : currentPage
 
+        let authorID = activeAuthorID
+        let reverse = isReverseOrder
+
         do {
             let repository = await repositoryProvider()
-            let loaded = if preferCache, let cached = await repository.cachedThreadPage(context: context, page: page) {
+            let loaded = if preferCache, let cached = await repository.cachedThreadPage(
+                context: context,
+                page: page,
+                authorID: authorID,
+                reverse: reverse
+            ) {
                 cached
             } else {
-                try await repository.fetchThreadPage(context: context, page: page)
+                try await repository.fetchThreadPage(
+                    context: context,
+                    page: page,
+                    authorID: authorID,
+                    reverse: reverse
+                )
             }
             guard requestGeneration == generation else { return }
             self.page = loaded
             currentPage = loaded.pageNavigation?.currentPage ?? page
+            captureThreadAuthorIDIfNeeded(from: loaded)
             handlePageLoadSuccess(previousLoadedPage: previousLoadedPage)
         } catch {
             guard requestGeneration == generation else { return }
             let repository = await repositoryProvider()
             if usesCachedFallbackOnFailure,
-               let cached = await repository.cachedThreadPage(context: context, page: page) {
+               let cached = await repository.cachedThreadPage(
+                   context: context,
+                   page: page,
+                   authorID: authorID,
+                   reverse: reverse
+               ) {
                 guard requestGeneration == generation else { return }
                 self.page = cached
                 currentPage = cached.pageNavigation?.currentPage ?? page
                 errorMessage = nil
                 transientMessage = L10n.string("forum.thread.refresh_failed", error.localizedDescription)
+                captureThreadAuthorIDIfNeeded(from: cached)
                 handlePageLoadSuccess(previousLoadedPage: previousLoadedPage)
                 return
             }
@@ -631,6 +706,52 @@ final class ForumThreadReaderViewModel {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    // MARK: - 只看楼主 / 倒序浏览
+
+    /// Author scope for the pages this reader requests: set only while
+    /// 只看楼主 is on, since the uid stays remembered across toggles.
+    private var activeAuthorID: String? {
+        isAuthorOnly ? threadAuthorID : nil
+    }
+
+    /// True while the reader shows something other than the canonical
+    /// forward-ordered whole thread. Page numbers and post order both differ
+    /// there, so reading progress and browsing history stay frozen at the last
+    /// canonical position instead of recording a position the normal view
+    /// could never resume to.
+    private var isFilteredView: Bool {
+        isAuthorOnly || isReverseOrder
+    }
+
+    private func reloadAfterViewModeChange() async {
+        // The previous mode's anchor points at a post that need not exist —
+        // or need not be at the same floor — in the new one.
+        latestVisibleAnchorPostID = nil
+        restoredAnchorPostID = nil
+        await loadPage(1)
+    }
+
+    /// The first post of an unfiltered forward-ordered page 1 is the thread
+    /// starter, and it is the only page that reveals their uid.
+    private func captureThreadAuthorIDIfNeeded(from loaded: ForumThreadPage) {
+        guard threadAuthorID == nil, !isFilteredView, currentPage == 1 else { return }
+        threadAuthorID = loaded.posts.first?.author.uid?.nilIfBlank
+    }
+
+    /// Looks up the thread starter's uid for a session that never loaded
+    /// page 1 — cached copy first, then one network read. Returns nil when the
+    /// page carries no uid at all (a deleted or guest first floor).
+    private func resolveThreadAuthorID() async -> String? {
+        if let threadAuthorID { return threadAuthorID }
+        let repository = await repositoryProvider()
+        if let cached = await repository.cachedThreadPage(context: context, page: 1, authorID: nil, reverse: false),
+           let uid = cached.posts.first?.author.uid?.nilIfBlank {
+            return uid
+        }
+        let fetched = try? await repository.fetchThreadPage(context: context, page: 1, authorID: nil, reverse: false)
+        return fetched?.posts.first?.author.uid?.nilIfBlank
     }
 
     // MARK: - Reading progress + browsing history
@@ -660,7 +781,7 @@ final class ForumThreadReaderViewModel {
     /// in a fresh unstructured Task so view teardown can't cancel the GRDB
     /// write mid-flight (the cancelled-Task write trap).
     func flushReadingProgress() {
-        guard let progressSync, page != nil else { return }
+        guard let progressSync, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             do {
@@ -683,7 +804,7 @@ final class ForumThreadReaderViewModel {
     }
 
     private func queueReadingProgressSave() {
-        guard let progressSync, page != nil else { return }
+        guard let progressSync, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             await progressSync.queue(.thread(position))
@@ -702,9 +823,11 @@ final class ForumThreadReaderViewModel {
     /// Upserts this visit's history row on every successful page load
     /// (browsing-history decision #5: open records, page turns refresh).
     /// Discussion companion views never record (decision #14) — their tid
-    /// belongs to the novel/manga main-form row.
+    /// belongs to the novel/manga main-form row. 只看楼主 / 倒序浏览 pages
+    /// don't either: their `pageIndex` doesn't address the same posts the
+    /// normal view would reopen.
     private func recordBrowsingHistoryVisit() {
-        guard !context.isDiscussionView, page != nil else { return }
+        guard !context.isDiscussionView, page != nil, !isFilteredView else { return }
         let entry = BrowsingHistoryEntry(
             target: .normalThread(threadID: context.thread.tid),
             title: favoriteTitle,

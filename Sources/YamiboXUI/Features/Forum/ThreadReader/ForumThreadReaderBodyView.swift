@@ -18,6 +18,9 @@ struct ForumThreadReaderBodyView: View {
     let isLoading: Bool
     let errorMessage: String?
     let isFavorited: Bool
+    /// 倒序浏览: page 1 opens on the newest replies, so no post on it carries
+    /// the thread's title and counters.
+    let isReverseOrder: Bool
     let refresh: () async -> Void
     let retry: () -> Void
     let goToPage: (Int) -> Void
@@ -75,7 +78,9 @@ struct ForumThreadReaderBodyView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if let page {
                         ForEach(page.posts) { post in
-                            let isFirstPost = currentPage == 1 && post.postID == page.posts.first?.postID
+                            let isFirstPost = currentPage == 1
+                                && !isReverseOrder
+                                && post.postID == page.posts.first?.postID
                             ForumThreadPostCard(
                                 post: post,
                                 isTarget: post.postID == targetPostID,

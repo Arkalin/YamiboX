@@ -318,6 +318,113 @@ import Testing
     #expect(fixture.repository.fetchPageCalls() == [1])
 }
 
+@MainActor
+@Test func forumThreadReaderAuthorOnlyScopesPagesToThreadStarterAndRestartsAtPageOne() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel()
+
+    await model.load()
+    await model.goToPage(3)
+    await model.setAuthorOnly(true)
+
+    #expect(model.isAuthorOnly)
+    #expect(model.currentPage == 1)
+    // Page 1 of the unfiltered load already revealed the starter's uid, so
+    // enabling the filter costs no extra lookup.
+    #expect(fixture.repository.fetchRequests() == [
+        ForumThreadPageRequest(page: 1, authorID: nil, reverse: false),
+        ForumThreadPageRequest(page: 3, authorID: nil, reverse: false),
+        ForumThreadPageRequest(page: 1, authorID: "42", reverse: false)
+    ])
+
+    // The scope survives page turns and refreshes...
+    await model.goToPage(2)
+    await model.refresh()
+    #expect(fixture.repository.fetchRequests().suffix(2) == [
+        ForumThreadPageRequest(page: 2, authorID: "42", reverse: false),
+        ForumThreadPageRequest(page: 2, authorID: "42", reverse: false)
+    ])
+
+    // ...and turning it off restarts at page 1 of the whole thread.
+    await model.setAuthorOnly(false)
+    #expect(!model.isAuthorOnly)
+    #expect(model.currentPage == 1)
+    #expect(fixture.repository.fetchRequests().last == ForumThreadPageRequest(page: 1, authorID: nil, reverse: false))
+}
+
+@MainActor
+@Test func forumThreadReaderAuthorOnlyResolvesThreadStarterWhenSessionResumedPastPageOne() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 4)
+
+    await model.load()
+    #expect(model.currentPage == 4)
+
+    await model.setAuthorOnly(true)
+
+    #expect(model.isAuthorOnly)
+    #expect(model.currentPage == 1)
+    // Page 4 never showed the starter, so page 1 is read once to identify
+    // them before the scoped load.
+    #expect(fixture.repository.fetchRequests() == [
+        ForumThreadPageRequest(page: 4, authorID: nil, reverse: false),
+        ForumThreadPageRequest(page: 1, authorID: nil, reverse: false),
+        ForumThreadPageRequest(page: 1, authorID: "42", reverse: false)
+    ])
+}
+
+@MainActor
+@Test func forumThreadReaderAuthorOnlyStaysOffWhenThreadStarterCannotBeIdentified() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture(threadAuthorUID: nil)
+    let model = fixture.makeModel()
+
+    await model.load()
+    await model.setAuthorOnly(true)
+
+    #expect(!model.isAuthorOnly)
+    #expect(!model.isLoading)
+    #expect(model.transientMessage == L10n.string("forum.thread.author_only_unavailable"))
+    // The unfiltered page the reader was on stays put.
+    #expect(model.page?.title == "解析标题")
+    #expect(fixture.repository.fetchRequests().allSatisfy { $0.authorID == nil })
+}
+
+@MainActor
+@Test func forumThreadReaderReverseOrderRestartsAtPageOneAndNeverReadsTheForwardCache() async throws {
+    let cachedPage = makeThreadPage(title: "缓存标题", postID: "cached", contentText: "缓存正文")
+    let fixture = try ForumThreadReaderViewModelFixture(cachedPages: [1: cachedPage])
+    let model = fixture.makeModel()
+
+    await model.load()
+    await model.goToPage(2)
+    await model.setReverseOrder(true)
+
+    #expect(model.isReverseOrder)
+    #expect(model.currentPage == 1)
+    #expect(fixture.repository.fetchRequests().last == ForumThreadPageRequest(page: 1, authorID: nil, reverse: true))
+    // Reverse-ordered page 1 holds the newest replies, so the forward-ordered
+    // cache entry under the same page number must not be served for it.
+    #expect(model.page?.title == "解析标题")
+
+    await model.setReverseOrder(false)
+
+    #expect(!model.isReverseOrder)
+    #expect(model.currentPage == 1)
+    #expect(model.page?.title == "缓存标题")
+}
+
+@MainActor
+@Test func forumThreadReaderCombinesAuthorOnlyWithReverseOrder() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel()
+
+    await model.load()
+    await model.setAuthorOnly(true)
+    await model.setReverseOrder(true)
+
+    #expect(fixture.repository.fetchRequests().last == ForumThreadPageRequest(page: 1, authorID: "42", reverse: true))
+}
+
 /// generation-guard coverage: a slow `goToPage(2)` response landing after a
 /// faster, later `goToPage(3)` must be discarded rather than clobbering the
 /// already-displayed page 3 content back to page 2.
@@ -535,7 +642,8 @@ private func makeThreadPage(
     postID: String,
     contentText: String,
     page: Int = 1,
-    formHash: String? = nil
+    formHash: String? = nil,
+    authorUID: String? = "42"
 ) -> ForumThreadPage {
     ForumThreadPage(
         thread: ThreadIdentity(tid: "704"),
@@ -543,7 +651,7 @@ private func makeThreadPage(
         posts: [
             ForumThreadPost(
                 postID: postID,
-                author: BlogReaderUser(uid: "42", name: "楼主"),
+                author: BlogReaderUser(uid: authorUID, name: "楼主"),
                 postedAtText: "2026-6-1 10:00",
                 lastEditedText: "本帖最后由 楼主 于 2026-6-2 12:00 编辑",
                 contentHTML: "",
@@ -569,9 +677,11 @@ private struct ForumThreadReaderViewModelFixture {
 
     init(
         cachedPages: [Int: ForumThreadPage] = [:],
+        authorScopedCachedPages: [Int: ForumThreadPage] = [:],
         fetchError: Error? = nil,
         formHash: String? = nil,
         fid: String = "40",
+        threadAuthorUID: String? = "42",
         mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil
     ) throws {
         suiteName = "ForumThreadReaderViewModelTests.\(UUID().uuidString)"
@@ -589,8 +699,10 @@ private struct ForumThreadReaderViewModelFixture {
         repository = FakeForumThreadPageLoader(
             threadURL: threadURL,
             cachedPages: cachedPages,
+            authorScopedCachedPages: authorScopedCachedPages,
             fetchError: fetchError,
-            formHash: formHash
+            formHash: formHash,
+            threadAuthorUID: threadAuthorUID
         )
         favoriteRepository = FakeThreadFavoriteRepository(threadURL: threadURL)
         self.fid = fid
@@ -604,11 +716,12 @@ private struct ForumThreadReaderViewModelFixture {
     }
 
     @MainActor
-    func makeModel() -> ForumThreadReaderViewModel {
+    func makeModel(initialPage: Int = 1) -> ForumThreadReaderViewModel {
         ForumThreadReaderViewModel(
             context: ThreadNovelLaunchContext(
                 thread: ThreadIdentity(tid: "704", fid: fid),
-                title: "上下文标题"
+                title: "上下文标题",
+                initialPage: initialPage
             ),
             repository: repository,
             localFavoriteLibraryStore: localFavoriteLibraryStore,
@@ -648,6 +761,14 @@ private actor ForumThreadPageFetchGate {
     }
 }
 
+/// One thread-page load as the reader asked for it — the page number plus the
+/// 只看楼主 / 倒序浏览 scope that decides which posts come back.
+private struct ForumThreadPageRequest: Equatable {
+    let page: Int
+    let authorID: String?
+    let reverse: Bool
+}
+
 private final class FakeForumThreadPageLoader: ForumThreadPageLoading, @unchecked Sendable {
     let threadURL: URL
     let gate = ForumThreadPageFetchGate()
@@ -658,10 +779,16 @@ private final class FakeForumThreadPageLoader: ForumThreadPageLoading, @unchecke
     /// lands.
     var gatedCachedPages: Set<Int> = []
     private let cachedPages: [Int: ForumThreadPage]
+    private let authorScopedCachedPages: [Int: ForumThreadPage]
     private let formHash: String?
+    /// uid on the first post of every fetched page — nil models a thread whose
+    /// starter can't be identified.
+    private let threadAuthorUID: String?
     var fetchError: Error?
     private var recordedCachedPages: [Int] = []
     private var recordedFetchPages: [Int] = []
+    private var recordedCachedRequests: [ForumThreadPageRequest] = []
+    private var recordedFetchRequests: [ForumThreadPageRequest] = []
     private var recordedVotePolls: [String] = []
     private var recordedRatePosts: [String] = []
     private var recordedCommentPosts: [String] = []
@@ -669,32 +796,57 @@ private final class FakeForumThreadPageLoader: ForumThreadPageLoading, @unchecke
     init(
         threadURL: URL,
         cachedPages: [Int: ForumThreadPage] = [:],
+        authorScopedCachedPages: [Int: ForumThreadPage] = [:],
         fetchError: Error? = nil,
-        formHash: String? = nil
+        formHash: String? = nil,
+        threadAuthorUID: String? = "42"
     ) {
         self.threadURL = threadURL
         self.cachedPages = cachedPages
+        self.authorScopedCachedPages = authorScopedCachedPages
         self.fetchError = fetchError
         self.formHash = formHash
+        self.threadAuthorUID = threadAuthorUID
     }
 
-    func cachedThreadPage(context _: ThreadNovelLaunchContext, page: Int) async -> ForumThreadPage? {
+    func cachedThreadPage(
+        context _: ThreadNovelLaunchContext,
+        page: Int,
+        authorID: String?,
+        reverse: Bool
+    ) async -> ForumThreadPage? {
         recordedCachedPages.append(page)
+        recordedCachedRequests.append(ForumThreadPageRequest(page: page, authorID: authorID, reverse: reverse))
         if gatedCachedPages.contains(page) {
             await gate.waitIfNeeded()
         }
-        return cachedPages[page]
+        // Mirrors the repository: reverse-ordered pages are never cached.
+        guard !reverse else { return nil }
+        return authorID == nil ? cachedPages[page] : authorScopedCachedPages[page]
     }
 
-    func fetchThreadPage(context: ThreadNovelLaunchContext, page: Int) async throws -> ForumThreadPage {
+    func fetchThreadPage(
+        context: ThreadNovelLaunchContext,
+        page: Int,
+        authorID: String?,
+        reverse: Bool
+    ) async throws -> ForumThreadPage {
         recordedFetchPages.append(page)
+        recordedFetchRequests.append(ForumThreadPageRequest(page: page, authorID: authorID, reverse: reverse))
         if gatedPages.contains(page) {
             await gate.waitIfNeeded()
         }
         if let fetchError {
             throw fetchError
         }
-        return makeThreadPage(title: "解析标题", postID: "4001", contentText: "正文", page: page, formHash: formHash)
+        return makeThreadPage(
+            title: "解析标题",
+            postID: "4001",
+            contentText: "正文",
+            page: page,
+            formHash: formHash,
+            authorUID: threadAuthorUID
+        )
     }
 
     func cachedPageCalls() -> [Int] {
@@ -703,6 +855,14 @@ private final class FakeForumThreadPageLoader: ForumThreadPageLoading, @unchecke
 
     func fetchPageCalls() -> [Int] {
         recordedFetchPages
+    }
+
+    func cachedRequests() -> [ForumThreadPageRequest] {
+        recordedCachedRequests
+    }
+
+    func fetchRequests() -> [ForumThreadPageRequest] {
+        recordedFetchRequests
     }
 
     func votePollCalls() -> [String] {

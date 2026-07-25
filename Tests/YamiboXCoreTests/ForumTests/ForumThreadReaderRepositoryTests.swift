@@ -142,6 +142,70 @@ private struct ForumThreadReaderRepositoryTests {
     #expect(await repository.cachedNovelThreadPage(context: context, page: 1)?.title == "刷新后缓存页")
 }
 
+@Test func forumThreadReaderRepositoryKeepsReverseOrderedPagesOutOfTheThreadPageCache() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let cacheStore = ForumCacheStore(baseDirectory: directory)
+    let thread = ThreadIdentity(tid: "709")
+    let repository = ForumThreadReaderRepository(
+        client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"),
+        cacheStore: cacheStore
+    )
+    let context = ThreadNovelLaunchContext(thread: thread, title: "上下文标题")
+
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+        let items = components?.queryItems ?? []
+        #expect(items.value(named: "tid") == "709")
+        #expect(items.value(named: "ordertype") == "1")
+        #expect(items.value(named: "authorid") == "42")
+        return forumThreadReaderRepositoryHTTPResponse(
+            url: request.url!,
+            body: forumThreadReaderRepositoryThreadHTML(title: "倒序页", postID: "9001")
+        )
+    }
+
+    let loaded = try await repository.fetchThreadPage(context: context, page: 1, authorID: "42", reverse: true)
+
+    #expect(loaded.title == "倒序页")
+    // The cache key has no order dimension, so a reverse-ordered page must
+    // leave no entry the forward-ordered view could pick up.
+    #expect(await repository.cachedThreadPage(context: context, page: 1, authorID: "42", reverse: true) == nil)
+    #expect(await repository.cachedThreadPage(context: context, page: 1, authorID: "42", reverse: false) == nil)
+    #expect(await cacheStore.loadThreadPage(thread: thread, page: 1, authorID: "42", allowExpired: true) == nil)
+}
+
+@Test func forumThreadReaderRepositoryCachesAuthorScopedThreadPagesSeparately() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let cacheStore = ForumCacheStore(baseDirectory: directory)
+    let thread = ThreadIdentity(tid: "710")
+    let repository = ForumThreadReaderRepository(
+        client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"),
+        cacheStore: cacheStore
+    )
+    let context = ThreadNovelLaunchContext(thread: thread, title: "上下文标题")
+
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+        let items = components?.queryItems ?? []
+        #expect(items.value(named: "ordertype") == nil)
+        let title = items.value(named: "authorid") == "42" ? "只看楼主页" : "全部楼层页"
+        return forumThreadReaderRepositoryHTTPResponse(
+            url: request.url!,
+            body: forumThreadReaderRepositoryThreadHTML(title: title, postID: "10001")
+        )
+    }
+
+    _ = try await repository.fetchThreadPage(context: context, page: 1)
+    _ = try await repository.fetchThreadPage(context: context, page: 1, authorID: "42")
+
+    #expect(await repository.cachedThreadPage(context: context, page: 1)?.title == "全部楼层页")
+    #expect(await repository.cachedThreadPage(context: context, page: 1, authorID: "42")?.title == "只看楼主页")
+}
+
 @Test func forumThreadReaderRepositoryInteractionRequestsDoNotWriteThreadPageCache() async throws {
     defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
 

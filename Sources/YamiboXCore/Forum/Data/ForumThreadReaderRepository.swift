@@ -9,9 +9,24 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         self.cacheStore = cacheStore
     }
 
-    public func fetchThreadPage(context: ThreadNovelLaunchContext, page: Int = 1) async throws -> ForumThreadPage {
+    /// Loads one page of a thread. `authorID` scopes it to a single poster
+    /// (the reader's 只看楼主), `reverse` asks Discuz for newest-first order
+    /// (倒序浏览).
+    ///
+    /// Reverse-ordered pages are never cached: the thread-page cache key has
+    /// no order dimension, so storing them would hand the normal forward view
+    /// a page of newest-first posts under the same key.
+    public func fetchThreadPage(
+        context: ThreadNovelLaunchContext,
+        page: Int = 1,
+        authorID: String? = nil,
+        reverse: Bool = false
+    ) async throws -> ForumThreadPage {
+        let authorID = authorID?.nilIfBlank
         let html = try await client.fetchThreadById(
             tid: context.thread.tid,
+            authorID: authorID,
+            reverse: reverse,
             page: page,
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
@@ -21,10 +36,12 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             thread: context.thread,
             fallbackTitle: context.title
         )
-        do {
-            try await cacheStore.saveThreadPage(parsed, thread: context.thread, pageNumber: page, authorID: nil)
-        } catch {
-            YamiboLog.forum.error("fetchThreadPage: failed to cache thread page tid=\(context.thread.tid, privacy: .public) page=\(page, privacy: .public): \(error)")
+        if !reverse {
+            do {
+                try await cacheStore.saveThreadPage(parsed, thread: context.thread, pageNumber: page, authorID: authorID)
+            } catch {
+                YamiboLog.forum.error("fetchThreadPage: failed to cache thread page tid=\(context.thread.tid, privacy: .public) page=\(page, privacy: .public): \(error)")
+            }
         }
         return parsed
     }
@@ -50,8 +67,17 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         return parsed
     }
 
-    public func cachedThreadPage(context: ThreadNovelLaunchContext, page: Int = 1) async -> ForumThreadPage? {
-        await cacheStore.loadThreadPage(thread: context.thread, page: page, authorID: nil)
+    /// Cache companion of `fetchThreadPage`. Reverse-ordered reads always miss
+    /// — nothing writes that order to the cache, and the forward-ordered entry
+    /// under the same key holds different posts.
+    public func cachedThreadPage(
+        context: ThreadNovelLaunchContext,
+        page: Int = 1,
+        authorID: String? = nil,
+        reverse: Bool = false
+    ) async -> ForumThreadPage? {
+        guard !reverse else { return nil }
+        return await cacheStore.loadThreadPage(thread: context.thread, page: page, authorID: authorID?.nilIfBlank)
     }
 
     public func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int = 1) async -> ForumThreadPage? {

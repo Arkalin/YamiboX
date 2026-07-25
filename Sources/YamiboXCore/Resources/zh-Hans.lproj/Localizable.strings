@@ -447,6 +447,9 @@
 "forum.search.result_count" = "找到 %d 笔搜索结果";
 "forum.search.title" = "论坛搜索";
 "forum.thread.author" = "作者";
+"forum.thread.author_only" = "只看楼主";
+"forum.thread.author_only_unavailable" = "无法确定楼主";
+"forum.thread.reverse_order" = "倒序浏览";
 "forum.thread.collapse_title" = "点击展开 / 收起";
 "forum.thread.image" = "图片";
 "forum.thread.image_load_failed" = "图片加载失败";
