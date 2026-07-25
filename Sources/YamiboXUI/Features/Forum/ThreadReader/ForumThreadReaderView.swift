@@ -51,6 +51,10 @@ struct ForumThreadReaderView: View {
         )
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
+        // The reader's own action bar already owns the bottom edge; keeping
+        // the tab bar under it would stack two bars there. No-op in the
+        // reader-overlay stack, which has no tab bar to begin with.
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
