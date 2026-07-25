@@ -5,6 +5,11 @@ struct ForumThreadSummaryRowView: View {
     let thread: ForumThreadSummary
     let onThreadTap: () -> Void
     let onAuthorTap: (String, String?) -> Void
+    /// Long-press menu for opening this one thread with a different reader
+    /// than its board is configured for. `nil` (the default) leaves the card
+    /// without a context menu entirely — an empty menu would still swallow
+    /// the long press.
+    var onReaderOverrideTap: ((YamiboThreadReaderOverride) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -41,7 +46,53 @@ struct ForumThreadSummaryRowView: View {
         }
         .padding(13)
         .forumCardBackground()
+        .modifier(ForumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap))
         .accessibilityIdentifier("forum-thread-row-\(thread.tid)")
+    }
+}
+
+/// Applies the reading-mode context menu only when a handler exists: an
+/// always-present `.contextMenu` whose body happens to be empty still turns
+/// every long press on the card into a menu-less preview.
+private struct ForumThreadReaderOverrideContextMenu: ViewModifier {
+    let onSelect: ((YamiboThreadReaderOverride) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let onSelect {
+            content.contextMenu {
+                Section(L10n.string("forum.thread.reader_override")) {
+                    ForumThreadReaderOverrideButton(
+                        title: L10n.string("forum.board.reader_settings.mode.plain"),
+                        systemImage: "text.bubble",
+                        action: { onSelect(.plainThread) }
+                    )
+                    ForumThreadReaderOverrideButton(
+                        title: L10n.string("forum.board.reader_settings.mode.novel"),
+                        systemImage: "book",
+                        action: { onSelect(.novel) }
+                    )
+                    ForumThreadReaderOverrideButton(
+                        title: L10n.string("forum.board.reader_settings.mode.manga"),
+                        systemImage: "photo.stack",
+                        action: { onSelect(.manga) }
+                    )
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private struct ForumThreadReaderOverrideButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+        }
     }
 }
 

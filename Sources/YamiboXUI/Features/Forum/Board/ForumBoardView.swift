@@ -5,6 +5,7 @@ struct ForumBoardView: View {
     let onSubBoardTap: (ForumBoardSummary) -> Void
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
+    let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
     let onSearchTap: () -> Void
     let onPostThreadTap: () -> Void
@@ -17,6 +18,7 @@ struct ForumBoardView: View {
         onSubBoardTap: @escaping (ForumBoardSummary) -> Void,
         onPinnedTap: @escaping (ForumPinnedItem) -> Void,
         onThreadTap: @escaping (ForumThreadSummary) -> Void,
+        onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)? = nil,
         onAuthorTap: @escaping (String, String?) -> Void,
         onSearchTap: @escaping () -> Void,
         onPostThreadTap: @escaping () -> Void
@@ -25,6 +27,7 @@ struct ForumBoardView: View {
         self.onSubBoardTap = onSubBoardTap
         self.onPinnedTap = onPinnedTap
         self.onThreadTap = onThreadTap
+        self.onThreadReaderOverrideTap = onThreadReaderOverrideTap
         self.onAuthorTap = onAuthorTap
         self.onSearchTap = onSearchTap
         self.onPostThreadTap = onPostThreadTap
@@ -52,6 +55,7 @@ struct ForumBoardView: View {
             onSubBoardTap: onSubBoardTap,
             onPinnedTap: onPinnedTap,
             onThreadTap: onThreadTap,
+            onThreadReaderOverrideTap: onThreadReaderOverrideTap,
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
@@ -175,6 +179,7 @@ private struct ForumBoardBodyView: View {
     let onSubBoardTap: (ForumBoardSummary) -> Void
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
+    let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
@@ -203,6 +208,7 @@ private struct ForumBoardBodyView: View {
                 onSubBoardTap: onSubBoardTap,
                 onPinnedTap: onPinnedTap,
                 onThreadTap: onThreadTap,
+                onThreadReaderOverrideTap: onThreadReaderOverrideTap,
                 onAuthorTap: onAuthorTap
             )
         } else {
@@ -231,6 +237,7 @@ private struct ForumBoardContentView: View {
     let onSubBoardTap: (ForumBoardSummary) -> Void
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
+    let onThreadReaderOverrideTap: ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)?
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
@@ -255,7 +262,12 @@ private struct ForumBoardContentView: View {
                             onThreadTap: {
                                 onThreadTap(thread)
                             },
-                            onAuthorTap: onAuthorTap
+                            onAuthorTap: onAuthorTap,
+                            onReaderOverrideTap: onThreadReaderOverrideTap.map { handler in
+                                { readerOverride in
+                                    handler(thread, readerOverride)
+                                }
+                            }
                         )
                     }
                 }

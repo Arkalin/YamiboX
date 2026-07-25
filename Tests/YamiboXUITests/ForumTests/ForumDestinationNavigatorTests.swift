@@ -65,6 +65,14 @@ import YamiboXTestSupport
     #expect(navigator.path.isEmpty)
 }
 
+/// 帖子卡片长按菜单只在论坛标签页里有意义：阅读器之上的论坛栈永远不会再启动
+/// 第二个阅读器，所以那里根本不提供这个菜单（`nil` = 不装 contextMenu）。
+@MainActor
+@Test func threadReaderOverrideHandlerIsOnlyOfferedInTheForumTab() throws {
+    #expect(try makeNavigator(mode: .forumTab).threadReaderOverrideHandler(containingFid: "49") != nil)
+    #expect(try makeNavigator(mode: .readerOverlay).threadReaderOverrideHandler(containingFid: "49") == nil)
+}
+
 /// Threads of the reader's own work opened inside the overlay must stay
 /// discussion companions, or their plain-thread history rows would absorb the
 /// work's main-form row (browsing-history decision #14 / finding P1-B).

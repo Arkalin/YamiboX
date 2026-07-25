@@ -455,6 +455,7 @@
 "forum.thread.login_info_failed" = "获取登录信息失败，请重新登录";
 "forum.thread.manage_action" = "管理帖子";
 "forum.thread.pinned" = "置顶帖";
+"forum.thread.reader_override" = "本次以此方式打开";
 "forum.thread.attachments" = "附件";
 "forum.thread.comments" = "点评";
 "forum.thread.comment" = "点评";
