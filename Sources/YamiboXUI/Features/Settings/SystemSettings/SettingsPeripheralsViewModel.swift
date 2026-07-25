@@ -25,6 +25,16 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         keyboard = settings.system.keyboard
     }
 
+    /// Reads this page's slice of the settings on its own, for presentations
+    /// that are not hosted by ``SystemSettingsViewModel`` — the reader
+    /// settings sheets open this page directly, so nobody else does the one
+    /// up-front read the settings tab's root performs.
+    func load() async {
+        activeAction = .loading
+        defer { activeAction = nil }
+        applyLoadedSettings(await dependencies.settingsStore.load())
+    }
+
     func restoreDefaultsAfterApplicationReset() {
         applePencilPageTurn = ApplePencilPageTurnSettings()
         gamepad = GamepadSettings()

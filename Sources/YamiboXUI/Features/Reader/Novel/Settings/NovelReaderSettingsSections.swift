@@ -178,6 +178,7 @@ struct NovelReaderMiscSection: View {
     let showsAuthorRepliesToOthers: Bool
     let onLoadsInlineImagesChange: (Bool) -> Void
     let onShowsAuthorRepliesToOthersChange: (Bool) -> Void
+    let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
         ReaderSettingsSection(title: L10n.string("reader.section.other"), palette: palette) {
@@ -197,6 +198,12 @@ struct NovelReaderMiscSection: View {
                     get: { showsAuthorRepliesToOthers },
                     set: { onShowsAuthorRepliesToOthersChange($0) }
                 )
+            )
+            ReaderSettingsDivider(palette: palette)
+            ReaderSettingsNavigationRow(
+                title: L10n.string("settings.peripheral_behavior"),
+                palette: palette,
+                action: onOpenPeripheralSettings
             )
         }
     }

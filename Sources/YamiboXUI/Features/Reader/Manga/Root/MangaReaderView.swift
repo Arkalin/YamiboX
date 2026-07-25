@@ -256,7 +256,7 @@ public struct MangaReaderView: View {
             )
         }
         .sheet(isPresented: $isSettingsPresented) {
-            MangaReaderSettingsSheet(model: model)
+            MangaReaderSettingsSheet(model: model, appModel: appModel)
         }
         .sheet(isPresented: $isCachePresented) {
             if case let .loaded(loaded) = model.presentation.state {

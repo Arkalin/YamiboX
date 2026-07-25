@@ -104,7 +104,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
             .sheet(item: $presentedSheet) { sheet in
                 switch sheet {
                 case .settings:
-                    NovelReaderSettingsSheet(model: model)
+                    NovelReaderSettingsSheet(model: model, appModel: appModel)
                         .presentationDetents([.large])
                         .presentationDragIndicator(.hidden)
                         .presentationBackground(.clear)

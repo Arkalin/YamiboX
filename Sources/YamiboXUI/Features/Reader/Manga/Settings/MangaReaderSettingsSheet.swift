@@ -8,10 +8,12 @@ struct MangaReaderSettingsSheet: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
     let model: MangaReaderViewModel
+    let appModel: YamiboAppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
     @State private var hasLoadedDraft = false
+    @State private var isPeripheralSettingsPresented = false
 
     private var isPadDevice: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -49,13 +51,20 @@ struct MangaReaderSettingsSheet: View {
                         settings: $draftSettings,
                         palette: palette,
                         isPadDevice: isPadDevice,
-                        usesTwoPageSpread: usesTwoPageSpread
+                        usesTwoPageSpread: usesTwoPageSpread,
+                        onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                     )
                 }
             }
         }
         .background(Color.clear)
         .onAppear(perform: loadDraftIfNeeded)
+        .sheet(isPresented: $isPeripheralSettingsPresented) {
+            ReaderPeripheralSettingsSheet(
+                dependencies: appModel.appContext.settingsDependencies,
+                peripheralInput: appModel.peripheralInput
+            )
+        }
     }
 
     private func loadDraftIfNeeded() {

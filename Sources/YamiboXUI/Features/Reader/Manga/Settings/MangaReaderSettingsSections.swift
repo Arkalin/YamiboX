@@ -9,6 +9,7 @@ struct MangaReaderSettingsSections: View {
     let palette: MangaReaderSettingsPalette
     let isPadDevice: Bool
     let usesTwoPageSpread: Bool
+    let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
         ScrollView {
@@ -23,6 +24,11 @@ struct MangaReaderSettingsSections: View {
                     palette: palette,
                     isPadDevice: isPadDevice,
                     usesTwoPageSpread: usesTwoPageSpread
+                )
+
+                MangaReaderSettingsOtherSection(
+                    palette: palette,
+                    onOpenPeripheralSettings: onOpenPeripheralSettings
                 )
             }
             .padding(.top, 8)
@@ -112,6 +118,26 @@ private struct MangaReaderSettingsPagingSection: View {
                     isOn: $settings.ignoresTopSafeArea
                 )
             }
+        }
+    }
+}
+
+/// Entries that leave this sheet rather than edit the draft settings, in the
+/// same "Other" card the Novel sheet ends with.
+private struct MangaReaderSettingsOtherSection: View {
+    let palette: MangaReaderSettingsPalette
+    let onOpenPeripheralSettings: () -> Void
+
+    var body: some View {
+        ReaderSettingsSection(
+            title: L10n.string("reader.section.other"),
+            palette: palette
+        ) {
+            ReaderSettingsNavigationRow(
+                title: L10n.string("settings.peripheral_behavior"),
+                palette: palette,
+                action: onOpenPeripheralSettings
+            )
         }
     }
 }

@@ -6,10 +6,12 @@ struct NovelReaderSettingsSheet: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
     let model: NovelReaderViewModel
+    let appModel: YamiboAppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
+    @State private var isPeripheralSettingsPresented = false
     private static let fallbackPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
 
@@ -43,6 +45,12 @@ struct NovelReaderSettingsSheet: View {
         }
         .background(Color.clear)
         .onAppear(perform: loadDraftIfNeeded)
+        .sheet(isPresented: $isPeripheralSettingsPresented) {
+            ReaderPeripheralSettingsSheet(
+                dependencies: appModel.appContext.settingsDependencies,
+                peripheralInput: appModel.peripheralInput
+            )
+        }
     }
 
     private func heroSection(
@@ -117,7 +125,8 @@ struct NovelReaderSettingsSheet: View {
                     loadsInlineImages: draftSettings.loadsInlineImages,
                     showsAuthorRepliesToOthers: draftSettings.showsAuthorRepliesToOthers,
                     onLoadsInlineImagesChange: setImageLoading,
-                    onShowsAuthorRepliesToOthersChange: setAuthorReplyVisibility
+                    onShowsAuthorRepliesToOthersChange: setAuthorReplyVisibility,
+                    onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                 )
             }
             .padding(.top, 24)
