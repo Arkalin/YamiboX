@@ -4,14 +4,24 @@ import UIKit
 
 enum YamiboColors {
     enum Site {
+        /// Components of the adaptive colors below, spelled out for the call
+        /// sites that have to reason about a value numerically — contrast math
+        /// in `ForumThreadAuthorColorAdapter` — rather than just apply it.
+        /// Declared here so the two spellings cannot drift apart.
+        static let brownPrimaryLightHex: UInt32 = 0x6D3A2B
+        static let brownPrimaryDarkHex: UInt32 = 0xD6A083
+        static let creamSurfaceDarkHex: UInt32 = 0x241B15
+        static let textDarkLightHex: UInt32 = 0x2E1A0E
+        static let textDarkDarkHex: UInt32 = 0xF4E7D1
+
         static let brownDeep = Color(light: 0x4E2A1B, dark: 0x24120C)
-        static let brownPrimary = Color(light: 0x6D3A2B, dark: 0xD6A083)
+        static let brownPrimary = Color(light: brownPrimaryLightHex, dark: brownPrimaryDarkHex)
         static let brownEmphasis = Color(light: 0x4E2A1B, dark: 0xD6A083)
         static let brownLight = Color(light: 0xCCB8A8, dark: 0x8F6F5E)
         static let creamBackground = Color(light: 0xFFF3D6, dark: 0x17110D)
-        static let creamSurface = Color(light: 0xFFF7E0, dark: 0x241B15)
+        static let creamSurface = Color(light: 0xFFF7E0, dark: creamSurfaceDarkHex)
         static let orangeAccent = Color(light: 0xF59E2A, dark: 0xF0A33A)
-        static let textDark = Color(light: 0x2E1A0E, dark: 0xF4E7D1)
+        static let textDark = Color(light: textDarkLightHex, dark: textDarkDarkHex)
         static let htmlTextDark = Color(light: 0x6E2B19, dark: 0xF0D8BC)
         /// Light variant deepened from 0xFF5656: as caption text on the 12%
         /// red-tinted cream badge that value measured ~2.6:1; 0xA61B29 clears
