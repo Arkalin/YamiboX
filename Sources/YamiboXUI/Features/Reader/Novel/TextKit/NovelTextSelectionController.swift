@@ -364,19 +364,15 @@ final class NovelTextSelectionController {
               let endChapterIdentity = end.textSegmentIdentity.chapterIdentity else {
             return nil
         }
+        let endpoints = NovelTextLikeAnchorEndpointResolver.resolve(
+            start: start,
+            endCharacter: end,
+            startChapterIdentity: startChapterIdentity,
+            endChapterIdentity: endChapterIdentity
+        )
         return (
-            NovelTextViewportSemanticTextPosition(
-                chapterIdentity: startChapterIdentity,
-                textSegmentIdentity: start.textSegmentIdentity,
-                displayedTextOffset: start.displayedTextOffset,
-                progressInTextRange: 0
-            ),
-            NovelTextViewportSemanticTextPosition(
-                chapterIdentity: endChapterIdentity,
-                textSegmentIdentity: end.textSegmentIdentity,
-                displayedTextOffset: end.displayedTextOffset,
-                progressInTextRange: 0
-            ),
+            endpoints.start,
+            endpoints.end,
             excerptText,
             context.prefix,
             context.suffix,
@@ -477,6 +473,37 @@ final class NovelTextSelectionController {
         scrollView.setContentOffset(
             CGPoint(x: scrollView.contentOffset.x, y: nextOffsetY),
             animated: false
+        )
+    }
+}
+
+/// Converts glyph hit-test samples into the half-open endpoints stored by
+/// `NovelTextLikeAnchor`. The end sample deliberately lands inside the last
+/// selected glyph, so its offset needs advancing to keep that glyph visible
+/// when the highlight is reconstructed.
+enum NovelTextLikeAnchorEndpointResolver {
+    static func resolve(
+        start: NovelTextViewportSample,
+        endCharacter: NovelTextViewportSample,
+        startChapterIdentity: NovelChapterIdentity,
+        endChapterIdentity: NovelChapterIdentity
+    ) -> (
+        start: NovelTextViewportSemanticTextPosition,
+        end: NovelTextViewportSemanticTextPosition
+    ) {
+        (
+            start: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: startChapterIdentity,
+                textSegmentIdentity: start.textSegmentIdentity,
+                displayedTextOffset: start.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            end: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: endChapterIdentity,
+                textSegmentIdentity: endCharacter.textSegmentIdentity,
+                displayedTextOffset: endCharacter.displayedTextOffset + 1,
+                progressInTextRange: 0
+            )
         )
     }
 }

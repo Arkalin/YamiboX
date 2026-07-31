@@ -75,7 +75,13 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         } else {
             lineOffset = 0
         }
-        let documentOffset = fragmentStart + lineOffset
+        let utf16Offset = fragmentStart + lineOffset
+        guard let documentOffset = characterOffset(
+            in: result.viewportContext.document.text,
+            fromUTF16Offset: utf16Offset
+        ) else {
+            return nil
+        }
         guard let sample = result.viewportContext.document.sample(
             containingDocumentOffset: documentOffset,
             surfaceIdentity: surfaceIdentity,

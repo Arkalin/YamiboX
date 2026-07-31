@@ -1,10 +1,84 @@
 import Foundation
 import Testing
+import XCTest
 @testable import YamiboXCore
 @testable import YamiboXUI
 
 // 拆分自 ReaderCoreTests.swift:NovelTextSelection 选区复制与代际失效。
 // NovelTextViewportRuntimeOwner 便捷构造器位于 NovelReaderTestSupport.swift。
+
+final class NovelTextLikeAnchorEndpointTests: XCTestCase {
+    @MainActor
+    func testKeepsTheLastSelectedCharacterAfterEmoji() throws {
+#if canImport(UIKit)
+        let text = "甲😀乙"
+        let document = NovelReaderProjection(
+            threadID: "197",
+            view: 1,
+            maxView: 1,
+            segments: [.text(text, chapterTitle: "Selection")]
+        )
+        let runtime = NovelTextViewportRuntimeOwner()
+        let transaction = try runtime.prepareTransaction(
+            preparedInput: NovelTextLayout.prepareInput(
+                document: document,
+                settings: NovelReaderAppearanceSettings(readingMode: .paged),
+                layout: NovelReaderLayout(width: 320, height: 480, readingMode: .paged)
+            )
+        )
+        let surface = try XCTUnwrap(transaction.result.viewportIndex.surfaces.first)
+        try runtime.prepareInitialViewport(for: transaction, around: surface.surfaceOrdinal)
+        XCTAssertTrue(runtime.commit(transaction))
+
+        let displayReference = try XCTUnwrap(runtime.displayReference(for: NovelReaderSurfaceIdentity(
+            generation: transaction.generation,
+            ordinal: surface.surfaceOrdinal
+        )))
+        let selectionRange = try XCTUnwrap(NovelTextSelectionRange(
+            generation: transaction.generation,
+            lowerBound: 0,
+            upperBound: text.count
+        ))
+        let selectionRects = displayReference.selectionRects(for: selectionRange)
+        let startRect = try XCTUnwrap(selectionRects.first)
+        let endRect = try XCTUnwrap(selectionRects.last)
+        let start = try XCTUnwrap(displayReference.viewportSample(
+            referencePoint: CGPoint(x: startRect.minX + 1, y: startRect.midY)
+        ))
+        let endCharacter = try XCTUnwrap(displayReference.viewportSample(
+            referencePoint: CGPoint(x: endRect.maxX - 1, y: endRect.midY)
+        ))
+        let startChapter = try XCTUnwrap(start.textSegmentIdentity.chapterIdentity)
+        let endChapter = try XCTUnwrap(endCharacter.textSegmentIdentity.chapterIdentity)
+
+        XCTAssertEqual(endCharacter.displayedTextOffset, 2)
+        let endpoints = NovelTextLikeAnchorEndpointResolver.resolve(
+            start: start,
+            endCharacter: endCharacter,
+            startChapterIdentity: startChapter,
+            endChapterIdentity: endChapter
+        )
+        func resumePoint(for endpoint: NovelTextViewportSemanticTextPosition) -> NovelResumePoint {
+            NovelResumePoint(
+                view: 1,
+                chapterIdentity: endpoint.chapterIdentity,
+                textSegmentIdentity: endpoint.textSegmentIdentity,
+                displayedTextOffset: endpoint.displayedTextOffset,
+                chapterOrdinal: 0,
+                segmentProgress: 0,
+                readingModeHint: .paged
+            )
+        }
+        let resolvedRange = try XCTUnwrap(runtime.documentSelectionRange(
+            from: resumePoint(for: endpoints.start),
+            to: resumePoint(for: endpoints.end)
+        ))
+
+        XCTAssertEqual(resolvedRange.range, 0..<text.count)
+        XCTAssertEqual(runtime.selectedText(for: resolvedRange), text)
+#endif
+    }
+}
 
 @MainActor
 @Test func novelTextSelectionCopiesDisplayedTextFromCommittedGeneration() throws {
