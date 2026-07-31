@@ -88,18 +88,24 @@ struct ReaderAnnotationPanel: View {
         .toolbar {
             if !activeNavigationState.isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.close"), action: onDismiss)
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(L10n.string("common.close"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if activeNavigationState.itemCount > 0 {
-                        Button(L10n.string("common.select")) {
+                        Button {
                             switch segment {
                             case .bookmarks:
                                 bookmarkSelectionRequest += 1
                             case .likes:
                                 likeSelectionRequest += 1
                             }
+                        } label: {
+                            Image(systemName: "checklist")
                         }
+                        .accessibilityLabel(L10n.string("common.select"))
                     }
                 }
             }

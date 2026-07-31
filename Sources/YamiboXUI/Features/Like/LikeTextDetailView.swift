@@ -55,7 +55,10 @@ struct LikeTextDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.close")) { dismiss() }
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(L10n.string("common.close"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
