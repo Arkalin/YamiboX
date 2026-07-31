@@ -15,6 +15,18 @@ struct ReaderAnnotationPanel: View {
     let onOpenLikeAnchor: (LikeAnchorPayload) -> Void
     let onDismiss: () -> Void
 
+    @State private var bookmarkNavigationState = ReaderAnnotationSegmentNavigationState()
+    @State private var likeNavigationState = ReaderAnnotationSegmentNavigationState()
+    @State private var bookmarkSelectionRequest = 0
+    @State private var likeSelectionRequest = 0
+
+    private var activeNavigationState: ReaderAnnotationSegmentNavigationState {
+        switch segment {
+        case .bookmarks: bookmarkNavigationState
+        case .likes: likeNavigationState
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $segment) {
@@ -24,33 +36,85 @@ struct ReaderAnnotationPanel: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .disabled(activeNavigationState.isSelecting)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            switch segment {
-            case .bookmarks:
+            // Keep both lists mounted while the picker changes. Besides
+            // preserving scroll position, it prevents a freshly-created list
+            // from briefly presenting its empty state before its store load
+            // finishes.
+            ZStack {
                 ReaderBookmarkListView(
                     work: work,
-                    workTitle: workTitle,
                     bookmarkStore: like.bookmarkStore,
                     onOpen: { item in
                         onDismiss()
                         onOpenBookmark(item)
                     },
-                    onDismiss: onDismiss
+                    selectionRequest: bookmarkSelectionRequest,
+                    onNavigationStateChange: { bookmarkNavigationState = $0 }
                 )
-            case .likes:
+                .opacity(segment == .bookmarks ? 1 : 0)
+                .allowsHitTesting(segment == .bookmarks)
+                .accessibilityHidden(segment != .bookmarks)
+
                 LikeWorkItemsView(
                     work: work,
                     workTitle: workTitle,
                     like: like,
                     onOpenAnchor: onOpenLikeAnchor,
-                    onDismiss: onDismiss
+                    onDismiss: onDismiss,
+                    annotationSelectionRequest: likeSelectionRequest,
+                    onAnnotationNavigationStateChange: { likeNavigationState = $0 },
+                    isAnnotationSegmentActive: segment == .likes
                 )
+                .opacity(segment == .likes ? 1 : 0)
+                .allowsHitTesting(segment == .likes)
+                .accessibilityHidden(segment != .likes)
+            }
+        }
+        // The navigation item belongs to the panel, not its replaceable
+        // segment bodies. Replacing a List otherwise briefly removes and
+        // re-adds the title and Select item, which produces a clipped frame.
+        .navigationTitle(
+            activeNavigationState.isSelecting
+                ? L10n.string("likes.selected_count", activeNavigationState.selectedItemCount)
+                : workTitle
+        )
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(activeNavigationState.isSelecting)
+        .toolbar {
+            if !activeNavigationState.isSelecting {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("common.close"), action: onDismiss)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if activeNavigationState.itemCount > 0 {
+                        Button(L10n.string("common.select")) {
+                            switch segment {
+                            case .bookmarks:
+                                bookmarkSelectionRequest += 1
+                            case .likes:
+                                likeSelectionRequest += 1
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/// State each segment reports to the panel-owned navigation item.
+///
+/// Keeping this compact value at the panel boundary prevents a segment swap
+/// from temporarily owning an incomplete navigation bar during layout.
+struct ReaderAnnotationSegmentNavigationState: Equatable {
+    var itemCount = 0
+    var isSelecting = false
+    var selectedItemCount = 0
 }
 
 /// The bookmark segment: book-ordered rows, tap to jump, swipe to delete.
@@ -60,12 +124,13 @@ struct ReaderAnnotationPanel: View {
 /// has never opened that chapter.
 struct ReaderBookmarkListView: View {
     let work: LikeWorkKey
-    let workTitle: String
     let bookmarkStore: BookmarkStore
     let onOpen: (BookmarkItem) -> Void
-    let onDismiss: (() -> Void)?
+    let selectionRequest: Int
+    let onNavigationStateChange: (ReaderAnnotationSegmentNavigationState) -> Void
 
     @State private var items: [BookmarkItem] = []
+    @State private var hasLoaded = false
     @State private var isSelecting = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isShowingDeleteConfirmation = false
@@ -102,7 +167,9 @@ struct ReaderBookmarkListView: View {
         .listStyle(.plain)
         .contentMargins(.top, 8, for: .scrollContent)
         .overlay {
-            if items.isEmpty {
+            if !hasLoaded {
+                ProgressView()
+            } else if items.isEmpty {
                 ContentUnavailableView {
                     Label(L10n.string("annotations.bookmark.empty_state"), systemImage: "bookmark")
                 } description: {
@@ -110,13 +177,6 @@ struct ReaderBookmarkListView: View {
                 }
             }
         }
-        .navigationTitle(
-            isSelecting
-                ? L10n.string("likes.selected_count", selectedItemIDs.count)
-                : workTitle
-        )
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(isSelecting)
         .toolbar {
             if isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
@@ -137,19 +197,6 @@ struct ReaderBookmarkListView: View {
                         SelectionBottomToolbar(actions: deleteActions)
                     }
                 }
-            } else {
-                if let onDismiss {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(L10n.string("common.close"), action: onDismiss)
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    if !items.isEmpty {
-                        Button(L10n.string("common.select")) {
-                            setSelecting(true)
-                        }
-                    }
-                }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -166,13 +213,20 @@ struct ReaderBookmarkListView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
-        .task { await load() }
+        .task {
+            publishNavigationState()
+            await load()
+        }
         .task {
             // Same appearance-scoped observation pattern the reader uses for
             // the Like store: one stream, torn down with the view.
             for await _ in bookmarkStore.changes() {
                 await load()
             }
+        }
+        .onChange(of: selectionRequest) { _, _ in
+            guard !items.isEmpty else { return }
+            setSelecting(true)
         }
     }
 
@@ -191,6 +245,7 @@ struct ReaderBookmarkListView: View {
         // Never carry a selection out of selection mode: the next entry would
         // start with rows already ticked that the user cannot see.
         selectedItemIDs.removeAll()
+        publishNavigationState()
     }
 
     private func toggleSelection(_ id: String) {
@@ -199,6 +254,7 @@ struct ReaderBookmarkListView: View {
         } else {
             selectedItemIDs.insert(id)
         }
+        publishNavigationState()
     }
 
     private func toggleSelectAll() {
@@ -207,6 +263,7 @@ struct ReaderBookmarkListView: View {
         } else {
             selectedItemIDs = Set(items.map(\.id))
         }
+        publishNavigationState()
     }
 
     private func load() async {
@@ -214,6 +271,8 @@ struct ReaderBookmarkListView: View {
         // A bookmark deleted on another device disappears mid-selection;
         // dropping the stale ids keeps the count honest.
         selectedItemIDs.formIntersection(Set(items.map(\.id)))
+        hasLoaded = true
+        publishNavigationState()
     }
 
     private func delete(_ item: BookmarkItem) {
@@ -229,6 +288,16 @@ struct ReaderBookmarkListView: View {
         }
         await load()
         setSelecting(false)
+    }
+
+    private func publishNavigationState() {
+        onNavigationStateChange(
+            ReaderAnnotationSegmentNavigationState(
+                itemCount: items.count,
+                isSelecting: isSelecting,
+                selectedItemCount: selectedItemIDs.count
+            )
+        )
     }
 }
 

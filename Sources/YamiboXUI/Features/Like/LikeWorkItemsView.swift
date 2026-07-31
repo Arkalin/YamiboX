@@ -15,8 +15,12 @@ struct LikeWorkItemsView: View {
     let like: LikeDependencies
     let onOpenAnchor: (LikeAnchorPayload) -> Void
     let onDismiss: (() -> Void)?
+    let annotationSelectionRequest: Int?
+    let onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
+    let isAnnotationSegmentActive: Bool
 
     @State private var items: [LikeItem] = []
+    @State private var hasLoaded = false
     @State private var chapterInfoByItemID: [String: String] = [:]
     @State private var searchText = ""
     @State private var presentedTextItem: LikeItem?
@@ -28,6 +32,26 @@ struct LikeWorkItemsView: View {
     @State private var isShowingDeleteConfirmation = false
 
     @Namespace private var imageBrowserZoomNamespace
+
+    init(
+        work: LikeWorkKey,
+        workTitle: String,
+        like: LikeDependencies,
+        onOpenAnchor: @escaping (LikeAnchorPayload) -> Void,
+        onDismiss: (() -> Void)?,
+        annotationSelectionRequest: Int? = nil,
+        onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)? = nil,
+        isAnnotationSegmentActive: Bool = true
+    ) {
+        self.work = work
+        self.workTitle = workTitle
+        self.like = like
+        self.onOpenAnchor = onOpenAnchor
+        self.onDismiss = onDismiss
+        self.annotationSelectionRequest = annotationSelectionRequest
+        self.onAnnotationNavigationStateChange = onAnnotationNavigationStateChange
+        self.isAnnotationSegmentActive = isAnnotationSegmentActive
+    }
 
     var body: some View {
         List {
@@ -58,26 +82,26 @@ struct LikeWorkItemsView: View {
         // in right after this view is pushed (before `load()` finishes) is
         // what caused the search bar to briefly ghost/overlap the first row.
         .overlay {
-            if items.isEmpty {
+            if !hasLoaded {
+                ProgressView()
+            } else if items.isEmpty {
                 ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
             } else if filteredItems.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             }
         }
-        .navigationTitle(
-            isSelecting
-                ? L10n.string("likes.selected_count", selectedItemIDs.count)
-                : workTitle
+        .likeWorkItemsNavigationTitle(
+            isManagedByAnnotationPanel: onAnnotationNavigationStateChange != nil,
+            isSelecting: isSelecting,
+            selectedItemCount: selectedItemIDs.count,
+            workTitle: workTitle,
+            onDismiss: onDismiss
         )
-        // Inline in the reader's annotation panel so this segment's header
-        // matches the bookmark segment's — the two swap in place under one
-        // picker, and a large title on only one of them makes the picker jump.
-        // Pushed from Mine there is no sibling to match, so the large title
-        // stays. `onDismiss` is the same signal the 关闭 button keys off: it is
-        // set only by the sheet presentation.
-        .navigationBarTitleDisplayMode(onDismiss == nil ? .automatic : .inline)
-        .navigationBarBackButtonHidden(isSelecting)
-        .searchable(text: $searchText, prompt: L10n.string("likes.search_placeholder"))
+        .likeWorkItemsSearchable(
+            isEnabled: isAnnotationSegmentActive,
+            text: $searchText,
+            prompt: L10n.string("likes.search_placeholder")
+        )
         .toolbar {
             if isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
@@ -102,7 +126,7 @@ struct LikeWorkItemsView: View {
                         )
                     }
                 }
-            } else {
+            } else if onAnnotationNavigationStateChange == nil {
                 if let onDismiss {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(L10n.string("common.close"), action: onDismiss)
@@ -136,7 +160,10 @@ struct LikeWorkItemsView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
-        .task { await load() }
+        .task {
+            publishAnnotationNavigationState()
+            await load()
+        }
         // Appearance-scoped `.task` replacing the removed `.onReceive`
         // bridge: sheets/covers presented from this view don't cancel it, so
         // deletions made in them still refresh live, and anything missed
@@ -151,6 +178,10 @@ struct LikeWorkItemsView: View {
                 }
                 Task { await load() }
             }
+        }
+        .onChange(of: annotationSelectionRequest) { _, request in
+            guard request != nil, !items.isEmpty else { return }
+            setSelecting(true)
         }
         .sheet(item: $presentedTextItem) { item in
             LikeTextDetailView(
@@ -262,6 +293,8 @@ struct LikeWorkItemsView: View {
             items = sorted
             chapterInfoByItemID = LikeChapterInfoResolver.mangaChapterInfo(for: sorted, directory: directory)
         }
+        hasLoaded = true
+        publishAnnotationNavigationState()
     }
 
     private func delete(_ item: LikeItem) {
@@ -282,6 +315,7 @@ struct LikeWorkItemsView: View {
         } else {
             selectedItemIDs.insert(id)
         }
+        publishAnnotationNavigationState()
     }
 
     private var isAllVisibleSelected: Bool {
@@ -302,6 +336,7 @@ struct LikeWorkItemsView: View {
         } else {
             selectedItemIDs.formUnion(visibleIDs)
         }
+        publishAnnotationNavigationState()
     }
 
     private func setSelecting(_ selecting: Bool) {
@@ -309,6 +344,7 @@ struct LikeWorkItemsView: View {
         if !selecting {
             selectedItemIDs.removeAll()
         }
+        publishAnnotationNavigationState()
     }
 
     private func deleteSelection() async {
@@ -320,6 +356,16 @@ struct LikeWorkItemsView: View {
         }
         setSelecting(false)
         await load()
+    }
+
+    private func publishAnnotationNavigationState() {
+        onAnnotationNavigationStateChange?(
+            ReaderAnnotationSegmentNavigationState(
+                itemCount: items.count,
+                isSelecting: isSelecting,
+                selectedItemCount: selectedItemIDs.count
+            )
+        )
     }
 
     /// Novel Like Items arrive from the store already in book order: the row
@@ -361,6 +407,43 @@ struct LikeWorkItemsView: View {
                 return lhsOrder < rhsOrder
             }
             return lhsAnchor.pageLocalIndex < rhsAnchor.pageLocalIndex
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func likeWorkItemsNavigationTitle(
+        isManagedByAnnotationPanel: Bool,
+        isSelecting: Bool,
+        selectedItemCount: Int,
+        workTitle: String,
+        onDismiss: (() -> Void)?
+    ) -> some View {
+        if isManagedByAnnotationPanel {
+            self
+        } else {
+            self
+                .navigationTitle(
+                    isSelecting
+                        ? L10n.string("likes.selected_count", selectedItemCount)
+                        : workTitle
+                )
+                .navigationBarTitleDisplayMode(onDismiss == nil ? .automatic : .inline)
+                .navigationBarBackButtonHidden(isSelecting)
+        }
+    }
+
+    @ViewBuilder
+    func likeWorkItemsSearchable(
+        isEnabled: Bool,
+        text: Binding<String>,
+        prompt: String
+    ) -> some View {
+        if isEnabled {
+            self.searchable(text: text, prompt: prompt)
+        } else {
+            self
         }
     }
 }
