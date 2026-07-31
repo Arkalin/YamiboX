@@ -15,7 +15,12 @@ struct NovelReaderBottomChrome: View {
     let onShowCache: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
-    let onShowLikes: () -> Void
+    let onToggleBookmark: () -> Void
+    let onShowAnnotations: () -> Void
+    /// Whether the position the bookmark button would mark right now is
+    /// already bookmarked, i.e. whether tapping removes rather than adds.
+    let isBookmarked: Bool
+    let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onJumpChapter: (Int) -> Void
     let onProgressCommit: (Int) -> Void
     let onVerticalProgressCommit: (Int) -> Void
@@ -72,6 +77,13 @@ struct NovelReaderBottomChrome: View {
         )
     }
 
+    /// The capsules `progressControl` is actually rendering right now: 目录 +
+    /// 评论 + 设置, plus 书签与喜欢 when the work has any. The vertical scrubber
+    /// bottom-aligns with the action row, so it has to span exactly this stack.
+    private var stackedCapsuleCount: Int {
+        chromeLayout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0)
+    }
+
     private var verticalProgressControlReservedWidth: CGFloat {
         guard progressChromePresentation.showsVerticalScrubber else { return 0 }
         return chromeLayout.verticalScrubberSideSpacing + chromeLayout.verticalScrubberWidth
@@ -82,6 +94,7 @@ struct NovelReaderBottomChrome: View {
             restingProgressFraction: progress.progressFraction,
             scrubContext: progress.scrubContext,
             ticks: progress.ticks,
+            stackedCapsuleCount: stackedCapsuleCount,
             onBeginScrub: onBeginVerticalProgressScrub,
             onCommit: onVerticalProgressCommit,
             onEndScrub: onEndVerticalProgressScrub
@@ -101,9 +114,12 @@ struct NovelReaderBottomChrome: View {
             Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(
                 action: ReaderBottomAction(kind: .bookmark),
-                title: L10n.string("mine.my_likes"),
-                systemName: "heart",
-                handler: onShowLikes
+                title: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
+                // `bottomActionButton` renders the glyph only — `title` is the
+                // accessibility label — so filled-vs-outline is the entire
+                // visual signal for the toggle's state.
+                systemName: isBookmarked ? "bookmark.fill" : "bookmark",
+                handler: onToggleBookmark
             )
             Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(
@@ -207,6 +223,17 @@ struct NovelReaderBottomChrome: View {
             .allowsHitTesting(!shouldHideDirectoryCapsule)
             .accessibilityHidden(shouldHideDirectoryCapsule)
 
+            // Only exists once the work has something to show — an entry point
+            // that always leads to an empty list is just permanent chrome.
+            if annotationCapsule.isVisible {
+                secondaryCapsuleButton(
+                    title: annotationCapsule.title,
+                    systemName: "bookmark",
+                    trailingText: annotationCapsule.countText,
+                    action: onShowAnnotations
+                )
+            }
+
             secondaryCapsuleButton(
                 title: L10n.string("reader.comments"),
                 systemName: "text.bubble",
@@ -224,6 +251,7 @@ struct NovelReaderBottomChrome: View {
     private func secondaryCapsuleButton(
         title: String,
         systemName: String,
+        trailingText: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let presentation = actionRowPresentation
@@ -231,6 +259,7 @@ struct NovelReaderBottomChrome: View {
         return ReaderChromeCapsuleButton(
             title: title,
             systemName: systemName,
+            trailingText: trailingText,
             action: action
         )
         .opacity(presentation.opacity)

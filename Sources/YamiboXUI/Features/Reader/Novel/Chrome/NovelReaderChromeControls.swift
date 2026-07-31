@@ -16,7 +16,10 @@ struct NovelReaderChromeControls: View {
     let onShowCache: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
-    let onShowLikes: () -> Void
+    let onToggleBookmark: () -> Void
+    let onShowAnnotations: () -> Void
+    let isBookmarked: Bool
+    let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onJumpChapter: (Int) -> Void
     let onProgressCommit: (Int) -> Void
     let onVerticalProgressCommit: (Int) -> Void
@@ -74,7 +77,10 @@ struct NovelReaderChromeControls: View {
             onShowCache: onShowCache,
             onShowComments: onShowComments,
             onOpenForum: onOpenForum,
-            onShowLikes: onShowLikes,
+            onToggleBookmark: onToggleBookmark,
+            onShowAnnotations: onShowAnnotations,
+            isBookmarked: isBookmarked,
+            annotationCapsule: annotationCapsule,
             onJumpChapter: onJumpChapter,
             onProgressCommit: onProgressCommit,
             onVerticalProgressCommit: onVerticalProgressCommit,

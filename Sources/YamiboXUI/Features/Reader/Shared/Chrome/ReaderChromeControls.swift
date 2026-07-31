@@ -248,6 +248,10 @@ private struct ReaderChromeHistoryButtonGlassModifier: ViewModifier {
 struct ReaderChromeCapsuleButton: View {
     let title: String
     let systemName: String
+    /// Rendered on the trailing edge *instead of* `systemName` when set. The
+    /// 书签与喜欢 capsule shows its item count there; every other capsule keeps
+    /// the icon, so the two read as the same control with a different payload.
+    var trailingText: String?
     var isEnabled = true
     let action: () -> Void
 
@@ -266,8 +270,15 @@ struct ReaderChromeCapsuleButton: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 12)
-                Image(systemName: systemName)
-                    .font(.callout.weight(.semibold))
+                if let trailingText {
+                    Text(trailingText)
+                        .font(.callout.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                } else {
+                    Image(systemName: systemName)
+                        .font(.callout.weight(.semibold))
+                }
             }
             .foregroundStyle(layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary)
             .frame(maxWidth: .infinity)

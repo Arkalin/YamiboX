@@ -75,6 +75,13 @@ public final class NovelTextViewportDisplayReference {
         runtimeOwner?.selectedText(for: selectionRange)
     }
 
+    func surroundingText(
+        for selectionRange: NovelTextSelectionRange,
+        radius: Int
+    ) -> (before: String, after: String)? {
+        runtimeOwner?.surroundingText(for: selectionRange, radius: radius)
+    }
+
     func highlightRange(
         from start: NovelResumePoint,
         to end: NovelResumePoint

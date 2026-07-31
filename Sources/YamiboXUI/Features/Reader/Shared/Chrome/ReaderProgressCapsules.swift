@@ -171,6 +171,11 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     let ticks: [ReaderChromeProgressTick]
     let previewSize: CGSize
     let showsPreview: Bool
+    /// How many capsules the chrome is stacking above the action row right
+    /// now, so this scrubber can span exactly that stack. Varies at runtime
+    /// because the 书签与喜欢 capsule only appears once the work has
+    /// annotations.
+    let stackedCapsuleCount: Int
     let onPreviewChange: (ReaderProgressScrubPreview?) -> Void
     let onBeginScrub: () -> Void
     let onCommit: (Int) -> Void
@@ -189,6 +194,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
         ticks: [ReaderChromeProgressTick],
         previewSize: CGSize,
         showsPreview: Bool = true,
+        stackedCapsuleCount: Int = ReaderBottomChromeLayoutPresentation().baseStackedCapsuleCount,
         onPreviewChange: @escaping (ReaderProgressScrubPreview?) -> Void = { _ in },
         onBeginScrub: @escaping () -> Void,
         onCommit: @escaping (Int) -> Void,
@@ -200,6 +206,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
         self.ticks = ticks
         self.previewSize = previewSize
         self.showsPreview = showsPreview
+        self.stackedCapsuleCount = stackedCapsuleCount
         self.onPreviewChange = onPreviewChange
         self.onBeginScrub = onBeginScrub
         self.onCommit = onCommit
@@ -257,7 +264,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
             .accessibilityLabel(L10n.string("reader.progress_capsule.directory_progress"))
         }
         .frame(width: totalWidth)
-        .frame(height: layout.verticalScrubberHeight)
+        .frame(height: layout.verticalScrubberHeight(capsuleCount: stackedCapsuleCount))
         .onAppear(perform: prepareFeedbackGenerators)
     }
 
@@ -366,6 +373,7 @@ extension ReaderVerticalProgressCapsule where PreviewContent == ReaderVerticalPr
         restingProgressFraction: Double,
         scrubContext: ReaderProgressScrubContext,
         ticks: [ReaderChromeProgressTick],
+        stackedCapsuleCount: Int = ReaderBottomChromeLayoutPresentation().baseStackedCapsuleCount,
         onBeginScrub: @escaping () -> Void,
         onCommit: @escaping (Int) -> Void,
         onEndScrub: @escaping () -> Void
@@ -376,6 +384,7 @@ extension ReaderVerticalProgressCapsule where PreviewContent == ReaderVerticalPr
             scrubContext: scrubContext,
             ticks: ticks,
             previewSize: CGSize(width: layout.verticalPreviewWidth, height: layout.verticalPreviewHeight),
+            stackedCapsuleCount: stackedCapsuleCount,
             onBeginScrub: onBeginScrub,
             onCommit: onCommit,
             onEndScrub: onEndScrub

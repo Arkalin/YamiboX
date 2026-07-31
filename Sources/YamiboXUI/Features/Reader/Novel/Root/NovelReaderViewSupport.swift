@@ -79,7 +79,14 @@ enum NovelReaderPresentedSheet: Identifiable, Hashable {
     case cacheProgress
     case chapterSheet
     case chapterComments
-    case likes
+    /// The two-segment 书签与喜欢 panel. Replaced the old `.likes` case when
+    /// the reader's 我的喜欢 button became the bookmark toggle: likes are now
+    /// one segment of this panel rather than a panel of their own.
+    case annotations
+    /// Note editor for one annotation. Carries the item so the sheet renders
+    /// the excerpt it is a note on; `LikeItem` is Hashable, which is all
+    /// `Identifiable` by `Self` needs.
+    case note(LikeItem)
 
     var id: Self { self }
 }
@@ -98,6 +105,9 @@ struct NovelReaderPresentationModifier: ViewModifier {
     let onJumpToChapterDirectoryChapter: (NovelReaderChapter) -> Void
     let onPreviewChapterDirectoryWebView: (Int) -> Void
     let onOpenLikeAnchor: (LikeAnchorPayload) -> Void
+    let onOpenBookmark: (BookmarkItem) -> Void
+    let onSaveNote: (LikeItem, String?) -> Void
+    @Binding var annotationSegment: ReaderAnnotationSegment
 
     func body(content: Content) -> some View {
         content
@@ -145,15 +155,21 @@ struct NovelReaderPresentationModifier: ViewModifier {
                             model.cache.hideProgress()
                         }
                     }
-                case .likes:
+                case .annotations:
                     NavigationStack {
-                        LikeWorkItemsView(
+                        ReaderAnnotationPanel(
                             work: .novel(threadID: model.context.threadID),
                             workTitle: model.title,
                             like: likeDependencies,
-                            onOpenAnchor: onOpenLikeAnchor,
+                            segment: $annotationSegment,
+                            onOpenBookmark: onOpenBookmark,
+                            onOpenLikeAnchor: onOpenLikeAnchor,
                             onDismiss: { presentedSheet = nil }
                         )
+                    }
+                case let .note(item):
+                    LikeNoteEditorSheet(item: item) { note in
+                        onSaveNote(item, note)
                     }
                 }
             }

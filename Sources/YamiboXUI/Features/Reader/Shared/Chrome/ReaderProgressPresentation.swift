@@ -233,7 +233,22 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var progressCapsulesUseButtonTint: Bool { true }
     public var progressSummaryVisibleWhileScrubbing: Bool { true }
     public var verticalScrubberWidth: CGFloat { progressPanelHeight }
-    public var verticalScrubberHeight: CGFloat { progressPanelHeight * 3 + panelSpacing * 3 + actionButtonRowHeight }
+
+    /// Capsules both readers always stack above the action row: 目录, 评论, 设置.
+    public var baseStackedCapsuleCount: Int { 3 }
+
+    /// The vertical-mode scrubber bottom-aligns with the action button row
+    /// (`verticalScrubberBottomAlignsWithActionButtons`), so its height has to
+    /// span the whole capsule stack sitting above that row. The 书签与喜欢
+    /// capsule only renders when the work has annotations, which is why this
+    /// takes the count the caller actually rendered instead of hard-coding it.
+    public func verticalScrubberHeight(capsuleCount: Int) -> CGFloat {
+        let capsules = CGFloat(max(capsuleCount, 1))
+        return progressPanelHeight * capsules + panelSpacing * capsules + actionButtonRowHeight
+    }
+
+    /// Height of the baseline stack, with no annotation capsule present.
+    public var verticalScrubberHeight: CGFloat { verticalScrubberHeight(capsuleCount: baseStackedCapsuleCount) }
     public var verticalPreviewWidth: CGFloat { maxChromeWidth }
     public var verticalPreviewHeight: CGFloat { 50 }
     public var verticalScrubberShowsChapterTicks: Bool { true }

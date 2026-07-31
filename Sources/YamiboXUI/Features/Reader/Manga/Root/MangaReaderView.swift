@@ -22,8 +22,16 @@ public struct MangaReaderView: View {
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var isSettingsPresented = false
     @State private var isCachePresented = false
-    @State private var isLikesPresented = false
+    /// Replaced `isLikesPresented`: the reader's likes list is now one segment
+    /// of the 书签与喜欢 panel rather than a panel of its own.
+    @State private var isAnnotationsPresented = false
+    /// Remembered for the reader session so reopening returns to the segment
+    /// the user last looked at; nil means "not chosen yet".
+    @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
     @State private var likedItemForActionTarget: LikeItem?
+    /// Item-driven so the editor always renders the note it was opened for,
+    /// even if the store changes underneath while it is up.
+    @State private var noteEditTarget: LikeItem?
     @State private var imageSavePresentation = MangaImageSavePresentationState()
     @State private var isPhotoPermissionAlertPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -170,10 +178,15 @@ public struct MangaReaderView: View {
                     onShowCache: {
                         isCachePresented = true
                     },
-                    onShowLikes: {
-                        guard model.canShowLikes else { return }
-                        isLikesPresented = true
+                    onToggleBookmark: {
+                        Task { await model.toggleBookmarkForCurrentPage() }
                     },
+                    onShowAnnotations: {
+                        guard model.canShowLikes else { return }
+                        isAnnotationsPresented = true
+                    },
+                    isBookmarked: model.isCurrentPageBookmarked,
+                    annotationCapsule: model.annotationCapsule,
                     onOpenOriginalPost: openOriginalPost,
                     onJumpToLocalPage: { targetIndex in
                         Task { await model.jumpToPage(localIndex: targetIndex) }
@@ -269,21 +282,33 @@ public struct MangaReaderView: View {
                 MangaDirectoryUnavailableSheet()
             }
         }
-        .sheet(isPresented: $isLikesPresented) {
-            if let likeSheetContext = model.likeSheetContext {
+        .sheet(isPresented: $isAnnotationsPresented) {
+            if let annotationSheetContext = model.annotationSheetContext {
                 NavigationStack {
-                    LikeWorkItemsView(
-                        work: likeSheetContext.workKey,
+                    ReaderAnnotationPanel(
+                        work: annotationSheetContext.workKey,
                         workTitle: context.displayTitle,
-                        like: likeSheetContext.like,
-                        onOpenAnchor: { anchor in
-                            isLikesPresented = false
+                        like: annotationSheetContext.like,
+                        segment: annotationSegmentBinding,
+                        onOpenBookmark: { item in
+                            Task { await openBookmark(item) }
+                        },
+                        onOpenLikeAnchor: { anchor in
+                            isAnnotationsPresented = false
                             Task {
                                 await openLikedAnchor(anchor)
                             }
                         },
-                        onDismiss: { isLikesPresented = false }
+                        onDismiss: { isAnnotationsPresented = false }
                     )
+                }
+            }
+        }
+        .sheet(item: $noteEditTarget) { item in
+            LikeNoteEditorSheet(item: item) { note in
+                Task {
+                    guard let annotation = model.annotationSheetContext else { return }
+                    _ = try? await annotation.like.likeStore.updateNote(id: item.id, note: note)
                 }
             }
         }
@@ -319,6 +344,14 @@ public struct MangaReaderView: View {
                 }
 
                 if let likedItem = likedItemForActionTarget {
+                    // A note lives on a like, so this only appears once the
+                    // page is liked — the same "notes depend on likes" rule the
+                    // novel reader follows.
+                    Button(L10n.string(likedItem.hasNote ? "likes.edit_note" : "likes.add_note")) {
+                        imageSavePresentation.clearActionTarget()
+                        likedItemForActionTarget = nil
+                        noteEditTarget = likedItem
+                    }
                     Button(L10n.string("likes.remove_like"), role: .destructive) {
                         Task {
                             await unlikePage(likedItem)
@@ -426,6 +459,8 @@ public struct MangaReaderView: View {
                 || isChapterCommentsPresented
                 || isSettingsPresented
                 || isCachePresented
+                || isAnnotationsPresented
+                || noteEditTarget != nil
                 || forumThreadOverlayItem != nil,
             isDismissing: isDismissing,
             isChromeVisible: isChromeVisible
@@ -441,7 +476,8 @@ public struct MangaReaderView: View {
             isChapterCommentsPresented ||
             isSettingsPresented ||
             isCachePresented ||
-            isLikesPresented ||
+            isAnnotationsPresented ||
+            noteEditTarget != nil ||
             forumThreadOverlayItem != nil
     }
 
@@ -593,6 +629,36 @@ public struct MangaReaderView: View {
         imageSavePresentation.finishSave(with: succeeded
             ? .custom(title: L10n.string("likes.remove_like"), message: "")
             : .failure(message: L10n.string("image.action_failed")))
+    }
+
+    private var annotationSegmentBinding: Binding<ReaderAnnotationSegment> {
+        Binding(
+            get: { rememberedAnnotationSegment ?? model.annotationCapsule.initialSegment(remembering: nil) },
+            set: { rememberedAnnotationSegment = $0 }
+        )
+    }
+
+    /// Mirrors `openLikedAnchor`: try the in-session jump first and only fall
+    /// back to presenting a fresh reader when that fails.
+    private func openBookmark(_ item: BookmarkItem) async {
+        guard case let .manga(anchor) = item.anchor else { return }
+        isAnnotationsPresented = false
+        if await model.jumpToLikedMangaPage(tid: anchor.chapterTID, localIndex: anchor.pageLocalIndex) {
+            return
+        }
+        appModel.presentMangaReader(
+            MangaLaunchContext(
+                originalThreadID: context.originalThreadID,
+                chapterTID: anchor.chapterTID,
+                displayTitle: context.displayTitle,
+                source: .like,
+                initialPage: anchor.pageLocalIndex,
+                directoryName: context.directoryName,
+                offlineCacheFavoriteID: context.offlineCacheFavoriteID,
+                isSmartModeEnabled: context.isSmartModeEnabled,
+                forumID: anchor.forumID ?? context.forumID
+            )
+        )
     }
 
     private func openLikedAnchor(_ anchor: LikeAnchorPayload) async {

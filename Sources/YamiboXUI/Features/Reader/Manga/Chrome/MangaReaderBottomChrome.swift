@@ -16,7 +16,10 @@ struct MangaReaderBottomChrome: View {
     let onShowComments: () -> Void
     let onShowSettings: () -> Void
     let onShowCache: () -> Void
-    let onShowLikes: () -> Void
+    let onToggleBookmark: () -> Void
+    let onShowAnnotations: () -> Void
+    let isBookmarked: Bool
+    let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onOpenOriginalPost: () -> Void
     let onJumpToLocalPage: (Int) -> Void
 
@@ -52,18 +55,34 @@ struct MangaReaderBottomChrome: View {
                         )
                     }
 
+                    // Only exists once the work has something to show — an
+                    // entry point that always leads to an empty list is just
+                    // permanent chrome.
+                    if annotationCapsule.isVisible {
+                        ReaderChromeCapsuleButton(
+                            title: annotationCapsule.title,
+                            systemName: "bookmark",
+                            trailingText: annotationCapsule.countText,
+                            action: onShowAnnotations
+                        )
+                        .opacity(staticControlVisibility.opacity)
+                        .allowsHitTesting(staticControlVisibility.allowsHitTesting)
+                        .accessibilityHidden(staticControlVisibility.isAccessibilityHidden)
+                    }
+
                     MangaReaderStaticActionControls(
                         colorScheme: colorScheme,
                         originalPostTitle: L10n.string("common.original_post"),
                         commentsTitle: L10n.string("reader.comments"),
                         settingsTitle: L10n.string("settings.title"),
-                        bookmarkTitle: L10n.string("mine.my_likes"),
+                        bookmarkTitle: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
+                        bookmarkSystemName: isBookmarked ? "bookmark.fill" : "bookmark",
                         cacheTitle: L10n.string("reader.cache"),
                         onOpenOriginalPost: onOpenOriginalPost,
                         onShowComments: onShowComments,
                         onShowSettings: onShowSettings,
                         onShowCache: onShowCache,
-                        onShowLikes: onShowLikes
+                        onToggleBookmark: onToggleBookmark
                     )
                     .opacity(staticControlVisibility.opacity)
                     .allowsHitTesting(staticControlVisibility.allowsHitTesting)
@@ -78,6 +97,7 @@ struct MangaReaderBottomChrome: View {
                    let progress = summary?.progress {
                     MangaReaderVerticalProgressControl(
                         progress: progress,
+                        stackedCapsuleCount: layout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0),
                         onPreviewChange: { activeVerticalProgressPreview = $0 },
                         onJumpToLocalPage: onJumpToLocalPage
                     )
@@ -207,6 +227,9 @@ private struct MangaReaderDirectoryProgressControl: View {
 
 private struct MangaReaderVerticalProgressControl: View {
     let progress: ReaderChromeProgress
+    /// Capsules stacked above the action row right now; the scrubber
+    /// bottom-aligns with that row, so it has to span exactly this stack.
+    let stackedCapsuleCount: Int
     let onPreviewChange: (ReaderProgressScrubPreview?) -> Void
     let onJumpToLocalPage: (Int) -> Void
 
@@ -217,6 +240,7 @@ private struct MangaReaderVerticalProgressControl: View {
             ticks: progress.ticks,
             previewSize: MangaReaderProgressImagePreview.previewSize,
             showsPreview: false,
+            stackedCapsuleCount: stackedCapsuleCount,
             onPreviewChange: onPreviewChange,
             onBeginScrub: {},
             onCommit: onJumpToLocalPage,
@@ -364,12 +388,13 @@ private struct MangaReaderStaticActionControls: View {
     let commentsTitle: String
     let settingsTitle: String
     let bookmarkTitle: String
+    let bookmarkSystemName: String
     let cacheTitle: String
     let onOpenOriginalPost: () -> Void
     let onShowComments: () -> Void
     let onShowSettings: () -> Void
     let onShowCache: () -> Void
-    let onShowLikes: () -> Void
+    let onToggleBookmark: () -> Void
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
@@ -395,8 +420,8 @@ private struct MangaReaderStaticActionControls: View {
             Spacer(minLength: layout.actionButtonSpacing)
             bottomActionButton(
                 title: bookmarkTitle,
-                systemName: "heart",
-                handler: onShowLikes
+                systemName: bookmarkSystemName,
+                handler: onToggleBookmark
             )
             Spacer(minLength: layout.actionButtonSpacing)
             bottomActionButton(
