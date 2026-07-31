@@ -21,6 +21,7 @@ struct LikeWorkItemsView: View {
     @State private var searchText = ""
     @State private var presentedTextItem: LikeItem?
     @State private var presentedImageItem: LikeItem?
+    @State private var noteEditTarget: LikeItem?
 
     @State private var isSelecting = false
     @State private var selectedItemIDs: Set<String> = []
@@ -155,11 +156,21 @@ struct LikeWorkItemsView: View {
             LikeTextDetailView(
                 item: item,
                 chapterInfo: chapterInfoByItemID[item.id],
+                onSaveNote: { note in
+                    Task {
+                        _ = try? await like.likeStore.updateNote(id: item.id, note: note)
+                    }
+                },
                 onJumpToOriginal: {
                     presentedTextItem = nil
                     onOpenAnchor(item.anchor)
                 }
             )
+        }
+        .sheet(item: $noteEditTarget) { item in
+            LikeNoteEditorSheet(item: item) { note in
+                saveImageNote(note, for: item)
+            }
         }
         .fullScreenCover(item: $presentedImageItem) { item in
             if let browserItem = imageBrowserItem(for: item) {
@@ -168,6 +179,9 @@ struct LikeWorkItemsView: View {
                     initialItemID: item.id,
                     mode: .single,
                     presentation: .zoom(imageBrowserZoomNamespace),
+                    onEditNote: { browserItem in
+                        noteEditTarget = items.first { $0.id == browserItem.id } ?? item
+                    },
                     onJumpToOriginal: {
                         presentedImageItem = nil
                         onOpenAnchor(item.anchor)
@@ -208,6 +222,24 @@ struct LikeWorkItemsView: View {
             title: chapterInfoByItemID[item.id] ?? workTitle,
             likeImageStore: like.likeImageStore
         )
+    }
+
+    private func saveImageNote(_ note: String?, for item: LikeItem) {
+        let normalizedNote = normalizedNote(note)
+        var updatedItem = item
+        updatedItem.note = normalizedNote
+        items = items.map { $0.id == item.id ? updatedItem : $0 }
+        if presentedImageItem?.id == item.id {
+            presentedImageItem = updatedItem
+        }
+        Task {
+            _ = try? await like.likeStore.updateNote(id: item.id, note: normalizedNote)
+        }
+    }
+
+    private func normalizedNote(_ note: String?) -> String? {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     private func load() async {

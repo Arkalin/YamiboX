@@ -52,6 +52,7 @@ struct ImageBrowserView: View {
     let mode: ImageBrowserMode
     let presentation: ImageBrowserPresentationStyle
     let coverActionsProvider: ImageBrowserCoverActionsProvider?
+    let onEditNote: ((ImageBrowserItem) -> Void)?
     let onJumpToOriginal: (() -> Void)?
     let onDismiss: () -> Void
 
@@ -70,6 +71,7 @@ struct ImageBrowserView: View {
         mode: ImageBrowserMode,
         presentation: ImageBrowserPresentationStyle = .fade,
         coverActionsProvider: ImageBrowserCoverActionsProvider? = nil,
+        onEditNote: ((ImageBrowserItem) -> Void)? = nil,
         onJumpToOriginal: (() -> Void)? = nil,
         onDismiss: @escaping () -> Void
     ) {
@@ -77,6 +79,7 @@ struct ImageBrowserView: View {
         self.mode = mode
         self.presentation = presentation
         self.coverActionsProvider = coverActionsProvider
+        self.onEditNote = onEditNote
         self.onJumpToOriginal = onJumpToOriginal
         self.onDismiss = onDismiss
         _selectedItemID = State(initialValue: Self.initialSelection(in: items, initialItemID: initialItemID))
@@ -201,6 +204,18 @@ struct ImageBrowserView: View {
                     } label: {
                         Label(action.title, systemImage: action.systemImage)
                     }
+                }
+            }
+
+            if let onEditNote, let currentItem {
+                Divider()
+                Button {
+                    onEditNote(currentItem)
+                } label: {
+                    Label(
+                        L10n.string(currentItem.caption == nil ? "likes.add_note" : "likes.edit_note"),
+                        systemImage: "note.text"
+                    )
                 }
             }
 
