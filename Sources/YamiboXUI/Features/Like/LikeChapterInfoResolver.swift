@@ -50,7 +50,7 @@ enum LikeChapterInfoResolver {
         let segmentIdentity: String
         switch anchor {
         case let .novelText(textAnchor):
-            segmentIdentity = textAnchor.textSegmentIdentity.rawValue
+            segmentIdentity = textAnchor.start.segmentIdentity
         case let .novelImage(imageAnchor):
             segmentIdentity = imageAnchor.imageSegmentIdentity
         case .mangaImage:

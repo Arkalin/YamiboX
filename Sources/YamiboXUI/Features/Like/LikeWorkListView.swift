@@ -271,8 +271,8 @@ struct LikeWorkListView: View {
                 resumePoint: NovelResumePoint(
                     view: textAnchor.view,
                     chapterIdentity: textAnchor.chapterIdentity,
-                    textSegmentIdentity: textAnchor.textSegmentIdentity,
-                    displayedTextOffset: textAnchor.range.location,
+                    textSegmentIdentity: textAnchor.startSegmentIdentity,
+                    displayedTextOffset: textAnchor.start.offset,
                     chapterOrdinal: 0,
                     segmentProgress: 0,
                     authorID: textAnchor.resolvedAuthorID,

@@ -101,9 +101,20 @@ struct LocalFavoriteSelectionEmphasis: ViewModifier {
     let isSelectionMode: Bool
     let isSelected: Bool
     var cornerRadius: CGFloat = 8
+    /// Space between the border and the content it marks.
+    ///
+    /// Zero by default because a card row already carries its own padding, and
+    /// the border wants to sit on the card's edge. Flat rows — ones drawn
+    /// straight onto the list background with no inner padding of their own —
+    /// pass a value here, or the stroke lands on the glyphs.
+    ///
+    /// Applied unconditionally rather than only while selected, so entering
+    /// selection mode never reflows the list.
+    var contentInset: CGFloat = 0
 
     func body(content: Content) -> some View {
         content
+            .padding(contentInset)
             .overlay {
                 if isSelectionMode, isSelected {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -116,7 +127,17 @@ struct LocalFavoriteSelectionEmphasis: ViewModifier {
 }
 
 extension View {
-    func favoriteSelectionEmphasis(isSelectionMode: Bool, isSelected: Bool, cornerRadius: CGFloat = 8) -> some View {
-        modifier(LocalFavoriteSelectionEmphasis(isSelectionMode: isSelectionMode, isSelected: isSelected, cornerRadius: cornerRadius))
+    func favoriteSelectionEmphasis(
+        isSelectionMode: Bool,
+        isSelected: Bool,
+        cornerRadius: CGFloat = 8,
+        contentInset: CGFloat = 0
+    ) -> some View {
+        modifier(LocalFavoriteSelectionEmphasis(
+            isSelectionMode: isSelectionMode,
+            isSelected: isSelected,
+            cornerRadius: cornerRadius,
+            contentInset: contentInset
+        ))
     }
 }
