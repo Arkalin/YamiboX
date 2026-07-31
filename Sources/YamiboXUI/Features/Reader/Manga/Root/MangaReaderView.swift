@@ -358,6 +358,11 @@ public struct MangaReaderView: View {
                         }
                     }
                 } else {
+                    Button(L10n.string("likes.add_note")) {
+                        Task {
+                            await addNote(to: target.page)
+                        }
+                    }
                     Button(L10n.string("likes.add_to_likes")) {
                         Task {
                             await likePage(target.page)
@@ -618,6 +623,24 @@ public struct MangaReaderView: View {
                 title: L10n.string("likes.already_liked"),
                 message: ""
             ))
+        }
+    }
+
+    /// Matches the novel reader's add-note action: creating an annotation is
+    /// part of adding the note, rather than a prerequisite the reader has to
+    /// discover and perform separately.
+    @MainActor
+    private func addNote(to page: MangaReaderPageProjection) async {
+        imageSavePresentation.clearActionTarget()
+        likedItemForActionTarget = nil
+        guard let outcome = await model.likePage(page) else {
+            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed")))
+            return
+        }
+
+        switch outcome {
+        case let .added(item), let .merged(item), let .alreadyLiked(item):
+            noteEditTarget = item
         }
     }
 
