@@ -356,6 +356,27 @@ package struct NovelReadingSession: Sendable {
         )
     }
 
+    /// Where each chapter sits on the forum page currently laid out, keyed by
+    /// chapter identity.
+    ///
+    /// Derived from segment order rather than from the novel directory: the
+    /// projection is always in hand here, the directory may not be, and the
+    /// ordinal only has to disambiguate posts *within* one page — the page
+    /// number already separates pages.
+    public func currentChapterOrdinalsByIdentity() -> [NovelChapterIdentity: Int] {
+        var ordinals: [NovelChapterIdentity: Int] = [:]
+        var nextOrdinal = 0
+        for semantics in currentProjection.segmentSemantics {
+            guard let chapterIdentity = semantics?.chapterIdentity,
+                  ordinals[chapterIdentity] == nil else {
+                continue
+            }
+            ordinals[chapterIdentity] = nextOrdinal
+            nextOrdinal += 1
+        }
+        return ordinals
+    }
+
     public func currentPreviewSourceText() -> String {
         guard let page = selectedViewportSurface,
               let projection = projection(for: page.documentView),

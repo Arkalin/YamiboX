@@ -600,6 +600,26 @@ package final class NovelTextViewportRuntimeOwner {
         return String(text[start..<end])
     }
 
+    /// The document text on either side of a selection, each side capped at
+    /// `radius` characters — the raw material `NovelLikeExcerptContext` trims
+    /// to clause boundaries. Capped here so a selection near the middle of a
+    /// long chapter never copies the whole document out.
+    package func surroundingText(
+        for selectionRange: NovelTextSelectionRange,
+        radius: Int
+    ) -> (before: String, after: String)? {
+        guard selectionRange.generation == activeGeneration,
+              let text = result?.viewportContext.document.text,
+              let start = text.index(text.startIndex, offsetBy: selectionRange.lowerBound, limitedBy: text.endIndex),
+              let end = text.index(text.startIndex, offsetBy: selectionRange.upperBound, limitedBy: text.endIndex),
+              start <= end else {
+            return nil
+        }
+        let beforeStart = text.index(start, offsetBy: -radius, limitedBy: text.startIndex) ?? text.startIndex
+        let afterEnd = text.index(end, offsetBy: radius, limitedBy: text.endIndex) ?? text.endIndex
+        return (String(text[beforeStart..<start]), String(text[end..<afterEnd]))
+    }
+
     /// Converts a persisted Like highlight's start/end into a selection range
     /// in the active generation's document-offset space, reusing the same
     /// geometry `selectionRects(for:surfaceIdentity:)` already draws with. A

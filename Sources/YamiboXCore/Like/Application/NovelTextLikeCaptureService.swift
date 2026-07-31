@@ -12,6 +12,14 @@ package struct NovelTextLikeCaptureRequest: Sendable {
     /// The active projection's cache-key identity at selection time (see
     /// `NovelTextLikeAnchor.resolvedAuthorID`).
     package var resolvedAuthorID: String?
+    /// The style to paint the new (or merged) annotation with — the reader's
+    /// sticky "last colour I chose". On a merge it overwrites every subsumed
+    /// item's style, because the merged range is one annotation.
+    package var style: LikeStyle
+    /// Clause context around the selection, sliced by the caller while it
+    /// still has the laid-out document in hand (see `LikeItem.excerptPrefix`).
+    package var excerptPrefix: String?
+    package var excerptSuffix: String?
 
     package init(
         workKey: LikeWorkKey,
@@ -19,7 +27,10 @@ package struct NovelTextLikeCaptureRequest: Sendable {
         end: NovelTextViewportSemanticTextPosition,
         excerptText: String,
         view: Int,
-        resolvedAuthorID: String?
+        resolvedAuthorID: String?,
+        style: LikeStyle = .default,
+        excerptPrefix: String? = nil,
+        excerptSuffix: String? = nil
     ) {
         self.workKey = workKey
         self.start = start
@@ -27,6 +38,9 @@ package struct NovelTextLikeCaptureRequest: Sendable {
         self.excerptText = excerptText
         self.view = view
         self.resolvedAuthorID = resolvedAuthorID
+        self.style = style
+        self.excerptPrefix = excerptPrefix
+        self.excerptSuffix = excerptSuffix
     }
 }
 
@@ -59,16 +73,28 @@ public struct NovelTextLikeCaptureService: Sendable {
         guard let chapterIdentity = request.start.chapterIdentity else {
             throw YamiboError.underlying("Novel text like capture requires a resolved chapter identity.")
         }
-        guard request.start.textSegmentIdentity == request.end.textSegmentIdentity else {
-            throw YamiboError.underlying("Novel text like capture requires a single-segment selection.")
+        // Both endpoints must live in the same chapter — nothing below this
+        // layer enforces it, and a cross-chapter range would render happily
+        // while being unorderable and unresolvable after a page change.
+        guard request.end.chapterIdentity == chapterIdentity else {
+            throw YamiboError.underlying("Novel text like capture requires a single-chapter selection.")
         }
-        let segment = request.start.textSegmentIdentity
-        let location = min(request.start.displayedTextOffset, request.end.displayedTextOffset)
-        let upperBound = max(request.start.displayedTextOffset, request.end.displayedTextOffset)
+        let requestedStart = NovelLikeTextEndpoint(
+            segmentIdentity: request.start.textSegmentIdentity.rawValue,
+            offset: request.start.displayedTextOffset
+        )
+        let requestedEnd = NovelLikeTextEndpoint(
+            segmentIdentity: request.end.textSegmentIdentity.rawValue,
+            offset: request.end.displayedTextOffset
+        )
+        // The drag may have run backwards, and the two endpoints may be in
+        // different segments, so document order — not raw offsets — decides
+        // which is which.
+        let orderedForward = NovelLikeTextEndpointOrdering.compare(requestedStart, requestedEnd) != .orderedDescending
         let requestAnchor = NovelTextLikeAnchor(
             chapterIdentity: chapterIdentity,
-            textSegmentIdentity: segment,
-            range: NovelCharacterRange(location: location, length: upperBound - location),
+            start: orderedForward ? requestedStart : requestedEnd,
+            end: orderedForward ? requestedEnd : requestedStart,
             view: request.view,
             resolvedAuthorID: request.resolvedAuthorID
         )
@@ -91,6 +117,9 @@ public struct NovelTextLikeCaptureService: Sendable {
                     workKey: request.workKey,
                     anchor: requestAnchor,
                     excerptText: request.excerptText,
+                    excerptPrefix: request.excerptPrefix,
+                    excerptSuffix: request.excerptSuffix,
+                    style: request.style,
                     date: date
                 )
             }.value
@@ -105,17 +134,59 @@ public struct NovelTextLikeCaptureService: Sendable {
         for candidate in overlapping.dropFirst() where candidate.item.updatedAt > survivor.item.updatedAt {
             survivor = candidate
         }
-        let unionLocation = overlapping.reduce(location) { min($0, $1.anchor.range.location) }
-        let unionUpperBound = overlapping.reduce(upperBound) { max($0, $1.anchor.range.upperBound) }
+        // The union spans from the earliest start to the latest end in
+        // document order, which `compare` resolves across segments as well as
+        // within one.
+        let unionStart = overlapping.reduce(requestAnchor.start) { earliest, entry in
+            NovelLikeTextEndpointOrdering.compare(entry.anchor.start, earliest) == .orderedAscending
+                ? entry.anchor.start
+                : earliest
+        }
+        let unionEnd = overlapping.reduce(requestAnchor.end) { latest, entry in
+            NovelLikeTextEndpointOrdering.compare(entry.anchor.end, latest) == .orderedDescending
+                ? entry.anchor.end
+                : latest
+        }
         let unionAnchor = NovelTextLikeAnchor(
             chapterIdentity: chapterIdentity,
-            textSegmentIdentity: segment,
-            range: NovelCharacterRange(location: unionLocation, length: unionUpperBound - unionLocation),
+            start: unionStart,
+            end: unionEnd,
             view: request.view,
             resolvedAuthorID: request.resolvedAuthorID
         )
         guard let mergedExcerpt = excerptTextForRange(unionAnchor) else {
             throw YamiboError.underlying("Novel text like capture could not recapture the merged excerpt text.")
+        }
+
+        // Every note the merge subsumes is carried into the survivor, in
+        // document order. Losing a note the user typed is not recoverable; a
+        // slightly long concatenated note is.
+        let mergedNote = overlapping
+            .sorted { lhs, rhs in
+                NovelLikeTextEndpointOrdering.compare(lhs.anchor.start, rhs.anchor.start) == .orderedAscending
+            }
+            .compactMap { entry -> String? in
+                guard let note = entry.item.note?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !note.isEmpty else {
+                    return nil
+                }
+                return note
+            }
+            .joined(separator: "\n\n")
+
+        // The context fields belong to whichever contributor's endpoint became
+        // the union's — a prefix describes the text before one specific start,
+        // so any other contributor's prefix would describe the middle of the
+        // merged range.
+        var unionPrefix = unionStart == requestAnchor.start ? request.excerptPrefix : nil
+        var unionSuffix = unionEnd == requestAnchor.end ? request.excerptSuffix : nil
+        for entry in overlapping {
+            if entry.anchor.start == unionStart, unionPrefix == nil {
+                unionPrefix = entry.item.excerptPrefix
+            }
+            if entry.anchor.end == unionEnd, unionSuffix == nil {
+                unionSuffix = entry.item.excerptSuffix
+            }
         }
 
         // Unstructured: same cancellation guard as the add path above.
@@ -125,6 +196,10 @@ public struct NovelTextLikeCaptureService: Sendable {
                 workKey: request.workKey,
                 anchor: unionAnchor,
                 excerptText: mergedExcerpt,
+                excerptPrefix: unionPrefix,
+                excerptSuffix: unionSuffix,
+                style: request.style,
+                note: mergedNote.isEmpty ? nil : mergedNote,
                 date: date
             )
         }.value

@@ -20,7 +20,7 @@ import Testing
         Issue.record("expected a novelText anchor")
         return
     }
-    #expect(anchor.range == NovelCharacterRange(location: 0, length: 5))
+    #expect(anchor.singleSegmentRange == NovelCharacterRange(location: 0, length: 5))
     #expect(await store.likes(for: workKey).count == 1)
 }
 
@@ -70,7 +70,7 @@ import Testing
         Issue.record("expected a novelText anchor")
         return
     }
-    #expect(anchor.range == NovelCharacterRange(location: 0, length: 15))
+    #expect(anchor.singleSegmentRange == NovelCharacterRange(location: 0, length: 15))
     #expect(await store.likes(for: workKey).count == 1)
 }
 
@@ -94,7 +94,7 @@ import Testing
         Issue.record("expected a novelText anchor")
         return
     }
-    #expect(anchor.range == NovelCharacterRange(location: 0, length: 10))
+    #expect(anchor.singleSegmentRange == NovelCharacterRange(location: 0, length: 10))
     #expect(await store.likes(for: workKey).count == 1)
 }
 

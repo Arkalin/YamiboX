@@ -64,6 +64,10 @@ public actor LikeStore {
         workKey: LikeWorkKey,
         anchor: NovelTextLikeAnchor,
         excerptText: String,
+        excerptPrefix: String? = nil,
+        excerptSuffix: String? = nil,
+        style: LikeStyle = .default,
+        note: String? = nil,
         date: Date = .now
     ) async throws -> LikeTextUpsertResult {
         do {
@@ -78,7 +82,12 @@ public actor LikeStore {
                     replacedIDs.append(candidate.id)
                 }
                 for replacedID in replacedIDs {
-                    try Self.deleteRow(id: replacedID, in: db)
+                    // Soft, not physical. A physically deleted row is neither in
+                    // `items` nor in `tombstones` on the next WebDAV export, so
+                    // the remote snapshot's copy came back as an unseen new item
+                    // and the merged-away highlight reappeared, overlapping the
+                    // one that subsumed it.
+                    try Self.softDeleteRow(id: replacedID, date: date, in: db)
                 }
                 let createdAt = try Self.fetchLike(id: id, in: db)?.createdAt ?? date
                 let item = LikeItem(
@@ -86,7 +95,14 @@ public actor LikeStore {
                     workKey: workKey,
                     kind: .text,
                     excerptText: excerptText,
+                    excerptPrefix: excerptPrefix,
+                    excerptSuffix: excerptSuffix,
                     anchor: .novelText(anchor),
+                    // New style wins over every style it subsumes: the user
+                    // just picked one, and the merged range is a single
+                    // annotation that can only have one.
+                    style: style,
+                    note: note,
                     createdAt: createdAt,
                     updatedAt: date
                 )
@@ -132,6 +148,65 @@ public actor LikeStore {
             }
             postChangeNotification()
             return item
+        } catch let error as YamiboError {
+            throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
+        } catch {
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        }
+    }
+
+    /// Changes an item's highlight style.
+    ///
+    /// Deliberately its own write path rather than a round trip through
+    /// `upsertTextLike`: recolouring is not a new selection, so it must not
+    /// swallow the neighbours that an overlap merge would.
+    @discardableResult
+    public func updateStyle(id: String, style: LikeStyle, date: Date = .now) async throws -> LikeItem? {
+        do {
+            let updated = try await database.write { db -> LikeItem? in
+                guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
+                item.style = style
+                item.updatedAt = date
+                try Self.upsertRow(item, in: db)
+                return item
+            }
+            if updated != nil {
+                postChangeNotification()
+            }
+            return updated
+        } catch let error as YamiboError {
+            throw error
+        } catch let error as YamiboPersistenceError {
+            throw error
+        } catch {
+            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        }
+    }
+
+    /// Sets or clears an item's note.
+    ///
+    /// Its own write path for the same reason `updateStyle` is: writing a note
+    /// is not a new selection, so it must not run the overlap merge. A
+    /// whitespace-only note is stored as nil, which is how clearing the editor
+    /// deletes the note without deleting the annotation.
+    @discardableResult
+    public func updateNote(id: String, note: String?, date: Date = .now) async throws -> LikeItem? {
+        let normalized = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = (normalized?.isEmpty ?? true) ? nil : normalized
+        do {
+            let updated = try await database.write { db -> LikeItem? in
+                guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
+                item.note = resolved
+                item.updatedAt = date
+                try Self.upsertRow(item, in: db)
+                return item
+            }
+            if updated != nil {
+                postChangeNotification()
+            }
+            return updated
         } catch let error as YamiboError {
             throw error
         } catch let error as YamiboPersistenceError {
@@ -235,6 +310,74 @@ public actor LikeStore {
         }
     }
 
+    /// Sharpens the book-order keys of one work's annotations once a reader
+    /// session has laid a forum page out and therefore knows where each post
+    /// sits on it.
+    ///
+    /// Deliberately does NOT touch `updated_at`: the sort key is local derived
+    /// state, so bumping it would mark the whole Like dataset dirty and upload
+    /// it on every reader launch. It also does not post a change notification
+    /// unless a row actually moved, so a no-op resolve cannot loop the reader's
+    /// store observers.
+    public func resolveChapterOrdinals(
+        _ ordinalsByChapterIdentity: [NovelChapterIdentity: Int],
+        for workKey: LikeWorkKey
+    ) async {
+        guard !ordinalsByChapterIdentity.isEmpty else { return }
+        let changed = (try? await database.write { db -> Bool in
+            var didChange = false
+            for item in try Self.fetchLikes(workKey: workKey, in: db) {
+                guard let chapterIdentity = LikeSortKey.chapterIdentity(of: item.anchor),
+                      let ordinal = ordinalsByChapterIdentity[chapterIdentity],
+                      item.chapterOrdinal != ordinal else {
+                    continue
+                }
+                try db.execute(
+                    sql: "UPDATE like_items SET chapter_ordinal = ?, sort_key = ? WHERE id = ?",
+                    arguments: [ordinal, LikeSortKey.of(item.anchor, chapterOrdinal: ordinal), item.id]
+                )
+                didChange = true
+            }
+            return didChange
+        }) ?? false
+        if changed {
+            postChangeNotification()
+        }
+    }
+
+    /// Fills in the clause context around excerpts once a reader session has
+    /// the chapter text in hand — the healing path for items captured before
+    /// the context fields existed, or synced from another device (the fields
+    /// never travel in the WebDAV payload).
+    ///
+    /// Same contract as `resolveChapterOrdinals`: local derived state, so
+    /// `updated_at` is deliberately untouched (bumping it would dirty the whole
+    /// Like dataset on every reader launch), and the change notification only
+    /// fires when a row actually gained context.
+    public func resolveExcerptContexts(
+        _ contextsByItemID: [String: (prefix: String?, suffix: String?)]
+    ) async {
+        guard !contextsByItemID.isEmpty else { return }
+        let changed = (try? await database.write { db -> Bool in
+            var didChange = false
+            for (id, context) in contextsByItemID {
+                guard let item = try Self.fetchLike(id: id, in: db),
+                      item.excerptPrefix != context.prefix || item.excerptSuffix != context.suffix else {
+                    continue
+                }
+                try db.execute(
+                    sql: "UPDATE like_items SET excerpt_prefix = ?, excerpt_suffix = ? WHERE id = ?",
+                    arguments: [context.prefix, context.suffix, id]
+                )
+                didChange = true
+            }
+            return didChange
+        }) ?? false
+        if changed {
+            postChangeNotification()
+        }
+    }
+
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()
     }
@@ -254,7 +397,7 @@ public actor LikeStore {
         try Row.fetchAll(
             db,
             sql: Self.selectColumns
-                + " WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL ORDER BY created_at ASC, id ASC",
+                + " WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL ORDER BY sort_key ASC, created_at ASC, id ASC",
             arguments: [workKey.kind.rawValue, workKey.id]
         ).compactMap { try Self.item(from: $0) }
     }
@@ -303,8 +446,8 @@ public actor LikeStore {
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO like_items
-            (id, work_kind, work_id, kind, excerpt_text, source_image_url, anchor_json, created_at, updated_at, deleted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, sort_key, chapter_ordinal, created_at, updated_at, deleted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 item.id,
@@ -312,8 +455,17 @@ public actor LikeStore {
                 item.workKey.id,
                 item.kind.rawValue,
                 item.excerptText,
+                item.excerptPrefix,
+                item.excerptSuffix,
                 item.sourceImageURL?.absoluteString,
                 anchorJSON,
+                item.style.rawValue,
+                item.note,
+                // Always recomputed here rather than trusted from the caller:
+                // the key is derived state, and a stale one silently reorders
+                // the panel.
+                LikeSortKey.of(item.anchor, chapterOrdinal: item.chapterOrdinal),
+                item.chapterOrdinal,
                 item.createdAt.timeIntervalSince1970,
                 item.updatedAt.timeIntervalSince1970,
                 item.deletedAt?.timeIntervalSince1970,
@@ -352,8 +504,14 @@ public actor LikeStore {
             workKey: LikeWorkKey(kind: workKind, id: row["work_id"]),
             kind: kind,
             excerptText: row["excerpt_text"],
+            excerptPrefix: row["excerpt_prefix"],
+            excerptSuffix: row["excerpt_suffix"],
             sourceImageURL: (row["source_image_url"] as String?).flatMap(URL.init(string:)),
             anchor: anchor,
+            style: (row["style"] as String?).flatMap(LikeStyle.init(rawValue:)) ?? .default,
+            note: row["note"],
+            sortKey: row["sort_key"],
+            chapterOrdinal: row["chapter_ordinal"],
             createdAt: Date(timeIntervalSince1970: row["created_at"]),
             updatedAt: Date(timeIntervalSince1970: row["updated_at"]),
             deletedAt: (row["deleted_at"] as Double?).map(Date.init(timeIntervalSince1970:))
@@ -361,7 +519,7 @@ public actor LikeStore {
     }
 
     private static let selectColumns = """
-    SELECT id, work_kind, work_id, kind, excerpt_text, source_image_url, anchor_json, created_at, updated_at, deleted_at
+    SELECT id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, sort_key, chapter_ordinal, created_at, updated_at, deleted_at
     FROM like_items
     """
 }

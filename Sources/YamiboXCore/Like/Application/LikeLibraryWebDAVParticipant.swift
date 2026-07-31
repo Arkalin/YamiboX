@@ -41,7 +41,35 @@ struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
         // A straight overwrite has nothing local left to protect against
         // revival, so bare tombstones (no known item data) don't need to be
         // materialized as placeholder rows here.
-        try await store.replaceAll(payload.items)
+        //
+        // It DOES need to protect the fields a client too old to know about
+        // them silently drops on re-export. This path never went through the
+        // merger's timestamp guard, so an old device re-exporting the payload
+        // for an unrelated reason (it deletes one like, say) would come back
+        // here and wipe every colour and note the user had — permanently, since
+        // the flattened state then becomes the recorded fingerprint.
+        let localByID = Dictionary(
+            uniqueKeysWithValues: await store.allIncludingDeleted().map { ($0.id, $0) }
+        )
+        try await store.replaceAll(payload.items.map { Self.restoringDroppedFields($0, from: localByID) })
+    }
+
+    /// Restores fields an older client would have dropped, but only when the
+    /// remote row is the *same version* of the same row (identical
+    /// `updatedAt`). A genuine edit on another device bumps `updatedAt`, so a
+    /// deliberate change back to yellow or a cleared note still wins.
+    static func restoringDroppedFields(_ remoteItem: LikeItem, from localByID: [String: LikeItem]) -> LikeItem {
+        guard let local = localByID[remoteItem.id], local.updatedAt == remoteItem.updatedAt else {
+            return remoteItem
+        }
+        var restored = remoteItem
+        if restored.style == .default {
+            restored.style = local.style
+        }
+        if restored.note == nil {
+            restored.note = local.note
+        }
+        return restored
     }
 
     // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
@@ -147,6 +175,17 @@ struct LikeLibraryWebDAVMerger: Sendable {
 
         var byID = Dictionary(uniqueKeysWithValues: localSnapshot.map { ($0.id, $0) })
         for remoteItem in remote.items {
+            // `>=`, not `>`, is what protects fields a client too old to know
+            // about them would flatten (style, note): re-exporting an item does
+            // not touch its `updatedAt`, so a payload rewritten by an old client
+            // comes back with equal timestamps and loses to the local row.
+            //
+            // This guard covers the merge path only. The download path
+            // (`applyRemote`) needs its own protection and has it — see
+            // `restoringDroppedFields`. A device with no local copy at all (a
+            // fresh install pulling an already-flattened remote) still cannot
+            // recover them, which is the accepted cost of keeping the payload at
+            // v1 so old clients keep syncing.
             if let existing = byID[remoteItem.id], existing.updatedAt >= remoteItem.updatedAt {
                 continue
             }
