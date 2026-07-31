@@ -13,6 +13,7 @@ enum YamiboDatabase {
         LibraryDatabaseSchema.self,
         FavoriteUpdateDatabaseSchema.self,
         LikeDatabaseSchema.self,
+        BookmarkDatabaseSchema.self,
         ReaderDatabaseSchema.self,
         BrowsingHistoryDatabaseSchema.self,
     ]

@@ -323,6 +323,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
         try renameReadingProgressMangaTargets(from: oldName, to: newName, in: db)
         try ContentCoverStore.renameSmartMangaCover(from: oldName, to: newName, in: db)
         try LikeStore.renameMangaTitleLikes(from: oldName, to: newName, in: db)
+        try BookmarkStore.renameMangaTitleBookmarks(from: oldName, to: newName, in: db)
         try FavoriteUpdateStore.renameMangaDirectoryTracking(from: oldName, to: newName, in: db)
     }
 
