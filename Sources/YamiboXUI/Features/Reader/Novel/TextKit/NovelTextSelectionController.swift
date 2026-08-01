@@ -352,21 +352,28 @@ final class NovelTextSelectionController {
             textBefore: surrounding?.before ?? "",
             textAfter: surrounding?.after ?? ""
         )
+        // `selectionRects` is intentionally clipped to one surface. It remains
+        // useful for the projection metadata below, but must not decide either
+        // persisted endpoint: a vertical selection can start on one surface and
+        // finish on the next.
         let rects = displayReference.selectionRects(for: selectionRangeValue)
-        guard let firstRect = rects.first, let lastRect = rects.last,
-              let start = displayReference.viewportSample(
+        guard let firstRect = rects.first,
+              let metadataSample = displayReference.viewportSample(
                   referencePoint: CGPoint(x: firstRect.minX + 1, y: firstRect.midY)
               ),
-              let end = displayReference.viewportSample(
-                  referencePoint: CGPoint(x: lastRect.maxX - 1, y: lastRect.midY)
+              let start = displayReference.semanticTextPosition(
+                  containingDocumentOffset: selectionRangeValue.lowerBound
+              ),
+              let endCharacter = displayReference.semanticTextPosition(
+                  containingDocumentOffset: selectionRangeValue.upperBound - 1
               ),
               let startChapterIdentity = start.textSegmentIdentity.chapterIdentity,
-              let endChapterIdentity = end.textSegmentIdentity.chapterIdentity else {
+              let endChapterIdentity = endCharacter.textSegmentIdentity.chapterIdentity else {
             return nil
         }
         let endpoints = NovelTextLikeAnchorEndpointResolver.resolve(
             start: start,
-            endCharacter: end,
+            endCharacter: endCharacter,
             startChapterIdentity: startChapterIdentity,
             endChapterIdentity: endChapterIdentity
         )
@@ -376,8 +383,8 @@ final class NovelTextSelectionController {
             excerptText,
             context.prefix,
             context.suffix,
-            start.documentView,
-            start.resolvedAuthorID,
+            metadataSample.documentView,
+            metadataSample.resolvedAuthorID,
             startChapterIdentity != endChapterIdentity
         )
     }
@@ -483,8 +490,8 @@ final class NovelTextSelectionController {
 /// when the highlight is reconstructed.
 enum NovelTextLikeAnchorEndpointResolver {
     static func resolve(
-        start: NovelTextViewportSample,
-        endCharacter: NovelTextViewportSample,
+        start: NovelTextViewportSemanticTextPosition,
+        endCharacter: NovelTextViewportSemanticTextPosition,
         startChapterIdentity: NovelChapterIdentity,
         endChapterIdentity: NovelChapterIdentity
     ) -> (
@@ -504,6 +511,33 @@ enum NovelTextLikeAnchorEndpointResolver {
                 displayedTextOffset: endCharacter.displayedTextOffset + 1,
                 progressInTextRange: 0
             )
+        )
+    }
+
+    static func resolve(
+        start: NovelTextViewportSample,
+        endCharacter: NovelTextViewportSample,
+        startChapterIdentity: NovelChapterIdentity,
+        endChapterIdentity: NovelChapterIdentity
+    ) -> (
+        start: NovelTextViewportSemanticTextPosition,
+        end: NovelTextViewportSemanticTextPosition
+    ) {
+        resolve(
+            start: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: startChapterIdentity,
+                textSegmentIdentity: start.textSegmentIdentity,
+                displayedTextOffset: start.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            endCharacter: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: endChapterIdentity,
+                textSegmentIdentity: endCharacter.textSegmentIdentity,
+                displayedTextOffset: endCharacter.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            startChapterIdentity: startChapterIdentity,
+            endChapterIdentity: endChapterIdentity
         )
     }
 }

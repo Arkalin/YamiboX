@@ -75,6 +75,12 @@ public final class NovelTextViewportDisplayReference {
         runtimeOwner?.selectedText(for: selectionRange)
     }
 
+    func semanticTextPosition(
+        containingDocumentOffset documentOffset: Int
+    ) -> NovelTextViewportSemanticTextPosition? {
+        runtimeOwner?.semanticTextPosition(containingDocumentOffset: documentOffset)
+    }
+
     func surroundingText(
         for selectionRange: NovelTextSelectionRange,
         radius: Int

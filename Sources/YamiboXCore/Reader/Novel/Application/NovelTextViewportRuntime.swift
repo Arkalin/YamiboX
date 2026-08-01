@@ -600,6 +600,22 @@ package final class NovelTextViewportRuntimeOwner {
         return String(text[start..<end])
     }
 
+    /// Resolves a document-global character offset without depending on any
+    /// particular rendered surface. A vertical selection can span multiple
+    /// surfaces, while its persisted endpoints still need their true semantic
+    /// positions in the shared document.
+    package func semanticTextPosition(
+        containingDocumentOffset documentOffset: Int
+    ) -> NovelTextViewportSemanticTextPosition? {
+        guard let projection, let document = result?.viewportContext.document else {
+            return nil
+        }
+        return document.semanticTextPosition(
+            containingDocumentOffset: documentOffset,
+            in: projection
+        )
+    }
+
     /// The document text on either side of a selection, each side capped at
     /// `radius` characters — the raw material `NovelLikeExcerptContext` trims
     /// to clause boundaries. Capped here so a selection near the middle of a
