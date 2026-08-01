@@ -66,9 +66,7 @@ struct ForumDestinationScreen: View {
                 model: MessageCenterViewModel(initialTab: tab, dependencies: dependencies),
                 onPrivateMessageTap: { navigator.openPrivateMessage(uid: $0, name: $1) },
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
-                onWebTap: {
-                    navigator.push(.web($0))
-                }
+                onURLTap: { navigator.route($0, source: .external) }
             )
             .forumNavigationBarStyle()
         case let .privateMessage(uid, name):

@@ -43,14 +43,52 @@ struct ForumThreadImageBlockView: View {
             source: YamiboImageSource(url: block.url, refererPageURL: refererURL),
             animates: true
         ) { image in
-            image
-                .resizable()
-                .scaledToFit()
+            ForumThreadImageContentView(
+                image: image,
+                maxDimension: block.isEmoticon ? 40 : 520
+            )
         } placeholder: {
             ForumThreadImagePlaceholderView()
         } failure: {
             ForumThreadImageFailureView()
         }
+    }
+}
+
+private struct ForumThreadImageContentView: View {
+    let image: Image
+    let maxDimension: CGFloat
+
+    @Environment(\.yamiboRemoteImageSize) private var remoteImageSize
+
+    var body: some View {
+        image
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: maxImageWidth, maxHeight: maxDimension, alignment: .leading)
+    }
+
+    private var maxImageWidth: CGFloat {
+        ForumThreadImageDisplaySizing.maxWidth(
+            for: remoteImageSize,
+            maxDimension: maxDimension
+        )
+    }
+}
+
+enum ForumThreadImageDisplaySizing {
+    static let defaultMaxDimension: CGFloat = 520
+
+    static func maxWidth(
+        for imageSize: CGSize?,
+        maxDimension: CGFloat = defaultMaxDimension
+    ) -> CGFloat {
+        guard let width = imageSize?.width,
+              width.isFinite,
+              width > 0 else {
+            return maxDimension
+        }
+        return min(width, maxDimension)
     }
 }
 

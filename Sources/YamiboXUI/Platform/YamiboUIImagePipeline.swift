@@ -5,6 +5,17 @@ import Nuke
 
 typealias YamiboPlatformImage = UIImage
 
+struct YamiboRemoteImageSizeKey: EnvironmentKey {
+    static let defaultValue: CGSize? = nil
+}
+
+extension EnvironmentValues {
+    var yamiboRemoteImageSize: CGSize? {
+        get { self[YamiboRemoteImageSizeKey.self] }
+        set { self[YamiboRemoteImageSizeKey.self] = newValue }
+    }
+}
+
 /// A decoded image ready to display, plus the original bytes when the payload
 /// turned out to be animated (GIF, APNG, animated WebP/HEICS) so callers that
 /// can play animations have something to play. Still images carry no bytes.
@@ -205,6 +216,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         .task(id: taskIdentity) {
             await load()
         }
+        .environment(\.yamiboRemoteImageSize, image?.size)
     }
 
     private var taskIdentity: String {

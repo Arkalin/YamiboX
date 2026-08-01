@@ -27,7 +27,13 @@ extension UserSpaceHTMLParser {
         for container in noticeContainers(in: document) {
             let content = noticeContentElement(in: container)
             let contentHTML = content?.html().nilIfBlank ?? container.html()
-            let contentText = (content ?? container).normalizedText()
+            let contentWithoutQuoteHTML = try contentHTMLWithoutQuote(from: contentHTML)
+            let contentWithoutQuoteDocument = try KannaSoup.parseBodyFragment(
+                contentWithoutQuoteHTML,
+                baseURL: YamiboDomain.baseURL.absoluteString
+            )
+            let contentText = contentWithoutQuoteDocument.body()?.normalizedText().nilIfBlank
+                ?? (content ?? container).normalizedText()
             guard !contentText.isEmpty else { continue }
 
             let timeText = firstNonBlank([
@@ -45,6 +51,7 @@ extension UserSpaceHTMLParser {
                     userID: firstUserID(in: container) ?? avatarURL.flatMap(userIDFromAvatarURL),
                     contentHTML: contentHTML,
                     contentText: contentText,
+                    contentBlocks: try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: contentWithoutQuoteHTML),
                     quote: container.firstText("blockquote, .quote, .notice_quote"),
                     timeText: timeText
                 )
@@ -75,6 +82,13 @@ extension UserSpaceHTMLParser {
 
     private static func noticeContentElement(in container: Element) -> Element? {
         container.selectFirst(anyOf: [".mbody", ".ntc_body", ".notice_body", ".content", ".detail"])
+    }
+
+    private static func contentHTMLWithoutQuote(from html: String) throws -> String {
+        let document = try KannaSoup.parseBodyFragment(html, baseURL: YamiboDomain.baseURL.absoluteString)
+        guard let body = document.body() else { return html }
+        body.select("blockquote, .quote, .notice_quote").remove()
+        return body.html()
     }
 
     private static func noticeID(in container: Element) -> String? {

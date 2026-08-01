@@ -6,18 +6,18 @@ struct MessageCenterView: View {
 
     let onPrivateMessageTap: (String, String?) -> Void
     let onUserTap: (String, String?) -> Void
-    let onWebTap: (URL) -> Void
+    let onURLTap: (URL) -> Void
 
     init(
         model: MessageCenterViewModel,
         onPrivateMessageTap: @escaping (String, String?) -> Void,
         onUserTap: @escaping (String, String?) -> Void,
-        onWebTap: @escaping (URL) -> Void
+        onURLTap: @escaping (URL) -> Void
     ) {
         _model = State(wrappedValue: model)
         self.onPrivateMessageTap = onPrivateMessageTap
         self.onUserTap = onUserTap
-        self.onWebTap = onWebTap
+        self.onURLTap = onURLTap
     }
 
     var body: some View {
@@ -33,14 +33,15 @@ struct MessageCenterView: View {
             retry: retry,
             goToPage: goToPage,
             onPrivateMessageTap: onPrivateMessageTap,
-            onUserTap: onUserTap
+            onUserTap: onUserTap,
+            onURLTap: onURLTap
         )
         .navigationTitle(model.navigationTitle)
         .toolbar {
             if model.selectedTab == .privateMessages {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        onWebTap(YamiboRoute.userSpaceSendPrivateMessage.url)
+                        onURLTap(YamiboRoute.userSpaceSendPrivateMessage.url)
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
@@ -89,6 +90,7 @@ private struct MessageCenterBodyView: View {
     let goToPage: (Int) -> Void
     let onPrivateMessageTap: (String, String?) -> Void
     let onUserTap: (String, String?) -> Void
+    let onURLTap: (URL) -> Void
 
     var body: some View {
         ScrollView {
@@ -109,7 +111,8 @@ private struct MessageCenterBodyView: View {
                         currentPage: currentPage,
                         goToPage: goToPage,
                         onPrivateMessageTap: onPrivateMessageTap,
-                        onUserTap: onUserTap
+                        onUserTap: onUserTap,
+                        onURLTap: onURLTap
                     )
                 }
             }
@@ -158,6 +161,7 @@ private struct MessageCenterContentView: View {
     let goToPage: (Int) -> Void
     let onPrivateMessageTap: (String, String?) -> Void
     let onUserTap: (String, String?) -> Void
+    let onURLTap: (URL) -> Void
 
     var body: some View {
         switch selectedTab {
@@ -184,7 +188,11 @@ private struct MessageCenterContentView: View {
                     MessageCenterEmptyView(message: L10n.string("message_center.empty_notices"))
                 } else {
                     ForEach(page.notices) { notice in
-                        MessageCenterNoticeRowView(notice: notice, onUserTap: onUserTap)
+                        MessageCenterNoticeRowView(
+                            notice: notice,
+                            onUserTap: onUserTap,
+                            onURLTap: onURLTap
+                        )
                     }
                     ForumPageNavigationBar(navigation: pageNavigation, currentPage: currentPage, goToPage: goToPage)
                         .padding(.top, 4)
@@ -250,6 +258,7 @@ private struct MessageCenterPrivateMessageRowView: View {
 private struct MessageCenterNoticeRowView: View {
     let notice: UserSpaceNoticeSummary
     let onUserTap: (String, String?) -> Void
+    let onURLTap: (URL) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -270,9 +279,13 @@ private struct MessageCenterNoticeRowView: View {
                         .font(.caption2)
                         .foregroundStyle(ForumColors.tertiaryText)
                 }
-                Text(notice.contentText)
-                    .font(.subheadline)
-                    .foregroundStyle(ForumColors.textDark)
+                ForumThreadContentBlocksView(
+                    blocks: notice.contentBlocks,
+                    fallbackText: notice.contentText,
+                    refererURL: YamiboDomain.baseURL,
+                    onImageTap: { _, _, _, _ in },
+                    onURLTap: onURLTap
+                )
                     .fixedSize(horizontal: false, vertical: true)
                 if let quote = notice.quote {
                     Text(quote)

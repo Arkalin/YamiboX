@@ -311,10 +311,22 @@ public struct UserSpaceNoticeSummary: Codable, Equatable, Identifiable, Hashable
     public var userID: String?
     public var contentHTML: String
     public var contentText: String
+    public var contentBlocks: [ForumThreadContentBlock]
     public var quote: String?
     public var timeText: String?
 
     public var id: String { noticeID }
+
+    private enum CodingKeys: String, CodingKey {
+        case noticeID
+        case avatarURL
+        case userID
+        case contentHTML
+        case contentText
+        case contentBlocks
+        case quote
+        case timeText
+    }
 
     public init(
         noticeID: String,
@@ -322,6 +334,7 @@ public struct UserSpaceNoticeSummary: Codable, Equatable, Identifiable, Hashable
         userID: String? = nil,
         contentHTML: String,
         contentText: String,
+        contentBlocks: [ForumThreadContentBlock] = [],
         quote: String? = nil,
         timeText: String? = nil
     ) {
@@ -330,8 +343,23 @@ public struct UserSpaceNoticeSummary: Codable, Equatable, Identifiable, Hashable
         self.userID = userID
         self.contentHTML = contentHTML
         self.contentText = contentText
+        self.contentBlocks = contentBlocks
         self.quote = quote
         self.timeText = timeText
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            noticeID: try container.decode(String.self, forKey: .noticeID),
+            avatarURL: try container.decodeIfPresent(URL.self, forKey: .avatarURL),
+            userID: try container.decodeIfPresent(String.self, forKey: .userID),
+            contentHTML: try container.decode(String.self, forKey: .contentHTML),
+            contentText: try container.decode(String.self, forKey: .contentText),
+            contentBlocks: try container.decodeIfPresent([ForumThreadContentBlock].self, forKey: .contentBlocks) ?? [],
+            quote: try container.decodeIfPresent(String.self, forKey: .quote),
+            timeText: try container.decodeIfPresent(String.self, forKey: .timeText)
+        )
     }
 }
 

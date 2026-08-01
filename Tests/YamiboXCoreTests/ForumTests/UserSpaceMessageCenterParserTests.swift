@@ -48,6 +48,12 @@ import Testing
     #expect(!reply.contentText.contains("屏蔽"))
     #expect(!reply.contentText.contains("3 天前"))
     #expect(reply.contentHTML.contains("viewthread"))
+    let replyTextBlock = try #require(reply.contentBlocks.compactMap { block in
+        if case let .text(textBlock) = block.kind { return textBlock }
+        return nil
+    }.first)
+    #expect(replyTextBlock.links.count == 2)
+    #expect(replyTextBlock.links.contains { $0.url.absoluteString.contains("tid=565409") })
     #expect(reply.quote == "引用内容")
     #expect(reply.timeText == "3 天前")
 
