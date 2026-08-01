@@ -91,6 +91,7 @@ struct NovelReaderChapterSheet: View {
 
                             }
                         }
+                        .listStyle(.plain)
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
