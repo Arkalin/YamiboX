@@ -29,6 +29,7 @@ public final class YamiboAppContext: Sendable {
     let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     private let likeStore: LikeStore
     private let likeImageStore: LikeImageStore
+    private let bookmarkStore: BookmarkStore
     let mangaDirectoryStore: MangaDirectoryStore
     let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     let mangaReaderProjectionStore: MangaReaderProjectionStore
@@ -62,6 +63,7 @@ public final class YamiboAppContext: Sendable {
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore? = nil,
         likeStore: LikeStore? = nil,
         likeImageStore: LikeImageStore? = nil,
+        bookmarkStore: BookmarkStore? = nil,
         mangaDirectoryStore: MangaDirectoryStore? = nil,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState = MangaDirectorySearchCooldownState(),
         mangaReaderProjectionStore: MangaReaderProjectionStore? = nil,
@@ -116,6 +118,7 @@ public final class YamiboAppContext: Sendable {
         self.likeImageStore = likeImageStore ?? LikeImageStore(
             baseDirectory: Self.likeImagesDirectory(rootDirectory: resolvedGRDBRootDirectory)
         )
+        self.bookmarkStore = bookmarkStore ?? BookmarkStore(databasePool: resolvedGRDBDatabasePool)
         self.mangaDirectoryStore = mangaDirectoryStore ?? MangaDirectoryStore(
             databasePool: resolvedGRDBDatabasePool,
             favoriteUpdateStore: resolvedFavoriteUpdateStore
@@ -260,6 +263,7 @@ public final class YamiboAppContext: Sendable {
         LikeDependencies(
             likeStore: likeStore,
             likeImageStore: likeImageStore,
+            bookmarkStore: bookmarkStore,
             mangaDirectoryStore: mangaDirectoryStore,
             novelReaderCacheStore: novelReaderCacheStore
         )
@@ -377,6 +381,7 @@ public final class YamiboAppContext: Sendable {
                 ReadingProgressWebDAVParticipant(store: readingProgressStore),
                 AppSettingsWebDAVParticipant(store: settingsStore),
                 LikeLibraryWebDAVParticipant(store: likeStore),
+                BookmarkLibraryWebDAVParticipant(store: bookmarkStore),
                 ContentCoverWebDAVParticipant(store: contentCoverStore),
             ],
             client: WebDAVClient(session: session)
@@ -424,6 +429,7 @@ public final class YamiboAppContext: Sendable {
         }
         try await likeStore.clearAll()
         try await likeImageStore.deleteAll()
+        try await bookmarkStore.clearAll()
     }
 
     private func clearLocalUIState() {

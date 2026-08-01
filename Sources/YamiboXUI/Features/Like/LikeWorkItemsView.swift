@@ -15,18 +15,43 @@ struct LikeWorkItemsView: View {
     let like: LikeDependencies
     let onOpenAnchor: (LikeAnchorPayload) -> Void
     let onDismiss: (() -> Void)?
+    let annotationSelectionRequest: Int?
+    let onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
+    let isAnnotationSegmentActive: Bool
 
     @State private var items: [LikeItem] = []
+    @State private var hasLoaded = false
     @State private var chapterInfoByItemID: [String: String] = [:]
     @State private var searchText = ""
     @State private var presentedTextItem: LikeItem?
     @State private var presentedImageItem: LikeItem?
+    @State private var noteEditTarget: LikeItem?
 
     @State private var isSelecting = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isShowingDeleteConfirmation = false
 
     @Namespace private var imageBrowserZoomNamespace
+
+    init(
+        work: LikeWorkKey,
+        workTitle: String,
+        like: LikeDependencies,
+        onOpenAnchor: @escaping (LikeAnchorPayload) -> Void,
+        onDismiss: (() -> Void)?,
+        annotationSelectionRequest: Int? = nil,
+        onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)? = nil,
+        isAnnotationSegmentActive: Bool = true
+    ) {
+        self.work = work
+        self.workTitle = workTitle
+        self.like = like
+        self.onOpenAnchor = onOpenAnchor
+        self.onDismiss = onDismiss
+        self.annotationSelectionRequest = annotationSelectionRequest
+        self.onAnnotationNavigationStateChange = onAnnotationNavigationStateChange
+        self.isAnnotationSegmentActive = isAnnotationSegmentActive
+    }
 
     var body: some View {
         List {
@@ -40,7 +65,7 @@ struct LikeWorkItemsView: View {
                     action: { open(item) },
                     onToggleSelection: { toggleSelection(item.id) }
                 )
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .deleteSwipeAction(allowsFullSwipe: false, isVisible: !isSelecting) {
@@ -57,19 +82,26 @@ struct LikeWorkItemsView: View {
         // in right after this view is pushed (before `load()` finishes) is
         // what caused the search bar to briefly ghost/overlap the first row.
         .overlay {
-            if items.isEmpty {
+            if !hasLoaded {
+                ProgressView()
+            } else if items.isEmpty {
                 ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
             } else if filteredItems.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             }
         }
-        .navigationTitle(
-            isSelecting
-                ? L10n.string("likes.selected_count", selectedItemIDs.count)
-                : workTitle
+        .likeWorkItemsNavigationTitle(
+            isManagedByAnnotationPanel: onAnnotationNavigationStateChange != nil,
+            isSelecting: isSelecting,
+            selectedItemCount: selectedItemIDs.count,
+            workTitle: workTitle,
+            onDismiss: onDismiss
         )
-        .navigationBarBackButtonHidden(isSelecting)
-        .searchable(text: $searchText, prompt: L10n.string("likes.search_placeholder"))
+        .likeWorkItemsSearchable(
+            isEnabled: isAnnotationSegmentActive,
+            text: $searchText,
+            prompt: L10n.string("likes.search_placeholder")
+        )
         .toolbar {
             if isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
@@ -94,7 +126,7 @@ struct LikeWorkItemsView: View {
                         )
                     }
                 }
-            } else {
+            } else if onAnnotationNavigationStateChange == nil {
                 if let onDismiss {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(L10n.string("common.close"), action: onDismiss)
@@ -128,7 +160,10 @@ struct LikeWorkItemsView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
-        .task { await load() }
+        .task {
+            publishAnnotationNavigationState()
+            await load()
+        }
         // Appearance-scoped `.task` replacing the removed `.onReceive`
         // bridge: sheets/covers presented from this view don't cancel it, so
         // deletions made in them still refresh live, and anything missed
@@ -144,15 +179,29 @@ struct LikeWorkItemsView: View {
                 Task { await load() }
             }
         }
+        .onChange(of: annotationSelectionRequest) { _, request in
+            guard request != nil, !items.isEmpty else { return }
+            setSelecting(true)
+        }
         .sheet(item: $presentedTextItem) { item in
             LikeTextDetailView(
                 item: item,
                 chapterInfo: chapterInfoByItemID[item.id],
+                onSaveNote: { note in
+                    Task {
+                        _ = try? await like.likeStore.updateNote(id: item.id, note: note)
+                    }
+                },
                 onJumpToOriginal: {
                     presentedTextItem = nil
                     onOpenAnchor(item.anchor)
                 }
             )
+        }
+        .sheet(item: $noteEditTarget) { item in
+            LikeNoteEditorSheet(item: item) { note in
+                saveImageNote(note, for: item)
+            }
         }
         .fullScreenCover(item: $presentedImageItem) { item in
             if let browserItem = imageBrowserItem(for: item) {
@@ -161,6 +210,9 @@ struct LikeWorkItemsView: View {
                     initialItemID: item.id,
                     mode: .single,
                     presentation: .zoom(imageBrowserZoomNamespace),
+                    onEditNote: { browserItem in
+                        noteEditTarget = items.first { $0.id == browserItem.id } ?? item
+                    },
                     onJumpToOriginal: {
                         presentedImageItem = nil
                         onOpenAnchor(item.anchor)
@@ -196,14 +248,29 @@ struct LikeWorkItemsView: View {
     }
 
     private func imageBrowserItem(for item: LikeItem) -> ImageBrowserItem? {
-        guard let url = item.sourceImageURL else { return nil }
-        let likeImageStore = like.likeImageStore
-        return ImageBrowserItem(
-            id: item.id,
-            source: YamiboImageSource(url: url),
+        LikeImageBrowserItemFactory.make(
+            item: item,
             title: chapterInfoByItemID[item.id] ?? workTitle,
-            localDataProvider: { await likeImageStore.loadData(id: item.id) }
+            likeImageStore: like.likeImageStore
         )
+    }
+
+    private func saveImageNote(_ note: String?, for item: LikeItem) {
+        let normalizedNote = normalizedNote(note)
+        var updatedItem = item
+        updatedItem.note = normalizedNote
+        items = items.map { $0.id == item.id ? updatedItem : $0 }
+        if presentedImageItem?.id == item.id {
+            presentedImageItem = updatedItem
+        }
+        Task {
+            _ = try? await like.likeStore.updateNote(id: item.id, note: normalizedNote)
+        }
+    }
+
+    private func normalizedNote(_ note: String?) -> String? {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     private func load() async {
@@ -226,6 +293,8 @@ struct LikeWorkItemsView: View {
             items = sorted
             chapterInfoByItemID = LikeChapterInfoResolver.mangaChapterInfo(for: sorted, directory: directory)
         }
+        hasLoaded = true
+        publishAnnotationNavigationState()
     }
 
     private func delete(_ item: LikeItem) {
@@ -246,6 +315,7 @@ struct LikeWorkItemsView: View {
         } else {
             selectedItemIDs.insert(id)
         }
+        publishAnnotationNavigationState()
     }
 
     private var isAllVisibleSelected: Bool {
@@ -266,6 +336,7 @@ struct LikeWorkItemsView: View {
         } else {
             selectedItemIDs.formUnion(visibleIDs)
         }
+        publishAnnotationNavigationState()
     }
 
     private func setSelecting(_ selecting: Bool) {
@@ -273,6 +344,7 @@ struct LikeWorkItemsView: View {
         if !selecting {
             selectedItemIDs.removeAll()
         }
+        publishAnnotationNavigationState()
     }
 
     private func deleteSelection() async {
@@ -286,42 +358,30 @@ struct LikeWorkItemsView: View {
         await load()
     }
 
-    private struct NovelLikeSortKey {
-        var chapterIdentity: String
-        var occurrence: Int
-        var offset: Int
+    private func publishAnnotationNavigationState() {
+        onAnnotationNavigationStateChange?(
+            ReaderAnnotationSegmentNavigationState(
+                itemCount: items.count,
+                isSelecting: isSelecting,
+                selectedItemCount: selectedItemIDs.count
+            )
+        )
     }
 
+    /// Novel Like Items arrive from the store already in book order: the row
+    /// carries a persisted `sortKey` derived from its anchor, which is exact
+    /// once a reader session has resolved the chapter's position on its forum
+    /// page.
+    ///
+    /// This used to sort here on `chapterIdentity.rawValue`, a string — so
+    /// `"post:9…"` sorted after `"post:10…"` and annotations in a long thread
+    /// came out in an order that looked arbitrary.
     private static func sortedNovelItems(_ items: [LikeItem]) -> [LikeItem] {
         items.sorted { lhs, rhs in
-            let lhsKey = novelSortKey(for: lhs)
-            let rhsKey = novelSortKey(for: rhs)
-            if lhsKey.chapterIdentity != rhsKey.chapterIdentity {
-                return lhsKey.chapterIdentity < rhsKey.chapterIdentity
+            if lhs.sortKey != rhs.sortKey {
+                return lhs.sortKey < rhs.sortKey
             }
-            if lhsKey.occurrence != rhsKey.occurrence {
-                return lhsKey.occurrence < rhsKey.occurrence
-            }
-            return lhsKey.offset < rhsKey.offset
-        }
-    }
-
-    private static func novelSortKey(for item: LikeItem) -> NovelLikeSortKey {
-        switch item.anchor {
-        case let .novelText(anchor):
-            return NovelLikeSortKey(
-                chapterIdentity: anchor.chapterIdentity.rawValue,
-                occurrence: LikeTextSegmentOccurrence.occurrence(of: anchor.textSegmentIdentity.rawValue) ?? 0,
-                offset: anchor.range.location
-            )
-        case let .novelImage(anchor):
-            return NovelLikeSortKey(
-                chapterIdentity: anchor.chapterIdentity.rawValue,
-                occurrence: LikeTextSegmentOccurrence.occurrence(of: anchor.imageSegmentIdentity) ?? 0,
-                offset: 0
-            )
-        case .mangaImage:
-            return NovelLikeSortKey(chapterIdentity: "", occurrence: 0, offset: 0)
+            return lhs.createdAt < rhs.createdAt
         }
     }
 
@@ -351,19 +411,58 @@ struct LikeWorkItemsView: View {
     }
 }
 
-/// `NovelLikeTextEndpointOrdering.occurrence(of:)` (Core) is internal and
-/// invisible across the Core/UI module boundary, so this reimplements the
-/// same "#text:N" / "#image:N" suffix parse for sorting purposes only.
-private enum LikeTextSegmentOccurrence {
-    private static let occurrenceSuffixRegex = try! NSRegularExpression(pattern: #"#(?:text|image):(\d+)$"#)
-
-    static func occurrence(of segmentIdentity: String) -> Int? {
-        let range = NSRange(segmentIdentity.startIndex..<segmentIdentity.endIndex, in: segmentIdentity)
-        guard let match = occurrenceSuffixRegex.firstMatch(in: segmentIdentity, range: range),
-              let numberRange = Range(match.range(at: 1), in: segmentIdentity) else {
-            return nil
+private extension View {
+    @ViewBuilder
+    func likeWorkItemsNavigationTitle(
+        isManagedByAnnotationPanel: Bool,
+        isSelecting: Bool,
+        selectedItemCount: Int,
+        workTitle: String,
+        onDismiss: (() -> Void)?
+    ) -> some View {
+        if isManagedByAnnotationPanel {
+            self
+        } else {
+            self
+                .navigationTitle(
+                    isSelecting
+                        ? L10n.string("likes.selected_count", selectedItemCount)
+                        : workTitle
+                )
+                .navigationBarTitleDisplayMode(onDismiss == nil ? .automatic : .inline)
+                .navigationBarBackButtonHidden(isSelecting)
         }
-        return Int(segmentIdentity[numberRange])
+    }
+
+    @ViewBuilder
+    func likeWorkItemsSearchable(
+        isEnabled: Bool,
+        text: Binding<String>,
+        prompt: String
+    ) -> some View {
+        if isEnabled {
+            self.searchable(text: text, prompt: prompt)
+        } else {
+            self
+        }
+    }
+}
+
+enum LikeImageBrowserItemFactory {
+    static func make(
+        item: LikeItem,
+        title: String,
+        likeImageStore: LikeImageStore
+    ) -> ImageBrowserItem? {
+        guard let url = item.sourceImageURL else { return nil }
+        let itemID = item.id
+        return ImageBrowserItem(
+            id: itemID,
+            source: YamiboImageSource(url: url),
+            title: title,
+            caption: item.hasNote ? item.note : nil,
+            localDataProvider: { await likeImageStore.loadData(id: itemID) }
+        )
     }
 }
 
@@ -393,12 +492,26 @@ private struct LikeItemCard: View {
             case .text:
                 LikeTextCardContent(item: item, chapterInfo: chapterInfo)
             case .image:
-                LikeImageCardContent(item: item, chapterInfo: chapterInfo, likeImageStore: likeImageStore)
+                LikeImageCardContent(
+                    itemID: item.id,
+                    sourceImageURL: item.sourceImageURL,
+                    note: item.hasNote ? item.note : nil,
+                    chapterInfo: chapterInfo,
+                    createdAt: item.createdAt,
+                    likeImageStore: likeImageStore
+                )
             }
         }
         .buttonStyle(.plain)
         .imageBrowserZoomSource(id: item.id, in: item.kind == .image ? imageBrowserZoomNamespace : nil)
-        .favoriteSelectionEmphasis(isSelectionMode: isSelecting, isSelected: isSelected, cornerRadius: 10)
+        .favoriteSelectionEmphasis(
+            isSelectionMode: isSelecting,
+            isSelected: isSelected,
+            cornerRadius: 10,
+            // These rows are flat, so the border has nothing but glyphs to sit
+            // against without this. The list row gives the same amount back.
+            contentInset: 8
+        )
     }
 }
 
@@ -406,48 +519,88 @@ private struct LikeTextCardContent: View {
     let item: LikeItem
     let chapterInfo: String?
 
+    /// Apple Books-style highlight row: one line of excerpt with the mark
+    /// painted inline (clause context plain around it), then — after a blank
+    /// gap — the note, then the date. The style needs no separate indicator
+    /// because the line itself is painted in it.
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.accentColor.opacity(0.55))
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                if let chapterInfo {
-                    Text(chapterInfo)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Text(item.excerptText ?? "")
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(5)
-                    .multilineTextAlignment(.leading)
-                Text(LocalFavoriteRelativeDate.string(from: item.createdAt))
+        VStack(alignment: .leading, spacing: 4) {
+            if let chapterInfo {
+                Text(chapterInfo)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer(minLength: 0)
+            Text(LikeStyleAppearance.inlineExcerptLine(for: item))
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if item.hasNote, let note = item.note {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    // The "blank line" between excerpt and note: enough gap to
+                    // read as a paragraph break, not merely line spacing.
+                    .padding(.top, 12)
+            }
+            Text(LocalFavoriteRelativeDate.string(from: item.createdAt))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 2)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(Rectangle())
     }
 }
 
 private struct LikeImageCardContent: View {
-    let item: LikeItem
+    let itemID: String
+    let sourceImageURL: URL?
+    let note: String?
     let chapterInfo: String?
+    let createdAt: Date
     let likeImageStore: LikeImageStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LikeImageCardPhoto(item: item, likeImageStore: likeImageStore)
-                .frame(height: 220)
-                .frame(maxWidth: .infinity)
-                .clipped()
+            LikeImageCardPhoto(
+                itemID: itemID,
+                sourceImageURL: sourceImageURL,
+                likeImageStore: likeImageStore
+            )
+            .frame(height: 220)
+            .frame(maxWidth: .infinity)
+            .clipped()
+
+            LikeImageCardDetails(
+                note: note,
+                chapterInfo: chapterInfo,
+                createdAt: createdAt
+            )
+        }
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct LikeImageCardDetails: View {
+    let note: String?
+    let chapterInfo: String?
+    let createdAt: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let note {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             HStack(spacing: 6) {
                 if let chapterInfo {
@@ -457,20 +610,19 @@ private struct LikeImageCardContent: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Text(LocalFavoriteRelativeDate.string(from: item.createdAt))
+                Text(LocalFavoriteRelativeDate.string(from: createdAt))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
         }
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 
 private struct LikeImageCardPhoto: View {
-    let item: LikeItem
+    let itemID: String
+    let sourceImageURL: URL?
     let likeImageStore: LikeImageStore
 
     @State private var localData: Data?
@@ -483,7 +635,7 @@ private struct LikeImageCardPhoto: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else if didFinishLocalLookup {
-                YamiboRemoteImage(source: item.sourceImageURL.map { YamiboImageSource(url: $0) }) { image in
+                YamiboRemoteImage(source: sourceImageURL.map { YamiboImageSource(url: $0) }) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
                     Color.secondary.opacity(0.12)
@@ -500,7 +652,7 @@ private struct LikeImageCardPhoto: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-            localData = await likeImageStore.loadData(id: item.id)
+            localData = await likeImageStore.loadData(id: itemID)
             didFinishLocalLookup = true
         }
     }

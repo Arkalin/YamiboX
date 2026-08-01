@@ -42,9 +42,13 @@ enum NovelLikeTextEndpointOrdering {
     }
 
     /// True when the two anchors' ranges overlap or are contiguous (no
-    /// character gap between them) within the same chapter. Different
-    /// segments never touch under this model: a Like range is confined to
-    /// one text segment, so only same-segment ranges can merge.
+    /// character gap between them) within the same chapter.
+    ///
+    /// Works across segments as well as within one: `compare` already orders
+    /// endpoints in different segments of the same chapter by their occurrence
+    /// number, and an anchor may now span segments. Two annotations on either
+    /// side of an illustration therefore *do* touch, and merge, which is the
+    /// point — the illustration is a layout break, not a semantic one.
     static func overlapsOrTouches(_ lhs: NovelTextLikeAnchor, _ rhs: NovelTextLikeAnchor) -> Bool {
         guard lhs.chapterIdentity == rhs.chapterIdentity else { return false }
         guard let forward = compare(lhs.endEndpoint, rhs.startEndpoint),

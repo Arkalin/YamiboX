@@ -25,16 +25,34 @@ final class NovelTextSelectionController {
     private var likeCaptureService: NovelTextLikeCaptureService?
     private var onLikeCaptured: ((LikeCaptureOutcome) -> Void)?
     private var onLikeActionOffered: (() -> Void)?
+    private var onRequestNoteEditor: ((LikeItem) -> Void)?
 
     var hasSelection: Bool {
         selectionRangeValue != nil
     }
 
-    /// Whether the current selection resolves to a single-segment semantic
-    /// position the Like capture service can anchor (A3: no chapter title ->
-    /// no chapter identity -> nothing to anchor to).
+    /// Why the edit menu can or cannot offer 加入喜欢 for the current selection.
+    enum LikeAvailability: Equatable {
+        /// No selection, no capture identity, or content the reader cannot
+        /// give a semantic position to (A3: no chapter title -> no chapter
+        /// identity -> nothing to anchor to). The action is omitted entirely.
+        case unavailable
+        /// Anchorable at each end, but the two ends are in different posts. The
+        /// action stays visible and disabled with a reason, because dragging
+        /// past a post boundary is almost always a slip and silently hiding the
+        /// action leaves the user with no idea what happened.
+        case crossesChapters
+        case available
+    }
+
+    var likeAvailability: LikeAvailability {
+        guard likeWorkKey != nil, likeCaptureService != nil else { return .unavailable }
+        guard let resolved = resolvedSelectionEndpoints() else { return .unavailable }
+        return resolved.crossesChapters ? .crossesChapters : .available
+    }
+
     var canLike: Bool {
-        likeWorkKey != nil && likeCaptureService != nil && likeAnchorEndpoints() != nil
+        likeAvailability == .available
     }
 
     func configure(mode: SelectionMode) {
@@ -178,7 +196,18 @@ final class NovelTextSelectionController {
         onLikeActionOffered?()
     }
 
-    func likeSelection() {
+    /// Captures the selection as an annotation.
+    ///
+    /// - Parameters:
+    ///   - style: the style to capture in. The style row is now the way in to
+    ///     capturing at all, so the colour is known up front and there is no
+    ///     "created, now recolour it" step to follow. `nil` keeps the sticky
+    ///     default, which is what the note action wants — it is capturing on
+    ///     the way to somewhere else and never asked about colour.
+    ///   - thenAddNote: opens the note editor on whatever the capture resolved
+    ///     to, so 「添加笔记」 on a fresh selection is one action rather than
+    ///     like-then-find-it-again.
+    func likeSelection(style: LikeStyle? = nil, thenAddNote: Bool = false) {
         guard let likeWorkKey, let likeCaptureService,
               let endpoints = likeAnchorEndpoints() else {
             return
@@ -189,12 +218,49 @@ final class NovelTextSelectionController {
             end: endpoints.end,
             excerptText: endpoints.excerptText,
             view: endpoints.documentView,
-            resolvedAuthorID: endpoints.resolvedAuthorID
+            resolvedAuthorID: endpoints.resolvedAuthorID,
+            // "Whatever colour I used last time" — read at capture time rather
+            // than cached, so a change made in another reader session applies
+            // immediately.
+            style: style ?? ReaderHighlightStyleDefault.current(),
+            excerptPrefix: endpoints.excerptPrefix,
+            excerptSuffix: endpoints.excerptSuffix
         )
+        // Picking a colour also makes it the default for the next annotation;
+        // that stickiness is the whole reason the row does not reset to yellow
+        // every time.
+        if let style {
+            ReaderHighlightStyleDefault.set(style)
+        }
         let onLikeCaptured = onLikeCaptured
-        Task {
+        Task { [weak self] in
             guard let outcome = try? await likeCaptureService.like(request) else { return }
             onLikeCaptured?(outcome)
+            guard thenAddNote else { return }
+            switch outcome {
+            case .added(let item), .merged(let item), .alreadyLiked(let item):
+                self?.requestNoteEditor(for: item)
+            }
+        }
+    }
+
+    /// Set by the reader so the UIKit style capsule can hand a note request
+    /// back up to SwiftUI, which owns the sheet slot.
+    func configureNoteEditor(_ handler: @escaping (LikeItem) -> Void) {
+        onRequestNoteEditor = handler
+    }
+
+    func requestNoteEditor(for item: LikeItem) {
+        onRequestNoteEditor?(item)
+    }
+
+    /// Opens the annotation menu on an existing annotation. Tries every
+    /// registered surface because the selection may already have been cleared,
+    /// so `activeSurfaceIdentity` is gone; the first surface that can resolve
+    /// the item's rects is the one showing it.
+    func presentAnnotationMenu(for item: LikeItem) {
+        for view in registeredViews.allObjects where view.presentLikeAnnotationMenu(for: item) {
+            return
         }
     }
 
@@ -244,8 +310,32 @@ final class NovelTextSelectionController {
         start: NovelTextViewportSemanticTextPosition,
         end: NovelTextViewportSemanticTextPosition,
         excerptText: String,
+        excerptPrefix: String?,
+        excerptSuffix: String?,
         documentView: Int,
         resolvedAuthorID: String?
+    )? {
+        guard let resolved = resolvedSelectionEndpoints(), !resolved.crossesChapters else { return nil }
+        return (resolved.start, resolved.end, resolved.excerptText, resolved.excerptPrefix, resolved.excerptSuffix, resolved.documentView, resolved.resolvedAuthorID)
+    }
+
+    /// Resolves both selection endpoints to semantic positions, reporting
+    /// whether they landed in different chapters instead of refusing outright —
+    /// the caller decides what to do about that.
+    ///
+    /// The two endpoints may now sit in different text *segments*: the whole
+    /// projection is one contiguous TextKit document, so a range crossing the
+    /// illustration that splits a chapter's text renders and resolves without
+    /// any change below this layer.
+    private func resolvedSelectionEndpoints() -> (
+        start: NovelTextViewportSemanticTextPosition,
+        end: NovelTextViewportSemanticTextPosition,
+        excerptText: String,
+        excerptPrefix: String?,
+        excerptSuffix: String?,
+        documentView: Int,
+        resolvedAuthorID: String?,
+        crossesChapters: Bool
     )? {
         guard let selectionRangeValue,
               let displayReference = firstCurrentDisplayReference(),
@@ -253,34 +343,49 @@ final class NovelTextSelectionController {
               !excerptText.isEmpty else {
             return nil
         }
+        // Sliced while the laid-out document is in hand — the panel row has no
+        // access to chapter text, so this is the only cheap moment to learn
+        // what the clause around the highlight says. 80 characters comfortably
+        // covers the context caps in `NovelLikeExcerptContext`.
+        let surrounding = displayReference.surroundingText(for: selectionRangeValue, radius: 80)
+        let context = NovelLikeExcerptContext.make(
+            textBefore: surrounding?.before ?? "",
+            textAfter: surrounding?.after ?? ""
+        )
+        // `selectionRects` is intentionally clipped to one surface. It remains
+        // useful for the projection metadata below, but must not decide either
+        // persisted endpoint: a vertical selection can start on one surface and
+        // finish on the next.
         let rects = displayReference.selectionRects(for: selectionRangeValue)
-        guard let firstRect = rects.first, let lastRect = rects.last,
-              let start = displayReference.viewportSample(
+        guard let firstRect = rects.first,
+              let metadataSample = displayReference.viewportSample(
                   referencePoint: CGPoint(x: firstRect.minX + 1, y: firstRect.midY)
               ),
-              let end = displayReference.viewportSample(
-                  referencePoint: CGPoint(x: lastRect.maxX - 1, y: lastRect.midY)
+              let start = displayReference.semanticTextPosition(
+                  containingDocumentOffset: selectionRangeValue.lowerBound
               ),
-              start.textSegmentIdentity == end.textSegmentIdentity,
-              let chapterIdentity = start.textSegmentIdentity.chapterIdentity else {
+              let endCharacter = displayReference.semanticTextPosition(
+                  containingDocumentOffset: selectionRangeValue.upperBound - 1
+              ),
+              let startChapterIdentity = start.textSegmentIdentity.chapterIdentity,
+              let endChapterIdentity = endCharacter.textSegmentIdentity.chapterIdentity else {
             return nil
         }
+        let endpoints = NovelTextLikeAnchorEndpointResolver.resolve(
+            start: start,
+            endCharacter: endCharacter,
+            startChapterIdentity: startChapterIdentity,
+            endChapterIdentity: endChapterIdentity
+        )
         return (
-            NovelTextViewportSemanticTextPosition(
-                chapterIdentity: chapterIdentity,
-                textSegmentIdentity: start.textSegmentIdentity,
-                displayedTextOffset: start.displayedTextOffset,
-                progressInTextRange: 0
-            ),
-            NovelTextViewportSemanticTextPosition(
-                chapterIdentity: chapterIdentity,
-                textSegmentIdentity: end.textSegmentIdentity,
-                displayedTextOffset: end.displayedTextOffset,
-                progressInTextRange: 0
-            ),
+            endpoints.start,
+            endpoints.end,
             excerptText,
-            start.documentView,
-            start.resolvedAuthorID
+            context.prefix,
+            context.suffix,
+            metadataSample.documentView,
+            metadataSample.resolvedAuthorID,
+            startChapterIdentity != endChapterIdentity
         )
     }
 
@@ -375,6 +480,64 @@ final class NovelTextSelectionController {
         scrollView.setContentOffset(
             CGPoint(x: scrollView.contentOffset.x, y: nextOffsetY),
             animated: false
+        )
+    }
+}
+
+/// Converts glyph hit-test samples into the half-open endpoints stored by
+/// `NovelTextLikeAnchor`. The end sample deliberately lands inside the last
+/// selected glyph, so its offset needs advancing to keep that glyph visible
+/// when the highlight is reconstructed.
+enum NovelTextLikeAnchorEndpointResolver {
+    static func resolve(
+        start: NovelTextViewportSemanticTextPosition,
+        endCharacter: NovelTextViewportSemanticTextPosition,
+        startChapterIdentity: NovelChapterIdentity,
+        endChapterIdentity: NovelChapterIdentity
+    ) -> (
+        start: NovelTextViewportSemanticTextPosition,
+        end: NovelTextViewportSemanticTextPosition
+    ) {
+        (
+            start: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: startChapterIdentity,
+                textSegmentIdentity: start.textSegmentIdentity,
+                displayedTextOffset: start.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            end: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: endChapterIdentity,
+                textSegmentIdentity: endCharacter.textSegmentIdentity,
+                displayedTextOffset: endCharacter.displayedTextOffset + 1,
+                progressInTextRange: 0
+            )
+        )
+    }
+
+    static func resolve(
+        start: NovelTextViewportSample,
+        endCharacter: NovelTextViewportSample,
+        startChapterIdentity: NovelChapterIdentity,
+        endChapterIdentity: NovelChapterIdentity
+    ) -> (
+        start: NovelTextViewportSemanticTextPosition,
+        end: NovelTextViewportSemanticTextPosition
+    ) {
+        resolve(
+            start: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: startChapterIdentity,
+                textSegmentIdentity: start.textSegmentIdentity,
+                displayedTextOffset: start.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            endCharacter: NovelTextViewportSemanticTextPosition(
+                chapterIdentity: endChapterIdentity,
+                textSegmentIdentity: endCharacter.textSegmentIdentity,
+                displayedTextOffset: endCharacter.displayedTextOffset,
+                progressInTextRange: 0
+            ),
+            startChapterIdentity: startChapterIdentity,
+            endChapterIdentity: endChapterIdentity
         )
     }
 }

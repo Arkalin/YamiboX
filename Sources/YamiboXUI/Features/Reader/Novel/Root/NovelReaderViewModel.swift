@@ -388,6 +388,10 @@ public final class NovelReaderViewModel {
         readingWorkflow?.captureNovelReadingPosition()
     }
 
+    var currentChapterOrdinalsByIdentity: [NovelChapterIdentity: Int] {
+        readingWorkflow?.currentChapterOrdinalsByIdentity() ?? [:]
+    }
+
     public func handleMemoryPressure() {
         readingWorkflow?.handleMemoryPressure()
     }

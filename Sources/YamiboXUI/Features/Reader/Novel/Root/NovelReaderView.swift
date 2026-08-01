@@ -20,7 +20,7 @@ public struct NovelReaderView: View {
     @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    // The six boolean-presented sheets are mutually exclusive (every setter
+    // The five boolean-presented sheets are mutually exclusive (every setter
     // is a chrome button, and chrome is disabled while any overlay is up),
     // so a single optional enum replaces the six booleans. The item-driven
     // covers (`forumThreadOverlayItem`, `imageBrowserItem`) stay separate.
@@ -44,6 +44,21 @@ public struct NovelReaderView: View {
     @State private var likeHighlightController = NovelLikeHighlightController()
     @State private var likedNovelImageAnchors: Set<NovelImageLikeAnchor> = []
     @State private var likeFeedbackGenerator = UINotificationFeedbackGenerator()
+    /// Drives the 书签与喜欢 capsule (visibility + count) and the bookmark
+    /// button's filled/outline state. Refreshed from the two stores rather
+    /// than derived, because the capsule must also reflect changes made in
+    /// another scene or synced in from another device.
+    @State private var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
+    /// Cosmetic only. The store's `toggle` is keyed by position and idempotent,
+    /// so a stale `true` here can never delete a bookmark that has scrolled
+    /// out of the neighborhood — it just shows the wrong glyph for a moment.
+    @State private var isCurrentPositionBookmarked = false
+    /// Remembered for the reader session so reopening the panel returns to the
+    /// segment the user last looked at; nil means "not chosen yet".
+    @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
+    /// The directory entry always lands on Chapters, while the annotation
+    /// entry preserves its bookmarks-or-likes destination.
+    @State private var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
     @State private var controlHandlerToken: UUID?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
     /// Scene-local window safe-area insets reported by
@@ -173,7 +188,10 @@ public struct NovelReaderView: View {
                         onShowCache: openCachePanel,
                         onShowComments: openChapterComments,
                         onOpenForum: openInForum,
-                        onShowLikes: openLikes,
+                        onToggleBookmark: toggleBookmarkAtCurrentPosition,
+                        onShowAnnotations: openAnnotations,
+                        isBookmarked: isCurrentPositionBookmarked,
+                        annotationCapsule: annotationCapsule,
                         onJumpChapter: { delta in
                             jumpAdjacentChapter(delta)
                         },
@@ -241,7 +259,28 @@ public struct NovelReaderView: View {
                         continue
                     }
                     Task { await loadLikedNovelImageAnchors() }
+                    Task { await refreshAnnotationState() }
                 }
+            }
+            // Bookmarks live in their own store, so they need their own
+            // stream: the capsule count and the toggle glyph must also follow
+            // deletions made in the panel and rows synced in from another
+            // device.
+            .task {
+                for await _ in dependencies.like.bookmarkStore.changes() {
+                    await refreshAnnotationState()
+                }
+            }
+            // The bookmark glyph is only readable while the chrome is up, so
+            // that is when it is worth re-deriving from the current position.
+            .onChange(of: chromeState.showsChrome) { _, showsChrome in
+                guard showsChrome else { return }
+                Task { await refreshAnnotationState() }
+            }
+            // The ordinals are scoped to the forum page currently laid out, so
+            // moving to another page reveals a fresh set.
+            .onChange(of: model.visibleView) { _, _ in
+                Task { await resolveAnnotationSortKeys() }
             }
         }
     }
@@ -256,8 +295,14 @@ public struct NovelReaderView: View {
                     likeStore: dependencies.like.likeStore
                 )
                 Task { await loadLikedNovelImageAnchors() }
+                Task { await refreshAnnotationState() }
                 await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
                 await model.prepare(layout: currentLayout)
+                // Strictly after `prepare`: it is what creates the reading
+                // workflow, and the ordinals come off the laid-out projection.
+                // Spawned before it, this read always saw a nil workflow and
+                // silently no-opped, leaving every chapter ordinal unresolved.
+                await resolveAnnotationSortKeys()
                 updateChromeForContentState()
                 restoreVerticalPositionIfNeeded()
             },
@@ -305,7 +350,17 @@ public struct NovelReaderView: View {
             },
             onOpenLikeAnchor: { payload in
                 handleLikeAnchorOpen(payload)
-            }
+            },
+            onOpenBookmark: { item in
+                handleBookmarkOpen(item)
+            },
+            onSaveNote: { item, note in
+                Task {
+                    _ = try? await dependencies.like.likeStore.updateNote(id: item.id, note: note)
+                }
+            },
+            annotationSegment: annotationSegmentBinding,
+            initialReaderLibraryTab: initialReaderLibraryTab
         )
     }
 
@@ -914,7 +969,8 @@ public struct NovelReaderView: View {
     }
 
     private func openChapterDrawer() {
-        presentedSheet = .chapterSheet
+        initialReaderLibraryTab = .chapters
+        presentedSheet = .annotations
     }
 
     private func openChapterComments() {
@@ -935,13 +991,125 @@ public struct NovelReaderView: View {
         }
     }
 
-    private func openLikes() {
-        presentedSheet = .likes
+    private func openAnnotations() {
+        initialReaderLibraryTab = ReaderLibraryPanelTab(
+            annotationSegment: annotationSegmentBinding.wrappedValue
+        )
+        presentedSheet = .annotations
+    }
+
+    // MARK: - Bookmarks
+
+    private var annotationSegmentBinding: Binding<ReaderAnnotationSegment> {
+        Binding(
+            get: { rememberedAnnotationSegment ?? annotationCapsule.initialSegment(remembering: nil) },
+            set: { rememberedAnnotationSegment = $0 }
+        )
+    }
+
+    /// The position the bookmark button marks: whatever the viewport is
+    /// showing right now. Returns nil on content the reader cannot give a
+    /// semantic position to (the same A3 gate that hides 加入喜欢), in which
+    /// case the button is a no-op rather than writing a bookmark that could
+    /// never be resolved back.
+    private func currentBookmarkAnchor() -> NovelBookmarkAnchor? {
+        guard let resumePoint = model.currentNovelResumePoint else { return nil }
+        return NovelBookmarkAnchor(
+            chapterIdentity: resumePoint.chapterIdentity,
+            textSegmentIdentity: resumePoint.textSegmentIdentity,
+            displayedTextOffset: resumePoint.displayedTextOffset,
+            view: resumePoint.view,
+            chapterOrdinal: resumePoint.chapterOrdinal,
+            chapterTitle: resumePoint.chapterTitle,
+            resolvedAuthorID: resumePoint.authorID
+        )
+    }
+
+    private func toggleBookmarkAtCurrentPosition() {
+        // In vertical mode the committed viewport sample lags the scroll by up
+        // to ~100 ms; without this the bookmark can land a screen behind.
+        syncVerticalViewportBeforeSave()
+        guard let anchor = currentBookmarkAnchor() else { return }
+        let snapshot = model.previewText(
+            translationMode: model.settings.translationMode,
+            characterCount: Self.bookmarkExcerptCharacterCount,
+            fallback: ""
+        )
+        likeFeedbackGenerator.prepare()
+        Task {
+            guard let outcome = try? await dependencies.like.bookmarkStore.toggle(
+                workKey: .novel(threadID: model.context.threadID),
+                anchor: .novel(anchor),
+                excerptText: snapshot.isEmpty ? nil : snapshot
+            ) else {
+                return
+            }
+            isCurrentPositionBookmarked = outcome.isBookmarked
+            likeFeedbackGenerator.notificationOccurred(.success)
+            await refreshAnnotationState()
+        }
+    }
+
+    private static let bookmarkExcerptCharacterCount = 40
+
+    /// Sharpens stored annotations' book-order keys with the chapter positions
+    /// this page's layout just revealed.
+    ///
+    /// Lazy rather than eager: the key is derived from the anchor, and the only
+    /// part the anchor cannot carry — where a post sits on its forum page — is
+    /// knowable exactly when the reader lays that page out. Rows the user never
+    /// revisits keep their approximate key, which is already correct except
+    /// among several posts sharing one page.
+    private func resolveAnnotationSortKeys() async {
+        let ordinals = model.currentChapterOrdinalsByIdentity
+        guard !ordinals.isEmpty else { return }
+        await dependencies.like.likeStore.resolveChapterOrdinals(
+            ordinals,
+            for: .novel(threadID: model.context.threadID)
+        )
+    }
+
+    private func refreshAnnotationState() async {
+        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
+        let bookmarkCount = await dependencies.like.bookmarkStore.count(for: workKey)
+        let likeCount = await dependencies.like.likeStore.likes(for: workKey).count
+        annotationCapsule = ReaderAnnotationCapsulePresentation(
+            bookmarkCount: bookmarkCount,
+            likeCount: likeCount
+        )
+        if let anchor = currentBookmarkAnchor() {
+            isCurrentPositionBookmarked = await dependencies.like.bookmarkStore
+                .bookmark(marking: .novel(anchor), in: workKey) != nil
+        } else {
+            isCurrentPositionBookmarked = false
+        }
+    }
+
+    private func handleBookmarkOpen(_ item: BookmarkItem) {
+        guard case let .novel(anchor) = item.anchor else { return }
+        Task { await model.jumpToLikeAnchor(resumePoint(forBookmarkAnchor: anchor)) }
+    }
+
+    private func resumePoint(forBookmarkAnchor anchor: NovelBookmarkAnchor) -> NovelResumePoint {
+        NovelResumePoint(
+            view: anchor.view,
+            chapterIdentity: anchor.chapterIdentity,
+            textSegmentIdentity: anchor.textSegmentIdentity,
+            displayedTextOffset: anchor.displayedTextOffset,
+            chapterOrdinal: anchor.chapterOrdinal,
+            chapterTitle: anchor.chapterTitle,
+            segmentProgress: 0,
+            authorID: anchor.resolvedAuthorID,
+            readingModeHint: model.settings.readingMode
+        )
     }
 
     // MARK: - Like capture
 
     private func configureLikeCapture() {
+        novelTextSelectionController.configureNoteEditor { item in
+            presentedSheet = .note(item)
+        }
         novelTextSelectionController.configureLikeCapture(
             workKey: .novel(threadID: model.context.threadID),
             service: NovelTextLikeCaptureService(likeStore: dependencies.like.likeStore),
@@ -953,8 +1121,13 @@ public struct NovelReaderView: View {
                 switch outcome {
                 case .added(let item), .merged(let item), .alreadyLiked(let item):
                     likeHighlightController.applyCapturedItem(item)
+                    // Nothing pops up afterwards on purpose: the style row is
+                    // now the way in to capturing at all, so the colour was
+                    // already chosen on the way here and there is nothing left
+                    // to ask. Tapping the annotation reopens the menu.
                 }
                 likeFeedbackGenerator.notificationOccurred(.success)
+                Task { await refreshAnnotationState() }
             }
         )
     }
@@ -1008,7 +1181,7 @@ public struct NovelReaderView: View {
         // Was `showingLikes = false`, which could only ever dismiss the likes
         // sheet; the guard keeps that per-sheet scoping now that a single
         // enum drives all boolean-style sheets.
-        if presentedSheet == .likes {
+        if presentedSheet == .annotations {
             presentedSheet = nil
         }
         switch payload {
@@ -1030,8 +1203,8 @@ public struct NovelReaderView: View {
         NovelResumePoint(
             view: anchor.view,
             chapterIdentity: anchor.chapterIdentity,
-            textSegmentIdentity: anchor.textSegmentIdentity,
-            displayedTextOffset: anchor.range.location,
+            textSegmentIdentity: anchor.startSegmentIdentity,
+            displayedTextOffset: anchor.start.offset,
             chapterOrdinal: 0,
             segmentProgress: 0,
             authorID: anchor.resolvedAuthorID,

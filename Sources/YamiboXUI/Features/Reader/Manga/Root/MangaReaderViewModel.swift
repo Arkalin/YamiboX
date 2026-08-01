@@ -114,6 +114,13 @@ public final class MangaReaderViewModel {
     public private(set) var chapterCommentsLoadMoreError: String?
     public private(set) var chapterCommentsRefreshError: String?
     public private(set) var likedPageIDs: Set<String> = []
+    /// Drives the 书签与喜欢 capsule (visibility + combined count).
+    public private(set) var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
+    /// Whether the page on screen already carries a bookmark. Unlike the novel
+    /// reader's equivalent this is exact rather than cosmetic — manga pages are
+    /// discrete, so "the same place" is exact page equality.
+    public private(set) var isCurrentPageBookmarked = false
+    @ObservationIgnored private var bookmarkChangeObservationTask: Task<Void, Never>?
     // Stays a tracked (observable) property on the view model (not on the
     // navigation coordinator) because MangaReaderView observes only this
     // object; the coordinator reads and writes it through its Reading
@@ -201,7 +208,13 @@ public final class MangaReaderViewModel {
             imageSource: { [weak self] page in
                 self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
             },
-            setLikedPageIDs: { [weak self] likedPageIDs in self?.likedPageIDs = likedPageIDs }
+            setLikedPageIDs: { [weak self] likedPageIDs in
+                self?.likedPageIDs = likedPageIDs
+                // The 书签与喜欢 capsule's count and visibility include likes,
+                // and every like-mutating path (capture, delete, the store's
+                // change stream) already funnels through this write-back.
+                Task { await self?.refreshAnnotationState() }
+            }
         )
     )
 
@@ -346,6 +359,8 @@ public final class MangaReaderViewModel {
         }
         await likeModule.refreshLikedPageIDs()
         likeModule.observeLikeChangesIfNeeded()
+        await refreshAnnotationState()
+        observeBookmarkChangesIfNeeded()
         coverModule.startAutoThreadCoverResolutionIfNeeded()
         browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
     }
@@ -597,6 +612,104 @@ public final class MangaReaderViewModel {
         await likeModule.isPageLiked(page)
     }
 
+    // MARK: - Bookmarks
+
+    /// The page the chrome's bookmark button acts on. `currentPage` is nil
+    /// until `resolvedPageIndex(for:)` settles, so this falls back the same way
+    /// the view's own summary does.
+    var currentPageProjection: MangaReaderPageProjection? {
+        guard case let .loaded(loaded) = presentation.state else { return nil }
+        if let currentPage = loaded.currentPage { return currentPage }
+        if let index = loaded.currentPageIndex, loaded.pages.indices.contains(index) {
+            return loaded.pages[index]
+        }
+        return loaded.pages.first
+    }
+
+    private func bookmarkAnchor(for page: MangaReaderPageProjection) -> BookmarkAnchorPayload {
+        .manga(
+            MangaBookmarkAnchor(
+                chapterTID: page.tid,
+                pageLocalIndex: page.localIndex,
+                globalPageIndex: page.globalIndex,
+                chapterTitle: page.chapterTitle,
+                // Same reason `MangaImageLikeAnchor` carries it: opening the
+                // bookmark should follow the board's *current* 阅读方式, not
+                // the mode that happened to be on at capture time.
+                forumID: context.forumID
+            )
+        )
+    }
+
+    /// Adds or removes a bookmark on the page currently on screen. Returns nil
+    /// when this session has no annotation identity at all (Smart Comic Mode
+    /// off), which is the same gate that hides the likes entry.
+    @discardableResult
+    func toggleBookmarkForCurrentPage() async -> Bool? {
+        guard let annotation = likeModule.likeSheetContext,
+              let page = currentPageProjection else {
+            return nil
+        }
+        guard let outcome = try? await annotation.like.bookmarkStore.toggle(
+            workKey: annotation.workKey,
+            anchor: bookmarkAnchor(for: page)
+        ) else {
+            return nil
+        }
+        isCurrentPageBookmarked = outcome.isBookmarked
+        await refreshAnnotationState()
+        return outcome.isBookmarked
+    }
+
+    /// Just the bookmark glyph's state, without the two count queries the full
+    /// refresh does — this runs on every page turn.
+    func refreshCurrentPageBookmarkState() async {
+        guard let annotation = likeModule.likeSheetContext,
+              let page = currentPageProjection else {
+            isCurrentPageBookmarked = false
+            return
+        }
+        isCurrentPageBookmarked = await annotation.like.bookmarkStore
+            .bookmark(marking: bookmarkAnchor(for: page), in: annotation.workKey) != nil
+    }
+
+    func refreshAnnotationState() async {
+        guard let annotation = likeModule.likeSheetContext else {
+            annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
+            isCurrentPageBookmarked = false
+            return
+        }
+        let bookmarkCount = await annotation.like.bookmarkStore.count(for: annotation.workKey)
+        let likeCount = await annotation.like.likeStore.likes(for: annotation.workKey).count
+        annotationCapsule = ReaderAnnotationCapsulePresentation(
+            bookmarkCount: bookmarkCount,
+            likeCount: likeCount
+        )
+        if let page = currentPageProjection {
+            isCurrentPageBookmarked = await annotation.like.bookmarkStore
+                .bookmark(marking: bookmarkAnchor(for: page), in: annotation.workKey) != nil
+        } else {
+            isCurrentPageBookmarked = false
+        }
+    }
+
+    private func observeBookmarkChangesIfNeeded() {
+        guard bookmarkChangeObservationTask == nil,
+              let annotation = likeModule.likeSheetContext else {
+            return
+        }
+        let bookmarkStore = annotation.like.bookmarkStore
+        bookmarkChangeObservationTask = Task { [weak self] in
+            for await _ in bookmarkStore.changes() {
+                await self?.refreshAnnotationState()
+            }
+        }
+    }
+
+    var annotationSheetContext: (workKey: LikeWorkKey, like: LikeDependencies)? {
+        likeModule.likeSheetContext
+    }
+
     func unlikePage(_ item: LikeItem) async -> Bool {
         await likeModule.unlikePage(item)
     }
@@ -838,6 +951,8 @@ public final class MangaReaderViewModel {
         adjacentPrefetchTask?.cancel()
         adjacentPrefetchTask = nil
         likeModule.cancelObservation()
+        bookmarkChangeObservationTask?.cancel()
+        bookmarkChangeObservationTask = nil
         coverModule.cancelAutoThreadCoverResolution()
         readerContentGeneration += 1
     }
@@ -851,6 +966,11 @@ public final class MangaReaderViewModel {
         }
         updateOfflineCacheOwnerName(from: nextPresentation)
         currentStableReadingPosition = stableReadingPosition(from: nextPresentation)
+        // Every page change funnels through here, and the bookmark glyph
+        // describes the CURRENT page. Without this it keeps describing whatever
+        // page was on screen at load, so the button silently does the opposite
+        // of its own label and icon.
+        Task { await refreshCurrentPageBookmarkState() }
         // Directory identity/title can change through any presentation
         // update (automatic directory update, rename); identity-stable
         // updates early-return on the record-key check inside.

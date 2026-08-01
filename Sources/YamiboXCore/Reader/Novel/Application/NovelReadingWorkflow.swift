@@ -649,6 +649,10 @@ public final class NovelReadingWorkflow {
         session?.currentPreviewSourceText() ?? ""
     }
 
+    public func currentChapterOrdinalsByIdentity() -> [NovelChapterIdentity: Int] {
+        session?.currentChapterOrdinalsByIdentity() ?? [:]
+    }
+
     public func updateVisibleSurfaceIdentities(_ surfaceIdentities: [NovelReaderSurfaceIdentity]) {
         viewportRuntime.updateVisibleSurfaceIdentities(surfaceIdentities)
     }

@@ -10,6 +10,8 @@ struct ImageBrowserItem: Identifiable {
     let id: String
     let source: YamiboImageSource
     let title: String
+    /// Optional user-authored context shown with the browser chrome.
+    let caption: String?
     /// Optional local-bytes-first loader (e.g. Like Library's user-retained
     /// image store). The page view tries this before falling back to the
     /// network image pipeline. Existing call sites omit it and behave
@@ -20,18 +22,23 @@ struct ImageBrowserItem: Identifiable {
         id: String,
         source: YamiboImageSource,
         title: String,
+        caption: String? = nil,
         localDataProvider: (@Sendable () async -> Data?)? = nil
     ) {
         self.id = id
         self.source = source
         self.title = title
+        self.caption = caption
         self.localDataProvider = localDataProvider
     }
 }
 
 extension ImageBrowserItem: Equatable {
     static func == (lhs: ImageBrowserItem, rhs: ImageBrowserItem) -> Bool {
-        lhs.id == rhs.id && lhs.source == rhs.source && lhs.title == rhs.title
+        lhs.id == rhs.id
+            && lhs.source == rhs.source
+            && lhs.title == rhs.title
+            && lhs.caption == rhs.caption
     }
 }
 
@@ -45,6 +52,7 @@ struct ImageBrowserView: View {
     let mode: ImageBrowserMode
     let presentation: ImageBrowserPresentationStyle
     let coverActionsProvider: ImageBrowserCoverActionsProvider?
+    let onEditNote: ((ImageBrowserItem) -> Void)?
     let onJumpToOriginal: (() -> Void)?
     let onDismiss: () -> Void
 
@@ -63,6 +71,7 @@ struct ImageBrowserView: View {
         mode: ImageBrowserMode,
         presentation: ImageBrowserPresentationStyle = .fade,
         coverActionsProvider: ImageBrowserCoverActionsProvider? = nil,
+        onEditNote: ((ImageBrowserItem) -> Void)? = nil,
         onJumpToOriginal: (() -> Void)? = nil,
         onDismiss: @escaping () -> Void
     ) {
@@ -70,6 +79,7 @@ struct ImageBrowserView: View {
         self.mode = mode
         self.presentation = presentation
         self.coverActionsProvider = coverActionsProvider
+        self.onEditNote = onEditNote
         self.onJumpToOriginal = onJumpToOriginal
         self.onDismiss = onDismiss
         _selectedItemID = State(initialValue: Self.initialSelection(in: items, initialItemID: initialItemID))
@@ -109,6 +119,7 @@ struct ImageBrowserView: View {
 
             ImageBrowserToolbar(
                 title: currentItem?.title ?? "",
+                caption: currentItem?.caption,
                 pagePosition: pagePosition,
                 isChromeVisible: isChromeVisible,
                 swipeDismissProgress: swipeDismissProgress,
@@ -193,6 +204,18 @@ struct ImageBrowserView: View {
                     } label: {
                         Label(action.title, systemImage: action.systemImage)
                     }
+                }
+            }
+
+            if let onEditNote, let currentItem {
+                Divider()
+                Button {
+                    onEditNote(currentItem)
+                } label: {
+                    Label(
+                        L10n.string(currentItem.caption == nil ? "likes.add_note" : "likes.edit_note"),
+                        systemImage: "note.text"
+                    )
                 }
             }
 
@@ -744,6 +767,7 @@ private struct ImageBrowserFailureView: View {
 
 private struct ImageBrowserToolbar: View {
     let title: String
+    let caption: String?
     let pagePosition: (index: Int, count: Int)?
     let isChromeVisible: Bool
     let swipeDismissProgress: CGFloat
@@ -751,49 +775,23 @@ private struct ImageBrowserToolbar: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-
-                    if let pagePosition {
-                        Text(verbatim: "\(pagePosition.index) / \(pagePosition.count)")
-                            .font(.footnote.weight(.medium).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.8))
-                            .accessibilityLabel(
-                                L10n.string("image.position_accessibility", pagePosition.index, pagePosition.count)
-                            )
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(.black.opacity(0.58), in: Circle())
-                }
-                .accessibilityLabel(L10n.string("common.close"))
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-            .background(
-                LinearGradient(
-                    colors: [.black.opacity(0.62), .black.opacity(0)],
-                    startPoint: .top,
-                    endPoint: .bottom
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                ImageBrowserTopBar(
+                    title: title,
+                    pagePosition: pagePosition,
+                    onDismiss: onDismiss
                 )
-                .ignoresSafeArea(edges: .top)
-            )
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+
+                if let caption {
+                    ImageBrowserCaptionPanel(
+                        caption: caption,
+                        maximumHeight: geometry.size.height * 0.35
+                    )
+                }
+            }
         }
         .opacity(effectiveOpacity)
         .allowsHitTesting(isChromeVisible && !isSwipeDismissCommitted)
@@ -803,6 +801,125 @@ private struct ImageBrowserToolbar: View {
     private var effectiveOpacity: Double {
         guard isChromeVisible else { return 0 }
         return 1 - min(swipeDismissProgress * 1.4, 1)
+    }
+}
+
+private struct ImageBrowserTopBar: View {
+    let title: String
+    let pagePosition: (index: Int, count: Int)?
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if let pagePosition {
+                    Text(verbatim: "\(pagePosition.index) / \(pagePosition.count)")
+                        .font(.footnote.weight(.medium).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.8))
+                        .accessibilityLabel(
+                            L10n.string("image.position_accessibility", pagePosition.index, pagePosition.count)
+                        )
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.58), in: Circle())
+            }
+            .accessibilityLabel(L10n.string("common.close"))
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(
+            LinearGradient(
+                colors: [.black.opacity(0.62), .black.opacity(0)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+        )
+    }
+}
+
+struct ImageBrowserCaptionPanel: View {
+    let caption: String
+    let maximumHeight: CGFloat
+
+    var body: some View {
+        ImageBrowserCaptionLayout(maximumHeight: maximumHeight) {
+            ImageBrowserCaptionText(caption: caption)
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .accessibilityHidden(true)
+
+            ScrollView {
+                ImageBrowserCaptionText(caption: caption)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(maxWidth: .infinity)
+        .background(.black.opacity(0.62))
+    }
+}
+
+private struct ImageBrowserCaptionLayout: Layout {
+    let maximumHeight: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        guard let measurement = subviews.first else { return .zero }
+        let measuredSize = measurement.sizeThatFits(
+            ProposedViewSize(width: proposal.width, height: nil)
+        )
+        let heightLimit = min(maximumHeight, proposal.height ?? maximumHeight)
+        return CGSize(
+            width: proposal.width ?? measuredSize.width,
+            height: min(measuredSize.height, heightLimit)
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        guard subviews.count > 1 else { return }
+        subviews[subviews.index(after: subviews.startIndex)].place(
+            at: bounds.origin,
+            anchor: .topLeading,
+            proposal: ProposedViewSize(bounds.size)
+        )
+    }
+}
+
+private struct ImageBrowserCaptionText: View {
+    let caption: String
+
+    var body: some View {
+        Text(caption)
+            .font(.callout)
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.leading)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
     }
 }
 
