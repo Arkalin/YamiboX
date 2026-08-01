@@ -14,26 +14,13 @@ final class MangaPagedPageCurlZoomController {
     private var pageCurlSteadyUserOffset: CGSize = .zero
     private var pageCurlGestureUserOffset: CGSize = .zero
     private var pageCurlPinchStartScale: CGFloat?
-    private var pageCurlPinchStartDisplayOffset: CGSize?
-    private var pageCurlPinchAnchor: CGPoint?
 
     private var parent: MangaPagedPageCurlReaderViewport {
         coordinator.parent
     }
 
     private var pageCurlZoomScale: CGFloat {
-        // `pageCurlGestureScale` is maintained pre-attenuated (rubber-banded)
-        // by the live pinch; the steady scale is hard-clamped on settle.
-        pageCurlSteadyScale * pageCurlGestureScale
-    }
-
-    /// How a transform update should animate: not at all (live gesture
-    /// tracking), with the critically damped settle spring (discrete changes),
-    /// or continuing a released gesture at its relative velocity.
-    private enum SpreadZoomAnimation {
-        case none
-        case settle
-        case momentum(CGFloat)
+        MangaPageZoomPolicy.clampedScale(pageCurlSteadyScale * pageCurlGestureScale)
     }
 
     init(coordinator: MangaPagedPageCurlCoordinator) {
@@ -48,32 +35,21 @@ final class MangaPagedPageCurlZoomController {
         switch recognizer.state {
         case .began:
             pageCurlPinchStartScale = pageCurlSteadyScale
-            let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlSteadyScale)
-            pageCurlPinchStartDisplayOffset = layout.liveDisplayOffset(forUserOffset: pageCurlSteadyUserOffset)
-            pageCurlPinchAnchor = recognizer.location(in: containerViewController.view)
         case .changed:
             let startScale = pageCurlPinchStartScale ?? pageCurlSteadyScale
-            let displayScale = MangaPageZoomPolicy.rubberBandedScale(startScale * recognizer.scale)
-            pageCurlGestureScale = displayScale / max(pageCurlSteadyScale, 0.001)
-            pageCurlSteadyUserOffset = focalPageCurlUserOffset(
-                displayScale: displayScale,
-                in: containerViewController
-            )
-            applyPageCurlSpreadZoomTransform(in: containerViewController, animation: .none)
+            let targetScale = MangaPageZoomPolicy.clampedScale(startScale * recognizer.scale)
+            pageCurlGestureScale = targetScale / max(pageCurlSteadyScale, 0.001)
+            clampPageCurlSteadyUserOffset(in: containerViewController, scale: targetScale)
+            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
         case .ended, .cancelled, .failed:
             let startScale = pageCurlPinchStartScale ?? pageCurlSteadyScale
-            let displayScale = MangaPageZoomPolicy.rubberBandedScale(startScale * recognizer.scale)
-            let settleScale = MangaPageZoomPolicy.clampedScale(startScale * recognizer.scale)
+            let targetScale = MangaPageZoomPolicy.clampedScale(startScale * recognizer.scale)
             pageCurlPinchStartScale = nil
-            pageCurlPinchStartDisplayOffset = nil
-            pageCurlPinchAnchor = nil
-            // Freeze the on-screen scale, then spring overshoot to the bound.
-            pageCurlSteadyScale = displayScale
+            pageCurlSteadyScale = targetScale
             pageCurlGestureScale = 1
-            if MangaPageZoomPolicy.isActive(settleScale) {
-                pageCurlSteadyScale = settleScale
+            if MangaPageZoomPolicy.isActive(targetScale) {
                 clampPageCurlSteadyUserOffset(in: containerViewController)
-                applyPageCurlSpreadZoomTransform(in: containerViewController, animation: .settle)
+                applyPageCurlSpreadZoomTransform(in: containerViewController, animated: true)
             } else {
                 resetPageCurlSpreadZoom(in: containerViewController, animated: true)
             }
@@ -96,67 +72,24 @@ final class MangaPagedPageCurlZoomController {
                 width: pageCurlSteadyUserOffset.width + translation.x,
                 height: pageCurlSteadyUserOffset.height + translation.y
             )
-            let banded = layout.rubberBandedUserOffset(proposed)
+            let clamped = layout.clampedUserOffset(proposed)
             pageCurlGestureUserOffset = CGSize(
-                width: banded.width - pageCurlSteadyUserOffset.width,
-                height: banded.height - pageCurlSteadyUserOffset.height
+                width: clamped.width - pageCurlSteadyUserOffset.width,
+                height: clamped.height - pageCurlSteadyUserOffset.height
             )
-            applyPageCurlSpreadZoomTransform(in: containerViewController, animation: .none)
+            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
         case .ended, .cancelled, .failed:
             let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlSteadyScale)
-            let velocity = recognizer.velocity(in: containerViewController.view)
-            let current = layout.rubberBandedUserOffset(
-                CGSize(
-                    width: pageCurlSteadyUserOffset.width + translation.x,
-                    height: pageCurlSteadyUserOffset.height + translation.y
-                )
+            let proposed = CGSize(
+                width: pageCurlSteadyUserOffset.width + translation.x,
+                height: pageCurlSteadyUserOffset.height + translation.y
             )
-            let projection = GesturePhysics.project(CGSize(width: velocity.x, height: velocity.y))
-            let target = layout.clampedUserOffset(
-                CGSize(
-                    width: current.width + projection.width,
-                    height: current.height + projection.height
-                )
-            )
-            let initialVelocity = GesturePhysics.relativeVelocity(
-                CGSize(width: velocity.x, height: velocity.y),
-                from: current,
-                to: target
-            )
-            pageCurlSteadyUserOffset = target
+            pageCurlSteadyUserOffset = layout.clampedUserOffset(proposed)
             pageCurlGestureUserOffset = .zero
-            applyPageCurlSpreadZoomTransform(
-                in: containerViewController,
-                animation: .momentum(initialVelocity)
-            )
+            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
         default:
             break
         }
-    }
-
-    /// Keeps the content point under the pinch's start centroid fixed while
-    /// the scale changes, so the detail being inspected doesn't drift toward
-    /// the container center.
-    private func focalPageCurlUserOffset(
-        displayScale: CGFloat,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> CGSize {
-        let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: displayScale)
-        guard let pinchStartScale = pageCurlPinchStartScale,
-              let pinchStartDisplayOffset = pageCurlPinchStartDisplayOffset,
-              let anchor = pageCurlPinchAnchor,
-              pinchStartScale > 0 else {
-            return layout.rubberBandedUserOffset(pageCurlSteadyUserOffset)
-        }
-        let bounds = containerViewController.view.bounds
-        let ratio = displayScale / pinchStartScale
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        return layout.rubberBandedUserOffset(
-            CGSize(
-                width: (anchor.x - center.x) * (1 - ratio) + pinchStartDisplayOffset.width * ratio,
-                height: (anchor.y - center.y) * (1 - ratio) + pinchStartDisplayOffset.height * ratio
-            )
-        )
     }
 
     func pageCurlContainerDidLayout(_ containerViewController: MangaPagedPageCurlContainerViewController) {
@@ -235,8 +168,6 @@ final class MangaPagedPageCurlZoomController {
         pageCurlSteadyUserOffset = .zero
         pageCurlGestureUserOffset = .zero
         pageCurlPinchStartScale = nil
-        pageCurlPinchStartDisplayOffset = nil
-        pageCurlPinchAnchor = nil
         applyPageCurlSpreadZoomTransform(in: containerViewController, animated: animated)
     }
 
@@ -304,19 +235,9 @@ final class MangaPagedPageCurlZoomController {
         in containerViewController: MangaPagedPageCurlContainerViewController,
         animated: Bool
     ) {
-        applyPageCurlSpreadZoomTransform(
-            in: containerViewController,
-            animation: animated ? .settle : .none
-        )
-    }
-
-    private func applyPageCurlSpreadZoomTransform(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        animation: SpreadZoomAnimation
-    ) {
         let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlZoomScale)
         let userOffset = proposedPageCurlSpreadUserOffset(layout: layout)
-        let displayOffset = layout.liveDisplayOffset(forUserOffset: userOffset)
+        let displayOffset = layout.displayOffset(forUserOffset: userOffset)
         let pageViewController = containerViewController.pageViewController
         let updates = {
             pageViewController.view.transform = CGAffineTransform(translationX: displayOffset.width, y: displayOffset.height).scaledBy(
@@ -324,27 +245,15 @@ final class MangaPagedPageCurlZoomController {
                 y: self.pageCurlZoomScale
             )
         }
-        switch animation {
-        case .none:
+        if animated {
+            UIView.animate(
+                withDuration: 0.2,
+                delay: 0,
+                options: [.curveEaseOut, .allowUserInteraction],
+                animations: updates
+            )
+        } else {
             updates()
-        case .settle:
-            UIView.animate(
-                withDuration: 0.38,
-                delay: 0,
-                usingSpringWithDamping: 1.0,
-                initialSpringVelocity: 0,
-                options: [.allowUserInteraction, .beginFromCurrentState],
-                animations: updates
-            )
-        case .momentum(let initialVelocity):
-            UIView.animate(
-                withDuration: 0.4,
-                delay: 0,
-                usingSpringWithDamping: 0.86,
-                initialSpringVelocity: initialVelocity,
-                options: [.allowUserInteraction, .beginFromCurrentState],
-                animations: updates
-            )
         }
         pageCurlSpreadHiddenEdges = hiddenPageCurlSpreadHorizontalEdges(layout: layout, userOffset: userOffset)
         coordinator.gestures.updatePageCurlContainerGestureState(in: containerViewController)
@@ -359,11 +268,11 @@ final class MangaPagedPageCurlZoomController {
     }
 
     private func proposedPageCurlSpreadUserOffset(layout: MangaPagedSpreadSurfaceZoomLayout) -> CGSize {
-        // Already rubber-banded when written by the live gesture; clamping
-        // here would flatten the overshoot mid-drag.
-        CGSize(
-            width: pageCurlSteadyUserOffset.width + pageCurlGestureUserOffset.width,
-            height: pageCurlSteadyUserOffset.height + pageCurlGestureUserOffset.height
+        layout.clampedUserOffset(
+            CGSize(
+                width: pageCurlSteadyUserOffset.width + pageCurlGestureUserOffset.width,
+                height: pageCurlSteadyUserOffset.height + pageCurlGestureUserOffset.height
+            )
         )
     }
 

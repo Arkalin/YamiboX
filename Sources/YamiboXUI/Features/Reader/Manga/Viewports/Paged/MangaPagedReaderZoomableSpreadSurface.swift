@@ -20,8 +20,6 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     @State private var gestureScale: CGFloat = 1
     @State private var steadyUserOffset: CGSize = .zero
     @State private var gestureUserOffset: CGSize = .zero
-    @State private var pinchStartScale: CGFloat?
-    @State private var pinchStartDisplayOffset: CGSize?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -29,7 +27,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
             let containerSize = proxy.size
             let layout = spreadSurfaceLayout(containerSize: containerSize, scale: zoomScale)
             let userOffset = proposedUserOffset(layout: layout)
-            let displayOffset = layout.liveDisplayOffset(forUserOffset: userOffset)
+            let displayOffset = layout.displayOffset(forUserOffset: userOffset)
             let hiddenEdges = hiddenHorizontalEdges(layout: layout, userOffset: userOffset)
             let isSurfaceZoomActive = isZoomInteractionEnabled && MangaPageZoomPolicy.isActive(zoomScale)
 
@@ -106,10 +104,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     }
 
     private var zoomScale: CGFloat {
-        // `gestureScale` is maintained pre-attenuated (rubber-banded) by the
-        // live pinch, and `steadyScale` is hard-clamped whenever it settles,
-        // so the product is already the displayable scale.
-        steadyScale * gestureScale
+        clampedScale(steadyScale * gestureScale)
     }
 
     private var surfaceDragGestureMask: GestureMask {
@@ -126,68 +121,23 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
         MagnifyGesture()
             .onChanged { value in
                 guard isZoomInteractionEnabled else { return }
-                if pinchStartScale == nil {
-                    pinchStartScale = steadyScale
-                    pinchStartDisplayOffset = steadyUserOffset
-                }
-                let displayScale = MangaPageZoomPolicy.rubberBandedScale(steadyScale * value.magnification)
-                gestureScale = displayScale / max(steadyScale, 0.001)
-                steadyUserOffset = focalUserOffset(
-                    displayScale: displayScale,
-                    startAnchor: value.startAnchor,
-                    containerSize: containerSize
-                )
+                let nextScale = clampedScale(steadyScale * value.magnification)
+                gestureScale = nextScale / max(steadyScale, 0.001)
+                let layout = spreadSurfaceLayout(containerSize: containerSize, scale: nextScale)
+                steadyUserOffset = layout.clampedUserOffset(steadyUserOffset)
             }
             .onEnded { value in
-                defer {
-                    pinchStartScale = nil
-                    pinchStartDisplayOffset = nil
-                }
                 guard isZoomInteractionEnabled else { return }
-                let displayScale = MangaPageZoomPolicy.rubberBandedScale(steadyScale * value.magnification)
-                let settleScale = clampedScale(steadyScale * value.magnification)
-                // Freeze the on-screen scale into steady state (no visual
-                // change), then spring any overshoot back to the bound.
-                steadyScale = displayScale
+                let nextScale = clampedScale(steadyScale * value.magnification)
+                steadyScale = nextScale
                 gestureScale = 1
-                if settleScale <= MangaPageZoomPolicy.activeThreshold {
+                if nextScale <= 1.01 {
                     resetZoomState(animated: true)
                 } else {
-                    let targetLayout = spreadSurfaceLayout(containerSize: containerSize, scale: settleScale)
-                    withAnimation(.gestureSettle) {
-                        steadyScale = settleScale
-                        steadyUserOffset = targetLayout.clampedUserOffset(steadyUserOffset)
-                    }
+                    let layout = spreadSurfaceLayout(containerSize: containerSize, scale: nextScale)
+                    steadyUserOffset = layout.clampedUserOffset(steadyUserOffset)
                 }
             }
-    }
-
-    /// Keeps the content point under the pinch's start anchor fixed while the
-    /// scale changes, so the detail being inspected doesn't drift toward the
-    /// container center.
-    private func focalUserOffset(
-        displayScale: CGFloat,
-        startAnchor: UnitPoint,
-        containerSize: CGSize
-    ) -> CGSize {
-        let layout = spreadSurfaceLayout(containerSize: containerSize, scale: displayScale)
-        guard let pinchStartScale,
-              let pinchStartDisplayOffset,
-              pinchStartScale > 0 else {
-            return layout.rubberBandedUserOffset(steadyUserOffset)
-        }
-        let ratio = displayScale / pinchStartScale
-        let anchor = CGPoint(
-            x: startAnchor.x * containerSize.width,
-            y: startAnchor.y * containerSize.height
-        )
-        let center = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
-        return layout.rubberBandedUserOffset(
-            CGSize(
-                width: (anchor.x - center.x) * (1 - ratio) + pinchStartDisplayOffset.width * ratio,
-                height: (anchor.y - center.y) * (1 - ratio) + pinchStartDisplayOffset.height * ratio
-            )
-        )
     }
 
     private func dragGesture(containerSize: CGSize) -> some Gesture {
@@ -199,10 +149,10 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
                     width: steadyUserOffset.width + value.translation.width,
                     height: steadyUserOffset.height + value.translation.height
                 )
-                let banded = layout.rubberBandedUserOffset(proposed)
+                let clamped = layout.clampedUserOffset(proposed)
                 gestureUserOffset = CGSize(
-                    width: banded.width - steadyUserOffset.width,
-                    height: banded.height - steadyUserOffset.height
+                    width: clamped.width - steadyUserOffset.width,
+                    height: clamped.height - steadyUserOffset.height
                 )
             }
             .onEnded { value in
@@ -211,27 +161,12 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
                     return
                 }
                 let layout = spreadSurfaceLayout(containerSize: containerSize, scale: steadyScale)
-                let current = layout.rubberBandedUserOffset(
-                    CGSize(
-                        width: steadyUserOffset.width + value.translation.width,
-                        height: steadyUserOffset.height + value.translation.height
-                    )
+                let proposed = CGSize(
+                    width: steadyUserOffset.width + value.translation.width,
+                    height: steadyUserOffset.height + value.translation.height
                 )
-                let projection = GesturePhysics.project(value.velocity)
-                let target = layout.clampedUserOffset(
-                    CGSize(
-                        width: current.width + projection.width,
-                        height: current.height + projection.height
-                    )
-                )
-                // Freeze the on-screen offset, then continue toward the
-                // projected landing point at the finger's release speed.
-                steadyUserOffset = current
+                steadyUserOffset = layout.clampedUserOffset(proposed)
                 gestureUserOffset = .zero
-                let initialVelocity = GesturePhysics.relativeVelocity(value.velocity, from: current, to: target)
-                withAnimation(.gestureMomentum(initialVelocity: initialVelocity)) {
-                    steadyUserOffset = target
-                }
             }
     }
 
@@ -247,7 +182,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
         let targetScale = MangaPageZoomPolicy.doubleTapTargetScale
         let targetLayout = spreadSurfaceLayout(containerSize: containerSize, scale: targetScale)
 
-        withAnimation(.gestureSettle) {
+        withAnimation(.easeOut(duration: 0.2)) {
             steadyScale = targetScale
             gestureScale = 1
             steadyUserOffset = targetLayout.userOffsetAnchoring(location)
@@ -266,15 +201,13 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
             return
         }
 
-        withAnimation(.gestureSettle) {
+        withAnimation(.easeOut(duration: 0.2)) {
             steadyUserOffset = targetUserOffset
             gestureUserOffset = .zero
         }
     }
 
     private func resetZoomState(animated: Bool) {
-        pinchStartScale = nil
-        pinchStartDisplayOffset = nil
         let updates = {
             steadyScale = 1
             gestureScale = 1
@@ -283,7 +216,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
         }
 
         if animated {
-            withAnimation(.gestureSettle, updates)
+            withAnimation(.easeOut(duration: 0.2), updates)
         } else {
             updates()
         }
@@ -296,11 +229,11 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     }
 
     private func proposedUserOffset(layout: MangaPagedSpreadSurfaceZoomLayout) -> CGSize {
-        // Already rubber-banded when written by the live gesture; clamping
-        // here would flatten the overshoot mid-drag.
-        CGSize(
-            width: steadyUserOffset.width + gestureUserOffset.width,
-            height: steadyUserOffset.height + gestureUserOffset.height
+        layout.clampedUserOffset(
+            CGSize(
+                width: steadyUserOffset.width + gestureUserOffset.width,
+                height: steadyUserOffset.height + gestureUserOffset.height
+            )
         )
     }
 
