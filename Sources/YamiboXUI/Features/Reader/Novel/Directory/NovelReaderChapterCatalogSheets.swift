@@ -64,14 +64,6 @@ struct NovelReaderChapterSheet: View {
                                         .foregroundStyle(.secondary)
                                 }
 
-                                if let previousView = navigation.previousChapterDirectoryWebView {
-                                    NovelReaderChapterWebNavigationButton(
-                                        title: L10n.string("reader.go_previous_web_page"),
-                                        systemImage: "chevron.up",
-                                        action: { onSelectWebView(previousView) }
-                                    )
-                                }
-
                                 ForEach(navigation.visibleChapterDirectoryChapters, id: \.ordinal) { chapter in
                                     Button {
                                         onSelect(chapter)
@@ -97,45 +89,18 @@ struct NovelReaderChapterSheet: View {
                                     .id(chapter.ordinal)
                                 }
 
-                                if let nextView = navigation.nextChapterDirectoryWebView {
-                                    NovelReaderChapterWebNavigationButton(
-                                        title: L10n.string("reader.go_next_web_page"),
-                                        systemImage: "chevron.down",
-                                        action: { onSelectWebView(nextView) }
-                                    )
-                                }
                             }
                         }
                     }
                 }
-                .safeAreaInset(edge: .top, spacing: 0) {
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     if isActive, model.maxView > 1 {
-                        Button {
-                            showingWebPicker.toggle()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(navigation.chapterDirectoryWebTitle)
-                                    .lineLimit(1)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption.weight(.semibold))
-                                    .rotationEffect(.degrees(showingWebPicker ? 180 : 0))
-                            }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.plain)
-                        .popover(isPresented: $showingWebPicker, arrowEdge: .top) {
-                            NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
-                                showingWebPicker = false
-                                guard view != navigation.visibleChapterDirectoryView else { return }
-                                onSelectWebView(view)
-                            }
-                            .presentationCompactAdaptation(.popover)
-                        }
-                        .accessibilityLabel(navigation.chapterDirectoryWebTitle)
+                        NovelReaderChapterWebPaginationBar(
+                            model: model,
+                            navigation: navigation,
+                            showingWebPicker: $showingWebPicker,
+                            onSelectWebView: onSelectWebView
+                        )
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -205,27 +170,72 @@ struct NovelReaderChapterSheet: View {
     }
 }
 
-private struct NovelReaderChapterWebNavigationButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
+private struct NovelReaderChapterWebPaginationBar: View {
+    let model: NovelReaderViewModel
+    @ObservedObject var navigation: NovelReaderNavigationCoordinator
+    @Binding var showingWebPicker: Bool
+    let onSelectWebView: (Int) -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.caption.weight(.semibold))
-                Text(title)
-                    .font(.callout.weight(.semibold))
+        HStack(spacing: 16) {
+            Button {
+                guard let previousView = navigation.previousChapterDirectoryWebView else { return }
+                onSelectWebView(previousView)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.headline.weight(.semibold))
+                    .frame(width: 44, height: 44)
             }
-            .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .accessibilityLabel(L10n.string("reader.previous_web_page"))
+            .disabled(navigation.previousChapterDirectoryWebView == nil)
+
+            Button {
+                showingWebPicker.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(L10n.string(
+                        "reader.web_view_progress",
+                        navigation.visibleChapterDirectoryView,
+                        max(model.maxView, 1)
+                    ))
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .rotationEffect(.degrees(showingWebPicker ? 180 : 0))
+                }
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(minWidth: 120, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(L10n.string("reader.select_web_page"))
+            .popover(isPresented: $showingWebPicker, arrowEdge: .bottom) {
+                NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
+                    showingWebPicker = false
+                    guard view != navigation.visibleChapterDirectoryView else { return }
+                    onSelectWebView(view)
+                }
+                .presentationCompactAdaptation(.popover)
+            }
+
+            Button {
+                guard let nextView = navigation.nextChapterDirectoryWebView else { return }
+                onSelectWebView(nextView)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(L10n.string("reader.next_web_page"))
+            .disabled(navigation.nextChapterDirectoryWebView == nil)
         }
-        .buttonStyle(.plain)
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 }
 
@@ -248,7 +258,11 @@ private struct NovelReaderChapterWebPicker: View {
                                 Image(systemName: view == navigation.visibleChapterDirectoryView ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(view == navigation.visibleChapterDirectoryView ? Color.accentColor : Color.secondary)
 
-                                Text(L10n.string("reader.page_number_spaced", view))
+                                Text(L10n.string(
+                                    "reader.web_view_progress",
+                                    view,
+                                    max(model.maxView, 1)
+                                ))
                                     .foregroundStyle(.primary)
 
                                 Spacer(minLength: 0)

@@ -200,13 +200,6 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
         return target <= reading.maxView() ? target : nil
     }
 
-    var chapterDirectoryWebTitle: String {
-        L10n.string(
-            "reader.web_view_chapters",
-            L10n.string("reader.web_view_progress", visibleChapterDirectoryView, max(reading.maxView(), 1))
-        )
-    }
-
     var currentChapterDirectoryIndex: Int? {
         guard chapterDirectory.view == nil || visibleChapterDirectoryView == reading.visibleView() else { return nil }
         return reading.currentChapterIndex()
