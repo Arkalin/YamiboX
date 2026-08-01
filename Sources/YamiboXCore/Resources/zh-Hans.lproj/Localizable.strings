@@ -9,6 +9,7 @@
 "special_thanks.upstream_projects" = "特别感谢以下上游项目";
 "annotations.title" = "书签与喜欢";
 "annotations.segment.bookmarks" = "书签";
+"annotations.segment.chapters" = "章节";
 "annotations.segment.likes" = "喜欢";
 "annotations.bookmark.add" = "添加书签";
 "annotations.bookmark.remove" = "移除书签";

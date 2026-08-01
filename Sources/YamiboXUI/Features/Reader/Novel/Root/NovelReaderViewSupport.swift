@@ -70,18 +70,15 @@ struct NovelReaderLifecycleModifier: ViewModifier {
 /// The reader's boolean-presented sheets, collapsed into one enum: they are
 /// mutually exclusive by construction (each is opened from the chrome, and
 /// the chrome is disabled while any overlay is presented), so a single
-/// optional drives one `.sheet(item:)` instead of six independent booleans.
+/// optional drives one `.sheet(item:)` instead of five independent booleans.
 /// The item-driven full-screen covers (`forumThreadOverlayItem`,
 /// `imageBrowserItem`) are separate presentation slots and stay item-based.
 enum NovelReaderPresentedSheet: Identifiable, Hashable {
     case settings
     case cachePanel
     case cacheProgress
-    case chapterSheet
     case chapterComments
-    /// The two-segment 书签与喜欢 panel. Replaced the old `.likes` case when
-    /// the reader's 我的喜欢 button became the bookmark toggle: likes are now
-    /// one segment of this panel rather than a panel of their own.
+    /// Chapters, bookmarks, and likes share this one reader-library panel.
     case annotations
     /// Note editor for one annotation. Carries the item so the sheet renders
     /// the excerpt it is a note on; `LikeItem` is Hashable, which is all
@@ -108,6 +105,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
     let onOpenBookmark: (BookmarkItem) -> Void
     let onSaveNote: (LikeItem, String?) -> Void
     @Binding var annotationSegment: ReaderAnnotationSegment
+    let initialReaderLibraryTab: ReaderLibraryPanelTab
 
     func body(content: Content) -> some View {
         content
@@ -118,12 +116,6 @@ struct NovelReaderPresentationModifier: ViewModifier {
                         .presentationDetents([.large])
                         .presentationDragIndicator(.hidden)
                         .presentationBackground(.clear)
-                case .chapterSheet:
-                    NovelReaderChapterSheet(model: model) { chapter in
-                        onJumpToChapterDirectoryChapter(chapter)
-                    } onSelectWebView: { view in
-                        onPreviewChapterDirectoryWebView(view)
-                    }
                 case .chapterComments:
                     ReaderChapterCommentsSheet(
                         target: chapterCommentsTarget,
@@ -161,11 +153,23 @@ struct NovelReaderPresentationModifier: ViewModifier {
                             work: .novel(threadID: model.context.threadID),
                             workTitle: model.title,
                             like: likeDependencies,
-                            segment: $annotationSegment,
+                            annotationSegment: $annotationSegment,
+                            initialTab: initialReaderLibraryTab,
                             onOpenBookmark: onOpenBookmark,
                             onOpenLikeAnchor: onOpenLikeAnchor,
                             onDismiss: { presentedSheet = nil }
-                        )
+                        ) { isActive, _ in
+                            NovelReaderChapterSheet(
+                                model: model,
+                                onSelect: { chapter in
+                                    presentedSheet = nil
+                                    onJumpToChapterDirectoryChapter(chapter)
+                                },
+                                onSelectWebView: onPreviewChapterDirectoryWebView,
+                                isEmbeddedInReaderPanel: true,
+                                isActive: isActive
+                            )
+                        }
                     }
                 case let .note(item):
                     LikeNoteEditorSheet(item: item) { note in
@@ -230,7 +234,7 @@ struct NovelReaderStateObserverModifier: ViewModifier {
                 onUpdateChromeForContentState()
                 onRestoreVerticalPositionIfNeeded()
             }
-            // Replaces the six per-boolean observers: every boolean flip maps
+            // Replaces the five per-boolean observers: every boolean flip maps
             // to a change of the single sheet enum, and the handler is an
             // idempotent state sync, so one observer is equivalent.
             .onChange(of: presentedSheet) { _, _ in

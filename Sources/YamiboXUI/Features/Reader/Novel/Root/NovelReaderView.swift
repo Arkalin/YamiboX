@@ -20,7 +20,7 @@ public struct NovelReaderView: View {
     @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    // The six boolean-presented sheets are mutually exclusive (every setter
+    // The five boolean-presented sheets are mutually exclusive (every setter
     // is a chrome button, and chrome is disabled while any overlay is up),
     // so a single optional enum replaces the six booleans. The item-driven
     // covers (`forumThreadOverlayItem`, `imageBrowserItem`) stay separate.
@@ -56,6 +56,9 @@ public struct NovelReaderView: View {
     /// Remembered for the reader session so reopening the panel returns to the
     /// segment the user last looked at; nil means "not chosen yet".
     @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
+    /// The directory entry always lands on Chapters, while the annotation
+    /// entry preserves its bookmarks-or-likes destination.
+    @State private var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
     @State private var controlHandlerToken: UUID?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
     /// Scene-local window safe-area insets reported by
@@ -356,7 +359,8 @@ public struct NovelReaderView: View {
                     _ = try? await dependencies.like.likeStore.updateNote(id: item.id, note: note)
                 }
             },
-            annotationSegment: annotationSegmentBinding
+            annotationSegment: annotationSegmentBinding,
+            initialReaderLibraryTab: initialReaderLibraryTab
         )
     }
 
@@ -965,7 +969,8 @@ public struct NovelReaderView: View {
     }
 
     private func openChapterDrawer() {
-        presentedSheet = .chapterSheet
+        initialReaderLibraryTab = .chapters
+        presentedSheet = .annotations
     }
 
     private func openChapterComments() {
@@ -987,6 +992,9 @@ public struct NovelReaderView: View {
     }
 
     private func openAnnotations() {
+        initialReaderLibraryTab = ReaderLibraryPanelTab(
+            annotationSegment: annotationSegmentBinding.wrappedValue
+        )
         presentedSheet = .annotations
     }
 

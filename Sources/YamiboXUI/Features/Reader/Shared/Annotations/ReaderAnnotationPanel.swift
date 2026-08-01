@@ -1,36 +1,97 @@
 import SwiftUI
 import YamiboXCore
 
-/// The 书签与喜欢 panel both readers present from the capsule under 目录.
-///
-/// Two segments, not three: 目录 keeps its own capsule so each entry point
-/// stays one tap deep, which is the one place this deliberately departs from
-/// Apple Books' single Bookmarks & Highlights menu.
-struct ReaderAnnotationPanel: View {
+/// The shared reader-library panel, with an optional chapters tab followed by
+/// the persisted bookmarks and likes tabs.
+struct ReaderAnnotationPanel<ChapterContent: View>: View {
     let work: LikeWorkKey
     let workTitle: String
     let like: LikeDependencies
-    @Binding var segment: ReaderAnnotationSegment
+    @Binding private var annotationSegment: ReaderAnnotationSegment
     let onOpenBookmark: (BookmarkItem) -> Void
     let onOpenLikeAnchor: (LikeAnchorPayload) -> Void
     let onDismiss: () -> Void
+    private let tabs: [ReaderLibraryPanelTab]
+    private let chapterContent: (Bool, @escaping (ReaderAnnotationSegmentNavigationState) -> Void) -> ChapterContent
 
+    @State private var selectedTab: ReaderLibraryPanelTab
+    @State private var chapterNavigationState = ReaderAnnotationSegmentNavigationState()
     @State private var bookmarkNavigationState = ReaderAnnotationSegmentNavigationState()
     @State private var likeNavigationState = ReaderAnnotationSegmentNavigationState()
     @State private var bookmarkSelectionRequest = 0
     @State private var likeSelectionRequest = 0
 
+    init(
+        work: LikeWorkKey,
+        workTitle: String,
+        like: LikeDependencies,
+        annotationSegment: Binding<ReaderAnnotationSegment>,
+        initialTab: ReaderLibraryPanelTab,
+        onOpenBookmark: @escaping (BookmarkItem) -> Void,
+        onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder chapterContent: @escaping (
+            Bool,
+            @escaping (ReaderAnnotationSegmentNavigationState) -> Void
+        ) -> ChapterContent
+    ) {
+        self.work = work
+        self.workTitle = workTitle
+        self.like = like
+        self._annotationSegment = annotationSegment
+        self.onOpenBookmark = onOpenBookmark
+        self.onOpenLikeAnchor = onOpenLikeAnchor
+        self.onDismiss = onDismiss
+        self.tabs = ReaderLibraryPanelTab.available(includingChapters: true)
+        self.chapterContent = chapterContent
+        self._selectedTab = State(initialValue: initialTab)
+    }
+
     private var activeNavigationState: ReaderAnnotationSegmentNavigationState {
-        switch segment {
+        switch selectedTab {
+        case .chapters: chapterNavigationState
         case .bookmarks: bookmarkNavigationState
         case .likes: likeNavigationState
         }
     }
 
+    private var tabBinding: Binding<ReaderLibraryPanelTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                selectedTab = newValue
+                if let segment = newValue.annotationSegment {
+                    annotationSegment = segment
+                }
+            }
+        )
+    }
+
+    private var navigationTitle: String {
+        guard activeNavigationState.isSelecting else { return workTitle }
+        return activeNavigationState.selectionTitle
+            ?? L10n.string("likes.selected_count", activeNavigationState.selectedItemCount)
+    }
+
+    private var isAnnotationTabSelected: Bool {
+        selectedTab.annotationSegment != nil
+    }
+
+    private func requestAnnotationSelection() {
+        switch selectedTab {
+        case .chapters:
+            break
+        case .bookmarks:
+            bookmarkSelectionRequest += 1
+        case .likes:
+            likeSelectionRequest += 1
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $segment) {
-                ForEach(ReaderAnnotationSegment.allCases, id: \.self) { candidate in
+            Picker("", selection: tabBinding) {
+                ForEach(tabs, id: \.self) { candidate in
                     Text(candidate.title).tag(candidate)
                 }
             }
@@ -41,11 +102,16 @@ struct ReaderAnnotationPanel: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            // Keep both lists mounted while the picker changes. Besides
+            // Keep every tab mounted while the picker changes. Besides
             // preserving scroll position, it prevents a freshly-created list
             // from briefly presenting its empty state before its store load
             // finishes.
             ZStack {
+                chapterContent(selectedTab == .chapters) { chapterNavigationState = $0 }
+                    .opacity(selectedTab == .chapters ? 1 : 0)
+                    .allowsHitTesting(selectedTab == .chapters)
+                    .accessibilityHidden(selectedTab != .chapters)
+
                 ReaderBookmarkListView(
                     work: work,
                     bookmarkStore: like.bookmarkStore,
@@ -56,9 +122,9 @@ struct ReaderAnnotationPanel: View {
                     selectionRequest: bookmarkSelectionRequest,
                     onNavigationStateChange: { bookmarkNavigationState = $0 }
                 )
-                .opacity(segment == .bookmarks ? 1 : 0)
-                .allowsHitTesting(segment == .bookmarks)
-                .accessibilityHidden(segment != .bookmarks)
+                .opacity(selectedTab == .bookmarks ? 1 : 0)
+                .allowsHitTesting(selectedTab == .bookmarks)
+                .accessibilityHidden(selectedTab != .bookmarks)
 
                 LikeWorkItemsView(
                     work: work,
@@ -68,21 +134,17 @@ struct ReaderAnnotationPanel: View {
                     onDismiss: onDismiss,
                     annotationSelectionRequest: likeSelectionRequest,
                     onAnnotationNavigationStateChange: { likeNavigationState = $0 },
-                    isAnnotationSegmentActive: segment == .likes
+                    isAnnotationSegmentActive: selectedTab == .likes
                 )
-                .opacity(segment == .likes ? 1 : 0)
-                .allowsHitTesting(segment == .likes)
-                .accessibilityHidden(segment != .likes)
+                .opacity(selectedTab == .likes ? 1 : 0)
+                .allowsHitTesting(selectedTab == .likes)
+                .accessibilityHidden(selectedTab != .likes)
             }
         }
         // The navigation item belongs to the panel, not its replaceable
         // segment bodies. Replacing a List otherwise briefly removes and
         // re-adds the title and Select item, which produces a clipped frame.
-        .navigationTitle(
-            activeNavigationState.isSelecting
-                ? L10n.string("likes.selected_count", activeNavigationState.selectedItemCount)
-                : workTitle
-        )
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(activeNavigationState.isSelecting)
         .toolbar {
@@ -94,14 +156,9 @@ struct ReaderAnnotationPanel: View {
                     .accessibilityLabel(L10n.string("common.close"))
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if activeNavigationState.itemCount > 0 {
+                    if isAnnotationTabSelected, activeNavigationState.itemCount > 0 {
                         Button {
-                            switch segment {
-                            case .bookmarks:
-                                bookmarkSelectionRequest += 1
-                            case .likes:
-                                likeSelectionRequest += 1
-                            }
+                            requestAnnotationSelection()
                         } label: {
                             Image(systemName: "checklist")
                         }
@@ -113,6 +170,31 @@ struct ReaderAnnotationPanel: View {
     }
 }
 
+extension ReaderAnnotationPanel where ChapterContent == EmptyView {
+    init(
+        work: LikeWorkKey,
+        workTitle: String,
+        like: LikeDependencies,
+        annotationSegment: Binding<ReaderAnnotationSegment>,
+        onOpenBookmark: @escaping (BookmarkItem) -> Void,
+        onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.work = work
+        self.workTitle = workTitle
+        self.like = like
+        self._annotationSegment = annotationSegment
+        self.onOpenBookmark = onOpenBookmark
+        self.onOpenLikeAnchor = onOpenLikeAnchor
+        self.onDismiss = onDismiss
+        self.tabs = ReaderLibraryPanelTab.available(includingChapters: false)
+        self.chapterContent = { _, _ in EmptyView() }
+        self._selectedTab = State(
+            initialValue: ReaderLibraryPanelTab(annotationSegment: annotationSegment.wrappedValue)
+        )
+    }
+}
+
 /// State each segment reports to the panel-owned navigation item.
 ///
 /// Keeping this compact value at the panel boundary prevents a segment swap
@@ -121,6 +203,7 @@ struct ReaderAnnotationSegmentNavigationState: Equatable {
     var itemCount = 0
     var isSelecting = false
     var selectedItemCount = 0
+    var selectionTitle: String?
 }
 
 /// The bookmark segment: book-ordered rows, tap to jump, swipe to delete.

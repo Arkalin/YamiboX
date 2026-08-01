@@ -45,6 +45,23 @@ import Testing
     #expect(both.initialSegment(remembering: .likes) == .likes)
 }
 
+@Test func readerLibraryPanelPlacesChaptersBeforeTheAnnotationTabsOnlyWhenAvailable() {
+    #expect(
+        ReaderLibraryPanelTab.available(includingChapters: true)
+            == [.chapters, .bookmarks, .likes]
+    )
+    #expect(
+        ReaderLibraryPanelTab.available(includingChapters: false)
+            == [.bookmarks, .likes]
+    )
+
+    // The remembered annotation destination stays separate from the chapter
+    // entry point, so reopening from the bookmarks-and-likes capsule retains
+    // the tab the reader last used there.
+    #expect(ReaderLibraryPanelTab(annotationSegment: .bookmarks) == .bookmarks)
+    #expect(ReaderLibraryPanelTab(annotationSegment: .likes) == .likes)
+}
+
 @Test func bookmarkRowLeadsWithTheBodySnapshotForNovels() {
     // A reflow reader has no stable page number, so the snapshot is the only
     // thing that tells two bookmarks in one chapter apart.

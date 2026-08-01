@@ -28,6 +28,9 @@ public struct MangaReaderView: View {
     /// Remembered for the reader session so reopening returns to the segment
     /// the user last looked at; nil means "not chosen yet".
     @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
+    /// Which tab the unified reader-library sheet should initially show for
+    /// its next presentation.
+    @State private var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
     @State private var likedItemForActionTarget: LikeItem?
     /// Item-driven so the editor always renders the note it was opened for,
     /// even if the store changes underneath while it is up.
@@ -167,7 +170,16 @@ public struct MangaReaderView: View {
                         // tap-to-open-directory-sheet interaction becomes a
                         // no-op.
                         guard model.context.isSmartModeEnabled else { return }
-                        isDirectoryPresented = true
+                        if model.annotationSheetContext != nil {
+                            initialReaderLibraryTab = .chapters
+                            isAnnotationsPresented = true
+                        } else {
+                            // A directory may become available before a Like
+                            // identity does; keep that narrow transition on
+                            // the existing directory-only fallback rather than
+                            // presenting an empty unified sheet.
+                            isDirectoryPresented = true
+                        }
                     },
                     onShowComments: {
                         isChapterCommentsPresented = true
@@ -183,6 +195,9 @@ public struct MangaReaderView: View {
                     },
                     onShowAnnotations: {
                         guard model.canShowLikes else { return }
+                        initialReaderLibraryTab = ReaderLibraryPanelTab(
+                            annotationSegment: annotationSegmentBinding.wrappedValue
+                        )
                         isAnnotationsPresented = true
                     },
                     isBookmarked: model.isCurrentPageBookmarked,
@@ -285,22 +300,92 @@ public struct MangaReaderView: View {
         .sheet(isPresented: $isAnnotationsPresented) {
             if let annotationSheetContext = model.annotationSheetContext {
                 NavigationStack {
-                    ReaderAnnotationPanel(
-                        work: annotationSheetContext.workKey,
-                        workTitle: context.displayTitle,
-                        like: annotationSheetContext.like,
-                        segment: annotationSegmentBinding,
-                        onOpenBookmark: { item in
-                            Task { await openBookmark(item) }
-                        },
-                        onOpenLikeAnchor: { anchor in
-                            isAnnotationsPresented = false
-                            Task {
-                                await openLikedAnchor(anchor)
+                    if context.isSmartModeEnabled {
+                        if case let .loaded(loaded) = model.presentation.state {
+                            ReaderAnnotationPanel(
+                                work: annotationSheetContext.workKey,
+                                workTitle: context.displayTitle,
+                                like: annotationSheetContext.like,
+                                annotationSegment: annotationSegmentBinding,
+                                initialTab: initialReaderLibraryTab,
+                                onOpenBookmark: { item in
+                                    Task { await openBookmark(item) }
+                                },
+                                onOpenLikeAnchor: { anchor in
+                                    isAnnotationsPresented = false
+                                    Task {
+                                        await openLikedAnchor(anchor)
+                                    }
+                                },
+                                onDismiss: { isAnnotationsPresented = false }
+                            ) { isActive, onNavigationStateChange in
+                                MangaDirectorySheet(
+                                    panel: loaded.directoryPanel,
+                                    onSortOrderChange: { sortOrder in
+                                        var settings = model.presentation.settings
+                                        settings.directorySortOrder = sortOrder
+                                        model.applySettings(settings)
+                                    },
+                                    onUpdateDirectory: {
+                                        Task { await model.updateDirectoryFromPanel() }
+                                    },
+                                    onResetDirectory: {
+                                        Task { await model.resetDirectory() }
+                                    },
+                                    onSaveCorrection: { draft in
+                                        Task { await model.renameDirectory(with: draft) }
+                                    },
+                                    onDeleteChapters: { selectedTIDs in
+                                        Task { await model.deleteDirectoryChapters(tids: selectedTIDs) }
+                                    },
+                                    onSelectChapter: { chapter in
+                                        isAnnotationsPresented = false
+                                        Task { await model.jumpToChapter(chapter) }
+                                    },
+                                    isEmbeddedInReaderPanel: true,
+                                    isActive: isActive,
+                                    onNavigationStateChange: onNavigationStateChange
+                                )
                             }
-                        },
-                        onDismiss: { isAnnotationsPresented = false }
-                    )
+                        } else {
+                            ReaderAnnotationPanel(
+                                work: annotationSheetContext.workKey,
+                                workTitle: context.displayTitle,
+                                like: annotationSheetContext.like,
+                                annotationSegment: annotationSegmentBinding,
+                                initialTab: initialReaderLibraryTab,
+                                onOpenBookmark: { item in
+                                    Task { await openBookmark(item) }
+                                },
+                                onOpenLikeAnchor: { anchor in
+                                    isAnnotationsPresented = false
+                                    Task {
+                                        await openLikedAnchor(anchor)
+                                    }
+                                },
+                                onDismiss: { isAnnotationsPresented = false }
+                            ) { _, _ in
+                                MangaDirectoryUnavailableContent()
+                            }
+                        }
+                    } else {
+                        ReaderAnnotationPanel(
+                            work: annotationSheetContext.workKey,
+                            workTitle: context.displayTitle,
+                            like: annotationSheetContext.like,
+                            annotationSegment: annotationSegmentBinding,
+                            onOpenBookmark: { item in
+                                Task { await openBookmark(item) }
+                            },
+                            onOpenLikeAnchor: { anchor in
+                                isAnnotationsPresented = false
+                                Task {
+                                    await openLikedAnchor(anchor)
+                                }
+                            },
+                            onDismiss: { isAnnotationsPresented = false }
+                        )
+                    }
                 }
             }
         }

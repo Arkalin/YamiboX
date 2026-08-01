@@ -12,6 +12,9 @@ struct MangaDirectorySheet: View {
     let onSaveCorrection: (MangaDirectoryEditDraft) -> Void
     let onDeleteChapters: (Set<String>) -> Void
     let onSelectChapter: (MangaChapter) -> Void
+    let isEmbeddedInReaderPanel: Bool
+    let isActive: Bool
+    let onNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft = MangaDirectoryEditDraft(
@@ -27,9 +30,44 @@ struct MangaDirectorySheet: View {
     @State private var isBatchDeleteConfirmationPresented = false
     @State private var isResetConfirmationPresented = false
 
+    init(
+        panel: MangaDirectoryPanelPresentation,
+        onSortOrderChange: @escaping (MangaDirectorySortOrder) -> Void,
+        onUpdateDirectory: @escaping () -> Void,
+        onResetDirectory: @escaping () -> Void,
+        onSaveCorrection: @escaping (MangaDirectoryEditDraft) -> Void,
+        onDeleteChapters: @escaping (Set<String>) -> Void,
+        onSelectChapter: @escaping (MangaChapter) -> Void,
+        isEmbeddedInReaderPanel: Bool = false,
+        isActive: Bool = true,
+        onNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)? = nil
+    ) {
+        self.panel = panel
+        self.onSortOrderChange = onSortOrderChange
+        self.onUpdateDirectory = onUpdateDirectory
+        self.onResetDirectory = onResetDirectory
+        self.onSaveCorrection = onSaveCorrection
+        self.onDeleteChapters = onDeleteChapters
+        self.onSelectChapter = onSelectChapter
+        self.isEmbeddedInReaderPanel = isEmbeddedInReaderPanel
+        self.isActive = isActive
+        self.onNavigationStateChange = onNavigationStateChange
+    }
+
     var body: some View {
-        NavigationStack {
-            List {
+        Group {
+            if isEmbeddedInReaderPanel {
+                directoryContent
+            } else {
+                NavigationStack {
+                    directoryContent
+                }
+            }
+        }
+    }
+
+    private var directoryContent: some View {
+        List {
                 MangaDirectoryMetadataSection(
                     panel: panel,
                     isSelecting: isSelecting,
@@ -80,7 +118,7 @@ struct MangaDirectorySheet: View {
                         }
                     }
                 }
-            }
+        }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(YamiboColors.SystemSurface.groupedBackground)
@@ -90,47 +128,57 @@ struct MangaDirectorySheet: View {
                         .selectionBottomToolbarCapsule()
                 }
             }
-            .navigationTitle(
-                isSelecting
-                    ? L10n.string("manga.directory.selected_count", selectedChapterTIDs.count)
-                    : L10n.string("manga.directory")
+            .mangaDirectoryNavigationTitle(
+                isEmbeddedInReaderPanel: isEmbeddedInReaderPanel,
+                isSelecting: isSelecting,
+                selectedItemCount: selectedChapterTIDs.count
             )
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(L10n.string("common.close"))
-                }
-
-                if !isSelecting {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            isResetConfirmationPresented = true
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
+                if isActive {
+                    if !isEmbeddedInReaderPanel {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .accessibilityLabel(L10n.string("common.close"))
                         }
-                        .disabled(panel.isUpdating)
-                        .accessibilityLabel(L10n.string("manga.directory.reset"))
                     }
-                }
 
-                if isSelecting && usesSystemSelectionBottomToolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        SelectionBottomToolbar(actions: selectionActions)
+                    if !isSelecting {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                isResetConfirmationPresented = true
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                            .disabled(panel.isUpdating)
+                            .accessibilityLabel(L10n.string("manga.directory.reset"))
+                        }
+                    }
+
+                    if isSelecting && usesSystemSelectionBottomToolbar {
+                        ToolbarItem(placement: .bottomBar) {
+                            SelectionBottomToolbar(actions: selectionActions)
+                        }
                     }
                 }
             }
             .task {
+                publishNavigationState()
                 guard !didSeedDraft else { return }
                 seedDraft(from: panel)
                 didSeedDraft = true
             }
             .onChange(of: panel.displayChapters.map(\.tid)) { _, visibleTIDs in
                 selectedChapterTIDs.formIntersection(Set(visibleTIDs))
+            }
+            .onChange(of: isSelecting) { _, _ in
+                publishNavigationState()
+            }
+            .onChange(of: selectedChapterTIDs) { _, _ in
+                publishNavigationState()
             }
             .sensoryFeedback(.selection, trigger: selectedChapterTIDs)
             .alert(L10n.string("manga.delete_current_chapter_failed"), isPresented: $isCurrentChapterDeleteAlertPresented) {
@@ -160,7 +208,6 @@ struct MangaDirectorySheet: View {
                 )
                 .presentationDetents(MangaDirectoryCorrectionSheet.presentationDetents)
             }
-        }
     }
 
     private var selectionActions: [SelectionToolbarAction] {
@@ -254,9 +301,39 @@ struct MangaDirectorySheet: View {
         isSelecting = false
         selectedChapterTIDs.removeAll()
     }
+
+    private func publishNavigationState() {
+        onNavigationStateChange?(
+            ReaderAnnotationSegmentNavigationState(
+                isSelecting: isSelecting,
+                selectedItemCount: selectedChapterTIDs.count,
+                selectionTitle: isSelecting
+                    ? L10n.string("manga.directory.selected_count", selectedChapterTIDs.count)
+                    : nil
+            )
+        )
+    }
 }
 
 private extension View {
+    @ViewBuilder
+    func mangaDirectoryNavigationTitle(
+        isEmbeddedInReaderPanel: Bool,
+        isSelecting: Bool,
+        selectedItemCount: Int
+    ) -> some View {
+        if isEmbeddedInReaderPanel {
+            self
+        } else {
+            navigationTitle(
+                isSelecting
+                    ? L10n.string("manga.directory.selected_count", selectedItemCount)
+                    : L10n.string("manga.directory")
+            )
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
     func mangaDirectoryListRow(top: CGFloat, bottom: CGFloat) -> some View {
         listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
             .listRowSeparator(.hidden)
@@ -578,7 +655,7 @@ struct MangaDirectoryUnavailableSheet: View {
 
     var body: some View {
         NavigationStack {
-            ContentUnavailableView(L10n.string("manga.no_chapters"), systemImage: "books.vertical")
+            MangaDirectoryUnavailableContent()
                 .navigationTitle(L10n.string("manga.directory"))
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -591,6 +668,12 @@ struct MangaDirectoryUnavailableSheet: View {
                     }
                 }
         }
+    }
+}
+
+struct MangaDirectoryUnavailableContent: View {
+    var body: some View {
+        ContentUnavailableView(L10n.string("manga.no_chapters"), systemImage: "books.vertical")
     }
 }
 #endif

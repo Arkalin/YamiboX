@@ -1,8 +1,10 @@
 import Foundation
 import YamiboXCore
 
-/// The two segments of the 书签与喜欢 panel. 目录 is deliberately not one of
-/// them: it keeps its own capsule, so each entry point is one tap deep.
+/// The two annotation segments remembered between openings of the reader
+/// library panel. Chapters has its own tab, but is intentionally not remembered
+/// here: reopening from the annotation capsule should retain its prior
+/// bookmarks-or-likes destination.
 public enum ReaderAnnotationSegment: String, CaseIterable, Hashable, Sendable {
     case bookmarks
     case likes
@@ -12,6 +14,44 @@ public enum ReaderAnnotationSegment: String, CaseIterable, Hashable, Sendable {
         case .bookmarks: L10n.string("annotations.segment.bookmarks")
         case .likes: L10n.string("annotations.segment.likes")
         }
+    }
+}
+
+/// Tabs shown in the reader's unified chapters, bookmarks, and likes panel.
+///
+/// This is distinct from `ReaderAnnotationSegment`: a reader can expose the
+/// annotation tabs without a chapter directory (for example, non-smart manga),
+/// and the chapter tab must not change the remembered annotation destination.
+enum ReaderLibraryPanelTab: Hashable, Sendable {
+    case chapters
+    case bookmarks
+    case likes
+
+    var title: String {
+        switch self {
+        case .chapters: L10n.string("annotations.segment.chapters")
+        case .bookmarks: L10n.string("annotations.segment.bookmarks")
+        case .likes: L10n.string("annotations.segment.likes")
+        }
+    }
+
+    var annotationSegment: ReaderAnnotationSegment? {
+        switch self {
+        case .chapters: nil
+        case .bookmarks: .bookmarks
+        case .likes: .likes
+        }
+    }
+
+    init(annotationSegment: ReaderAnnotationSegment) {
+        switch annotationSegment {
+        case .bookmarks: self = .bookmarks
+        case .likes: self = .likes
+        }
+    }
+
+    static func available(includingChapters: Bool) -> [Self] {
+        includingChapters ? [.chapters, .bookmarks, .likes] : [.bookmarks, .likes]
     }
 }
 

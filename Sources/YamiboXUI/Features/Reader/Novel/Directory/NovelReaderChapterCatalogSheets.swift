@@ -6,10 +6,11 @@ import UIKit
 
 struct NovelReaderChapterSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
 
     let onSelect: (NovelReaderChapter) -> Void
     let onSelectWebView: (Int) -> Void
+    let isEmbeddedInReaderPanel: Bool
+    let isActive: Bool
 
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
@@ -22,17 +23,32 @@ struct NovelReaderChapterSheet: View {
     init(
         model: NovelReaderViewModel,
         onSelect: @escaping (NovelReaderChapter) -> Void,
-        onSelectWebView: @escaping (Int) -> Void
+        onSelectWebView: @escaping (Int) -> Void,
+        isEmbeddedInReaderPanel: Bool = false,
+        isActive: Bool = true
     ) {
         self.model = model
         self.navigation = model.navigation
         self.onSelect = onSelect
         self.onSelectWebView = onSelectWebView
+        self.isEmbeddedInReaderPanel = isEmbeddedInReaderPanel
+        self.isActive = isActive
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { scrollProxy in
+        Group {
+            if isEmbeddedInReaderPanel {
+                chapterContent
+            } else {
+                NavigationStack {
+                    chapterContent
+                }
+            }
+        }
+    }
+
+    private var chapterContent: some View {
+        ScrollViewReader { scrollProxy in
                 ZStack {
                     if navigation.chapterDirectory.isLoading {
                         Text(L10n.string("common.loading"))
@@ -59,7 +75,9 @@ struct NovelReaderChapterSheet: View {
                                 ForEach(navigation.visibleChapterDirectoryChapters, id: \.ordinal) { chapter in
                                     Button {
                                         onSelect(chapter)
-                                        dismiss()
+                                        if !isEmbeddedInReaderPanel {
+                                            dismiss()
+                                        }
                                     } label: {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(chapter.title)
@@ -90,11 +108,9 @@ struct NovelReaderChapterSheet: View {
                         }
                     }
                 }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if isActive, model.maxView > 1 {
                         Button {
-                            guard model.maxView > 1 else { return }
                             showingWebPicker.toggle()
                         } label: {
                             HStack(spacing: 6) {
@@ -104,10 +120,13 @@ struct NovelReaderChapterSheet: View {
                                     .font(.caption.weight(.semibold))
                                     .rotationEffect(.degrees(showingWebPicker ? 180 : 0))
                             }
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
                         }
                         .buttonStyle(.plain)
-                        .disabled(model.maxView <= 1)
                         .popover(isPresented: $showingWebPicker, arrowEdge: .top) {
                             NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
                                 showingWebPicker = false
@@ -118,15 +137,29 @@ struct NovelReaderChapterSheet: View {
                         }
                         .accessibilityLabel(navigation.chapterDirectoryWebTitle)
                     }
-                    ToolbarItem(placement: .topBarLeading) {
-                        ReaderToolbarIconButton(
-                            systemName: "xmark",
-                            title: L10n.string("common.done"),
-                            action: { dismiss() }
-                        )
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if isActive, !isEmbeddedInReaderPanel {
+                        ToolbarItem(placement: .topBarLeading) {
+                            ReaderToolbarIconButton(
+                                systemName: "xmark",
+                                title: L10n.string("common.done"),
+                                action: { dismiss() }
+                            )
+                        }
                     }
                 }
                 .onAppear {
+                    guard isActive else { return }
+                    navigation.resetChapterDirectoryBrowsing()
+                    scrollToCurrentChapter(using: scrollProxy)
+                }
+                .onChange(of: isActive) { _, isActive in
+                    guard isActive else {
+                        showingWebPicker = false
+                        return
+                    }
                     navigation.resetChapterDirectoryBrowsing()
                     scrollToCurrentChapter(using: scrollProxy)
                 }
@@ -145,7 +178,6 @@ struct NovelReaderChapterSheet: View {
                         showingWebPicker = false
                     }
                 }
-            }
         }
     }
 
