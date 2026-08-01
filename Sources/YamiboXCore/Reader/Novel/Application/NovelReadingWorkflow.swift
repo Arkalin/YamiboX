@@ -235,8 +235,21 @@ public final class NovelReadingWorkflow {
         return NovelReadingCacheContext(authorID: authorID)
     }
 
-    public func canPromotePrefetchedDocument(forView view: Int) -> Bool {
-        prefetchedProjection?.view == max(1, view)
+    /// A resume point with an author scope can only reuse a prefetch made for
+    /// that same scope. Older anchors did not record one, so `nil` deliberately
+    /// keeps the current session's scope and remains promotable.
+    public func canPromotePrefetchedDocument(
+        forView view: Int,
+        matchingAuthorID: String? = nil
+    ) -> Bool {
+        guard let prefetchedProjection,
+              prefetchedProjection.view == max(1, view) else {
+            return false
+        }
+        return authorScopesAreCompatible(
+            expectedAuthorID: matchingAuthorID,
+            actualAuthorID: authorScope(for: prefetchedProjection)
+        )
     }
 
     package nonisolated(nonsending) func previewChapterDirectory(view: Int) async throws -> [NovelChapterDirectoryEntry] {
@@ -530,6 +543,10 @@ public final class NovelReadingWorkflow {
     ) -> NovelReadingWorkflowState? {
         guard let state,
               state.snapshot.currentView == resumePoint.view,
+              authorScopesAreCompatible(
+                  expectedAuthorID: resumePoint.authorID,
+                  actualAuthorID: authorScope(for: currentProjection)
+              ),
               session?.restoreResumePoint(resumePoint) == true else {
             return nil
         }
@@ -682,6 +699,27 @@ public final class NovelReadingWorkflow {
         return NovelReadingCacheContext(authorID: authorID)
     }
 
+    private func authorScope(for projection: NovelReaderProjection?) -> String? {
+        Self.normalizedAuthorID(projection?.resolvedAuthorID)
+            ?? Self.normalizedAuthorID(currentAuthorID)
+            ?? Self.normalizedAuthorID(context.authorID)
+    }
+
+    private func authorScopesAreCompatible(
+        expectedAuthorID: String?,
+        actualAuthorID: String?
+    ) -> Bool {
+        guard let expectedAuthorID = Self.normalizedAuthorID(expectedAuthorID) else {
+            return true
+        }
+        return expectedAuthorID == Self.normalizedAuthorID(actualAuthorID)
+    }
+
+    private static func normalizedAuthorID(_ authorID: String?) -> String? {
+        let value = authorID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
     private func currentDisplayedView(
         in snapshot: NovelReadingSnapshot?,
         surfaces: [NovelTextViewportIndexSurface]
@@ -761,6 +799,12 @@ public final class NovelReadingWorkflow {
             return nil
         }
         let effectiveResumePoint = resumePoint?.view == nextProjection.view ? resumePoint : nil
+        guard authorScopesAreCompatible(
+            expectedAuthorID: effectiveResumePoint?.authorID,
+            actualAuthorID: authorScope(for: nextProjection)
+        ) else {
+            return nil
+        }
         let transaction = try prepareRuntimeTransaction(
             projection: nextProjection,
             settings: settings,
@@ -801,26 +845,32 @@ public final class NovelReadingWorkflow {
         forceRefresh: Bool
     ) async throws -> NovelReadingWorkflowState {
         supersedePendingRuntimeUpdate()
+        let targetView = max(1, view)
+        let preferredAuthorID = preferredResumePoint?.view == targetView
+            ? preferredResumePoint?.authorID
+            : nil
+        let requestedAuthorID = Self.normalizedAuthorID(preferredAuthorID)
+            ?? Self.normalizedAuthorID(currentAuthorID)
+            ?? Self.normalizedAuthorID(context.authorID)
         if forceRefresh {
-            let context = cacheContext(forView: view)
             try await repository.deleteCachedViews(
-                [view],
+                [targetView],
                 for: self.context.threadID,
-                authorID: context.authorID
+                authorID: requestedAuthorID
             )
         }
 
         let request = NovelPageRequest(
             threadID: context.threadID,
-            view: view,
-            authorID: currentAuthorID ?? context.authorID
+            view: targetView,
+            authorID: requestedAuthorID
         )
         let pageLoad = forceRefresh
             ? try await repository.loadPageIgnoringCacheResult(request)
             : try await repository.loadPageResult(request)
         let projection = pageLoad.projection
         let preservedResumePoint = preferredResumePoint ?? captureNovelReadingPosition()
-        let nextAuthorID = projection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
+        let nextAuthorID = Self.normalizedAuthorID(projection.resolvedAuthorID) ?? requestedAuthorID
         let transaction = try prepareRuntimeTransaction(
             projection: projection,
             settings: settings,
@@ -840,7 +890,7 @@ public final class NovelReadingWorkflow {
             ),
             pageTurnDirection: settings.pageTurnDirection
         )
-        let projectionCacheContext = cacheContext(for: projection)
+        let projectionCacheContext = NovelReadingCacheContext(authorID: nextAuthorID)
         let cachedViews = await repository.cachedViews(
             for: context.threadID,
             authorID: projectionCacheContext.authorID

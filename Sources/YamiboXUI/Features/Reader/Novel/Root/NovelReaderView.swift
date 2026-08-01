@@ -1087,7 +1087,7 @@ public struct NovelReaderView: View {
 
     private func handleBookmarkOpen(_ item: BookmarkItem) {
         guard case let .novel(anchor) = item.anchor else { return }
-        Task { await model.jumpToLikeAnchor(resumePoint(forBookmarkAnchor: anchor)) }
+        Task { await jumpToAnnotationAnchor(resumePoint(forBookmarkAnchor: anchor)) }
     }
 
     private func resumePoint(forBookmarkAnchor anchor: NovelBookmarkAnchor) -> NovelResumePoint {
@@ -1186,12 +1186,22 @@ public struct NovelReaderView: View {
         }
         switch payload {
         case let .novelText(anchor):
-            Task { await model.jumpToLikeAnchor(resumePoint(forTextLikeAnchor: anchor)) }
+            Task { await jumpToAnnotationAnchor(resumePoint(forTextLikeAnchor: anchor)) }
         case let .novelImage(anchor):
-            Task { await model.jumpToLikeAnchor(resumePoint(forImageLikeAnchor: anchor)) }
+            Task { await jumpToAnnotationAnchor(resumePoint(forImageLikeAnchor: anchor)) }
         case .mangaImage:
             break
         }
+    }
+
+    /// Same-document annotation jumps keep their layout generation. The
+    /// vertical UIKit viewport needs an explicit scroll request for that
+    /// path; paged mode simply no-ops here.
+    private func jumpToAnnotationAnchor(_ resumePoint: NovelResumePoint) async {
+        _ = await NovelReaderAnnotationJump(
+            model: model,
+            requestVerticalRestore: { restoreVerticalPositionIfNeeded() }
+        ).perform(resumePoint)
     }
 
     // NovelTextLikeAnchor/NovelImageLikeAnchor carry `view` (the forum page

@@ -134,7 +134,8 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                     onDismiss: onDismiss,
                     annotationSelectionRequest: likeSelectionRequest,
                     onAnnotationNavigationStateChange: { likeNavigationState = $0 },
-                    isAnnotationSegmentActive: selectedTab == .likes
+                    isAnnotationSegmentActive: selectedTab == .likes,
+                    opensAnchorsDirectly: true
                 )
                 .opacity(selectedTab == .likes ? 1 : 0)
                 .allowsHitTesting(selectedTab == .likes)

@@ -110,6 +110,51 @@ final class NovelReaderViewModelTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testAnnotationJumpRequestsVerticalRestoreAfterSameDocumentJump() async throws {
+        let document = NovelReaderProjection(
+            threadID: "annotation-restore",
+            view: 1,
+            maxView: 1,
+            segments: [
+                .text(String(repeating: "第一章 内容。", count: 240), chapterTitle: "第一章")
+            ]
+        )
+        let model = try await makeModel(
+            documents: [document],
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical)
+        )
+        let targetSurface = try XCTUnwrap(viewportSurfaces(in: model).last { !$0.ranges.isEmpty })
+        let targetRange = try XCTUnwrap(targetSurface.ranges.first)
+        let targetSemantics = try XCTUnwrap(document.semantics(forSegmentIndex: targetRange.segmentIndex))
+        let target = NovelResumePoint(
+            view: document.view,
+            chapterIdentity: targetSemantics.chapterIdentity,
+            textSegmentIdentity: targetSemantics.textSegmentIdentity,
+            displayedTextOffset: midpoint(in: targetRange),
+            chapterOrdinal: targetSurface.chapterOrdinal ?? 0,
+            chapterTitle: targetSurface.chapterTitle,
+            segmentProgress: 0,
+            authorID: model.currentNovelResumePoint?.authorID,
+            readingModeHint: .vertical
+        )
+        let initialPresentation = try XCTUnwrap(model.novelReaderPresentation)
+        XCTAssertNotEqual(model.selectedSurfaceIndex, targetSurface.surfaceOrdinal)
+
+        var verticalRestoreRequestCount = 0
+        let didJump = await NovelReaderAnnotationJump(
+            model: model,
+            requestVerticalRestore: { verticalRestoreRequestCount += 1 }
+        ).perform(target)
+
+        let finalPresentation = try XCTUnwrap(model.novelReaderPresentation)
+        XCTAssertTrue(didJump)
+        XCTAssertEqual(verticalRestoreRequestCount, 1)
+        XCTAssertEqual(finalPresentation.generation, initialPresentation.generation)
+        XCTAssertGreaterThan(finalPresentation.revision, initialPresentation.revision)
+        XCTAssertEqual(model.selectedSurfaceIndex, targetSurface.surfaceOrdinal)
+    }
+
     func testWebViewBoundaryNavigationPublishesLoadingOverlayState() async throws {
         let model = try await makeModel(
             documents: [

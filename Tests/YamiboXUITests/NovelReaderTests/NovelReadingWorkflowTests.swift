@@ -756,6 +756,134 @@ final class NovelReadingWorkflowTests: XCTestCase {
         XCTAssertEqual(state.presentation?.readingState.authorID, "favorite-author")
     }
 
+    func testInSessionResumePointUsesItsAuthorScopeForRefreshAndCacheOperations() async throws {
+        let threadID = "9124"
+        let repository = RecordingNovelReadingRepository(documents: [
+            1: makeNovelDocument(threadID: threadID, view: 1, maxView: 2, authorID: "author-1"),
+            // Production projections always carry this value, but a missing
+            // one here verifies that the requested scope remains the session
+            // fallback until a loaded projection can replace it.
+            2: makeNovelDocument(threadID: threadID, view: 2, maxView: 2, authorID: nil)
+        ])
+        let workflow = NovelReadingWorkflow(
+            context: NovelLaunchContext(
+                threadID: threadID,
+                threadTitle: "Thread",
+                source: .forum,
+                initialView: 1,
+                authorID: "author-1"
+            ),
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            layout: NovelReaderLayout(width: 320, height: 568),
+            repository: repository
+        )
+        _ = try await workflow.start(initial: NovelReadingInitialPosition())
+        let resumePoint = NovelResumePoint(
+            view: 2,
+            displayedTextOffset: 0,
+            chapterOrdinal: 0,
+            segmentProgress: 0,
+            authorID: " author-2 ",
+            readingModeHint: .vertical
+        )
+
+        let state = try await workflow.loadView(
+            2,
+            preferredSurfaceOrdinal: 0,
+            preferredResumePoint: resumePoint,
+            forceRefresh: true
+        )
+
+        XCTAssertEqual(repository.ignoringCacheRequests.last, NovelPageRequest(
+            threadID: threadID,
+            view: 2,
+            authorID: "author-2"
+        ))
+        XCTAssertEqual(repository.deletedViews.last, .init(
+            views: [2],
+            threadID: threadID,
+            authorID: "author-2"
+        ))
+        XCTAssertEqual(repository.cachedViewsRequests.last, .init(
+            threadID: threadID,
+            authorID: "author-2"
+        ))
+        XCTAssertEqual(state.snapshot.currentAuthorID, "author-2")
+    }
+
+    func testResumePointWithDifferentAuthorScopeDoesNotReuseCurrentDocument() async throws {
+        let threadID = "9125"
+        let repository = RecordingNovelReadingRepository(documents: [
+            1: makeNovelDocument(threadID: threadID, view: 1, maxView: 1, authorID: "author-1")
+        ])
+        let workflow = NovelReadingWorkflow(
+            context: NovelLaunchContext(
+                threadID: threadID,
+                threadTitle: "Thread",
+                source: .forum,
+                initialView: 1,
+                authorID: "author-1"
+            ),
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            layout: NovelReaderLayout(width: 320, height: 568),
+            repository: repository
+        )
+        _ = try await workflow.start(initial: NovelReadingInitialPosition())
+        let resumePoint = NovelResumePoint(
+            view: 1,
+            displayedTextOffset: 0,
+            chapterOrdinal: 0,
+            segmentProgress: 0,
+            authorID: "author-2",
+            readingModeHint: .vertical
+        )
+
+        XCTAssertNil(workflow.restoreResumePointInCurrentDocument(resumePoint))
+        XCTAssertEqual(repository.loadRequests.count, 1)
+    }
+
+    func testPrefetchedDocumentRequiresMatchingResumeAuthorScope() async throws {
+        let threadID = "9126"
+        let repository = RecordingNovelReadingRepository(documents: [
+            1: makeNovelDocument(threadID: threadID, view: 1, maxView: 2, authorID: "author-1"),
+            2: makeNovelDocument(threadID: threadID, view: 2, maxView: 2, authorID: "author-1")
+        ])
+        let workflow = NovelReadingWorkflow(
+            context: NovelLaunchContext(
+                threadID: threadID,
+                threadTitle: "Thread",
+                source: .forum,
+                initialView: 1,
+                authorID: "author-1"
+            ),
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            layout: NovelReaderLayout(width: 320, height: 568),
+            repository: repository
+        )
+        let initialState = try await workflow.start(initial: NovelReadingInitialPosition())
+        _ = await workflow.prefetchIfNeeded(
+            nearSurfaceOrdinal: max(try surfaceCount(in: initialState) - 2, 0)
+        )
+        let resumePoint = NovelResumePoint(
+            view: 2,
+            displayedTextOffset: 0,
+            chapterOrdinal: 0,
+            segmentProgress: 0,
+            authorID: "author-2",
+            readingModeHint: .vertical
+        )
+
+        XCTAssertTrue(workflow.canPromotePrefetchedDocument(forView: 2))
+        XCTAssertTrue(workflow.canPromotePrefetchedDocument(forView: 2, matchingAuthorID: " author-1 "))
+        XCTAssertFalse(workflow.canPromotePrefetchedDocument(forView: 2, matchingAuthorID: "author-2"))
+        let promotedState = try await workflow.promotePrefetchedDocument(
+            preferredSurfaceOrdinal: 0,
+            resumePoint: resumePoint
+        )
+        XCTAssertNil(promotedState)
+        XCTAssertEqual(workflow.state?.snapshot.currentView, 1)
+    }
+
     func testUpdatingSettingsThrowsWhenViewportLayoutFailsAndKeepsSnapshot() async throws {
         let threadID = "9110"
         let repository = RecordingNovelReadingRepository(documents: [
@@ -2873,6 +3001,11 @@ private final class RecordingNovelReadingRepository: NovelReadingPageRepository,
         var authorID: String?
     }
 
+    struct CachedViewsRequest: Equatable {
+        var threadID: String
+        var authorID: String?
+    }
+
     private let documents: [Int: NovelReaderProjection]
     private let loadSources: [Int: NovelReaderProjectionLoadSource]
     private let failingViews: Set<Int>
@@ -2881,6 +3014,7 @@ private final class RecordingNovelReadingRepository: NovelReadingPageRepository,
     private(set) var loadRequests: [NovelPageRequest] = []
     private(set) var ignoringCacheRequests: [NovelPageRequest] = []
     private(set) var deletedViews: [DeletedViews] = []
+    private(set) var cachedViewsRequests: [CachedViewsRequest] = []
 
     init(
         documents: [Int: NovelReaderProjection],
@@ -2923,7 +3057,8 @@ private final class RecordingNovelReadingRepository: NovelReadingPageRepository,
         for threadID: String,
         authorID: String?
     ) async -> Set<Int> {
-        []
+        cachedViewsRequests.append(CachedViewsRequest(threadID: threadID, authorID: authorID))
+        return []
     }
 
     func deleteCachedViews(

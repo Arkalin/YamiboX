@@ -1028,7 +1028,10 @@ public final class NovelReaderViewModel {
             return true
         }
 
-        if readingWorkflow?.canPromotePrefetchedDocument(forView: resumePoint.view) == true {
+        if readingWorkflow?.canPromotePrefetchedDocument(
+            forView: resumePoint.view,
+            matchingAuthorID: resumePoint.authorID
+        ) == true {
             return await promotePrefetchedDocument(
                 startingAt: 0,
                 preferredResumePoint: resumePoint,

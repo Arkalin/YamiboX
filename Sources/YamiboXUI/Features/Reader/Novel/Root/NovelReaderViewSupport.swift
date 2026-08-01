@@ -88,6 +88,21 @@ enum NovelReaderPresentedSheet: Identifiable, Hashable {
     var id: Self { self }
 }
 
+/// Performs an in-session annotation jump and restores the imperative
+/// vertical viewport when the jump succeeds.
+@MainActor
+struct NovelReaderAnnotationJump {
+    let model: NovelReaderViewModel
+    let requestVerticalRestore: () -> Void
+
+    @discardableResult
+    func perform(_ resumePoint: NovelResumePoint) async -> Bool {
+        guard await model.jumpToLikeAnchor(resumePoint) else { return false }
+        requestVerticalRestore()
+        return true
+    }
+}
+
 struct NovelReaderPresentationModifier: ViewModifier {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.

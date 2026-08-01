@@ -5,10 +5,8 @@ import UIKit
 /// Second-level Like list for one work: Mine push destination and both
 /// readers' `.sheet` share this exact type (see implementation-design.md §9).
 ///
-/// Tapping a card never jumps straight to the original reading position —
-/// it opens a text detail sheet or the image browser, and jumping back is a
-/// menu action inside those, so browsing likes never yanks the reader out
-/// from under the user by accident.
+/// Mine opens a text detail sheet or image browser first; the reader's
+/// annotation panel opts into opening the saved anchor directly.
 struct LikeWorkItemsView: View {
     let work: LikeWorkKey
     let workTitle: String
@@ -18,6 +16,7 @@ struct LikeWorkItemsView: View {
     let annotationSelectionRequest: Int?
     let onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
     let isAnnotationSegmentActive: Bool
+    let opensAnchorsDirectly: Bool
 
     @State private var items: [LikeItem] = []
     @State private var hasLoaded = false
@@ -41,7 +40,8 @@ struct LikeWorkItemsView: View {
         onDismiss: (() -> Void)?,
         annotationSelectionRequest: Int? = nil,
         onAnnotationNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)? = nil,
-        isAnnotationSegmentActive: Bool = true
+        isAnnotationSegmentActive: Bool = true,
+        opensAnchorsDirectly: Bool = false
     ) {
         self.work = work
         self.workTitle = workTitle
@@ -51,6 +51,7 @@ struct LikeWorkItemsView: View {
         self.annotationSelectionRequest = annotationSelectionRequest
         self.onAnnotationNavigationStateChange = onAnnotationNavigationStateChange
         self.isAnnotationSegmentActive = isAnnotationSegmentActive
+        self.opensAnchorsDirectly = opensAnchorsDirectly
     }
 
     var body: some View {
@@ -238,6 +239,10 @@ struct LikeWorkItemsView: View {
     }
 
     private func open(_ item: LikeItem) {
+        if opensAnchorsDirectly {
+            onOpenAnchor(item.anchor)
+            return
+        }
         switch item.kind {
         case .text:
             presentedTextItem = item
