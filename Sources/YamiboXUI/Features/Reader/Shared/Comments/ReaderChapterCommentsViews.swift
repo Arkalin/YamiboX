@@ -6,7 +6,6 @@ struct ReaderChapterCommentsContent: View {
     private static let loadNextColor = YamiboColors.Site.brownEmphasis
     static let refreshErrorRowID = "__refresh_error__"
     static let loadNextRowID = "__load_next__"
-    private static let cardCornerRadius: CGFloat = 10
 
     let state: ReaderChapterCommentsState
     let isLoadingMore: Bool
@@ -20,11 +19,12 @@ struct ReaderChapterCommentsContent: View {
 
     var body: some View {
         content
+            .background(Color(.systemBackground).ignoresSafeArea())
     }
 
-    // The comment list is a hand-rolled inset-grouped ScrollView instead of a
-    // List: `scrollPosition(id:)` (needed for drift-free controller scrolling)
-    // only works on ScrollView + scrollTargetLayout.
+    // Keep this as a ScrollView rather than a List: `scrollPosition(id:)`
+    // (needed for drift-free controller scrolling) only works here with
+    // `scrollTargetLayout`.
     @ViewBuilder
     private var content: some View {
         switch state {
@@ -56,48 +56,42 @@ struct ReaderChapterCommentsContent: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if let refreshError {
-                            refreshErrorCard(refreshError)
+                            refreshErrorRow(refreshError)
                                 .id(Self.refreshErrorRowID)
                         }
                         ForEach(page.comments) { comment in
-                            commentCardRow(comment, target: target, page: page)
+                            commentListRow(comment, target: target, page: page)
                                 .id(comment.id)
                         }
                         if page.nextView != nil {
                             loadNextButton
-                                .padding(.top, 10)
                                 .id(Self.loadNextRowID)
                         }
                     }
                     .scrollTargetLayout()
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
                 }
                 .scrollPosition(id: $scrollTarget, anchor: .top)
-                .background(Color(.systemGroupedBackground))
             }
         }
     }
 
-    private func refreshErrorCard(_ message: String) -> some View {
+    private func refreshErrorRow(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
-            .padding(.bottom, 16)
+            .overlay(alignment: .bottom) {
+                Divider()
+            }
     }
 
-    private func commentCardRow(
+    private func commentListRow(
         _ comment: ChapterComment,
         target: ReaderChapterCommentTarget,
         page: ChapterCommentsPage
     ) -> some View {
-        let isFirst = comment.id == page.comments.first?.id
         let isLast = comment.id == page.comments.last?.id
         return ReaderChapterCommentRow(
             comment: comment,
@@ -105,22 +99,14 @@ struct ReaderChapterCommentsContent: View {
             openOriginalPost: openOriginalPost
         )
         .padding(.horizontal, 16)
-        .padding(.vertical, 7)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
         .overlay(alignment: .bottom) {
             if !isLast {
                 Divider()
                     .padding(.leading, 16)
             }
         }
-        .clipShape(.rect(
-            topLeadingRadius: isFirst ? Self.cardCornerRadius : 0,
-            bottomLeadingRadius: isLast ? Self.cardCornerRadius : 0,
-            bottomTrailingRadius: isLast ? Self.cardCornerRadius : 0,
-            topTrailingRadius: isFirst ? Self.cardCornerRadius : 0,
-            style: .continuous
-        ))
     }
 
     private var loadNextButton: some View {
@@ -136,7 +122,7 @@ struct ReaderChapterCommentsContent: View {
                 }
                 Spacer()
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(Self.loadNextColor)
             .contentShape(Rectangle())
