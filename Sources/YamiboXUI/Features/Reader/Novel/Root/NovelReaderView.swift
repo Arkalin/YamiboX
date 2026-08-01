@@ -49,9 +49,8 @@ public struct NovelReaderView: View {
     /// than derived, because the capsule must also reflect changes made in
     /// another scene or synced in from another device.
     @State private var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
-    /// Cosmetic only. The store's `toggle` is keyed by position and idempotent,
-    /// so a stale `true` here can never delete a bookmark that has scrolled
-    /// out of the neighborhood — it just shows the wrong glyph for a moment.
+    /// Whether the bookmark action at the viewport's current position removes
+    /// an existing bookmark rather than adding a new one.
     @State private var isCurrentPositionBookmarked = false
     /// Remembered for the reader session so reopening the panel returns to the
     /// segment the user last looked at; nil means "not chosen yet".
@@ -295,9 +294,12 @@ public struct NovelReaderView: View {
                     likeStore: dependencies.like.likeStore
                 )
                 Task { await loadLikedNovelImageAnchors() }
-                Task { await refreshAnnotationState() }
                 await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
                 await model.prepare(layout: currentLayout)
+                // `prepare` is what makes a semantic reader position
+                // available. Refreshing earlier always reads nil and leaves
+                // an existing bookmark looking like an add action.
+                await refreshAnnotationState()
                 // Strictly after `prepare`: it is what creates the reading
                 // workflow, and the ordinals come off the laid-out projection.
                 // Spawned before it, this read always saw a nil workflow and
@@ -440,9 +442,7 @@ public struct NovelReaderView: View {
             canBoundaryPageTurn: { delta in
                 canNavigatePagedBoundary(delta: delta)
             },
-            onSelectionChange: { selectionIndex in
-                model.selectPagedViewportIndex(selectionIndex)
-            },
+            onSelectionChange: self.handlePagedViewportSelection,
             onBoundaryPageTurn: { delta in
                 Task { await goRelativePage(delta, pagerIdentity: pagerIdentity) }
             },
@@ -605,6 +605,7 @@ public struct NovelReaderView: View {
             },
             onScrollSettled: {
                 verticalRestore.updateVerticalViewportPosition(model: model)
+                Task { await self.refreshCurrentPositionBookmarkState() }
             },
             onTap: {
                 handleVerticalTap()
@@ -1025,6 +1026,13 @@ public struct NovelReaderView: View {
         )
     }
 
+    /// Paged swipes update the reader model outside the button actions, so
+    /// the glyph must follow that new viewport position too.
+    private func handlePagedViewportSelection(_ selectionIndex: Int) {
+        model.selectPagedViewportIndex(selectionIndex)
+        Task { await self.refreshCurrentPositionBookmarkState() }
+    }
+
     private func toggleBookmarkAtCurrentPosition() {
         // In vertical mode the committed viewport sample lags the scroll by up
         // to ~100 ms; without this the bookmark can land a screen behind.
@@ -1044,7 +1052,9 @@ public struct NovelReaderView: View {
             ) else {
                 return
             }
-            isCurrentPositionBookmarked = outcome.isBookmarked
+            if currentBookmarkAnchor() == anchor {
+                isCurrentPositionBookmarked = outcome.isBookmarked
+            }
             likeFeedbackGenerator.notificationOccurred(.success)
             await refreshAnnotationState()
         }
@@ -1077,12 +1087,22 @@ public struct NovelReaderView: View {
             bookmarkCount: bookmarkCount,
             likeCount: likeCount
         )
-        if let anchor = currentBookmarkAnchor() {
-            isCurrentPositionBookmarked = await dependencies.like.bookmarkStore
-                .bookmark(marking: .novel(anchor), in: workKey) != nil
-        } else {
+        await refreshCurrentPositionBookmarkState()
+    }
+
+    /// Refreshes only the position-specific glyph. A location change can
+    /// happen while the store query is suspended (for example, while paging),
+    /// so verify the anchor before applying the answer from the old query.
+    private func refreshCurrentPositionBookmarkState() async {
+        guard let anchor = currentBookmarkAnchor() else {
             isCurrentPositionBookmarked = false
+            return
         }
+        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
+        let isBookmarked = await dependencies.like.bookmarkStore
+            .bookmark(marking: .novel(anchor), in: workKey) != nil
+        guard currentBookmarkAnchor() == anchor else { return }
+        isCurrentPositionBookmarked = isBookmarked
     }
 
     private func handleBookmarkOpen(_ item: BookmarkItem) {
@@ -1198,10 +1218,13 @@ public struct NovelReaderView: View {
     /// vertical UIKit viewport needs an explicit scroll request for that
     /// path; paged mode simply no-ops here.
     private func jumpToAnnotationAnchor(_ resumePoint: NovelResumePoint) async {
-        _ = await NovelReaderAnnotationJump(
+        let didJump = await NovelReaderAnnotationJump(
             model: model,
             requestVerticalRestore: { restoreVerticalPositionIfNeeded() }
         ).perform(resumePoint)
+        if didJump {
+            await refreshCurrentPositionBookmarkState()
+        }
     }
 
     // NovelTextLikeAnchor/NovelImageLikeAnchor carry `view` (the forum page
@@ -1270,11 +1293,13 @@ public struct NovelReaderView: View {
     private func commitProgressSlider(_ targetIndex: Int) {
         model.jumpToSurface(targetIndex)
         restoreVerticalPositionIfNeeded()
+        Task { await refreshCurrentPositionBookmarkState() }
     }
 
     private func jumpAdjacentChapter(_ delta: Int) {
         model.jumpToAdjacentChapter(delta)
         restoreVerticalPositionIfNeeded()
+        Task { await refreshCurrentPositionBookmarkState() }
     }
 
     // MARK: - Navigation intents
@@ -1282,11 +1307,13 @@ public struct NovelReaderView: View {
     private func jumpToChapter(_ chapter: NovelReaderChapter) {
         model.jumpToChapter(chapter)
         restoreVerticalPositionIfNeeded()
+        Task { await refreshCurrentPositionBookmarkState() }
     }
 
     private func jumpToChapterDirectoryChapter(_ chapter: NovelReaderChapter) async {
         await model.navigation.jumpToChapterDirectoryChapter(chapter)
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func jumpToWebView(_ view: Int) async {
@@ -1297,22 +1324,26 @@ public struct NovelReaderView: View {
         chromeState.showChrome()
         await model.jumpToWebView(view, preferredSurfaceOrdinal: preferredSurfaceOrdinal)
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func navigateBackFromChrome() async {
         await model.navigation.navigateBack()
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func navigateForwardFromChrome() async {
         await model.navigation.navigateForward()
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func goRelativePage(_ delta: Int) async {
         pagedScrollAnimationRequest = nil
         await model.jumpRelativeSurface(delta)
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func goRelativePage(_ delta: Int, pagerIdentity: ReaderPagedPagerIdentity?) async {
@@ -1326,6 +1357,7 @@ public struct NovelReaderView: View {
             pagedScrollAnimationRequest = nil
         }
         restoreVerticalPositionIfNeeded()
+        await refreshCurrentPositionBookmarkState()
     }
 
     private func makePagedScrollAnimationRequest(
@@ -1435,6 +1467,7 @@ public struct NovelReaderView: View {
     private func commitVerticalProgressScrub(_ target: Int) {
         model.jumpToSurface(target)
         restoreVerticalPositionIfNeeded()
+        Task { await refreshCurrentPositionBookmarkState() }
         verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
     }
 
