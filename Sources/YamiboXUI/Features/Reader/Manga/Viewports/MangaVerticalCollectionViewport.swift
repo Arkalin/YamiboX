@@ -106,6 +106,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private var lastAppliedPlacementRevision: Int?
         private var lastAppliedControlScrollRevision: Int?
         private var pendingControlScrollTarget: (y: CGFloat, timestamp: TimeInterval)?
+        private var zoomTransitionOverlay: UIView?
         private(set) var verticalZoomScale = MangaPageZoomPolicy.minimumScale
         private var pinchStartScale: CGFloat?
         private var lastScrollMotionTime = CACurrentMediaTime()
@@ -494,29 +495,91 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 return
             }
 
+            zoomTransitionOverlay?.removeFromSuperview()
+            zoomTransitionOverlay = nil
+            let isZoomingIn = targetScale > oldScale
+            let zoomInSnapshot = animated && isZoomingIn
+                ? makeZoomTransitionSnapshot(
+                    in: collectionView,
+                    visibleAnchor: visibleAnchor,
+                    initialScale: 1,
+                    afterScreenUpdates: false
+                )
+                : nil
+
             verticalZoomScale = targetScale
             let updates = {
                 collectionView.collectionViewLayout.invalidateLayout()
                 collectionView.layoutIfNeeded()
                 collectionView.setContentOffset(targetOffset, animated: false)
+                collectionView.layoutIfNeeded()
             }
-            if animated {
+            UIView.performWithoutAnimation(updates)
+            clampContentOffset(in: collectionView, animated: false)
+            collectionView.layoutIfNeeded()
+
+            let transitionSnapshot = zoomInSnapshot ?? (
+                animated && !isZoomingIn
+                    ? makeZoomTransitionSnapshot(
+                        in: collectionView,
+                        visibleAnchor: visibleAnchor,
+                        initialScale: oldScale / max(targetScale, 0.001),
+                        afterScreenUpdates: true
+                    )
+                    : nil
+            )
+            if let transitionSnapshot {
+                zoomTransitionOverlay = transitionSnapshot.overlay
+                let finalTransform = isZoomingIn
+                    ? CGAffineTransform(
+                        scaleX: targetScale / max(oldScale, 0.001),
+                        y: targetScale / max(oldScale, 0.001)
+                    )
+                    : .identity
                 UIView.animate(
                     withDuration: 0.18,
                     delay: 0,
                     options: [.allowUserInteraction, .beginFromCurrentState],
-                    animations: updates,
+                    animations: {
+                        transitionSnapshot.snapshot.transform = finalTransform
+                    },
                     completion: { [weak self, weak collectionView] _ in
+                        transitionSnapshot.overlay.removeFromSuperview()
                         guard let self, let collectionView else { return }
+                        guard self.zoomTransitionOverlay === transitionSnapshot.overlay else { return }
+                        self.zoomTransitionOverlay = nil
                         self.clampContentOffset(in: collectionView, animated: false)
                         self.publishCurrentPageIfNeeded(from: collectionView)
                     }
                 )
-            } else {
-                UIView.performWithoutAnimation(updates)
-                clampContentOffset(in: collectionView, animated: false)
             }
             publishCurrentPageIfNeeded(from: collectionView)
+        }
+
+        private func makeZoomTransitionSnapshot(
+            in collectionView: UICollectionView,
+            visibleAnchor: CGPoint,
+            initialScale: CGFloat,
+            afterScreenUpdates: Bool
+        ) -> (overlay: UIView, snapshot: UIView)? {
+            guard let hostView = collectionView.superview,
+                  let snapshot = collectionView.snapshotView(afterScreenUpdates: afterScreenUpdates) else {
+                return nil
+            }
+
+            let overlay = UIView(frame: collectionView.convert(collectionView.bounds, to: hostView))
+            overlay.clipsToBounds = true
+            overlay.isUserInteractionEnabled = false
+            snapshot.frame = overlay.bounds
+            snapshot.layer.anchorPoint = CGPoint(
+                x: visibleAnchor.x / max(overlay.bounds.width, 1),
+                y: visibleAnchor.y / max(overlay.bounds.height, 1)
+            )
+            snapshot.layer.position = visibleAnchor
+            snapshot.transform = CGAffineTransform(scaleX: initialScale, y: initialScale)
+            overlay.addSubview(snapshot)
+            hostView.addSubview(overlay)
+            return (overlay, snapshot)
         }
 
         private func clampContentOffset(in collectionView: UICollectionView, animated: Bool) {
