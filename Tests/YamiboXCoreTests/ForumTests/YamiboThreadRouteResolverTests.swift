@@ -596,6 +596,60 @@ struct YamiboThreadRouteResolverTests {
     #expect(context.targetPostID == "9001")
 }
 
+@Test func yamiboThreadRouteResolverUsesThreadURLForReplyMetadataLookup() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
+    let request = YamiboThreadRouteRequest(
+        threadURL: try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=304&pid=9003&mobile=2")),
+        title: "我的回复"
+    )
+    var fetchedCanonicalThread = false
+    YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+        let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if items.value(named: "goto") == "findpost" {
+            #expect(items.value(named: "mod") == "redirect")
+            #expect(items.value(named: "ptid") == "304")
+            #expect(items.value(named: "pid") == "9003")
+        } else {
+            #expect(items.value(named: "mod") == "viewthread")
+            #expect(items.value(named: "tid") == "304")
+            #expect(items.value(named: "goto") == nil)
+            #expect(items.value(named: "ptid") == nil)
+            fetchedCanonicalThread = true
+        }
+        return yamiboThreadRouteHTTPResponse(
+            url: request.url!,
+            body: #"""
+            <html>
+            <head><title>普通帖子 - 百合会</title></head>
+            <body>
+              <div class="header"><h2><a href="forum.php?mod=forumdisplay&amp;fid=999999&amp;mobile=2">普通板块</a></h2></div>
+              <div id="post_9003">
+                <div class="authi">
+                  <a class="author" href="home.php?mod=space&amp;uid=42&amp;mobile=2">楼主</a>
+                  <em>发表于 2026-6-1 10:00</em>
+                </div>
+                <div class="message" id="postmessage_9003">目标回复</div>
+              </div>
+              <div class="pg"><strong>1</strong></div>
+            </body>
+            </html>
+            """#
+        )
+    }
+
+    let target = try await resolver.resolve(request)
+
+    guard case let .thread(context) = target else {
+        Issue.record("Expected native thread reader target, got \(target)")
+        return
+    }
+    #expect(context.thread.tid == "304")
+    #expect(context.targetPostID == "9003")
+    #expect(fetchedCanonicalThread)
+}
+
 @Test func yamiboThreadRouteResolverNativeThreadIntentKeepsFindPostTargetWhenPageResolutionFails() async throws {
     defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
 

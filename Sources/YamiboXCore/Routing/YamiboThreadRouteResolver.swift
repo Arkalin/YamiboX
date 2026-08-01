@@ -64,7 +64,7 @@ public actor YamiboThreadRouteResolver {
         if request.readerOverride == nil,
            shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
             do {
-                metadata = try await loadMetadata(for: requestURL)
+                metadata = try await loadMetadata(for: canonicalURL, fallbackURL: requestURL)
             } catch let fallback as YamiboThreadRouteResolverWebFallback {
                 return .webFallback(fallback.url)
             }
@@ -165,14 +165,14 @@ public actor YamiboThreadRouteResolver {
         return fid == nil
     }
 
-    private func loadMetadata(for url: URL) async throws -> YamiboThreadMetadata {
+    private func loadMetadata(for url: URL, fallbackURL: URL) async throws -> YamiboThreadMetadata {
         do {
             let html = try await client.fetchHTML(for: .thread(url: url, page: 1, authorID: nil))
             return try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
         } catch YamiboError.notAuthenticated {
-            throw YamiboThreadRouteResolverWebFallback(url: url)
+            throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
         } catch YamiboError.floodControl {
-            throw YamiboThreadRouteResolverWebFallback(url: url)
+            throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
         }
     }
 
