@@ -40,7 +40,7 @@ extension ReaderPagedPageTurnCell {
             )
             .ignoresSafeArea(
                 .container,
-                edges: UIDevice.current.userInterfaceIdiom == .pad ? .vertical : .bottom
+                edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges
             )
         }
         .margins(.all, 0)

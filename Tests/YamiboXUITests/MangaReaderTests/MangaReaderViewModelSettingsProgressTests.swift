@@ -163,6 +163,7 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
             brightness: -1,
             zoomEnabled: false,
             showsTwoPagesInLandscapeOnPad: true,
+            ignoresTopSafeArea: false,
             directorySortOrder: .descending
         )
         fixture.model.applySettings(updatedMangaSettings)
@@ -171,6 +172,7 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
         XCTAssertEqual(fixture.model.presentation.settings.readingMode, .vertical)
         XCTAssertEqual(fixture.model.presentation.settings.pageEdgeFillStyle, .white)
         XCTAssertFalse(fixture.model.presentation.settings.zoomEnabled)
+        XCTAssertFalse(fixture.model.presentation.settings.ignoresTopSafeArea)
 
         try await waitFor {
             let loaded = await fixture.settingsStore.load()
@@ -180,7 +182,8 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
                 loaded.manga.pageTurnDirection == .leftToRight &&
                 loaded.manga.pageScaleMode == .fitHeight &&
                 loaded.manga.pageEdgeFillStyle == .white &&
-                loaded.manga.zoomEnabled == false
+                loaded.manga.zoomEnabled == false &&
+                loaded.manga.ignoresTopSafeArea == false
         }
 
         let loaded = await fixture.settingsStore.load()

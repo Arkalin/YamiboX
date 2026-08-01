@@ -1,4 +1,4 @@
-import CoreGraphics
+import SwiftUI
 import YamiboXCore
 
 enum MangaPagedLayoutPolicy {
@@ -27,6 +27,10 @@ enum MangaPagedLayoutPolicy {
         guard settings.readingMode == .paged, !settings.ignoresTopSafeArea else { return 0 }
         return topInset
     }
+
+    /// The outer reader owns the optional top inset. Nested UIKit hosting roots
+    /// must not reintroduce the window's top safe area on iPhone.
+    static let hostedPageSafeAreaEdges: Edge.Set = .vertical
 }
 
 enum MangaPagedViewportResizePolicy {

@@ -95,6 +95,11 @@ struct MangaPagedLayoutPolicyTests {
         #expect(MangaReaderSettings().ignoresTopSafeArea)
     }
 
+    @Test func hostedPagedContentCanExtendThroughVerticalSafeAreas() {
+        #expect(MangaPagedLayoutPolicy.hostedPageSafeAreaEdges.contains(.top))
+        #expect(MangaPagedLayoutPolicy.hostedPageSafeAreaEdges.contains(.bottom))
+    }
+
     @Test func resizedViewportKeepsSameVisibleItemAtNewPageWidth() {
         let targetOffset = MangaPagedViewportResizePolicy.alignedContentOffsetX(
             previousContentOffsetX: 1_800,
