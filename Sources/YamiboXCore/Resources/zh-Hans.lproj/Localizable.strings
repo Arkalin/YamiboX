@@ -759,6 +759,7 @@
 "mine.login_card_hint" = "轻点打开登录表单";
 "mine.login_password" = "密码";
 "mine.login_username" = "用户名 / Email / UID";
+"mine.web_login" = "网页登录";
 "mine.my_likes" = "我的喜欢";
 "mine.profile_card_view_profile_hint" = "轻点可查看个人主页";
 "mine.security_answer" = "答案";

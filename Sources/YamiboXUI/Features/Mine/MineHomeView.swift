@@ -11,6 +11,7 @@ public struct MineHomeView: View {
     @State private var isHistoryPushed = false
 
     private let settingsDependencies: SettingsDependencies
+    private let sessionStore: SessionStore
     private let appModel: YamiboAppModel
     private let likeDependencies: LikeDependencies
 
@@ -27,6 +28,7 @@ public struct MineHomeView: View {
             mode: .forumTab
         ))
         self.settingsDependencies = settingsDependencies
+        self.sessionStore = dependencies.sessionStore
         self.appModel = appModel
         self.likeDependencies = likeDependencies
     }
@@ -111,7 +113,11 @@ public struct MineHomeView: View {
                 viewModel.checkInResultMessage = nil
             }
             .sheet(isPresented: $showingLoginSheet) {
-                MineLoginSheet(viewModel: viewModel) {
+                MineLoginSheet(
+                    viewModel: viewModel,
+                    sessionStore: sessionStore,
+                    appModel: appModel
+                ) {
                     showingLoginSheet = false
                 }
             }
