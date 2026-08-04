@@ -154,6 +154,7 @@ struct FixedSessionStateStore: SessionStoring {
     func save(_ session: SessionState) async throws {}
     func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws {}
     func updateWebSession(cookie: String, userAgent: String, isLoggedIn: Bool) async throws {}
+    func updateWebSession(cookies: [YamiboCookie], userAgent: String) async throws {}
     func updateAccountUID(_ accountUID: String?) async throws {}
     func reset() async throws {}
 }

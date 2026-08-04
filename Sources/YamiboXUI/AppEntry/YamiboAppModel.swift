@@ -48,14 +48,22 @@ public final class YamiboAppModel {
 
     public let appContext: YamiboAppContext
     public let peripheralInput: ReaderPeripheralInputManager
+    public let webSessionCoordinator: ForumWebSessionCoordinator
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
 
-    public init(appContext: YamiboAppContext, initialTab: AppTab = .forum) {
+    public init(
+        appContext: YamiboAppContext,
+        initialTab: AppTab = .forum,
+        webSessionCoordinator: ForumWebSessionCoordinator? = nil
+    ) {
         self.appContext = appContext
         selectedTab = initialTab
         appContinuity = AppContinuityWorkflow(appContext: appContext)
         peripheralInput = ReaderPeripheralInputManager(settingsStore: appContext.settingsStore)
+        self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
+            sessionStore: appContext.forumDependencies.sessionStore
+        )
     }
 
     public func bootstrapIfNeeded() async {

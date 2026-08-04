@@ -116,13 +116,6 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.sync(with: webView)
-            Task {
-                do {
-                    try await persistCookies(from: webView)
-                } catch {
-                    YamiboLog.forum.error("Failed to persist web session cookies after navigation finished: \(error)")
-                }
-            }
         }
 
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
@@ -216,8 +209,8 @@ public struct IOSForumWebView: UIViewRepresentable {
             switch sessionSyncState.action(for: sessionState, reloadIfNeeded: reloadIfNeeded) {
             case .none:
                 return
-            case let .injectCookies(cookieHeader, reload):
-                await injectCookies(cookieHeader, into: webView)
+            case let .injectCookies(reload):
+                await injectCookies(sessionState.cookies, into: webView)
                 if reload {
                     reloadOrLoad(webView)
                 }
@@ -238,35 +231,38 @@ public struct IOSForumWebView: UIViewRepresentable {
             }
         }
 
-        private func injectCookies(_ cookieHeader: String, into webView: WKWebView) async {
-            let cookies = cookieHeader
-                .split(separator: ";")
-                .compactMap { cookiePart -> HTTPCookie? in
-                    let pair = cookiePart.split(separator: "=", maxSplits: 1).map(String.init)
-                    guard pair.count == 2 else { return nil }
-                    return HTTPCookie(properties: [
-                        .domain: YamiboDomain.forumHost,
-                        .path: "/",
-                        .name: pair[0].trimmingCharacters(in: .whitespaces),
-                        .value: pair[1].trimmingCharacters(in: .whitespaces),
-                        .secure: "TRUE"
-                    ])
-                }
+        private func injectCookies(_ cookies: [YamiboCookie], into webView: WKWebView) async {
+            let validCookies = cookies.filter { !$0.isExpired() }
+            let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
+            let stored = await cookieStore.allCookies()
+            let storedByIdentity = Dictionary(uniqueKeysWithValues: stored.map { cookie in
+                let record = YamiboCookie(cookie)
+                return (record.identity, record)
+            })
 
-            await clearConflictingYamiboCookies(for: cookies, in: webView)
-            for cookie in cookies {
-                await webView.configuration.websiteDataStore.httpCookieStore.setCookieAsync(cookie)
+            await clearConflictingYamiboCookies(for: validCookies, in: webView)
+            for cookie in validCookies {
+                if let current = storedByIdentity[cookie.identity],
+                   YamiboCookie.isWAFCookie(cookie.name),
+                   !current.isExpired(),
+                   (current.expiresAt ?? .distantFuture) >= (cookie.expiresAt ?? .distantPast) {
+                    continue
+                }
+                if let httpCookie = cookie.httpCookie() {
+                    await cookieStore.setCookieAsync(httpCookie)
+                }
             }
         }
 
-        private func clearConflictingYamiboCookies(for cookies: [HTTPCookie], in webView: WKWebView) async {
+        private func clearConflictingYamiboCookies(for cookies: [YamiboCookie], in webView: WKWebView) async {
             let incomingNames = Set(cookies.map(\.name))
                 .union([SessionState.authenticationCookieName])
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let storedCookies = await cookieStore.allCookies()
             for cookie in storedCookies
                 where YamiboDomain.containsYamiboDomain(cookie.domain) &&
-                incomingNames.contains(cookie.name) {
+                incomingNames.contains(cookie.name) &&
+                !YamiboCookie.isWAFCookie(cookie.name) {
                 await cookieStore.deleteCookieAsync(cookie)
             }
         }
@@ -279,22 +275,6 @@ public struct IOSForumWebView: UIViewRepresentable {
             }
         }
 
-        private func persistCookies(from webView: WKWebView) async throws {
-            let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-            let header = cookies
-                .filter { YamiboDomain.containsYamiboDomain($0.domain) }
-                .sorted { $0.name < $1.name }
-                .map { "\($0.name)=\($0.value)" }
-                .joined(separator: "; ")
-
-            let userAgent = webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent
-            sessionSyncState.markPersistedWebSession(cookieHeader: header)
-            try await sessionStore.updateWebSession(
-                cookie: header,
-                userAgent: userAgent,
-                isLoggedIn: SessionState.hasAuthenticationCookie(header)
-            )
-        }
     }
 }
 

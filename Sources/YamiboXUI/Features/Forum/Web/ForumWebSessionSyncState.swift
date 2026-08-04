@@ -3,7 +3,7 @@ import YamiboXCore
 
 enum ForumWebSessionSyncAction: Equatable {
     case none
-    case injectCookies(cookieHeader: String, reload: Bool)
+    case injectCookies(reload: Bool)
     case clearCookies(reload: Bool)
 }
 
@@ -28,10 +28,7 @@ struct ForumWebSessionSyncState {
 
             lastCookieHeader = sessionState.cookie
             lastAuthenticationCookieValue = authenticationValue
-            return .injectCookies(
-                cookieHeader: sessionState.cookie,
-                reload: reloadIfNeeded || authenticationChanged
-            )
+            return .injectCookies(reload: reloadIfNeeded || authenticationChanged)
         }
 
         if sessionState.cookie.isEmpty {
@@ -48,6 +45,6 @@ struct ForumWebSessionSyncState {
         guard sessionState.cookie != lastCookieHeader else { return .none }
         lastCookieHeader = sessionState.cookie
         lastAuthenticationCookieValue = nil
-        return .injectCookies(cookieHeader: sessionState.cookie, reload: false)
+        return .injectCookies(reload: false)
     }
 }

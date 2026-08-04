@@ -38,17 +38,20 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
     private let checkInStore: YamiboCheckInStore
     private let session: URLSession
     private let verificationDelayNanoseconds: UInt64
+    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
 
     init(
         sessionStore: SessionStore,
         checkInStore: YamiboCheckInStore,
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
-        verificationDelayNanoseconds: UInt64 = 3_000_000_000
+        verificationDelayNanoseconds: UInt64 = 3_000_000_000,
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
     ) {
         self.sessionStore = sessionStore
         self.checkInStore = checkInStore
         self.session = session
         self.verificationDelayNanoseconds = verificationDelayNanoseconds
+        self.wafRecoverer = wafRecoverer
     }
 
     func checkInIfNeeded(force: Bool = false) async -> YamiboCheckInResult {
@@ -66,8 +69,8 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
 
         let client = YamiboClient(
             session: session,
-            cookie: sessionState.cookie,
-            userAgent: sessionState.userAgent
+            credentials: sessionState.credentials,
+            wafRecoverer: wafRecoverer
         )
 
         let checkInPageHTML: String

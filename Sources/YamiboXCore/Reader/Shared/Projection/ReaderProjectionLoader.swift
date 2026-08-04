@@ -60,6 +60,7 @@ enum ReaderProjectionFallbackPolicy {
         case .parsingFailed,
              .invalidImageData,
              .floodControl,
+             .securityVerificationRequired,
              .notAuthenticated,
              .accountUIDUnavailable,
              .loginFormUnavailable,

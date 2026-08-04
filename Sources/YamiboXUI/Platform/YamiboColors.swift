@@ -17,6 +17,10 @@ enum YamiboColors {
 
         static let brownDeep = Color(light: 0x4E2A1B, dark: 0x24120C)
         static let brownPrimary = Color(light: brownPrimaryLightHex, dark: brownPrimaryDarkHex)
+        /// The app target's adaptive AccentColor asset. Root presentation
+        /// containers inject this into the tint environment so semantic
+        /// `Color.accentColor` continues to resolve to the branded color.
+        static let appAccent = Color("AccentColor", bundle: .main)
         static let brownEmphasis = Color(light: 0x4E2A1B, dark: 0xD6A083)
         static let brownLight = Color(light: 0xCCB8A8, dark: 0x8F6F5E)
         static let creamBackground = Color(light: creamBackgroundLightHex, dark: 0x17110D)

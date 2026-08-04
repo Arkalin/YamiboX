@@ -7,17 +7,39 @@ enum YamiboRequestCancellationPolicy: Sendable {
 
 struct YamiboClient: Sendable {
     var session: URLSession
-    var cookie: String?
+    var credentials: YamiboRequestCredentials
     var userAgent: String
+    var wafRecoverer: (any YamiboWAFChallengeRecovering)?
+
+    var cookie: String? {
+        let header = credentials.cookieHeader(for: YamiboDomain.baseURL)
+        return header.isEmpty ? nil : header
+    }
 
     init(
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         cookie: String? = nil,
-        userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent
+        userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
     ) {
         self.session = session
-        self.cookie = cookie
+        credentials = YamiboRequestCredentials(
+            cookies: YamiboCookie.legacyCookies(from: cookie ?? ""),
+            userAgent: userAgent
+        )
         self.userAgent = userAgent
+        self.wafRecoverer = wafRecoverer
+    }
+
+    init(
+        session: URLSession = YamiboNetworkConfiguration.makeSession(),
+        credentials: YamiboRequestCredentials,
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+    ) {
+        self.session = session
+        self.credentials = credentials
+        userAgent = credentials.userAgent
+        self.wafRecoverer = wafRecoverer
     }
 
     func fetchHTML(
@@ -69,13 +91,13 @@ struct YamiboClient: Sendable {
         request.httpBody = formBody(fields)
         request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        if let cookie, !cookie.isEmpty {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
-        }
-        request.setValue(userAgent ?? self.userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        return try decodeHTML(from: data, response: response)
+        let resolvedUserAgent = userAgent ?? self.userAgent
+        applyCredentials(credentials, to: &request, userAgent: resolvedUserAgent)
+        return try await performHTMLRequest(
+            request,
+            userAgent: resolvedUserAgent,
+            cancellationPolicy: .propagateCancellation
+        )
     }
 
     func fetchHTML(
@@ -86,13 +108,13 @@ struct YamiboClient: Sendable {
     ) async throws -> String {
         var request = YamiboNetworkConfiguration.makeRequest(url: url, cachePolicy: cachePolicy)
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        if let cookie, !cookie.isEmpty {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
-        }
-        request.setValue(userAgent ?? self.userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
-        return try decodeHTML(from: data, response: response)
+        let resolvedUserAgent = userAgent ?? self.userAgent
+        applyCredentials(credentials, to: &request, userAgent: resolvedUserAgent)
+        return try await performHTMLRequest(
+            request,
+            userAgent: resolvedUserAgent,
+            cancellationPolicy: cancellationPolicy
+        )
     }
 
     private func data(
@@ -108,6 +130,70 @@ struct YamiboClient: Sendable {
             }
             return try await requestTask.value
         }
+    }
+
+    private func performHTMLRequest(
+        _ request: URLRequest,
+        userAgent: String,
+        cancellationPolicy: YamiboRequestCancellationPolicy
+    ) async throws -> String {
+        let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw YamiboError.invalidResponse(statusCode: nil)
+        }
+
+        guard YamiboWAFResponseDetector.matches(data: initialData, response: httpResponse, requestURL: request.url ?? YamiboDomain.baseURL) else {
+            return try decodeHTML(from: initialData, response: response)
+        }
+
+        guard let wafRecoverer, let url = request.url else {
+            throw YamiboError.securityVerificationRequired
+        }
+        if cancellationPolicy == .propagateCancellation {
+            try Task.checkCancellation()
+        }
+
+        let clearance = credentials.cookies.first {
+            $0.name == "nox_jst_v1" && $0.matches(url)
+        }
+        let challenge = YamiboWAFChallenge(
+            url: url,
+            method: request.httpMethod ?? "GET",
+            userAgent: userAgent,
+            clearanceFingerprint: clearance.map { YamiboWAFChallenge.clearanceFingerprint(for: $0.value) },
+            clearanceExpiresAt: clearance?.expiresAt
+        )
+        let refreshedCredentials: YamiboRequestCredentials
+        do {
+            refreshedCredentials = try await wafRecoverer.recover(from: challenge)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw YamiboError.securityVerificationRequired
+        }
+
+        var retry = request
+        retry.cachePolicy = .reloadIgnoringLocalCacheData
+        applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
+        let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy)
+        guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
+            throw YamiboError.invalidResponse(statusCode: nil)
+        }
+        if YamiboWAFResponseDetector.matches(data: retryData, response: retryHTTPResponse, requestURL: url) {
+            await wafRecoverer.presentFallback(for: challenge)
+            throw YamiboError.securityVerificationRequired
+        }
+        return try decodeHTML(from: retryData, response: retryResponse)
+    }
+
+    private func applyCredentials(
+        _ credentials: YamiboRequestCredentials,
+        to request: inout URLRequest,
+        userAgent: String
+    ) {
+        let cookieHeader = request.url.map { credentials.cookieHeader(for: $0) } ?? ""
+        request.setValue(cookieHeader.isEmpty ? nil : cookieHeader, forHTTPHeaderField: "Cookie")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
     }
 
     private func decodeHTML(from data: Data, response: URLResponse) throws -> String {

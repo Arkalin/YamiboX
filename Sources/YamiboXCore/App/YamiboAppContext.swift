@@ -45,6 +45,7 @@ public final class YamiboAppContext: Sendable {
     private nonisolated(unsafe) let uiDefaults: UserDefaults
     private let clearsWebDataOnReset: Bool
     private let websiteDataClearer: (any WebsiteDataClearing)?
+    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
 
     public init(
         sessionStore: SessionStore = SessionStore(),
@@ -78,7 +79,8 @@ public final class YamiboAppContext: Sendable {
         uiDefaults: UserDefaults = .standard,
         clearsWebDataOnReset: Bool = true,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
-        session: URLSession = YamiboNetworkConfiguration.makeSession()
+        session: URLSession = YamiboNetworkConfiguration.makeSession(),
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
     ) {
         let resolvedGRDBRootDirectory = grdbRootDirectory ?? YamiboDatabase.defaultRootDirectory()
         let resolvedCachesRootDirectory = cachesRootDirectory ?? YamiboDatabase.defaultCacheRootDirectory()
@@ -133,6 +135,7 @@ public final class YamiboAppContext: Sendable {
         self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport
         self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
         self.session = session
+        self.wafRecoverer = wafRecoverer
         YamiboImagePipeline.shared.setOfflineImageProvider(resolvedOfflineCacheStore)
     }
 
@@ -275,8 +278,8 @@ public final class YamiboAppContext: Sendable {
         let sessionState = await sessionStore.load()
         return YamiboClient(
             session: session,
-            cookie: sessionState.cookie,
-            userAgent: sessionState.userAgent
+            credentials: sessionState.credentials,
+            wafRecoverer: wafRecoverer
         )
     }
 
@@ -359,7 +362,8 @@ public final class YamiboAppContext: Sendable {
         YamiboCheckInService(
             sessionStore: sessionStore,
             checkInStore: checkInStore,
-            session: session
+            session: session,
+            wafRecoverer: wafRecoverer
         )
     }
 
@@ -368,7 +372,8 @@ public final class YamiboAppContext: Sendable {
             session: session,
             sessionStore: sessionStore,
             profileStore: profileStore,
-            websiteDataClearer: websiteDataClearer
+            websiteDataClearer: websiteDataClearer,
+            wafRecoverer: wafRecoverer
         )
     }
 

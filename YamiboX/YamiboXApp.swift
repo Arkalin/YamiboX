@@ -20,9 +20,13 @@ struct YamiboXApp: App {
 
     init() {
         let initialTab = YamiboXApp.resolveInitialTab()
+        let sessionStore = SessionStore()
+        let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let appContext = YamiboAppContext(
+            sessionStore: sessionStore,
             ordinaryImageCache: YamiboUIImagePipeline.shared,
-            websiteDataClearer: WebKitWebsiteDataClearer()
+            websiteDataClearer: WebKitWebsiteDataClearer(),
+            wafRecoverer: webSessionCoordinator
         )
         #if os(iOS)
         YamiboAppDelegate.appContext = appContext
@@ -31,7 +35,11 @@ struct YamiboXApp: App {
         #if os(iOS) && canImport(BackgroundTasks)
         FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
         #endif
-        let appModel = YamiboAppModel(appContext: appContext, initialTab: initialTab)
+        let appModel = YamiboAppModel(
+            appContext: appContext,
+            initialTab: initialTab,
+            webSessionCoordinator: webSessionCoordinator
+        )
         #if os(iOS)
         YamiboAppDelegate.appModel = appModel
         #endif

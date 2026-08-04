@@ -115,6 +115,7 @@
 "error.favorite_add_failed" = "添加收藏失败，请稍后重试";
 "error.flood_control" = "论坛触发了防灌水限制，请稍后再试";
 "error.invalid_response" = "未拿到有效的论坛响应";
+"error.security_verification_required" = "论坛安全验证未完成，请重试或使用网页浏览";
 "error.invalid_response_with_status" = "论坛响应异常（HTTP %d）";
 "error.account_uid_unavailable" = "无法确认当前百合会账号，请重新登录后再同步。";
 "error.login_failed" = "登录失败，请检查账号信息后重试";

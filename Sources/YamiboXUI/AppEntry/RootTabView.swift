@@ -14,18 +14,33 @@ public struct RootTabView: View {
     }
 
     public var body: some View {
-        Group {
-            if isShowingBootstrapPlaceholder {
-                ProgressView(L10n.string("app.initializing"))
-                    .transition(.opacity)
-            } else {
-                content
-                    .transition(.opacity)
+        ZStack {
+            ForumWebSessionWebViewHost(
+                coordinator: appModel.webSessionCoordinator,
+                placement: .hidden
+            )
+            .opacity(0.001)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
+            Group {
+                if isShowingBootstrapPlaceholder {
+                    ProgressView(L10n.string("app.initializing"))
+                        .transition(.opacity)
+                } else {
+                    content
+                        .transition(.opacity)
+                }
             }
         }
         // Cross-fade from the bootstrap placeholder into the tab content
         // instead of hard-swapping frames.
         .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
+        // The persistent UIKit WebView host can otherwise leave SwiftUI's
+        // inherited tint at the platform default. Keep the app-wide semantic
+        // accent explicit so `Color.accentColor` remains part of the forum
+        // palette on every root tab.
+        .tint(ForumColors.appAccent)
         .task {
             await appModel.bootstrapIfNeeded()
         }
@@ -47,14 +62,17 @@ public struct RootTabView: View {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
+                appModel.webSessionCoordinator.setAppIsActive(true)
                 appModel.synchronizeWebDAVIfNeeded()
                 presentClipboardForumLinkPromptIfNeeded()
             case .background:
+                appModel.webSessionCoordinator.setAppIsActive(false)
                 appModel.flushWebDAVSyncBeforeBackground()
 #if os(iOS) && canImport(BackgroundTasks)
                 FavoriteUpdateBackgroundScheduler.scheduleNextIfNeeded(appContext: appModel.appContext)
 #endif
             case .inactive:
+                appModel.webSessionCoordinator.setAppIsActive(false)
                 break
             @unknown default:
                 break
@@ -68,6 +86,12 @@ public struct RootTabView: View {
             prompter: appUpdateLaunchPrompter,
             isActive: !isShowingBootstrapPlaceholder && !appModel.hasActiveReaderPresentation
         ))
+        .fullScreenCover(item: webVerificationBinding) { _ in
+            ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
+        }
+        .task {
+            appModel.webSessionCoordinator.setAppIsActive(scenePhase == .active)
+        }
     }
 
     private var isShowingBootstrapPlaceholder: Bool {
@@ -106,6 +130,17 @@ public struct RootTabView: View {
         Binding(
             get: { appModel.selectedTab },
             set: { appModel.selectTab($0) }
+        )
+    }
+
+    private var webVerificationBinding: Binding<ForumWebSessionCoordinator.Presentation?> {
+        Binding(
+            get: { appModel.webSessionCoordinator.presentation },
+            set: { presentation in
+                if presentation == nil {
+                    appModel.webSessionCoordinator.dismissPresentation()
+                }
+            }
         )
     }
 
@@ -254,6 +289,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
+                    .tint(ForumColors.appAccent)
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
             .fullScreenCover(item: binding(for: \.activeMangaContext)) { context in
@@ -263,6 +299,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
+                    .tint(ForumColors.appAccent)
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
     }

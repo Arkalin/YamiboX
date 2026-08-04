@@ -76,6 +76,7 @@ struct MineLoginSheet: View {
 final class MineWebLoginSessionMonitor {
     private let sessionStore: SessionStore
     private let changes: AsyncStream<String>
+    private var baselineAuthenticationValue: String?
 
     init(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -83,14 +84,12 @@ final class MineWebLoginSessionMonitor {
     }
 
     func waitForAuthentication() async -> Bool {
-        if await isAuthenticated() {
-            return true
-        }
+        baselineAuthenticationValue = await authenticationValue()
 
         for await changeID in changes {
             guard !Task.isCancelled else { return false }
             guard changeID == sessionStore.changeID else { continue }
-            if await isAuthenticated() {
+            if await isAuthenticatedAfterMonitoringStarted() {
                 return true
             }
         }
@@ -98,9 +97,15 @@ final class MineWebLoginSessionMonitor {
         return false
     }
 
-    private func isAuthenticated() async -> Bool {
+    private func authenticationValue() async -> String? {
         let session = await sessionStore.load()
-        return session.isLoggedIn && SessionState.hasAuthenticationCookie(session.cookie)
+        return session.authenticationCookie?.value
+    }
+
+    private func isAuthenticatedAfterMonitoringStarted() async -> Bool {
+        let session = await sessionStore.load()
+        guard session.isLoggedIn, let value = session.authenticationCookie?.value else { return false }
+        return baselineAuthenticationValue == nil || value != baselineAuthenticationValue
     }
 }
 

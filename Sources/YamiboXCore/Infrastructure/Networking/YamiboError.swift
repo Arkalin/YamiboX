@@ -21,6 +21,7 @@ public enum YamiboError: LocalizedError, Equatable, Sendable {
     case emptyHTML
     case parsingFailed(context: String)
     case floodControl
+    case securityVerificationRequired
     case notAuthenticated
     case accountUIDUnavailable
     case loginFormUnavailable
@@ -48,6 +49,8 @@ public enum YamiboError: LocalizedError, Equatable, Sendable {
             return L10n.string("error.parsing_failed", context)
         case .floodControl:
             return L10n.string("error.flood_control")
+        case .securityVerificationRequired:
+            return L10n.string("error.security_verification_required")
         case .notAuthenticated:
             return L10n.string("error.not_authenticated")
         case .accountUIDUnavailable:

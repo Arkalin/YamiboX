@@ -5,6 +5,7 @@ public protocol SessionStoring: Sendable {
     func save(_ session: SessionState) async throws
     func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws
     func updateWebSession(cookie: String, userAgent: String, isLoggedIn: Bool) async throws
+    func updateWebSession(cookies: [YamiboCookie], userAgent: String) async throws
     func updateAccountUID(_ accountUID: String?) async throws
     func reset() async throws
 }
@@ -46,25 +47,33 @@ public actor SessionStore: SessionStoring {
     }
 
     public func updateWebSession(cookie: String, userAgent: String, isLoggedIn _: Bool) async throws {
+        try await updateWebSession(cookies: YamiboCookie.legacyCookies(from: cookie), userAgent: userAgent)
+    }
+
+    public func updateWebSession(cookies webCookies: [YamiboCookie], userAgent: String) async throws {
         var session = await load()
         let previousSession = session
-        let previousAuthenticationValue = SessionState.authenticationCookieValue(in: session.cookie)
-        let webAuthenticationValue = SessionState.authenticationCookieValue(in: cookie)
-        let hasCurrentAuthentication = session.isLoggedIn && previousAuthenticationValue != nil
+        let previousAuthentication = session.authenticationCookie
+        let incoming = canonicalCookies(webCookies.filter { !$0.isExpired() })
+        let incomingAuthentication = incoming.first { $0.name == SessionState.authenticationCookieName }
+        let preservesCurrentAuthentication = session.isLoggedIn && previousAuthentication != nil &&
+            (incomingAuthentication == nil || incomingAuthentication?.value != previousAuthentication?.value)
 
-        if hasCurrentAuthentication,
-           webAuthenticationValue != previousAuthenticationValue {
-            return
+        if preservesCurrentAuthentication, let previousAuthentication {
+            session.cookies = canonicalCookies(
+                incoming.filter { $0.name != SessionState.authenticationCookieName } + [previousAuthentication]
+            )
+        } else {
+            session.cookies = incoming
         }
-
-        session.cookie = cookie
         session.userAgent = userAgent
-        session.isLoggedIn = webAuthenticationValue != nil
-        if webAuthenticationValue == nil || webAuthenticationValue != previousAuthenticationValue {
+        let resultingAuthentication = session.authenticationCookie
+        session.isLoggedIn = resultingAuthentication != nil
+        if resultingAuthentication?.value != previousAuthentication?.value {
             session.accountUID = nil
         }
 
-        guard session.cookie != previousSession.cookie ||
+        guard session.cookies != previousSession.cookies ||
             session.userAgent != previousSession.userAgent ||
             session.isLoggedIn != previousSession.isLoggedIn ||
             session.accountUID != previousSession.accountUID
@@ -74,6 +83,15 @@ public actor SessionStore: SessionStoring {
 
         session.lastUpdatedAt = .now
         try await save(session)
+    }
+
+    private func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {
+        var byIdentity: [String: YamiboCookie] = [:]
+        for cookie in cookies {
+            if let current = byIdentity[cookie.identity], current.capturedAt > cookie.capturedAt { continue }
+            byIdentity[cookie.identity] = cookie
+        }
+        return byIdentity.values.sorted { $0.identity < $1.identity }
     }
 
     public func updateAccountUID(_ accountUID: String?) async throws {

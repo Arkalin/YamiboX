@@ -6,19 +6,22 @@ public struct YamiboAccountService: Sendable {
     private let profileStore: YamiboProfileStore
     private let userAgent: String
     private let websiteDataClearer: (any WebsiteDataClearing)?
+    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
 
     init(
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
-        websiteDataClearer: (any WebsiteDataClearing)? = nil
+        websiteDataClearer: (any WebsiteDataClearing)? = nil,
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
     ) {
         self.session = session
         self.sessionStore = sessionStore
         self.profileStore = profileStore
         self.userAgent = userAgent
         self.websiteDataClearer = websiteDataClearer
+        self.wafRecoverer = wafRecoverer
     }
 
     public func login(_ request: YamiboLoginRequest) async throws -> YamiboProfile {
@@ -28,7 +31,7 @@ public struct YamiboAccountService: Sendable {
         }
 
         let form = try await fetchLoginForm()
-        let client = YamiboClient(session: session, userAgent: userAgent)
+        let client = YamiboClient(session: session, userAgent: userAgent, wafRecoverer: wafRecoverer)
         let responseHTML = try await client.submitForm(
             url: form.actionURL,
             fields: loginFields(
@@ -44,15 +47,16 @@ public struct YamiboAccountService: Sendable {
             throw YamiboError.loginVerificationRequired
         }
 
-        let cookieHeader = currentCookieHeader()
-        guard SessionState.hasAuthenticationCookie(cookieHeader) else {
+        let cookies = currentCookies()
+        guard cookies.contains(where: { $0.name == SessionState.authenticationCookieName && !$0.isExpired() }) else {
             throw YamiboError.loginFailed(extractLoginFailureMessage(from: responseHTML))
         }
 
-        let profile = try await fetchProfile(cookie: cookieHeader, userAgent: userAgent)
+        let credentials = YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
+        let profile = try await fetchProfile(credentials: credentials)
         try await sessionStore.save(
             SessionState(
-                cookie: cookieHeader,
+                cookies: cookies,
                 userAgent: userAgent,
                 isLoggedIn: true,
                 lastUpdatedAt: .now,
@@ -66,13 +70,12 @@ public struct YamiboAccountService: Sendable {
     public func refreshProfile() async throws -> YamiboProfile {
         let sessionState = await sessionStore.load()
         guard sessionState.isLoggedIn,
-              SessionState.hasAuthenticationCookie(sessionState.cookie) else {
+              sessionState.hasValidAuthenticationCookie else {
             throw YamiboError.notAuthenticated
         }
 
         let profile = try await fetchProfile(
-            cookie: sessionState.cookie,
-            userAgent: sessionState.userAgent
+            credentials: sessionState.credentials
         )
         try await profileStore.save(profile)
         if !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -87,11 +90,11 @@ public struct YamiboAccountService: Sendable {
         let profile = await profileStore.load()
         if let formHash = profile?.formHash?.trimmingCharacters(in: .whitespacesAndNewlines),
            !formHash.isEmpty,
-           !sessionState.cookie.isEmpty {
+           !sessionState.cookies.isEmpty {
             let client = YamiboClient(
                 session: session,
-                cookie: sessionState.cookie,
-                userAgent: sessionState.userAgent
+                credentials: sessionState.credentials,
+                wafRecoverer: wafRecoverer
             )
             do {
                 _ = try await client.fetchHTML(for: .logout(formHash: formHash))
@@ -110,13 +113,13 @@ public struct YamiboAccountService: Sendable {
     }
 
     private func fetchLoginForm() async throws -> YamiboLoginForm {
-        let client = YamiboClient(session: session, userAgent: userAgent)
+        let client = YamiboClient(session: session, userAgent: userAgent, wafRecoverer: wafRecoverer)
         let html = try await client.fetchHTML(for: .login, cachePolicy: .reloadIgnoringLocalCacheData)
         return try YamiboLoginFormParser.parse(html)
     }
 
-    private func fetchProfile(cookie: String, userAgent: String) async throws -> YamiboProfile {
-        let client = YamiboClient(session: session, cookie: cookie, userAgent: userAgent)
+    private func fetchProfile(credentials: YamiboRequestCredentials) async throws -> YamiboProfile {
+        let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer)
         let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
         return try YamiboProfileParser.parse(html)
     }
@@ -139,20 +142,19 @@ public struct YamiboAccountService: Sendable {
         return fields
     }
 
-    private func currentCookieHeader() -> String {
+    private func currentCookies() -> [YamiboCookie] {
         let storageCookies = cookieStorages()
             .flatMap { $0.cookies ?? [] }
             .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
 
-        var uniqueCookies: [String: HTTPCookie] = [:]
+        var uniqueCookies: [String: YamiboCookie] = [:]
         for cookie in storageCookies {
-            uniqueCookies["\(cookie.domain)|\(cookie.path)|\(cookie.name)"] = cookie
+            let stored = YamiboCookie(cookie)
+            uniqueCookies[stored.identity] = stored
         }
 
         return uniqueCookies.values
-            .sorted { $0.name < $1.name }
-            .map { "\($0.name)=\($0.value)" }
-            .joined(separator: "; ")
+            .sorted { $0.identity < $1.identity }
     }
 
     private func cookieStorages() -> [HTTPCookieStorage] {
@@ -211,4 +213,3 @@ public struct YamiboAccountService: Sendable {
         return L10n.string("error.login_failed")
     }
 }
-
