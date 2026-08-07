@@ -96,9 +96,9 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         var userInfo: [ImageRequest.UserInfoKey: any Sendable] = [:]
         if let client {
             urlRequest.setValue(client.userAgent, forHTTPHeaderField: "User-Agent")
-            if let cookie = client.cookie?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !cookie.isEmpty {
-                urlRequest.setValue(cookie, forHTTPHeaderField: "Cookie")
+            let cookieHeader = client.credentials.cookieHeader(for: source.url)
+            if !cookieHeader.isEmpty {
+                urlRequest.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
             }
             userInfo[.yamiboURLSession] = YamiboImageRequestSession(client.session)
         }

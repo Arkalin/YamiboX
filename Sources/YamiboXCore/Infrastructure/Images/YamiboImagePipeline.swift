@@ -57,8 +57,7 @@ public final class YamiboImagePipeline: @unchecked Sendable {
         let sessionState = await sessionStore.load()
         let client = YamiboClient(
             session: imageSession,
-            cookie: sessionState.cookie,
-            userAgent: sessionState.userAgent
+            credentials: sessionState.credentials
         )
         return try await engine.data(for: source, client: client)
     }

@@ -18,10 +18,75 @@ struct YamiboImagePipelineTests {
         let pipeline = harness.makeImagePipeline()
 
         let data = try await pipeline.data(
-            for: imageSource(refererPageURL: URL(string: "https://bbs.yamibo.com/thread-1.html"))
+            for: imageSource(
+                url: "https://bbs.yamibo.com/data/attachment/forum/a.jpg",
+                refererPageURL: URL(string: "https://bbs.yamibo.com/thread-1.html")
+            )
         )
 
         #expect(data == Data([1, 2, 3]))
+        #expect(harness.requests.count == 1)
+    }
+
+    @Test func carriesStructuredWAFCookieForForumHostedImages() async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "Cookie") == "auth=1; nox_jst_v1=fresh")
+            return MangaReaderDataTestResponse(data: Data([1]))
+        }
+        let pipeline = harness.makeImagePipeline(sessionState: SessionState(
+            cookies: [
+                YamiboCookie(
+                    name: "auth",
+                    value: "1",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                ),
+                YamiboCookie(
+                    name: "nox_jst_v1",
+                    value: "fresh",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                )
+            ],
+            userAgent: "UnitAgent"
+        ))
+
+        _ = try await pipeline.data(
+            for: imageSource(url: "https://bbs.yamibo.com/data/attachment/forum/b.jpg")
+        )
+
+        #expect(harness.requests.count == 1)
+    }
+
+    @Test func externalImageHostDoesNotReceiveYamiboCookies() async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
+            return MangaReaderDataTestResponse(data: Data([1]))
+        }
+        let pipeline = harness.makeImagePipeline(sessionState: SessionState(
+            cookies: [
+                YamiboCookie(
+                    name: "auth",
+                    value: "1",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                ),
+                YamiboCookie(
+                    name: "nox_jst_v1",
+                    value: "fresh",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                )
+            ],
+            userAgent: "UnitAgent"
+        ))
+
+        _ = try await pipeline.data(for: imageSource())
+
         #expect(harness.requests.count == 1)
     }
 
