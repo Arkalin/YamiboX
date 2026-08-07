@@ -71,7 +71,7 @@ public final class YamiboAppContext: Sendable {
         offlineCacheStore: (any OfflineCacheStoring)? = nil,
         forumCacheStore: ForumCacheStore? = nil,
         ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)? = nil,
-        offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport = OfflineCacheBackgroundDownloadTransport(),
+        offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport? = nil,
         offlineCacheContinuedProcessingCoordinator: OfflineCacheContinuedProcessingCoordinator = OfflineCacheContinuedProcessingCoordinator(),
         databasePool: DatabasePool? = nil,
         grdbRootDirectory: URL? = nil,
@@ -132,7 +132,7 @@ public final class YamiboAppContext: Sendable {
             diskCacheStore: diskCacheStore
         )
         self.ordinaryImageCache = ordinaryImageCache ?? YamiboImageDataPipeline.shared
-        self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport
+        self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
         self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
         self.session = session
         self.wafRecoverer = wafRecoverer

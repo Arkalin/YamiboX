@@ -511,6 +511,87 @@ struct ReaderSharedTestsOfflineCacheQueueExecutor {
         #expect(harness.requests.count == 1)
     }
 
+    @Test func backgroundDownloadCarriesSessionUserAgentAndForumCookies() async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        let imageURL = try #require(URL(string: "https://bbs.yamibo.com/data/attachment/forum/bg.jpg"))
+        let refererURL = try #require(URL(string: "https://bbs.yamibo.com/forum.php?tid=740"))
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == "UnitAgent")
+            #expect(request.value(forHTTPHeaderField: "Cookie") == "auth=1; nox_jst_v1=fresh")
+            #expect(request.value(forHTTPHeaderField: "Referer") == refererURL.absoluteString)
+            return MangaReaderDataTestResponse(data: Data([7, 4, 0]))
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MangaReaderDataTestURLProtocol.self]
+        configuration.httpAdditionalHeaders = ["X-Manga-Test-ID": harness.testID]
+        let sessionState = SessionState(
+            cookies: [
+                YamiboCookie(
+                    name: "auth",
+                    value: "1",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                ),
+                YamiboCookie(
+                    name: "nox_jst_v1",
+                    value: "fresh",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                )
+            ],
+            userAgent: "UnitAgent"
+        )
+        let transport = OfflineCacheBackgroundDownloadTransport(
+            configuration: configuration,
+            sessionStore: FixedSessionStateStore(state: sessionState)
+        )
+
+        let data = try await transport.downloadImageData(for: YamiboImageSource(url: imageURL, refererPageURL: refererURL))
+
+        #expect(data == Data([7, 4, 0]))
+        #expect(harness.requests.count == 1)
+    }
+
+    @Test func backgroundDownloadOmitsYamiboCookiesForExternalImageHosts() async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        let imageURL = try #require(URL(string: "https://img.example.com/740-1.jpg"))
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == "UnitAgent")
+            #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
+            return MangaReaderDataTestResponse(data: Data([7, 4, 0]))
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MangaReaderDataTestURLProtocol.self]
+        configuration.httpAdditionalHeaders = ["X-Manga-Test-ID": harness.testID]
+        let sessionState = SessionState(
+            cookies: [
+                YamiboCookie(
+                    name: "auth",
+                    value: "1",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                ),
+                YamiboCookie(
+                    name: "nox_jst_v1",
+                    value: "fresh",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: .now.addingTimeInterval(600)
+                )
+            ],
+            userAgent: "UnitAgent"
+        )
+        let transport = OfflineCacheBackgroundDownloadTransport(
+            configuration: configuration,
+            sessionStore: FixedSessionStateStore(state: sessionState)
+        )
+
+        _ = try await transport.downloadImageData(for: YamiboImageSource(url: imageURL))
+
+        #expect(harness.requests.count == 1)
+    }
+
     @Test func chapterCancellationRemovesPartialOfflineBytesForCanceledWork() async throws {
         let store = try makeTestOfflineCacheStore(rootDirectory: try makeTemporaryExecutorDirectory())
         let imageURLs = try makeImageURLs(tid: "800", count: 2)

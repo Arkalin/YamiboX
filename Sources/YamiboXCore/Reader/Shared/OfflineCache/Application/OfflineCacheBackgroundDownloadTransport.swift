@@ -8,21 +8,28 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     private var sessionStorage: URLSession?
     private var pendingDownloads: [Int: PendingDownload] = [:]
     private var backgroundEventCompletionHandlers: [String: () -> Void] = [:]
+    private let sessionStore: (any SessionStoring)?
 
     public init(
         configuration: URLSessionConfiguration = OfflineCacheBackgroundDownloadTransport.makeBackgroundConfiguration(),
-        delegateQueue: OperationQueue? = nil
+        delegateQueue: OperationQueue? = nil,
+        sessionStore: (any SessionStoring)? = nil
     ) {
         let queue = delegateQueue ?? OperationQueue()
         queue.maxConcurrentOperationCount = 1
+        self.sessionStore = sessionStore
         sessionFactory = { delegate in
             URLSession(configuration: configuration, delegate: delegate, delegateQueue: queue)
         }
         super.init()
     }
 
-    init(sessionFactory: @escaping @Sendable (URLSessionDelegate) -> URLSession) {
+    init(
+        sessionFactory: @escaping @Sendable (URLSessionDelegate) -> URLSession,
+        sessionStore: (any SessionStoring)? = nil
+    ) {
         self.sessionFactory = sessionFactory
+        self.sessionStore = sessionStore
         super.init()
     }
 
@@ -42,10 +49,18 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     }
 
     public func downloadImageData(for source: YamiboImageSource) async throws -> Data {
+        let credentials = await currentCredentials()
         let taskBox = URLSessionTaskBox()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 var urlRequest = URLRequest(url: source.url)
+                if let credentials {
+                    urlRequest.setValue(credentials.userAgent, forHTTPHeaderField: "User-Agent")
+                    let cookieHeader = credentials.cookieHeader(for: source.url)
+                    if !cookieHeader.isEmpty {
+                        urlRequest.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+                    }
+                }
                 if let refererPageURL = source.refererPageURL {
                     urlRequest.setValue(refererPageURL.absoluteString, forHTTPHeaderField: "Referer")
                 }
@@ -118,6 +133,12 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
             sessionStorage = session
             return session
         }
+    }
+
+    private func currentCredentials() async -> YamiboRequestCredentials? {
+        guard let sessionStore else { return nil }
+        let session = await sessionStore.load()
+        return session.credentials
     }
 
     private func register(
