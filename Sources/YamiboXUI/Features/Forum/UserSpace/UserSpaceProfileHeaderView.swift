@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceProfileHeaderView: View {
+    @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile
     let isSelf: Bool
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
@@ -17,9 +18,9 @@ struct UserSpaceProfileHeaderView: View {
                         .resizable()
                         .scaledToFill()
                 } placeholder: {
-                    Rectangle().fill(ForumColors.brownDeep.opacity(0.24))
+                    Rectangle().fill(theme.accent.opacity(0.24))
                 } failure: {
-                    Rectangle().fill(ForumColors.brownDeep.opacity(0.24))
+                    Rectangle().fill(theme.accent.opacity(0.24))
                 }
                 .frame(height: 172)
                 .clipped()
@@ -71,6 +72,7 @@ struct UserSpaceProfileHeaderView: View {
 }
 
 private struct UserSpaceActionGridView: View {
+    @Environment(\.forumTheme) private var theme
     let isSelf: Bool
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
     let beginAddFriend: () -> Void
@@ -114,7 +116,7 @@ private struct UserSpaceActionGridView: View {
                         .frame(maxWidth: .infinity, minHeight: 42)
                 }
                 .buttonStyle(.bordered)
-                .tint(ForumColors.brownEmphasis)
+                .tint(theme.accentText)
             }
         }
         .padding(13)
@@ -156,6 +158,7 @@ private struct UserSpaceProfileAction: Identifiable {
 }
 
 private struct UserSpaceStatsView: View {
+    @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile
 
     var body: some View {
@@ -171,6 +174,7 @@ private struct UserSpaceStatsView: View {
 }
 
 private struct UserSpaceStatView: View {
+    @Environment(\.forumTheme) private var theme
     let label: String
     let value: String
 
@@ -178,26 +182,27 @@ private struct UserSpaceStatView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.headline.monospacedDigit())
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         }
         .frame(maxWidth: .infinity)
     }
 }
 
 private struct UserSpaceSignatureView: View {
+    @Environment(\.forumTheme) private var theme
     let signature: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("user_space.signature"))
                 .font(.headline)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
             Text(signature)
                 .font(.subheadline)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,6 +212,7 @@ private struct UserSpaceSignatureView: View {
 }
 
 private struct UserSpaceInfoTableView: View {
+    @Environment(\.forumTheme) private var theme
     let rows: [UserSpaceInfoRow]
     let onWebTap: (URL) -> Void
 
@@ -215,11 +221,11 @@ private struct UserSpaceInfoTableView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.string("user_space.profile"))
                     .font(.headline)
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 ForEach(rows) { row in
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(row.label)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                         Spacer(minLength: 8)
                         if let url = row.url {
                             Button {
@@ -230,10 +236,10 @@ private struct UserSpaceInfoTableView: View {
                                     .expandedHitTarget(width: 0)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(ForumColors.brownPrimary)
+                            .foregroundStyle(theme.mutedAccent)
                         } else {
                             Text(row.value)
-                                .foregroundStyle(ForumColors.textDark)
+                                .foregroundStyle(theme.primaryText)
                                 .multilineTextAlignment(.trailing)
                         }
                     }

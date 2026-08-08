@@ -31,6 +31,7 @@ public final class ForumBrowserModel: ObservableObject {
 }
 
 public struct ForumBrowserView: View {
+    @Environment(\.forumTheme) private var theme
     @StateObject private var model: ForumBrowserModel
     private let sessionStore: SessionStore
     private let appModel: YamiboAppModel
@@ -62,7 +63,7 @@ public struct ForumBrowserView: View {
             }
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 ForumBrowserNavigationTitle(
@@ -82,6 +83,7 @@ public struct ForumBrowserView: View {
 }
 
 struct ForumBrowserNavigationTitle: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let urlText: String?
 

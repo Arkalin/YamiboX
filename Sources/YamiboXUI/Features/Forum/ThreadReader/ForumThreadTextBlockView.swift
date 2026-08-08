@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadTextBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let block: ForumThreadTextBlock
     let onURLTap: (URL) -> Void
 
@@ -24,7 +25,7 @@ struct ForumThreadTextBlockView: View {
         Text(cache.attributedText(for: block))
             .font(.body)
             .lineSpacing(4)
-            .foregroundStyle(ForumColors.textDark)
+            .foregroundStyle(theme.primaryText)
             .multilineTextAlignment(block.alignment.swiftUITextAlignment)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)

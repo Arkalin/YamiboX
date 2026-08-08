@@ -183,5 +183,5 @@ private func authoredColor(_ hex: String) -> ResolvedColor {
 @Test func linkWithoutAuthoredBackgroundKeepsTheAdaptiveThemeColor() throws {
     let color = ForumThreadAuthorColorAdapter.linkColor(onBackgroundHex: nil)
 
-    #expect(color == ForumColors.brownPrimary)
+    #expect(color == ForumTheme.classic.mutedAccent)
 }

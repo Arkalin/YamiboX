@@ -3,7 +3,7 @@ import YamiboXCore
 
 #if os(iOS)
 struct ReaderChapterCommentsContent: View {
-    private static let loadNextColor = YamiboColors.Site.brownEmphasis
+    private static let loadNextColor = ReaderTheme.chapterCommentAction
     static let refreshErrorRowID = "__refresh_error__"
     static let loadNextRowID = "__load_next__"
 
@@ -383,11 +383,11 @@ private struct ReaderChapterCommentSourceBadge: View {
     private var palette: (foreground: Color, border: Color) {
         switch source {
         case .postComment:
-            (YamiboColors.Site.brownEmphasis, Color(red: 0.74, green: 0.52, blue: 0.38))
+            (ReaderTheme.chapterCommentAction, Color(red: 0.74, green: 0.52, blue: 0.38))
         case .ratingReason:
-            (YamiboColors.Site.ratingReasonAccent, Color(red: 0.36, green: 0.65, blue: 0.55))
+            (ReaderTheme.chapterCommentRating, Color(red: 0.36, green: 0.65, blue: 0.55))
         case .reply:
-            (YamiboColors.Site.replyAccent, Color(red: 0.48, green: 0.56, blue: 0.82))
+            (ReaderTheme.chapterCommentReply, Color(red: 0.48, green: 0.56, blue: 0.82))
         }
     }
 

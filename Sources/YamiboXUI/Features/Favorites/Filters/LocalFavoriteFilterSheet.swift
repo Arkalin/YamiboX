@@ -29,7 +29,7 @@ struct LocalFavoriteFilterSheet: View {
                                     .foregroundStyle(.secondary)
                                 if organizer.filter.selectedSourceFilters.contains(sourceFilter) {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(AppColors.accent)
                                 }
                             }
                         }
@@ -53,7 +53,7 @@ struct LocalFavoriteFilterSheet: View {
                                 Spacer()
                                 if organizer.filter.selectedTagIDs.contains(tag.id) {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(AppColors.accent)
                                 }
                             }
                         }

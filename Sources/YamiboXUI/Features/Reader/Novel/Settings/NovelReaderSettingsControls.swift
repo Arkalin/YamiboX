@@ -46,7 +46,7 @@ struct NovelReaderFontScaleRow: View {
                     ),
                     in: 0.8 ... 2.3
                 )
-                .tint(YamiboColors.Site.orangeAccent)
+                .tint(ReaderTheme.progressAccent)
 
                 ReaderSettingsStepperButton(
                     systemName: "plus",

@@ -43,7 +43,7 @@ struct LocalFavoriteViewOptionChips: View {
                     systemImage: organizer.filter.hasActiveFilters
                         ? "line.3.horizontal.decrease.circle.fill"
                         : "line.3.horizontal.decrease.circle",
-                    tint: organizer.filter.hasActiveFilters ? Color.accentColor : nil
+                    tint: organizer.filter.hasActiveFilters ? AppColors.accent : nil
                 )
             }
             Menu {

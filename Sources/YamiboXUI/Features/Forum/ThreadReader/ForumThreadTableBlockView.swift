@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadTableBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let rows: [[ForumThreadTableCell]]
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
@@ -25,12 +26,13 @@ struct ForumThreadTableBlockView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(ForumColors.brownLight.opacity(0.25), lineWidth: 1)
+                .stroke(theme.divider.opacity(0.25), lineWidth: 1)
         }
     }
 }
 
 private struct ForumThreadTableCellView: View {
+    @Environment(\.forumTheme) private var theme
     let cell: ForumThreadTableCell
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
@@ -46,10 +48,10 @@ private struct ForumThreadTableCellView: View {
         )
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cell.isHeader ? ForumColors.accentFill.opacity(0.5) : ForumColors.creamBackground)
+            .background(cell.isHeader ? theme.selectedFill.opacity(0.5) : theme.pageBackground)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(ForumColors.brownLight.opacity(0.2))
+                    .fill(theme.divider.opacity(0.2))
                     .frame(width: 1)
             }
     }

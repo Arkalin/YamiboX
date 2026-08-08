@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadReaderActionBar: View {
+    @Environment(\.forumTheme) private var theme
     let thread: ThreadIdentity
     let isFavorited: Bool
     let onReply: () -> Void
@@ -15,7 +16,7 @@ struct ForumThreadReaderActionBar: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(ForumColors.brownDeep)
+            .tint(theme.accent)
 
             Button(action: onFavorite) {
                 Label(
@@ -24,12 +25,12 @@ struct ForumThreadReaderActionBar: View {
                 )
                 .labelStyle(.iconOnly)
                 .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(isFavorited ? ForumColors.orangeAccent : ForumColors.brownEmphasis)
+                .foregroundStyle(isFavorited ? theme.warning : theme.accentText)
                 .frame(width: 42, height: 34)
                 .expandedHitTarget()
             }
             .buttonStyle(.bordered)
-            .tint(ForumColors.brownEmphasis)
+            .tint(theme.accentText)
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onFavoriteLongPress() })
             .accessibilityLabel(
                 isFavorited ? L10n.string("forum.thread.favorited") : L10n.string("forum.thread.favorite")
@@ -38,12 +39,12 @@ struct ForumThreadReaderActionBar: View {
             ShareLink(item: Self.threadURL(for: thread)) {
                 Label(L10n.string("forum.thread.share"), systemImage: "square.and.arrow.up")
                     .labelStyle(.iconOnly)
-                    .foregroundStyle(ForumColors.brownEmphasis)
+                    .foregroundStyle(theme.accentText)
                     .frame(width: 42, height: 34)
                     .expandedHitTarget()
             }
             .buttonStyle(.bordered)
-            .tint(ForumColors.brownEmphasis)
+            .tint(theme.accentText)
             .accessibilityLabel(L10n.string("forum.thread.share"))
         }
         .font(.callout.weight(.semibold))

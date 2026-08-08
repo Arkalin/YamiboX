@@ -8,6 +8,7 @@ struct ForumThreadRubySegment: Identifiable {
 }
 
 struct ForumThreadRubyTextBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let segments: [ForumThreadRubySegment]
     let alignment: ForumThreadTextAlignment
     let onURLTap: (URL) -> Void
@@ -28,6 +29,7 @@ struct ForumThreadRubyTextBlockView: View {
 }
 
 private struct ForumThreadRubySegmentView: View {
+    @Environment(\.forumTheme) private var theme
     let segment: ForumThreadRubySegment
 
     var body: some View {
@@ -35,18 +37,18 @@ private struct ForumThreadRubySegmentView: View {
             VStack(spacing: 0) {
                 Text(rubyText)
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .lineLimit(1)
                 Text(segment.attributedText)
                     .font(.body)
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
             }
         } else {
             Text(segment.attributedText)
                 .font(.body)
                 .lineSpacing(4)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .fixedSize(horizontal: true, vertical: false)
         }
     }

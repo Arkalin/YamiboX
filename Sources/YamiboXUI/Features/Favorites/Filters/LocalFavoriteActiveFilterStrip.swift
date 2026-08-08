@@ -38,7 +38,7 @@ struct LocalFavoriteActiveFilterStrip: View {
 private struct LocalFavoriteFilterChip: View {
     let title: String
     let systemImage: String
-    var tint: Color = .accentColor
+    var tint: Color = AppColors.accent
     let onClear: () -> Void
 
     var body: some View {

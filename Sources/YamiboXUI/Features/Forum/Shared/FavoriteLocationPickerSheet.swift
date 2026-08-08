@@ -156,7 +156,7 @@ struct FavoriteLocationPickerSheet: View {
     private func locationRow(
         title: String,
         systemImage: String,
-        tint: Color = .accentColor,
+        tint: Color = AppColors.accent,
         location: FavoriteLocation
     ) -> some View {
         let isSelected = selection.contains(location)
@@ -177,7 +177,7 @@ struct FavoriteLocationPickerSheet: View {
                 }
                 Spacer()
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? AppColors.accent : Color.secondary)
             }
         }
     }

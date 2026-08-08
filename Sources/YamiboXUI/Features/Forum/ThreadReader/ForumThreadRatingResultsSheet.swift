@@ -38,6 +38,7 @@ final class ForumThreadRatingResultsSheetModel {
 }
 
 struct ForumThreadRatingResultsSheet: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadRatingResultsSheetModel
 
@@ -68,12 +69,12 @@ struct ForumThreadRatingResultsSheet: View {
                         HStack {
                             Text(L10n.string("forum.thread.rating_participants_format", page.ratings.count))
                                 .font(.caption)
-                                .foregroundStyle(ForumColors.secondaryText)
+                                .foregroundStyle(theme.secondaryText)
                             Spacer(minLength: 0)
                             if let totalScore = page.totalScore {
                                 Text(L10n.string("forum.thread.ratings_total_format", totalScore))
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(ForumColors.orangeAccent)
+                                    .foregroundStyle(theme.warning)
                             }
                         }
 
@@ -112,6 +113,7 @@ struct ForumThreadRatingResultsSheet: View {
 }
 
 private struct ForumThreadRatingResultRow: View {
+    @Environment(\.forumTheme) private var theme
     let rating: ForumThreadRating
     let onUserTap: (String, String?) -> Void
 
@@ -123,23 +125,23 @@ private struct ForumThreadRatingResultRow: View {
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
                 .frame(maxWidth: 120, alignment: .leading)
             } else {
                 Text(rating.user.name)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .frame(maxWidth: 120, alignment: .leading)
             }
 
             Text(rating.scoreText)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(ForumColors.orangeAccent)
+                .foregroundStyle(theme.warning)
                 .frame(width: 48, alignment: .leading)
 
             Text(rating.reason ?? "")
                 .font(.caption)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

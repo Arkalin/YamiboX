@@ -45,6 +45,9 @@ struct NovelReaderChapterSheet: View {
                 }
             }
         }
+        // The chapter sheet and its popover get their own hosting controllers
+        // on iOS 27, so inherit the reader accent explicitly at this boundary.
+        .tint(ReaderTheme.accent)
     }
 
     private var chapterContent: some View {
@@ -74,7 +77,7 @@ struct NovelReaderChapterSheet: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(chapter.title)
                                                 .font(.body.weight(isCurrent(chapter) ? .semibold : .regular))
-                                                .foregroundStyle(isCurrent(chapter) ? Color.accentColor : .primary)
+                                                .foregroundStyle(isCurrent(chapter) ? ReaderTheme.accent : .primary)
                                                 .lineLimit(1)
                                             Text(chapterLocationText(for: chapter))
                                                 .font(.caption)
@@ -85,7 +88,7 @@ struct NovelReaderChapterSheet: View {
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    .listRowBackground(isCurrent(chapter) ? Color.accentColor.opacity(0.12) : Color.clear)
+                                    .listRowBackground(isCurrent(chapter) ? ReaderTheme.accent.opacity(0.12) : Color.clear)
                                     .id(chapter.ordinal)
                                 }
 
@@ -217,6 +220,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
                     onSelectWebView(view)
                 }
                 .presentationCompactAdaptation(.popover)
+                .tint(ReaderTheme.accent)
             }
 
             Button {
@@ -257,7 +261,7 @@ private struct NovelReaderChapterWebPicker: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: view == navigation.visibleChapterDirectoryView ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? ForumColors.appAccent : Color.secondary)
+                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? ReaderTheme.accent : Color.secondary)
 
                                 Text(L10n.string(
                                     "reader.web_view_progress",
@@ -271,7 +275,7 @@ private struct NovelReaderChapterWebPicker: View {
                                 if view == model.visibleView {
                                     Text(L10n.string("common.current"))
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(ForumColors.appAccent)
+                                        .foregroundStyle(ReaderTheme.accent)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +283,7 @@ private struct NovelReaderChapterWebPicker: View {
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(view == navigation.visibleChapterDirectoryView ? ForumColors.appAccent.opacity(0.12) : Color.clear)
+                                    .fill(view == navigation.visibleChapterDirectoryView ? ReaderTheme.accent.opacity(0.12) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)

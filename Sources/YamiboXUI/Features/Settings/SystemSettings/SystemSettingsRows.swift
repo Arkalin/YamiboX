@@ -35,7 +35,7 @@ struct SystemSettingsHomePageSelector: View {
                         .padding(.vertical, 10)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(homePage == option ? Color.accentColor : Color.secondary.opacity(0.12))
+                                .fill(homePage == option ? AppColors.accent : Color.secondary.opacity(0.12))
                         )
                         .expandedHitTarget()
                     }

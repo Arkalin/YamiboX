@@ -439,7 +439,7 @@ private struct FavoriteBackgroundChangeImageButton: View {
     var body: some View {
         Button(action: action, label: label)
             .font(.subheadline.weight(.semibold))
-            .readerChromeButtonStyle(prominent: true, tint: .accentColor)
+            .readerChromeButtonStyle(prominent: true, tint: AppColors.accent)
             .disabled(isApplying)
     }
 

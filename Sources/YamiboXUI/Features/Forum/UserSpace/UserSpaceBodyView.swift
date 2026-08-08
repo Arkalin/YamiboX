@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile?
     let selectedSubPage: UserSpaceSubPage
     let availableSubPages: [UserSpaceSubPage]
@@ -72,11 +73,12 @@ struct UserSpaceBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoadingContent && content != nil)
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 }
 
 private struct UserSpaceProfileContentView: View {
+    @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile?
     let isSelf: Bool
     let isLoading: Bool
@@ -108,6 +110,7 @@ private struct UserSpaceProfileContentView: View {
 }
 
 private struct UserSpaceSubPageContentView: View {
+    @Environment(\.forumTheme) private var theme
     let selectedSubPage: UserSpaceSubPage
     let availableSubPages: [UserSpaceSubPage]
     let viewAllBlogFilter: UserSpaceViewAllBlogFilter

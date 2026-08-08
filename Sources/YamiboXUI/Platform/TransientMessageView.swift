@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TransientMessageView: View {
+    @Environment(\.forumTheme) private var theme
     let message: String
 
     var body: some View {
@@ -11,8 +12,8 @@ struct TransientMessageView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .frame(maxWidth: 420)
-            .background(ForumColors.brownDeep, in: Capsule())
-            .shadow(color: ForumColors.brownDeep.opacity(0.22), radius: 12, x: 0, y: 6)
+            .background(theme.accent, in: Capsule())
+            .shadow(color: theme.accent.opacity(0.22), radius: 12, x: 0, y: 6)
     }
 }
 

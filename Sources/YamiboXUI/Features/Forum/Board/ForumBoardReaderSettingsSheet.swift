@@ -45,7 +45,7 @@ struct ForumBoardReaderSettingsSheet: View {
                             } label: {
                                 Image(systemName: "questionmark.circle")
                                     .font(.headline.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(AppColors.accent)
                                     .expandedHitTarget()
                             }
                             .buttonStyle(.plain)

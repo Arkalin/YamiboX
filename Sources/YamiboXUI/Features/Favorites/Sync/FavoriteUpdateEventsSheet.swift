@@ -13,7 +13,7 @@ struct FavoriteUpdateEventRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: event.readAt == nil ? "bell.badge" : "bell")
-                    .foregroundStyle(event.readAt == nil ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(event.readAt == nil ? AppColors.accent : Color.secondary)
                     .frame(width: 24, height: 24)
 
                 VStack(alignment: .leading, spacing: 4) {

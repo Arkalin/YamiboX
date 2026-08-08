@@ -37,10 +37,9 @@ public struct RootTabView: View {
         // instead of hard-swapping frames.
         .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
         // The persistent UIKit WebView host can otherwise leave SwiftUI's
-        // inherited tint at the platform default. Keep the app-wide semantic
-        // accent explicit so `Color.accentColor` remains part of the forum
-        // palette on every root tab.
-        .tint(ForumColors.appAccent)
+        // inherited tint at the platform default. Keep the app-shell accent
+        // explicit; the forum applies its own theme inside its tab.
+        .tint(AppColors.accent)
         .task {
             await appModel.bootstrapIfNeeded()
         }
@@ -289,7 +288,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
-                    .tint(ForumColors.appAccent)
+                    .tint(ReaderTheme.accent)
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
             .fullScreenCover(item: binding(for: \.activeMangaContext)) { context in
@@ -299,7 +298,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
-                    .tint(ForumColors.appAccent)
+                    .tint(ReaderTheme.accent)
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
     }

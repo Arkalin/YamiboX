@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadContentBlocksView: View {
+    @Environment(\.forumTheme) private var theme
     let blocks: [ForumThreadContentBlock]
     let fallbackText: String
     let refererURL: URL
@@ -31,6 +32,7 @@ struct ForumThreadContentBlocksView: View {
 }
 
 private struct ForumThreadContentBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let block: ForumThreadContentBlock
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
@@ -64,7 +66,7 @@ private struct ForumThreadContentBlockView: View {
             ForumThreadCodeBlockView(text: text)
         case .horizontalRule:
             Divider()
-                .overlay(ForumColors.brownLight.opacity(0.35))
+                .overlay(theme.divider.opacity(0.35))
         case let .collapse(title, blocks):
             ForumThreadDisclosureBlockView(
                 title: title ?? L10n.string("forum.thread.collapse_title"),
@@ -93,6 +95,7 @@ private struct ForumThreadContentBlockView: View {
 }
 
 struct ForumThreadNestedBlockContainer<Content: View>: View {
+    @Environment(\.forumTheme) private var theme
     let accented: Bool
     @ViewBuilder var content: Content
 
@@ -100,7 +103,7 @@ struct ForumThreadNestedBlockContainer<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             if accented {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(ForumColors.brownPrimary)
+                    .fill(theme.mutedAccent)
                     .frame(width: 4)
             }
 
@@ -108,6 +111,6 @@ struct ForumThreadNestedBlockContainer<Content: View>: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 }

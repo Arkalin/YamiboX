@@ -37,6 +37,7 @@ final class ForumThreadCommentSheetModel {
 }
 
 struct ForumThreadCommentSheet: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadCommentSheetModel
 
@@ -50,11 +51,11 @@ struct ForumThreadCommentSheet: View {
                 TextEditor(text: $model.message)
                     .frame(minHeight: 160)
                     .padding(8)
-                    .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+                    .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topLeading) {
                         if model.message.isEmpty {
                             Text(L10n.string("forum.thread.comment_placeholder"))
-                                .foregroundStyle(ForumColors.secondaryText)
+                                .foregroundStyle(theme.secondaryText)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 16)
                                 .allowsHitTesting(false)

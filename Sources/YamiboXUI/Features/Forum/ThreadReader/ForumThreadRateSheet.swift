@@ -65,6 +65,7 @@ final class ForumThreadRateSheetModel {
 }
 
 struct ForumThreadRateSheet: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadRateSheetModel
 
@@ -112,7 +113,7 @@ struct ForumThreadRateSheet: View {
                     Section {
                         Text(hintMessage)
                             .font(.caption)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
                 }
 

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadDisclosureBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let blocks: [ForumThreadContentBlock]
     let refererURL: URL
@@ -23,9 +24,9 @@ struct ForumThreadDisclosureBlockView: View {
         } label: {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
         }
         .padding(12)
-        .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 }

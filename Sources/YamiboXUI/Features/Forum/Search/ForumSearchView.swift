@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumSearchView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: ForumSearchViewModel
 
     let onThreadTap: (ForumThreadSummary) -> Void
@@ -35,7 +36,7 @@ struct ForumSearchView: View {
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .navigationTitle(L10n.string("forum.search.title"))
     }
 
@@ -60,6 +61,7 @@ struct ForumSearchView: View {
 }
 
 private struct ForumSearchBodyView: View {
+    @Environment(\.forumTheme) private var theme
     @Binding var query: String
 
     let results: [ForumThreadSummary]
@@ -90,7 +92,7 @@ private struct ForumSearchBodyView: View {
                     if let resultCountText {
                         Text(resultCountText)
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
 
                     ForEach(results) { thread in
@@ -117,11 +119,12 @@ private struct ForumSearchBodyView: View {
             .padding(.vertical, 14)
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 }
 
 private struct ForumSearchInputView: View {
+    @Environment(\.forumTheme) private var theme
     @Binding var query: String
 
     let isLoading: Bool
@@ -149,7 +152,7 @@ private struct ForumSearchInputView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(ForumColors.brownDeep)
+            .tint(theme.accent)
             .disabled(isLoading || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel(L10n.string("common.search"))
         }
@@ -158,6 +161,7 @@ private struct ForumSearchInputView: View {
 
 
 private struct ForumSearchIdleView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         ContentUnavailableView(
             L10n.string("forum.search.idle_title"),

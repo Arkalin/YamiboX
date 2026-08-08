@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadReaderBodyView: View {
+    @Environment(\.forumTheme) private var theme
     @Namespace private var imageBrowserZoomNamespace
     @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
     @State private var ratingResultsRequest: ForumThreadRatingResultsRequest?
@@ -173,7 +174,7 @@ struct ForumThreadReaderBodyView: View {
             }
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .safeAreaInset(edge: .bottom) {
             if let page {
                 ForumThreadReaderActionBar(

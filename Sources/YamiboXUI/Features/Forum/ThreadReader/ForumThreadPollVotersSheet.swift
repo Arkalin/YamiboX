@@ -62,6 +62,7 @@ final class ForumThreadPollVotersSheetModel {
 }
 
 struct ForumThreadPollVotersSheet: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadPollVotersSheetModel
 
@@ -94,7 +95,7 @@ struct ForumThreadPollVotersSheet: View {
                         if votersPage.voters.isEmpty {
                             Text(L10n.string("forum.thread.poll_voters_empty"))
                                 .font(.body)
-                                .foregroundStyle(ForumColors.secondaryText)
+                                .foregroundStyle(theme.secondaryText)
                                 .frame(maxWidth: .infinity, minHeight: 120)
                         } else {
                             ScrollView {
@@ -151,16 +152,16 @@ struct ForumThreadPollVotersSheet: View {
                 HStack {
                     Text(model.selectedOptionName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                         .lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+                .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -172,6 +173,7 @@ struct ForumThreadPollVotersSheet: View {
 }
 
 private struct ForumThreadPollVoterButton: View {
+    @Environment(\.forumTheme) private var theme
     let user: BlogReaderUser
     let onUserTap: (String, String?) -> Void
 
@@ -188,17 +190,17 @@ private struct ForumThreadPollVoterButton: View {
                     .padding(.vertical, 11)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(ForumColors.brownPrimary)
-            .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(theme.mutedAccent)
+            .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
         } else {
             Text(user.name)
                 .font(.callout.weight(.semibold))
                 .lineLimit(1)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 11)
-                .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+                .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 }

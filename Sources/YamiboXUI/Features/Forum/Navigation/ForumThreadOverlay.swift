@@ -72,6 +72,7 @@ struct ForumThreadOverlayScreen: View {
             }
             .forumNavigationBarStyle()
         }
+        .forumTheme(.classic)
     }
 }
 

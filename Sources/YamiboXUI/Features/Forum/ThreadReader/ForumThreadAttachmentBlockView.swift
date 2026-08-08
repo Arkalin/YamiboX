@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadFooterAttachmentsView: View {
+    @Environment(\.forumTheme) private var theme
     let attachments: [ForumThreadAttachmentBlock]
     let onURLTap: (URL) -> Void
 
@@ -9,7 +10,7 @@ struct ForumThreadFooterAttachmentsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L10n.string("forum.thread.attachments"), systemImage: "paperclip")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
             ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
                 ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap)
@@ -19,6 +20,7 @@ struct ForumThreadFooterAttachmentsView: View {
 }
 
 struct ForumThreadAttachmentBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let block: ForumThreadAttachmentBlock
     let onURLTap: (URL) -> Void
 
@@ -32,27 +34,27 @@ struct ForumThreadAttachmentBlockView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(block.fileName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                         .lineLimit(2)
                     if let uploadInfo = block.uploadInfo {
                         Text(uploadInfo)
                             .font(.caption)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
                     if let statInfo = block.statInfo {
                         Text(statInfo)
                             .font(.caption)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(12)
-            .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+            .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(ForumColors.brownLight.opacity(0.25), lineWidth: 1)
+                    .stroke(theme.divider.opacity(0.25), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -60,6 +62,7 @@ struct ForumThreadAttachmentBlockView: View {
 }
 
 private struct ForumThreadAttachmentIconView: View {
+    @Environment(\.forumTheme) private var theme
     let iconURL: URL?
 
     var body: some View {
@@ -67,13 +70,13 @@ private struct ForumThreadAttachmentIconView: View {
             image.resizable().scaledToFit()
         } placeholder: {
             Image(systemName: "paperclip")
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
         } failure: {
             Image(systemName: "paperclip")
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
         }
         .frame(width: 34, height: 34)
         .padding(6)
-        .background(ForumColors.creamSurface, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }

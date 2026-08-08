@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: UserSpaceViewModel
 
     let onThreadTap: (URL, String?) -> Void
@@ -62,7 +63,7 @@ struct UserSpaceView: View {
             onWebTap: onWebTap
         )
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .navigationTitle(model.navigationTitle)
         .toolbar {
             if model.canOpenBlogEditor {

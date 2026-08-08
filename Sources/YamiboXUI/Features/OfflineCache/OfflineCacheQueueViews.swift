@@ -172,7 +172,7 @@ private struct OfflineCacheQueueControls: View {
         } label: {
             Label(controlTitle, systemImage: controlImage)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AppColors.accent)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .background(
@@ -232,7 +232,7 @@ private struct OfflineCacheQueueOwnerRow: View {
                 }
 
                 ProgressView(value: group.progressFraction)
-                    .tint(dimming.isDimmed ? Color.secondary : Color.accentColor)
+                    .tint(dimming.isDimmed ? Color.secondary : AppColors.accent)
 
                 HStack(spacing: 8) {
                     Text(group.progressText)
@@ -422,7 +422,7 @@ private struct OfflineCacheQueueChapterRowView: View {
             }
 
             ProgressView(value: chapter.progressFraction)
-                .tint(dimming.isDimmed ? Color.secondary : Color.accentColor)
+                .tint(dimming.isDimmed ? Color.secondary : AppColors.accent)
 
             HStack(spacing: 8) {
                 Text(chapter.progressText)

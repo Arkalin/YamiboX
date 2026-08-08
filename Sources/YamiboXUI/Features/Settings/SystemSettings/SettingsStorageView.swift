@@ -27,7 +27,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.webdav_sync"),
-                        titleColor: .accentColor
+                        titleColor: AppColors.accent
                     )
                 }
                 .disabled(viewModel.isBusy)

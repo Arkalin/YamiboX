@@ -21,13 +21,12 @@ private let readableContrast = 4.5
     // drawn in it, so splitting the icon and text roles apart is its own
     // change rather than something to fold in here.
     let roles: [(name: String, color: Color)] = [
-        ("textDark", ForumColors.textDark),
-        ("secondaryText", ForumColors.secondaryText),
-        ("tertiaryText", ForumColors.tertiaryText),
-        ("brownPrimary", ForumColors.brownPrimary),
-        ("brownEmphasis", ForumColors.brownEmphasis),
-        ("htmlTextDark", ForumColors.htmlTextDark),
-        ("redAccent", ForumColors.redAccent)
+        ("primaryText", ForumTheme.classic.primaryText),
+        ("secondaryText", ForumTheme.classic.secondaryText),
+        ("tertiaryText", ForumTheme.classic.tertiaryText),
+        ("mutedAccent", ForumTheme.classic.mutedAccent),
+        ("accentText", ForumTheme.classic.accentText),
+        ("danger", ForumTheme.classic.danger)
     ]
 
     for (name, color) in roles {
@@ -42,11 +41,11 @@ private let readableContrast = 4.5
     // Each weight must read as less prominent than the one above it, or the
     // contrast floor has flattened the palette into a single tone.
     for (style, surface) in forumSurfaces {
-        let body = ResolvedColor(ForumColors.textDark, style).contrast(with: surface)
-        let secondary = ResolvedColor(ForumColors.secondaryText, style).contrast(with: surface)
-        let tertiary = ResolvedColor(ForumColors.tertiaryText, style).contrast(with: surface)
+        let body = ResolvedColor(ForumTheme.classic.primaryText, style).contrast(with: surface)
+        let secondary = ResolvedColor(ForumTheme.classic.secondaryText, style).contrast(with: surface)
+        let tertiary = ResolvedColor(ForumTheme.classic.tertiaryText, style).contrast(with: surface)
 
-        #expect(body > secondary, "textDark is not stronger than secondaryText in \(style) mode")
+        #expect(body > secondary, "primaryText is not stronger than secondaryText in \(style) mode")
         #expect(secondary > tertiary, "secondaryText is not stronger than tertiaryText in \(style) mode")
     }
 }

@@ -115,7 +115,7 @@ struct FavoriteRemoteSyncStatusCard: View {
     private var statusColor: Color {
         switch snapshot.status {
         case .running:
-            .accentColor
+            AppColors.accent
         case .completed:
             .green
         case .failed:
