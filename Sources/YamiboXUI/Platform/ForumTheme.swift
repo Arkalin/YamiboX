@@ -28,6 +28,10 @@ public struct ForumTheme: @unchecked Sendable {
     public let pinnedSurface: Color
     public let announcementSurface: Color
     public let navigationSurface: Color
+    /// Fixed colors, not adaptive: `toolbarColorScheme(.dark)` makes the
+    /// toolbar resolve adaptive colors against dark traits even in light mode.
+    public let navigationBarBackgroundLight: Color
+    public let navigationBarBackgroundDark: Color
 
     public init(
         id: String,
@@ -48,7 +52,9 @@ public struct ForumTheme: @unchecked Sendable {
         danger: Color,
         pinnedSurface: Color,
         announcementSurface: Color,
-        navigationSurface: Color
+        navigationSurface: Color,
+        navigationBarBackgroundLight: Color,
+        navigationBarBackgroundDark: Color
     ) {
         self.id = id
         self.accent = accent
@@ -69,6 +75,8 @@ public struct ForumTheme: @unchecked Sendable {
         self.pinnedSurface = pinnedSurface
         self.announcementSurface = announcementSurface
         self.navigationSurface = navigationSurface
+        self.navigationBarBackgroundLight = navigationBarBackgroundLight
+        self.navigationBarBackgroundDark = navigationBarBackgroundDark
     }
 
     public static let classic = ForumTheme(
@@ -90,7 +98,9 @@ public struct ForumTheme: @unchecked Sendable {
         danger: Color(light: 0xA61B29, dark: 0xFF7A70),
         pinnedSurface: Color(light: 0xFFF0C8, dark: 0x302416),
         announcementSurface: Color(light: 0xFFE8B0, dark: 0x382711),
-        navigationSurface: Color(light: 0xFFE6B7, dark: 0x21150F)
+        navigationSurface: Color(light: 0xFFE6B7, dark: 0x21150F),
+        navigationBarBackgroundLight: Color(hex: 0x4E2A1B),
+        navigationBarBackgroundDark: Color(hex: 0x24120C)
     )
 }
 
@@ -164,12 +174,19 @@ private struct ForumNavigationBarStyleModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .toolbarBackground(navigationBarBackground, for: .navigationBar)
+            .toolbarBackground(theme.navigationBarBackground(for: colorScheme), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
     }
+}
 
-    private var navigationBarBackground: Color {
-        colorScheme == .dark ? theme.accent : theme.navigationSurface
+extension ForumTheme {
+    public func navigationBarBackground(for colorScheme: ColorScheme) -> Color {
+        switch colorScheme {
+        case .dark:
+            navigationBarBackgroundDark
+        default:
+            navigationBarBackgroundLight
+        }
     }
 }
