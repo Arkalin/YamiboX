@@ -4,6 +4,7 @@ import YamiboXCore
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case forum
     case favorites
     case reading
     case peripherals
@@ -15,6 +16,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             L10n.string("settings.section.general")
+        case .forum:
+            L10n.string("settings.section.forum")
         case .favorites:
             L10n.string("settings.section.favorites")
         case .reading:
@@ -29,6 +32,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImageName: String {
         switch self {
         case .general: "gearshape"
+        case .forum: "text.bubble"
         case .favorites: "star"
         case .reading: "book"
         case .peripherals: "gamecontroller"
@@ -91,10 +95,16 @@ enum SettingsSearchRegistry {
             keywords: ["主页", "首页", "论坛", "收藏"]
         ),
         SettingsSearchEntry(
-            id: "general.auto_sign_in",
+            id: "forum.auto_sign_in",
             title: L10n.string("settings.auto_sign_in"),
-            category: .general,
+            category: .forum,
             keywords: ["签到", "自动化", "快捷指令"]
+        ),
+        SettingsSearchEntry(
+            id: "forum.board_reader",
+            title: L10n.string("settings.section.board_reader"),
+            category: .forum,
+            keywords: ["板块", "阅读方式", "漫画", "小说", "智能漫画"]
         ),
         SettingsSearchEntry(
             id: "favorites.layout",
@@ -131,12 +141,6 @@ enum SettingsSearchRegistry {
             title: L10n.string("favorites.updates.notifications"),
             category: .favorites,
             keywords: ["通知", "提醒", "推送"]
-        ),
-        SettingsSearchEntry(
-            id: "reading.board_reader",
-            title: L10n.string("settings.section.board_reader"),
-            category: .reading,
-            keywords: ["板块", "阅读方式", "漫画", "小说", "智能漫画"]
         ),
         SettingsSearchEntry(
             id: "reading.novel_offline_cache",

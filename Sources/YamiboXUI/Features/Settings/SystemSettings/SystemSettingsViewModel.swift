@@ -15,6 +15,7 @@ final class SystemSettingsViewModel {
     let dependencies: SettingsDependencies
 
     let general: SettingsGeneralViewModel
+    let forum: SettingsForumViewModel
     let favorites: SettingsFavoritesViewModel
     let reading: SettingsReadingViewModel
     let peripherals: SettingsPeripheralsViewModel
@@ -31,6 +32,7 @@ final class SystemSettingsViewModel {
         let activity = SystemSettingsActivity()
         let storageUsage = SettingsStorageUsage(dependencies: dependencies)
         let general = SettingsGeneralViewModel(dependencies: dependencies, activity: activity)
+        let forum = SettingsForumViewModel(dependencies: dependencies, activity: activity)
         let favorites = SettingsFavoritesViewModel(dependencies: dependencies, activity: activity)
         let reading = SettingsReadingViewModel(dependencies: dependencies, activity: activity)
         let peripherals = SettingsPeripheralsViewModel(dependencies: dependencies, activity: activity)
@@ -57,6 +59,7 @@ final class SystemSettingsViewModel {
         // through this root.
         storage.onApplicationDataReset = {
             general.restoreDefaultsAfterApplicationReset()
+            forum.restoreDefaultsAfterApplicationReset()
             favorites.restoreDefaultsAfterApplicationReset()
             reading.restoreDefaultsAfterApplicationReset()
             peripherals.restoreDefaultsAfterApplicationReset()
@@ -68,6 +71,7 @@ final class SystemSettingsViewModel {
         self.activity = activity
         self.storageUsage = storageUsage
         self.general = general
+        self.forum = forum
         self.favorites = favorites
         self.reading = reading
         self.peripherals = peripherals
@@ -99,6 +103,7 @@ final class SystemSettingsViewModel {
 
         let settings = await dependencies.settingsStore.load()
         general.applyLoadedSettings(settings)
+        forum.applyLoadedSettings(settings)
         favorites.applyLoadedSettings(settings)
         reading.applyLoadedSettings(settings)
         peripherals.applyLoadedSettings(settings)

@@ -1007,6 +1007,7 @@
 "settings.section.favorite_sync_behavior" = "收藏同步偏好";
 "settings.section.favorite_smart_manga_management" = "智能漫画收藏管理";
 "settings.section.general" = "通用";
+"settings.section.forum" = "论坛";
 "settings.section.novel_offline_cache" = "小说离线缓存";
 "settings.section.board_reader" = "板块阅读方式";
 "settings.section.storage" = "存储管理";

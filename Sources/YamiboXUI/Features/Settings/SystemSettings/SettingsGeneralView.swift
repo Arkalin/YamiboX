@@ -2,7 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 struct SettingsGeneralView: View {
-    @Environment(\.openURL) private var openURL
     // Plain stored reference: @Observable registers exactly the properties
     // `body` reads, so no property wrapper is needed for observation.
     let viewModel: SettingsGeneralViewModel
@@ -15,18 +14,6 @@ struct SettingsGeneralView: View {
                     isBusy: viewModel.isBusy,
                     onSelect: viewModel.updateHomePage
                 )
-            }
-
-            Section {
-                Button {
-                    openCheckInAutomationCreator()
-                } label: {
-                    SystemSettingsRow(
-                        title: L10n.string("settings.auto_sign_in"),
-                        titleColor: .accentColor
-                    )
-                }
-                .disabled(viewModel.isBusy)
             }
         }
         .navigationTitle(L10n.string("settings.section.general"))
@@ -45,17 +32,5 @@ struct SettingsGeneralView: View {
             isPresented: { viewModel.errorMessage != nil },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
-    }
-
-    private func openCheckInAutomationCreator() {
-        guard let url = URL(string: "shortcuts://create-automation") else {
-            viewModel.errorMessage = L10n.string("settings.shortcuts_open_failed")
-            return
-        }
-
-        openURL(url) { accepted in
-            guard !accepted else { return }
-            viewModel.errorMessage = L10n.string("settings.shortcuts_open_failed")
-        }
     }
 }

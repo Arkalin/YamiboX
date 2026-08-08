@@ -218,7 +218,7 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertTrue(didReset)
         XCTAssertEqual(settings.reading.novelOfflineCache, NovelOfflineCacheSettings())
         XCTAssertEqual(settings.peripherals.applePencilPageTurn, ApplePencilPageTurnSettings())
-        XCTAssertEqual(settings.reading.boardReader, BoardReaderSettings())
+        XCTAssertEqual(settings.forum.boardReader, BoardReaderSettings())
         let loaded = await fixture.settingsStore.load()
         XCTAssertEqual(loaded.novelOfflineCache, NovelOfflineCacheSettings())
         XCTAssertEqual(loaded.system.applePencilPageTurn, ApplePencilPageTurnSettings())
