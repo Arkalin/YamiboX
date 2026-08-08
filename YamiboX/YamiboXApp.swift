@@ -19,7 +19,6 @@ struct YamiboXApp: App {
     @State private var showsLaunchAnimation = true
 
     init() {
-        let initialTab = YamiboXApp.resolveInitialTab()
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let appContext = YamiboAppContext(
@@ -37,7 +36,6 @@ struct YamiboXApp: App {
         #endif
         let appModel = YamiboAppModel(
             appContext: appContext,
-            initialTab: initialTab,
             webSessionCoordinator: webSessionCoordinator
         )
         #if os(iOS)
@@ -63,11 +61,6 @@ struct YamiboXApp: App {
                 }
             }
         }
-    }
-
-    private static func resolveInitialTab() -> AppTab {
-        let settings = SettingsStore.loadSync()
-        return AppTabLaunchResolver.resolveInitialTab(homePage: settings.system.homePage)
     }
 
     private static func registerMangaOfflineCacheBackgroundTasks(appContext: YamiboAppContext) {

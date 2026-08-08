@@ -1,7 +1,7 @@
 import SwiftUI
 import YamiboXCore
 
-/// Root settings screen: search plus entries into the six settings
+/// Root settings screen: search plus entries into the five settings
 /// categories. Pushed onto the Mine tab's navigation stack (not a sheet),
 /// so it owns no `NavigationStack` of its own.
 public struct SettingsHomeView: View {
@@ -159,8 +159,6 @@ public struct SettingsHomeView: View {
     @ViewBuilder
     private func categoryView(for category: SettingsCategory) -> some View {
         switch category {
-        case .general:
-            SettingsGeneralView(viewModel: viewModel.general)
         case .forum:
             SettingsForumView(viewModel: viewModel.forum)
         case .favorites:
