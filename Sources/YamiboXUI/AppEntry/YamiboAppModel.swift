@@ -54,7 +54,7 @@ public final class YamiboAppModel {
 
     public init(
         appContext: YamiboAppContext,
-        initialTab: AppTab = .forum,
+        initialTab: AppTab = .home,
         webSessionCoordinator: ForumWebSessionCoordinator? = nil
     ) {
         self.appContext = appContext
