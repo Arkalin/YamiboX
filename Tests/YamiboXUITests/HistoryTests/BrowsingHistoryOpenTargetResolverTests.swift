@@ -127,6 +127,33 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
         XCTAssertEqual(context.threadID, "6006")
     }
 
+    func testHomeOriginUsesCachedMangaChapterWhenNoProgressExists() async throws {
+        let fixture = try makeFixture(prefix: "history-open-home-cache")
+        var boardReader = BoardReaderSettings(entries: [:])
+        boardReader.setEntry(.init(mode: .manga(smartEnabled: false)), forumID: "46")
+        try await fixture.settingsStore.save(AppSettings(boardReader: boardReader))
+
+        let entry = BrowsingHistoryEntry(
+            target: .mangaThread(threadID: "6010"),
+            title: "离线漫画",
+            forumID: "46",
+            chapterTitle: "第七话",
+            chapterThreadID: "6010"
+        )
+        let opened = await fixture.resolver.openTarget(
+            for: entry,
+            origin: .home,
+            fallbackMangaView: 4
+        )
+
+        guard case let .mangaReader(context)? = opened else {
+            return XCTFail("Expected a manga reader open target")
+        }
+        XCTAssertEqual(context.source, .home)
+        XCTAssertEqual(context.chapterTID, "6010")
+        XCTAssertEqual(context.chapterView, 4)
+    }
+
     // The heart stamps the row's effective category (R13): the mapping from
     // effective category to favorite target kind is what keeps "what the row
     // shows/opens as" and "what gets favorited" in lockstep.

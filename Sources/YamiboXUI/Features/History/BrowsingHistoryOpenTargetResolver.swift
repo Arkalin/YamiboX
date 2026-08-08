@@ -7,6 +7,29 @@ enum BrowsingHistoryOpenTarget: Sendable {
     case nativeThread(url: URL, title: String)
 }
 
+enum ReadingOpenOrigin: Sendable {
+    case history
+    case home
+
+    var novelLaunchSource: NovelLaunchSource {
+        switch self {
+        case .history:
+            return .history
+        case .home:
+            return .home
+        }
+    }
+
+    var mangaLaunchSource: MangaLaunchSource {
+        switch self {
+        case .history:
+            return .history
+        case .home:
+            return .home
+        }
+    }
+}
+
 /// Resolves a browsing-history row into a concrete open target, mirroring
 /// `LocalFavoriteOpenTargetResolver`'s resume semantics per content form.
 ///
@@ -27,12 +50,17 @@ enum BrowsingHistoryOpenTarget: Sendable {
 ///   logic; every other stored identity goes through the single-thread
 ///   logic, which itself upgrades to the directory level when the board is
 ///   currently smart-on (decision #13).
-struct BrowsingHistoryOpenTargetResolver {
+struct ReadingOpenTargetResolver {
     let readingProgressStore: ReadingProgressStore
     let mangaDirectoryStore: any MangaDirectoryPersisting
     let settingsStore: SettingsStore
 
-    func openTarget(for entry: BrowsingHistoryEntry) async -> BrowsingHistoryOpenTarget? {
+    func openTarget(
+        for entry: BrowsingHistoryEntry,
+        origin: ReadingOpenOrigin = .history,
+        fallbackNovelView: Int? = nil,
+        fallbackMangaView: Int = 1
+    ) async -> BrowsingHistoryOpenTarget? {
         // One settings snapshot backs both the category dispatch and the
         // manga smart bit, so a concurrent configuration change can't make
         // them disagree within a single resolve.
@@ -52,8 +80,8 @@ struct BrowsingHistoryOpenTargetResolver {
                 NovelLaunchContext(
                     threadID: threadID,
                     threadTitle: entry.title,
-                    source: .history,
-                    initialView: resumePoint?.view ?? novel?.lastView,
+                    source: origin.novelLaunchSource,
+                    initialView: resumePoint?.view ?? novel?.lastView ?? fallbackNovelView,
                     authorID: resumePoint?.authorID ?? novel?.authorID ?? entry.authorID,
                     initialResumePoint: resumePoint
                 )
@@ -65,14 +93,18 @@ struct BrowsingHistoryOpenTargetResolver {
                 return await mangaTitleTarget(
                     cleanBookName: cleanBookName,
                     entry: entry,
-                    smartModeEnabled: smartModeEnabled
+                    smartModeEnabled: smartModeEnabled,
+                    source: origin.mangaLaunchSource,
+                    fallbackMangaView: fallbackMangaView
                 )
             }
             guard let threadID = entry.target.threadID else { return nil }
             return await mangaThreadTarget(
                 threadID: threadID,
                 entry: entry,
-                smartModeEnabled: smartModeEnabled
+                smartModeEnabled: smartModeEnabled,
+                source: origin.mangaLaunchSource,
+                fallbackMangaView: fallbackMangaView
             )
         }
     }
@@ -86,7 +118,9 @@ struct BrowsingHistoryOpenTargetResolver {
     private func mangaThreadTarget(
         threadID: String,
         entry: BrowsingHistoryEntry,
-        smartModeEnabled: Bool
+        smartModeEnabled: Bool,
+        source: MangaLaunchSource,
+        fallbackMangaView: Int
     ) async -> BrowsingHistoryOpenTarget {
         let ownThreadProgress = await readingProgressStore.load(for: .mangaThread(threadID: threadID))?.manga
         guard smartModeEnabled else {
@@ -95,8 +129,8 @@ struct BrowsingHistoryOpenTargetResolver {
                     originalThreadID: threadID,
                     chapterTID: ownThreadProgress?.chapterThreadID ?? threadID,
                     displayTitle: entry.title,
-                    source: .history,
-                    chapterView: ownThreadProgress?.chapterView ?? 1,
+                    source: source,
+                    chapterView: ownThreadProgress?.chapterView ?? fallbackMangaView,
                     initialPage: ownThreadProgress?.mangaPageIndex ?? 0,
                     directoryName: nil,
                     isSmartModeEnabled: false,
@@ -111,8 +145,8 @@ struct BrowsingHistoryOpenTargetResolver {
                     originalThreadID: threadID,
                     chapterTID: ownThreadProgress?.chapterThreadID ?? threadID,
                     displayTitle: entry.title,
-                    source: .history,
-                    chapterView: ownThreadProgress?.chapterView ?? 1,
+                    source: source,
+                    chapterView: ownThreadProgress?.chapterView ?? fallbackMangaView,
                     initialPage: ownThreadProgress?.mangaPageIndex ?? 0,
                     directoryName: nil,
                     isSmartModeEnabled: true,
@@ -130,7 +164,7 @@ struct BrowsingHistoryOpenTargetResolver {
                 originalThreadID: threadID,
                 chapterTID: directoryProgress?.chapterThreadID ?? firstChapter.tid,
                 displayTitle: directory.cleanBookName,
-                source: .history,
+                source: source,
                 chapterView: directoryProgress?.chapterView ?? firstChapter.view,
                 initialPage: directoryProgress?.mangaPageIndex ?? 0,
                 directoryName: directory.cleanBookName,
@@ -144,7 +178,9 @@ struct BrowsingHistoryOpenTargetResolver {
     private func mangaTitleTarget(
         cleanBookName: String,
         entry: BrowsingHistoryEntry,
-        smartModeEnabled: Bool
+        smartModeEnabled: Bool,
+        source: MangaLaunchSource,
+        fallbackMangaView: Int
     ) async -> BrowsingHistoryOpenTarget? {
         let directoryProgress = await readingProgressStore.load(for: entry.target)?.manga
         guard let chapterTID = directoryProgress?.chapterThreadID ?? entry.chapterThreadID else {
@@ -161,8 +197,8 @@ struct BrowsingHistoryOpenTargetResolver {
                     originalThreadID: chapterTID,
                     chapterTID: chapterTID,
                     displayTitle: entry.title,
-                    source: .history,
-                    chapterView: ownThreadProgress?.chapterView ?? directoryProgress?.chapterView ?? 1,
+                    source: source,
+                    chapterView: ownThreadProgress?.chapterView ?? directoryProgress?.chapterView ?? fallbackMangaView,
                     initialPage: ownThreadProgress?.mangaPageIndex ?? 0,
                     directoryName: nil,
                     isSmartModeEnabled: false,
@@ -186,7 +222,7 @@ struct BrowsingHistoryOpenTargetResolver {
                 originalThreadID: chapterTID,
                 chapterTID: chapterTID,
                 displayTitle: cleanBookName,
-                source: .history,
+                source: source,
                 chapterView: directoryProgress?.chapterView ?? fallbackChapterView,
                 initialPage: directoryProgress?.mangaPageIndex ?? 0,
                 directoryName: cleanBookName,
@@ -196,3 +232,5 @@ struct BrowsingHistoryOpenTargetResolver {
         )
     }
 }
+
+typealias BrowsingHistoryOpenTargetResolver = ReadingOpenTargetResolver

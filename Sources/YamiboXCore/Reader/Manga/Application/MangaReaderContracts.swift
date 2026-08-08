@@ -6,6 +6,7 @@ public enum MangaLaunchSource: String, Codable, Hashable, Sendable {
     case resume
     case like
     case history
+    case home
 }
 
 public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
@@ -135,4 +136,3 @@ extension MangaLaunchContext: Codable {
         )
     }
 }
-
