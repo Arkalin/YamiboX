@@ -131,6 +131,7 @@ struct ForumThreadReaderBodyView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
+            .id(currentPage)
             .refreshable {
                 await refresh()
             }
