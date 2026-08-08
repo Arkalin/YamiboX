@@ -360,6 +360,10 @@ public final class NovelReaderViewModel {
         readingWorkflow?.displayReference(for: surfaceIdentity)
     }
 
+    func currentPageSearchSnapshot() -> NovelReaderSearchSnapshot? {
+        readingWorkflow?.runtime.currentSearchSnapshot()
+    }
+
     func updateNovelTextViewportVisibleSurfaceIdentities(_ surfaceIdentities: [NovelReaderSurfaceIdentity]) {
         readingWorkflow?.updateVisibleSurfaceIdentities(surfaceIdentities)
     }
@@ -1056,6 +1060,16 @@ public final class NovelReaderViewModel {
     // directory, relative-chapter jump, cross-view jump), so it is recorded
     // the same way, making it eligible for the chrome's back/forward history.
     func jumpToLikeAnchor(_ resumePoint: NovelResumePoint) async -> Bool {
+        let navigationSequence = navigation.beginNavigationRequest()
+        let sourceResumePoint = currentStableResumePoint
+        let didRestore = await restoreResumePoint(resumePoint)
+        if didRestore, navigation.isCurrentNavigationRequest(navigationSequence) {
+            navigation.recordSuccessfulNonlinearNavigation(from: sourceResumePoint, to: currentStableResumePoint)
+        }
+        return didRestore
+    }
+
+    func jumpToSearchResult(_ resumePoint: NovelResumePoint) async -> Bool {
         let navigationSequence = navigation.beginNavigationRequest()
         let sourceResumePoint = currentStableResumePoint
         let didRestore = await restoreResumePoint(resumePoint)

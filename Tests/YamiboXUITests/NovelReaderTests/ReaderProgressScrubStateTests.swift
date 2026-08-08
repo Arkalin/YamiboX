@@ -190,7 +190,7 @@ final class ReaderProgressScrubStateTests: XCTestCase {
         let resting = ReaderBottomActionRowPresentation(isScrubbing: false)
         let scrubbing = ReaderBottomActionRowPresentation(isScrubbing: true)
 
-        XCTAssertEqual(resting.actions.map(\.kind), [.browser, .bookmark, .cache])
+        XCTAssertEqual(resting.actions.map(\.kind), [.browser, .search, .bookmark, .cache])
         XCTAssertTrue(resting.actions.first(where: { $0.kind == .bookmark })?.isDisabled == true)
         XCTAssertEqual(resting.opacity, 1)
         XCTAssertTrue(resting.allowsHitTesting)

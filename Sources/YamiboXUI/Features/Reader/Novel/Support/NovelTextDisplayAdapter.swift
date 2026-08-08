@@ -8,15 +8,18 @@ struct NativeNovelTextViewportReferenceView: UIViewRepresentable {
     let displayReference: NovelTextViewportDisplayReference
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
 
     init(
         displayReference: NovelTextViewportDisplayReference,
         selectionController: NovelTextSelectionController? = nil,
-        likeHighlightController: NovelLikeHighlightController? = nil
+        likeHighlightController: NovelLikeHighlightController? = nil,
+        searchHighlightController: NovelReaderSearchHighlightController? = nil
     ) {
         self.displayReference = displayReference
         self.selectionController = selectionController
         self.likeHighlightController = likeHighlightController
+        self.searchHighlightController = searchHighlightController
     }
 
     func makeUIView(context: Context) -> NovelTextViewportReferenceUIView {
@@ -27,6 +30,7 @@ struct NativeNovelTextViewportReferenceView: UIViewRepresentable {
         uiView.displayReference = displayReference
         uiView.selectionController = selectionController
         uiView.likeHighlightController = likeHighlightController
+        uiView.searchHighlightController = searchHighlightController
     }
 }
 
@@ -66,6 +70,15 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             guard oldValue !== likeHighlightController else { return }
             oldValue?.unregister(self)
             likeHighlightController?.register(self)
+            setNeedsDisplay()
+        }
+    }
+
+    weak var searchHighlightController: NovelReaderSearchHighlightController? {
+        didSet {
+            guard oldValue !== searchHighlightController else { return }
+            oldValue?.unregister(self)
+            searchHighlightController?.register(self)
             setNeedsDisplay()
         }
     }
@@ -148,6 +161,10 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         }
         displayReference.drawBlockBackgrounds(in: context, bounds: self.bounds)
         drawLikeHighlights(
+            displayReference: displayReference,
+            in: context
+        )
+        drawSearchHighlight(
             displayReference: displayReference,
             in: context
         )
@@ -513,6 +530,23 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             for rect in entry.rects {
                 context.fill(LikeStyleAppearance.paintedRect(for: style, in: rect))
             }
+        }
+        context.restoreGState()
+    }
+
+    private func drawSearchHighlight(
+        displayReference: NovelTextViewportDisplayReference,
+        in context: CGContext
+    ) {
+        guard let highlight = searchHighlightController?.resolvedHighlight(for: displayReference) else {
+            return
+        }
+        context.saveGState()
+        context.setFillColor(
+            UIColor.systemYellow.withAlphaComponent(0.32 * highlight.opacity).cgColor
+        )
+        for rect in highlight.rects {
+            context.fill(rect.insetBy(dx: -1, dy: 0))
         }
         context.restoreGState()
     }

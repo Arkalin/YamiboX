@@ -144,6 +144,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let isChromeVisible: Bool
     let canBoundaryPageTurn: (Int) -> Bool
@@ -516,6 +517,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                     displayReferenceProvider: parent.displayReferenceProvider,
                     selectionController: parent.selectionController,
                     likeHighlightController: parent.likeHighlightController,
+                    searchHighlightController: parent.searchHighlightController,
                     likedImageAnchors: parent.likedImageAnchors,
                     onImageTap: parent.onImageTap
                 ),
@@ -739,6 +741,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let onImageTap: (URL, String?) -> Void
 
@@ -751,6 +754,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
                     displayReference: surface.flatMap { displayReferenceProvider($0.identity) },
                     selectionController: selectionController,
                     likeHighlightController: likeHighlightController,
+                    searchHighlightController: searchHighlightController,
                     likedImageAnchors: likedImageAnchors,
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: surfaceIndex,

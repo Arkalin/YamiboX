@@ -28,6 +28,7 @@ public struct NovelReaderView: View {
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var imageBrowserItem: ImageBrowserItem?
     @State private var chapterCommentsTarget: ReaderChapterCommentTarget?
+    @State private var searchPresentation: NovelReaderSearchPresentation?
     @State private var chromeState = NovelReaderChromeState()
     @State private var isVerticalProgressScrubbing = false
     @State private var verticalTapSuppressionUntil: CFTimeInterval = 0
@@ -42,6 +43,7 @@ public struct NovelReaderView: View {
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
     @State private var novelTextSelectionController = NovelTextSelectionController()
     @State private var likeHighlightController = NovelLikeHighlightController()
+    @State private var searchHighlightController = NovelReaderSearchHighlightController()
     @State private var likedNovelImageAnchors: Set<NovelImageLikeAnchor> = []
     @State private var likeFeedbackGenerator = UINotificationFeedbackGenerator()
     /// Drives the 书签与喜欢 capsule (visibility + count) and the bookmark
@@ -187,6 +189,7 @@ public struct NovelReaderView: View {
                         onShowCache: openCachePanel,
                         onShowComments: openChapterComments,
                         onOpenForum: openInForum,
+                        onShowSearch: openSearch,
                         onToggleBookmark: toggleBookmarkAtCurrentPosition,
                         onShowAnnotations: openAnnotations,
                         isBookmarked: isCurrentPositionBookmarked,
@@ -236,10 +239,22 @@ public struct NovelReaderView: View {
             }
             .modifier(readerLifecycleModifier(currentLayout: currentLayout))
             .modifier(novelReaderPresentationModifier())
+            .sheet(item: $searchPresentation) { presentation in
+                NovelReaderSearchView(
+                    snapshot: presentation.snapshot,
+                    backgroundColor: backgroundColor,
+                    onSelect: handleSearchResult,
+                    onDismiss: closeSearch
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(backgroundColor)
+            }
             .modifier(readerStateObserverModifier())
             .modifier(readerChromeHeightObserverModifier())
             .onChange(of: model.novelReaderPresentation?.generation) { _, _ in
                 novelTextSelectionController.clearSelection()
+                searchHighlightController.clear()
             }
             .onChange(of: model.settings.readingMode) { _, _ in
                 novelTextSelectionController.clearSelection()
@@ -326,6 +341,7 @@ public struct NovelReaderView: View {
                 appModel.peripheralInput.removeHandler(controlHandlerToken)
                 controlHandlerToken = nil
                 verticalRestore.cancelPendingRestoreWork()
+                searchHighlightController.clear()
                 syncVerticalViewportBeforeSave()
                 Task {
                     await model.saveProgress()
@@ -437,6 +453,7 @@ public struct NovelReaderView: View {
             },
             selectionController: novelTextSelectionController,
             likeHighlightController: likeHighlightController,
+            searchHighlightController: searchHighlightController,
             likedImageAnchors: likedNovelImageAnchors,
             isChromeVisible: chromeState.showsChrome,
             canBoundaryPageTurn: { delta in
@@ -491,6 +508,7 @@ public struct NovelReaderView: View {
                     displayReferenceProvider: bindings.displayReferenceProvider,
                     selectionController: bindings.selectionController,
                     likeHighlightController: bindings.likeHighlightController,
+                    searchHighlightController: bindings.searchHighlightController,
                     likedImageAnchors: bindings.likedImageAnchors,
                     isChromeVisible: bindings.isChromeVisible,
                     canBoundaryPageTurn: bindings.canBoundaryPageTurn,
@@ -519,6 +537,7 @@ public struct NovelReaderView: View {
                     displayReferenceProvider: bindings.displayReferenceProvider,
                     selectionController: bindings.selectionController,
                     likeHighlightController: bindings.likeHighlightController,
+                    searchHighlightController: bindings.searchHighlightController,
                     likedImageAnchors: bindings.likedImageAnchors,
                     isChromeVisible: bindings.isChromeVisible,
                     canBoundaryPageTurn: bindings.canBoundaryPageTurn,
@@ -550,6 +569,7 @@ public struct NovelReaderView: View {
             },
             selectionController: novelTextSelectionController,
             likeHighlightController: likeHighlightController,
+            searchHighlightController: searchHighlightController,
             likedImageAnchors: likedNovelImageAnchors,
             isChromeVisible: chromeState.showsChrome,
             onVisibleSurfaceIdentitiesChange: { surfaceIdentities in
@@ -792,6 +812,28 @@ public struct NovelReaderView: View {
         )
     }
 
+    private func openSearch() {
+        guard let snapshot = model.currentPageSearchSnapshot() else { return }
+        searchPresentation = NovelReaderSearchPresentation(snapshot: snapshot)
+    }
+
+    private func closeSearch() {
+        searchPresentation = nil
+    }
+
+    private func handleSearchResult(_ match: NovelReaderSearchMatch) {
+        searchPresentation = nil
+        Task {
+            guard await model.jumpToSearchResult(match.startResumePoint) else { return }
+            searchHighlightController.highlight(
+                from: match.startResumePoint,
+                to: match.endResumePoint
+            )
+            restoreVerticalPositionIfNeeded()
+            await refreshCurrentPositionBookmarkState()
+        }
+    }
+
     // MARK: - Image taps and browser
 
     private func handleImageTap(url: URL, title: String?) {
@@ -831,6 +873,7 @@ public struct NovelReaderView: View {
         chromeState.showChrome()
         guard !isDismissing else { return }
         isDismissing = true
+        searchHighlightController.clear()
         syncVerticalViewportBeforeSave()
         Task {
             await model.saveProgress()
@@ -1437,14 +1480,16 @@ public struct NovelReaderView: View {
     private var hasPresentedOverlay: Bool {
         presentedSheet != nil ||
             forumThreadOverlayItem != nil ||
-            imageBrowserItem != nil
+            imageBrowserItem != nil ||
+            searchPresentation != nil
     }
 
     /// Deliberately excludes `imageBrowserItem`: the image browser overlays
     /// the reader without forcing the chrome back on.
     private var hasChromePresentedOverlay: Bool {
         presentedSheet != nil ||
-            forumThreadOverlayItem != nil
+            forumThreadOverlayItem != nil ||
+            searchPresentation != nil
     }
 
     private var canReceiveApplePencilPageTurn: Bool {

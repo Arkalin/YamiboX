@@ -24,6 +24,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let isChromeVisible: Bool
     let onVisibleSurfaceIdentitiesChange: ([NovelReaderSurfaceIdentity]) -> Void
@@ -202,6 +203,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 displayReference: displayReference,
                 selectionController: parent.selectionController,
                 likeHighlightController: parent.likeHighlightController,
+                searchHighlightController: parent.searchHighlightController,
                 likedImageAnchors: parent.likedImageAnchors,
                 surface: verticalSurface(for: indexPath.item),
                 textHeight: displaySurface.presentationHeight,
@@ -672,6 +674,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
     private var currentDisplayReference: NovelTextViewportDisplayReference?
     private weak var currentSelectionController: NovelTextSelectionController?
     private weak var currentLikeHighlightController: NovelLikeHighlightController?
+    private weak var currentSearchHighlightController: NovelReaderSearchHighlightController?
     private var currentLikedImageAnchors: Set<NovelImageLikeAnchor> = []
     private var currentSurface: NovelReaderSurface?
     private var currentTextHeight: CGFloat?
@@ -699,6 +702,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         currentDisplayReference = nil
         currentSelectionController = nil
         currentLikeHighlightController = nil
+        currentSearchHighlightController = nil
         currentLikedImageAnchors = []
         currentSurface = nil
         currentTextHeight = nil
@@ -734,6 +738,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
             displayReference: currentDisplayReference,
             selectionController: currentSelectionController,
             likeHighlightController: currentLikeHighlightController,
+            searchHighlightController: currentSearchHighlightController,
             likedImageAnchors: currentLikedImageAnchors,
             surface: currentSurface,
             textHeight: currentTextHeight,
@@ -751,6 +756,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         displayReference: NovelTextViewportDisplayReference?,
         selectionController: NovelTextSelectionController?,
         likeHighlightController: NovelLikeHighlightController?,
+        searchHighlightController: NovelReaderSearchHighlightController?,
         likedImageAnchors: Set<NovelImageLikeAnchor>,
         surface: NovelReaderSurface?,
         textHeight: CGFloat?,
@@ -765,6 +771,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         currentDisplayReference = displayReference
         currentSelectionController = selectionController
         currentLikeHighlightController = likeHighlightController
+        currentSearchHighlightController = searchHighlightController
         currentLikedImageAnchors = likedImageAnchors
         currentSurface = surface
         currentTextHeight = textHeight
@@ -788,6 +795,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                 displayReference: displayReference,
                 selectionController: selectionController,
                 likeHighlightController: likeHighlightController,
+                searchHighlightController: searchHighlightController,
                 isLiked: {
                     guard case let .image(url) = block else { return false }
                     return isNovelImageLiked(url, surface: surface, likedAnchors: likedImageAnchors)
@@ -876,6 +884,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         displayReference: NovelTextViewportDisplayReference?,
         selectionController: NovelTextSelectionController?,
         likeHighlightController: NovelLikeHighlightController?,
+        searchHighlightController: NovelReaderSearchHighlightController?,
         isLiked: Bool,
         textHeight: CGFloat?,
         onImageTap: @escaping (URL, String?) -> Void
@@ -887,6 +896,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                 displayReference: displayReference,
                 selectionController: selectionController,
                 likeHighlightController: likeHighlightController,
+                searchHighlightController: searchHighlightController,
                 textHeight: textHeight
             )
         case let .image(url):
@@ -909,12 +919,14 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         displayReference: NovelTextViewportDisplayReference?,
         selectionController: NovelTextSelectionController?,
         likeHighlightController: NovelLikeHighlightController?,
+        searchHighlightController: NovelReaderSearchHighlightController?,
         textHeight: CGFloat?
     ) -> BlockView {
         let surface = NovelTextViewportReferenceUIView()
         surface.displayReference = displayReference
         surface.selectionController = selectionController
         surface.likeHighlightController = likeHighlightController
+        surface.searchHighlightController = searchHighlightController
         return BlockView(
             view: surface,
             height: max(textHeight ?? bounds.height, 1),
@@ -993,6 +1005,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
             if let textView = blockView.view as? NovelTextViewportReferenceUIView {
                 textView.selectionController = nil
                 textView.likeHighlightController = nil
+                textView.searchHighlightController = nil
             }
             blockView.view.removeFromSuperview()
         }

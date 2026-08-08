@@ -315,6 +315,61 @@ package final class NovelTextViewportRuntimeOwner {
         activeGeneration
     }
 
+    package func currentSearchSnapshot() -> NovelReaderSearchSnapshot? {
+        guard let projection, let result else { return nil }
+        let document = result.viewportContext.document
+        let viewportIndex = result.viewportIndex
+        let segments = document.textRangesBySegment
+            .sorted { $0.value.startOffset < $1.value.startOffset }
+            .compactMap { segmentIndex, documentRange -> NovelReaderSearchSegment? in
+                guard projection.segments.indices.contains(segmentIndex),
+                      let semantics = projection.semantics(forSegmentIndex: segmentIndex),
+                      let textSegmentIdentity = semantics.textSegmentIdentity,
+                      documentRange.endOffset <= document.text.count,
+                      let start = document.text.index(
+                          document.text.startIndex,
+                          offsetBy: documentRange.startOffset,
+                          limitedBy: document.text.endIndex
+                      ),
+                      let end = document.text.index(
+                          document.text.startIndex,
+                          offsetBy: documentRange.endOffset,
+                          limitedBy: document.text.endIndex
+                      ),
+                      start <= end else {
+                    return nil
+                }
+                let surfaceRanges = viewportIndex.surfaces.compactMap { surface -> NovelReaderSearchSurfaceRange? in
+                    guard let range = surface.ranges.first(where: { $0.segmentIndex == segmentIndex }) else {
+                        return nil
+                    }
+                    return NovelReaderSearchSurfaceRange(
+                        startOffset: range.startOffset,
+                        endOffset: range.endOffset,
+                        surfaceOrdinal: surface.surfaceOrdinal,
+                        chapterOrdinal: surface.chapterOrdinal ?? 0,
+                        chapterTitle: surface.chapterTitle
+                    )
+                }
+                return NovelReaderSearchSegment(
+                    text: String(document.text[start..<end]),
+                    chapterIdentity: semantics.chapterIdentity,
+                    textSegmentIdentity: textSegmentIdentity,
+                    fallbackChapterTitle: projection.segments[segmentIndex].chapterTitle,
+                    surfaceRanges: surfaceRanges
+                )
+            }
+
+        return NovelReaderSearchSnapshot(
+            generation: activeGeneration,
+            view: projection.view,
+            authorID: projection.resolvedAuthorID,
+            readingMode: viewportIndex.readingMode,
+            surfaceCount: viewportIndex.surfaces.count,
+            segments: segments
+        )
+    }
+
     private var activeTextKitGraphCount: Int {
         activeGraph == nil ? 0 : 1
     }

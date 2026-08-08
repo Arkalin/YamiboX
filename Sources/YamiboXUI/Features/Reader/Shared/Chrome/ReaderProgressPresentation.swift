@@ -127,6 +127,7 @@ public struct ReaderProgressChromePresentation: Equatable, Sendable {
 
 public enum ReaderBottomActionKind: Equatable, Sendable {
     case browser
+    case search
     case comments
     case settings
     case bookmark
@@ -153,6 +154,7 @@ public struct ReaderBottomActionRowPresentation: Equatable, Sendable {
     public var actions: [ReaderBottomAction] {
         [
             ReaderBottomAction(kind: .browser),
+            ReaderBottomAction(kind: .search),
             ReaderBottomAction(kind: .bookmark, isDisabled: true),
             ReaderBottomAction(kind: .cache),
         ]

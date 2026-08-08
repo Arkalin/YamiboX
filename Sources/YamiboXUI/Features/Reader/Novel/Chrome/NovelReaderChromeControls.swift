@@ -16,6 +16,7 @@ struct NovelReaderChromeControls: View {
     let onShowCache: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
+    let onShowSearch: () -> Void
     let onToggleBookmark: () -> Void
     let onShowAnnotations: () -> Void
     let isBookmarked: Bool
@@ -77,6 +78,7 @@ struct NovelReaderChromeControls: View {
             onShowCache: onShowCache,
             onShowComments: onShowComments,
             onOpenForum: onOpenForum,
+            onShowSearch: onShowSearch,
             onToggleBookmark: onToggleBookmark,
             onShowAnnotations: onShowAnnotations,
             isBookmarked: isBookmarked,
