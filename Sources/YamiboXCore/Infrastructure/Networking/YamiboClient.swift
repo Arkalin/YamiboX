@@ -10,6 +10,7 @@ struct YamiboClient: Sendable {
     var credentials: YamiboRequestCredentials
     var userAgent: String
     var wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    var handlesCookies: Bool
 
     var cookie: String? {
         let header = credentials.cookieHeader(for: YamiboDomain.baseURL)
@@ -20,7 +21,8 @@ struct YamiboClient: Sendable {
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         cookie: String? = nil,
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        handlesCookies: Bool = true
     ) {
         self.session = session
         credentials = YamiboRequestCredentials(
@@ -29,17 +31,20 @@ struct YamiboClient: Sendable {
         )
         self.userAgent = userAgent
         self.wafRecoverer = wafRecoverer
+        self.handlesCookies = handlesCookies
     }
 
     init(
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         credentials: YamiboRequestCredentials,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        handlesCookies: Bool = true
     ) {
         self.session = session
         self.credentials = credentials
         userAgent = credentials.userAgent
         self.wafRecoverer = wafRecoverer
+        self.handlesCookies = handlesCookies
     }
 
     func fetchHTML(
@@ -191,6 +196,7 @@ struct YamiboClient: Sendable {
         to request: inout URLRequest,
         userAgent: String
     ) {
+        request.httpShouldHandleCookies = handlesCookies
         let cookieHeader = request.url.map { credentials.cookieHeader(for: $0) } ?? ""
         request.setValue(cookieHeader.isEmpty ? nil : cookieHeader, forHTTPHeaderField: "Cookie")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")

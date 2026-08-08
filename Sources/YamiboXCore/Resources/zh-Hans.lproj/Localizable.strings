@@ -874,6 +874,8 @@
 "reading_mode.title" = "阅读模式";
 "reading_mode.vertical" = "纵向滚动";
 "settings.auto_sign_in" = "自动签到";
+"settings.enhanced_check_in" = "增强签到";
+"settings.enhanced_check_in_description" = "签到时同时访问自己的推广链接。";
 "settings.clear_content_cover_cache" = "清理封面索引";
 "settings.clear_content_cover_cache_message" = "将清除本地记录的自动与手动封面索引，封面会在下次打开时重新拉取。";
 "settings.clear_image_cache" = "清理图片缓存";

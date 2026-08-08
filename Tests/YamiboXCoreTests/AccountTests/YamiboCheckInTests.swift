@@ -1,10 +1,22 @@
 import Foundation
 import Testing
 @testable import YamiboXCore
+import YamiboXTestSupport
 
 private struct YamiboCheckInStubResponse {
     let statusCode: Int
     let body: String
+    let headers: [String: String]
+
+    init(
+        statusCode: Int,
+        body: String,
+        headers: [String: String] = ["Content-Type": "text/html; charset=utf-8"]
+    ) {
+        self.statusCode = statusCode
+        self.body = body
+        self.headers = headers
+    }
 }
 
 private enum YamiboCheckInStubOutput {
@@ -48,7 +60,7 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
                 url: request.url!,
                 statusCode: output.statusCode,
                 httpVersion: nil,
-                headerFields: ["Content-Type": "text/html; charset=utf-8"]
+                headerFields: output.headers
             )!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(output.body.utf8))
@@ -59,6 +71,25 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+private final class YamiboCheckInPromotionRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedRequests: [URLRequest] = []
+
+    @discardableResult
+    func record(_ request: URLRequest) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        storedRequests.append(request)
+        return storedRequests.count
+    }
+
+    func requests() -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRequests
+    }
 }
 
 @Test func yamiboCheckInReturnsNotAuthenticatedWhenSessionIsMissing() async throws {
@@ -190,11 +221,8 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
     let suiteName = makeYamiboCheckInSuiteName(prefix: "skip-today")
     let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
     let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
-    let sessionState = SessionState(
-        cookie: "sid=1; EeqY_2132_auth=user-c",
-        userAgent: "Test-UA",
-        isLoggedIn: true
-    )
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: true)
+    let sessionState = makeEnhancedCheckInSessionState(accountUID: "535977")
     try await sessionStore.save(sessionState)
     await checkInStore.markCheckedIn(session: sessionState)
 
@@ -211,7 +239,9 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
     let service = YamiboCheckInService(
         sessionStore: sessionStore,
         checkInStore: checkInStore,
+        settingsStore: settingsStore,
         session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
         verificationDelayNanoseconds: 0
     )
 
@@ -311,6 +341,216 @@ private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
     #expect(result == .verificationFailed)
 }
 
+@Test func enhancedCheckInVisitsPromotionWithOnlyWAFCookie() async throws {
+    let testID = UUID().uuidString
+    let suiteName = makeYamiboCheckInSuiteName(prefix: "enhanced-cookie-filter")
+    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
+    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: true)
+    try await sessionStore.save(makeEnhancedCheckInSessionState(accountUID: "535977"))
+
+    let promotionRecorder = YamiboCheckInPromotionRequestRecorder()
+    YamiboCheckInURLProtocol.setHandler({ request in
+        if request.url?.path == "/" {
+            promotionRecorder.record(request)
+            return .response(YamiboCheckInStubResponse(statusCode: 200, body: "<html>promo</html>"))
+        }
+        return .response(YamiboCheckInStubResponse(
+            statusCode: 200,
+            body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div>"#
+        ))
+    }, for: testID)
+    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
+
+    let service = YamiboCheckInService(
+        sessionStore: sessionStore,
+        checkInStore: checkInStore,
+        settingsStore: settingsStore,
+        session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
+        verificationDelayNanoseconds: 0
+    )
+
+    let result = await service.checkInIfNeeded(force: true)
+    try await waitForCondition(message: "enhanced check-in promotion request") {
+        promotionRecorder.requests().count == 1
+    }
+
+    let request = promotionRecorder.requests()[0]
+    #expect(result == .alreadyCheckedInToday)
+    #expect(request.url?.absoluteString == "https://bbs.yamibo.com/?fromuid=535977")
+    #expect(request.httpShouldHandleCookies == false)
+    #expect(request.value(forHTTPHeaderField: "Cookie") == "nox_jst_v1=clearance")
+    #expect(request.value(forHTTPHeaderField: "Cookie")?.contains(SessionState.authenticationCookieName) == false)
+    #expect(request.value(forHTTPHeaderField: "Cookie")?.contains("sid=") == false)
+    #expect(request.value(forHTTPHeaderField: "Cookie")?.contains("account-preference=") == false)
+}
+
+@Test func disabledEnhancedCheckInDoesNotVisitPromotion() async throws {
+    let testID = UUID().uuidString
+    let suiteName = makeYamiboCheckInSuiteName(prefix: "enhanced-disabled")
+    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
+    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: false)
+    try await sessionStore.save(makeEnhancedCheckInSessionState(accountUID: "535977"))
+
+    let promotionRecorder = YamiboCheckInPromotionRequestRecorder()
+    YamiboCheckInURLProtocol.setHandler({ request in
+        if request.url?.path == "/" {
+            promotionRecorder.record(request)
+        }
+        return .response(YamiboCheckInStubResponse(
+            statusCode: 200,
+            body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div>"#
+        ))
+    }, for: testID)
+    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
+
+    let service = YamiboCheckInService(
+        sessionStore: sessionStore,
+        checkInStore: checkInStore,
+        settingsStore: settingsStore,
+        session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
+        verificationDelayNanoseconds: 0
+    )
+
+    let result = await service.checkInIfNeeded(force: true)
+
+    #expect(result == .alreadyCheckedInToday)
+    #expect(promotionRecorder.requests().isEmpty)
+}
+
+@Test func enhancedCheckInSkipsPromotionWithoutNumericAccountUID() async throws {
+    let testID = UUID().uuidString
+    let suiteName = makeYamiboCheckInSuiteName(prefix: "enhanced-missing-uid")
+    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
+    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: true)
+    try await sessionStore.save(makeEnhancedCheckInSessionState(accountUID: nil))
+
+    let promotionRecorder = YamiboCheckInPromotionRequestRecorder()
+    YamiboCheckInURLProtocol.setHandler({ request in
+        if request.url?.path == "/" {
+            promotionRecorder.record(request)
+        }
+        return .response(YamiboCheckInStubResponse(
+            statusCode: 200,
+            body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div>"#
+        ))
+    }, for: testID)
+    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
+
+    let service = YamiboCheckInService(
+        sessionStore: sessionStore,
+        checkInStore: checkInStore,
+        settingsStore: settingsStore,
+        session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
+        verificationDelayNanoseconds: 0
+    )
+
+    let result = await service.checkInIfNeeded(force: true)
+
+    #expect(result == .alreadyCheckedInToday)
+    #expect(promotionRecorder.requests().isEmpty)
+}
+
+@Test func enhancedCheckInPromotionFailureDoesNotChangeCheckInResult() async throws {
+    let testID = UUID().uuidString
+    let suiteName = makeYamiboCheckInSuiteName(prefix: "enhanced-promotion-failure")
+    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
+    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: true)
+    try await sessionStore.save(makeEnhancedCheckInSessionState(accountUID: "535977"))
+
+    let promotionRecorder = YamiboCheckInPromotionRequestRecorder()
+    YamiboCheckInURLProtocol.setHandler({ request in
+        if request.url?.path == "/" {
+            promotionRecorder.record(request)
+            return .error(URLError(.notConnectedToInternet))
+        }
+        return .response(YamiboCheckInStubResponse(
+            statusCode: 200,
+            body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div>"#
+        ))
+    }, for: testID)
+    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
+
+    let service = YamiboCheckInService(
+        sessionStore: sessionStore,
+        checkInStore: checkInStore,
+        settingsStore: settingsStore,
+        session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
+        verificationDelayNanoseconds: 0
+    )
+
+    let result = await service.checkInIfNeeded(force: true)
+    try await waitForCondition(message: "failed enhanced check-in promotion request") {
+        promotionRecorder.requests().count == 1
+    }
+
+    #expect(result == .alreadyCheckedInToday)
+}
+
+@Test func enhancedCheckInRecoveryRetryKeepsOnlyWAFCookie() async throws {
+    let testID = UUID().uuidString
+    let suiteName = makeYamiboCheckInSuiteName(prefix: "enhanced-waf-retry")
+    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
+    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
+    let settingsStore = try await makeYamiboCheckInSettingsStore(suiteName: suiteName, enhancedCheckInEnabled: true)
+    try await sessionStore.save(makeEnhancedCheckInSessionState(accountUID: "535977"))
+
+    let promotionRecorder = YamiboCheckInPromotionRequestRecorder()
+    YamiboCheckInURLProtocol.setHandler({ request in
+        if request.url?.path == "/" {
+            let count = promotionRecorder.record(request)
+            if count == 1 {
+                return .response(YamiboCheckInStubResponse(
+                    statusCode: 405,
+                    body: "challenge",
+                    headers: ["Server": "BAIDU_WAF"]
+                ))
+            }
+            return .response(YamiboCheckInStubResponse(statusCode: 200, body: "<html>promo</html>"))
+        }
+        return .response(YamiboCheckInStubResponse(
+            statusCode: 200,
+            body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div>"#
+        ))
+    }, for: testID)
+    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
+
+    let recoverer = YamiboCheckInPromotionWAFRecoverer()
+    let service = YamiboCheckInService(
+        sessionStore: sessionStore,
+        checkInStore: checkInStore,
+        settingsStore: settingsStore,
+        session: makeYamiboCheckInSession(testID: testID),
+        promotionSession: makeYamiboCheckInSession(testID: testID),
+        verificationDelayNanoseconds: 0,
+        wafRecoverer: recoverer
+    )
+
+    let result = await service.checkInIfNeeded(force: true)
+    try await waitForCondition(message: "WAF retry for enhanced check-in promotion") {
+        promotionRecorder.requests().count == 2
+    }
+
+    let requests = promotionRecorder.requests()
+    #expect(result == .alreadyCheckedInToday)
+    #expect(await recoverer.recoveryCount == 1)
+    #expect(requests[0].value(forHTTPHeaderField: "Cookie") == "nox_jst_v1=clearance")
+    #expect(requests[1].value(forHTTPHeaderField: "Cookie") == "nox_jst_v1=fresh")
+    #expect(requests.allSatisfy {
+        let cookie = $0.value(forHTTPHeaderField: "Cookie") ?? ""
+        return !cookie.contains(SessionState.authenticationCookieName)
+            && !cookie.contains("sid=")
+            && !cookie.contains("account-preference=")
+    })
+}
+
 @Test func yamiboCheckInStoreSeparatesDifferentAccounts() async throws {
     let suiteName = makeYamiboCheckInSuiteName(prefix: "account-isolation")
     let store = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
@@ -342,4 +582,63 @@ private func makeYamiboCheckInDefaults(suiteName: String) throws -> UserDefaults
     }
     defaults.removePersistentDomain(forName: suiteName)
     return defaults
+}
+
+private func makeYamiboCheckInSettingsStore(
+    suiteName: String,
+    enhancedCheckInEnabled: Bool
+) async throws -> SettingsStore {
+    let settingsStore = SettingsStore(
+        defaults: try makeYamiboCheckInDefaults(suiteName: "\(suiteName)-settings"),
+        key: "settings"
+    )
+    var settings = AppSettings()
+    settings.system.enhancedCheckInEnabled = enhancedCheckInEnabled
+    try await settingsStore.save(settings)
+    return settingsStore
+}
+
+private func makeEnhancedCheckInSessionState(accountUID: String?) -> SessionState {
+    let expiresAt = Date.now.addingTimeInterval(600)
+    return SessionState(
+        cookies: [
+            YamiboCookie(name: "sid", value: "account-session", domain: YamiboDomain.forumHost, expiresAt: expiresAt),
+            YamiboCookie(
+                name: SessionState.authenticationCookieName,
+                value: "account-authentication",
+                domain: YamiboDomain.forumHost,
+                expiresAt: expiresAt
+            ),
+            YamiboCookie(name: "account-preference", value: "private", domain: YamiboDomain.forumHost, expiresAt: expiresAt),
+            YamiboCookie(name: "nox_jst_v1", value: "clearance", domain: YamiboDomain.forumHost, expiresAt: expiresAt)
+        ],
+        userAgent: "Test-UA",
+        isLoggedIn: true,
+        accountUID: accountUID
+    )
+}
+
+private actor YamiboCheckInPromotionWAFRecoverer: YamiboWAFChallengeRecovering {
+    private(set) var recoveryCount = 0
+
+    func recover(from challenge: YamiboWAFChallenge) async throws -> YamiboRequestCredentials {
+        recoveryCount += 1
+        let expiresAt = Date.now.addingTimeInterval(600)
+        return YamiboRequestCredentials(
+            cookies: [
+                YamiboCookie(name: "nox_jst_v1", value: "fresh", domain: YamiboDomain.forumHost, expiresAt: expiresAt),
+                YamiboCookie(
+                    name: SessionState.authenticationCookieName,
+                    value: "recovered-account-authentication",
+                    domain: YamiboDomain.forumHost,
+                    expiresAt: expiresAt
+                ),
+                YamiboCookie(name: "account-preference", value: "recovered-private", domain: YamiboDomain.forumHost, expiresAt: expiresAt),
+                YamiboCookie(name: "sid", value: "recovered-session", domain: YamiboDomain.forumHost, expiresAt: expiresAt)
+            ],
+            userAgent: challenge.userAgent
+        )
+    }
+
+    func presentFallback(for _: YamiboWAFChallenge) async {}
 }

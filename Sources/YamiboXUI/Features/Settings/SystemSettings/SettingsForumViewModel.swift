@@ -7,6 +7,7 @@ import YamiboXCore
 @Observable
 final class SettingsForumViewModel: AppSettingsPersisting {
     var boardReader = BoardReaderSettings()
+    var enhancedCheckInEnabled = false
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
@@ -18,10 +19,18 @@ final class SettingsForumViewModel: AppSettingsPersisting {
 
     func applyLoadedSettings(_ settings: AppSettings) {
         boardReader = settings.boardReader
+        enhancedCheckInEnabled = settings.system.enhancedCheckInEnabled
     }
 
     func restoreDefaultsAfterApplicationReset() {
         boardReader = BoardReaderSettings()
+        enhancedCheckInEnabled = false
+    }
+
+    func updateEnhancedCheckInEnabled(_ value: Bool) {
+        persistSettingsAtomically(\.enhancedCheckInEnabled, to: value) {
+            $0.system.enhancedCheckInEnabled = value
+        }
     }
 
     /// Overwrites the board's entry with `mode`. `boardName` must be the

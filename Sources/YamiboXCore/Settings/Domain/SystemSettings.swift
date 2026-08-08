@@ -71,6 +71,7 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
 public struct SystemSettings: Codable, Hashable, Sendable {
     public var homePage: AppHomePage
     public var usesDataSaverMode: Bool
+    public var enhancedCheckInEnabled: Bool
     public var applePencilPageTurn: ApplePencilPageTurnSettings
     public var gamepad: GamepadSettings
     public var keyboard: KeyboardSettings
@@ -78,14 +79,39 @@ public struct SystemSettings: Codable, Hashable, Sendable {
     public init(
         homePage: AppHomePage = .forum,
         usesDataSaverMode: Bool = false,
+        enhancedCheckInEnabled: Bool = false,
         applePencilPageTurn: ApplePencilPageTurnSettings = .init(),
         gamepad: GamepadSettings = .init(),
         keyboard: KeyboardSettings = .init()
     ) {
         self.homePage = homePage
         self.usesDataSaverMode = usesDataSaverMode
+        self.enhancedCheckInEnabled = enhancedCheckInEnabled
         self.applePencilPageTurn = applePencilPageTurn
         self.gamepad = gamepad
         self.keyboard = keyboard
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case homePage
+        case usesDataSaverMode
+        case enhancedCheckInEnabled
+        case applePencilPageTurn
+        case gamepad
+        case keyboard
+    }
+
+    /// `SystemSettings` predates enhanced check-in. Decode the new flag
+    /// optionally so existing persisted settings retain every other value.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            homePage: try container.decodeIfPresent(AppHomePage.self, forKey: .homePage) ?? .forum,
+            usesDataSaverMode: try container.decodeIfPresent(Bool.self, forKey: .usesDataSaverMode) ?? false,
+            enhancedCheckInEnabled: try container.decodeIfPresent(Bool.self, forKey: .enhancedCheckInEnabled) ?? false,
+            applePencilPageTurn: try container.decodeIfPresent(ApplePencilPageTurnSettings.self, forKey: .applePencilPageTurn) ?? .init(),
+            gamepad: try container.decodeIfPresent(GamepadSettings.self, forKey: .gamepad) ?? .init(),
+            keyboard: try container.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init()
+        )
     }
 }

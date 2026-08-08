@@ -362,6 +362,7 @@ public final class YamiboAppContext: Sendable {
         YamiboCheckInService(
             sessionStore: sessionStore,
             checkInStore: checkInStore,
+            settingsStore: settingsStore,
             session: session,
             wafRecoverer: wafRecoverer
         )

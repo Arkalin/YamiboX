@@ -16,6 +16,12 @@ public enum YamiboNetworkConfiguration {
         URLSession(configuration: makeImageSessionConfiguration())
     }
 
+    /// A short-lived session for requests that provide an explicit, filtered
+    /// Cookie header. It must not read from or write to shared cookie storage.
+    static func makeCookieIsolatedSession() -> URLSession {
+        URLSession(configuration: makeCookieIsolatedSessionConfiguration())
+    }
+
     public static func makeSessionConfiguration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = requestTimeout
@@ -27,6 +33,16 @@ public enum YamiboNetworkConfiguration {
         let configuration = makeSessionConfiguration()
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
+        return configuration
+    }
+
+    static func makeCookieIsolatedSessionConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = requestTimeout
+        configuration.timeoutIntervalForResource = resourceTimeout
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
         return configuration
     }
 

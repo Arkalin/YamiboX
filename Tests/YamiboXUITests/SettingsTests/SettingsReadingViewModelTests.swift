@@ -67,6 +67,25 @@ final class SettingsReadingViewModelTests: XCTestCase {
         XCTAssertFalse(settings.forum.boardReader.isSmartComicModeEnabled(forumID: "37"))
     }
 
+    func testEnhancedCheckInLoadsAndPersists() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        try await fixture.settingsStore.save(AppSettings(
+            system: SystemSettings(enhancedCheckInEnabled: true)
+        ))
+
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        let viewModel = settings.forum
+        await settings.load()
+
+        XCTAssertTrue(viewModel.enhancedCheckInEnabled)
+        viewModel.updateEnhancedCheckInEnabled(false)
+
+        try await waitForSettings {
+            await fixture.settingsStore.load().system.enhancedCheckInEnabled == false
+        }
+        XCTAssertFalse(viewModel.enhancedCheckInEnabled)
+    }
+
     /// The Forum settings overview's smart-bit write side: flipping fid 30 off and fid 46
     /// on persists through `SettingsStore`, exercised independently for both
     /// directions (enabling and disabling) on two different

@@ -101,6 +101,12 @@ enum SettingsSearchRegistry {
             keywords: ["签到", "自动化", "快捷指令"]
         ),
         SettingsSearchEntry(
+            id: "forum.enhanced_check_in",
+            title: L10n.string("settings.enhanced_check_in"),
+            category: .forum,
+            keywords: ["签到", "推广", "WAF"]
+        ),
+        SettingsSearchEntry(
             id: "forum.board_reader",
             title: L10n.string("settings.section.board_reader"),
             category: .forum,

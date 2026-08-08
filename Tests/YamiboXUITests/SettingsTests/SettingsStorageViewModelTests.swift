@@ -198,10 +198,13 @@ final class SettingsStorageViewModelTests: XCTestCase {
                 retainsInlineImages: true,
                 isAutoRefreshEnabled: false
             ),
-            system: SystemSettings(applePencilPageTurn: ApplePencilPageTurnSettings(
-                isEnabled: true,
-                behavior: .doubleTapNextSqueezePrevious
-            )),
+            system: SystemSettings(
+                enhancedCheckInEnabled: true,
+                applePencilPageTurn: ApplePencilPageTurnSettings(
+                    isEnabled: true,
+                    behavior: .doubleTapNextSqueezePrevious
+                )
+            ),
             boardReader: {
                 var custom = BoardReaderSettings()
                 custom.setEntry(.init(mode: .manga(smartEnabled: true)), forumID: "46")
@@ -219,9 +222,11 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertEqual(settings.reading.novelOfflineCache, NovelOfflineCacheSettings())
         XCTAssertEqual(settings.peripherals.applePencilPageTurn, ApplePencilPageTurnSettings())
         XCTAssertEqual(settings.forum.boardReader, BoardReaderSettings())
+        XCTAssertFalse(settings.forum.enhancedCheckInEnabled)
         let loaded = await fixture.settingsStore.load()
         XCTAssertEqual(loaded.novelOfflineCache, NovelOfflineCacheSettings())
         XCTAssertEqual(loaded.system.applePencilPageTurn, ApplePencilPageTurnSettings())
+        XCTAssertFalse(loaded.system.enhancedCheckInEnabled)
         XCTAssertEqual(settings.favorites.favoriteBackground, FavoriteBackgroundSettings())
     }
 

@@ -19,8 +19,19 @@ struct SettingsForumView: View {
                     )
                 }
                 .disabled(viewModel.isBusy)
+
+                Toggle(
+                    L10n.string("settings.enhanced_check_in"),
+                    isOn: Binding(
+                        get: { viewModel.enhancedCheckInEnabled },
+                        set: viewModel.updateEnhancedCheckInEnabled
+                    )
+                )
+                .disabled(viewModel.isBusy)
             } header: {
                 Text(L10n.string("mine.check_in"))
+            } footer: {
+                Text(L10n.string("settings.enhanced_check_in_description"))
             }
 
             Section {

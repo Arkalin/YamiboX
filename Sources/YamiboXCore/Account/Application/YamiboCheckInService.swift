@@ -33,23 +33,30 @@ public protocol YamiboCheckInServicing: Sendable {
 
 struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
     static let checkInPageURL = YamiboDomain.url(forSitePath: "plugin.php?id=zqlj_sign&mobile=2")!
+    static let enhancedCheckInPromotionBaseURL = YamiboDomain.baseURL
 
     private let sessionStore: SessionStore
     private let checkInStore: YamiboCheckInStore
+    private let settingsStore: SettingsStore
     private let session: URLSession
+    private let promotionSession: URLSession
     private let verificationDelayNanoseconds: UInt64
     private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
 
     init(
         sessionStore: SessionStore,
         checkInStore: YamiboCheckInStore,
+        settingsStore: SettingsStore = SettingsStore(),
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
+        promotionSession: URLSession = YamiboNetworkConfiguration.makeCookieIsolatedSession(),
         verificationDelayNanoseconds: UInt64 = 3_000_000_000,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
     ) {
         self.sessionStore = sessionStore
         self.checkInStore = checkInStore
+        self.settingsStore = settingsStore
         self.session = session
+        self.promotionSession = promotionSession
         self.verificationDelayNanoseconds = verificationDelayNanoseconds
         self.wafRecoverer = wafRecoverer
     }
@@ -66,6 +73,8 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
                 return .skippedToday
             }
         }
+
+        await startEnhancedCheckInPromotionVisit(for: sessionState)
 
         let client = YamiboClient(
             session: session,
@@ -109,6 +118,63 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         } catch {
             return mapNetworkError(error)
         }
+    }
+
+    /// Starts the referral visit separately from the user-visible check-in
+    /// flow. Its credentials are limited to valid WAF clearance cookies from
+    /// the initial request through any WAF recovery retry.
+    private func startEnhancedCheckInPromotionVisit(for sessionState: SessionState) async {
+        let settings = await settingsStore.load()
+        guard settings.system.enhancedCheckInEnabled,
+              let url = Self.enhancedCheckInPromotionURL(for: sessionState.accountUID),
+              let credentials = Self.wafOnlyCredentials(from: sessionState, for: url)
+        else {
+            return
+        }
+
+        let client = YamiboClient(
+            session: promotionSession,
+            credentials: credentials,
+            wafRecoverer: wafRecoverer.map { WAFOnlyChallengeRecoverer(base: $0) },
+            handlesCookies: false
+        )
+
+        Task {
+            _ = try? await client.fetchHTML(
+                url: url,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                cancellationPolicy: .completeStartedRequest
+            )
+        }
+    }
+
+    private static func enhancedCheckInPromotionURL(for rawUID: String?) -> URL? {
+        guard let uid = normalizedNumericUID(rawUID) else { return nil }
+        var components = URLComponents(url: enhancedCheckInPromotionBaseURL, resolvingAgainstBaseURL: false)
+        components?.path = "/"
+        components?.queryItems = [URLQueryItem(name: "fromuid", value: uid)]
+        return components?.url
+    }
+
+    private static func normalizedNumericUID(_ rawUID: String?) -> String? {
+        guard let uid = rawUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty,
+              uid.unicodeScalars.allSatisfy({ $0.value >= 48 && $0.value <= 57 })
+        else {
+            return nil
+        }
+        return uid
+    }
+
+    private static func wafOnlyCredentials(
+        from sessionState: SessionState,
+        for url: URL
+    ) -> YamiboRequestCredentials? {
+        let credentials = YamiboRequestCredentials(
+            cookies: sessionState.cookies.filter { YamiboCookie.isWAFCookie($0.name) },
+            userAgent: sessionState.userAgent
+        )
+        return credentials.cookieHeader(for: url).isEmpty ? nil : credentials
     }
 
     private func mapNetworkError(_ error: Error) -> YamiboCheckInResult {
@@ -157,4 +223,27 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         let path = String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
         return URL(string: path, relativeTo: YamiboDomain.baseURL)?.absoluteURL
     }
+}
+
+private struct WAFOnlyChallengeRecoverer: YamiboWAFChallengeRecovering {
+    private let base: any YamiboWAFChallengeRecovering
+
+    init(base: any YamiboWAFChallengeRecovering) {
+        self.base = base
+    }
+
+    func recover(from challenge: YamiboWAFChallenge) async throws -> YamiboRequestCredentials {
+        let recovered = try await base.recover(from: challenge)
+        let wafOnly = YamiboRequestCredentials(
+            cookies: recovered.cookies.filter { YamiboCookie.isWAFCookie($0.name) },
+            userAgent: recovered.userAgent
+        )
+        guard !wafOnly.cookieHeader(for: challenge.url).isEmpty else {
+            throw YamiboError.securityVerificationRequired
+        }
+        return wafOnly
+    }
+
+    /// A failed background referral must not show an additional fallback UI.
+    func presentFallback(for _: YamiboWAFChallenge) async {}
 }
