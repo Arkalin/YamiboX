@@ -33,7 +33,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .forum: "text.bubble"
-        case .favorites: "star"
+        case .favorites: "heart.text.square"
         case .reading: "book"
         case .peripherals: "gamecontroller"
         case .storage: "externaldrive"
