@@ -250,44 +250,47 @@ private struct NovelReaderRecentSearchesView: View {
     let onClear: () -> Void
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                HStack {
-                    Text(L10n.string("reader.search.recent"))
-                        .font(.headline)
-                    Spacer()
-                    Button(L10n.string("common.clear"), action: onClear)
-                        .disabled(queries.isEmpty)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+        VStack(spacing: 0) {
+            HStack {
+                Text(L10n.string("reader.search.recent"))
+                    .font(.headline)
+                Spacer()
+                Button(L10n.string("common.clear"), action: onClear)
+                    .disabled(queries.isEmpty)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
 
-                if queries.isEmpty {
-                    ContentUnavailableView(
-                        L10n.string("reader.search.no_recent"),
-                        systemImage: "clock"
-                    )
-                    .padding(.top, 44)
-                } else {
-                    ForEach(queries, id: \.self) { query in
-                        Button {
-                            onSelect(query)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock")
-                                    .foregroundStyle(.secondary)
-                                Text(query)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
+            if queries.isEmpty {
+                Spacer(minLength: 0)
+                ContentUnavailableView(
+                    L10n.string("reader.search.no_recent"),
+                    systemImage: "clock"
+                )
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(queries, id: \.self) { query in
+                            Button {
+                                onSelect(query)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "clock")
+                                        .foregroundStyle(.secondary)
+                                    Text(query)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 14)
+                                .contentShape(Rectangle())
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 14)
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            Divider().padding(.leading, 52)
                         }
-                        .buttonStyle(.plain)
-                        Divider().padding(.leading, 52)
                     }
                 }
             }
