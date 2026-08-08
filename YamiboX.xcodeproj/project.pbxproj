@@ -321,6 +321,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 67485D7YXU;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = YamiboX/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Yamibo X";
@@ -578,6 +579,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 67485D7YXU;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = YamiboX/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Yamibo X";
@@ -588,7 +590,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.2.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboX;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboX.debug;
 				PRODUCT_NAME = YamiboX;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
