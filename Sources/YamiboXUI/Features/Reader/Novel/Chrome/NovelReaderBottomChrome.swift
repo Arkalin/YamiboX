@@ -15,6 +15,7 @@ struct NovelReaderBottomChrome: View {
     let onShowCache: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
+    let onShowSearch: () -> Void
     let onToggleBookmark: () -> Void
     let onShowAnnotations: () -> Void
     /// Whether the position the bookmark button would mark right now is
@@ -110,6 +111,13 @@ struct NovelReaderBottomChrome: View {
                 title: L10n.string("common.original_post"),
                 systemName: "safari",
                 handler: onOpenForum
+            )
+            Spacer(minLength: chromeLayout.actionButtonSpacing)
+            bottomActionButton(
+                action: ReaderBottomAction(kind: .search),
+                title: L10n.string("common.search"),
+                systemName: "magnifyingglass",
+                handler: onShowSearch
             )
             Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(

@@ -38,6 +38,7 @@ struct NovelReaderPresentationSpreadContent: View {
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let onImageTap: (URL, String?) -> Void
 
@@ -61,6 +62,7 @@ struct NovelReaderPresentationSpreadContent: View {
                     displayReference: surface.flatMap { displayReferenceProvider($0.identity) },
                     selectionController: selectionController,
                     likeHighlightController: likeHighlightController,
+                    searchHighlightController: searchHighlightController,
                     likedImageAnchors: likedImageAnchors,
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: surfaceIndex,
@@ -87,6 +89,7 @@ struct NovelReaderViewportSurfaceContent: View {
     let displayReference: NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let fallbackDocumentView: Int?
     let fallbackSurfaceIndex: Int?
@@ -100,6 +103,7 @@ struct NovelReaderViewportSurfaceContent: View {
         displayReference: NovelTextViewportDisplayReference? = nil,
         selectionController: NovelTextSelectionController? = nil,
         likeHighlightController: NovelLikeHighlightController? = nil,
+        searchHighlightController: NovelReaderSearchHighlightController? = nil,
         likedImageAnchors: Set<NovelImageLikeAnchor> = [],
         fallbackDocumentView: Int?,
         fallbackSurfaceIndex: Int?,
@@ -112,6 +116,7 @@ struct NovelReaderViewportSurfaceContent: View {
         self.displayReference = displayReference
         self.selectionController = selectionController
         self.likeHighlightController = likeHighlightController
+        self.searchHighlightController = searchHighlightController
         self.likedImageAnchors = likedImageAnchors
         self.fallbackDocumentView = fallbackDocumentView
         self.fallbackSurfaceIndex = fallbackSurfaceIndex
@@ -142,6 +147,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     displayReference: displayReference,
                     selectionController: selectionController,
                     likeHighlightController: likeHighlightController,
+                    searchHighlightController: searchHighlightController,
                     isLiked: isImageBlockLiked(block),
                     refererURL: refererURL,
                     offlineScope: offlineScope,
@@ -163,6 +169,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     displayReference: displayReference,
                     selectionController: selectionController,
                     likeHighlightController: likeHighlightController,
+                    searchHighlightController: searchHighlightController,
                     isLiked: isImageBlockLiked(block),
                     refererURL: refererURL,
                     offlineScope: offlineScope,
@@ -222,6 +229,7 @@ private struct NovelReaderViewportBlockView: View {
     let displayReference: NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let isLiked: Bool
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
@@ -235,7 +243,8 @@ private struct NovelReaderViewportBlockView: View {
                 NativeNovelTextViewportReferenceView(
                     displayReference: displayReference,
                     selectionController: selectionController,
-                    likeHighlightController: likeHighlightController
+                    likeHighlightController: likeHighlightController,
+                    searchHighlightController: searchHighlightController
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {

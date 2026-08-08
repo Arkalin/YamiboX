@@ -28,6 +28,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
+    let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
     let isChromeVisible: Bool
     let canBoundaryPageTurn: (Int) -> Bool
@@ -219,6 +220,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                     displayReference: surface.flatMap { parent.displayReferenceProvider($0.identity) },
                     selectionController: parent.selectionController,
                     likeHighlightController: parent.likeHighlightController,
+                    searchHighlightController: parent.searchHighlightController,
                     likedImageAnchors: parent.likedImageAnchors,
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: itemIndex,
@@ -244,6 +246,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                         displayReferenceProvider: parent.displayReferenceProvider,
                         selectionController: parent.selectionController,
                         likeHighlightController: parent.likeHighlightController,
+                        searchHighlightController: parent.searchHighlightController,
                         likedImageAnchors: parent.likedImageAnchors,
                         onImageTap: parent.onImageTap
                     )
