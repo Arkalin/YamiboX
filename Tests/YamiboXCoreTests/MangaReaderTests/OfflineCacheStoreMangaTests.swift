@@ -243,6 +243,66 @@ struct MangaReaderTestsOfflineCacheStore {
         #expect(await store.offlineImageData(for: imageURL) == nil)
         #expect(await store.mangaOfflineCacheDiskUsageByOwner().isEmpty)
     }
+
+    @Test func cachedWorksGroupsCompletedEntriesAndExcludesQueuedOnlyWork() async throws {
+        let store = try makeTestOfflineCacheStore(rootDirectory: try makeTemporaryOfflineCacheDirectory())
+        let olderManga = MangaOfflineCacheMembership(
+            ownerName: "漫画作品",
+            tid: "301",
+            chapterTitle: "第一话",
+            imageURLs: [],
+            sourcePage: makeTestMangaOfflineSourcePage(tid: "301"),
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        var newestSourcePage = makeTestMangaOfflineSourcePage(tid: "302")
+        newestSourcePage.forumID = "30"
+        newestSourcePage.pageNavigation = ForumPageNavigation(currentPage: 3, totalPages: 9)
+        let newestManga = MangaOfflineCacheMembership(
+            ownerName: "漫画作品",
+            tid: "302",
+            chapterTitle: "第二话",
+            imageURLs: [],
+            sourcePage: newestSourcePage,
+            createdAt: Date(timeIntervalSince1970: 300)
+        )
+        try await store.saveMangaOfflineCacheMembership(olderManga)
+        try await store.saveMangaOfflineCacheMembership(newestManga)
+
+        let novel = NovelOfflineCacheEntry(
+            ownerTitle: "小说作品",
+            document: NovelReaderProjection(
+                threadID: "401",
+                view: 2,
+                maxView: 5,
+                resolvedAuthorID: "88",
+                segments: [.text("缓存小说", chapterTitle: "第二章")]
+            ),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        try await store.saveNovelOfflineCacheEntry(novel)
+
+        _ = try await store.enqueueMangaOfflineCacheWork(
+            MangaOfflineCacheWorkRequest(
+                ownerName: "排队作品",
+                tid: "501",
+                chapterTitle: "第一话"
+            )
+        )
+
+        let works = await store.offlineCachedWorks()
+
+        #expect(works.map(\.title) == ["漫画作品", "小说作品"])
+        #expect(works.map(\.cachedEntryCount) == [2, 1])
+        #expect(works[0].id == OfflineCacheGroupID(readerKind: .manga, ownerKey: "漫画作品"))
+        #expect(works[1].id == novel.id.groupID)
+        #expect(works[1].launchTarget == .novel(threadID: "401", authorID: "88", cachedView: 2))
+        #expect(works[0].launchTarget == .manga(
+            threadID: "302",
+            chapterTitle: "第二话",
+            chapterView: 3,
+            forumID: "30"
+        ))
+    }
 }
 
 private func makeOfflineMembership(

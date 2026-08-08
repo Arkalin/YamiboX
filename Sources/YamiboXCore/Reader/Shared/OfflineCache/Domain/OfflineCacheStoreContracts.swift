@@ -16,6 +16,9 @@ public protocol OfflineCacheImageAssetStoring: Sendable {
 
 public protocol OfflineCacheManagementStoring: OfflineCacheUpdateObserving {
     func offlineCacheManagementSnapshot() async -> OfflineCacheManagementSnapshot
+    /// A read-only, work-level projection for entry surfaces. Unlike the
+    /// management snapshot, this excludes queued and failed cache work.
+    func offlineCachedWorks() async -> [OfflineCachedWork]
     func removeOfflineCacheGroup(_ id: OfflineCacheGroupID) async throws
     func removeOfflineCacheEntry(_ id: OfflineCacheEntryID) async throws
     func totalDiskUsageBytes() async -> Int

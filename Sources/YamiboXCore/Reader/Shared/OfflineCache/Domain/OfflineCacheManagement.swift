@@ -156,6 +156,39 @@ public struct OfflineCacheManagementSnapshot: Codable, Hashable, Sendable {
     }
 }
 
+/// The concrete reader route that can be reconstructed from an on-disk cache
+/// entry when no newer reading-progress record exists.
+public enum OfflineCachedWorkLaunchTarget: Codable, Hashable, Sendable {
+    case novel(threadID: String, authorID: String?, cachedView: Int)
+    case manga(threadID: String, chapterTitle: String, chapterView: Int, forumID: String?)
+}
+
+/// One work with at least one fully cached source entry. This is intentionally
+/// narrower than ``OfflineCacheManagementGroup``: it has no queue state or
+/// destructive-management concerns, so reading surfaces can safely use it as
+/// a gallery data source.
+public struct OfflineCachedWork: Codable, Hashable, Identifiable, Sendable {
+    public var id: OfflineCacheGroupID
+    public var title: String
+    public var cachedEntryCount: Int
+    public var updatedAt: Date
+    public var launchTarget: OfflineCachedWorkLaunchTarget
+
+    public init(
+        id: OfflineCacheGroupID,
+        title: String,
+        cachedEntryCount: Int,
+        updatedAt: Date,
+        launchTarget: OfflineCachedWorkLaunchTarget
+    ) {
+        self.id = id
+        self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.cachedEntryCount = max(0, cachedEntryCount)
+        self.updatedAt = updatedAt
+        self.launchTarget = launchTarget
+    }
+}
+
 public struct OfflineCacheQueueWorkProjection: Codable, Hashable, Identifiable, Sendable {
     public var id: OfflineCacheWorkID
     public var groupID: OfflineCacheGroupID
