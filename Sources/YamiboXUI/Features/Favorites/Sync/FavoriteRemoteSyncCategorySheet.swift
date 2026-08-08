@@ -19,7 +19,7 @@ struct FavoriteRemoteSyncCategorySheet: View {
                         Spacer()
                         if category.id == selectedCategoryID {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(AppColors.accent)
                         }
                     }
                 }

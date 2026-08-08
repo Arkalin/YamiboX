@@ -105,7 +105,7 @@ public struct SettingsHomeView: View {
             Button {
                 isAboutPushed = true
             } label: {
-                SystemSettingsRow(title: aboutSettingsTitle, titleColor: .accentColor)
+                SystemSettingsRow(title: aboutSettingsTitle, titleColor: AppColors.accent)
             }
             .disabled(viewModel.isBusy)
         }
@@ -233,7 +233,7 @@ private struct SettingsCategoryRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: category.systemImageName)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AppColors.accent)
                 .frame(width: 24)
 
             Text(category.title)

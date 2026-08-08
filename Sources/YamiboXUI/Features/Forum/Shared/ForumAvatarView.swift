@@ -5,6 +5,7 @@ import YamiboXCore
 /// scales the fallback glyph for larger avatar sizes; nil inherits the
 /// ambient font like the original inline implementations did.
 struct ForumAvatarView: View {
+    @Environment(\.forumTheme) private var theme
     let url: URL?
     let size: CGFloat
     var placeholderSystemImage = "person.crop.circle"
@@ -27,6 +28,6 @@ struct ForumAvatarView: View {
     private var placeholder: some View {
         Image(systemName: placeholderSystemImage)
             .font(placeholderFont)
-            .foregroundStyle(ForumColors.secondaryText)
+            .foregroundStyle(theme.secondaryText)
     }
 }

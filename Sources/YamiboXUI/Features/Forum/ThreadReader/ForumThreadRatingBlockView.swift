@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadRatingBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let block: ForumThreadRatingBlock
     let onShowAllRatings: () -> Void
 
@@ -10,12 +11,12 @@ struct ForumThreadRatingBlockView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(ratingTitle)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 Spacer(minLength: 0)
                 if let totalScore = block.totalScore {
                     Text(L10n.string("forum.thread.ratings_total_format", totalScore))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(ForumColors.orangeAccent)
+                        .foregroundStyle(theme.warning)
                 }
             }
 
@@ -23,15 +24,15 @@ struct ForumThreadRatingBlockView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Text(rating.user.name)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .frame(maxWidth: 92, alignment: .leading)
                     Text(rating.scoreText)
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(ForumColors.orangeAccent)
+                        .foregroundStyle(theme.warning)
                         .frame(width: 44, alignment: .leading)
                     Text(rating.reason ?? "")
                         .font(.caption)
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -44,12 +45,12 @@ struct ForumThreadRatingBlockView: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var ratingTitle: String {

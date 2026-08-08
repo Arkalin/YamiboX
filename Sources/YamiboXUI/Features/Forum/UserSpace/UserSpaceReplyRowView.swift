@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceReplyRowView: View {
+    @Environment(\.forumTheme) private var theme
     let reply: UserSpaceReplyGroup
     let onTap: () -> Void
 
@@ -10,17 +11,17 @@ struct UserSpaceReplyRowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(reply.threadTitle)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                 if let excerpt = reply.excerpt {
                     Text(excerpt)
                         .font(.subheadline)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .lineLimit(3)
                 }
                 if let lastActivityText = reply.lastActivityText {
                     Text(lastActivityText)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.tertiaryText)
+                        .foregroundStyle(theme.tertiaryText)
                 }
             }
             .padding(13)

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadPostHeader: View {
+    @Environment(\.forumTheme) private var theme
     let post: ForumThreadPost
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
@@ -20,11 +21,11 @@ struct ForumThreadPostHeader: View {
                     }
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 } else {
                     Text(post.author.name)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                 }
 
                 HStack(spacing: 8) {
@@ -36,7 +37,7 @@ struct ForumThreadPostHeader: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(ForumColors.tertiaryText)
+                .foregroundStyle(theme.tertiaryText)
             }
 
             Spacer(minLength: 0)
@@ -48,7 +49,7 @@ struct ForumThreadPostHeader: View {
             if post.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .accessibilityLabel(L10n.string("forum.thread.pinned"))
             }
         }
@@ -56,6 +57,7 @@ struct ForumThreadPostHeader: View {
 }
 
 private struct ForumThreadManageActionsView: View {
+    @Environment(\.forumTheme) private var theme
     let actions: [ForumThreadManageAction]
     let onURLTap: (URL) -> Void
 
@@ -66,7 +68,7 @@ private struct ForumThreadManageActionsView: View {
             } label: {
                 Text(singleAction.title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                     .expandedHitTarget()
             }
             .buttonStyle(.plain)
@@ -81,7 +83,7 @@ private struct ForumThreadManageActionsView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                     .frame(width: 32, height: 32)
                     .expandedHitTarget()
             }

@@ -77,7 +77,7 @@ struct NovelReaderVerticalBoundaryPullBadge: View {
             } icon: {
                 Image(systemName: systemImage)
                     .symbolVariant(isArmed ? .fill : .none)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(ReaderTheme.accent)
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(.primary)
@@ -86,7 +86,7 @@ struct NovelReaderVerticalBoundaryPullBadge: View {
             .readerChromePanel(cornerRadius: 22, tint: badgeTint)
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.22 + 0.38 * progress), lineWidth: 1)
+                    .strokeBorder(ReaderTheme.accent.opacity(0.22 + 0.38 * progress), lineWidth: 1)
             }
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 12, y: 4)
         }
@@ -94,7 +94,7 @@ struct NovelReaderVerticalBoundaryPullBadge: View {
 
     private var badgeTint: Color {
         if isArmed {
-            return Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.14)
+            return ReaderTheme.accent.opacity(colorScheme == .dark ? 0.18 : 0.14)
         }
         return readerChromePanelTint(for: colorScheme)
     }

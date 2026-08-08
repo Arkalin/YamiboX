@@ -89,7 +89,7 @@ private func resolved(_ color: Color?, _ style: UIUserInterfaceStyle) -> Resolve
 
     let linkRange = try #require(attributed.range(of: "here"))
     #expect(attributed[linkRange].runs.allSatisfy { $0.link == url })
-    #expect(attributed[linkRange].runs.allSatisfy { $0.foregroundColor == ForumColors.brownPrimary })
+    #expect(attributed[linkRange].runs.allSatisfy { $0.foregroundColor == ForumTheme.classic.mutedAccent })
     #expect(attributed[linkRange].runs.allSatisfy { $0.underlineStyle == .single })
 }
 

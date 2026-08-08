@@ -26,6 +26,7 @@ final class UserSpaceAddFriendSheetModel {
 }
 
 struct UserSpaceAddFriendSheet: View {
+    @Environment(\.forumTheme) private var theme
     let targetName: String?
     let form: UserSpaceAddFriendForm?
     let isLoading: Bool
@@ -79,6 +80,7 @@ struct UserSpaceAddFriendSheet: View {
 }
 
 private struct UserSpaceAddFriendFormView: View {
+    @Environment(\.forumTheme) private var theme
     let targetName: String?
     let avatarURL: URL?
     let options: [UserSpaceAddFriendOption]
@@ -98,7 +100,7 @@ private struct UserSpaceAddFriendFormView: View {
                             .font(.headline)
                         Text(L10n.string("user_space.add_friend_note_limit"))
                             .font(.caption)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
                 }
                 .padding(.vertical, 4)
@@ -131,12 +133,13 @@ private struct UserSpaceAddFriendFormView: View {
 }
 
 private struct UserSpaceAddFriendLoadingView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         VStack(spacing: 12) {
             ProgressView()
             Text(L10n.string("user_space.add_friend_loading"))
                 .font(.subheadline)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

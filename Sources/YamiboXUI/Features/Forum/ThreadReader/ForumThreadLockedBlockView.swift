@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadLockedBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let cost: Int?
     let blocks: [ForumThreadContentBlock]
     let refererURL: URL
@@ -13,7 +14,7 @@ struct ForumThreadLockedBlockView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label(lockedText, systemImage: "lock")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                 ForumThreadContentBlocksView(
                     blocks: blocks,
                     fallbackText: "",
@@ -25,7 +26,7 @@ struct ForumThreadLockedBlockView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(ForumColors.orangeAccent.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .stroke(theme.warning.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         }
     }
 

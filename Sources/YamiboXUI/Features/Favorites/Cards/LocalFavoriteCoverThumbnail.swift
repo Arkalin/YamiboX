@@ -69,7 +69,7 @@ struct LocalFavoriteSmartCardBadge: View {
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
             .padding(5)
-            .background(Color.accentColor, in: Circle())
+            .background(AppColors.accent, in: Circle())
             .offset(x: 5, y: -5)
             .accessibilityHidden(true)
     }
@@ -99,11 +99,11 @@ struct LocalFavoriteCoverTextFallback: View {
     var body: some View {
         ZStack(alignment: .top) {
             Rectangle()
-                .fill(Color.accentColor.opacity(0.12))
+                .fill(AppColors.accent.opacity(0.12))
             Text(trimmedTitle)
                 .font(.system(size: fontSize, weight: .bold))
                 .lineSpacing(fontSize * 0.15)
-                .foregroundStyle(Color.accentColor.opacity(0.75))
+                .foregroundStyle(AppColors.accent.opacity(0.75))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .padding(scaledPadding)

@@ -6,9 +6,15 @@ public struct ForumNavigationHostView: View {
     @State private var navigator: ForumDestinationNavigator
 
     private let appModel: YamiboAppModel
+    private let theme: ForumTheme
 
-    public init(dependencies: ForumDependencies, appModel: YamiboAppModel) {
+    public init(
+        dependencies: ForumDependencies,
+        appModel: YamiboAppModel,
+        theme: ForumTheme = .classic
+    ) {
         self.appModel = appModel
+        self.theme = theme
         _model = State(wrappedValue: ForumHomeViewModel(dependencies: dependencies))
         _navigator = State(wrappedValue: ForumDestinationNavigator(
             dependencies: dependencies,
@@ -53,5 +59,6 @@ public struct ForumNavigationHostView: View {
             guard appModel.forumSearchRequest != nil else { return }
             navigator.push(.search(fid: nil))
         }
+        .forumTheme(theme)
     }
 }

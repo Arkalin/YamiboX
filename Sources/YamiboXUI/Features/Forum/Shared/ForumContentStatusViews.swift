@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumContentLoadingView: View {
+    @Environment(\.forumTheme) private var theme
     /// How the placeholder occupies its container: embedded in scroll
     /// content, stretched over the available space, or stretched with the
     /// forum page background behind it.
@@ -35,12 +36,13 @@ struct ForumContentLoadingView: View {
             ProgressView()
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         }
     }
 }
 
 struct ForumContentErrorView: View {
+    @Environment(\.forumTheme) private var theme
     let message: String
     let retry: () -> Void
 
@@ -48,10 +50,10 @@ struct ForumContentErrorView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(ForumColors.orangeAccent)
+                .foregroundStyle(theme.warning)
             Text(message)
                 .font(.body)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .multilineTextAlignment(.center)
             Button {
                 retry()

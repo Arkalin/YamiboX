@@ -68,7 +68,7 @@ struct LocalFavoriteCategoryTabBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                isSelected ? Color.accentColor : Color.secondary.opacity(0.12),
+                isSelected ? AppColors.accent : Color.secondary.opacity(0.12),
                 in: Capsule()
             )
             .foregroundStyle(isSelected ? selectedPillForeground : .primary)

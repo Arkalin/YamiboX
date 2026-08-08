@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceBlogRowView: View {
+    @Environment(\.forumTheme) private var theme
     let blog: UserSpaceBlogSummary
     let onUserTap: (String, String?) -> Void
     let onTap: () -> Void
@@ -12,11 +13,11 @@ struct UserSpaceBlogRowView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(blog.title)
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                     if let excerpt = blog.excerpt {
                         Text(excerpt)
                             .font(.subheadline)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                             .lineLimit(3)
                     }
                 }
@@ -30,7 +31,7 @@ struct UserSpaceBlogRowView: View {
                         onUserTap(authorID, authorName)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 }
                 Spacer()
                 if let viewCount = blog.viewCount {
@@ -41,7 +42,7 @@ struct UserSpaceBlogRowView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(ForumColors.secondaryText)
+            .foregroundStyle(theme.secondaryText)
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)

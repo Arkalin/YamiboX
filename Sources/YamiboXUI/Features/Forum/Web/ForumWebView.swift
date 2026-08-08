@@ -6,6 +6,7 @@ import YamiboXCore
 import UIKit
 
 public struct IOSForumWebView: UIViewRepresentable {
+    @Environment(\.forumTheme) private var theme
     public let model: ForumBrowserModel
     public let sessionStore: SessionStore
     public let isSelected: Bool
@@ -24,11 +25,12 @@ public struct IOSForumWebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .default()
-        configuration.userContentController.addUserScript(.yamiboHideChromeScript(for: context.environment.colorScheme))
+        let appearance = ForumWebAppearance(theme: theme, colorScheme: context.environment.colorScheme)
+        configuration.userContentController.addUserScript(.yamiboHideChromeScript(appearance))
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
-        context.coordinator.applyAppearance(to: webView, colorScheme: context.environment.colorScheme)
+        context.coordinator.applyAppearance(to: webView, appearance: appearance)
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -38,7 +40,10 @@ public struct IOSForumWebView: UIViewRepresentable {
 
     public func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.attach(view)
-        context.coordinator.applyAppearance(to: view, colorScheme: context.environment.colorScheme)
+        context.coordinator.applyAppearance(
+            to: view,
+            appearance: ForumWebAppearance(theme: theme, colorScheme: context.environment.colorScheme)
+        )
         if isSelected {
             context.coordinator.synchronizeCurrentSession(reloadIfNeeded: true)
         }
@@ -49,7 +54,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         private let sessionStore: SessionStore
         private weak var webView: WKWebView?
         private var didPrepareInitialLoad = false
-        private var appliedColorScheme: ColorScheme?
+        private var appliedAppearance: ForumWebAppearance?
         private var sessionObservationTask: Task<Void, Never>?
         private var sessionSyncState = ForumWebSessionSyncState()
 
@@ -80,19 +85,15 @@ public struct IOSForumWebView: UIViewRepresentable {
             }
         }
 
-        func applyAppearance(to webView: WKWebView, colorScheme: ColorScheme) {
-            let isDark = colorScheme == .dark
-            let backgroundColor = isDark
-                ? YamiboColors.Site.creamBackgroundDarkUIColor
-                : YamiboColors.Site.creamBackgroundUIColor
-            webView.overrideUserInterfaceStyle = isDark ? .dark : .light
-            webView.backgroundColor = backgroundColor
-            webView.scrollView.backgroundColor = backgroundColor
+        fileprivate func applyAppearance(to webView: WKWebView, appearance: ForumWebAppearance) {
+            webView.overrideUserInterfaceStyle = appearance.isDark ? .dark : .light
+            webView.backgroundColor = appearance.pageBackground
+            webView.scrollView.backgroundColor = appearance.pageBackground
 
-            guard appliedColorScheme != colorScheme else { return }
-            appliedColorScheme = colorScheme
+            guard appliedAppearance != appearance else { return }
+            appliedAppearance = appearance
 
-            let script = WKUserScript.yamiboHideChromeScript(for: colorScheme)
+            let script = WKUserScript.yamiboHideChromeScript(appearance)
             webView.configuration.userContentController.removeAllUserScripts()
             webView.configuration.userContentController.addUserScript(script)
             webView.evaluateJavaScript(script.source)
@@ -278,16 +279,58 @@ public struct IOSForumWebView: UIViewRepresentable {
     }
 }
 
+fileprivate struct ForumWebAppearance: Equatable {
+    let isDark: Bool
+    let pageBackground: UIColor
+    let pageBackgroundCSS: String
+    let surfaceCSS: String
+    let webTextCSS: String
+    let borderCSS: String
+
+    init(theme: ForumTheme, colorScheme: ColorScheme) {
+        isDark = colorScheme == .dark
+        let traits = UITraitCollection(userInterfaceStyle: isDark ? .dark : .light)
+        pageBackground = UIColor(theme.pageBackground).resolvedColor(with: traits)
+        pageBackgroundCSS = Self.cssColor(pageBackground)
+        surfaceCSS = Self.cssColor(UIColor(theme.surface).resolvedColor(with: traits))
+        webTextCSS = Self.cssColor(UIColor(theme.webText).resolvedColor(with: traits))
+        borderCSS = Self.cssColor(UIColor(theme.border).resolvedColor(with: traits))
+    }
+
+    static func == (lhs: ForumWebAppearance, rhs: ForumWebAppearance) -> Bool {
+        lhs.isDark == rhs.isDark
+            && lhs.pageBackgroundCSS == rhs.pageBackgroundCSS
+            && lhs.surfaceCSS == rhs.surfaceCSS
+            && lhs.webTextCSS == rhs.webTextCSS
+            && lhs.borderCSS == rhs.borderCSS
+    }
+
+    private static func cssColor(_ color: UIColor) -> String {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        let redByte = Int((red * 255).rounded())
+        let greenByte = Int((green * 255).rounded())
+        let blueByte = Int((blue * 255).rounded())
+        if alpha >= 0.999 {
+            return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
+        }
+        return "rgba(\(redByte),\(greenByte),\(blueByte),\(String(format: "%.3f", alpha)))"
+    }
+}
+
 private extension WKUserScript {
-    static func yamiboHideChromeScript(for colorScheme: ColorScheme) -> WKUserScript {
+    static func yamiboHideChromeScript(_ appearance: ForumWebAppearance) -> WKUserScript {
         WKUserScript(
-            source: yamiboHideChromeSource(for: colorScheme),
+            source: yamiboHideChromeSource(appearance),
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: false
         )
     }
 
-    /// Rules that recolor the forum page to match the app's cream/brown theme.
+    /// Rules that recolor the forum page to match the active forum theme.
     ///
     /// Light mode blankets known structural containers (wrap/bm/tl/threadlist)
     /// because the site's own light skin is visually inconsistent across them.
@@ -300,20 +343,19 @@ private extension WKUserScript {
     /// versa). Leaving them unset lets explicit site/post colors keep
     /// showing through, same as how per-post author colors are left alone
     /// elsewhere in this app.
-    static func yamiboHideChromeSource(for colorScheme: ColorScheme) -> String {
+    static func yamiboHideChromeSource(_ appearance: ForumWebAppearance) -> String {
         let themeRules: [String]
-        switch colorScheme {
-        case .dark:
+        if appearance.isDark {
             themeRules = [
-                "html,body{background:#17110D !important;color:#F0D8BC !important;}"
+                "html,body{background:\(appearance.pageBackgroundCSS) !important;color:\(appearance.webTextCSS) !important;}"
             ]
-        default:
+        } else {
             themeRules = [
-                "html,body{background:#FFF3D6 !important;color:#6E2B19 !important;}",
-                "#wrap,.wrap,.wp,.ct2,.mn,.bm,.bm_c,.threadlist,.tl{background:#FFF3D6 !important;color:#6E2B19 !important;}",
-                ".bm,.bm_c,.tl th,.tl td{border-color:rgba(109,58,43,0.18) !important;}",
-                ".bm_h,.bm_h h2,.bm_h h3{background:#FFF7E0 !important;color:#6E2B19 !important;}",
-                "a{color:#6E2B19 !important;}"
+                "html,body{background:\(appearance.pageBackgroundCSS) !important;color:\(appearance.webTextCSS) !important;}",
+                "#wrap,.wrap,.wp,.ct2,.mn,.bm,.bm_c,.threadlist,.tl{background:\(appearance.pageBackgroundCSS) !important;color:\(appearance.webTextCSS) !important;}",
+                ".bm,.bm_c,.tl th,.tl td{border-color:\(appearance.borderCSS) !important;}",
+                ".bm_h,.bm_h h2,.bm_h h3{background:\(appearance.surfaceCSS) !important;color:\(appearance.webTextCSS) !important;}",
+                "a{color:\(appearance.webTextCSS) !important;}"
             ]
         }
 

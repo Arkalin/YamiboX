@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadImageBlockView: View {
+    @Environment(\.forumTheme) private var theme
     let blockID: String
     let block: ForumThreadImageBlock
     let refererURL: URL
@@ -56,6 +57,7 @@ struct ForumThreadImageBlockView: View {
 }
 
 private struct ForumThreadImageContentView: View {
+    @Environment(\.forumTheme) private var theme
     let image: Image
     let maxDimension: CGFloat
 
@@ -93,9 +95,10 @@ enum ForumThreadImageDisplaySizing {
 }
 
 private struct ForumThreadImagePlaceholderView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(ForumColors.creamBackground)
+            .fill(theme.pageBackground)
             .frame(height: 180)
             .overlay {
                 ProgressView()
@@ -104,14 +107,15 @@ private struct ForumThreadImagePlaceholderView: View {
 }
 
 private struct ForumThreadImageFailureView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(ForumColors.creamBackground)
+            .fill(theme.pageBackground)
             .frame(height: 120)
             .overlay {
                 Label(L10n.string("forum.thread.image_load_failed"), systemImage: "photo")
                     .font(.caption)
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
             }
     }
 }

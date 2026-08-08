@@ -261,7 +261,7 @@ struct ReaderChromeCapsuleButton: View {
         let layout = ReaderBottomChromeLayoutPresentation()
         let controlTint = layout.progressCapsulesUseButtonTint
             ? readerChromeButtonTint(for: colorScheme)
-            : Color.accentColor
+            : ReaderTheme.accent
 
         Button(action: action) {
             HStack(spacing: 8) {
@@ -316,8 +316,8 @@ func readerChromeButtonTint(for colorScheme: ColorScheme) -> Color {
     // Reader controls are rendered by glass/UIKit presentation hosts where
     // the semantic accent can fall back to the system blue. Resolve the
     // app's AccentColor asset directly at this single reader boundary; the
-    // rest of the app can continue using `Color.accentColor`.
-    ForumColors.appAccent
+    // rest of the app can continue using `ReaderTheme.accent`.
+    ReaderTheme.accent
 }
 
 /// Reader Preview Mode indicator: shown in the top chrome of both the novel

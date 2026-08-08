@@ -6,6 +6,7 @@ import UIKit
 #endif
 
 struct ForumNovelDetailView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: ForumNovelDetailViewModel
 
     let onChapterTap: (NovelLaunchContext) -> Void
@@ -82,6 +83,7 @@ struct ForumNovelDetailView: View {
 }
 
 private struct ForumNovelDetailBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let header: ForumNovelDetailHeaderSummary
     let sections: [ForumNovelChapterSection]
     let expandedPages: Set<Int>
@@ -149,11 +151,12 @@ private struct ForumNovelDetailBodyView: View {
             await refresh()
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 }
 
 private struct ForumNovelFirstFloorPreview: View {
+    @Environment(\.forumTheme) private var theme
     let text: String
     let onCopyText: ((String) -> Void)?
 
@@ -163,10 +166,10 @@ private struct ForumNovelFirstFloorPreview: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "text.alignleft")
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 Text(L10n.string("forum.thread_route.first_floor_preview"))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                 Spacer(minLength: 0)
                 Button {
                     withAnimation(.snappy(duration: 0.18)) {
@@ -186,7 +189,7 @@ private struct ForumNovelFirstFloorPreview: View {
 
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .lineSpacing(3)
                 .lineLimit(isExpanded ? nil : 6)
                 .textSelection(.enabled)
@@ -207,6 +210,7 @@ private struct ForumNovelFirstFloorPreview: View {
 }
 
 private struct ForumNovelChapterSectionView: View {
+    @Environment(\.forumTheme) private var theme
     let section: ForumNovelChapterSection
     let isExpanded: Bool
     let onToggle: () -> Void
@@ -219,17 +223,17 @@ private struct ForumNovelChapterSectionView: View {
                 HStack(spacing: 10) {
                     Text(String(format: L10n.string("reader.page_number_spaced"), section.page))
                         .font(.subheadline.weight(section.page == 1 ? .semibold : .medium))
-                        .foregroundStyle(ForumColors.brownEmphasis)
+                        .foregroundStyle(theme.accentText)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(ForumColors.brownPrimary.opacity(0.65))
+                        .foregroundStyle(theme.mutedAccent.opacity(0.65))
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
                 .background(
-                    (section.page == 1 ? ForumColors.brownDeep : ForumColors.brownPrimary).opacity(section.page == 1 ? 0.08 : 0.06),
+                    (section.page == 1 ? theme.accent : theme.mutedAccent).opacity(section.page == 1 ? 0.08 : 0.06),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
             }
@@ -241,7 +245,7 @@ private struct ForumNovelChapterSectionView: View {
                         Spacer()
                         ProgressView()
                             .controlSize(.small)
-                            .tint(ForumColors.brownPrimary)
+                            .tint(theme.mutedAccent)
                         Spacer()
                     }
                     .frame(height: 56)
@@ -260,6 +264,7 @@ private struct ForumNovelChapterSectionView: View {
 }
 
 private struct ForumNovelChapterRow: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let chapter: ForumNovelChapterSummary
     let action: () -> Void
@@ -275,20 +280,20 @@ private struct ForumNovelChapterRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(chapter.title)
                         .font(.subheadline)
-                        .foregroundStyle(chapter.isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
+                        .foregroundStyle(chapter.isCurrentRead ? theme.accentText : theme.primaryText)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let progressText = chapter.progressText {
                         Text(progressText)
                             .font(.caption2)
-                            .foregroundStyle(ForumColors.brownPrimary)
+                            .foregroundStyle(theme.mutedAccent)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.tertiaryText)
+                    .foregroundStyle(theme.tertiaryText)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -299,6 +304,7 @@ private struct ForumNovelChapterRow: View {
 }
 
 private struct ForumNovelChapterLeadingBadge: View {
+    @Environment(\.forumTheme) private var theme
     let floorText: String?
     let isCurrentRead: Bool
 
@@ -307,23 +313,23 @@ private struct ForumNovelChapterLeadingBadge: View {
             if let floorText {
                 Text(floorText)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(isCurrentRead ? .white : ForumColors.brownEmphasis)
+                    .foregroundStyle(isCurrentRead ? .white : theme.accentText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(
-                        isCurrentRead ? ForumColors.brownDeep : ForumColors.brownPrimary.opacity(0.1),
+                        isCurrentRead ? theme.accent : theme.mutedAccent.opacity(0.1),
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
             } else {
                 Image(systemName: "text.book.closed")
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                     .frame(width: 24)
             }
 
             if isCurrentRead {
                 Image(systemName: "bookmark.fill")
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                     .offset(x: 5, y: 6)
             }
         }
@@ -332,6 +338,7 @@ private struct ForumNovelChapterLeadingBadge: View {
 }
 
 private struct ForumNovelDetailHeader: View {
+    @Environment(\.forumTheme) private var theme
     let summary: ForumNovelDetailHeaderSummary
     let canReadStart: Bool
     let hasReadingProgress: Bool
@@ -350,7 +357,7 @@ private struct ForumNovelDetailHeader: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(summary.title)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .contextMenu {
@@ -375,21 +382,21 @@ private struct ForumNovelDetailHeader: View {
                     if let postedAtText = summary.postedAtText {
                         Text(String(format: L10n.string("forum.thread_route.posted_at_format"), postedAtText))
                             .font(.caption2)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if let lastUpdatedText = summary.lastUpdatedText {
                         Text(String(format: L10n.string("forum.thread_route.updated_at_format"), lastUpdatedText))
                             .font(.caption2)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if let readingProgressText = summary.readingProgressText {
                         Label(readingProgressText, systemImage: "bookmark.fill")
                             .font(.caption2.weight(.medium))
-                            .foregroundStyle(ForumColors.orangeAccent)
+                            .foregroundStyle(theme.warning)
                             .lineLimit(2)
                     }
 
@@ -433,6 +440,7 @@ private struct ForumNovelDetailHeader: View {
 }
 
 private struct ForumNovelHeaderActions: View {
+    @Environment(\.forumTheme) private var theme
     let isFavorited: Bool
     let canReadStart: Bool
     let hasReadingProgress: Bool
@@ -474,7 +482,7 @@ private struct ForumNovelHeaderActions: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 38)
             .foregroundStyle(.white)
-            .background(ForumColors.brownDeep, in: Capsule())
+            .background(theme.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(!canReadStart)
@@ -486,9 +494,9 @@ private struct ForumNovelHeaderActions: View {
             Image(systemName: isFavorited ? "star.fill" : "star")
                 .contentTransition(.symbolEffect(.replace))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownEmphasis)
+                .foregroundStyle(theme.accentText)
                 .frame(minWidth: 42, minHeight: 38)
-                .background(ForumColors.brownPrimary.opacity(0.16), in: Capsule())
+                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
                 .expandedHitTarget()
         }
         .buttonStyle(.plain)
@@ -500,9 +508,9 @@ private struct ForumNovelHeaderActions: View {
         ShareLink(item: threadURL) {
             Image(systemName: "square.and.arrow.up")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownEmphasis)
+                .foregroundStyle(theme.accentText)
                 .frame(minWidth: 42, minHeight: 38)
-                .background(ForumColors.brownPrimary.opacity(0.16), in: Capsule())
+                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
                 .expandedHitTarget()
         }
         .buttonStyle(.plain)
@@ -519,10 +527,10 @@ private struct ForumNovelHeaderActions: View {
             }
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
-                .foregroundStyle(ForumColors.brownEmphasis)
+                .foregroundStyle(theme.accentText)
                 .padding(.horizontal, showsTitle ? 12 : 0)
                 .frame(minWidth: showsTitle ? nil : 42, minHeight: 38)
-                .background(ForumColors.brownPrimary.opacity(0.16), in: Capsule())
+                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.string("forum.thread_route.view_discussion"))
@@ -530,6 +538,7 @@ private struct ForumNovelHeaderActions: View {
 }
 
 private struct ForumNovelAuthorButton: View {
+    @Environment(\.forumTheme) private var theme
     let authorID: String?
     let authorName: String
     let onAuthorTap: (String, String?) -> Void
@@ -551,7 +560,7 @@ private struct ForumNovelAuthorButton: View {
             }
         }
         .font(.caption)
-        .foregroundStyle(ForumColors.brownPrimary)
+        .foregroundStyle(theme.mutedAccent)
         .contextMenu {
             if let onCopyText {
                 Button {
@@ -565,6 +574,7 @@ private struct ForumNovelAuthorButton: View {
 }
 
 private struct FlowStatRow: View {
+    @Environment(\.forumTheme) private var theme
     let summary: ForumNovelDetailHeaderSummary
 
     var body: some View {
@@ -577,7 +587,7 @@ private struct FlowStatRow: View {
             }
         }
         .font(.caption2.weight(.medium))
-        .foregroundStyle(ForumColors.secondaryText)
+        .foregroundStyle(theme.secondaryText)
     }
 
     @ViewBuilder
@@ -604,6 +614,7 @@ private struct FlowStatRow: View {
 }
 
 private struct ForumNovelDetailStatChip: View {
+    @Environment(\.forumTheme) private var theme
     let text: String
     let systemImage: String
 
@@ -612,6 +623,6 @@ private struct ForumNovelDetailStatChip: View {
             .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(ForumColors.brownPrimary.opacity(0.08), in: Capsule())
+            .background(theme.mutedAccent.opacity(0.08), in: Capsule())
     }
 }

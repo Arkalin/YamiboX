@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceViewAllBlogFilterView: View {
+    @Environment(\.forumTheme) private var theme
     let selectedFilter: UserSpaceViewAllBlogFilter
     let selectFilter: (UserSpaceViewAllBlogFilter) -> Void
 
@@ -18,7 +19,7 @@ struct UserSpaceViewAllBlogFilterView: View {
                         .expandedHitTarget(width: 0)
                 }
                 .buttonStyle(.bordered)
-                .tint(filter == selectedFilter ? ForumColors.brownEmphasis : ForumColors.brownLight)
+                .tint(filter == selectedFilter ? theme.accentText : theme.divider)
                 .accessibilityAddTraits(filter == selectedFilter ? .isSelected : [])
             }
         }

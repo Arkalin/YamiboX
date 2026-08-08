@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadPollView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var selectedOptionIDs: Set<String>
     @State private var isSubmitting = false
     @State private var resultMessage: String?
@@ -28,13 +29,13 @@ struct ForumThreadPollView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(poll.title, systemImage: "chart.bar.doc.horizontal")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let endTimeText = poll.endTimeText {
                 Text(endTimeText)
                     .font(.caption)
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -63,7 +64,7 @@ struct ForumThreadPollView: View {
             if let resultMessage {
                 Text(resultMessage)
                     .font(.caption)
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -78,7 +79,7 @@ struct ForumThreadPollView: View {
                     .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(ForumColors.brownPrimary)
+                .tint(theme.mutedAccent)
                 .disabled(selectedOptionIDs.isEmpty || isSubmitting)
             }
 
@@ -88,12 +89,12 @@ struct ForumThreadPollView: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func toggle(_ optionID: String) {
@@ -130,6 +131,7 @@ struct ForumThreadPollView: View {
 }
 
 private struct ForumThreadPollOptionView: View {
+    @Environment(\.forumTheme) private var theme
     let option: ForumThreadPollOption
     let pollStatus: ForumThreadPollStatus
     let pollType: ForumThreadPollType
@@ -147,16 +149,16 @@ private struct ForumThreadPollOptionView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: selectionIconName)
                         .font(.caption)
-                        .foregroundStyle(isVisuallySelected ? ForumColors.brownPrimary : ForumColors.secondaryText)
+                        .foregroundStyle(isVisuallySelected ? theme.mutedAccent : theme.secondaryText)
                     Text(option.title)
                         .font(.callout)
-                        .foregroundStyle(ForumColors.textDark)
+                        .foregroundStyle(theme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     if let voteCount = option.voteCount {
                         Text(L10n.string("forum.thread.poll_votes_format", voteCount))
                             .font(.caption)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                     }
                 }
                 .expandedHitTarget(width: 0)
@@ -167,11 +169,11 @@ private struct ForumThreadPollOptionView: View {
 
             if showProgress {
                 ProgressView(value: min(max((option.percentage ?? 0) / 100, 0), 1))
-                    .tint(ForumColors.brownPrimary)
+                    .tint(theme.mutedAccent)
                 if let percentage = option.percentage {
                     Text(percentage.formatted(.number.precision(.fractionLength(0 ... 2))) + "%")
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                 }
             }
         }

@@ -121,7 +121,7 @@ private struct AboutLinksSection: View {
                     } else {
                         Image(systemName: "arrow.down.circle")
                             .font(.title2.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppColors.accent)
                             .accessibilityHidden(true)
                     }
                 }
@@ -150,7 +150,7 @@ struct AboutExternalLinkRow: View {
 
                 Image(systemName: "arrow.up.forward.square")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppColors.accent)
                     .accessibilityHidden(true)
             }
             .frame(minHeight: 64)
@@ -314,7 +314,7 @@ private struct AppIconView: View {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.accentColor.gradient)
+                    .fill(AppColors.accent.gradient)
 
                 Image(systemName: "book.pages.fill")
                     .font(.system(size: 44, weight: .semibold))

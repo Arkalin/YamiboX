@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceSubPagePickerView: View {
+    @Environment(\.forumTheme) private var theme
     let subPages: [UserSpaceSubPage]
     let selectedSubPage: UserSpaceSubPage
     let selectSubPage: (UserSpaceSubPage) -> Void
@@ -17,8 +18,8 @@ struct UserSpaceSubPagePickerView: View {
                             .font(.footnote.weight(subPage == selectedSubPage ? .semibold : .regular))
                             .padding(.horizontal, 12)
                             .frame(minHeight: 30)
-                            .foregroundStyle(subPage == selectedSubPage ? ForumColors.textDark : ForumColors.secondaryText)
-                            .background(Capsule().fill(subPage == selectedSubPage ? ForumColors.accentFill : ForumColors.mutedFill))
+                            .foregroundStyle(subPage == selectedSubPage ? theme.primaryText : theme.secondaryText)
+                            .background(Capsule().fill(subPage == selectedSubPage ? theme.selectedFill : theme.mutedFill))
                             .expandedHitTarget(width: 0)
                     }
                     .buttonStyle(.plain)

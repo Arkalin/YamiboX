@@ -118,7 +118,7 @@ struct LocalFavoriteSelectionEmphasis: ViewModifier {
             .overlay {
                 if isSelectionMode, isSelected {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color.accentColor, lineWidth: 2.5)
+                        .stroke(AppColors.accent, lineWidth: 2.5)
                 }
             }
             .opacity(isSelectionMode && !isSelected ? 0.45 : 1)

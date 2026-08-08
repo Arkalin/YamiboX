@@ -58,6 +58,10 @@ struct MangaReaderSettingsSheet: View {
             }
         }
         .background(Color.clear)
+        // Sheets use a separate presentation host on recent iOS releases;
+        // set the reader-owned accent again so UIKit/glass controls cannot
+        // fall back to the system blue.
+        .tint(ReaderTheme.accent)
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(

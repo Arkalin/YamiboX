@@ -384,14 +384,14 @@ private struct MangaDirectoryMetadataSection: View {
                     onUpdateDirectory()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(panel.isSearchMode ? .indigo : .accentColor)
+                .tint(panel.isSearchMode ? .indigo : ReaderTheme.accent)
                 .disabled(!panel.isUpdateButtonEnabled || isSelecting)
             }
 
             if let errorMessage = panel.errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(ReaderTheme.accent)
             }
         }
         .padding(16)
@@ -450,10 +450,10 @@ private struct MangaDirectorySortToggleButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.down")
-                    .foregroundStyle(sortOrder == .ascending ? Color.accentColor : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .ascending ? ReaderTheme.accent : .gray.opacity(0.35))
 
                 Image(systemName: "arrow.up")
-                    .foregroundStyle(sortOrder == .descending ? Color.accentColor : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .descending ? ReaderTheme.accent : .gray.opacity(0.35))
             }
             .font(.subheadline.weight(.bold))
             .padding(.horizontal, 10)
@@ -490,7 +490,7 @@ private struct MangaDirectorySelectionToggleButton: View {
                 } else {
                     Image(systemName: "trash")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(ReaderTheme.accent)
                 }
             }
             .expandedHitTarget()
@@ -567,20 +567,20 @@ private struct MangaDirectoryChapterRow: View {
     private var numberColor: Color {
         if isSelecting {
             if isSelected {
-                return isCurrent ? .accentColor : .secondary
+                return isCurrent ? ReaderTheme.accent : .secondary
             }
-            return isCurrent ? Color.accentColor.opacity(0.45) : Color.secondary.opacity(0.55)
+            return isCurrent ? ReaderTheme.accent.opacity(0.45) : Color.secondary.opacity(0.55)
         }
-        return isCurrent ? .accentColor : .secondary
+        return isCurrent ? ReaderTheme.accent : .secondary
     }
 
     private var expandButtonTint: Color {
-        isSelecting && !isSelected ? Color.accentColor.opacity(0.45) : .accentColor
+        isSelecting && !isSelected ? ReaderTheme.accent.opacity(0.45) : ReaderTheme.accent
     }
 
     private var backgroundColor: Color {
         if isCurrent {
-            return Color.accentColor.opacity(isSelecting && !isSelected ? 0.06 : 0.12)
+            return ReaderTheme.accent.opacity(isSelecting && !isSelected ? 0.06 : 0.12)
         }
         return YamiboColors.SystemSurface.secondaryGroupedBackground
     }

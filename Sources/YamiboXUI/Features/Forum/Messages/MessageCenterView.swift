@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct MessageCenterView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: MessageCenterViewModel
 
     let onPrivateMessageTap: (String, String?) -> Void
@@ -78,6 +79,7 @@ struct MessageCenterView: View {
 }
 
 private struct MessageCenterBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let selectedTab: MessageCenterTab
     let content: MessageCenterViewModel.Content?
     let pageNavigation: ForumPageNavigation?
@@ -124,11 +126,12 @@ private struct MessageCenterBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoading && content != nil)
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 }
 
 private struct MessageCenterTabPickerView: View {
+    @Environment(\.forumTheme) private var theme
     let selectedTab: MessageCenterTab
     let selectTab: (MessageCenterTab) -> Void
 
@@ -142,8 +145,8 @@ private struct MessageCenterTabPickerView: View {
                         .font(.footnote.weight(tab == selectedTab ? .semibold : .regular))
                         .padding(.horizontal, 12)
                         .frame(minHeight: 30)
-                        .foregroundStyle(tab == selectedTab ? ForumColors.textDark : ForumColors.secondaryText)
-                        .background(Capsule().fill(tab == selectedTab ? ForumColors.accentFill : ForumColors.mutedFill))
+                        .foregroundStyle(tab == selectedTab ? theme.primaryText : theme.secondaryText)
+                        .background(Capsule().fill(tab == selectedTab ? theme.selectedFill : theme.mutedFill))
                         .expandedHitTarget(width: 0)
                 }
                 .buttonStyle(.plain)
@@ -154,6 +157,7 @@ private struct MessageCenterTabPickerView: View {
 }
 
 private struct MessageCenterContentView: View {
+    @Environment(\.forumTheme) private var theme
     let selectedTab: MessageCenterTab
     let content: MessageCenterViewModel.Content?
     let pageNavigation: ForumPageNavigation?
@@ -203,6 +207,7 @@ private struct MessageCenterContentView: View {
 }
 
 private struct MessageCenterPrivateMessageRowView: View {
+    @Environment(\.forumTheme) private var theme
     let message: UserSpacePrivateMessageSummary
     let onUserTap: (String, String?) -> Void
     let onTap: () -> Void
@@ -221,7 +226,7 @@ private struct MessageCenterPrivateMessageRowView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(message.title)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(ForumColors.textDark)
+                            .foregroundStyle(theme.primaryText)
                             .lineLimit(1)
                         if let unreadCount = message.unreadCount {
                             Text(String(unreadCount))
@@ -229,12 +234,12 @@ private struct MessageCenterPrivateMessageRowView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(ForumColors.redAccent, in: Capsule())
+                                .background(theme.danger, in: Capsule())
                         }
                     }
                     Text(message.message)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .lineLimit(2)
                 }
             }
@@ -245,7 +250,7 @@ private struct MessageCenterPrivateMessageRowView: View {
             if let timeText = message.timeText {
                 Text(timeText)
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.tertiaryText)
+                    .foregroundStyle(theme.tertiaryText)
                     .lineLimit(1)
             }
         }
@@ -256,6 +261,7 @@ private struct MessageCenterPrivateMessageRowView: View {
 }
 
 private struct MessageCenterNoticeRowView: View {
+    @Environment(\.forumTheme) private var theme
     let notice: UserSpaceNoticeSummary
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
@@ -277,7 +283,7 @@ private struct MessageCenterNoticeRowView: View {
                 if let timeText = notice.timeText {
                     Text(timeText)
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.tertiaryText)
+                        .foregroundStyle(theme.tertiaryText)
                 }
                 ForumThreadContentBlocksView(
                     blocks: notice.contentBlocks,
@@ -290,10 +296,10 @@ private struct MessageCenterNoticeRowView: View {
                 if let quote = notice.quote {
                     Text(quote)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(ForumColors.mutedFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(theme.mutedFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
             }
         }
@@ -308,6 +314,7 @@ private struct MessageCenterNoticeRowView: View {
 
 
 private struct MessageCenterEmptyView: View {
+    @Environment(\.forumTheme) private var theme
     let message: String
 
     var body: some View {

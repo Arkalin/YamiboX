@@ -78,7 +78,7 @@ struct LocalFavoriteSelectionMoveSheet: View {
     private func locationRow(
         title: String,
         systemImage: String,
-        tint: Color = .accentColor,
+        tint: Color = AppColors.accent,
         location: FavoriteLocation
     ) -> some View {
         let state = organizer.selectionLocationState(location)
@@ -97,7 +97,7 @@ struct LocalFavoriteSelectionMoveSheet: View {
                 }
                 Spacer()
                 Image(systemName: stateImageName(state))
-                    .foregroundStyle(state == .none ? Color.secondary : Color.accentColor)
+                    .foregroundStyle(state == .none ? Color.secondary : AppColors.accent)
             }
         }
     }

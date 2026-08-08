@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadCommentsView: View {
+    @Environment(\.forumTheme) private var theme
     let comments: [ForumThreadPostComment]
     let onUserTap: (String, String?) -> Void
 
@@ -9,7 +10,7 @@ struct ForumThreadCommentsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(L10n.string("forum.thread.comments"), systemImage: "text.bubble")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
             ForEach(comments) { comment in
                 ForumThreadCommentRow(comment: comment, onUserTap: onUserTap)
@@ -17,11 +18,12 @@ struct ForumThreadCommentsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForumColors.creamBackground, in: RoundedRectangle(cornerRadius: 8))
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
 private struct ForumThreadCommentRow: View {
+    @Environment(\.forumTheme) private var theme
     let comment: ForumThreadPostComment
     let onUserTap: (String, String?) -> Void
 
@@ -37,11 +39,11 @@ private struct ForumThreadCommentRow: View {
                     }
                     .buttonStyle(.plain)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 } else {
                     Text(comment.author.name)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(ForumColors.brownPrimary)
+                        .foregroundStyle(theme.mutedAccent)
                 }
 
                 Spacer(minLength: 0)
@@ -49,13 +51,13 @@ private struct ForumThreadCommentRow: View {
                 if let postedAtText = comment.postedAtText {
                     Text(postedAtText)
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                 }
             }
 
             Text(comment.message)
                 .font(.callout)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -40,10 +40,10 @@ enum ForumThreadAuthorColorAdapter {
     /// Without such a background the scheme-adaptive theme color is right.
     static func linkColor(onBackgroundHex hex: String?) -> Color {
         guard let background = RGBColor(forumThreadHex: hex) else {
-            return ForumColors.brownPrimary
+            return ForumTheme.classic.mutedAccent
         }
-        let light = RGBColor(hex: ForumColors.brownPrimaryLightHex)
-        let dark = RGBColor(hex: ForumColors.brownPrimaryDarkHex)
+        let light = RGBColor(hex: ForumThemeClassicMetrics.mutedAccentLightHex)
+        let dark = RGBColor(hex: ForumThemeClassicMetrics.mutedAccentDarkHex)
         let readable = RGBColor.contrast(light, background) >= RGBColor.contrast(dark, background) ? light : dark
         return Color(readable)
     }
@@ -60,10 +60,10 @@ enum ForumThreadAuthorColorAdapter {
     /// dark one and the deepest light one. Clearing these clears the rest —
     /// quotes, table cells, and the page background sit on the other side of
     /// each pair.
-    private static let darkSurface = RGBColor(hex: ForumColors.creamSurfaceDarkHex)
-    private static let lightSurface = RGBColor(hex: ForumColors.creamBackgroundLightHex)
-    private static let inkOnDarkSurface = RGBColor(hex: ForumColors.textDarkDarkHex)
-    private static let inkOnLightSurface = RGBColor(hex: ForumColors.textDarkLightHex)
+    private static let darkSurface = RGBColor(hex: ForumThemeClassicMetrics.surfaceDarkHex)
+    private static let lightSurface = RGBColor(hex: ForumThemeClassicMetrics.pageBackgroundLightHex)
+    private static let inkOnDarkSurface = RGBColor(hex: ForumThemeClassicMetrics.primaryTextDarkHex)
+    private static let inkOnLightSurface = RGBColor(hex: ForumThemeClassicMetrics.primaryTextLightHex)
 
     private static func adaptedForeground(hex: String?) -> Color? {
         guard let authored = RGBColor(forumThreadHex: hex) else { return nil }

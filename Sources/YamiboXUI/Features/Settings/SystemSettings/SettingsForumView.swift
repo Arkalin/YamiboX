@@ -15,7 +15,7 @@ struct SettingsForumView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.auto_sign_in"),
-                        titleColor: .accentColor
+                        titleColor: AppColors.accent
                     )
                 }
                 .disabled(viewModel.isBusy)

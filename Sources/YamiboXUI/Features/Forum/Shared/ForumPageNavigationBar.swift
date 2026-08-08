@@ -6,6 +6,7 @@ import YamiboXCore
 /// `navigation` because some screens track an optimistic page separately
 /// from the last parsed one.
 struct ForumPageNavigationBar: View {
+    @Environment(\.forumTheme) private var theme
     let navigation: ForumPageNavigation?
     let currentPage: Int
     let goToPage: (Int) -> Void
@@ -27,7 +28,7 @@ struct ForumPageNavigationBar: View {
 
                 Text(pageText(navigation))
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
 
                 Spacer()
 
@@ -41,7 +42,7 @@ struct ForumPageNavigationBar: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .tint(ForumColors.brownEmphasis)
+            .tint(theme.accentText)
         }
     }
 

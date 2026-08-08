@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumBoardView: View {
+    @Environment(\.forumTheme) private var theme
     let onSubBoardTap: (ForumBoardSummary) -> Void
     let onPinnedTap: (ForumPinnedItem) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
@@ -63,7 +64,7 @@ struct ForumBoardView: View {
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .navigationTitle(model.title)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -163,6 +164,7 @@ private struct ForumBoardOptionItem: Identifiable, Equatable {
 }
 
 private struct ForumBoardBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let page: ForumBoardPage?
     let subBoards: [ForumBoardSummary]
     let pinnedItems: [ForumPinnedItem]
@@ -224,6 +226,7 @@ private struct ForumBoardBodyView: View {
 }
 
 private struct ForumBoardContentView: View {
+    @Environment(\.forumTheme) private var theme
     let board: ForumBoardSummary
     let subBoards: [ForumBoardSummary]
     let pinnedItems: [ForumPinnedItem]
@@ -352,6 +355,7 @@ private struct ForumBoardContentView: View {
 }
 
 private struct ForumBoardStatsView: View {
+    @Environment(\.forumTheme) private var theme
     let todayCount: Int?
     let threadCount: Int?
     let rank: Int?
@@ -380,7 +384,7 @@ private struct ForumBoardStatsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
-                colors: [ForumColors.brownDeep, ForumColors.brownPrimary.opacity(0.85)],
+                colors: [theme.accent, theme.mutedAccent.opacity(0.85)],
                 startPoint: .leading,
                 endPoint: .trailing
             ),
@@ -432,6 +436,7 @@ private struct ForumBoardStatsView: View {
 }
 
 private struct ForumBoardOptionMenuButton: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let systemImage: String
     let menuTitle: String
@@ -477,6 +482,7 @@ private struct ForumBoardOptionMenuButton: View {
 }
 
 private struct ForumStatChipView: View {
+    @Environment(\.forumTheme) private var theme
     let label: String
     let value: String
 
@@ -486,7 +492,7 @@ private struct ForumStatChipView: View {
                 .foregroundStyle(.white.opacity(0.78))
             Text(value)
                 .fontWeight(.semibold)
-                .foregroundStyle(ForumColors.redAccent)
+                .foregroundStyle(theme.danger)
         }
         .font(.caption)
         .padding(.horizontal, 9)
@@ -496,6 +502,7 @@ private struct ForumStatChipView: View {
 }
 
 private struct ForumSubBoardSectionView: View {
+    @Environment(\.forumTheme) private var theme
     let boards: [ForumBoardSummary]
     let onTap: (ForumBoardSummary) -> Void
 
@@ -503,7 +510,7 @@ private struct ForumSubBoardSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("forum.board.sub_boards"))
                 .font(.headline)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 10) {
@@ -514,7 +521,7 @@ private struct ForumSubBoardSectionView: View {
                             Label(board.name, systemImage: "folder")
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
-                                .foregroundStyle(ForumColors.textDark)
+                                .foregroundStyle(theme.primaryText)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 9)
                                 .forumCardBackground()
@@ -529,6 +536,7 @@ private struct ForumSubBoardSectionView: View {
 }
 
 private struct ForumPinnedSectionView: View {
+    @Environment(\.forumTheme) private var theme
     let items: [ForumPinnedItem]
     let onTap: (ForumPinnedItem) -> Void
     let onReaderOverrideTap: ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)?
@@ -537,7 +545,7 @@ private struct ForumPinnedSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("forum.board.pinned"))
                 .font(.headline)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
             ForEach(items) { item in
                 ForumPinnedRowView(
@@ -565,6 +573,7 @@ private struct ForumPinnedSectionView: View {
 }
 
 private struct ForumPinnedRowView: View {
+    @Environment(\.forumTheme) private var theme
     let id: String
     let title: String
     let kind: ForumPinnedItem.Kind
@@ -576,20 +585,20 @@ private struct ForumPinnedRowView: View {
             HStack(spacing: 10) {
                 Text(kind == .announcement ? L10n.string("forum.board.announcement") : L10n.string("forum.board.pinned_badge"))
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(ForumColors.orangeAccent, in: Capsule())
+                    .background(theme.warning, in: Capsule())
 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
             .padding(11)
-            .forumCardBackground(fill: kind == .announcement ? ForumColors.announcementBackground : ForumColors.pinnedBackground)
+            .forumCardBackground(fill: kind == .announcement ? theme.announcementSurface : theme.pinnedSurface)
         }
         .buttonStyle(.plain)
         .forumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap)
@@ -600,6 +609,7 @@ private struct ForumPinnedRowView: View {
 
 
 private struct ForumBoardErrorView: View {
+    @Environment(\.forumTheme) private var theme
     let message: String
     let retry: () -> Void
 
@@ -609,13 +619,13 @@ private struct ForumBoardErrorView: View {
                 Text(L10n.string("common.load_failed"))
                     .font(.headline)
                     .fontWeight(.bold)
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
 
                 Text(message)
                     .font(.caption)
                     .lineSpacing(3)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(ForumColors.brownPrimary.opacity(0.75))
+                    .foregroundStyle(theme.mutedAccent.opacity(0.75))
 
                 Button(action: retry) {
                     Text(L10n.string("common.retry"))
@@ -623,15 +633,15 @@ private struct ForumBoardErrorView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(ForumColors.brownDeep, in: Capsule())
+                        .background(theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 8)
             }
             .padding(28)
             .frame(maxWidth: 360)
-            .background(ForumColors.creamSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: ForumColors.brownDeep.opacity(0.14), radius: 12, x: 0, y: 6)
+            .background(theme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: theme.accent.opacity(0.14), radius: 12, x: 0, y: 6)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -640,6 +650,7 @@ private struct ForumBoardErrorView: View {
 }
 
 private struct ForumBoardEmptyView: View {
+    @Environment(\.forumTheme) private var theme
     let retry: () -> Void
 
     var body: some View {
@@ -654,6 +665,7 @@ private struct ForumBoardEmptyView: View {
 }
 
 private struct ForumBoardNoThreadsView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         ContentUnavailableView(
             L10n.string("forum.board.no_threads"),

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct PrivateMessageView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: PrivateMessageViewModel
 
     init(model: PrivateMessageViewModel) {
@@ -31,7 +32,7 @@ struct PrivateMessageView: View {
             )
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
         .toolbar {
@@ -78,6 +79,7 @@ struct PrivateMessageView: View {
 }
 
 private struct PrivateMessageContentView: View {
+    @Environment(\.forumTheme) private var theme
     let page: PrivateMessagePage?
     let currentProfile: YamiboProfile?
     let currentPage: Int
@@ -129,6 +131,7 @@ private struct PrivateMessageContentView: View {
 }
 
 private struct PrivateMessageBubbleView: View {
+    @Environment(\.forumTheme) private var theme
     let message: PrivateMessage
     let currentProfile: YamiboProfile?
 
@@ -159,25 +162,25 @@ private struct PrivateMessageBubbleView: View {
             VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
                 Text(displayName)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
                     .lineLimit(1)
 
                 Text(message.contentText)
                     .font(.subheadline)
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .background(isMine ? ForumColors.accentFill : ForumColors.creamSurface, in: bubbleShape)
+                    .background(isMine ? theme.selectedFill : theme.surface, in: bubbleShape)
                     .overlay {
-                        bubbleShape.stroke(ForumColors.border, lineWidth: 1)
+                        bubbleShape.stroke(theme.border, lineWidth: 1)
                     }
 
                 if let postedAtText = message.postedAtText {
                     Text(postedAtText)
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.tertiaryText)
+                        .foregroundStyle(theme.tertiaryText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
@@ -195,6 +198,7 @@ private struct PrivateMessageBubbleView: View {
 
 
 private struct PrivateMessageInputBar: View {
+    @Environment(\.forumTheme) private var theme
     @Binding var text: String
     let canSend: Bool
     let isSending: Bool
@@ -220,7 +224,7 @@ private struct PrivateMessageInputBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(ForumColors.navBarBackground)
+        .background(theme.navigationSurface)
     }
 }
 
@@ -228,6 +232,7 @@ private struct PrivateMessageInputBar: View {
 
 
 private struct PrivateMessageEmptyView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         ContentUnavailableView(L10n.string("private_message.empty"), systemImage: "bubble.left")
             .frame(maxWidth: .infinity)

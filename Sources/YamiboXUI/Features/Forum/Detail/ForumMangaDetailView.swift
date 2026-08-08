@@ -6,6 +6,7 @@ import UIKit
 #endif
 
 struct ForumMangaDetailView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: ForumMangaDetailViewModel
     @State private var isCorrectionPresented = false
     @State private var isResetConfirmationPresented = false
@@ -110,6 +111,7 @@ struct ForumMangaDetailView: View {
 }
 
 private struct ForumMangaDetailBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let model: ForumMangaDetailViewModel
     let retry: () -> Void
     let onContinueTap: () -> Void
@@ -189,7 +191,7 @@ private struct ForumMangaDetailBodyView: View {
             }
         }
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 
     private func scrollTaskIdentity(directory: MangaDirectory?, focusedChapterTID: String?) -> String {
@@ -201,6 +203,7 @@ private struct ForumMangaDetailBodyView: View {
 }
 
 private struct ForumMangaDetailHeader: View {
+    @Environment(\.forumTheme) private var theme
     let directory: MangaDirectory
     let coverURL: URL?
     let latestChapterText: String?
@@ -235,14 +238,14 @@ private struct ForumMangaDetailHeader: View {
                             lastUpdatedAt.formatted(date: .abbreviated, time: .omitted)
                         ))
                         .font(.caption2)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if let readingProgressText {
                         Label(readingProgressText, systemImage: "bookmark.fill")
                             .font(.caption2.weight(.medium))
-                            .foregroundStyle(ForumColors.orangeAccent)
+                            .foregroundStyle(theme.warning)
                             .lineLimit(2)
                     }
 
@@ -257,7 +260,7 @@ private struct ForumMangaDetailHeader: View {
             if let actionErrorMessage {
                 Label(actionErrorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -284,7 +287,7 @@ private struct ForumMangaDetailHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(directory.cleanBookName)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .contextMenu {
@@ -300,9 +303,9 @@ private struct ForumMangaDetailHeader: View {
             Button(action: onCorrectionTap) {
                 Image(systemName: "pencil")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                     .frame(width: 28, height: 28)
-                    .background(ForumColors.brownPrimary.opacity(0.12), in: Circle())
+                    .background(theme.mutedAccent.opacity(0.12), in: Circle())
                     .expandedHitTarget()
             }
             .buttonStyle(.plain)
@@ -318,6 +321,7 @@ private struct ForumMangaDetailHeader: View {
 }
 
 private struct ForumMangaStatRow: View {
+    @Environment(\.forumTheme) private var theme
     let chapterCount: Int
     let latestChapterText: String?
 
@@ -331,7 +335,7 @@ private struct ForumMangaStatRow: View {
             }
         }
         .font(.caption2.weight(.medium))
-        .foregroundStyle(ForumColors.secondaryText)
+        .foregroundStyle(theme.secondaryText)
     }
 
     @ViewBuilder
@@ -350,6 +354,7 @@ private struct ForumMangaStatRow: View {
 }
 
 private struct ForumMangaStatChip: View {
+    @Environment(\.forumTheme) private var theme
     let text: String
     let systemImage: String
 
@@ -358,11 +363,12 @@ private struct ForumMangaStatChip: View {
             .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(ForumColors.brownPrimary.opacity(0.08), in: Capsule())
+            .background(theme.mutedAccent.opacity(0.08), in: Capsule())
     }
 }
 
 private struct ForumMangaHeaderActions: View {
+    @Environment(\.forumTheme) private var theme
     let hasReadingProgress: Bool
     let updateButtonTitle: String
     let isUpdateButtonEnabled: Bool
@@ -403,7 +409,7 @@ private struct ForumMangaHeaderActions: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 38)
             .foregroundStyle(.white)
-            .background(ForumColors.brownDeep, in: Capsule())
+            .background(theme.accent, in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -413,9 +419,9 @@ private struct ForumMangaHeaderActions: View {
             Image(systemName: isFavorited ? "star.fill" : "star")
                 .contentTransition(.symbolEffect(.replace))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ForumColors.brownEmphasis)
+                .foregroundStyle(theme.accentText)
                 .frame(minWidth: 42, minHeight: 38)
-                .background(ForumColors.brownPrimary.opacity(0.16), in: Capsule())
+                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
                 .expandedHitTarget()
         }
         .buttonStyle(.plain)
@@ -437,11 +443,11 @@ private struct ForumMangaHeaderActions: View {
             .lineLimit(1)
             .padding(.horizontal, 12)
             .frame(minHeight: 38)
-            .foregroundStyle(isForcedSearchShortcutActive ? ForumColors.orangeAccent : ForumColors.brownEmphasis)
+            .foregroundStyle(isForcedSearchShortcutActive ? theme.warning : theme.accentText)
             .background(
                 isForcedSearchShortcutActive
-                    ? ForumColors.orangeAccent.opacity(0.16)
-                    : ForumColors.brownPrimary.opacity(0.16),
+                    ? theme.warning.opacity(0.16)
+                    : theme.mutedAccent.opacity(0.16),
                 in: Capsule()
             )
         }
@@ -461,10 +467,10 @@ private struct ForumMangaHeaderActions: View {
             }
             .font(.subheadline.weight(.semibold))
             .lineLimit(1)
-            .foregroundStyle(ForumColors.brownEmphasis)
+            .foregroundStyle(theme.accentText)
             .padding(.horizontal, showsTitle ? 12 : 0)
             .frame(minWidth: showsTitle ? nil : 42, minHeight: 38)
-            .background(ForumColors.brownPrimary.opacity(0.16), in: Capsule())
+            .background(theme.mutedAccent.opacity(0.16), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.string("forum.thread_route.view_discussion"))
@@ -472,6 +478,7 @@ private struct ForumMangaHeaderActions: View {
 }
 
 private struct ForumMangaChapterRow: View {
+    @Environment(\.forumTheme) private var theme
     let directory: MangaDirectory
     let chapter: MangaChapter
     let isFocused: Bool
@@ -495,13 +502,13 @@ private struct ForumMangaChapterRow: View {
                         cleanBookName: directory.cleanBookName
                     ))
                     .font(.subheadline.weight(isFocused || isCurrentRead ? .semibold : .regular))
-                    .foregroundStyle(isCurrentRead ? ForumColors.brownEmphasis : ForumColors.textDark)
+                    .foregroundStyle(isCurrentRead ? theme.accentText : theme.primaryText)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                     if let subtitleText {
                         Text(subtitleText)
                             .font(.caption2)
-                            .foregroundStyle(ForumColors.brownPrimary)
+                            .foregroundStyle(theme.mutedAccent)
                             .lineLimit(1)
                     }
                 }
@@ -510,11 +517,11 @@ private struct ForumMangaChapterRow: View {
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(ForumColors.tertiaryText)
+                    .foregroundStyle(theme.tertiaryText)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .forumCardBackground(fill: isFocused ? ForumColors.accentFill : ForumColors.creamSurface)
+            .forumCardBackground(fill: isFocused ? theme.selectedFill : theme.surface)
         }
         .buttonStyle(.plain)
     }
@@ -531,6 +538,7 @@ private struct ForumMangaChapterRow: View {
 }
 
 private struct ForumMangaChapterLeadingBadge: View {
+    @Environment(\.forumTheme) private var theme
     let numberText: String
     let isCurrentRead: Bool
 
@@ -538,18 +546,18 @@ private struct ForumMangaChapterLeadingBadge: View {
         ZStack(alignment: .bottomTrailing) {
             Text(numberText)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(isCurrentRead ? .white : ForumColors.brownEmphasis)
+                .foregroundStyle(isCurrentRead ? .white : theme.accentText)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(
-                    isCurrentRead ? ForumColors.brownDeep : ForumColors.brownPrimary.opacity(0.1),
+                    isCurrentRead ? theme.accent : theme.mutedAccent.opacity(0.1),
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
 
             if isCurrentRead {
                 Image(systemName: "bookmark.fill")
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.orangeAccent)
+                    .foregroundStyle(theme.warning)
                     .offset(x: 5, y: 6)
             }
         }

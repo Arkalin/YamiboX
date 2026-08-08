@@ -128,11 +128,11 @@ private struct MineEntryRowContent: View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AppColors.accent)
                 .frame(width: 28, height: 28)
 
             Text(title)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AppColors.accent)
 
             Spacer(minLength: 8)
 

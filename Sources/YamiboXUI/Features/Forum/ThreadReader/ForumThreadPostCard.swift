@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadPostCard: View {
+    @Environment(\.forumTheme) private var theme
     @State private var isShowingRateSheet = false
     @State private var isShowingCommentSheet = false
 
@@ -88,7 +89,7 @@ struct ForumThreadPostCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .forumCardBackground(fill: isTarget ? ForumColors.accentFill : ForumColors.creamSurface)
+        .forumCardBackground(fill: isTarget ? theme.selectedFill : theme.surface)
         .sheet(isPresented: $isShowingRateSheet) {
             ForumThreadRateSheet(
                 postID: post.postID,
@@ -106,6 +107,7 @@ struct ForumThreadPostCard: View {
 }
 
 private struct ForumThreadPostActionRow: View {
+    @Environment(\.forumTheme) private var theme
     let replyURL: URL
     let onRate: () -> Void
     let onComment: () -> Void
@@ -114,7 +116,7 @@ private struct ForumThreadPostActionRow: View {
     var body: some View {
         VStack(spacing: 10) {
             Divider()
-                .overlay(ForumColors.brownLight.opacity(0.25))
+                .overlay(theme.divider.opacity(0.25))
 
             HStack {
                 Spacer(minLength: 0)
@@ -124,7 +126,7 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
                 Button(action: onComment) {
                     Label(L10n.string("forum.thread.comment"), systemImage: "text.bubble")
@@ -132,7 +134,7 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
                 Button {
                     onURLTap(replyURL)
@@ -142,19 +144,20 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
             }
         }
     }
 }
 
 private struct ForumThreadPostEditedTextView: View {
+    @Environment(\.forumTheme) private var theme
     let text: String
 
     var body: some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(ForumColors.secondaryText)
+            .foregroundStyle(theme.secondaryText)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 2)
@@ -162,6 +165,7 @@ private struct ForumThreadPostEditedTextView: View {
 }
 
 private struct ForumThreadPostTitleHeader: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let totalViews: Int?
     let totalReplies: Int?
@@ -170,7 +174,7 @@ private struct ForumThreadPostTitleHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -190,6 +194,7 @@ private struct ForumThreadPostTitleHeader: View {
 }
 
 private struct ForumThreadStatBadge: View {
+    @Environment(\.forumTheme) private var theme
     let systemImage: String
     let value: Int
 
@@ -201,9 +206,9 @@ private struct ForumThreadStatBadge: View {
             Image(systemName: systemImage)
                 .font(.caption.weight(.semibold))
         }
-        .foregroundStyle(ForumColors.secondaryText)
+        .foregroundStyle(theme.secondaryText)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(ForumColors.creamBackground, in: Capsule())
+        .background(theme.pageBackground, in: Capsule())
     }
 }

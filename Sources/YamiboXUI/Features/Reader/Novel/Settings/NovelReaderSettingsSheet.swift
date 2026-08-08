@@ -44,6 +44,7 @@ struct NovelReaderSettingsSheet: View {
             .background(Color.clear)
         }
         .background(Color.clear)
+        .tint(ReaderTheme.accent)
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(

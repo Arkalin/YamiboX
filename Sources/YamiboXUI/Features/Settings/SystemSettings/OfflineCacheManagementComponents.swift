@@ -113,7 +113,7 @@ private struct OfflineCacheManagementEntryRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "doc.text.image")
-                .foregroundStyle(entry.state == .failed ? Color.red : Color.accentColor)
+                .foregroundStyle(entry.state == .failed ? Color.red : AppColors.accent)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {

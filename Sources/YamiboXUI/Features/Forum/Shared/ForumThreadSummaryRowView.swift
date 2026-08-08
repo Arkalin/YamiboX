@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadSummaryRowView: View {
+    @Environment(\.forumTheme) private var theme
     let thread: ForumThreadSummary
     let onThreadTap: () -> Void
     let onAuthorTap: (String, String?) -> Void
@@ -28,7 +29,7 @@ struct ForumThreadSummaryRowView: View {
                     if let description = thread.description {
                         Text(description)
                             .font(.subheadline)
-                            .foregroundStyle(ForumColors.brownPrimary.opacity(0.65))
+                            .foregroundStyle(theme.mutedAccent.opacity(0.65))
                             .lineLimit(3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -98,6 +99,7 @@ private struct ForumThreadReaderOverrideContextMenu: ViewModifier {
 }
 
 private struct ForumThreadReaderOverrideButton: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -110,6 +112,7 @@ private struct ForumThreadReaderOverrideButton: View {
 }
 
 private struct ForumThreadSummaryMetaView: View {
+    @Environment(\.forumTheme) private var theme
     let authorName: String?
     let authorID: String?
     let authorAvatarURL: URL?
@@ -139,7 +142,7 @@ private struct ForumThreadSummaryMetaView: View {
             if let lastActivityText {
                 Text(lastActivityText)
                     .font(.caption2)
-                    .foregroundStyle(ForumColors.tertiaryText)
+                    .foregroundStyle(theme.tertiaryText)
                     .lineLimit(1)
             }
         }
@@ -147,6 +150,7 @@ private struct ForumThreadSummaryMetaView: View {
 }
 
 private struct ForumThreadSummaryAuthorView: View {
+    @Environment(\.forumTheme) private var theme
     let authorName: String?
     let authorAvatarURL: URL?
 
@@ -158,7 +162,7 @@ private struct ForumThreadSummaryAuthorView: View {
             if let authorName {
                 Text(authorName)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                     .lineLimit(1)
             }
         }
@@ -166,6 +170,7 @@ private struct ForumThreadSummaryAuthorView: View {
 }
 
 private struct ForumThreadSummaryTitleView: View {
+    @Environment(\.forumTheme) private var theme
     let title: String
     let isPoll: Bool
 
@@ -174,18 +179,19 @@ private struct ForumThreadSummaryTitleView: View {
             if isPoll {
                 Image(systemName: "chart.bar.doc.horizontal")
                     .font(.caption)
-                    .foregroundStyle(ForumColors.secondaryText)
+                    .foregroundStyle(theme.secondaryText)
             }
 
             Text(title)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .multilineTextAlignment(.leading)
         }
     }
 }
 
 private struct ForumThreadSummaryFooterView: View {
+    @Environment(\.forumTheme) private var theme
     let tag: String?
     let viewCount: Int?
     let replyCount: Int?
@@ -206,10 +212,10 @@ private struct ForumThreadSummaryFooterView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(ForumColors.accentFill, in: Capsule())
+                    .background(theme.selectedFill, in: Capsule())
             }
         }
         .font(.caption)
-        .foregroundStyle(ForumColors.secondaryText)
+        .foregroundStyle(theme.secondaryText)
     }
 }

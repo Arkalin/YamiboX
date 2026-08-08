@@ -112,7 +112,7 @@ struct SettingsFavoritesView: View {
                             title: L10n.string("settings.favorite_sync"),
                             value: favoriteRemoteSyncStatusLabel,
                             showsChevronAfterValue: true,
-                            titleColor: .accentColor
+                            titleColor: AppColors.accent
                         )
                     }
                     .disabled(viewModel.isBusy)

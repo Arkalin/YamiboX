@@ -151,7 +151,7 @@ private struct MineCreditProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ProgressView(value: progress.fraction)
-                .tint(.accentColor)
+                .tint(AppColors.accent)
 
             HStack(spacing: 8) {
                 Text(progress.currentGroupName)

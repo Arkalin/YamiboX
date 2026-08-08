@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceFriendRowView: View {
+    @Environment(\.forumTheme) private var theme
     let friend: UserSpaceFriendSummary
     let onPrivateMessageTap: (String, String?) -> Void
     let onWebTap: (URL) -> Void
@@ -22,7 +23,7 @@ struct UserSpaceFriendRowView: View {
                         } label: {
                             Text(L10n.string("user_space.send_message"))
                         }
-                        .tint(ForumColors.brownEmphasis)
+                        .tint(theme.accentText)
                     }
                     if let deleteURL = friend.deleteURL {
                         Button(role: .destructive) {
@@ -47,11 +48,11 @@ struct UserSpaceFriendRowView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(friend.name)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.textDark)
+                    .foregroundStyle(theme.primaryText)
                 if let detail = friend.detail {
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .lineLimit(2)
                 }
             }

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct BlogReaderView: View {
+    @Environment(\.forumTheme) private var theme
     @State private var model: BlogReaderViewModel
 
     let onUserTap: (String, String?) -> Void
@@ -92,6 +93,7 @@ struct BlogReaderView: View {
 }
 
 private struct BlogReaderBodyView: View {
+    @Environment(\.forumTheme) private var theme
     let page: BlogReaderPage?
     let currentPage: Int
     let pageNavigation: ForumPageNavigation?
@@ -146,11 +148,12 @@ private struct BlogReaderBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoading && page != nil)
         .forumPageBackground()
-        .tint(ForumColors.brownDeep)
+        .tint(theme.accent)
     }
 }
 
 private struct BlogReaderRootCard: View {
+    @Environment(\.forumTheme) private var theme
     let page: BlogReaderPage
     let onUserTap: (String, String?) -> Void
     let onWebTap: (URL) -> Void
@@ -159,7 +162,7 @@ private struct BlogReaderRootCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(page.title)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
             BlogReaderAuthorRow(user: page.author, postedAtText: page.postedAtText, onUserTap: onUserTap)
@@ -169,7 +172,7 @@ private struct BlogReaderRootCard: View {
             Text(page.contentText)
                 .font(.body)
                 .lineSpacing(4)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .textSelection(.enabled)
 
             BlogReaderActionRow(page: page, onWebTap: onWebTap)
@@ -181,6 +184,7 @@ private struct BlogReaderRootCard: View {
 }
 
 private struct BlogReaderAuthorRow: View {
+    @Environment(\.forumTheme) private var theme
     let user: BlogReaderUser
     let postedAtText: String?
     let onUserTap: (String, String?) -> Void
@@ -196,7 +200,7 @@ private struct BlogReaderAuthorRow: View {
                     }
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ForumColors.brownPrimary)
+                    .foregroundStyle(theme.mutedAccent)
                 } else {
                     Text(user.name)
                         .font(.subheadline.weight(.semibold))
@@ -204,7 +208,7 @@ private struct BlogReaderAuthorRow: View {
                 if let postedAtText {
                     Text(postedAtText)
                         .font(.caption)
-                        .foregroundStyle(ForumColors.tertiaryText)
+                        .foregroundStyle(theme.tertiaryText)
                 }
             }
             Spacer()
@@ -213,6 +217,7 @@ private struct BlogReaderAuthorRow: View {
 }
 
 private struct BlogReaderStatRow: View {
+    @Environment(\.forumTheme) private var theme
     let viewCount: Int?
     let replyCount: Int?
 
@@ -226,11 +231,12 @@ private struct BlogReaderStatRow: View {
             }
         }
         .font(.caption)
-        .foregroundStyle(ForumColors.secondaryText)
+        .foregroundStyle(theme.secondaryText)
     }
 }
 
 private struct BlogReaderActionRow: View {
+    @Environment(\.forumTheme) private var theme
     let page: BlogReaderPage
     let onWebTap: (URL) -> Void
 
@@ -245,7 +251,7 @@ private struct BlogReaderActionRow: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .tint(ForumColors.brownEmphasis)
+        .tint(theme.accentText)
     }
 
     @ViewBuilder
@@ -275,6 +281,7 @@ private struct BlogReaderActionRow: View {
 }
 
 private struct BlogReaderCommentSection: View {
+    @Environment(\.forumTheme) private var theme
     let comments: [BlogReaderComment]
     let currentPage: Int
     let pageNavigation: ForumPageNavigation?
@@ -293,7 +300,7 @@ private struct BlogReaderCommentSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.string("blog_reader.comments"))
                 .font(.headline)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
             if comments.isEmpty {
                 ContentUnavailableView(L10n.string("blog_reader.empty_comments"), systemImage: "bubble.left")
                     .frame(maxWidth: .infinity)
@@ -318,6 +325,7 @@ private struct BlogReaderCommentSection: View {
 }
 
 private struct BlogReaderCommentEditor: View {
+    @Environment(\.forumTheme) private var theme
     let text: String
     let placeholder: String
     let canEdit: Bool
@@ -330,7 +338,7 @@ private struct BlogReaderCommentEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.string("blog_reader.write_comment"))
                 .font(.headline)
-                .foregroundStyle(ForumColors.brownPrimary)
+                .foregroundStyle(theme.mutedAccent)
 
             TextField(
                 placeholder,
@@ -356,7 +364,7 @@ private struct BlogReaderCommentEditor: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(ForumColors.brownDeep)
+            .tint(theme.accent)
             .disabled(!canSubmit)
         }
         .padding(13)
@@ -366,6 +374,7 @@ private struct BlogReaderCommentEditor: View {
 }
 
 private struct BlogReaderCommentRow: View {
+    @Environment(\.forumTheme) private var theme
     let comment: BlogReaderComment
     let onUserTap: (String, String?) -> Void
     let onWebTap: (URL) -> Void
@@ -381,14 +390,14 @@ private struct BlogReaderCommentRow: View {
                             onUserTap(uid, comment.author.name)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(ForumColors.brownPrimary)
+                        .foregroundStyle(theme.mutedAccent)
                     } else {
                         Text(comment.author.name)
                     }
                     if let postedAtText = comment.postedAtText {
                         Text(postedAtText)
                             .font(.caption)
-                            .foregroundStyle(ForumColors.tertiaryText)
+                            .foregroundStyle(theme.tertiaryText)
                     }
                 }
                 Spacer()
@@ -406,7 +415,7 @@ private struct BlogReaderCommentRow: View {
 
             Text(comment.contentText)
                 .font(.subheadline)
-                .foregroundStyle(ForumColors.textDark)
+                .foregroundStyle(theme.primaryText)
                 .lineSpacing(3)
                 .textSelection(.enabled)
         }

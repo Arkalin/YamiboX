@@ -76,7 +76,7 @@ struct ReaderDirectoryProgressCapsule: View {
     var body: some View {
         GeometryReader { geometry in
             let layout = ReaderBottomChromeLayoutPresentation()
-            let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : Color.accentColor
+            let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : ReaderTheme.accent
             let width = max(geometry.size.width, 1)
             let clampedProgress = min(max(progressFraction, 0), 1)
 
@@ -332,7 +332,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
 
     private func verticalProgressBar(height: CGFloat, thumbY: CGFloat) -> some View {
         let layout = ReaderBottomChromeLayoutPresentation()
-        let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : Color.accentColor
+        let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : ReaderTheme.accent
 
         return ZStack(alignment: .topTrailing) {
             Capsule()
@@ -448,7 +448,7 @@ struct ReaderVerticalProgressPreviewCapsule: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 16)
         .frame(width: layout.verticalPreviewWidth, height: layout.verticalPreviewHeight)
-        .readerChromePanel(cornerRadius: 24, tint: Color.accentColor.opacity(0.08))
+        .readerChromePanel(cornerRadius: 24, tint: ReaderTheme.accent.opacity(0.08))
         .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumHomeView: View {
+    @Environment(\.forumTheme) private var theme
     let model: ForumHomeViewModel
     let onBoardTap: (ForumBoardSummary) -> Void
     let onCarouselTap: (ForumHomeCarouselItem) -> Void
@@ -48,6 +49,7 @@ struct ForumHomeView: View {
 /// board sections where the real page will appear, gently pulsing. Reads as
 /// "the page is coming" rather than a context-free spinner.
 private struct ForumHomeSkeletonView: View {
+    @Environment(\.forumTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isDimmed = false
 
@@ -55,18 +57,18 @@ private struct ForumHomeSkeletonView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(ForumColors.mutedFill)
+                    .fill(theme.mutedFill)
                     .aspectRatio(2.63, contentMode: .fit)
 
                 ForEach(0..<2, id: \.self) { _ in
                     VStack(alignment: .leading, spacing: 10) {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(ForumColors.mutedFill)
+                            .fill(theme.mutedFill)
                             .frame(width: 96, height: 18)
 
                         ForEach(0..<3, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(ForumColors.creamSurface)
+                                .fill(theme.surface)
                                 .frame(height: 64)
                         }
                     }
@@ -92,6 +94,7 @@ private struct ForumHomeSkeletonView: View {
 }
 
 private struct ForumHomeContentView: View {
+    @Environment(\.forumTheme) private var theme
     let categories: [ForumCategory]
     let carouselItems: [ForumHomeCarouselItem]
     let expandedCategoryIDs: Set<String>
@@ -131,6 +134,7 @@ private struct ForumHomeContentView: View {
 }
 
 private struct ForumHomeCarouselView: View {
+    @Environment(\.forumTheme) private var theme
     let items: [ForumHomeCarouselItem]
     let onTap: (ForumHomeCarouselItem) -> Void
 
@@ -292,6 +296,7 @@ struct ForumHomeCarouselPeekLayout: Equatable {
 }
 
 private struct ForumHomePeekCarouselView: View {
+    @Environment(\.forumTheme) private var theme
     let items: [ForumHomeCarouselItem]
     @Binding var selection: Int
     @Binding var isUserInteracting: Bool
@@ -419,7 +424,7 @@ private struct ForumHomePeekCarouselView: View {
         HStack(spacing: 5) {
             ForEach(items.indices, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(index == selection ? ForumColors.brownEmphasis : ForumColors.brownLight.opacity(0.45))
+                    .fill(index == selection ? theme.accentText : theme.divider.opacity(0.45))
                     .frame(width: index == selection ? 18 : 6, height: 6)
             }
         }
@@ -450,6 +455,7 @@ private struct ForumHomePeekCarouselView: View {
 }
 
 private struct ForumCarouselImageButton: View {
+    @Environment(\.forumTheme) private var theme
     let item: ForumHomeCarouselItem
     let onTap: (ForumHomeCarouselItem) -> Void
 
@@ -463,15 +469,15 @@ private struct ForumCarouselImageButton: View {
                     .scaledToFill()
             } placeholder: {
                 ZStack {
-                    Rectangle().fill(ForumColors.creamSurface)
+                    Rectangle().fill(theme.surface)
                     ProgressView()
                 }
             } failure: {
                 ZStack {
-                    Rectangle().fill(ForumColors.creamSurface)
+                    Rectangle().fill(theme.surface)
                     Image(systemName: "photo")
                         .font(.title)
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -484,6 +490,7 @@ private struct ForumCarouselImageButton: View {
 }
 
 private struct ForumCategorySectionView: View {
+    @Environment(\.forumTheme) private var theme
     let id: String
     let title: String
     let boards: [ForumBoardSummary]
@@ -501,11 +508,11 @@ private struct ForumCategorySectionView: View {
                 HStack(spacing: 10) {
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(ForumColors.brownEmphasis)
+                        .foregroundStyle(theme.accentText)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(ForumColors.secondaryText)
+                        .foregroundStyle(theme.secondaryText)
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 }
                 .contentShape(Rectangle())
@@ -527,6 +534,7 @@ private struct ForumCategorySectionView: View {
 }
 
 private struct ForumCategoryBoardListView: View {
+    @Environment(\.forumTheme) private var theme
     let boards: [ForumBoardSummary]
     let onBoardTap: (ForumBoardSummary) -> Void
 
@@ -549,6 +557,7 @@ private struct ForumCategoryBoardListView: View {
 }
 
 private struct ForumBoardRowView: View {
+    @Environment(\.forumTheme) private var theme
     let fid: String
     let name: String
     let detail: String?
@@ -570,23 +579,23 @@ private struct ForumBoardRowView: View {
                     titleLayout {
                         Text(name)
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(ForumColors.textDark)
+                            .foregroundStyle(theme.primaryText)
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                         if let todayCount {
                             Text(L10n.string("forum.home.today_count", todayCount))
                                 .font(.caption2.weight(.medium))
-                                .foregroundStyle(ForumColors.redAccent)
+                                .foregroundStyle(theme.danger)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .background(ForumColors.redAccent.opacity(0.12), in: Capsule())
+                                .background(theme.danger.opacity(0.12), in: Capsule())
                         }
                     }
 
                     if let detail {
                         Text(detail)
                             .font(.subheadline)
-                            .foregroundStyle(ForumColors.secondaryText)
+                            .foregroundStyle(theme.secondaryText)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -594,7 +603,7 @@ private struct ForumBoardRowView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(ForumColors.tertiaryText)
+                    .foregroundStyle(theme.tertiaryText)
             }
             .padding(12)
             .forumCardBackground()
@@ -618,6 +627,7 @@ private struct ForumBoardRowView: View {
 }
 
 private struct ForumBoardIconView: View {
+    @Environment(\.forumTheme) private var theme
     let iconURL: URL?
     let name: String
 
@@ -629,19 +639,20 @@ private struct ForumBoardIconView: View {
         } placeholder: {
             Image(systemName: "text.bubble")
                 .font(.title3)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         } failure: {
             Image(systemName: "text.bubble")
                 .font(.title3)
-                .foregroundStyle(ForumColors.secondaryText)
+                .foregroundStyle(theme.secondaryText)
         }
         .frame(width: 38, height: 38)
-        .background(ForumColors.mutedFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(theme.mutedFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityHidden(true)
     }
 }
 
 private struct ForumHomeEmptyView: View {
+    @Environment(\.forumTheme) private var theme
     var body: some View {
         ContentUnavailableView {
             Label(L10n.string("forum.home.empty"), systemImage: "rectangle.stack")
