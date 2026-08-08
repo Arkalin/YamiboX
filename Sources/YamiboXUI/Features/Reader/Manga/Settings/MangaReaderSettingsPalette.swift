@@ -28,7 +28,10 @@ struct MangaReaderSettingsPalette {
         let isDark = colorScheme == .dark
         let cool = Color(red: 0.10, green: 0.64, blue: 0.68)
         let warm = Color(red: 0.93, green: 0.36, blue: 0.43)
-        let controlAccent = Color.accentColor
+        // The settings sheet is presented by its own hosting controller, so
+        // the semantic accent can fall back to the system blue. Resolve the
+        // app asset at the palette boundary shared by every settings control.
+        let controlAccent = ForumColors.appAccent
         let ink = Color(red: 0.08, green: 0.08, blue: 0.09)
 
         if isDark {

@@ -257,7 +257,7 @@ private struct NovelReaderChapterWebPicker: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: view == navigation.visibleChapterDirectoryView ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? Color.accentColor : Color.secondary)
+                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? ForumColors.appAccent : Color.secondary)
 
                                 Text(L10n.string(
                                     "reader.web_view_progress",
@@ -271,7 +271,7 @@ private struct NovelReaderChapterWebPicker: View {
                                 if view == model.visibleView {
                                     Text(L10n.string("common.current"))
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(ForumColors.appAccent)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +279,7 @@ private struct NovelReaderChapterWebPicker: View {
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(view == navigation.visibleChapterDirectoryView ? Color.accentColor.opacity(0.12) : Color.clear)
+                                    .fill(view == navigation.visibleChapterDirectoryView ? ForumColors.appAccent.opacity(0.12) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)
