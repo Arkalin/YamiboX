@@ -9,6 +9,7 @@ public enum YamiboAppStorageKey {
     public static let favoriteTagSortOrder = "yamibox.favorite.tag.sort"
     public static let loginUsername = "yamibox.login.username"
     public static let appUpdateSkippedVersion = "yamibox.app_update.skipped_version"
+    public static let readerSearchHistory = "yamibox.reader.search.history"
     /// The highlight style the reader will use for the next annotation —
     /// "whatever I picked last time", global rather than per-work because a
     /// reader's colour semantics (yellow = a good line, blue = setting) stay
@@ -22,6 +23,7 @@ public enum YamiboAppStorageKey {
     public static let resettable: [String] = [
         favoriteTagSortOrder,
         appUpdateSkippedVersion,
-        readerDefaultHighlightStyle
+        readerDefaultHighlightStyle,
+        readerSearchHistory
     ]
 }

@@ -819,6 +819,14 @@
 "reader.character_spacing" = "字符间距";
 "reader.character_spacing_sample" = "甲乙丙";
 "reader.current_web_page" = "当前网页";
+"reader.search.title" = "在当前网页中搜索";
+"reader.search.placeholder" = "搜索当前网页";
+"reader.search.recent" = "最近搜索";
+"reader.search.no_recent" = "暂无最近搜索";
+"reader.search.searching" = "正在搜索…";
+"reader.search.no_results" = "未找到匹配项";
+"reader.search.load_more" = "加载更多...";
+"reader.search.match_count" = "找到 %d 个匹配项";
 "reader.empty_content" = "暂无可显示内容";
 "reader.font.rounded" = "圆角";
 "reader.font.system_sans" = "苹方";
