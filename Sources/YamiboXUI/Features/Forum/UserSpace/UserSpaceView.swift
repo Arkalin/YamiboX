@@ -65,6 +65,8 @@ struct UserSpaceView: View {
         .forumPageBackground()
         .tint(theme.accent)
         .navigationTitle(model.navigationTitle)
+        .yamiboInlineNavigationTitleDisplayMode()
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             if model.canOpenBlogEditor {
                 ToolbarItem(placement: .primaryAction) {
