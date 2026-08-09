@@ -65,6 +65,13 @@ import YamiboXTestSupport
 
     let view = LocalFavoritesOrganizationView(
         organizer: organizer,
+        favoriteShare: FavoriteShareFlowModel(
+            service: FavoriteShareService(
+                libraryStore: libraryStore,
+                contentCoverStore: contentCoverStore,
+                settingsStore: settingsStore
+            )
+        ),
         remoteSync: remoteSync,
         updateMonitor: updateMonitor,
         makeFavoriteRepository: { FavoriteRepository(client: await makeClient()) },

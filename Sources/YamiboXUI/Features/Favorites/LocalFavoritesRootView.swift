@@ -6,6 +6,7 @@ import YamiboXCore
 /// targets into the app-level readers or a full-screen thread overlay.
 struct LocalFavoritesRootView: View {
     @State private var organizer: FavoriteLibraryOrganizer
+    @State private var favoriteShare: FavoriteShareFlowModel
     @StateObject private var remoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
     @State private var threadOverlayItem: ForumThreadOverlayItem?
@@ -24,6 +25,13 @@ struct LocalFavoritesRootView: View {
             mangaDirectoryStore: dependencies.mangaDirectoryStore,
             makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
             makeFavoriteRepository: dependencies.makeFavoriteRepository
+        ))
+        _favoriteShare = State(initialValue: FavoriteShareFlowModel(
+            service: FavoriteShareService(
+                libraryStore: dependencies.localFavoriteLibraryStore,
+                contentCoverStore: dependencies.contentCoverStore,
+                settingsStore: dependencies.settingsStore
+            )
         ))
         _remoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession(
             libraryStore: dependencies.localFavoriteLibraryStore,
@@ -64,6 +72,7 @@ struct LocalFavoritesRootView: View {
     var body: some View {
         LocalFavoritesOrganizationView(
             organizer: organizer,
+            favoriteShare: favoriteShare,
             remoteSync: remoteSync,
             updateMonitor: updateMonitor,
             makeFavoriteRepository: makeFavoriteRepository,

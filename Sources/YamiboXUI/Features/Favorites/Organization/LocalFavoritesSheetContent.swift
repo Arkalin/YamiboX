@@ -6,6 +6,7 @@ import YamiboXCore
 struct LocalFavoritesSheetContent: View {
     let sheet: LocalFavoritesRoutes.Sheet
     let organizer: FavoriteLibraryOrganizer
+    @Bindable var favoriteShare: FavoriteShareFlowModel
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     let routes: LocalFavoritesRoutes
@@ -82,6 +83,76 @@ struct LocalFavoritesSheetContent: View {
                     }
                 )
             }
+        case .favoriteShareExportSelection:
+            FavoriteShareCategorySelectionSheet(
+                title: L10n.string("favorites.share.select_title"),
+                categories: organizer.categories,
+                selectedCategoryIDs: $favoriteShare.exportCategoryIDs,
+                confirmTitle: L10n.string("common.next"),
+                onCancel: {
+                    favoriteShare.cancelExport()
+                    routes.sheet = nil
+                },
+                onConfirm: {
+                    if await favoriteShare.prepareExport() {
+                        routes.sheet = .favoriteShareExportPreview
+                    }
+                }
+            )
+        case .favoriteShareExportPreview:
+            if let export = favoriteShare.preparedExport {
+                FavoriteShareExportPreviewSheet(
+                    export: export,
+                    onCancel: {
+                        favoriteShare.cancelExport()
+                        routes.sheet = nil
+                    },
+                    onSave: {
+                        routes.sheet = nil
+                        Task { @MainActor in
+                            await Task.yield()
+                            favoriteShare.isFileExporterPresented = true
+                        }
+                    }
+                )
+            }
+        case .favoriteShareImportPreview:
+            if let preview = favoriteShare.importPreview {
+                FavoriteShareImportPreviewSheet(
+                    preview: preview,
+                    onCancel: {
+                        favoriteShare.cancelImport()
+                        routes.sheet = nil
+                    },
+                    onCreateFolders: {
+                        if await favoriteShare.importFavorites(target: .createFolders) {
+                            routes.sheet = nil
+                        }
+                    },
+                    onAddToExistingFolders: {
+                        favoriteShare.importTargetCategoryIDs = []
+                        routes.sheet = .favoriteShareImportTarget
+                    }
+                )
+            }
+        case .favoriteShareImportTarget:
+            FavoriteShareCategorySelectionSheet(
+                title: L10n.string("favorites.share.import_target_title"),
+                categories: organizer.categories,
+                selectedCategoryIDs: $favoriteShare.importTargetCategoryIDs,
+                confirmTitle: L10n.string("favorites.share.import_confirm"),
+                onCancel: {
+                    favoriteShare.cancelImport()
+                    routes.sheet = nil
+                },
+                onConfirm: {
+                    if await favoriteShare.importFavorites(
+                        target: .addToExistingFolders(categoryIDs: favoriteShare.importTargetCategoryIDs)
+                    ) {
+                        routes.sheet = nil
+                    }
+                }
+            )
         }
     }
 }

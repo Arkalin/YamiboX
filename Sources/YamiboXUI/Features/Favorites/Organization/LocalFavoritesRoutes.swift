@@ -16,6 +16,10 @@ final class LocalFavoritesRoutes: ObservableObject {
         case filters
         case remoteSyncCategory
         case updateFilters
+        case favoriteShareExportSelection
+        case favoriteShareExportPreview
+        case favoriteShareImportPreview
+        case favoriteShareImportTarget
 
         var id: String {
             switch self {
@@ -35,6 +39,14 @@ final class LocalFavoritesRoutes: ObservableObject {
                 "remoteSyncCategory"
             case .updateFilters:
                 "updateFilters"
+            case .favoriteShareExportSelection:
+                "favoriteShareExportSelection"
+            case .favoriteShareExportPreview:
+                "favoriteShareExportPreview"
+            case .favoriteShareImportPreview:
+                "favoriteShareImportPreview"
+            case .favoriteShareImportTarget:
+                "favoriteShareImportTarget"
             }
         }
     }
