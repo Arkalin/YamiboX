@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import YamiboXCore
 
 /// Main favorites screen: navigation scaffold, toolbar, status cards, and
@@ -6,6 +7,7 @@ import YamiboXCore
 /// grid content views, which read the organizer and browse session directly.
 struct LocalFavoritesOrganizationView: View {
     @Bindable var organizer: FavoriteLibraryOrganizer
+    @Bindable var favoriteShare: FavoriteShareFlowModel
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     @ObservedObject private var selection: LocalFavoriteBrowseSession
@@ -25,6 +27,7 @@ struct LocalFavoritesOrganizationView: View {
 
     init(
         organizer: FavoriteLibraryOrganizer,
+        favoriteShare: FavoriteShareFlowModel,
         remoteSync: FavoriteRemoteSyncSession,
         updateMonitor: FavoriteUpdateMonitor,
         makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
@@ -33,6 +36,7 @@ struct LocalFavoritesOrganizationView: View {
         onOpenBoard: @escaping (BoardFavorite) -> Void
     ) {
         self.organizer = organizer
+        self.favoriteShare = favoriteShare
         self.remoteSync = remoteSync
         self.updateMonitor = updateMonitor
         self.selection = organizer.selection
@@ -96,12 +100,36 @@ struct LocalFavoritesOrganizationView: View {
                 LocalFavoritesSheetContent(
                     sheet: sheet,
                     organizer: organizer,
+                    favoriteShare: favoriteShare,
                     remoteSync: remoteSync,
                     updateMonitor: updateMonitor,
                     routes: routes
                 )
             }
-            .transientMessage(organizer.transientMessage) {
+            .fileImporter(
+                isPresented: $favoriteShare.isFileImporterPresented,
+                allowedContentTypes: [.item]
+            ) { result in
+                switch result {
+                case let .success(url):
+                    Task {
+                        if await favoriteShare.loadImportFile(url) {
+                            routes.sheet = .favoriteShareImportPreview
+                        }
+                    }
+                case let .failure(error):
+                    favoriteShare.handleImporterFailure(error)
+                }
+            }
+            .fileExporter(
+                isPresented: $favoriteShare.isFileExporterPresented,
+                document: FavoriteShareFileDocument(data: favoriteShare.preparedExport?.data ?? Data()),
+                contentType: .json,
+                defaultFilename: favoriteShare.preparedExport?.fileName ?? "yamibo-favorites.json",
+                onCompletion: favoriteShare.handleExporterResult
+            )
+            .transientMessage(favoriteShare.transientMessage ?? organizer.transientMessage) {
+                favoriteShare.transientMessage = nil
                 organizer.transientMessage = nil
             }
             .navigationDestination(isPresented: collectionDetailBinding) {
@@ -600,6 +628,19 @@ struct LocalFavoritesOrganizationView: View {
             }
             Section {
                 Button {
+                    favoriteShare.beginExport()
+                    routes.sheet = .favoriteShareExportSelection
+                } label: {
+                    Label(L10n.string("favorites.share.action"), systemImage: "square.and.arrow.up")
+                }
+                Button {
+                    favoriteShare.beginImport()
+                } label: {
+                    Label(L10n.string("favorites.share.load"), systemImage: "square.and.arrow.down")
+                }
+            }
+            Section {
+                Button {
                     if remoteSync.snapshot?.status == .running {
                         routes.isSyncProgressPushed = true
                     } else {
@@ -706,10 +747,11 @@ struct LocalFavoritesOrganizationView: View {
     // MARK: - Errors
 
     private var combinedErrorMessage: String? {
-        organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage
+        favoriteShare.errorMessage ?? organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage
     }
 
     private func clearErrorMessages() {
+        favoriteShare.errorMessage = nil
         organizer.errorMessage = nil
         remoteSync.errorMessage = nil
         updateMonitor.errorMessage = nil
