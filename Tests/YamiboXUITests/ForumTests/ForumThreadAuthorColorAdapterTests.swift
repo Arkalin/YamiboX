@@ -112,6 +112,29 @@ private func authoredColor(_ hex: String) -> ResolvedColor {
     }
 }
 
+@Test func authorForegroundUsesEverySelectedThemeSurface() throws {
+    for preset in ForumThemePreset.allCases {
+        let theme = ForumTheme.theme(for: preset)
+        for hex in ["#000000", "#FFFFFF", "#FF0000", "#808080", "#00008B", "#FFFF00"] {
+            let color = try #require(ForumThreadAuthorColorAdapter.colors(
+                for: ForumThreadTextStyle(foregroundHex: hex),
+                theme: theme
+            ).foreground)
+
+            for style in [UIUserInterfaceStyle.light, .dark] {
+                for surfaceColor in [theme.pageBackground, theme.surface] {
+                    let ratio = ResolvedColor(color, style)
+                        .contrast(with: ResolvedColor(surfaceColor, style))
+                    #expect(
+                        ratio >= readableContrast,
+                        "\(preset.rawValue) left \(hex) unreadable in \(style) mode"
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Test func invalidAuthorHexLeavesTheThemeColorInPlace() throws {
     let colors = ForumThreadAuthorColorAdapter.colors(for: ForumThreadTextStyle(foregroundHex: "not-a-color"))
 
@@ -184,4 +207,13 @@ private func authoredColor(_ hex: String) -> ResolvedColor {
     let color = ForumThreadAuthorColorAdapter.linkColor(onBackgroundHex: nil)
 
     #expect(color == ForumTheme.classic.mutedAccent)
+}
+
+@Test func linkWithoutAuthoredBackgroundUsesTheSelectedThemeColor() {
+    for preset in ForumThemePreset.allCases {
+        let theme = ForumTheme.theme(for: preset)
+        let color = ForumThreadAuthorColorAdapter.linkColor(onBackgroundHex: nil, theme: theme)
+
+        #expect(color == theme.mutedAccent)
+    }
 }

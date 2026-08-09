@@ -585,10 +585,10 @@ private struct ForumBoardRowView: View {
                         if let todayCount {
                             Text(L10n.string("forum.home.today_count", todayCount))
                                 .font(.caption2.weight(.medium))
-                                .foregroundStyle(theme.danger)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .background(theme.danger.opacity(0.12), in: Capsule())
+                                .background(theme.dangerFill, in: Capsule())
                         }
                     }
 

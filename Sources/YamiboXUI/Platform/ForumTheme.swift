@@ -1,10 +1,10 @@
 import SwiftUI
+import YamiboXCore
 
 /// Semantic colors for native forum surfaces.
 ///
-/// `classic` preserves the forum's existing brown presentation. Future forum
-/// preferences only need to select another `ForumTheme` at the forum root;
-/// readers intentionally have their own `ReaderTheme`.
+/// `classic` preserves the forum's existing brown presentation. Forum roots
+/// select one preset while readers intentionally keep their own `ReaderTheme`.
 // `Color` is immutable but is not declared Sendable by SwiftUI. A theme only
 // stores immutable values, so crossing the app's UI-bound settings boundary is
 // safe without forcing the entire theme-selection interface onto MainActor.
@@ -24,7 +24,9 @@ public struct ForumTheme: @unchecked Sendable {
     public let mutedFill: Color
     public let selectedFill: Color
     public let warning: Color
+    public let warningFill: Color
     public let danger: Color
+    public let dangerFill: Color
     public let pinnedSurface: Color
     public let announcementSurface: Color
     public let navigationSurface: Color
@@ -54,7 +56,9 @@ public struct ForumTheme: @unchecked Sendable {
         announcementSurface: Color,
         navigationSurface: Color,
         navigationBarBackgroundLight: Color,
-        navigationBarBackgroundDark: Color
+        navigationBarBackgroundDark: Color,
+        warningFill: Color? = nil,
+        dangerFill: Color? = nil
     ) {
         self.id = id
         self.accent = accent
@@ -71,7 +75,9 @@ public struct ForumTheme: @unchecked Sendable {
         self.mutedFill = mutedFill
         self.selectedFill = selectedFill
         self.warning = warning
+        self.warningFill = warningFill ?? warning
         self.danger = danger
+        self.dangerFill = dangerFill ?? danger
         self.pinnedSurface = pinnedSurface
         self.announcementSurface = announcementSurface
         self.navigationSurface = navigationSurface
@@ -79,40 +85,169 @@ public struct ForumTheme: @unchecked Sendable {
         self.navigationBarBackgroundDark = navigationBarBackgroundDark
     }
 
-    public static let classic = ForumTheme(
-        id: "classic",
-        accent: Color(light: 0x4E2A1B, dark: 0x24120C),
-        accentText: Color(light: 0x4E2A1B, dark: 0xD6A083),
-        mutedAccent: Color(light: ForumThemeClassicMetrics.mutedAccentLightHex, dark: ForumThemeClassicMetrics.mutedAccentDarkHex),
-        divider: Color(light: 0xCCB8A8, dark: 0x8F6F5E),
-        pageBackground: Color(light: ForumThemeClassicMetrics.pageBackgroundLightHex, dark: 0x17110D),
-        surface: Color(light: 0xFFF7E0, dark: ForumThemeClassicMetrics.surfaceDarkHex),
-        primaryText: Color(light: ForumThemeClassicMetrics.primaryTextLightHex, dark: ForumThemeClassicMetrics.primaryTextDarkHex),
-        webText: Color(light: 0x6E2B19, dark: 0xF0D8BC),
-        secondaryText: Color(light: 0x7A5C4D, dark: 0xAE8C7A),
-        tertiaryText: Color(light: 0x85674E, dark: 0xA1806F),
-        border: Color(light: ForumThemeClassicMetrics.mutedAccentLightHex, dark: ForumThemeClassicMetrics.mutedAccentDarkHex).opacity(0.18),
-        mutedFill: Color(light: ForumThemeClassicMetrics.mutedAccentLightHex, dark: ForumThemeClassicMetrics.mutedAccentDarkHex).opacity(0.10),
-        selectedFill: Color(light: 0xF59E2A, dark: 0xF0A33A).opacity(0.15),
-        warning: Color(light: 0xF59E2A, dark: 0xF0A33A),
-        danger: Color(light: 0xA61B29, dark: 0xFF7A70),
-        pinnedSurface: Color(light: 0xFFF0C8, dark: 0x302416),
-        announcementSurface: Color(light: 0xFFE8B0, dark: 0x382711),
-        navigationSurface: Color(light: 0xFFE6B7, dark: 0x21150F),
-        navigationBarBackgroundLight: Color(hex: 0x4E2A1B),
-        navigationBarBackgroundDark: Color(hex: 0x24120C)
-    )
+    public static let standard = ForumThemePalette(
+        id: ForumThemePreset.standard.rawValue,
+        light: .init(
+            pageBackground: 0xF2F2F7, surface: 0xFFFFFF,
+            primaryText: 0x1C1C1E, secondaryText: 0x4A4A50, tertiaryText: 0x5F6068,
+            accent: 0x3A3A3C, accentText: 0x3A3A3C, mutedAccent: 0x5F6068,
+            webText: 0x34343A, navigationBarBackground: 0x2C2C2E,
+            warning: 0x8A4B00, warningFill: 0xF5C451,
+            danger: 0xB42318, dangerFill: 0xB42318
+        ),
+        dark: .init(
+            pageBackground: 0x111214, surface: 0x1C1D20,
+            primaryText: 0xF2F2F4, secondaryText: 0xC2C3C8, tertiaryText: 0xA9AAB0,
+            accent: 0x4B4B4F, accentText: 0xD1D1D6, mutedAccent: 0xB0B0B5,
+            webText: 0xE5E5EA, navigationBarBackground: 0x2C2C2E,
+            warning: 0xF5B957, warningFill: 0x6B430D,
+            danger: 0xFF8178, dangerFill: 0x9E2B2B
+        )
+    ).theme
+
+    public static let classic = ForumThemePalette(
+        id: ForumThemePreset.classic.rawValue,
+        light: .init(
+            pageBackground: 0xFFF3D6, surface: 0xFFF7E0,
+            primaryText: 0x2E1A0E, secondaryText: 0x7A5C4D, tertiaryText: 0x85674E,
+            accent: 0x4E2A1B, accentText: 0x4E2A1B, mutedAccent: 0x6D3A2B,
+            webText: 0x6E2B19, navigationBarBackground: 0x4E2A1B,
+            warning: 0x8A4B00, warningFill: 0xF5C451,
+            danger: 0xA61B29, dangerFill: 0xA61B29
+        ),
+        dark: .init(
+            pageBackground: 0x17110D, surface: 0x241B15,
+            primaryText: 0xF4E7D1, secondaryText: 0xAE8C7A, tertiaryText: 0xA1806F,
+            accent: 0x24120C, accentText: 0xD6A083, mutedAccent: 0xD6A083,
+            webText: 0xF0D8BC, navigationBarBackground: 0x24120C,
+            warning: 0xF4B35E, warningFill: 0x66400D,
+            danger: 0xFF8C83, dangerFill: 0x9C2830
+        )
+    ).theme
+
+    public static let teal = ForumThemePalette(
+        id: ForumThemePreset.teal.rawValue,
+        light: .init(
+            pageBackground: 0xEDF5F3, surface: 0xFBFFFE,
+            primaryText: 0x18312F, secondaryText: 0x3F5B58, tertiaryText: 0x54706D,
+            accent: 0x155E63, accentText: 0x155E63, mutedAccent: 0x2D6965,
+            webText: 0x234C49, navigationBarBackground: 0x155257,
+            warning: 0x7A4B00, warningFill: 0xF1C75B,
+            danger: 0xA5222F, dangerFill: 0xA5222F
+        ),
+        dark: .init(
+            pageBackground: 0x0F1717, surface: 0x172321,
+            primaryText: 0xEBF5F1, secondaryText: 0xB8CCC6, tertiaryText: 0x99B2AC,
+            accent: 0x205A5B, accentText: 0x78C8BE, mutedAccent: 0x86BBB3,
+            webText: 0xD0E5DF, navigationBarBackground: 0x103F42,
+            warning: 0xF3BC60, warningFill: 0x62420F,
+            danger: 0xFF8588, dangerFill: 0x972F38
+        )
+    ).theme
+
+    public static let rose = ForumThemePalette(
+        id: ForumThemePreset.rose.rawValue,
+        light: .init(
+            pageBackground: 0xF7F1F3, surface: 0xFFFBFC,
+            primaryText: 0x302126, secondaryText: 0x5D444D, tertiaryText: 0x725963,
+            accent: 0x7B334C, accentText: 0x7B334C, mutedAccent: 0x865066,
+            webText: 0x583845, navigationBarBackground: 0x713047,
+            warning: 0x815000, warningFill: 0xF2C866,
+            danger: 0xA7273A, dangerFill: 0xA7273A
+        ),
+        dark: .init(
+            pageBackground: 0x181315, surface: 0x251B1F,
+            primaryText: 0xF8ECEF, secondaryText: 0xD3BBC3, tertiaryText: 0xB79DA6,
+            accent: 0x713149, accentText: 0xD99AAE, mutedAccent: 0xCEA0B0,
+            webText: 0xE4CDD5, navigationBarBackground: 0x512134,
+            warning: 0xF4BF67, warningFill: 0x694610,
+            danger: 0xFF8897, dangerFill: 0x9F3045
+        )
+    ).theme
+
+    public static func theme(for preset: ForumThemePreset) -> ForumTheme {
+        switch preset {
+        case .standard: standard
+        case .classic: classic
+        case .teal: teal
+        case .rose: rose
+        }
+    }
 }
 
-/// Numeric values stay private to the classic renderer. They are used only
-/// where authored HTML colors need contrast calculations, not by forum views.
-enum ForumThemeClassicMetrics {
-    static let mutedAccentLightHex: UInt32 = 0x6D3A2B
-    static let mutedAccentDarkHex: UInt32 = 0xD6A083
-    static let pageBackgroundLightHex: UInt32 = 0xFFF3D6
-    static let surfaceDarkHex: UInt32 = 0x241B15
-    static let primaryTextLightHex: UInt32 = 0x2E1A0E
-    static let primaryTextDarkHex: UInt32 = 0xF4E7D1
+private struct ForumThemePalette {
+    let id: String
+    let light: Scheme
+    let dark: Scheme
+
+    struct Scheme {
+        let pageBackground: UInt32
+        let surface: UInt32
+        let primaryText: UInt32
+        let secondaryText: UInt32
+        let tertiaryText: UInt32
+        let accent: UInt32
+        let accentText: UInt32
+        let mutedAccent: UInt32
+        let webText: UInt32
+        let navigationBarBackground: UInt32
+        let warning: UInt32
+        let warningFill: UInt32
+        let danger: UInt32
+        let dangerFill: UInt32
+
+        var divider: UInt32 { surface.mixed(with: primaryText, amount: 0.18) }
+        var border: UInt32 { surface.mixed(with: primaryText, amount: 0.12) }
+        var mutedFill: UInt32 { surface.mixed(with: mutedAccent, amount: 0.10) }
+        var selectedFill: UInt32 { surface.mixed(with: accentText, amount: 0.16) }
+        var pinnedSurface: UInt32 { surface.mixed(with: warningFill, amount: 0.12) }
+        var announcementSurface: UInt32 { surface.mixed(with: warningFill, amount: 0.22) }
+        var navigationSurface: UInt32 { surface.mixed(with: accentText, amount: 0.10) }
+    }
+
+    var theme: ForumTheme {
+        ForumTheme(
+            id: id,
+            accent: adaptive(\.accent),
+            accentText: adaptive(\.accentText),
+            mutedAccent: adaptive(\.mutedAccent),
+            divider: adaptive(\.divider),
+            pageBackground: adaptive(\.pageBackground),
+            surface: adaptive(\.surface),
+            primaryText: adaptive(\.primaryText),
+            webText: adaptive(\.webText),
+            secondaryText: adaptive(\.secondaryText),
+            tertiaryText: adaptive(\.tertiaryText),
+            border: adaptive(\.border),
+            mutedFill: adaptive(\.mutedFill),
+            selectedFill: adaptive(\.selectedFill),
+            warning: adaptive(\.warning),
+            danger: adaptive(\.danger),
+            pinnedSurface: adaptive(\.pinnedSurface),
+            announcementSurface: adaptive(\.announcementSurface),
+            navigationSurface: adaptive(\.navigationSurface),
+            navigationBarBackgroundLight: Color(hex: light.navigationBarBackground),
+            navigationBarBackgroundDark: Color(hex: dark.navigationBarBackground),
+            warningFill: adaptive(\.warningFill),
+            dangerFill: adaptive(\.dangerFill)
+        )
+    }
+
+    private func adaptive(_ keyPath: KeyPath<Scheme, UInt32>) -> Color {
+        Color(light: light[keyPath: keyPath], dark: dark[keyPath: keyPath])
+    }
+}
+
+private extension UInt32 {
+    func mixed(with other: UInt32, amount: Double) -> UInt32 {
+        let clamped = Swift.min(Swift.max(amount, 0), 1)
+        func channel(_ shift: UInt32) -> UInt32 {
+            let start = Double((self >> shift) & 0xFF)
+            let end = Double((other >> shift) & 0xFF)
+            return UInt32((start + (end - start) * clamped).rounded())
+        }
+        return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
 }
 
 private struct ForumThemeKey: EnvironmentKey {

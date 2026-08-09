@@ -93,6 +93,36 @@ private func resolved(_ color: Color?, _ style: UIUserInterfaceStyle) -> Resolve
     #expect(attributed[linkRange].runs.allSatisfy { $0.underlineStyle == .single })
 }
 
+@Test func textBlockFormatterUsesTheSelectedThemeForLinks() throws {
+    let url = try #require(URL(string: "https://bbs.yamibo.com/thread-22-1-1.html"))
+    let block = ForumThreadTextBlock(
+        text: "tap here",
+        links: [ForumThreadTextLink(start: 4, length: 4, url: url)]
+    )
+
+    let attributed = ForumThreadTextBlockFormatter(block: block, theme: .rose).attributedText
+
+    let linkRange = try #require(attributed.range(of: "here"))
+    #expect(attributed[linkRange].runs.allSatisfy { $0.foregroundColor == ForumTheme.rose.mutedAccent })
+}
+
+@Test func textBlockFormatterCacheInvalidatesWhenTheThemeChanges() throws {
+    let url = try #require(URL(string: "https://bbs.yamibo.com/thread-23-1-1.html"))
+    let block = ForumThreadTextBlock(
+        text: "tap here",
+        links: [ForumThreadTextLink(start: 4, length: 4, url: url)]
+    )
+    let cache = ForumThreadTextBlockFormatterCache()
+
+    let classic = cache.attributedText(for: block, theme: .classic)
+    let teal = cache.attributedText(for: block, theme: .teal)
+
+    let classicRange = try #require(classic.range(of: "here"))
+    let tealRange = try #require(teal.range(of: "here"))
+    #expect(classic[classicRange].runs.allSatisfy { $0.foregroundColor == ForumTheme.classic.mutedAccent })
+    #expect(teal[tealRange].runs.allSatisfy { $0.foregroundColor == ForumTheme.teal.mutedAccent })
+}
+
 @Test func textBlockFormatterFixesLinkColorOverAnAuthoredHighlight() throws {
     let url = try #require(URL(string: "https://bbs.yamibo.com/thread-3-1-1.html"))
     let block = ForumThreadTextBlock(

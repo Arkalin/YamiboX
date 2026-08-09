@@ -356,6 +356,7 @@ private struct ForumBoardContentView: View {
 
 private struct ForumBoardStatsView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let todayCount: Int?
     let threadCount: Int?
     let rank: Int?
@@ -369,35 +370,38 @@ private struct ForumBoardStatsView: View {
     let selectOrder: @Sendable (String?) -> Void
 
     var body: some View {
-        ViewThatFits {
-            HStack(spacing: 8) {
-                statChips
-                Spacer(minLength: 8)
-                optionButtons
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                statChips
-                optionButtons
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    statChips
+                    optionButtons
+                }
+            } else {
+                ViewThatFits {
+                    HStack(spacing: 8) {
+                        statChips
+                        Spacer(minLength: 8)
+                        optionButtons
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        statChips
+                        optionButtons
+                    }
+                }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [theme.accent, theme.mutedAccent.opacity(0.85)],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
+        .background(theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
     }
 
+    @ViewBuilder
     private var statChips: some View {
-        HStack(spacing: 8) {
+        let chips = Group {
             if let todayCount {
                 ForumStatChipView(label: L10n.string("forum.board.today"), value: String(todayCount))
             }
@@ -408,10 +412,21 @@ private struct ForumBoardStatsView: View {
                 ForumStatChipView(label: L10n.string("forum.board.rank"), value: String(rank))
             }
         }
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                chips
+            }
+        } else {
+            HStack(spacing: 8) {
+                chips
+            }
+        }
     }
 
+    @ViewBuilder
     private var optionButtons: some View {
-        HStack(spacing: 8) {
+        let buttons = Group {
             if showsOrder {
                 ForumBoardOptionMenuButton(
                     title: selectedOrderTitle,
@@ -430,6 +445,16 @@ private struct ForumBoardStatsView: View {
                     items: filterItems,
                     select: selectFilter
                 )
+            }
+        }
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                buttons
+            }
+        } else {
+            HStack(spacing: 8) {
+                buttons
             }
         }
     }
@@ -482,7 +507,6 @@ private struct ForumBoardOptionMenuButton: View {
 }
 
 private struct ForumStatChipView: View {
-    @Environment(\.forumTheme) private var theme
     let label: String
     let value: String
 
@@ -492,9 +516,11 @@ private struct ForumStatChipView: View {
                 .foregroundStyle(.white.opacity(0.78))
             Text(value)
                 .fontWeight(.semibold)
-                .foregroundStyle(theme.danger)
+                .foregroundStyle(.white)
         }
         .font(.caption)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(.white.opacity(0.14), in: Capsule())
@@ -574,6 +600,7 @@ private struct ForumPinnedSectionView: View {
 
 private struct ForumPinnedRowView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let id: String
     let title: String
     let kind: ForumPinnedItem.Kind
@@ -588,12 +615,12 @@ private struct ForumPinnedRowView: View {
                     .foregroundStyle(theme.primaryText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(theme.warning, in: Capsule())
+                    .background(theme.warningFill, in: Capsule())
 
                 Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(theme.primaryText)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                 Spacer(minLength: 0)
             }

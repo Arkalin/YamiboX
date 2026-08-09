@@ -11,6 +11,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var webBrowser: WebBrowserSettings
     public var system: SystemSettings
     public var boardReader: BoardReaderSettings
+    public var forumAppearance: ForumAppearanceSettings
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -19,7 +20,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
         favorites: FavoriteLibrarySettings = .init(),
         webBrowser: WebBrowserSettings = .init(),
         system: SystemSettings = .init(),
-        boardReader: BoardReaderSettings = .init()
+        boardReader: BoardReaderSettings = .init(),
+        forumAppearance: ForumAppearanceSettings = .init()
     ) {
         self.novelReader = novelReader
         self.novelOfflineCache = novelOfflineCache
@@ -28,6 +30,35 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.webBrowser = webBrowser
         self.system = system
         self.boardReader = boardReader
+        self.forumAppearance = forumAppearance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case novelReader
+        case novelOfflineCache
+        case manga
+        case favorites
+        case webBrowser
+        case system
+        case boardReader
+        case forumAppearance
+    }
+
+    /// Forum appearance was added after the aggregate shipped. Only that new
+    /// field is optional so malformed or incomplete legacy payloads keep the
+    /// store's existing all-settings fallback behavior.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            novelReader: try container.decode(NovelReaderAppearanceSettings.self, forKey: .novelReader),
+            novelOfflineCache: try container.decode(NovelOfflineCacheSettings.self, forKey: .novelOfflineCache),
+            manga: try container.decode(MangaReaderSettings.self, forKey: .manga),
+            favorites: try container.decode(FavoriteLibrarySettings.self, forKey: .favorites),
+            webBrowser: try container.decode(WebBrowserSettings.self, forKey: .webBrowser),
+            system: try container.decode(SystemSettings.self, forKey: .system),
+            boardReader: try container.decode(BoardReaderSettings.self, forKey: .boardReader),
+            forumAppearance: try container.decodeIfPresent(ForumAppearanceSettings.self, forKey: .forumAppearance) ?? .init()
+        )
     }
 
     /// Convenience so callers don't need to reach through `boardReader`

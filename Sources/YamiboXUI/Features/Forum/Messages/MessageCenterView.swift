@@ -234,7 +234,7 @@ private struct MessageCenterPrivateMessageRowView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(theme.danger, in: Capsule())
+                                .background(theme.dangerFill, in: Capsule())
                         }
                     }
                     Text(message.message)

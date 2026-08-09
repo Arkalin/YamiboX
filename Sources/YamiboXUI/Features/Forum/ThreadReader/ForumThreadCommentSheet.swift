@@ -65,7 +65,7 @@ struct ForumThreadCommentSheet: View {
                 if let errorMessage = model.errorMessage {
                     Text(errorMessage)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(theme.danger)
                 }
 
                 Spacer(minLength: 0)

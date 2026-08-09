@@ -121,7 +121,7 @@ struct ForumThreadRateSheet: View {
                     Section {
                         Text(errorMessage)
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(theme.danger)
                     }
                 }
             }

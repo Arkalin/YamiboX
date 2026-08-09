@@ -57,7 +57,7 @@ struct ForumThreadPollView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -79,7 +79,7 @@ struct ForumThreadPollView: View {
                     .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(theme.mutedAccent)
+                .tint(theme.accent)
                 .disabled(selectedOptionIDs.isEmpty || isSubmitting)
             }
 

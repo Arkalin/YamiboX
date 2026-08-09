@@ -14,7 +14,7 @@ struct ForumThreadTextBlockView: View {
             plainText
         } else {
             ForumThreadRubyTextBlockView(
-                segments: cache.rubySegments(for: block),
+                segments: cache.rubySegments(for: block, theme: theme),
                 alignment: block.alignment,
                 onURLTap: onURLTap
             )
@@ -22,7 +22,7 @@ struct ForumThreadTextBlockView: View {
     }
 
     private var plainText: some View {
-        Text(cache.attributedText(for: block))
+        Text(cache.attributedText(for: block, theme: theme))
             .font(.body)
             .lineSpacing(4)
             .foregroundStyle(theme.primaryText)

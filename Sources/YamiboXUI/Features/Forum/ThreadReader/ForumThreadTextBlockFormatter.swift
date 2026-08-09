@@ -6,6 +6,7 @@ import YamiboXCore
 /// to renderable SwiftUI values. Pure value transformation, no view state.
 struct ForumThreadTextBlockFormatter {
     let block: ForumThreadTextBlock
+    var theme: ForumTheme = .classic
 
     /// The whole block text with style runs and links applied.
     var attributedText: AttributedString {
@@ -16,7 +17,7 @@ struct ForumThreadTextBlockFormatter {
                 continue
             }
             attributed[range].font = font(for: run.style)
-            let colors = ForumThreadAuthorColorAdapter.colors(for: run.style)
+            let colors = ForumThreadAuthorColorAdapter.colors(for: run.style, theme: theme)
             if let foregroundColor = colors.foreground {
                 attributed[range].foregroundColor = foregroundColor
             }
@@ -36,7 +37,8 @@ struct ForumThreadTextBlockFormatter {
             }
             attributed[range].link = link.url
             attributed[range].foregroundColor = ForumThreadAuthorColorAdapter.linkColor(
-                onBackgroundHex: authoredBackgroundHex(under: link)
+                onBackgroundHex: authoredBackgroundHex(under: link),
+                theme: theme
             )
             attributed[range].underlineStyle = .single
         }
@@ -141,37 +143,40 @@ struct ForumThreadTextBlockFormatter {
 /// SwiftUI update.
 final class ForumThreadTextBlockFormatterCache {
     private var cachedBlock: ForumThreadTextBlock?
+    private var cachedThemeID: String?
     private var cachedAttributedText: AttributedString?
     private var cachedRubySegments: [ForumThreadRubySegment]?
 
-    func attributedText(for block: ForumThreadTextBlock) -> AttributedString {
-        if cachedBlock == block, let cachedAttributedText {
+    func attributedText(for block: ForumThreadTextBlock, theme: ForumTheme = .classic) -> AttributedString {
+        if cachedBlock == block, cachedThemeID == theme.id, let cachedAttributedText {
             return cachedAttributedText
         }
-        let attributedText = ForumThreadTextBlockFormatter(block: block).attributedText
-        updateCache(for: block, attributedText: attributedText, rubySegments: nil)
+        let attributedText = ForumThreadTextBlockFormatter(block: block, theme: theme).attributedText
+        updateCache(for: block, themeID: theme.id, attributedText: attributedText, rubySegments: nil)
         return attributedText
     }
 
-    func rubySegments(for block: ForumThreadTextBlock) -> [ForumThreadRubySegment] {
-        if cachedBlock == block, let cachedRubySegments {
+    func rubySegments(for block: ForumThreadTextBlock, theme: ForumTheme = .classic) -> [ForumThreadRubySegment] {
+        if cachedBlock == block, cachedThemeID == theme.id, let cachedRubySegments {
             return cachedRubySegments
         }
-        let rubySegments = ForumThreadTextBlockFormatter(block: block).rubySegments
-        updateCache(for: block, attributedText: nil, rubySegments: rubySegments)
+        let rubySegments = ForumThreadTextBlockFormatter(block: block, theme: theme).rubySegments
+        updateCache(for: block, themeID: theme.id, attributedText: nil, rubySegments: rubySegments)
         return rubySegments
     }
 
     private func updateCache(
         for block: ForumThreadTextBlock,
+        themeID: String,
         attributedText: AttributedString?,
         rubySegments: [ForumThreadRubySegment]?
     ) {
-        if cachedBlock != block {
+        if cachedBlock != block || cachedThemeID != themeID {
             cachedAttributedText = nil
             cachedRubySegments = nil
         }
         cachedBlock = block
+        cachedThemeID = themeID
         if let attributedText {
             cachedAttributedText = attributedText
         }

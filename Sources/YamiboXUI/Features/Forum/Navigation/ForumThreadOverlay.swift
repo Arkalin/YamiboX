@@ -22,6 +22,7 @@ struct ForumThreadOverlayScreen: View {
     @State private var navigator: ForumDestinationNavigator
 
     private let item: ForumThreadOverlayItem
+    private let appModel: YamiboAppModel
     private let rootIsDiscussionView: Bool
 
     /// - Parameters:
@@ -42,6 +43,7 @@ struct ForumThreadOverlayScreen: View {
         discussionWorkTIDs: Set<String> = []
     ) {
         self.item = item
+        self.appModel = appModel
         self.rootIsDiscussionView = rootIsDiscussionView
         _navigator = State(wrappedValue: ForumDestinationNavigator(
             dependencies: dependencies,
@@ -72,7 +74,7 @@ struct ForumThreadOverlayScreen: View {
             }
             .forumNavigationBarStyle()
         }
-        .forumTheme(.classic)
+        .forumTheme(.theme(for: appModel.forumThemePreset))
     }
 }
 

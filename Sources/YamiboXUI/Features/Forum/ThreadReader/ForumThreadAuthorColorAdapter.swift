@@ -22,9 +22,12 @@ enum ForumThreadAuthorColorAdapter {
         var background: Color?
     }
 
-    static func colors(for style: ForumThreadTextStyle) -> RunColors {
+    static func colors(for style: ForumThreadTextStyle, theme: ForumTheme = .classic) -> RunColors {
         guard let background = RGBColor(forumThreadHex: style.backgroundHex) else {
-            return RunColors(foreground: adaptedForeground(hex: style.foregroundHex), background: nil)
+            return RunColors(
+                foreground: adaptedForeground(hex: style.foregroundHex, theme: theme),
+                background: nil
+            )
         }
         // An authored background is one fixed color in both schemes, so the
         // text on it has to be fixed too — the scheme-adaptive body ink
@@ -32,18 +35,18 @@ enum ForumThreadAuthorColorAdapter {
         // authored foreground was already chosen against this background, so
         // it stays verbatim; otherwise whichever theme ink reads better on the
         // background wins.
-        let foreground = RGBColor(forumThreadHex: style.foregroundHex) ?? ink(on: background)
+        let foreground = RGBColor(forumThreadHex: style.foregroundHex) ?? ink(on: background, theme: theme)
         return RunColors(foreground: Color(foreground), background: Color(background))
     }
 
     /// Link color for a link sitting inside a run with an authored background.
     /// Without such a background the scheme-adaptive theme color is right.
-    static func linkColor(onBackgroundHex hex: String?) -> Color {
+    static func linkColor(onBackgroundHex hex: String?, theme: ForumTheme = .classic) -> Color {
         guard let background = RGBColor(forumThreadHex: hex) else {
-            return ForumTheme.classic.mutedAccent
+            return theme.mutedAccent
         }
-        let light = RGBColor(hex: ForumThemeClassicMetrics.mutedAccentLightHex)
-        let dark = RGBColor(hex: ForumThemeClassicMetrics.mutedAccentDarkHex)
+        let light = resolved(theme.mutedAccent, style: .light)
+        let dark = resolved(theme.mutedAccent, style: .dark)
         let readable = RGBColor.contrast(light, background) >= RGBColor.contrast(dark, background) ? light : dark
         return Color(readable)
     }
@@ -56,17 +59,12 @@ enum ForumThreadAuthorColorAdapter {
     private static let nearBlackLightness: Double = 0.25
     private static let nearWhiteLightness: Double = 0.75
 
-    /// The worst-case surface a text block sits on in each scheme: the palest
-    /// dark one and the deepest light one. Clearing these clears the rest —
-    /// quotes, table cells, and the page background sit on the other side of
-    /// each pair.
-    private static let darkSurface = RGBColor(hex: ForumThemeClassicMetrics.surfaceDarkHex)
-    private static let lightSurface = RGBColor(hex: ForumThemeClassicMetrics.pageBackgroundLightHex)
-    private static let inkOnDarkSurface = RGBColor(hex: ForumThemeClassicMetrics.primaryTextDarkHex)
-    private static let inkOnLightSurface = RGBColor(hex: ForumThemeClassicMetrics.primaryTextLightHex)
-
-    private static func adaptedForeground(hex: String?) -> Color? {
+    private static func adaptedForeground(hex: String?, theme: ForumTheme) -> Color? {
         guard let authored = RGBColor(forumThreadHex: hex) else { return nil }
+        let lightSurface = resolved(theme.pageBackground, style: .light)
+        let darkSurface = resolved(theme.surface, style: .dark)
+        let inkOnLightSurface = resolved(theme.primaryText, style: .light)
+        let inkOnDarkSurface = resolved(theme.primaryText, style: .dark)
         return Color(
             light: relit(authored, on: lightSurface, fallbackInk: inkOnLightSurface),
             dark: relit(authored, on: darkSurface, fallbackInk: inkOnDarkSurface)
@@ -114,10 +112,17 @@ enum ForumThreadAuthorColorAdapter {
         return RGBColor(hsl: hsl)
     }
 
-    private static func ink(on background: RGBColor) -> RGBColor {
-        RGBColor.contrast(inkOnDarkSurface, background) >= RGBColor.contrast(inkOnLightSurface, background)
+    private static func ink(on background: RGBColor, theme: ForumTheme) -> RGBColor {
+        let inkOnDarkSurface = resolved(theme.primaryText, style: .dark)
+        let inkOnLightSurface = resolved(theme.primaryText, style: .light)
+        return RGBColor.contrast(inkOnDarkSurface, background) >= RGBColor.contrast(inkOnLightSurface, background)
             ? inkOnDarkSurface
             : inkOnLightSurface
+    }
+
+    private static func resolved(_ color: Color, style: UIUserInterfaceStyle) -> RGBColor {
+        let traits = UITraitCollection(userInterfaceStyle: style)
+        return RGBColor(UIColor(color).resolvedColor(with: traits))
     }
 }
 
@@ -140,6 +145,17 @@ private struct RGBColor {
         red = Double((hex >> 16) & 0xFF) / 255
         green = Double((hex >> 8) & 0xFF) / 255
         blue = Double(hex & 0xFF) / 255
+    }
+
+    init(_ color: UIColor) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        self.red = Double(red)
+        self.green = Double(green)
+        self.blue = Double(blue)
     }
 
     /// Parses the `#RRGGBB` spelling `ForumThreadTextStyleParser` normalizes to.

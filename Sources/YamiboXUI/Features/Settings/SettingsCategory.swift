@@ -85,6 +85,12 @@ enum SettingsSearchRegistry {
 
     private static let baseEntries: [SettingsSearchEntry] = [
         SettingsSearchEntry(
+            id: "forum.appearance",
+            title: L10n.string("settings.forum_theme"),
+            category: .forum,
+            keywords: ["主题", "外观", "配色", "简约", "普通", "经典", "青岚", "樱墨", "浅色", "深色"]
+        ),
+        SettingsSearchEntry(
             id: "forum.auto_sign_in",
             title: L10n.string("settings.auto_sign_in"),
             category: .forum,

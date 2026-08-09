@@ -44,6 +44,7 @@ public final class YamiboAppModel {
     public private(set) var suspendedMangaContext: MangaLaunchContext?
     public private(set) var forumNavigationRequest: ForumNavigationRequest?
     public private(set) var forumSearchRequest: ForumSearchRequest?
+    public private(set) var forumThemePreset = ForumThemePreset.classic
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
 
     public let appContext: YamiboAppContext
@@ -51,6 +52,7 @@ public final class YamiboAppModel {
     public let webSessionCoordinator: ForumWebSessionCoordinator
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
+    @ObservationIgnored private var settingsObservationTask: Task<Void, Never>?
 
     public init(
         appContext: YamiboAppContext,
@@ -64,6 +66,11 @@ public final class YamiboAppModel {
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
             sessionStore: appContext.forumDependencies.sessionStore
         )
+        observeForumAppearanceSettings()
+    }
+
+    deinit {
+        settingsObservationTask?.cancel()
     }
 
     public func bootstrapIfNeeded() async {
@@ -72,6 +79,7 @@ public final class YamiboAppModel {
         defer { isBootstrapping = false }
 
         let result = await appContinuity.launchIfNeeded(canRestoreReaderRoute: canRestoreReaderRoute)
+        forumThemePreset = result.bootstrapState.settings.forumAppearance.themePreset
         bootstrapState = result.bootstrapState
         bootstrapErrorMessage = nil
         applyRestoredRoute(result.restoredRoute)
@@ -82,6 +90,7 @@ public final class YamiboAppModel {
         defer { isBootstrapping = false }
 
         let state = await appContext.bootstrap()
+        forumThemePreset = state.settings.forumAppearance.themePreset
         bootstrapState = state
         bootstrapErrorMessage = nil
         let restoredRoute = await appContinuity.restoreExplicitly(canRestoreReaderRoute: canRestoreReaderRoute)
@@ -106,6 +115,23 @@ public final class YamiboAppModel {
 
     public func flushWebDAVSyncBeforeBackground() {
         appContinuity.willEnterBackground()
+    }
+
+    public func refreshForumAppearanceSettings() async {
+        let settings = await appContext.settingsStore.load()
+        forumThemePreset = settings.forumAppearance.themePreset
+    }
+
+    private func observeForumAppearanceSettings() {
+        let settingsStore = appContext.settingsStore
+        settingsObservationTask = Task { [weak self] in
+            for await changeID in settingsStore.changes() {
+                guard !Task.isCancelled else { return }
+                guard changeID == settingsStore.changeID else { continue }
+                guard let self else { return }
+                await self.refreshForumAppearanceSettings()
+            }
+        }
     }
 
     public func presentNovelReader(_ context: NovelLaunchContext) {

@@ -94,7 +94,7 @@ public struct RootTabView: View {
     }
 
     private var isShowingBootstrapPlaceholder: Bool {
-        appModel.isBootstrapping && appModel.bootstrapState == nil
+        appModel.bootstrapState == nil
     }
 
     private var content: some View {
@@ -109,7 +109,11 @@ public struct RootTabView: View {
                     Label(L10n.string("tab.home"), systemImage: "house")
                 }
 
-            ForumNavigationHostView(dependencies: appModel.appContext.forumDependencies, appModel: appModel)
+            ForumNavigationHostView(
+                dependencies: appModel.appContext.forumDependencies,
+                appModel: appModel,
+                theme: .theme(for: appModel.forumThemePreset)
+            )
                 .tag(AppTab.forum)
                 .tabItem {
                     Label(L10n.string("tab.forum"), systemImage: "text.bubble")

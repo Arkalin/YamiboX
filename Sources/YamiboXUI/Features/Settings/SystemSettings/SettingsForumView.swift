@@ -9,6 +9,12 @@ struct SettingsForumView: View {
 
     var body: some View {
         Form {
+            SettingsForumAppearanceSection(
+                selectedPreset: viewModel.themePreset,
+                isBusy: viewModel.isBusy,
+                onSelect: viewModel.updateThemePreset
+            )
+
             Section {
                 Button {
                     openCheckInAutomationCreator()

@@ -6,30 +6,67 @@ import YamiboXCore
 @MainActor
 @Observable
 final class SettingsForumViewModel: AppSettingsPersisting {
+    typealias AtomicSettingsUpdater = @Sendable (
+        _ mutate: @Sendable (inout AppSettings) -> Void
+    ) async throws -> AppSettings
+
     var boardReader = BoardReaderSettings()
     var enhancedCheckInEnabled = false
+    var themePreset = ForumThemePreset.classic
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
+    private let updateSettings: AtomicSettingsUpdater
 
-    init(dependencies: SettingsDependencies, activity: SystemSettingsActivity) {
+    init(
+        dependencies: SettingsDependencies,
+        activity: SystemSettingsActivity,
+        updateSettings: AtomicSettingsUpdater? = nil
+    ) {
         self.dependencies = dependencies
         self.activity = activity
+        self.updateSettings = updateSettings ?? { mutate in
+            try await dependencies.settingsStore.update(mutate)
+        }
     }
 
     func applyLoadedSettings(_ settings: AppSettings) {
         boardReader = settings.boardReader
         enhancedCheckInEnabled = settings.system.enhancedCheckInEnabled
+        themePreset = settings.forumAppearance.themePreset
     }
 
     func restoreDefaultsAfterApplicationReset() {
         boardReader = BoardReaderSettings()
         enhancedCheckInEnabled = false
+        themePreset = .classic
     }
 
     func updateEnhancedCheckInEnabled(_ value: Bool) {
         persistSettingsAtomically(\.enhancedCheckInEnabled, to: value) {
             $0.system.enhancedCheckInEnabled = value
+        }
+    }
+
+    func updateThemePreset(_ value: ForumThemePreset) {
+        guard themePreset != value else { return }
+        let previous = themePreset
+        themePreset = value
+
+        Task {
+            do {
+                let saved = try await updateSettings { settings in
+                    settings.forumAppearance.themePreset = value
+                }
+                if themePreset == value {
+                    themePreset = saved.forumAppearance.themePreset
+                }
+            } catch {
+                if themePreset == value {
+                    themePreset = previous
+                }
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
