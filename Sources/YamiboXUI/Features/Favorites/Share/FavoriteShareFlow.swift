@@ -249,8 +249,6 @@ struct FavoriteShareExportPreviewSheet: View {
                     Button(action: onSave) {
                         Label(L10n.string("favorites.share.save_file"), systemImage: "square.and.arrow.down")
                     }
-                } footer: {
-                    Text(L10n.string("favorites.share.export_hint"))
                 }
             }
             .navigationTitle(L10n.string("favorites.share.action"))

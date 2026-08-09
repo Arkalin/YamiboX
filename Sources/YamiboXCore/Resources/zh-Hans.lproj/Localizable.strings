@@ -1116,7 +1116,7 @@
 "favorites.share.load" = "载入收藏夹";
 "favorites.share.select_title" = "分享哪些收藏夹";
 "favorites.share.import_target_title" = "加入到哪些收藏夹";
-"favorites.share.import_confirm" = "载入";
+"favorites.share.import_confirm" = "导入";
 "favorites.share.no_categories" = "没有可选的收藏夹";
 "favorites.share.folder_count" = "收藏夹";
 "favorites.share.item_count" = "收藏项目";
@@ -1127,11 +1127,10 @@
 "favorites.share.more_folders" = "另有 %d 个收藏夹";
 "favorites.share.share_file" = "分享文件";
 "favorites.share.save_file" = "保存文件";
-"favorites.share.export_hint" = "JSON 文件可与 Android 版 YamiboReader 双向载入。";
 "favorites.share.create_folders" = "建立新收藏夹";
 "favorites.share.add_existing" = "加入既有收藏夹";
 "favorites.share.saved" = "已保存 %@";
-"favorites.share.import_result" = "已载入：新建 %d 个收藏夹、%d 项，复用 %d 项，跳过 %d 项；不支持 %d 项，无效 %d 项";
+"favorites.share.import_result" = "已导入：新建 %d 个收藏夹、%d 项，复用 %d 项，跳过 %d 项；不支持 %d 项，无效 %d 项";
 "favorites.share.imported_folder" = "导入的收藏夹";
 "favorites.share.error.invalid_format" = "收藏分享文件格式错误：%@";
 "favorites.share.error.unsupported_schema" = "不支持的收藏分享格式：%@";
