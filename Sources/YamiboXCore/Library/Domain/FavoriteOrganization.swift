@@ -40,20 +40,51 @@ public struct FavoriteCategory: Codable, Hashable, Identifiable, Sendable {
     public var name: String
     public var manualOrder: Int
     public var isDefault: Bool
+    public var updatedAt: Date
 
-    public init(id: String = UUID().uuidString, name: String, manualOrder: Int = 0, isDefault: Bool = false) {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case manualOrder
+        case isDefault
+        case updatedAt
+    }
+
+    public init(
+        id: String = UUID().uuidString,
+        name: String,
+        manualOrder: Int = 0,
+        isDefault: Bool = false,
+        updatedAt: Date = .now
+    ) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.manualOrder = manualOrder
         self.isDefault = isDefault
+        self.updatedAt = updatedAt
     }
 
     public static var defaultCategory: FavoriteCategory {
-        FavoriteCategory(id: defaultID, name: defaultStorageName, manualOrder: 0, isDefault: true)
+        FavoriteCategory(
+            id: defaultID,
+            name: defaultStorageName,
+            manualOrder: 0,
+            isDefault: true,
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
     }
 
     public var displayName: String {
         isDefault ? L10n.string("favorites.default_category") : name
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        manualOrder = try container.decode(Int.self, forKey: .manualOrder)
+        isDefault = try container.decode(Bool.self, forKey: .isDefault)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(timeIntervalSince1970: 0)
     }
 }
 
@@ -74,18 +105,40 @@ public struct LocalFavoriteCollection: Codable, Hashable, Identifiable, Sendable
     public var name: String
     public var color: FavoriteCollectionColor
     public var manualOrder: Int
+    public var updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case categoryID
+        case name
+        case color
+        case manualOrder
+        case updatedAt
+    }
 
     public init(
         id: String = UUID().uuidString,
         categoryID: String,
         name: String,
         color: FavoriteCollectionColor = .gray,
-        manualOrder: Int = 0
+        manualOrder: Int = 0,
+        updatedAt: Date = .now
     ) {
         self.id = id
         self.categoryID = categoryID
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.color = color
         self.manualOrder = manualOrder
+        self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        categoryID = try container.decode(String.self, forKey: .categoryID)
+        name = try container.decode(String.self, forKey: .name)
+        color = try container.decode(FavoriteCollectionColor.self, forKey: .color)
+        manualOrder = try container.decode(Int.self, forKey: .manualOrder)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(timeIntervalSince1970: 0)
     }
 }

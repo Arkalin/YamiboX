@@ -170,6 +170,230 @@ import Testing
     #expect(item.locations == [.category(destination.id)])
 }
 
+/// Moving a collection changes both the collection's parent category and
+/// every member's collection coordinate. A stale remote snapshot must not
+/// win only the collection half and leave normalization to discard the newer
+/// member coordinates.
+@Test func favoriteLibraryWebDAVMergeKeepsCollectionMoveAndMembersTogether() throws {
+    let baseDate = Date(timeIntervalSince1970: 150)
+    let target = FavoriteItemTarget(kind: .normalThread, threadID: "9002")
+
+    var remoteDocument = FavoriteLibraryDocument()
+    let source = remoteDocument.createCategory(name: "原分类")
+    let destination = remoteDocument.createCategory(name: "目标分类")
+    let collection = remoteDocument.createCollection(
+        categoryID: source.id,
+        name: "待移动合集",
+        date: baseDate
+    )
+    let originalCollectionLocation = FavoriteLocation.collection(
+        categoryID: source.id,
+        collectionID: collection.id
+    )
+    let item = try FavoriteItem(
+        target: target,
+        title: "合集成员",
+        locations: [.category(source.id), originalCollectionLocation],
+        updatedAt: baseDate
+    )
+    remoteDocument.upsertItem(item)
+
+    var localDocument = remoteDocument
+    localDocument.moveCollection(
+        id: collection.id,
+        toCategoryID: destination.id,
+        date: baseDate.addingTimeInterval(60)
+    )
+
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: FavoriteLibraryWebDAVPayload(
+            updatedAt: baseDate.addingTimeInterval(60),
+            library: localDocument
+        ),
+        remote: FavoriteLibraryWebDAVPayload(updatedAt: baseDate, library: remoteDocument),
+        updatedAt: baseDate.addingTimeInterval(120)
+    )
+
+    let mergedCollection = try #require(merged.library.collections.first { $0.id == collection.id })
+    #expect(mergedCollection.categoryID == destination.id)
+
+    let movedCollectionLocation = FavoriteLocation.collection(
+        categoryID: destination.id,
+        collectionID: collection.id
+    )
+    let mergedItem = try #require(merged.library.items.first { $0.target == target })
+    #expect(mergedItem.locations.contains(movedCollectionLocation))
+    #expect(mergedItem.locations.contains(originalCollectionLocation) == false)
+}
+
+@Test func favoriteLibraryWebDAVMergeCategoriesUseNewestRecordAndFavorLocalTies() throws {
+    let older = Date(timeIntervalSince1970: 200)
+    let newer = older.addingTimeInterval(60)
+    let tied = older.addingTimeInterval(120)
+    let localCategories = [
+        FavoriteCategory(id: "local-newer", name: "本地", manualOrder: 11, updatedAt: newer),
+        FavoriteCategory(id: "remote-newer", name: "本地旧值", manualOrder: 12, updatedAt: older),
+        FavoriteCategory(id: "tied", name: "平局本地", manualOrder: 13, updatedAt: tied),
+    ]
+    let remoteCategories = [
+        FavoriteCategory(id: "local-newer", name: "远端旧值", manualOrder: 21, updatedAt: older),
+        FavoriteCategory(id: "remote-newer", name: "远端", manualOrder: 22, updatedAt: newer),
+        FavoriteCategory(id: "tied", name: "平局远端", manualOrder: 23, updatedAt: tied),
+    ]
+
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(categories: localCategories)
+        ),
+        remote: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(categories: remoteCategories)
+        ),
+        updatedAt: tied
+    )
+
+    let localNewer = try #require(merged.library.categories.first { $0.id == "local-newer" })
+    #expect(localNewer.name == "本地")
+    #expect(localNewer.manualOrder == 11)
+    let remoteNewer = try #require(merged.library.categories.first { $0.id == "remote-newer" })
+    #expect(remoteNewer.name == "远端")
+    #expect(remoteNewer.manualOrder == 22)
+    let tiedRecord = try #require(merged.library.categories.first { $0.id == "tied" })
+    #expect(tiedRecord.name == "平局本地")
+    #expect(tiedRecord.manualOrder == 13)
+}
+
+@Test func favoriteLibraryWebDAVMergeCollectionsUseNewestRecordAndFavorLocalTies() throws {
+    let older = Date(timeIntervalSince1970: 300)
+    let newer = older.addingTimeInterval(60)
+    let tied = older.addingTimeInterval(120)
+    let leftCategory = FavoriteCategory(id: "left-category", name: "左", updatedAt: older)
+    let rightCategory = FavoriteCategory(id: "right-category", name: "右", updatedAt: older)
+    let categories = [leftCategory, rightCategory]
+    let localCollections = [
+        LocalFavoriteCollection(
+            id: "local-newer",
+            categoryID: leftCategory.id,
+            name: "本地",
+            color: .red,
+            manualOrder: 11,
+            updatedAt: newer
+        ),
+        LocalFavoriteCollection(
+            id: "remote-newer",
+            categoryID: leftCategory.id,
+            name: "本地旧值",
+            color: .orange,
+            manualOrder: 12,
+            updatedAt: older
+        ),
+        LocalFavoriteCollection(
+            id: "tied",
+            categoryID: leftCategory.id,
+            name: "平局本地",
+            color: .yellow,
+            manualOrder: 13,
+            updatedAt: tied
+        ),
+    ]
+    let remoteCollections = [
+        LocalFavoriteCollection(
+            id: "local-newer",
+            categoryID: rightCategory.id,
+            name: "远端旧值",
+            color: .green,
+            manualOrder: 21,
+            updatedAt: older
+        ),
+        LocalFavoriteCollection(
+            id: "remote-newer",
+            categoryID: rightCategory.id,
+            name: "远端",
+            color: .blue,
+            manualOrder: 22,
+            updatedAt: newer
+        ),
+        LocalFavoriteCollection(
+            id: "tied",
+            categoryID: rightCategory.id,
+            name: "平局远端",
+            color: .purple,
+            manualOrder: 23,
+            updatedAt: tied
+        ),
+    ]
+
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(categories: categories, collections: localCollections)
+        ),
+        remote: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(categories: categories, collections: remoteCollections)
+        ),
+        updatedAt: tied
+    )
+
+    let localNewer = try #require(merged.library.collections.first { $0.id == "local-newer" })
+    #expect(localNewer.categoryID == leftCategory.id)
+    #expect(localNewer.name == "本地")
+    #expect(localNewer.color == .red)
+    #expect(localNewer.manualOrder == 11)
+    let remoteNewer = try #require(merged.library.collections.first { $0.id == "remote-newer" })
+    #expect(remoteNewer.categoryID == rightCategory.id)
+    #expect(remoteNewer.name == "远端")
+    #expect(remoteNewer.color == .blue)
+    #expect(remoteNewer.manualOrder == 22)
+    let tiedRecord = try #require(merged.library.collections.first { $0.id == "tied" })
+    #expect(tiedRecord.categoryID == leftCategory.id)
+    #expect(tiedRecord.name == "平局本地")
+    #expect(tiedRecord.color == .yellow)
+    #expect(tiedRecord.manualOrder == 13)
+}
+
+@Test func favoriteLibraryWebDAVMergeTagsUseNewestRecordAndFavorLocalTies() throws {
+    let older = Date(timeIntervalSince1970: 400)
+    let newer = older.addingTimeInterval(60)
+    let tied = older.addingTimeInterval(120)
+    let localTags = [
+        FavoriteTag(id: "local-newer", name: "本地", color: .red, manualOrder: 11, createdAt: older, updatedAt: newer),
+        FavoriteTag(id: "remote-newer", name: "本地旧值", color: .orange, manualOrder: 12, createdAt: older, updatedAt: older),
+        FavoriteTag(id: "tied", name: "平局本地", color: .yellow, manualOrder: 13, createdAt: older, updatedAt: tied),
+    ]
+    let remoteTags = [
+        FavoriteTag(id: "local-newer", name: "远端旧值", color: .green, manualOrder: 21, createdAt: older, updatedAt: older),
+        FavoriteTag(id: "remote-newer", name: "远端", color: .blue, manualOrder: 22, createdAt: older, updatedAt: newer),
+        FavoriteTag(id: "tied", name: "平局远端", color: .purple, manualOrder: 23, createdAt: older, updatedAt: tied),
+    ]
+
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(tags: localTags)
+        ),
+        remote: FavoriteLibraryWebDAVPayload(
+            updatedAt: newer,
+            library: FavoriteLibraryDocument(tags: remoteTags)
+        ),
+        updatedAt: tied
+    )
+
+    let localNewer = try #require(merged.library.tags.first { $0.id == "local-newer" })
+    #expect(localNewer.name == "本地")
+    #expect(localNewer.color == .red)
+    #expect(localNewer.manualOrder == 11)
+    let remoteNewer = try #require(merged.library.tags.first { $0.id == "remote-newer" })
+    #expect(remoteNewer.name == "远端")
+    #expect(remoteNewer.color == .blue)
+    #expect(remoteNewer.manualOrder == 22)
+    let tiedRecord = try #require(merged.library.tags.first { $0.id == "tied" })
+    #expect(tiedRecord.name == "平局本地")
+    #expect(tiedRecord.color == .yellow)
+    #expect(tiedRecord.manualOrder == 13)
+}
+
 /// Whole-record deletions (category/collection/tag/item) are the same class
 /// of bug the locations fix above addresses, but for existence rather than a
 /// field: a stale peer that still has the id would otherwise revive it via
@@ -535,6 +759,63 @@ import Testing
     #expect(decoded.version == 2)
     #expect(decoded.updatedAt == Date(timeIntervalSinceReferenceDate: 50))
     #expect(decoded.library.items.isEmpty)
+}
+
+@Test func favoriteLibraryWebDAVPayloadDecodesLegacyOrganizationRecordsWithoutUpdatedAt() throws {
+    let categoryID = "legacy-category"
+    let collectionID = "legacy-collection"
+    let payload = FavoriteLibraryWebDAVPayload(
+        updatedAt: Date(timeIntervalSince1970: 500),
+        library: FavoriteLibraryDocument(
+            categories: [FavoriteCategory(id: categoryID, name: "旧分类")],
+            collections: [
+                LocalFavoriteCollection(
+                    id: collectionID,
+                    categoryID: categoryID,
+                    name: "旧合集"
+                ),
+            ]
+        )
+    )
+    let encoded = try JSONEncoder().encode(payload)
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    var library = try #require(object["library"] as? [String: Any])
+    var categories = try #require(library["categories"] as? [[String: Any]])
+    var collections = try #require(library["collections"] as? [[String: Any]])
+    for index in categories.indices {
+        categories[index].removeValue(forKey: "updatedAt")
+    }
+    for index in collections.indices {
+        collections[index].removeValue(forKey: "updatedAt")
+    }
+    library["categories"] = categories
+    library["collections"] = collections
+    object["library"] = library
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+    let decoded = try JSONDecoder().decode(FavoriteLibraryWebDAVPayload.self, from: legacyData)
+    let epoch = Date(timeIntervalSince1970: 0)
+    #expect(decoded.version == FavoriteLibraryWebDAVPayload.currentVersion)
+    #expect(decoded.library.categories.first { $0.id == categoryID }?.updatedAt == epoch)
+    #expect(decoded.library.collections.first { $0.id == collectionID }?.updatedAt == epoch)
+
+    let changedAt = Date(timeIntervalSince1970: 600)
+    var localDocument = decoded.library
+    localDocument.renameCategory(id: categoryID, name: "新分类", date: changedAt)
+    localDocument.renameCollection(id: collectionID, name: "新合集", date: changedAt)
+    let merged = FavoriteLibraryWebDAVMerger().merge(
+        local: FavoriteLibraryWebDAVPayload(updatedAt: changedAt, library: localDocument),
+        remote: decoded,
+        updatedAt: changedAt
+    )
+    let roundTripped = try JSONDecoder().decode(
+        FavoriteLibraryWebDAVPayload.self,
+        from: JSONEncoder().encode(merged)
+    )
+
+    #expect(roundTripped.version == FavoriteLibraryWebDAVPayload.currentVersion)
+    #expect(roundTripped.library.categories.first { $0.id == categoryID }?.name == "新分类")
+    #expect(roundTripped.library.collections.first { $0.id == collectionID }?.name == "新合集")
 }
 
 /// Payloads written before revisions existed carry no `syncRevision`; they
