@@ -123,6 +123,7 @@ public struct HomeView: View {
                 await model.observeProfileChanges()
             }
         }
+        .forumTheme(.theme(for: appModel.forumThemePreset))
     }
 
     private func openAccount() {
