@@ -30,7 +30,7 @@ public enum MangaTitleCleaner {
         if hasLeadingMetadata {
             clean = HTMLTextExtractor.regexReplacing(
                 clean,
-                pattern: #"\s+(?:第\s*)?\d{1,3}(?:\.\d+)?(?:\s*[-—]\s*\d{1,3}(?:\.\d+)?)?$"#,
+                pattern: #"\s+(?:第\s*)?\d{1,3}(?:\.\d+)?(?:\s*[-—]\s*\d{1,3}(?:\.\d+)?)?(?:\s*[:：]\s*.*)?$"#,
                 with: ""
             )
         }
