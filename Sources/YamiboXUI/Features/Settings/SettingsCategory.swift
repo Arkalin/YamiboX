@@ -3,6 +3,7 @@ import UIKit
 import YamiboXCore
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
+    case general
     case forum
     case favorites
     case reading
@@ -13,6 +14,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .general:
+            L10n.string("settings.section.general")
         case .forum:
             L10n.string("settings.section.forum")
         case .favorites:
@@ -28,6 +31,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var systemImageName: String {
         switch self {
+        case .general: "gearshape"
         case .forum: "text.bubble"
         case .favorites: "heart.text.square"
         case .reading: "book"
@@ -84,6 +88,12 @@ enum SettingsSearchRegistry {
     }()
 
     private static let baseEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(
+            id: "general.home_page",
+            title: L10n.string("settings.home_page"),
+            category: .general,
+            keywords: ["主页", "首页", "论坛", "收藏"]
+        ),
         SettingsSearchEntry(
             id: "forum.appearance",
             title: L10n.string("settings.forum_theme"),

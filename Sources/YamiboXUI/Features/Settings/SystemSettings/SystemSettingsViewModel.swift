@@ -14,6 +14,7 @@ import YamiboXCore
 final class SystemSettingsViewModel {
     let dependencies: SettingsDependencies
 
+    let general: SettingsGeneralViewModel
     let forum: SettingsForumViewModel
     let favorites: SettingsFavoritesViewModel
     let reading: SettingsReadingViewModel
@@ -30,6 +31,7 @@ final class SystemSettingsViewModel {
     init(dependencies: SettingsDependencies) {
         let activity = SystemSettingsActivity()
         let storageUsage = SettingsStorageUsage(dependencies: dependencies)
+        let general = SettingsGeneralViewModel(dependencies: dependencies, activity: activity)
         let forum = SettingsForumViewModel(dependencies: dependencies, activity: activity)
         let favorites = SettingsFavoritesViewModel(dependencies: dependencies, activity: activity)
         let reading = SettingsReadingViewModel(dependencies: dependencies, activity: activity)
@@ -56,6 +58,7 @@ final class SystemSettingsViewModel {
         // `self`) keeps the storage model free of a reference cycle back
         // through this root.
         storage.onApplicationDataReset = {
+            general.restoreDefaultsAfterApplicationReset()
             forum.restoreDefaultsAfterApplicationReset()
             favorites.restoreDefaultsAfterApplicationReset()
             reading.restoreDefaultsAfterApplicationReset()
@@ -67,6 +70,7 @@ final class SystemSettingsViewModel {
         self.dependencies = dependencies
         self.activity = activity
         self.storageUsage = storageUsage
+        self.general = general
         self.forum = forum
         self.favorites = favorites
         self.reading = reading
@@ -98,6 +102,7 @@ final class SystemSettingsViewModel {
         defer { activity.activeAction = nil }
 
         let settings = await dependencies.settingsStore.load()
+        general.applyLoadedSettings(settings)
         forum.applyLoadedSettings(settings)
         favorites.applyLoadedSettings(settings)
         reading.applyLoadedSettings(settings)
