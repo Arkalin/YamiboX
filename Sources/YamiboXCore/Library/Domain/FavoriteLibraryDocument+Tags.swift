@@ -16,13 +16,16 @@ extension FavoriteLibraryDocument {
     }
 
     public mutating func renameTag(id tagID: String, name: String, date: Date = .now) {
-        guard let index = tags.firstIndex(where: { $0.id == tagID }) else { return }
-        tags[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = tags.firstIndex(where: { $0.id == tagID }),
+              tags[index].name != trimmedName else { return }
+        tags[index].name = trimmedName
         tags[index].updatedAt = date
     }
 
     public mutating func recolorTag(id tagID: String, color: FavoriteTagColor, date: Date = .now) {
-        guard let index = tags.firstIndex(where: { $0.id == tagID }) else { return }
+        guard let index = tags.firstIndex(where: { $0.id == tagID }),
+              tags[index].color != color else { return }
         tags[index].color = color
         tags[index].updatedAt = date
     }
@@ -41,12 +44,14 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    public mutating func reorderTags(orderedIDs: [String]) {
+    public mutating func reorderTags(orderedIDs: [String], date: Date = .now) {
         let orderByID = Dictionary(uniqueKeysWithValues: orderedIDs.enumerated().map { ($0.element, $0.offset) })
         tags = tags.map { tag in
             var tag = tag
-            guard let order = orderByID[tag.id] else { return tag }
+            guard let order = orderByID[tag.id],
+                  tag.manualOrder != order else { return tag }
             tag.manualOrder = order
+            tag.updatedAt = date
             return tag
         }
     }

@@ -92,8 +92,9 @@ struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
     // `remoteMappingUpdatedAt` (see `FavoriteItem`'s doc comment — the old
     // `FavoriteLibraryWebDAVClocks` had the identical "never actually
     // written from local state" flaw as the old tombstones field): decoding
-    // tolerates the removed keys and the app is pre-release, so no format
-    // break is needed.
+    // tolerates the removed keys. Category and collection `updatedAt` fields
+    // are also backward-compatible nested additions, so no format break is
+    // needed.
     static let currentVersion = 2
 
     var version: Int
@@ -279,7 +280,11 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         remote: FavoriteLibraryDocument
     ) -> (categories: [FavoriteCategory], deletedIDs: [String: Date]) {
         let deletedIDs = maxDateDictionary(local.deletedCategoryIDs, remote.deletedCategoryIDs)
-        let categories = keyedByID(local.categories + remote.categories)
+        let categories = newestByID(
+            local: local.categories,
+            remote: remote.categories,
+            updatedAt: \.updatedAt
+        )
             .filter { deletedIDs[$0.id] == nil }
             .sorted {
                 if $0.isDefault != $1.isDefault { return $0.isDefault }
@@ -295,7 +300,11 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         validCategoryIDs: Set<String>
     ) -> (collections: [LocalFavoriteCollection], deletedIDs: [String: Date]) {
         let deletedIDs = maxDateDictionary(local.deletedCollectionIDs, remote.deletedCollectionIDs)
-        let collections = keyedByID(local.collections + remote.collections)
+        let collections = newestByID(
+            local: local.collections,
+            remote: remote.collections,
+            updatedAt: \.updatedAt
+        )
             // `deleteCategory` only cascade-tombstones the collections it
             // knows about; a collection a peer created (under the same
             // category) concurrently with — but never synced before — that
@@ -316,7 +325,11 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         remote: FavoriteLibraryDocument
     ) -> (tags: [FavoriteTag], deletedIDs: [String: Date]) {
         let deletedIDs = maxDateDictionary(local.deletedTagIDs, remote.deletedTagIDs)
-        let tags = keyedByID(local.tags + remote.tags)
+        let tags = newestByID(
+            local: local.tags,
+            remote: remote.tags,
+            updatedAt: \.updatedAt
+        )
             .filter { deletedIDs[$0.id] == nil }
             .sorted {
                 if $0.manualOrder != $1.manualOrder { return $0.manualOrder < $1.manualOrder }
@@ -337,10 +350,24 @@ private func maxDateDictionary(_ lhs: [String: Date], _ rhs: [String: Date]) -> 
     return result
 }
 
-private func keyedByID<Value: Identifiable>(_ values: [Value]) -> [Value] where Value.ID == String {
-    var byID: [String: Value] = [:]
-    for value in values {
-        byID[value.id] = value
+private func newestByID<Value: Identifiable>(
+    local: [Value],
+    remote: [Value],
+    updatedAt: (Value) -> Date
+) -> [Value] where Value.ID == String {
+    let newest: (Value, Value) -> Value = { lhs, rhs in
+        updatedAt(lhs) >= updatedAt(rhs) ? lhs : rhs
+    }
+    var byID = Dictionary(local.map { ($0.id, $0) }, uniquingKeysWith: newest)
+    let remoteByID = Dictionary(remote.map { ($0.id, $0) }, uniquingKeysWith: newest)
+    for (id, remoteValue) in remoteByID {
+        guard let localValue = byID[id] else {
+            byID[id] = remoteValue
+            continue
+        }
+        if updatedAt(remoteValue) > updatedAt(localValue) {
+            byID[id] = remoteValue
+        }
     }
     return Array(byID.values)
 }

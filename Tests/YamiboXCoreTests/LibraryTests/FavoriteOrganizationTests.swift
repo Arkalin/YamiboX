@@ -85,3 +85,138 @@ import Testing
     #expect(stored.tagIDs.isEmpty)
     #expect(document.tags.isEmpty)
 }
+
+@Test func favoriteCategoryMutationClocksOnlyAdvanceForRealChanges() throws {
+    let createdAt = Date(timeIntervalSince1970: 100)
+    let renamedAt = createdAt.addingTimeInterval(10)
+    let reorderedAt = createdAt.addingTimeInterval(20)
+    let noOpAt = createdAt.addingTimeInterval(30)
+    var document = FavoriteLibraryDocument()
+    let first = document.createCategory(name: "第一类", date: createdAt)
+    let second = document.createCategory(name: "第二类", date: createdAt)
+
+    #expect(document.defaultCategory.updatedAt == Date(timeIntervalSince1970: 0))
+    #expect(first.updatedAt == createdAt)
+    #expect(second.updatedAt == createdAt)
+
+    document.renameCategory(id: first.id, name: " 第一类 ", date: noOpAt)
+    #expect(document.categories.first { $0.id == first.id }?.updatedAt == createdAt)
+
+    document.renameCategory(id: first.id, name: "重命名", date: renamedAt)
+    #expect(document.categories.first { $0.id == first.id }?.updatedAt == renamedAt)
+
+    document.reorderCategories(orderedIDs: [second.id, first.id], date: reorderedAt)
+    #expect(document.categories.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.categories.first { $0.id == second.id }?.updatedAt == reorderedAt)
+
+    document.reorderCategories(orderedIDs: [second.id, first.id], date: noOpAt)
+    #expect(document.categories.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.categories.first { $0.id == second.id }?.updatedAt == reorderedAt)
+}
+
+@Test func favoriteCollectionMutationClocksOnlyAdvanceForRealChanges() throws {
+    let createdAt = Date(timeIntervalSince1970: 200)
+    let renamedAt = createdAt.addingTimeInterval(10)
+    let recoloredAt = createdAt.addingTimeInterval(20)
+    let reorderedAt = createdAt.addingTimeInterval(30)
+    let movedAt = createdAt.addingTimeInterval(40)
+    let noOpAt = createdAt.addingTimeInterval(50)
+    var document = FavoriteLibraryDocument()
+    let source = document.createCategory(name: "原分类", date: createdAt)
+    let destination = document.createCategory(name: "目标分类", date: createdAt)
+    let first = document.createCollection(
+        categoryID: source.id,
+        name: "第一合集",
+        color: .gray,
+        date: createdAt
+    )
+    let second = document.createCollection(
+        categoryID: source.id,
+        name: "第二合集",
+        color: .blue,
+        date: createdAt
+    )
+
+    #expect(first.updatedAt == createdAt)
+    #expect(second.updatedAt == createdAt)
+
+    document.renameCollection(id: first.id, name: " 第一合集 ", date: noOpAt)
+    document.recolorCollection(id: first.id, color: .gray, date: noOpAt)
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == createdAt)
+
+    document.renameCollection(id: first.id, name: "重命名合集", date: renamedAt)
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == renamedAt)
+    document.recolorCollection(id: first.id, color: .red, date: recoloredAt)
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == recoloredAt)
+
+    document.reorderCollections(
+        categoryID: source.id,
+        orderedIDs: [second.id, first.id],
+        date: reorderedAt
+    )
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.collections.first { $0.id == second.id }?.updatedAt == reorderedAt)
+    document.reorderCollections(
+        categoryID: source.id,
+        orderedIDs: [second.id, first.id],
+        date: noOpAt
+    )
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.collections.first { $0.id == second.id }?.updatedAt == reorderedAt)
+
+    let memberTargets = [
+        FavoriteItemTarget(kind: .normalThread, threadID: "clock-1"),
+        FavoriteItemTarget(kind: .normalThread, threadID: "clock-2"),
+    ]
+    for target in memberTargets {
+        let item = try FavoriteItem(
+            target: target,
+            title: "合集成员",
+            locations: [.collection(categoryID: source.id, collectionID: first.id)],
+            updatedAt: createdAt
+        )
+        document.upsertItem(item)
+    }
+
+    document.moveCollection(id: first.id, toCategoryID: destination.id, date: movedAt)
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == movedAt)
+    for target in memberTargets {
+        let member = try #require(document.items.first { $0.target == target })
+        #expect(member.locationsUpdatedAt == movedAt)
+        #expect(member.updatedAt == movedAt)
+        #expect(member.locations.contains(.collection(categoryID: destination.id, collectionID: first.id)))
+    }
+
+    document.moveCollection(id: first.id, toCategoryID: destination.id, date: noOpAt)
+    #expect(document.collections.first { $0.id == first.id }?.updatedAt == movedAt)
+}
+
+@Test func favoriteTagMutationClocksOnlyAdvanceForRealChanges() throws {
+    let createdAt = Date(timeIntervalSince1970: 300)
+    let renamedAt = createdAt.addingTimeInterval(10)
+    let recoloredAt = createdAt.addingTimeInterval(20)
+    let reorderedAt = createdAt.addingTimeInterval(30)
+    let noOpAt = createdAt.addingTimeInterval(40)
+    var document = FavoriteLibraryDocument()
+    let first = document.createTag(name: "第一标签", color: .gray, date: createdAt)
+    let second = document.createTag(name: "第二标签", color: .blue, date: createdAt)
+
+    #expect(first.updatedAt == createdAt)
+    #expect(second.updatedAt == createdAt)
+
+    document.renameTag(id: first.id, name: " 第一标签 ", date: noOpAt)
+    document.recolorTag(id: first.id, color: .gray, date: noOpAt)
+    #expect(document.tags.first { $0.id == first.id }?.updatedAt == createdAt)
+
+    document.renameTag(id: first.id, name: "重命名标签", date: renamedAt)
+    #expect(document.tags.first { $0.id == first.id }?.updatedAt == renamedAt)
+    document.recolorTag(id: first.id, color: .red, date: recoloredAt)
+    #expect(document.tags.first { $0.id == first.id }?.updatedAt == recoloredAt)
+
+    document.reorderTags(orderedIDs: [second.id, first.id], date: reorderedAt)
+    #expect(document.tags.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.tags.first { $0.id == second.id }?.updatedAt == reorderedAt)
+    document.reorderTags(orderedIDs: [second.id, first.id], date: noOpAt)
+    #expect(document.tags.first { $0.id == first.id }?.updatedAt == reorderedAt)
+    #expect(document.tags.first { $0.id == second.id }?.updatedAt == reorderedAt)
+}

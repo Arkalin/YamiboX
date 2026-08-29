@@ -6,26 +6,33 @@ extension FavoriteLibraryDocument {
     public mutating func createCollection(
         categoryID: String,
         name: String,
-        color: FavoriteCollectionColor = .gray
+        color: FavoriteCollectionColor = .gray,
+        date: Date = .now
     ) -> LocalFavoriteCollection {
         let collection = LocalFavoriteCollection(
             categoryID: categoryID,
             name: name,
             color: color,
-            manualOrder: ((collections.filter { $0.categoryID == categoryID }.map(\.manualOrder).max() ?? -1) + 1)
+            manualOrder: ((collections.filter { $0.categoryID == categoryID }.map(\.manualOrder).max() ?? -1) + 1),
+            updatedAt: date
         )
         collections.append(collection)
         return collection
     }
 
-    public mutating func renameCollection(id collectionID: String, name: String) {
-        guard let index = collections.firstIndex(where: { $0.id == collectionID }) else { return }
-        collections[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    public mutating func renameCollection(id collectionID: String, name: String, date: Date = .now) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = collections.firstIndex(where: { $0.id == collectionID }),
+              collections[index].name != trimmedName else { return }
+        collections[index].name = trimmedName
+        collections[index].updatedAt = date
     }
 
-    public mutating func recolorCollection(id collectionID: String, color: FavoriteCollectionColor) {
-        guard let index = collections.firstIndex(where: { $0.id == collectionID }) else { return }
+    public mutating func recolorCollection(id collectionID: String, color: FavoriteCollectionColor, date: Date = .now) {
+        guard let index = collections.firstIndex(where: { $0.id == collectionID }),
+              collections[index].color != color else { return }
         collections[index].color = color
+        collections[index].updatedAt = date
     }
 
     public mutating func moveCollection(id collectionID: String, toCategoryID categoryID: String, date: Date = .now) {
@@ -37,6 +44,7 @@ extension FavoriteLibraryDocument {
         guard previousCategoryID != categoryID else { return }
         collections[index].categoryID = categoryID
         collections[index].manualOrder = ((collections.filter { $0.categoryID == categoryID }.map(\.manualOrder).max() ?? -1) + 1)
+        collections[index].updatedAt = date
         items = items.map { item in
             guard item.locations.contains(.collection(categoryID: previousCategoryID, collectionID: collectionID)) else { return item }
             var item = item
@@ -52,12 +60,15 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    public mutating func reorderCollections(categoryID: String, orderedIDs: [String]) {
+    public mutating func reorderCollections(categoryID: String, orderedIDs: [String], date: Date = .now) {
         let orderByID = Dictionary(uniqueKeysWithValues: orderedIDs.enumerated().map { ($0.element, $0.offset) })
         collections = collections.map { collection in
             var collection = collection
-            guard collection.categoryID == categoryID, let order = orderByID[collection.id] else { return collection }
+            guard collection.categoryID == categoryID,
+                  let order = orderByID[collection.id],
+                  collection.manualOrder != order else { return collection }
             collection.manualOrder = order
+            collection.updatedAt = date
             return collection
         }
     }
