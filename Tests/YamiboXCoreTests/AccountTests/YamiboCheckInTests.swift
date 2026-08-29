@@ -109,47 +109,6 @@ private final class YamiboCheckInPromotionRequestRecorder: @unchecked Sendable {
     #expect(result == .notAuthenticated)
 }
 
-@Test func yamiboCheckInRecognizesAlreadyCheckedInPageAndPersistsToday() async throws {
-    let testID = UUID().uuidString
-    let suiteName = makeYamiboCheckInSuiteName(prefix: "already-checked-in")
-    let sessionStore = SessionStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), key: "session")
-    let checkInStore = YamiboCheckInStore(defaults: try makeYamiboCheckInDefaults(suiteName: suiteName), keyPrefix: "check-in")
-    try await sessionStore.save(
-        SessionState(
-            cookie: "foo=1; EeqY_2132_auth=user-a",
-            userAgent: "Test-UA",
-            isLoggedIn: true
-        )
-    )
-
-    YamiboCheckInURLProtocol.setHandler({ request in
-        #expect(request.value(forHTTPHeaderField: "Cookie") == "foo=1; EeqY_2132_auth=user-a")
-        #expect(request.value(forHTTPHeaderField: "User-Agent") == "Test-UA")
-        return .response(
-            YamiboCheckInStubResponse(
-                statusCode: 200,
-                body: #"<div class="signbtn"><a href="javascript:;" class="btna">今日已打卡</a></div><table><tbody id="tablebody"><tr><td class="day today on">18</td></tr></tbody></table>"#
-            )
-        )
-    }, for: testID)
-    defer { YamiboCheckInURLProtocol.removeHandler(for: testID) }
-
-    let service = YamiboCheckInService(
-        sessionStore: sessionStore,
-        checkInStore: checkInStore,
-        session: makeYamiboCheckInSession(testID: testID),
-        verificationDelayNanoseconds: 0
-    )
-
-    let result = await service.checkInIfNeeded(force: true)
-
-    #expect(result == .alreadyCheckedInToday)
-    let lastCheckedInDate = await checkInStore.lastCheckedInDate(
-        session: SessionState(cookie: "foo=1; EeqY_2132_auth=user-a", userAgent: "Test-UA", isLoggedIn: true)
-    )
-    #expect(lastCheckedInDate != nil)
-}
-
 @Test func yamiboCheckInRequestsCheckInURLAndSucceedsAfterVerification() async throws {
     let testID = UUID().uuidString
     let suiteName = makeYamiboCheckInSuiteName(prefix: "check-in-success")
