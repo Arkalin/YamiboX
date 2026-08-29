@@ -9,7 +9,7 @@ public struct RootTabView: View {
     @State private var clipboardForumLinkPasteboardReader = ClipboardForumLinkPasteboardReader()
     @State private var appUpdateLaunchPrompter = AppUpdateLaunchPrompter()
 
-    public init(appModel: YamiboAppModel) {
+    public init(appModel: YamiboAppModel, initialTab: AppTab = .forum) {
         self.appModel = appModel
     }
 
@@ -99,16 +99,6 @@ public struct RootTabView: View {
 
     private var content: some View {
         TabView(selection: selectedTabBinding) {
-            HomeView(
-                accountDependencies: appModel.appContext.accountDependencies,
-                libraryDependencies: appModel.appContext.libraryDependencies,
-                appModel: appModel
-            )
-                .tag(AppTab.home)
-                .tabItem {
-                    Label(L10n.string("tab.home"), systemImage: "house")
-                }
-
             ForumNavigationHostView(
                 dependencies: appModel.appContext.forumDependencies,
                 appModel: appModel,
