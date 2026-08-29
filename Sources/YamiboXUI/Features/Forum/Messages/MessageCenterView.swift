@@ -126,7 +126,7 @@ private struct MessageCenterBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoading && content != nil)
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 }
 

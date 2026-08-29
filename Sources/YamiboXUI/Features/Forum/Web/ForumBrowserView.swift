@@ -63,7 +63,7 @@ public struct ForumBrowserView: View {
             }
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 ForumBrowserNavigationTitle(

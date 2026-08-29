@@ -8,12 +8,13 @@ struct FavoriteUpdateEventRow: View {
     let onOpen: () async -> Void
     let onMarkRead: () async -> Void
     let onDismiss: () async -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: event.readAt == nil ? "bell.badge" : "bell")
-                    .foregroundStyle(event.readAt == nil ? AppColors.accent : Color.secondary)
+                    .foregroundStyle(event.readAt == nil ? appTheme.controlAccent : Color.secondary)
                     .frame(width: 24, height: 24)
 
                 VStack(alignment: .leading, spacing: 4) {

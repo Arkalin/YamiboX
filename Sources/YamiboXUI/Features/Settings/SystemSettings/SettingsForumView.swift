@@ -3,25 +3,20 @@ import YamiboXCore
 
 struct SettingsForumView: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.appTheme) private var appTheme
 
     let viewModel: SettingsForumViewModel
     @State private var pendingConfirmation: SystemSettingsConfirmation?
 
     var body: some View {
         Form {
-            SettingsForumAppearanceSection(
-                selectedPreset: viewModel.themePreset,
-                isBusy: viewModel.isBusy,
-                onSelect: viewModel.updateThemePreset
-            )
-
             Section {
                 Button {
                     openCheckInAutomationCreator()
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.auto_sign_in"),
-                        titleColor: AppColors.accent
+                        titleColor: appTheme.controlAccent
                     )
                 }
                 .disabled(viewModel.isBusy)

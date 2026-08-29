@@ -884,11 +884,11 @@
 "settings.auto_sign_in" = "自动签到";
 "settings.enhanced_check_in" = "增强签到";
 "settings.enhanced_check_in_description" = "签到时同时访问自己的推广链接。";
-"settings.forum_theme" = "论坛主题";
-"settings.forum_theme.standard" = "简约";
-"settings.forum_theme.classic" = "经典";
-"settings.forum_theme.teal" = "青岚";
-"settings.forum_theme.rose" = "樱墨";
+"settings.app_theme" = "应用主题";
+"settings.app_theme.standard" = "简约";
+"settings.app_theme.classic" = "经典";
+"settings.app_theme.teal" = "青岚";
+"settings.app_theme.rose" = "樱墨";
 "settings.clear_content_cover_cache" = "清理封面索引";
 "settings.clear_content_cover_cache_message" = "将清除本地记录的自动与手动封面索引，封面会在下次打开时重新拉取。";
 "settings.clear_image_cache" = "清理图片缓存";

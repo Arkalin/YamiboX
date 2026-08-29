@@ -22,6 +22,7 @@ public struct SettingsHomeView: View {
     @State private var isAboutPushed = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
     @State private var isSigningOut = false
+    @Environment(\.appTheme) private var appTheme
 
     public init(
         dependencies: SettingsDependencies,
@@ -105,7 +106,7 @@ public struct SettingsHomeView: View {
             Button {
                 isAboutPushed = true
             } label: {
-                SystemSettingsRow(title: aboutSettingsTitle, titleColor: AppColors.accent)
+                SystemSettingsRow(title: aboutSettingsTitle, titleColor: appTheme.controlAccent)
             }
             .disabled(viewModel.isBusy)
         }
@@ -229,11 +230,12 @@ public struct SettingsHomeView: View {
 
 private struct SettingsCategoryRow: View {
     let category: SettingsCategory
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: category.systemImageName)
-                .foregroundStyle(AppColors.accent)
+                .foregroundStyle(appTheme.controlAccent)
                 .frame(width: 24)
 
             Text(category.title)

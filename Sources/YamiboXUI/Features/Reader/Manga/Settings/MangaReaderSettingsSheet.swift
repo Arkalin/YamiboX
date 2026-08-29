@@ -19,11 +19,18 @@ struct MangaReaderSettingsSheet: View {
         UIDevice.current.userInterfaceIdiom == .pad
     }
 
+    private var controlAccent: Color {
+        AppTheme.theme(for: appModel.appThemePreset).controlAccent
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let topInset = proxy.safeAreaInsets.top
             let heroHeight = max(318, min(382, proxy.size.height * 0.38)) + topInset
-            let palette = MangaReaderSettingsPalette(colorScheme: colorScheme)
+            let palette = MangaReaderSettingsPalette(
+                colorScheme: colorScheme,
+                controlAccent: controlAccent
+            )
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: draftSettings,
                 isPadDevice: isPadDevice,
@@ -59,9 +66,9 @@ struct MangaReaderSettingsSheet: View {
         }
         .background(Color.clear)
         // Sheets use a separate presentation host on recent iOS releases;
-        // set the reader-owned accent again so UIKit/glass controls cannot
-        // fall back to the system blue.
-        .tint(ReaderTheme.accent)
+        // set the app accent again so UIKit/glass controls cannot fall back
+        // to the system blue.
+        .tint(controlAccent)
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(

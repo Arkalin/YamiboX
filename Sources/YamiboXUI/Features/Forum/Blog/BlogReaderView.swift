@@ -148,7 +148,7 @@ private struct BlogReaderBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoading && page != nil)
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 }
 
@@ -364,7 +364,7 @@ private struct BlogReaderCommentEditor: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(theme.accent)
+            .tint(theme.accentText)
             .disabled(!canSubmit)
         }
         .padding(13)
@@ -424,6 +424,5 @@ private struct BlogReaderCommentRow: View {
         .forumCardBackground()
     }
 }
-
 
 

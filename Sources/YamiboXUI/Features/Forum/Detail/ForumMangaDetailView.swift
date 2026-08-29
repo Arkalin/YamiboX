@@ -191,7 +191,7 @@ private struct ForumMangaDetailBodyView: View {
             }
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 
     private func scrollTaskIdentity(directory: MangaDirectory?, focusedChapterTID: String?) -> String {

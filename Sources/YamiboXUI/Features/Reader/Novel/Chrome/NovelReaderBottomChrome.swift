@@ -32,6 +32,7 @@ struct NovelReaderBottomChrome: View {
     @State private var scrubState = ReaderProgressScrubState()
     @State private var scrubFeedback = ReaderProgressScrubFeedback()
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(spacing: 12) {
@@ -197,7 +198,7 @@ struct NovelReaderBottomChrome: View {
                 .font(.headline)
                 .frame(width: chromeLayout.actionButtonIconFrame, height: chromeLayout.actionButtonIconFrame)
         }
-        .readerChromeButtonStyle(tint: readerChromeButtonTint(for: colorScheme))
+        .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(action.isDisabled ? 0.34 : 1)
         .disabled(action.isDisabled)
         .accessibilityLabel(title)

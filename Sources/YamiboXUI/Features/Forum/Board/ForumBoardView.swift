@@ -64,7 +64,7 @@ struct ForumBoardView: View {
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
         .navigationTitle(model.title)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -615,7 +615,7 @@ private struct ForumPinnedRowView: View {
                     .foregroundStyle(theme.primaryText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(theme.warningFill, in: Capsule())
+                    .background(theme.pinnedBadgeFill, in: Capsule())
 
                 Text(title)
                     .font(.subheadline.weight(.medium))

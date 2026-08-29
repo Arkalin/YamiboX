@@ -7,11 +7,12 @@ struct MangaDirectoryManagementRowView: View {
     let isSelected: Bool
     let select: () -> Void
     let delete: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "photo.stack")
-                .foregroundStyle(dimming.emphasis(.indigo))
+                .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {

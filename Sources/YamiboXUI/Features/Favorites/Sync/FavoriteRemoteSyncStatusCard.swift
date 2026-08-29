@@ -8,6 +8,7 @@ struct FavoriteRemoteSyncStatusCard: View {
     let onResume: () -> Void
     let onInterrupt: () -> Void
     let onHide: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -115,7 +116,7 @@ struct FavoriteRemoteSyncStatusCard: View {
     private var statusColor: Color {
         switch snapshot.status {
         case .running:
-            AppColors.accent
+            appTheme.controlAccent
         case .completed:
             .green
         case .failed:

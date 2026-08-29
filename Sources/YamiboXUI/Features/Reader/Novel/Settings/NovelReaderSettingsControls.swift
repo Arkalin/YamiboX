@@ -46,7 +46,7 @@ struct NovelReaderFontScaleRow: View {
                     ),
                     in: 0.8 ... 2.3
                 )
-                .tint(ReaderTheme.progressAccent)
+                .tint(palette.controlAccent)
 
                 ReaderSettingsStepperButton(
                     systemName: "plus",

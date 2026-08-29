@@ -346,6 +346,7 @@ private struct MangaDirectoryMetadataSection: View {
     let isSelecting: Bool
     let onUpdateDirectory: () -> Void
     let onEditDirectory: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -384,14 +385,14 @@ private struct MangaDirectoryMetadataSection: View {
                     onUpdateDirectory()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(panel.isSearchMode ? .indigo : ReaderTheme.accent)
+                .tint(appTheme.controlAccent)
                 .disabled(!panel.isUpdateButtonEnabled || isSelecting)
             }
 
             if let errorMessage = panel.errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(ReaderTheme.accent)
+                    .foregroundStyle(appTheme.controlAccent)
             }
         }
         .padding(16)
@@ -443,6 +444,7 @@ private struct MangaDirectoryChapterControlsRow: View {
 private struct MangaDirectorySortToggleButton: View {
     let sortOrder: MangaDirectorySortOrder
     let onSortOrderChange: (MangaDirectorySortOrder) -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button {
@@ -450,10 +452,10 @@ private struct MangaDirectorySortToggleButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.down")
-                    .foregroundStyle(sortOrder == .ascending ? ReaderTheme.accent : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .ascending ? appTheme.controlAccent : .gray.opacity(0.35))
 
                 Image(systemName: "arrow.up")
-                    .foregroundStyle(sortOrder == .descending ? ReaderTheme.accent : .gray.opacity(0.35))
+                    .foregroundStyle(sortOrder == .descending ? appTheme.controlAccent : .gray.opacity(0.35))
             }
             .font(.subheadline.weight(.bold))
             .padding(.horizontal, 10)
@@ -480,6 +482,7 @@ private struct MangaDirectorySortToggleButton: View {
 private struct MangaDirectorySelectionToggleButton: View {
     let isSelecting: Bool
     let action: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button(action: action) {
@@ -490,7 +493,7 @@ private struct MangaDirectorySelectionToggleButton: View {
                 } else {
                     Image(systemName: "trash")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(ReaderTheme.accent)
+                        .foregroundStyle(appTheme.controlAccent)
                 }
             }
             .expandedHitTarget()
@@ -511,6 +514,7 @@ private struct MangaDirectoryChapterRow: View {
 
     @State private var isExpanded = false
     @State private var isTruncated = false
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -567,20 +571,20 @@ private struct MangaDirectoryChapterRow: View {
     private var numberColor: Color {
         if isSelecting {
             if isSelected {
-                return isCurrent ? ReaderTheme.accent : .secondary
+                return isCurrent ? appTheme.controlAccent : .secondary
             }
-            return isCurrent ? ReaderTheme.accent.opacity(0.45) : Color.secondary.opacity(0.55)
+            return isCurrent ? appTheme.controlAccent.opacity(0.45) : Color.secondary.opacity(0.55)
         }
-        return isCurrent ? ReaderTheme.accent : .secondary
+        return isCurrent ? appTheme.controlAccent : .secondary
     }
 
     private var expandButtonTint: Color {
-        isSelecting && !isSelected ? ReaderTheme.accent.opacity(0.45) : ReaderTheme.accent
+        isSelecting && !isSelected ? appTheme.controlAccent.opacity(0.45) : appTheme.controlAccent
     }
 
     private var backgroundColor: Color {
         if isCurrent {
-            return ReaderTheme.accent.opacity(isSelecting && !isSelected ? 0.06 : 0.12)
+            return appTheme.controlAccent.opacity(isSelecting && !isSelected ? 0.06 : 0.12)
         }
         return YamiboColors.SystemSurface.secondaryGroupedBackground
     }

@@ -170,6 +170,7 @@ struct FavoriteShareCategorySelectionSheet: View {
     let confirmTitle: String
     let onCancel: () -> Void
     let onConfirm: () async -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         NavigationStack {
@@ -179,7 +180,7 @@ struct FavoriteShareCategorySelectionSheet: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: selectedCategoryIDs.contains(category.id) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(selectedCategoryIDs.contains(category.id) ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(selectedCategoryIDs.contains(category.id) ? appTheme.controlAccent : Color.secondary)
                         Text(category.displayName)
                             .foregroundStyle(.primary)
                         Spacer()

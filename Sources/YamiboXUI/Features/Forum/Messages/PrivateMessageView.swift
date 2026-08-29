@@ -32,7 +32,7 @@ struct PrivateMessageView: View {
             )
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
         .toolbar {

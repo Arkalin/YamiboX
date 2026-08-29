@@ -7,6 +7,7 @@ struct FavoriteRemoteSyncCategorySheet: View {
     let selectedCategoryID: String
     let onCancel: () -> Void
     let onStart: (String) async -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         NavigationStack {
@@ -19,7 +20,7 @@ struct FavoriteRemoteSyncCategorySheet: View {
                         Spacer()
                         if category.id == selectedCategoryID {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(AppColors.accent)
+                                .foregroundStyle(appTheme.controlAccent)
                         }
                     }
                 }

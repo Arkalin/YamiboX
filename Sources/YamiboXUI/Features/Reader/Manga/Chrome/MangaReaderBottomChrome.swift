@@ -395,6 +395,7 @@ private struct MangaReaderStaticActionControls: View {
     let onShowSettings: () -> Void
     let onShowCache: () -> Void
     let onToggleBookmark: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
@@ -447,7 +448,7 @@ private struct MangaReaderStaticActionControls: View {
                 .font(.headline)
                 .frame(width: layout.actionButtonIconFrame, height: layout.actionButtonIconFrame)
         }
-        .readerChromeButtonStyle(tint: readerChromeButtonTint(for: colorScheme))
+        .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
         .accessibilityLabel(title)

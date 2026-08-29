@@ -11,7 +11,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var webBrowser: WebBrowserSettings
     public var system: SystemSettings
     public var boardReader: BoardReaderSettings
-    public var forumAppearance: ForumAppearanceSettings
+    public var appearance: AppAppearanceSettings
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -21,7 +21,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         webBrowser: WebBrowserSettings = .init(),
         system: SystemSettings = .init(),
         boardReader: BoardReaderSettings = .init(),
-        forumAppearance: ForumAppearanceSettings = .init()
+        appearance: AppAppearanceSettings = .init()
     ) {
         self.novelReader = novelReader
         self.novelOfflineCache = novelOfflineCache
@@ -30,7 +30,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.webBrowser = webBrowser
         self.system = system
         self.boardReader = boardReader
-        self.forumAppearance = forumAppearance
+        self.appearance = appearance
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -41,10 +41,10 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case webBrowser
         case system
         case boardReader
-        case forumAppearance
+        case appearance
     }
 
-    /// Forum appearance was added after the aggregate shipped. Only that new
+    /// Application appearance was added after the aggregate shipped. Only that new
     /// field is optional so malformed or incomplete legacy payloads keep the
     /// store's existing all-settings fallback behavior.
     public init(from decoder: any Decoder) throws {
@@ -57,7 +57,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
             webBrowser: try container.decode(WebBrowserSettings.self, forKey: .webBrowser),
             system: try container.decode(SystemSettings.self, forKey: .system),
             boardReader: try container.decode(BoardReaderSettings.self, forKey: .boardReader),
-            forumAppearance: try container.decodeIfPresent(ForumAppearanceSettings.self, forKey: .forumAppearance) ?? .init()
+            appearance: try container.decodeIfPresent(AppAppearanceSettings.self, forKey: .appearance) ?? .init()
         )
     }
 

@@ -12,6 +12,7 @@ struct SystemSettingsPeripheralPageTurnView: View {
     @State private var capturingKeyboardAction: ReaderControlAction?
     @State private var showsKeyboardCaptureRejectedNotice = false
     @State private var keyboardCaptureRejectionDismissTask: Task<Void, Never>?
+    @Environment(\.appTheme) private var appTheme
 
     private var showsApplePencilSection: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -38,7 +39,7 @@ struct SystemSettingsPeripheralPageTurnView: View {
                         } label: {
                             Image(systemName: "questionmark.circle")
                                 .font(.headline.weight(.semibold))
-                                .foregroundStyle(AppColors.accent)
+                                .foregroundStyle(appTheme.controlAccent)
                                 .expandedHitTarget()
                         }
                         .buttonStyle(.plain)

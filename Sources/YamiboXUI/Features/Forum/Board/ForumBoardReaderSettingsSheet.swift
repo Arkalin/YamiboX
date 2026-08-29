@@ -20,6 +20,7 @@ private enum ForumBoardReaderModeSelection: Hashable, CaseIterable {
 
 struct ForumBoardReaderSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.forumTheme) private var theme
     @State private var showsSmartMangaHelp = false
 
     let model: ForumBoardViewModel
@@ -45,7 +46,7 @@ struct ForumBoardReaderSettingsSheet: View {
                             } label: {
                                 Image(systemName: "questionmark.circle")
                                     .font(.headline.weight(.semibold))
-                                    .foregroundStyle(AppColors.accent)
+                                    .foregroundStyle(theme.accentText)
                                     .expandedHitTarget()
                             }
                             .buttonStyle(.plain)

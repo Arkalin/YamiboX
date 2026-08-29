@@ -14,9 +14,15 @@ struct NovelReaderSheetPalette {
     let segmentedBackground: Color
     let divider: Color
     let headerButtonBackground: Color
+    let controlAccent: Color
     let confirmButtonBackground: Color
+    let selectedControlText: Color
 
-    init(settings: NovelReaderAppearanceSettings, colorScheme: ColorScheme) {
+    init(
+        settings: NovelReaderAppearanceSettings,
+        colorScheme: ColorScheme,
+        controlAccent: Color
+    ) {
         let isNightMode = colorScheme == .dark
         let heroBackground = readerThemeColor(for: settings.backgroundStyle, colorScheme: colorScheme)
         let bodyBackground: Color
@@ -47,10 +53,9 @@ struct NovelReaderSheetPalette {
         headerButtonBackground = isNightMode
             ? Color.white.opacity(0.10)
             : Color.white.opacity(0.78)
-        confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
-            blendingInto: heroBackground,
-            isDark: isNightMode
-        )
+        self.controlAccent = controlAccent
+        confirmButtonBackground = controlAccent
+        selectedControlText = ReaderSettingsPaletteTokens.selectedControlText(isDark: isNightMode)
     }
 }
 
@@ -59,12 +64,9 @@ extension NovelReaderSheetPalette: ReaderSettingsPalette {
     /// been outlined with the divider hairline.
     var sectionStroke: Color { divider }
 
-    /// Novel highlights selected picker chips with its warm confirm blend
-    /// (not the app accent Manga uses) and always paints white on top —
-    /// both values are mapped, not merged, because they are semantically
-    /// different colors per reader.
+    /// Selected controls share the application accent while the reader
+    /// preview and sheet backgrounds retain the reader's own palette.
     var selectedControlBackground: Color { confirmButtonBackground }
-    var selectedControlText: Color { .white }
 }
 
 

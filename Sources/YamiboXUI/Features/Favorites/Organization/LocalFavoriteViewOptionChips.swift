@@ -9,6 +9,7 @@ struct LocalFavoriteViewOptionChips: View {
     let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
     let cardsCount: Int
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 8) {
@@ -43,7 +44,7 @@ struct LocalFavoriteViewOptionChips: View {
                     systemImage: organizer.filter.hasActiveFilters
                         ? "line.3.horizontal.decrease.circle.fill"
                         : "line.3.horizontal.decrease.circle",
-                    tint: organizer.filter.hasActiveFilters ? AppColors.accent : nil
+                    tint: organizer.filter.hasActiveFilters ? appTheme.controlAccent : nil
                 )
             }
             Menu {

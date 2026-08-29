@@ -8,8 +8,26 @@ import UIKit
 /// WCAG AA for body text.
 private let readableContrast = 4.5
 
+@Test func appControlAccentsAreReadableOnSystemSurfaces() {
+    let systemSurfaces: [(UIUserInterfaceStyle, ResolvedColor)] = [
+        (.light, ResolvedColor(hex: 0xFFFFFF)),
+        (.dark, ResolvedColor(hex: 0x1C1C1E))
+    ]
+
+    for preset in AppThemePreset.allCases {
+        let theme = AppTheme.theme(for: preset)
+        for (style, surface) in systemSurfaces {
+            let ratio = ResolvedColor(theme.controlAccent, style).contrast(with: surface)
+            #expect(
+                ratio >= readableContrast,
+                "\(preset.rawValue) app accent measures \(ratio):1 on the \(style) system surface"
+            )
+        }
+    }
+}
+
 @Test func forumTextRolesAreReadableOnForumSurfaces() {
-    for preset in ForumThemePreset.allCases {
+    for preset in AppThemePreset.allCases {
         let theme = ForumTheme.theme(for: preset)
         let roles: [(name: String, color: Color)] = [
             ("primaryText", theme.primaryText),
@@ -23,7 +41,12 @@ private let readableContrast = 4.5
         ]
 
         for style in [UIUserInterfaceStyle.light, .dark] {
-            let surfaces = [theme.pageBackground, theme.surface].map { ResolvedColor($0, style) }
+            let surfaces = [
+                theme.pageBackground,
+                theme.surface,
+                theme.pinnedSurface,
+                theme.announcementSurface
+            ].map { ResolvedColor($0, style) }
             for (name, color) in roles {
                 for surface in surfaces {
                     let ratio = ResolvedColor(color, style).contrast(with: surface)
@@ -40,7 +63,7 @@ private let readableContrast = 4.5
 @Test func forumTextRolesKeepTheirVisualHierarchy() {
     // Each weight must read as less prominent than the one above it, or the
     // contrast floor has flattened the palette into a single tone.
-    for preset in ForumThemePreset.allCases {
+    for preset in AppThemePreset.allCases {
         let theme = ForumTheme.theme(for: preset)
         for style in [UIUserInterfaceStyle.light, .dark] {
             for surfaceColor in [theme.pageBackground, theme.surface] {
@@ -59,7 +82,7 @@ private let readableContrast = 4.5
 @Test func forumControlAndBadgeTextMeetsContrastRequirements() {
     let white = ResolvedColor(hex: 0xFFFFFF)
 
-    for preset in ForumThemePreset.allCases {
+    for preset in AppThemePreset.allCases {
         let theme = ForumTheme.theme(for: preset)
         for style in [UIUserInterfaceStyle.light, .dark] {
             let whiteTextSurfaces: [(String, Color)] = [

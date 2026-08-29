@@ -79,7 +79,7 @@ struct ForumThreadPollView: View {
                     .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(theme.accent)
+                .tint(theme.accentText)
                 .disabled(selectedOptionIDs.isEmpty || isSubmitting)
             }
 

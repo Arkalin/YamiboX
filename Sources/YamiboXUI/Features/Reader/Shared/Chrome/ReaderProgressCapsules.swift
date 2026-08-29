@@ -46,6 +46,7 @@ struct ReaderDirectoryProgressCapsule: View {
     let onEndScrub: () -> Void
     @State private var dragStartProgressFraction: Double?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     init(
         title: String,
@@ -76,7 +77,7 @@ struct ReaderDirectoryProgressCapsule: View {
     var body: some View {
         GeometryReader { geometry in
             let layout = ReaderBottomChromeLayoutPresentation()
-            let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : ReaderTheme.accent
+            let controlTint = appTheme.controlAccent
             let width = max(geometry.size.width, 1)
             let clampedProgress = min(max(progressFraction, 0), 1)
 
@@ -187,6 +188,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     @State private var progressTickFeedbackGenerator = UISelectionFeedbackGenerator()
     @State private var progressCommitFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     init(
         restingProgressFraction: Double,
@@ -332,7 +334,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
 
     private func verticalProgressBar(height: CGFloat, thumbY: CGFloat) -> some View {
         let layout = ReaderBottomChromeLayoutPresentation()
-        let controlTint = layout.progressCapsulesUseButtonTint ? readerChromeButtonTint(for: colorScheme) : ReaderTheme.accent
+        let controlTint = appTheme.controlAccent
 
         return ZStack(alignment: .topTrailing) {
             Capsule()
@@ -425,6 +427,7 @@ private struct ReaderVerticalProgressChapterTickOverlay: View {
 
 struct ReaderVerticalProgressPreviewCapsule: View {
     let preview: ReaderProgressScrubPreview
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
@@ -448,7 +451,7 @@ struct ReaderVerticalProgressPreviewCapsule: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 16)
         .frame(width: layout.verticalPreviewWidth, height: layout.verticalPreviewHeight)
-        .readerChromePanel(cornerRadius: 24, tint: ReaderTheme.accent.opacity(0.08))
+        .readerChromePanel(cornerRadius: 24, tint: appTheme.controlAccent.opacity(0.08))
         .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
     }
 }

@@ -62,11 +62,12 @@ struct OfflineCacheManagementGroupRowView: View {
     let open: () -> Void
     let select: () -> Void
     let delete: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
-                .foregroundStyle(dimming.emphasis(.indigo))
+                .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -109,11 +110,12 @@ struct OfflineCacheManagementGroupRowView: View {
 private struct OfflineCacheManagementEntryRowView: View {
     let entry: OfflineCacheManagementEntry
     let delete: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "doc.text.image")
-                .foregroundStyle(entry.state == .failed ? Color.red : AppColors.accent)
+                .foregroundStyle(entry.state == .failed ? Color.red : appTheme.controlAccent)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {

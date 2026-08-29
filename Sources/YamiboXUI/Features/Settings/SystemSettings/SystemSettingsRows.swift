@@ -7,9 +7,10 @@ struct SystemSettingsHomePageSelector: View {
     let onSelect: (AppHomePage) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
-    /// White on the dark AccentColor variant (#C7946B) is only ~2.7:1, so
-    /// the selected capsule's foreground flips to black in dark mode.
+    /// App-theme accents are light in dark mode, so selected controls use a
+    /// black foreground there rather than assuming white text is readable.
     private var selectedForeground: Color {
         colorScheme == .dark ? .black : .white
     }
@@ -35,7 +36,7 @@ struct SystemSettingsHomePageSelector: View {
                         .padding(.vertical, 10)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(homePage == option ? AppColors.accent : Color.secondary.opacity(0.12))
+                                .fill(homePage == option ? appTheme.controlAccent : Color.secondary.opacity(0.12))
                         )
                         .expandedHitTarget()
                     }

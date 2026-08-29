@@ -95,9 +95,9 @@ enum SettingsSearchRegistry {
             keywords: ["主页", "首页", "论坛", "收藏"]
         ),
         SettingsSearchEntry(
-            id: "forum.appearance",
-            title: L10n.string("settings.forum_theme"),
-            category: .forum,
+            id: "general.appearance",
+            title: L10n.string("settings.app_theme"),
+            category: .general,
             keywords: ["主题", "外观", "配色", "简约", "普通", "经典", "青岚", "樱墨", "浅色", "深色"]
         ),
         SettingsSearchEntry(

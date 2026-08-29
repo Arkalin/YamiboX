@@ -111,6 +111,7 @@ struct LocalFavoriteSelectionEmphasis: ViewModifier {
     /// Applied unconditionally rather than only while selected, so entering
     /// selection mode never reflows the list.
     var contentInset: CGFloat = 0
+    @Environment(\.appTheme) private var appTheme
 
     func body(content: Content) -> some View {
         content
@@ -118,7 +119,7 @@ struct LocalFavoriteSelectionEmphasis: ViewModifier {
             .overlay {
                 if isSelectionMode, isSelected {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(AppColors.accent, lineWidth: 2.5)
+                        .stroke(appTheme.controlAccent, lineWidth: 2.5)
                 }
             }
             .opacity(isSelectionMode && !isSelected ? 0.45 : 1)

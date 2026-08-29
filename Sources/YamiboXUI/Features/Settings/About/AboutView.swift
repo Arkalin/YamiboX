@@ -75,6 +75,7 @@ public struct AboutView: View {
 private struct AboutLinksSection: View {
     let isCheckingForUpdates: Bool
     let checkForUpdates: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -121,7 +122,7 @@ private struct AboutLinksSection: View {
                     } else {
                         Image(systemName: "arrow.down.circle")
                             .font(.title2.weight(.semibold))
-                            .foregroundStyle(AppColors.accent)
+                            .foregroundStyle(appTheme.controlAccent)
                             .accessibilityHidden(true)
                     }
                 }
@@ -138,6 +139,7 @@ private struct AboutLinksSection: View {
 struct AboutExternalLinkRow: View {
     let title: String
     let destination: URL
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Link(destination: destination) {
@@ -150,7 +152,7 @@ struct AboutExternalLinkRow: View {
 
                 Image(systemName: "arrow.up.forward.square")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(AppColors.accent)
+                    .foregroundStyle(appTheme.controlAccent)
                     .accessibilityHidden(true)
             }
             .frame(minHeight: 64)
@@ -306,6 +308,9 @@ struct AboutUpdateAlert: Identifiable, Equatable {
 }
 
 private struct AppIconView: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         if let icon = PlatformAppIcon.load() {
             icon
@@ -314,11 +319,11 @@ private struct AppIconView: View {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(AppColors.accent.gradient)
+                    .fill(appTheme.controlAccent.gradient)
 
                 Image(systemName: "book.pages.fill")
                     .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(colorScheme == .dark ? .black : .white)
             }
         }
     }

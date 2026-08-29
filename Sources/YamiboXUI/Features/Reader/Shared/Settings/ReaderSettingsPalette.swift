@@ -20,9 +20,8 @@ protocol ReaderSettingsPalette {
     /// reuses its `divider` — a real per-side difference that the protocol
     /// preserves instead of forcing one value.
     var sectionStroke: Color { get }
-    /// Fill of a selected chip in the mode/direction pickers. Manga uses the
-    /// app accent, Novel uses its warm confirm-button blend — semantically
-    /// different colors, so they are mapped, not merged.
+    /// Fill of a selected chip in the mode/direction pickers. Both readers
+    /// map their own confirm-button background onto this slot.
     var selectedControlBackground: Color { get }
     /// Text/icon color painted on top of `selectedControlBackground`.
     var selectedControlText: Color { get }
@@ -43,14 +42,10 @@ enum ReaderSettingsPaletteTokens {
         isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)
     }
 
-    /// Warm brown blend behind the confirm button (and, on the Novel side,
-    /// selected picker chips). Both readers blend the same target color by
-    /// the same amount into their own base surface, which is why the base is
-    /// a parameter.
-    static func confirmButtonBackground(blendingInto base: Color, isDark: Bool) -> Color {
-        isDark
-            ? base.mix(with: Color(red: 0.44, green: 0.39, blue: 0.30), amount: 0.58)
-            : base.mix(with: Color(red: 0.31, green: 0.26, blue: 0.18), amount: 0.72)
+    /// App-theme accents are dark in light mode and light in dark mode, so
+    /// selected controls need the opposite fixed foreground for legibility.
+    static func selectedControlText(isDark: Bool) -> Color {
+        isDark ? .black.opacity(0.82) : .white
     }
 }
 

@@ -123,16 +123,17 @@ private struct MineEntryRowContent: View {
     var badgeText: String? = nil
     var showsProgress = false
     var showsDisclosureIndicator = true
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(AppColors.accent)
+                .foregroundStyle(appTheme.controlAccent)
                 .frame(width: 28, height: 28)
 
             Text(title)
-                .foregroundStyle(AppColors.accent)
+                .foregroundStyle(appTheme.controlAccent)
 
             Spacer(minLength: 8)
 

@@ -9,6 +9,7 @@ struct ReaderCacheQueueToolbarButton<Icon: View>: View {
     let entryCount: Int
     let action: () -> Void
     private let icon: (_ isActive: Bool) -> Icon
+    @Environment(\.appTheme) private var appTheme
 
     init(
         entryCount: Int,
@@ -31,7 +32,7 @@ struct ReaderCacheQueueToolbarButton<Icon: View>: View {
                     .frame(minWidth: 12, alignment: .trailing)
             }
             .frame(minWidth: 48, minHeight: 32, alignment: .center)
-            .foregroundStyle(entryCount > 0 ? ReaderTheme.accent : Color.secondary)
+            .foregroundStyle(entryCount > 0 ? appTheme.controlAccent : Color.secondary)
             .contentShape(Rectangle())
         }
         .accessibilityElement(children: .ignore)

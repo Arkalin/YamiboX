@@ -19,11 +19,19 @@ struct NovelReaderSettingsSheet: View {
         UIDevice.current.userInterfaceIdiom == .pad && draftSettings.readingMode == .paged
     }
 
+    private var controlAccent: Color {
+        AppTheme.theme(for: appModel.appThemePreset).controlAccent
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let topInset = proxy.safeAreaInsets.top
             let heroHeight = max(300, min(356, proxy.size.height * 0.34)) + topInset
-            let palette = NovelReaderSheetPalette(settings: draftSettings, colorScheme: colorScheme)
+            let palette = NovelReaderSheetPalette(
+                settings: draftSettings,
+                colorScheme: colorScheme,
+                controlAccent: controlAccent
+            )
 
             ZStack(alignment: .top) {
                 NovelReaderUnifiedSheetBackground(
@@ -44,7 +52,7 @@ struct NovelReaderSettingsSheet: View {
             .background(Color.clear)
         }
         .background(Color.clear)
-        .tint(ReaderTheme.accent)
+        .tint(controlAccent)
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(

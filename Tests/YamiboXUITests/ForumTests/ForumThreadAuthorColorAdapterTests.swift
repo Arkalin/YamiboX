@@ -113,7 +113,7 @@ private func authoredColor(_ hex: String) -> ResolvedColor {
 }
 
 @Test func authorForegroundUsesEverySelectedThemeSurface() throws {
-    for preset in ForumThemePreset.allCases {
+    for preset in AppThemePreset.allCases {
         let theme = ForumTheme.theme(for: preset)
         for hex in ["#000000", "#FFFFFF", "#FF0000", "#808080", "#00008B", "#FFFF00"] {
             let color = try #require(ForumThreadAuthorColorAdapter.colors(
@@ -210,7 +210,7 @@ private func authoredColor(_ hex: String) -> ResolvedColor {
 }
 
 @Test func linkWithoutAuthoredBackgroundUsesTheSelectedThemeColor() {
-    for preset in ForumThemePreset.allCases {
+    for preset in AppThemePreset.allCases {
         let theme = ForumTheme.theme(for: preset)
         let color = ForumThreadAuthorColorAdapter.linkColor(onBackgroundHex: nil, theme: theme)
 

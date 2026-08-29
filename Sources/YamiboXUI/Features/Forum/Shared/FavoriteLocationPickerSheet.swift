@@ -43,6 +43,7 @@ struct FavoriteLocationPickerSheet: View {
     @State private var categoryNameDraft: LocalFavoriteCategoryNameDraft?
     @State private var pendingCollectionDraft: PendingCollectionDraft?
     @State private var errorMessage: String?
+    @Environment(\.appTheme) private var appTheme
 
     init(
         context: FavoriteLocationPickerContext,
@@ -156,7 +157,7 @@ struct FavoriteLocationPickerSheet: View {
     private func locationRow(
         title: String,
         systemImage: String,
-        tint: Color = AppColors.accent,
+        tint: Color? = nil,
         location: FavoriteLocation
     ) -> some View {
         let isSelected = selection.contains(location)
@@ -173,11 +174,11 @@ struct FavoriteLocationPickerSheet: View {
                         .foregroundStyle(.primary)
                 } icon: {
                     Image(systemName: systemImage)
-                        .foregroundStyle(tint)
+                        .foregroundStyle(tint ?? appTheme.controlAccent)
                 }
                 Spacer()
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? AppColors.accent : Color.secondary)
+                    .foregroundStyle(isSelected ? appTheme.controlAccent : Color.secondary)
             }
         }
     }

@@ -8,6 +8,7 @@ struct LocalFavoriteFilterSheet: View {
     let routes: LocalFavoritesRoutes
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         NavigationStack {
@@ -29,7 +30,7 @@ struct LocalFavoriteFilterSheet: View {
                                     .foregroundStyle(.secondary)
                                 if organizer.filter.selectedSourceFilters.contains(sourceFilter) {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(AppColors.accent)
+                                        .foregroundStyle(appTheme.controlAccent)
                                 }
                             }
                         }
@@ -53,7 +54,7 @@ struct LocalFavoriteFilterSheet: View {
                                 Spacer()
                                 if organizer.filter.selectedTagIDs.contains(tag.id) {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(AppColors.accent)
+                                        .foregroundStyle(appTheme.controlAccent)
                                 }
                             }
                         }

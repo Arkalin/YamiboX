@@ -13,6 +13,7 @@ struct NovelReaderTopChrome: View {
     let onClose: () -> Void
     let onRefresh: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         let summary = ReaderChromeProgressSummary(
@@ -63,7 +64,7 @@ struct NovelReaderTopChrome: View {
                         ReaderChromeCircleButton(
                             systemName: "xmark",
                             title: L10n.string("common.close"),
-                            tint: readerChromeButtonTint(for: colorScheme),
+                            tint: appTheme.controlAccent,
                             action: onClose
                         )
                         .frame(width: chromeButtonSize, height: chromeButtonSize)
@@ -73,7 +74,7 @@ struct NovelReaderTopChrome: View {
                 .padding(.horizontal, 4)
             }
             .frame(maxWidth: .infinity)
-            .tint(readerChromeButtonTint(for: colorScheme))
+            .tint(appTheme.controlAccent)
 
             if model.context.isPreview {
                 ReaderPreviewModeBadge()

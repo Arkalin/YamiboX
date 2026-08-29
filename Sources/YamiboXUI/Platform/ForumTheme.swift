@@ -1,10 +1,9 @@
 import SwiftUI
 import YamiboXCore
 
-/// Semantic colors for native forum surfaces.
-///
-/// `classic` preserves the forum's existing brown presentation. Forum roots
-/// select one preset while readers intentionally keep their own `ReaderTheme`.
+/// Semantic colors for native forum surfaces. The application theme selects a
+/// palette, while reader surfaces keep their own background and semantic
+/// comment colors.
 // `Color` is immutable but is not declared Sendable by SwiftUI. A theme only
 // stores immutable values, so crossing the app's UI-bound settings boundary is
 // safe without forcing the entire theme-selection interface onto MainActor.
@@ -34,6 +33,9 @@ public struct ForumTheme: @unchecked Sendable {
     /// toolbar resolve adaptive colors against dark traits even in light mode.
     public let navigationBarBackgroundLight: Color
     public let navigationBarBackgroundDark: Color
+
+    /// Badges in the pinned section follow the active palette.
+    public var pinnedBadgeFill: Color { selectedFill }
 
     public init(
         id: String,
@@ -86,7 +88,7 @@ public struct ForumTheme: @unchecked Sendable {
     }
 
     public static let standard = ForumThemePalette(
-        id: ForumThemePreset.standard.rawValue,
+        id: AppThemePreset.standard.rawValue,
         light: .init(
             pageBackground: 0xF2F2F7, surface: 0xFFFFFF,
             primaryText: 0x1C1C1E, secondaryText: 0x4A4A50, tertiaryText: 0x5F6068,
@@ -106,7 +108,7 @@ public struct ForumTheme: @unchecked Sendable {
     ).theme
 
     public static let classic = ForumThemePalette(
-        id: ForumThemePreset.classic.rawValue,
+        id: AppThemePreset.classic.rawValue,
         light: .init(
             pageBackground: 0xFFF3D6, surface: 0xFFF7E0,
             primaryText: 0x2E1A0E, secondaryText: 0x7A5C4D, tertiaryText: 0x85674E,
@@ -126,7 +128,7 @@ public struct ForumTheme: @unchecked Sendable {
     ).theme
 
     public static let teal = ForumThemePalette(
-        id: ForumThemePreset.teal.rawValue,
+        id: AppThemePreset.teal.rawValue,
         light: .init(
             pageBackground: 0xEDF5F3, surface: 0xFBFFFE,
             primaryText: 0x18312F, secondaryText: 0x3F5B58, tertiaryText: 0x54706D,
@@ -146,7 +148,7 @@ public struct ForumTheme: @unchecked Sendable {
     ).theme
 
     public static let rose = ForumThemePalette(
-        id: ForumThemePreset.rose.rawValue,
+        id: AppThemePreset.rose.rawValue,
         light: .init(
             pageBackground: 0xF7F1F3, surface: 0xFFFBFC,
             primaryText: 0x302126, secondaryText: 0x5D444D, tertiaryText: 0x725963,
@@ -165,7 +167,7 @@ public struct ForumTheme: @unchecked Sendable {
         )
     ).theme
 
-    public static func theme(for preset: ForumThemePreset) -> ForumTheme {
+    public static func theme(for preset: AppThemePreset) -> ForumTheme {
         switch preset {
         case .standard: standard
         case .classic: classic
@@ -200,8 +202,11 @@ private struct ForumThemePalette {
         var border: UInt32 { surface.mixed(with: primaryText, amount: 0.12) }
         var mutedFill: UInt32 { surface.mixed(with: mutedAccent, amount: 0.10) }
         var selectedFill: UInt32 { surface.mixed(with: accentText, amount: 0.16) }
-        var pinnedSurface: UInt32 { surface.mixed(with: warningFill, amount: 0.12) }
-        var announcementSurface: UInt32 { surface.mixed(with: warningFill, amount: 0.22) }
+        // Pinned rows are a navigation treatment, not a warning state. Keep
+        // their highlight in the selected palette so they do not retain the
+        // old brown warning tone when the app theme changes.
+        var pinnedSurface: UInt32 { surface.mixed(with: mutedAccent, amount: 0.12) }
+        var announcementSurface: UInt32 { surface.mixed(with: mutedAccent, amount: 0.22) }
         var navigationSurface: UInt32 { surface.mixed(with: accentText, amount: 0.10) }
     }
 
@@ -264,7 +269,7 @@ extension EnvironmentValues {
 extension View {
     func forumTheme(_ theme: ForumTheme) -> some View {
         environment(\.forumTheme, theme)
-            .tint(theme.accent)
+            .tint(theme.accentText)
     }
 
     func forumPageBackground() -> some View {

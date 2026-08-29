@@ -159,6 +159,7 @@ private enum OfflineCacheQueueSelectionActions {
 
 private struct OfflineCacheQueueControls: View {
     let viewModel: OfflineCacheQueueViewModel
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button {
@@ -172,7 +173,7 @@ private struct OfflineCacheQueueControls: View {
         } label: {
             Label(controlTitle, systemImage: controlImage)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppColors.accent)
+                .foregroundStyle(appTheme.controlAccent)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .background(
@@ -203,11 +204,12 @@ private struct OfflineCacheQueueOwnerRow: View {
     let open: () -> Void
     let toggleSelection: () -> Void
     let cancel: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "books.vertical.fill")
-                .foregroundStyle(dimming.emphasis(.indigo))
+                .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -232,7 +234,7 @@ private struct OfflineCacheQueueOwnerRow: View {
                 }
 
                 ProgressView(value: group.progressFraction)
-                    .tint(dimming.isDimmed ? Color.secondary : AppColors.accent)
+                    .tint(dimming.isDimmed ? Color.secondary : appTheme.controlAccent)
 
                 HStack(spacing: 8) {
                     Text(group.progressText)
@@ -405,6 +407,7 @@ private struct OfflineCacheQueueChapterRowView: View {
     let isSelected: Bool
     let toggleSelection: () -> Void
     let cancel: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -422,7 +425,7 @@ private struct OfflineCacheQueueChapterRowView: View {
             }
 
             ProgressView(value: chapter.progressFraction)
-                .tint(dimming.isDimmed ? Color.secondary : AppColors.accent)
+                .tint(dimming.isDimmed ? Color.secondary : appTheme.controlAccent)
 
             HStack(spacing: 8) {
                 Text(chapter.progressText)

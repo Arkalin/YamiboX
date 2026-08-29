@@ -14,6 +14,7 @@ struct LocalFavoriteItemRow: View {
     let isSelected: Bool
     let onToggleSelection: () -> Void
     let actions: LocalFavoriteCardActions
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button {
@@ -67,7 +68,7 @@ struct LocalFavoriteItemRow: View {
                 } label: {
                     Label(L10n.string("favorites.tags_action"), systemImage: "tag")
                 }
-                .tint(.indigo)
+                .tint(appTheme.controlAccent)
             }
         }
     }

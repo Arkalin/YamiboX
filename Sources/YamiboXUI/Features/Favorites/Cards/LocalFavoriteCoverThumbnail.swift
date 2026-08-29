@@ -64,12 +64,15 @@ struct LocalFavoriteCoverThumbnail: View {
 /// Purely a supplementary visual cue (the card's own accessibility label
 /// already conveys its title), so it is hidden from the accessibility tree.
 struct LocalFavoriteSmartCardBadge: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Image(systemName: "sparkles")
             .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(colorScheme == .dark ? .black : .white)
             .padding(5)
-            .background(AppColors.accent, in: Circle())
+            .background(appTheme.controlAccent, in: Circle())
             .offset(x: 5, y: -5)
             .accessibilityHidden(true)
     }
@@ -91,6 +94,7 @@ struct LocalFavoriteSmartCardBadge: View {
 struct LocalFavoriteCoverTextFallback: View {
     let title: String
     let boxWidth: CGFloat
+    @Environment(\.appTheme) private var appTheme
 
     /// The cover width the 32/24/19/15/12 step table below was tuned for —
     /// the fixed/staggered grid card's typical cover width on iPhone.
@@ -99,11 +103,11 @@ struct LocalFavoriteCoverTextFallback: View {
     var body: some View {
         ZStack(alignment: .top) {
             Rectangle()
-                .fill(AppColors.accent.opacity(0.12))
+                .fill(appTheme.controlAccent.opacity(0.12))
             Text(trimmedTitle)
                 .font(.system(size: fontSize, weight: .bold))
                 .lineSpacing(fontSize * 0.15)
-                .foregroundStyle(AppColors.accent.opacity(0.75))
+                .foregroundStyle(appTheme.controlAccent.opacity(0.75))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .padding(scaledPadding)

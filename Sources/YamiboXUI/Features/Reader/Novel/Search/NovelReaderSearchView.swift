@@ -417,6 +417,7 @@ private struct NovelReaderSearchBottomBar: View {
 
     @FocusState private var isFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         ReaderGlassContainer(spacing: 10) {
@@ -458,7 +459,7 @@ private struct NovelReaderSearchBottomBar: View {
                         .frame(width: 36, height: 36)
                 }
                 .buttonBorderShape(.circle)
-                .readerChromeButtonStyle(tint: readerChromeButtonTint(for: colorScheme))
+                .readerChromeButtonStyle(tint: appTheme.controlAccent)
                 .accessibilityLabel(L10n.string("common.close"))
             }
         }

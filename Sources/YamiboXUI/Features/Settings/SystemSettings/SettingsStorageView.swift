@@ -13,6 +13,7 @@ struct SettingsStorageView: View {
     /// back out of Settings first, since the app state it just wiped includes
     /// whatever this stack is showing.
     let onReset: () async -> Void
+    @Environment(\.appTheme) private var appTheme
 
     @State private var showingWebDAVSettings = false
     @State private var showingOfflineCacheManagement = false
@@ -27,7 +28,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.webdav_sync"),
-                        titleColor: AppColors.accent
+                        titleColor: appTheme.controlAccent
                     )
                 }
                 .disabled(viewModel.isBusy)

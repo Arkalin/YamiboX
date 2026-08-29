@@ -151,7 +151,7 @@ private struct ForumNovelDetailBodyView: View {
             await refresh()
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 }
 

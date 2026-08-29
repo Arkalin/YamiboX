@@ -8,6 +8,12 @@ struct SettingsGeneralView: View {
 
     var body: some View {
         Form {
+            SettingsAppearanceSection(
+                selectedPreset: viewModel.themePreset,
+                isBusy: viewModel.isBusy,
+                onSelect: viewModel.updateThemePreset
+            )
+
             Section {
                 SystemSettingsHomePageSelector(
                     homePage: viewModel.homePage,

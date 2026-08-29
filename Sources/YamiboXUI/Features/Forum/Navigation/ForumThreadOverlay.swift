@@ -74,7 +74,7 @@ struct ForumThreadOverlayScreen: View {
             }
             .forumNavigationBarStyle()
         }
-        .forumTheme(.theme(for: appModel.forumThemePreset))
+        .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
     }
 }
 

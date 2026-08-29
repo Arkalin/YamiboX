@@ -31,6 +31,7 @@ private struct SelectableCardRowModifier: ViewModifier {
     let isSelected: Bool
     let fill: Color
     let onTap: (() -> Void)?
+    @Environment(\.appTheme) private var appTheme
 
     func body(content: Content) -> some View {
         let card = content
@@ -43,7 +44,7 @@ private struct SelectableCardRowModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isSelecting && isSelected ? AppColors.accent : Color.clear, lineWidth: 2)
+                    .strokeBorder(isSelecting && isSelected ? appTheme.controlAccent : Color.clear, lineWidth: 2)
             )
             .contentShape(Rectangle())
             .animation(.spring(response: 0.24, dampingFraction: 0.72), value: isSelected)

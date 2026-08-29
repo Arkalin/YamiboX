@@ -16,7 +16,7 @@ struct ForumThreadReaderActionBar: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(theme.accent)
+            .tint(theme.accentText)
 
             Button(action: onFavorite) {
                 Label(

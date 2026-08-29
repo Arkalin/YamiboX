@@ -19,6 +19,7 @@ struct LocalFavoriteSelectionMoveSheet: View {
     @ObservedObject var selection: LocalFavoriteBrowseSession
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         NavigationStack {
@@ -78,7 +79,7 @@ struct LocalFavoriteSelectionMoveSheet: View {
     private func locationRow(
         title: String,
         systemImage: String,
-        tint: Color = AppColors.accent,
+        tint: Color? = nil,
         location: FavoriteLocation
     ) -> some View {
         let state = organizer.selectionLocationState(location)
@@ -93,11 +94,11 @@ struct LocalFavoriteSelectionMoveSheet: View {
                         .foregroundStyle(.primary)
                 } icon: {
                     Image(systemName: systemImage)
-                        .foregroundStyle(tint)
+                        .foregroundStyle(tint ?? appTheme.controlAccent)
                 }
                 Spacer()
                 Image(systemName: stateImageName(state))
-                    .foregroundStyle(state == .none ? Color.secondary : AppColors.accent)
+                    .foregroundStyle(state == .none ? Color.secondary : appTheme.controlAccent)
             }
         }
     }

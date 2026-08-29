@@ -2,20 +2,20 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-struct SettingsForumAppearanceSection: View {
-    let selectedPreset: ForumThemePreset
+struct SettingsAppearanceSection: View {
+    let selectedPreset: AppThemePreset
     let isBusy: Bool
-    let onSelect: (ForumThemePreset) -> Void
+    let onSelect: (AppThemePreset) -> Void
 
     var body: some View {
         Section {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 12) {
-                    ForEach(ForumThemePreset.allCases) { preset in
+                    ForEach(AppThemePreset.allCases) { preset in
                         Button {
                             onSelect(preset)
                         } label: {
-                            ForumThemePreviewCard(
+                            AppThemePreviewCard(
                                 preset: preset,
                                 isSelected: selectedPreset == preset
                             )
@@ -36,18 +36,18 @@ struct SettingsForumAppearanceSection: View {
     }
 }
 
-private struct ForumThemePreviewCard: View {
-    let preset: ForumThemePreset
+private struct AppThemePreviewCard: View {
+    let preset: AppThemePreset
     let isSelected: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var theme: ForumTheme {
+    private var appTheme: AppTheme {
         .theme(for: preset)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ForumThemeMiniPreview(theme: theme)
+            ForumThemeMiniPreview(theme: appTheme.forumTheme)
 
             Text(preset.settingsTitle)
                 .font(.subheadline.weight(.semibold))
@@ -63,13 +63,13 @@ private struct ForumThemePreviewCard: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? AppColors.accent : Color.secondary.opacity(0.18), lineWidth: isSelected ? 2 : 1)
+                .stroke(isSelected ? appTheme.controlAccent : Color.secondary.opacity(0.18), lineWidth: isSelected ? 2 : 1)
         }
         .overlay(alignment: .topTrailing) {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(AppColors.accent)
+                    .foregroundStyle(appTheme.controlAccent)
                     .background(Color(uiColor: .systemBackground), in: Circle())
                     .padding(6)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
@@ -148,13 +148,13 @@ private struct ForumThemeMiniRow: View {
     }
 }
 
-private extension ForumThemePreset {
+private extension AppThemePreset {
     var settingsTitle: String {
         switch self {
-        case .standard: L10n.string("settings.forum_theme.standard")
-        case .classic: L10n.string("settings.forum_theme.classic")
-        case .teal: L10n.string("settings.forum_theme.teal")
-        case .rose: L10n.string("settings.forum_theme.rose")
+        case .standard: L10n.string("settings.app_theme.standard")
+        case .classic: L10n.string("settings.app_theme.classic")
+        case .teal: L10n.string("settings.app_theme.teal")
+        case .rose: L10n.string("settings.app_theme.rose")
         }
     }
 }

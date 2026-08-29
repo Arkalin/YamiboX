@@ -38,8 +38,9 @@ struct LocalFavoriteActiveFilterStrip: View {
 private struct LocalFavoriteFilterChip: View {
     let title: String
     let systemImage: String
-    var tint: Color = AppColors.accent
+    var tint: Color? = nil
     let onClear: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button(action: onClear) {
@@ -55,7 +56,7 @@ private struct LocalFavoriteFilterChip: View {
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
-            .background(tint.opacity(0.14), in: Capsule())
+            .background((tint ?? appTheme.controlAccent).opacity(0.14), in: Capsule())
             .expandedHitTarget(width: 0)
         }
         .buttonStyle(.plain)

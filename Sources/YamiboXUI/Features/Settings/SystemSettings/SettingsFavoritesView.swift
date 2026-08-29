@@ -5,6 +5,7 @@ import YamiboXCore
 
 struct SettingsFavoritesView: View {
     let viewModel: SettingsFavoritesViewModel
+    @Environment(\.appTheme) private var appTheme
 
     @StateObject private var favoriteRemoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
@@ -112,7 +113,7 @@ struct SettingsFavoritesView: View {
                             title: L10n.string("settings.favorite_sync"),
                             value: favoriteRemoteSyncStatusLabel,
                             showsChevronAfterValue: true,
-                            titleColor: AppColors.accent
+                            titleColor: appTheme.controlAccent
                         )
                     }
                     .disabled(viewModel.isBusy)

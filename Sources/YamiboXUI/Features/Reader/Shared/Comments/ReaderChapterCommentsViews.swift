@@ -2,10 +2,20 @@ import SwiftUI
 import YamiboXCore
 
 #if os(iOS)
+private enum ChapterCommentSourcePalette {
+    static let action = Color(light: 0x4E2A1B, dark: 0xD6A083)
+    static let rating = Color(light: 0x26705C, dark: 0x5FC9A8)
+    static let reply = Color(light: 0x475CAD, dark: 0x8FA0E0)
+    static let actionBorder = Color(red: 0.74, green: 0.52, blue: 0.38)
+    static let ratingBorder = Color(red: 0.36, green: 0.65, blue: 0.55)
+    static let replyBorder = Color(red: 0.48, green: 0.56, blue: 0.82)
+}
+
 struct ReaderChapterCommentsContent: View {
-    private static let loadNextColor = ReaderTheme.chapterCommentAction
     static let refreshErrorRowID = "__refresh_error__"
     static let loadNextRowID = "__load_next__"
+
+    @Environment(\.appTheme) private var appTheme
 
     let state: ReaderChapterCommentsState
     let isLoadingMore: Bool
@@ -115,7 +125,7 @@ struct ReaderChapterCommentsContent: View {
                 Spacer()
                 if isLoadingMore {
                     ProgressView()
-                        .tint(Self.loadNextColor)
+                        .tint(appTheme.controlAccent)
                 } else {
                     Text(loadMoreError ?? L10n.string("reader.chapter_comments_load_next"))
                         .font(.footnote.weight(.medium))
@@ -124,7 +134,7 @@ struct ReaderChapterCommentsContent: View {
             }
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(Self.loadNextColor)
+            .foregroundStyle(appTheme.controlAccent)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -383,11 +393,11 @@ private struct ReaderChapterCommentSourceBadge: View {
     private var palette: (foreground: Color, border: Color) {
         switch source {
         case .postComment:
-            (ReaderTheme.chapterCommentAction, Color(red: 0.74, green: 0.52, blue: 0.38))
+            (ChapterCommentSourcePalette.action, ChapterCommentSourcePalette.actionBorder)
         case .ratingReason:
-            (ReaderTheme.chapterCommentRating, Color(red: 0.36, green: 0.65, blue: 0.55))
+            (ChapterCommentSourcePalette.rating, ChapterCommentSourcePalette.ratingBorder)
         case .reply:
-            (ReaderTheme.chapterCommentReply, Color(red: 0.48, green: 0.56, blue: 0.82))
+            (ChapterCommentSourcePalette.reply, ChapterCommentSourcePalette.replyBorder)
         }
     }
 

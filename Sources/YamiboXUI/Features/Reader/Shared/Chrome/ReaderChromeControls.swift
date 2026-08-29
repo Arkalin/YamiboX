@@ -131,7 +131,7 @@ struct ReaderChromeIconButton: View {
     let title: String
     var isEnabled = true
     let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button(action: action) {
@@ -139,7 +139,7 @@ struct ReaderChromeIconButton: View {
                 .font(.headline)
                 .frame(width: 34, height: 34)
         }
-        .readerChromeButtonStyle(tint: readerChromeButtonTint(for: colorScheme))
+        .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
@@ -180,6 +180,7 @@ struct ReaderChromeHistoryButton: View {
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
     private static let hitTargetSize: CGFloat = 44
     private let iconSize: CGFloat = 19
     private let glassSize: CGFloat = 27
@@ -221,11 +222,11 @@ struct ReaderChromeHistoryButton: View {
     }
 
     private var fillColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.86) : Color(red: 0.20, green: 0.16, blue: 0.12)
+        appTheme.controlAccent
     }
 
     private var symbolColor: Color {
-        colorScheme == .dark ? Color.black.opacity(0.82) : Color(red: 0.96, green: 0.90, blue: 0.80)
+        colorScheme == .dark ? Color.black.opacity(0.82) : Color.white
     }
 }
 
@@ -256,12 +257,11 @@ struct ReaderChromeCapsuleButton: View {
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
-        let controlTint = layout.progressCapsulesUseButtonTint
-            ? readerChromeButtonTint(for: colorScheme)
-            : ReaderTheme.accent
+        let controlTint = appTheme.controlAccent
 
         Button(action: action) {
             HStack(spacing: 8) {
@@ -310,14 +310,6 @@ struct ReaderToolbarIconButton: View {
 
 func readerChromePanelTint(for colorScheme: ColorScheme) -> Color {
     colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.18)
-}
-
-func readerChromeButtonTint(for colorScheme: ColorScheme) -> Color {
-    // Reader controls are rendered by glass/UIKit presentation hosts where
-    // the semantic accent can fall back to the system blue. Resolve the
-    // app's AccentColor asset directly at this single reader boundary; the
-    // rest of the app can continue using `ReaderTheme.accent`.
-    ReaderTheme.accent
 }
 
 /// Reader Preview Mode indicator: shown in the top chrome of both the novel

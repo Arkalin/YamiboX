@@ -24,14 +24,10 @@ struct MangaReaderSettingsPalette {
     let coolPanel: Color
     let neutralPanel: Color
 
-    init(colorScheme: ColorScheme) {
+    init(colorScheme: ColorScheme, controlAccent: Color) {
         let isDark = colorScheme == .dark
         let cool = Color(red: 0.10, green: 0.64, blue: 0.68)
         let warm = Color(red: 0.93, green: 0.36, blue: 0.43)
-        // The settings sheet is presented by its own hosting controller, so
-        // the semantic accent can fall back to the system blue. Resolve the
-        // app asset at the palette boundary shared by every settings control.
-        let controlAccent = ReaderTheme.accent
         let ink = Color(red: 0.08, green: 0.08, blue: 0.09)
 
         if isDark {
@@ -43,16 +39,13 @@ struct MangaReaderSettingsPalette {
             secondaryText = Color.white.opacity(0.66)
             segmentedBackground = Color.white.opacity(0.07)
             selectedControlBackground = controlAccent
-            selectedControlText = Color.white
+            selectedControlText = ReaderSettingsPaletteTokens.selectedControlText(isDark: true)
             divider = ReaderSettingsPaletteTokens.divider(isDark: true)
             cardStroke = Color.white.opacity(0.10)
             previewFrameBackground = Color.black.opacity(0.26)
             previewPageBackground = Color(red: 0.88, green: 0.88, blue: 0.84)
             neutralPanel = Color.black.opacity(0.16)
-            confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
-                blendingInto: sheetBackground,
-                isDark: true
-            )
+            confirmButtonBackground = controlAccent
         } else {
             let heroSurfaceBackground = Color.white
             heroBackground = heroSurfaceBackground
@@ -62,16 +55,13 @@ struct MangaReaderSettingsPalette {
             secondaryText = Color.black.opacity(0.55)
             segmentedBackground = Color.black.opacity(0.045)
             selectedControlBackground = controlAccent
-            selectedControlText = Color.white
+            selectedControlText = ReaderSettingsPaletteTokens.selectedControlText(isDark: false)
             divider = ReaderSettingsPaletteTokens.divider(isDark: false)
             cardStroke = Color.black.opacity(0.08)
             previewFrameBackground = Color.black.opacity(0.08)
             previewPageBackground = Color.white
             neutralPanel = Color.black.opacity(0.08)
-            confirmButtonBackground = ReaderSettingsPaletteTokens.confirmButtonBackground(
-                blendingInto: heroSurfaceBackground,
-                isDark: false
-            )
+            confirmButtonBackground = controlAccent
         }
 
         accent = controlAccent

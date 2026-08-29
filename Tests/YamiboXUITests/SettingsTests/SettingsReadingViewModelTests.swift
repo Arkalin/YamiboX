@@ -67,53 +67,6 @@ final class SettingsReadingViewModelTests: XCTestCase {
         XCTAssertFalse(settings.forum.boardReader.isSmartComicModeEnabled(forumID: "37"))
     }
 
-    func testForumThemeLoadsFromSettings() async throws {
-        let fixture = try makeSystemSettingsFixture()
-        try await fixture.settingsStore.save(AppSettings(
-            forumAppearance: ForumAppearanceSettings(themePreset: .teal)
-        ))
-
-        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
-        await settings.load()
-
-        XCTAssertEqual(settings.forum.themePreset, .teal)
-    }
-
-    func testForumThemeSwitchIsOptimisticAndPersistsAtomically() async throws {
-        let fixture = try makeSystemSettingsFixture()
-        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
-        await settings.load()
-
-        settings.forum.updateThemePreset(.rose)
-
-        XCTAssertEqual(settings.forum.themePreset, .rose)
-        try await waitForSettings {
-            await fixture.settingsStore.load().forumAppearance.themePreset == .rose
-        }
-    }
-
-    func testForumThemeSaveFailureRollsBackAndSurfacesTheError() async throws {
-        let fixture = try makeSystemSettingsFixture()
-        let activity = SystemSettingsActivity()
-        let viewModel = SettingsForumViewModel(
-            dependencies: fixture.appContext.settingsDependencies,
-            activity: activity,
-            updateSettings: { _ in throw ForumThemeSettingsTestError.saveFailed }
-        )
-        viewModel.applyLoadedSettings(AppSettings(
-            forumAppearance: ForumAppearanceSettings(themePreset: .classic)
-        ))
-
-        viewModel.updateThemePreset(.standard)
-
-        XCTAssertEqual(viewModel.themePreset, .standard)
-        try await waitForSettings {
-            viewModel.themePreset == .classic && viewModel.errorMessage != nil
-        }
-        XCTAssertEqual(viewModel.themePreset, .classic)
-        XCTAssertNotNil(viewModel.errorMessage)
-    }
-
     func testEnhancedCheckInLoadsAndPersists() async throws {
         let fixture = try makeSystemSettingsFixture()
         try await fixture.settingsStore.save(AppSettings(
@@ -233,10 +186,4 @@ final class SettingsReadingViewModelTests: XCTestCase {
         }
         XCTAssertEqual(viewModel.boardReader, .factoryDefault)
     }
-}
-
-private enum ForumThemeSettingsTestError: LocalizedError {
-    case saveFailed
-
-    var errorDescription: String? { "Forum theme save failed" }
 }

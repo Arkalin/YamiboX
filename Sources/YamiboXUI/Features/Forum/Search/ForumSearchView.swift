@@ -36,7 +36,7 @@ struct ForumSearchView: View {
             onAuthorTap: onAuthorTap
         )
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
         .navigationTitle(L10n.string("forum.search.title"))
     }
 
@@ -119,7 +119,7 @@ private struct ForumSearchBodyView: View {
             .padding(.vertical, 14)
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 }
 
@@ -152,7 +152,7 @@ private struct ForumSearchInputView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(theme.accent)
+            .tint(theme.accentText)
             .disabled(isLoading || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel(L10n.string("common.search"))
         }
@@ -172,5 +172,4 @@ private struct ForumSearchIdleView: View {
         .padding(.vertical, 36)
     }
 }
-
 

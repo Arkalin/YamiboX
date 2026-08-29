@@ -36,10 +36,7 @@ public struct RootTabView: View {
         // Cross-fade from the bootstrap placeholder into the tab content
         // instead of hard-swapping frames.
         .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
-        // The persistent UIKit WebView host can otherwise leave SwiftUI's
-        // inherited tint at the platform default. Keep the app-shell accent
-        // explicit; the forum applies its own theme inside its tab.
-        .tint(AppColors.accent)
+        .appTheme(.theme(for: appModel.appThemePreset))
         .task {
             await appModel.bootstrapIfNeeded()
         }
@@ -102,7 +99,7 @@ public struct RootTabView: View {
             ForumNavigationHostView(
                 dependencies: appModel.appContext.forumDependencies,
                 appModel: appModel,
-                theme: .theme(for: appModel.forumThemePreset)
+                theme: AppTheme.theme(for: appModel.appThemePreset).forumTheme
             )
                 .tag(AppTab.forum)
                 .tabItem {
@@ -292,7 +289,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
-                    .tint(ReaderTheme.accent)
+                    .appTheme(AppTheme.theme(for: appModel.appThemePreset))
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
             .fullScreenCover(item: binding(for: \.activeMangaContext)) { context in
@@ -302,7 +299,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                     appModel: appModel
                 )
                     .ignoresSafeArea()
-                    .tint(ReaderTheme.accent)
+                    .appTheme(AppTheme.theme(for: appModel.appThemePreset))
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
     }

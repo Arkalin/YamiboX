@@ -14,6 +14,7 @@ struct LocalFavoriteCategoryTabBar: View {
     let routes: LocalFavoritesRoutes
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -43,9 +44,8 @@ struct LocalFavoriteCategoryTabBar: View {
         .accessibilityLabel(L10n.string("favorites.category.create"))
     }
 
-    /// The dark AccentColor variant (#C7946B) is light enough that white
-    /// text on it lands around 2.7:1 — below even the large-text contrast
-    /// floor — so the selected pill's foreground flips to black in dark mode.
+    /// App-theme accents are light in dark mode, so selected pills use a
+    /// black foreground there rather than assuming white text is readable.
     private var selectedPillForeground: Color {
         colorScheme == .dark ? .black : .white
     }
@@ -68,7 +68,7 @@ struct LocalFavoriteCategoryTabBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                isSelected ? AppColors.accent : Color.secondary.opacity(0.12),
+                isSelected ? appTheme.controlAccent : Color.secondary.opacity(0.12),
                 in: Capsule()
             )
             .foregroundStyle(isSelected ? selectedPillForeground : .primary)

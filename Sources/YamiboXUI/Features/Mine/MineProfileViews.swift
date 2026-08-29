@@ -147,11 +147,12 @@ private struct MineUIDText: View {
 
 private struct MineCreditProgressView: View {
     let progress: ForumCreditProgress
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ProgressView(value: progress.fraction)
-                .tint(AppColors.accent)
+                .tint(appTheme.controlAccent)
 
             HStack(spacing: 8) {
                 Text(progress.currentGroupName)

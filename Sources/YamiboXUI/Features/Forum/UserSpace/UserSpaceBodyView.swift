@@ -73,7 +73,7 @@ struct UserSpaceBodyView: View {
         }
         .topRefreshIndicator(isVisible: isLoadingContent && content != nil)
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
     }
 }
 

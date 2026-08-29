@@ -6,6 +6,7 @@ import UIKit
 
 struct NovelReaderChapterSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appTheme) private var appTheme
 
     let onSelect: (NovelReaderChapter) -> Void
     let onSelectWebView: (Int) -> Void
@@ -46,8 +47,8 @@ struct NovelReaderChapterSheet: View {
             }
         }
         // The chapter sheet and its popover get their own hosting controllers
-        // on iOS 27, so inherit the reader accent explicitly at this boundary.
-        .tint(ReaderTheme.accent)
+        // on iOS 27, so inherit the app accent explicitly at this boundary.
+        .tint(appTheme.controlAccent)
     }
 
     private var chapterContent: some View {
@@ -77,7 +78,7 @@ struct NovelReaderChapterSheet: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(chapter.title)
                                                 .font(.body.weight(isCurrent(chapter) ? .semibold : .regular))
-                                                .foregroundStyle(isCurrent(chapter) ? ReaderTheme.accent : .primary)
+                                                .foregroundStyle(isCurrent(chapter) ? appTheme.controlAccent : .primary)
                                                 .lineLimit(1)
                                             Text(chapterLocationText(for: chapter))
                                                 .font(.caption)
@@ -88,7 +89,7 @@ struct NovelReaderChapterSheet: View {
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    .listRowBackground(isCurrent(chapter) ? ReaderTheme.accent.opacity(0.12) : Color.clear)
+                                    .listRowBackground(isCurrent(chapter) ? appTheme.controlAccent.opacity(0.12) : Color.clear)
                                     .id(chapter.ordinal)
                                 }
 
@@ -179,6 +180,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
     @ObservedObject var navigation: NovelReaderNavigationCoordinator
     @Binding var showingWebPicker: Bool
     let onSelectWebView: (Int) -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         HStack(spacing: 16) {
@@ -220,7 +222,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
                     onSelectWebView(view)
                 }
                 .presentationCompactAdaptation(.popover)
-                .tint(ReaderTheme.accent)
+                .tint(appTheme.controlAccent)
             }
 
             Button {
@@ -250,6 +252,7 @@ private struct NovelReaderChapterWebPicker: View {
     let model: NovelReaderViewModel
     @ObservedObject var navigation: NovelReaderNavigationCoordinator
     let onSelect: (Int) -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -261,7 +264,7 @@ private struct NovelReaderChapterWebPicker: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: view == navigation.visibleChapterDirectoryView ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? ReaderTheme.accent : Color.secondary)
+                                    .foregroundStyle(view == navigation.visibleChapterDirectoryView ? appTheme.controlAccent : Color.secondary)
 
                                 Text(L10n.string(
                                     "reader.web_view_progress",
@@ -275,7 +278,7 @@ private struct NovelReaderChapterWebPicker: View {
                                 if view == model.visibleView {
                                     Text(L10n.string("common.current"))
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(ReaderTheme.accent)
+                                        .foregroundStyle(appTheme.controlAccent)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,7 +286,7 @@ private struct NovelReaderChapterWebPicker: View {
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(view == navigation.visibleChapterDirectoryView ? ReaderTheme.accent.opacity(0.12) : Color.clear)
+                                    .fill(view == navigation.visibleChapterDirectoryView ? appTheme.controlAccent.opacity(0.12) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)

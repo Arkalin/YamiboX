@@ -435,11 +435,12 @@ private struct FavoriteBackgroundBlurControl: View {
 private struct FavoriteBackgroundChangeImageButton: View {
     let isApplying: Bool
     let action: () -> Void
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         Button(action: action, label: label)
             .font(.subheadline.weight(.semibold))
-            .readerChromeButtonStyle(prominent: true, tint: AppColors.accent)
+            .readerChromeButtonStyle(prominent: true, tint: appTheme.controlAccent)
             .disabled(isApplying)
     }
 

@@ -174,7 +174,7 @@ struct ForumThreadReaderBodyView: View {
             }
         }
         .forumPageBackground()
-        .tint(theme.accent)
+        .tint(theme.accentText)
         .safeAreaInset(edge: .bottom) {
             if let page {
                 ForumThreadReaderActionBar(

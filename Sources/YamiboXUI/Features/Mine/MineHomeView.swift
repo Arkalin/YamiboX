@@ -158,7 +158,6 @@ public struct MineHomeView: View {
                 )
             }
         }
-        .forumTheme(.theme(for: appModel.forumThemePreset))
     }
 
     private var errorIsPresented: Binding<Bool> {

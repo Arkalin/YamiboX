@@ -4,39 +4,47 @@ import Testing
 
 @Suite("SettingsTests: System Settings")
 struct SystemSettingsTests {
-    @Test func forumAppearanceDefaultsToClassic() {
-        #expect(ForumAppearanceSettings().themePreset == .classic)
-        #expect(AppSettings().forumAppearance.themePreset == .classic)
+    @Test func appearanceDefaultsToClassic() {
+        #expect(AppAppearanceSettings().themePreset == .classic)
+        #expect(AppSettings().appearance.themePreset == .classic)
     }
 
-    @Test func forumThemePresetsRoundTripThroughCodable() throws {
-        for preset in ForumThemePreset.allCases {
-            let settings = ForumAppearanceSettings(themePreset: preset)
+    @Test func appThemePresetsRoundTripThroughCodable() throws {
+        for preset in AppThemePreset.allCases {
+            let settings = AppAppearanceSettings(themePreset: preset)
             let encoded = try JSONEncoder().encode(settings)
-            let decoded = try JSONDecoder().decode(ForumAppearanceSettings.self, from: encoded)
+            let decoded = try JSONDecoder().decode(AppAppearanceSettings.self, from: encoded)
 
             #expect(decoded == settings)
         }
     }
 
-    @Test func legacyAppSettingsDecodeWithClassicForumAppearance() throws {
+    @Test func legacyForumAppearanceKeyIsIgnoredAndDefaultsToClassic() throws {
         let original = AppSettings(
             system: SystemSettings(homePage: .favorites, usesDataSaverMode: true),
-            forumAppearance: ForumAppearanceSettings(themePreset: .teal)
+            appearance: AppAppearanceSettings(themePreset: .teal)
         )
         let encoded = try JSONEncoder().encode(original)
         guard var payload = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
             throw YamiboError.underlying("Failed to prepare legacy settings fixture")
         }
-        payload.removeValue(forKey: "forumAppearance")
+        payload["forumAppearance"] = payload.removeValue(forKey: "appearance")
 
         let legacyData = try JSONSerialization.data(withJSONObject: payload)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: legacyData)
 
         #expect(decoded.system.homePage == .favorites)
         #expect(decoded.system.usesDataSaverMode == true)
-        #expect(decoded.forumAppearance.themePreset == .classic)
+        #expect(decoded.appearance.themePreset == .classic)
         #expect(decoded.boardReader == original.boardReader)
+    }
+
+    @Test func appSettingsEncodeOnlyTheNewAppearanceKey() throws {
+        let encoded = try JSONEncoder().encode(AppSettings(appearance: .init(themePreset: .teal)))
+        let payload = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+
+        #expect(payload?["appearance"] != nil)
+        #expect(payload?["forumAppearance"] == nil)
     }
 
     @Test func missingExistingAppSettingsFieldStillFailsDecoding() throws {
@@ -52,18 +60,26 @@ struct SystemSettingsTests {
         }
     }
 
-    @Test func applicationSettingsResetRestoresClassicForumAppearance() async throws {
-        let suiteName = "forum-appearance-reset-\(UUID().uuidString)"
+    @Test func applicationSettingsResetRestoresClassicAppearance() async throws {
+        let suiteName = "app-appearance-reset-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             throw YamiboError.underlying("Failed to create isolated defaults")
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults, key: "settings")
-        try await store.save(AppSettings(forumAppearance: .init(themePreset: .rose)))
+        try await store.save(AppSettings(appearance: .init(themePreset: .rose)))
 
         try await store.reset()
 
-        #expect(await store.load().forumAppearance.themePreset == .classic)
+        #expect(await store.load().appearance.themePreset == .classic)
+    }
+
+    @Test func appAppearanceStaysLocalWhenApplyingWebDAVSettings() {
+        let local = AppSettings(appearance: .init(themePreset: .rose))
+        let synced = WebDAVSyncedAppSettings(settings: local)
+
+        #expect(synced == .init(homePage: .forum, webBrowser: WebBrowserSettings()))
+        #expect(synced.applying(to: local).appearance.themePreset == .rose)
     }
 
     @Test func enhancedCheckInDefaultsToDisabled() {
