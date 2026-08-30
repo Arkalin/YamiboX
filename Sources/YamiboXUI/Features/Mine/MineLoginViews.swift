@@ -85,6 +85,11 @@ final class MineWebLoginSessionMonitor {
 
     func waitForAuthentication() async -> Bool {
         baselineAuthenticationValue = await authenticationValue()
+        // A session that is already authenticated needs no change event; this
+        // also avoids missing a login that landed before the baseline read.
+        if await isAuthenticatedNow() {
+            return true
+        }
 
         for await changeID in changes {
             guard !Task.isCancelled else { return false }
@@ -106,6 +111,11 @@ final class MineWebLoginSessionMonitor {
         let session = await sessionStore.load()
         guard session.isLoggedIn, let value = session.authenticationCookie?.value else { return false }
         return baselineAuthenticationValue == nil || value != baselineAuthenticationValue
+    }
+
+    private func isAuthenticatedNow() async -> Bool {
+        let session = await sessionStore.load()
+        return session.isLoggedIn && session.authenticationCookie != nil
     }
 }
 

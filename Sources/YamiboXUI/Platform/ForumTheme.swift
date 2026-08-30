@@ -92,7 +92,7 @@ public struct ForumTheme: @unchecked Sendable {
         light: .init(
             pageBackground: 0xF2F2F7, surface: 0xFFFFFF,
             primaryText: 0x1C1C1E, secondaryText: 0x4A4A50, tertiaryText: 0x5F6068,
-            accent: 0x3A3A3C, accentText: 0x3A3A3C, mutedAccent: 0x5F6068,
+            accent: 0x3A3A3C, accentText: 0x3A3A3C, mutedAccent: 0x5F6067,
             webText: 0x34343A, navigationBarBackground: 0x2C2C2E,
             warning: 0x8A4B00, warningFill: 0xF5C451,
             danger: 0xB42318, dangerFill: 0xB42318
@@ -103,7 +103,7 @@ public struct ForumTheme: @unchecked Sendable {
             accent: 0x4B4B4F, accentText: 0xD1D1D6, mutedAccent: 0xB0B0B5,
             webText: 0xE5E5EA, navigationBarBackground: 0x2C2C2E,
             warning: 0xF5B957, warningFill: 0x6B430D,
-            danger: 0xFF8178, dangerFill: 0x9E2B2B
+            danger: 0xFF8478, dangerFill: 0x9E2B2B
         )
     ).theme
 
@@ -111,15 +111,15 @@ public struct ForumTheme: @unchecked Sendable {
         id: AppThemePreset.classic.rawValue,
         light: .init(
             pageBackground: 0xFFF3D6, surface: 0xFFF7E0,
-            primaryText: 0x2E1A0E, secondaryText: 0x7A5C4D, tertiaryText: 0x85674E,
+            primaryText: 0x2E1A0E, secondaryText: 0x6E5345, tertiaryText: 0x6D5440,
             accent: 0x4E2A1B, accentText: 0x4E2A1B, mutedAccent: 0x6D3A2B,
             webText: 0x6E2B19, navigationBarBackground: 0x4E2A1B,
-            warning: 0x8A4B00, warningFill: 0xF5C451,
+            warning: 0x834700, warningFill: 0xF5C451,
             danger: 0xA61B29, dangerFill: 0xA61B29
         ),
         dark: .init(
             pageBackground: 0x17110D, surface: 0x241B15,
-            primaryText: 0xF4E7D1, secondaryText: 0xAE8C7A, tertiaryText: 0xA1806F,
+            primaryText: 0xF4E7D1, secondaryText: 0xC59F8A, tertiaryText: 0xC69D89,
             accent: 0x24120C, accentText: 0xD6A083, mutedAccent: 0xD6A083,
             webText: 0xF0D8BC, navigationBarBackground: 0x24120C,
             warning: 0xF4B35E, warningFill: 0x66400D,
@@ -131,7 +131,7 @@ public struct ForumTheme: @unchecked Sendable {
         id: AppThemePreset.teal.rawValue,
         light: .init(
             pageBackground: 0xEDF5F3, surface: 0xFBFFFE,
-            primaryText: 0x18312F, secondaryText: 0x3F5B58, tertiaryText: 0x54706D,
+            primaryText: 0x18312F, secondaryText: 0x3F5B58, tertiaryText: 0x54616D,
             accent: 0x155E63, accentText: 0x155E63, mutedAccent: 0x2D6965,
             webText: 0x234C49, navigationBarBackground: 0x155257,
             warning: 0x7A4B00, warningFill: 0xF1C75B,
@@ -143,7 +143,7 @@ public struct ForumTheme: @unchecked Sendable {
             accent: 0x205A5B, accentText: 0x78C8BE, mutedAccent: 0x86BBB3,
             webText: 0xD0E5DF, navigationBarBackground: 0x103F42,
             warning: 0xF3BC60, warningFill: 0x62420F,
-            danger: 0xFF8588, dangerFill: 0x972F38
+            danger: 0xFF8988, dangerFill: 0x972F38
         )
     ).theme
 
@@ -151,15 +151,15 @@ public struct ForumTheme: @unchecked Sendable {
         id: AppThemePreset.rose.rawValue,
         light: .init(
             pageBackground: 0xF7F1F3, surface: 0xFFFBFC,
-            primaryText: 0x302126, secondaryText: 0x5D444D, tertiaryText: 0x725963,
-            accent: 0x7B334C, accentText: 0x7B334C, mutedAccent: 0x865066,
+            primaryText: 0x302126, secondaryText: 0x5D444D, tertiaryText: 0x725763,
+            accent: 0x7B334C, accentText: 0x7B334C, mutedAccent: 0x864D66,
             webText: 0x583845, navigationBarBackground: 0x713047,
             warning: 0x815000, warningFill: 0xF2C866,
             danger: 0xA7273A, dangerFill: 0xA7273A
         ),
         dark: .init(
             pageBackground: 0x181315, surface: 0x251B1F,
-            primaryText: 0xF8ECEF, secondaryText: 0xD3BBC3, tertiaryText: 0xB79DA6,
+            primaryText: 0xF8ECEF, secondaryText: 0xD3BBC3, tertiaryText: 0xB7A3A7,
             accent: 0x713149, accentText: 0xD99AAE, mutedAccent: 0xCEA0B0,
             webText: 0xE4CDD5, navigationBarBackground: 0x512134,
             warning: 0xF4BF67, warningFill: 0x694610,
