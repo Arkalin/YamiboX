@@ -1,16 +1,6 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Xcode 26.6's Swift 6.3.3 frontend crashes while optimizing a synthesized
-// async closure in YamiboXUI. Keep Release builds optimized per file until
-// that compiler regression is fixed upstream.
-let releaseCompilerWorkarounds: [SwiftSetting] = [
-    .unsafeFlags(
-        ["-disable-cmo"],
-        .when(configuration: .release)
-    )
-]
-
 let package = Package(
     name: "YamiboX",
     defaultLocalization: "zh-Hans",
@@ -37,16 +27,14 @@ let package = Package(
             ],
             resources: [
                 .process("Resources")
-            ],
-            swiftSettings: releaseCompilerWorkarounds
+            ]
         ),
         .target(
             name: "YamiboXUI",
             dependencies: [
                 "YamiboXCore",
                 .product(name: "NukeUI", package: "Nuke"),
-            ],
-            swiftSettings: releaseCompilerWorkarounds
+            ]
         ),
         .target(
             name: "YamiboXTestSupport",
