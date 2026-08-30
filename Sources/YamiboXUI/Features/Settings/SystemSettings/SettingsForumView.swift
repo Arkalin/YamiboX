@@ -25,7 +25,7 @@ struct SettingsForumView: View {
                     L10n.string("settings.enhanced_check_in"),
                     isOn: Binding(
                         get: { viewModel.enhancedCheckInEnabled },
-                        set: viewModel.updateEnhancedCheckInEnabled
+                        set: { viewModel.updateEnhancedCheckInEnabled($0) }
                     )
                 )
                 .disabled(viewModel.isBusy)
