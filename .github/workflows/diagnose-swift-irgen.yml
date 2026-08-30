@@ -60,3 +60,57 @@ jobs:
         with:
           name: swift-irgen-probe-results
           path: diagnostics/results
+
+  archive-comparison:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare original Release archive against one-line candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun swiftc --version
+          mkdir -p diagnostics/archive-results
+          printf 'variant,exit_code,matching_crash\n' > diagnostics/archive-results/results.csv
+          matched_baseline=false
+          passed_candidate=false
+          for variant in baseline candidate; do
+            if [[ "$variant" == candidate ]]; then
+              git apply --check diagnostics/swift-irgen/binding-setter.patch
+              git apply diagnostics/swift-irgen/binding-setter.patch
+              git diff -- Sources > diagnostics/archive-results/candidate.diff
+            fi
+            if xcodebuild archive \
+              -project YamiboX.xcodeproj -scheme YamiboX -configuration Release \
+              -derivedDataPath "$RUNNER_TEMP/derived-$variant" \
+              -archivePath "$RUNNER_TEMP/$variant.xcarchive" \
+              -destination 'generic/platform=iOS' \
+              CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+              > "diagnostics/archive-results/$variant.log" 2>&1; then
+              result=0
+            else
+              result=$?
+            fi
+            matching=false
+            if grep -Fq '$sSbScA_pSgIeAghyg_SbIeAghn_TR' "diagnostics/archive-results/$variant.log"; then
+              matching=true
+            fi
+            printf '%s,%s,%s\n' "$variant" "$result" "$matching" | tee -a diagnostics/archive-results/results.csv
+            tail -n 12 "diagnostics/archive-results/$variant.log"
+            if [[ "$variant" == baseline && "$result" != 0 && "$matching" == true ]]; then
+              matched_baseline=true
+            fi
+            if [[ "$variant" == candidate && "$result" == 0 ]]; then
+              passed_candidate=true
+            fi
+          done
+          [[ "$matched_baseline" == true && "$passed_candidate" == true ]]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-irgen-archive-comparison
+          path: diagnostics/archive-results

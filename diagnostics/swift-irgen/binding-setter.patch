@@ -1,0 +1,12 @@
+diff --git a/Sources/YamiboXUI/Features/Settings/SystemSettings/SettingsForumView.swift b/Sources/YamiboXUI/Features/Settings/SystemSettings/SettingsForumView.swift
+--- a/Sources/YamiboXUI/Features/Settings/SystemSettings/SettingsForumView.swift
++++ b/Sources/YamiboXUI/Features/Settings/SystemSettings/SettingsForumView.swift
+@@ -25,7 +25,7 @@ struct SettingsForumView: View {
+                     L10n.string("settings.enhanced_check_in"),
+                     isOn: Binding(
+                         get: { viewModel.enhancedCheckInEnabled },
+-                        set: viewModel.updateEnhancedCheckInEnabled
++                        set: { viewModel.updateEnhancedCheckInEnabled($0) }
+                     )
+                 )
+                 .disabled(viewModel.isBusy)
