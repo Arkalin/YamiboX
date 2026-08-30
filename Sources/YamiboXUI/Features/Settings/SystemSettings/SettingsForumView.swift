@@ -114,7 +114,10 @@ struct SettingsForumView: View {
             return
         }
 
-        openURL(url)
+        openURL(url) { accepted in
+            guard !accepted else { return }
+            viewModel.errorMessage = L10n.string("settings.shortcuts_open_failed")
+        }
     }
 }
 
