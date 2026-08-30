@@ -13,6 +13,13 @@
       "iconURL": "https://raw.githubusercontent.com/Arkalin/YamiboX/main/YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
       "versions": [
         {
+          "version": "0.3.0",
+          "date": "2026-08-30T04:18:58Z",
+          "localizedDescription": "【新增】\n- 论坛设置新增“增强签到”开关，签到时自动访问自己的推广链接\n- 小说阅读器新增搜索：搜索当前网页内容、查看匹配结果并跳转定位，带最近搜索记录\n- 收藏新增分享与导入（兼容LittleSurvival/yamibo-app）：可将选中的收藏夹导出为 JSON 文件分享或保存，也可导入收藏文件并选择新建收藏夹或加入既有收藏夹\n- 设置新增“应用主题”选择，提供简约、经典、青岚、樱墨四种配色，并应用到论坛、阅读器与全局界面\n\n【变更】\n- 设置新增独立的“论坛”分类，自动签到与各板块阅读方式设置移入其中\n- 设置里的“收藏”分类图标改为爱心样式\n\n【修复】\n- 修复阅读器设置与章节目录的强调色未跟随应用主题的问题\n- 修复论坛帖子阅读器翻页后停留在上一页滚动位置的问题\n- 修复个人资料页顶部导航栏样式不统一的问题\n- 修复部分智能漫画标题残留章节副标题的问题\n- 修复 WebDAV 同步时收藏分类、合集与标签的改动可能被旧数据覆盖的问题，现在按修改时间合并并保留较新的记录",
+          "downloadURL": "https://github.com/Arkalin/YamiboX/releases/download/v0.3.0/YamiboX_v0.3.0_unsigned.ipa",
+          "size": 9302713
+        },
+        {
           "version": "0.2.1",
           "date": "2026-08-07T02:11:26Z",
           "localizedDescription": "【修复】\n- 修复论坛图片加载未携带 WAF 验证 Cookie、可能被拦截的问题\n- 修复后台离线下载未携带登录会话 Cookie、可能导致下载失败的问题",
