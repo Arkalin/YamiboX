@@ -114,3 +114,69 @@ jobs:
         with:
           name: swift-irgen-archive-comparison
           path: diagnostics/archive-results
+
+  failing-test-diagnostics:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select iOS simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          device_line="$(
+            xcrun simctl list devices available |
+            awk '
+              /^-- iOS / { in_ios = 1; next }
+              /^-- / { in_ios = 0 }
+              in_ios && $0 ~ /^[[:space:]]+iPhone / { candidate = $0 }
+              END {
+                if (candidate != "") {
+                  print candidate
+                }
+              }
+            '
+          )"
+          udid="$(printf '%s\n' "${device_line}" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')"
+          destination="platform=iOS Simulator,id=${udid}"
+          echo "IOS_SIMULATOR_DESTINATION=${destination}" >> "${GITHUB_ENV}"
+          echo "Selected simulator: ${device_line}"
+      - name: Capture failure details for the three unrelated failing tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          xcodebuild -version
+          mkdir -p diagnostics/failing-test-results
+          if xcodebuild test \
+            -project YamiboX.xcodeproj \
+            -scheme YamiboX \
+            -testPlan YamiboXTests \
+            -destination "${IOS_SIMULATOR_DESTINATION}" \
+            -derivedDataPath "$RUNNER_TEMP/failing-tests-derived" \
+            -resultBundlePath "$RUNNER_TEMP/failing-tests.xcresult" \
+            -only-testing:YamiboXUITests/MineWebLoginSessionMonitorTests/testAuthenticatedWebSessionCompletesMonitoring \
+            -only-testing:YamiboXUITests/ThemeBoundaryTests/standardForumThemeUsesOnlyNeutralAccentColors \
+            -only-testing:YamiboXUITests/YamiboColorsContrastTests/forumTextRolesAreReadableOnForumSurfaces \
+            -parallel-testing-enabled NO \
+            -enableCodeCoverage NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > "diagnostics/failing-test-results/run.log" 2>&1; then
+            result=0
+          else
+            result=$?
+          fi
+          printf 'exit_code=%s\n' "$result" | tee -a diagnostics/failing-test-results/summary.txt
+          grep -n -E '#expect|XCTAssert|error:|failed|Failing tests:|Test Suite|Requested test' \
+            "diagnostics/failing-test-results/run.log" | tail -n 120 >> diagnostics/failing-test-results/summary.txt || true
+          tail -n 80 "diagnostics/failing-test-results/run.log"
+          if [[ -d "$RUNNER_TEMP/failing-tests.xcresult" ]]; then
+            cp -R "$RUNNER_TEMP/failing-tests.xcresult" diagnostics/failing-test-results/
+          fi
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-irgen-failing-test-diagnostics
+          path: diagnostics/failing-test-results
