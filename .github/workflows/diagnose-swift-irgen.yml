@@ -49,8 +49,8 @@ jobs:
             -destination "${IOS_SIMULATOR_DESTINATION}" \
             -derivedDataPath "$RUNNER_TEMP/failing-tests-derived" \
             -resultBundlePath "$RUNNER_TEMP/failing-tests.xcresult" \
-            -only-testing:YamiboXUITests/standardForumThemeUsesOnlyNeutralAccentColors() \
-            -only-testing:YamiboXUITests/forumTextRolesAreReadableOnForumSurfaces() \
+            "-only-testing:YamiboXUITests/standardForumThemeUsesOnlyNeutralAccentColors()" \
+            "-only-testing:YamiboXUITests/forumTextRolesAreReadableOnForumSurfaces()" \
             -parallel-testing-enabled NO \
             -enableCodeCoverage NO \
             CODE_SIGNING_ALLOWED=NO \
