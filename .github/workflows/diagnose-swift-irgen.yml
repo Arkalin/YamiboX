@@ -1,0 +1,59 @@
+name: Diagnose Swift IRGen
+
+on:
+  push:
+    branches: [codex/diagnose-v030-swift-irgen]
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-probes:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated compiler probes
+        shell: bash
+        run: |
+          set -uo pipefail
+          xcodebuild -version
+          xcrun swiftc --version
+          sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
+          mkdir -p diagnostics/results
+          printf 'variant,mode,exit_code,matching_crash\n' > diagnostics/results/results.csv
+          for variant in direct closure nonisolated no-observation open-url; do
+            definitions=()
+            source=diagnostics/swift-irgen/BindingSetterProbe.swift
+            case "$variant" in
+              closure) definitions=(-D EXPLICIT_SETTER) ;;
+              nonisolated) definitions=(-D NONISOLATED_MODEL) ;;
+              no-observation) definitions=(-D NO_OBSERVATION) ;;
+              open-url) source=diagnostics/swift-irgen/OpenURLProbe.swift ;;
+            esac
+            for mode in debug optimized wmo; do
+              flags=(-Onone)
+              case "$mode" in
+                optimized) flags=(-O) ;;
+                wmo) flags=(-O -whole-module-optimization) ;;
+              esac
+              name="$variant-$mode"
+              xcrun swiftc -swift-version 6 -target arm64-apple-ios18.0 \
+                -sdk "$sdk" -parse-as-library -emit-object \
+                "${flags[@]}" "${definitions[@]}" "$source" \
+                -o "diagnostics/results/$name.o" > "diagnostics/results/$name.log" 2>&1
+              result=$?
+              matching=false
+              if grep -Fq '$sSbScA_pSgIeAghyg_SbIeAghn_TR' "diagnostics/results/$name.log"; then
+                matching=true
+              fi
+              printf '%s,%s,%s,%s\n' "$variant" "$mode" "$result" "$matching" | tee -a diagnostics/results/results.csv
+              grep -E 'error:|While evaluating request|While emitting IR|Swift version|fatal error' "diagnostics/results/$name.log" || true
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-irgen-probe-results
+          path: diagnostics/results
