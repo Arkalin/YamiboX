@@ -93,4 +93,4 @@ After the compiler fix, the normal Swift workflow on `ac13b0e` builds successful
 
 The production diff at that commit is one line in `SettingsForumView`, so it cannot alter web-session monitoring or forum color resolution. These are separate pre-existing or environment-sensitive failures that were previously masked because the whole build crashed before tests could run.
 
-Run `33287617399` (rerun) repeats the same list. The diagnostic job captures their full assertion output on the same Xcode 26.6 runner.
+Run `33287617399` (rerun) repeats the same list. The isolated diagnostic run shows that `MineWebLoginSessionMonitorTests.testAuthenticatedWebSessionCompletesMonitoring()` hangs past the 10-minute execution allowance. The remaining color contrast diagnostics run on the same Xcode 26.6 runner with the compiler fix applied.

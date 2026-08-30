@@ -36,7 +36,7 @@ jobs:
           destination="platform=iOS Simulator,id=${udid}"
           echo "IOS_SIMULATOR_DESTINATION=${destination}" >> "${GITHUB_ENV}"
           echo "Selected simulator: ${device_line}"
-      - name: Capture failure details for the three unrelated failing tests
+      - name: Capture failure details for the unrelated color contrast tests
         shell: bash
         run: |
           set -uo pipefail
@@ -49,9 +49,8 @@ jobs:
             -destination "${IOS_SIMULATOR_DESTINATION}" \
             -derivedDataPath "$RUNNER_TEMP/failing-tests-derived" \
             -resultBundlePath "$RUNNER_TEMP/failing-tests.xcresult" \
-            -only-testing:YamiboXUITests/MineWebLoginSessionMonitorTests/testAuthenticatedWebSessionCompletesMonitoring \
-            -only-testing:YamiboXUITests/ThemeBoundaryTests/standardForumThemeUsesOnlyNeutralAccentColors \
-            -only-testing:YamiboXUITests/YamiboColorsContrastTests/forumTextRolesAreReadableOnForumSurfaces \
+            -only-testing:YamiboXUITests/standardForumThemeUsesOnlyNeutralAccentColors() \
+            -only-testing:YamiboXUITests/forumTextRolesAreReadableOnForumSurfaces() \
             -parallel-testing-enabled NO \
             -enableCodeCoverage NO \
             CODE_SIGNING_ALLOWED=NO \
