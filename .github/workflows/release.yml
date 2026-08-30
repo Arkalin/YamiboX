@@ -75,9 +75,6 @@ jobs:
 
       - name: Archive (unsigned)
         run: |
-          # Swift 6.3.3 on the macos-26 image crashes in Release optimization
-          # while emitting a compiler-generated async closure. Compile per-file
-          # until the hosted toolchain includes the upstream fix.
           xcodebuild archive \
             -project YamiboX.xcodeproj \
             -scheme YamiboX \
@@ -86,8 +83,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            SWIFT_OPTIMIZATION_LEVEL=-Onone
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package unsigned IPA
         id: package
