@@ -24,7 +24,7 @@ jobs:
           mkdir -p diagnostics/results
           printf 'variant,mode,exit_code,matching_crash\n' > diagnostics/results/results.csv
           for variant in direct closure nonisolated no-observation open-url; do
-            definitions=()
+            definitions=(-D DIAGNOSTIC)
             source=diagnostics/swift-irgen/BindingSetterProbe.swift
             case "$variant" in
               closure) definitions=(-D EXPLICIT_SETTER) ;;
@@ -39,11 +39,14 @@ jobs:
                 wmo) flags=(-O -whole-module-optimization) ;;
               esac
               name="$variant-$mode"
-              xcrun swiftc -swift-version 6 -target arm64-apple-ios18.0 \
+              if xcrun swiftc -swift-version 6 -target arm64-apple-ios18.0 \
                 -sdk "$sdk" -parse-as-library -emit-object \
                 "${flags[@]}" "${definitions[@]}" "$source" \
-                -o "diagnostics/results/$name.o" > "diagnostics/results/$name.log" 2>&1
-              result=$?
+                -o "diagnostics/results/$name.o" > "diagnostics/results/$name.log" 2>&1; then
+                result=0
+              else
+                result=$?
+              fi
               matching=false
               if grep -Fq '$sSbScA_pSgIeAghyg_SbIeAghn_TR' "diagnostics/results/$name.log"; then
                 matching=true
