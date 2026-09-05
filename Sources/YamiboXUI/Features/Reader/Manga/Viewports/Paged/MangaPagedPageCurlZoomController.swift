@@ -142,6 +142,7 @@ final class MangaPagedPageCurlZoomController {
         )
         return MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: parent.zoomEnabled,
+            allowsUnzoomedSurfacePan: false,
             isZoomActive: MangaPageZoomPolicy.isActive(pageCurlZoomScale),
             hiddenEdges: pageCurlSpreadHiddenEdges,
             physicalEdge: physicalEdge

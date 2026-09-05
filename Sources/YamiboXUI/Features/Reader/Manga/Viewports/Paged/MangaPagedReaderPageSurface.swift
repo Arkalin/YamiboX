@@ -4,6 +4,112 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
+@MainActor
+final class MangaPagedSurfacePanGestureCoordinator: NSObject, UIGestureRecognizerDelegate {
+    private var shouldBeginHandler: (CGSize, CGSize) -> Bool
+    private var onChangedHandler: (CGSize) -> Void
+    private var onEndedHandler: (CGSize) -> Void
+    private var onCancelledHandler: () -> Void
+
+    init(
+        shouldBegin: @escaping (CGSize, CGSize) -> Bool,
+        onChanged: @escaping (CGSize) -> Void,
+        onEnded: @escaping (CGSize) -> Void,
+        onCancelled: @escaping () -> Void
+    ) {
+        self.shouldBeginHandler = shouldBegin
+        self.onChangedHandler = onChanged
+        self.onEndedHandler = onEnded
+        self.onCancelledHandler = onCancelled
+    }
+
+    func update(
+        shouldBegin: @escaping (CGSize, CGSize) -> Bool,
+        onChanged: @escaping (CGSize) -> Void,
+        onEnded: @escaping (CGSize) -> Void,
+        onCancelled: @escaping () -> Void
+    ) {
+        shouldBeginHandler = shouldBegin
+        onChangedHandler = onChanged
+        onEndedHandler = onEnded
+        onCancelledHandler = onCancelled
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let panGesture = gestureRecognizer as? UIPanGestureRecognizer else {
+            return false
+        }
+        let translationPoint = panGesture.translation(in: panGesture.view)
+        let velocityPoint = panGesture.velocity(in: panGesture.view)
+        let translation = CGSize(width: translationPoint.x, height: translationPoint.y)
+        let velocity = CGSize(width: velocityPoint.x, height: velocityPoint.y)
+        return shouldBeginHandler(translation, velocity)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        otherGestureRecognizer is UIPinchGestureRecognizer ||
+            otherGestureRecognizer is UILongPressGestureRecognizer
+    }
+
+    func handle(state: UIGestureRecognizer.State, translation: CGSize) {
+        switch state {
+        case .changed:
+            onChangedHandler(translation)
+        case .ended:
+            onEndedHandler(translation)
+        case .cancelled, .failed:
+            onCancelledHandler()
+        default:
+            break
+        }
+    }
+}
+
+struct MangaPagedSurfacePanGesture: UIGestureRecognizerRepresentable {
+    let isEnabled: Bool
+    let shouldBegin: (CGSize, CGSize) -> Bool
+    let onChanged: (CGSize) -> Void
+    let onEnded: (CGSize) -> Void
+    let onCancelled: () -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> MangaPagedSurfacePanGestureCoordinator {
+        MangaPagedSurfacePanGestureCoordinator(
+            shouldBegin: shouldBegin,
+            onChanged: onChanged,
+            onEnded: onEnded,
+            onCancelled: onCancelled
+        )
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.delegate = context.coordinator
+        recognizer.isEnabled = isEnabled
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.update(
+            shouldBegin: shouldBegin,
+            onChanged: onChanged,
+            onEnded: onEnded,
+            onCancelled: onCancelled
+        )
+        if recognizer.isEnabled != isEnabled {
+            recognizer.isEnabled = isEnabled
+        }
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translationPoint = context.converter.localTranslation ?? recognizer.translation(in: recognizer.view)
+        let translation = CGSize(width: translationPoint.x, height: translationPoint.y)
+        context.coordinator.handle(state: recognizer.state, translation: translation)
+    }
+}
+
 struct MangaPagedReaderPageSurface: View {
     let page: MangaReaderPageProjection
     let surfaceIdentity: MangaPagedReaderPageAppearanceIdentity
@@ -35,6 +141,7 @@ struct MangaPagedReaderPageSurface: View {
                     pageScaleMode: pageScaleMode,
                     initialHorizontalAlignment: initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,
+                    isSurfaceInteractionEnabled: !isChromeVisible,
                     isZoomInteractionEnabled: !isChromeVisible && zoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
                     surfaceInteraction: surfaceInteraction,
@@ -123,6 +230,7 @@ private struct MangaPagedReaderScaledImage: View {
     let pageScaleMode: MangaPageScaleMode
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
+    let isSurfaceInteractionEnabled: Bool
     let isZoomInteractionEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaPagedReaderPageSurfaceInteraction
@@ -146,6 +254,12 @@ private struct MangaPagedReaderScaledImage: View {
             )
             let hiddenEdges = hiddenHorizontalEdges(layout: layout, userOffset: userOffset)
             let isSurfaceZoomActive = isZoomInteractionEnabled && MangaPageZoomPolicy.isActive(zoomScale)
+            let isSurfacePanEnabled = MangaPagedSurfaceDragIntent.isSurfacePanEnabled(
+                isInteractionEnabled: isSurfaceInteractionEnabled,
+                allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
+                isZoomActive: isSurfaceZoomActive,
+                hiddenEdges: hiddenEdges
+            )
 
             ZStack {
                 pageEdgeFillStyle.color(for: colorScheme)
@@ -153,20 +267,31 @@ private struct MangaPagedReaderScaledImage: View {
                     .resizable()
                     .frame(width: layout.contentSize.width, height: layout.contentSize.height)
                     .offset(displayOffset)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            // Keep hit testing in the fixed viewport coordinate space, not the wider image space.
+            .overlay {
                 MangaPagedReaderLongPressHitRegion(
                     frame: longPressFrame,
                     onLongPress: onLongPress
                 )
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
             .clipped()
             .simultaneousGesture(magnifyGesture(containerSize: containerSize))
-            .simultaneousGesture(
-                dragGesture(containerSize: containerSize),
-                including: surfaceDragGestureMask
+            .gesture(
+                surfacePanGesture(
+                    containerSize: containerSize,
+                    isEnabled: isSurfacePanEnabled,
+                    isZoomActive: isSurfaceZoomActive,
+                    hiddenEdges: hiddenEdges
+                )
             )
             .onChange(of: isZoomInteractionEnabled) { _, isEnabled in
+                guard !isEnabled else { return }
+                endSurfaceInteraction(animated: true)
+            }
+            .onChange(of: isSurfaceInteractionEnabled) { _, isEnabled in
                 guard !isEnabled else { return }
                 endSurfaceInteraction(animated: true)
             }
@@ -210,16 +335,6 @@ private struct MangaPagedReaderScaledImage: View {
         clampedScale(steadyScale * gestureScale)
     }
 
-    private var surfaceDragGestureMask: GestureMask {
-        // `.gesture` would disable the long-press hit region below (a subview) whenever
-        // pan is active — which for an unzoomed single page is effectively always.
-        surfaceDragGestureEnabled ? .all : .subviews
-    }
-
-    private var surfaceDragGestureEnabled: Bool {
-        isZoomInteractionEnabled && (allowsUnzoomedSurfacePan || MangaPageZoomPolicy.isActive(zoomScale))
-    }
-
     private func magnifyGesture(containerSize: CGSize) -> some Gesture {
         MagnifyGesture()
             .onChanged { value in
@@ -243,14 +358,27 @@ private struct MangaPagedReaderScaledImage: View {
             }
     }
 
-    private func dragGesture(containerSize: CGSize) -> some Gesture {
-        DragGesture(
-            minimumDistance: MangaPagedSurfaceDragIntent.minimumUnzoomedHorizontalTranslation,
-            coordinateSpace: .local
-        )
-            .onChanged { value in
-                guard surfaceDragGestureEnabled,
-                      let translation = surfaceDragTranslation(value.translation) else {
+    private func surfacePanGesture(
+        containerSize: CGSize,
+        isEnabled: Bool,
+        isZoomActive: Bool,
+        hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>
+    ) -> MangaPagedSurfacePanGesture {
+        MangaPagedSurfacePanGesture(
+            isEnabled: isEnabled,
+            shouldBegin: { translation, velocity in
+                MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+                    isInteractionEnabled: isSurfaceInteractionEnabled,
+                    allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
+                    isZoomActive: isZoomActive,
+                    hiddenEdges: hiddenEdges,
+                    translation: translation,
+                    velocity: velocity
+                )
+            },
+            onChanged: { translation in
+                guard isSurfaceInteractionEnabled,
+                      let translation = surfaceDragTranslation(translation) else {
                     return
                 }
                 let layout = imageSurfaceLayout(containerSize: containerSize, scale: zoomScale)
@@ -263,10 +391,10 @@ private struct MangaPagedReaderScaledImage: View {
                     width: clamped.width - steadyUserOffset.width,
                     height: clamped.height - steadyUserOffset.height
                 )
-            }
-            .onEnded { value in
-                guard surfaceDragGestureEnabled,
-                      let translation = surfaceDragTranslation(value.translation) else {
+            },
+            onEnded: { translation in
+                guard isSurfaceInteractionEnabled,
+                      let translation = surfaceDragTranslation(translation) else {
                     gestureUserOffset = .zero
                     return
                 }
@@ -277,15 +405,19 @@ private struct MangaPagedReaderScaledImage: View {
                 )
                 steadyUserOffset = layout.clampedUserOffset(proposed)
                 gestureUserOffset = .zero
+            },
+            onCancelled: {
+                gestureUserOffset = .zero
             }
+        )
     }
 
     private func surfaceDragTranslation(_ translation: CGSize) -> CGSize? {
-        if MangaPageZoomPolicy.isActive(zoomScale) {
+        if isZoomInteractionEnabled && MangaPageZoomPolicy.isActive(zoomScale) {
             return translation
         }
         guard allowsUnzoomedSurfacePan else { return nil }
-        return MangaPagedSurfaceDragIntent.unzoomedHorizontalTranslation(translation)
+        return MangaPagedSurfaceDragIntent.unzoomedSurfaceTranslation(translation)
     }
 
     private func toggleZoom(at location: CGPoint, containerSize: CGSize) {

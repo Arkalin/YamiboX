@@ -3,6 +3,10 @@ import Testing
 @testable import YamiboXCore
 @testable import YamiboXUI
 
+#if os(iOS)
+import UIKit
+#endif
+
 @Suite("MangaReaderTests: Paged Image Surface Layout")
 struct MangaPagedImageSurfaceLayoutTests {
     @Test func zoomPolicyCentralizesSharedMangaPageZoomThresholds() {
@@ -139,11 +143,174 @@ struct MangaPagedImageSurfaceLayoutTests {
         ) == CGRect(x: thirdWidth, y: 250, width: thirdWidth, height: 300))
     }
 
-    @Test func surfaceDragIntentRequiresDeliberateHorizontalUnzoomedDrag() {
-        #expect(MangaPagedSurfaceDragIntent.unzoomedHorizontalTranslation(CGSize(width: 8, height: 0)) == nil)
-        #expect(MangaPagedSurfaceDragIntent.unzoomedHorizontalTranslation(CGSize(width: 20, height: 24)) == nil)
-        #expect(MangaPagedSurfaceDragIntent.unzoomedHorizontalTranslation(CGSize(width: -20, height: 4)) == CGSize(width: -20, height: 0))
-        #expect(MangaPagedSurfaceDragIntent.unzoomedHorizontalTranslation(CGSize(width: 20, height: -4)) == CGSize(width: 20, height: 0))
+    @Test func pageLongPressHitFrameStaysInViewportForFitHeightAtEachHorizontalPosition() {
+        let pageBounds = CGRect(x: 0, y: 0, width: 400, height: 800)
+        let expectedFrame = CGRect(
+            x: 400 / 3,
+            y: 0,
+            width: 400 / 3,
+            height: 800
+        )
+
+        for alignment in [
+            MangaPagedImageSurfaceInitialHorizontalAlignment.left,
+            .right
+        ] {
+            let layout = MangaPagedImageSurfaceLayout(
+                imageSize: CGSize(width: 1200, height: 800),
+                containerSize: pageBounds.size,
+                pageScaleMode: .fitHeight,
+                initialHorizontalAlignment: alignment,
+                zoomScale: 1
+            )
+            let userOffsets: [CGSize] = alignment == .left
+                ? [.zero, CGSize(width: -400, height: 0), CGSize(width: -800, height: 0)]
+                : [.zero, CGSize(width: 400, height: 0), CGSize(width: 800, height: 0)]
+
+            for userOffset in userOffsets {
+                #expect(MangaPageLongPressHitTesting.allowedFrame(
+                    in: pageBounds,
+                    imageFrame: layout.displayedImageFrame(forUserOffset: userOffset)
+                ) == expectedFrame)
+            }
+        }
+    }
+
+    @Test func surfacePanDirectionAcceptsSmallHorizontalTranslations() {
+        let hiddenRight: Set<MangaPagedImageSurfaceHorizontalEdge> = [.right]
+
+        for distance in [CGFloat.zero, 2, 8, 11, 12, 40] {
+            let translation = CGSize(width: -distance, height: 0)
+            let expected: MangaPagedImageSurfaceHorizontalEdge? = distance == 0 ? nil : .right
+            #expect(MangaPagedSurfaceDragIntent.physicalEdge(
+                forPanTranslation: translation,
+                velocity: .zero
+            ) == expected)
+            #expect(MangaPagedSurfaceDragIntent.unzoomedSurfaceTranslation(
+                CGSize(width: -distance, height: 40)
+            ) == CGSize(width: -distance, height: 0))
+            #expect(MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+                isInteractionEnabled: true,
+                allowsUnzoomedSurfacePan: true,
+                isZoomActive: false,
+                hiddenEdges: hiddenRight,
+                translation: translation,
+                velocity: .zero
+            ) == (distance > 0))
+        }
+    }
+
+    @Test func surfacePanDirectionUsesVelocityForAxisAndEdge() {
+        let hiddenRight: Set<MangaPagedImageSurfaceHorizontalEdge> = [.right]
+
+        #expect(MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: hiddenRight,
+            translation: CGSize(width: 40, height: 0),
+            velocity: CGSize(width: -80, height: 0)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: hiddenRight,
+            translation: CGSize(width: -40, height: 0),
+            velocity: CGSize(width: 2, height: 80)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: hiddenRight,
+            translation: CGSize(width: 0, height: 40),
+            velocity: .zero
+        ))
+
+        #expect(MangaPagedSurfaceDragIntent.physicalEdge(
+            forPanTranslation: CGSize(width: 40, height: 0),
+            velocity: CGSize(width: -80, height: 80)
+        ) == nil)
+    }
+
+    @Test func surfacePanIsDisabledWhenAnUnzoomedPageHasNothingToPan() {
+        #expect(MangaPagedSurfaceDragIntent.isSurfacePanEnabled(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: [.right]
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.isSurfacePanEnabled(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: []
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: [],
+            translation: CGSize(width: -40, height: 0)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.isSurfacePanEnabled(
+            isInteractionEnabled: false,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: true,
+            hiddenEdges: [.left, .right]
+        ))
+    }
+
+    @Test func unzoomedSurfacePanBeginsOnlyTowardAHiddenPhysicalEdge() {
+        let rightEdgeHidden: Set<MangaPagedImageSurfaceHorizontalEdge> = [.right]
+        let leftEdgeHidden: Set<MangaPagedImageSurfaceHorizontalEdge> = [.left]
+
+        #expect(MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: rightEdgeHidden,
+            translation: CGSize(width: -40, height: 2)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: rightEdgeHidden,
+            translation: CGSize(width: 40, height: 2)
+        ))
+        #expect(MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: leftEdgeHidden,
+            translation: CGSize(width: 40, height: 2)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: [.left, .right],
+            translation: CGSize(width: 20, height: 24)
+        ))
+        #expect(!MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: true,
+            isZoomActive: false,
+            hiddenEdges: rightEdgeHidden,
+            translation: CGSize(width: 0, height: 0)
+        ))
+    }
+
+    @Test func zoomedSurfacePanOwnsDragRegardlessOfDirection() {
+        #expect(MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+            isInteractionEnabled: true,
+            allowsUnzoomedSurfacePan: false,
+            isZoomActive: true,
+            hiddenEdges: [],
+            translation: CGSize(width: 2, height: 30)
+        ))
     }
 
     @Test func surfaceDragIntentPreservesUnzoomedOffsetWhenInteractionDisables() {
@@ -173,47 +340,154 @@ struct MangaPagedImageSurfaceLayoutTests {
         #expect(!MangaPagedSurfaceEdgeInteraction.shouldRevealHiddenContent(on: .left, hiddenEdges: hiddenEdges))
         #expect(MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: true,
+            allowsUnzoomedSurfacePan: false,
             isZoomActive: true,
             hiddenEdges: [],
             physicalEdge: nil
         ))
         #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: false,
+            allowsUnzoomedSurfacePan: false,
             isZoomActive: true,
             hiddenEdges: [],
             physicalEdge: nil
         ))
         #expect(MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
-            zoomEnabled: true,
-            isZoomActive: false,
-            hiddenEdges: hiddenEdges,
-            physicalEdge: .right
-        ))
-        #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: false,
+            allowsUnzoomedSurfacePan: true,
             isZoomActive: false,
             hiddenEdges: hiddenEdges,
             physicalEdge: .right
         ))
         #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: true,
+            allowsUnzoomedSurfacePan: true,
             isZoomActive: false,
             hiddenEdges: hiddenEdges,
             physicalEdge: .left
         ))
         #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
+            zoomEnabled: false,
+            allowsUnzoomedSurfacePan: false,
+            isZoomActive: false,
+            hiddenEdges: hiddenEdges,
+            physicalEdge: .right
+        ))
+        #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: true,
+            allowsUnzoomedSurfacePan: true,
             isZoomActive: false,
             hiddenEdges: [],
             physicalEdge: .right
         ))
         #expect(!MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: true,
+            allowsUnzoomedSurfacePan: true,
             isZoomActive: false,
             hiddenEdges: hiddenEdges,
             physicalEdge: nil
         ))
+
+        for zoomEnabled in [false, true] {
+            #expect(MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
+                zoomEnabled: zoomEnabled,
+                allowsUnzoomedSurfacePan: true,
+                isZoomActive: false,
+                hiddenEdges: hiddenEdges,
+                physicalEdge: .right
+            ))
+        }
     }
+
+    #if os(iOS)
+    @MainActor
+    private final class ControlledPanGestureRecognizer: UIPanGestureRecognizer {
+        private let controlledTranslation: CGPoint
+        private let controlledVelocity: CGPoint
+
+        init(translation: CGPoint, velocity: CGPoint) {
+            controlledTranslation = translation
+            controlledVelocity = velocity
+            super.init(target: nil, action: nil)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func translation(in view: UIView?) -> CGPoint {
+            controlledTranslation
+        }
+
+        override func velocity(in view: UIView?) -> CGPoint {
+            controlledVelocity
+        }
+    }
+
+    @MainActor
+    @Test func surfacePanGestureCoordinatorUsesUpdatedDelegateAndCleansUpStates() {
+        var delegateCallCount = 0
+        var changedTranslation: CGSize?
+        var endedTranslation: CGSize?
+        var cancelledCallCount = 0
+        var allowsUnzoomedSurfacePan = true
+        let hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> = [.right]
+
+        let shouldBegin: (CGSize, CGSize) -> Bool = { translation, velocity in
+            delegateCallCount += 1
+            return MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
+                isInteractionEnabled: true,
+                allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
+                isZoomActive: false,
+                hiddenEdges: hiddenEdges,
+                translation: translation,
+                velocity: velocity
+            )
+        }
+
+        let coordinator = MangaPagedSurfacePanGestureCoordinator(
+            shouldBegin: shouldBegin,
+            onChanged: { changedTranslation = $0 },
+            onEnded: { endedTranslation = $0 },
+            onCancelled: { cancelledCallCount += 1 }
+        )
+        let recognizer = ControlledPanGestureRecognizer(
+            translation: CGPoint(x: -2, y: 0),
+            velocity: .zero
+        )
+        recognizer.delegate = coordinator
+
+        #expect(coordinator.gestureRecognizerShouldBegin(recognizer))
+        #expect(delegateCallCount == 1)
+        #expect(coordinator.gestureRecognizer(
+            recognizer,
+            shouldRecognizeSimultaneouslyWith: UIPinchGestureRecognizer()
+        ))
+        #expect(coordinator.gestureRecognizer(
+            recognizer,
+            shouldRecognizeSimultaneouslyWith: UIPanGestureRecognizer()
+        ) == false)
+
+        allowsUnzoomedSurfacePan = false
+        coordinator.update(
+            shouldBegin: shouldBegin,
+            onChanged: { changedTranslation = $0 },
+            onEnded: { endedTranslation = $0 },
+            onCancelled: { cancelledCallCount += 1 }
+        )
+        #expect(!coordinator.gestureRecognizerShouldBegin(recognizer))
+        #expect(delegateCallCount == 2)
+
+        let changed = CGSize(width: -40, height: 3)
+        coordinator.handle(state: .changed, translation: changed)
+        coordinator.handle(state: .ended, translation: changed)
+        coordinator.handle(state: .cancelled, translation: .zero)
+
+        #expect(changedTranslation == changed)
+        #expect(endedTranslation == changed)
+        #expect(cancelledCallCount == 1)
+    }
+    #endif
 
     @Test func fitWidthKeepsFixedPageSurfaceWithVerticalBlankSpace() {
         let layout = MangaPagedImageSurfaceLayout(

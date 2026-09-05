@@ -195,12 +195,21 @@ final class MangaPagedScrollGestureController: NSObject, UIGestureRecognizerDele
         }
         let velocity = recognizer.velocity(in: collectionView)
         let translation = recognizer.translation(in: collectionView)
-        let physicalEdge = MangaPagedSurfaceEdgeInteraction.physicalEdge(
-            horizontalVelocityX: velocity.x,
-            horizontalTranslationX: translation.x
-        )
+        let physicalEdge: MangaPagedImageSurfaceHorizontalEdge?
+        if parent.plan.usesTwoPageSpread {
+            physicalEdge = MangaPagedSurfaceEdgeInteraction.physicalEdge(
+                horizontalVelocityX: velocity.x,
+                horizontalTranslationX: translation.x
+            )
+        } else {
+            physicalEdge = MangaPagedSurfaceDragIntent.physicalEdge(
+                forPanTranslation: CGSize(width: translation.x, height: translation.y),
+                velocity: CGSize(width: velocity.x, height: velocity.y)
+            )
+        }
         return MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: parent.zoomEnabled,
+            allowsUnzoomedSurfacePan: !parent.plan.usesTwoPageSpread,
             isZoomActive: surfaceInteraction.isZoomActive,
             hiddenEdges: surfaceInteraction.hiddenEdges,
             physicalEdge: physicalEdge

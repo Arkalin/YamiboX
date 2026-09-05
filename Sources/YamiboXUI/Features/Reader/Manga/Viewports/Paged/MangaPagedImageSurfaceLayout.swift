@@ -79,15 +79,62 @@ enum MangaPageLongPressHitTesting {
 }
 
 enum MangaPagedSurfaceDragIntent {
-    static let minimumUnzoomedHorizontalTranslation: CGFloat = 12
+    static func isSurfacePanEnabled(
+        isInteractionEnabled: Bool,
+        allowsUnzoomedSurfacePan: Bool,
+        isZoomActive: Bool,
+        hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>
+    ) -> Bool {
+        guard isInteractionEnabled else { return false }
+        return isZoomActive || (allowsUnzoomedSurfacePan && !hiddenEdges.isEmpty)
+    }
 
-    static func unzoomedHorizontalTranslation(_ translation: CGSize) -> CGSize? {
-        let absoluteWidth = abs(translation.width)
-        guard absoluteWidth >= minimumUnzoomedHorizontalTranslation,
-              absoluteWidth > abs(translation.height) else {
+    static func physicalEdge(
+        forPanTranslation translation: CGSize,
+        velocity: CGSize
+    ) -> MangaPagedImageSurfaceHorizontalEdge? {
+        let direction = if velocity.width != 0 || velocity.height != 0 {
+            velocity
+        } else {
+            translation
+        }
+        guard direction.width != 0,
+              abs(direction.width) > abs(direction.height) else {
             return nil
         }
-        return CGSize(width: translation.width, height: 0)
+        return MangaPagedSurfaceEdgeInteraction.physicalEdge(
+            horizontalVelocityX: direction.width,
+            horizontalTranslationX: 0
+        )
+    }
+
+    static func unzoomedSurfaceTranslation(_ translation: CGSize) -> CGSize {
+        CGSize(width: translation.width, height: 0)
+    }
+
+    static func shouldBeginSurfacePan(
+        isInteractionEnabled: Bool,
+        allowsUnzoomedSurfacePan: Bool,
+        isZoomActive: Bool,
+        hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>,
+        translation: CGSize,
+        velocity: CGSize = .zero
+    ) -> Bool {
+        guard isSurfacePanEnabled(
+            isInteractionEnabled: isInteractionEnabled,
+            allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
+            isZoomActive: isZoomActive,
+            hiddenEdges: hiddenEdges
+        ) else {
+            return false
+        }
+        if isZoomActive {
+            return true
+        }
+        guard let physicalEdge = physicalEdge(forPanTranslation: translation, velocity: velocity) else {
+            return false
+        }
+        return hiddenEdges.contains(physicalEdge)
     }
 
     static func shouldResetOffsetWhenInteractionDisables(zoomScale: CGFloat) -> Bool {
@@ -128,12 +175,14 @@ enum MangaPagedSurfaceEdgeInteraction {
 
     static func shouldDeferPageTurnPanToSurfaceContent(
         zoomEnabled: Bool,
+        allowsUnzoomedSurfacePan: Bool,
         isZoomActive: Bool,
         hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>,
         physicalEdge: MangaPagedImageSurfaceHorizontalEdge?
     ) -> Bool {
         MangaPagedPageTurnPanPolicy.shouldDeferPageTurnPanToSurfaceContent(
             zoomEnabled: zoomEnabled,
+            allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
             isZoomActive: isZoomActive,
             hiddenEdges: hiddenEdges,
             physicalEdge: physicalEdge
@@ -144,13 +193,18 @@ enum MangaPagedSurfaceEdgeInteraction {
 enum MangaPagedPageTurnPanPolicy {
     static func shouldDeferPageTurnPanToSurfaceContent(
         zoomEnabled: Bool,
+        allowsUnzoomedSurfacePan: Bool,
         isZoomActive: Bool,
         hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>,
         physicalEdge: MangaPagedImageSurfaceHorizontalEdge?
     ) -> Bool {
-        guard zoomEnabled else { return false }
-        if isZoomActive { return true }
-        guard let physicalEdge else { return false }
+        if isZoomActive {
+            return zoomEnabled
+        }
+        guard allowsUnzoomedSurfacePan,
+              let physicalEdge else {
+            return false
+        }
         return MangaPagedSurfaceEdgeInteraction.shouldRevealHiddenContent(
             on: physicalEdge,
             hiddenEdges: hiddenEdges
