@@ -5,8 +5,9 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedReaderViewport: UIViewRepresentable {
-    static func dismantleUIView(_ view: MangaPagedReaderCollectionView, coordinator: MangaPagedScrollCoordinator) {
-        view.shouldBeginPanGesture = nil
+    static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
+        (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
+        (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
         coordinator.gestures.input.detach()
         coordinator.interactionRuntime.reset()
     }

@@ -200,6 +200,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             return
         }
         if parent.sequence.usesTwoPageSpread,
+           !animated,
            clampedSelectionIndex != currentSelectionIndex,
            let activeContainerViewController {
             zoom.resetPageCurlSpreadZoom(in: activeContainerViewController, animated: false)
@@ -209,16 +210,22 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         let outgoingViewControllers = pageViewController.viewControllers ?? []
         let shouldPrepareOutgoingPageCurlPages = !parent.sequence.usesTwoPageSpread &&
             clampedSelectionIndex != currentSelectionIndex
+        let generation = interactionRuntime.navigationGeneration
+        let changesSelection = clampedSelectionIndex != currentSelectionIndex
         pageViewController.setViewControllers(
             controllers,
             direction: direction,
             animated: animated
         ) { [weak self] completed in
-            guard let self else { return }
+            guard let self, self.interactionRuntime.navigationGeneration == generation else { return }
             if animated {
                 self.stopPageCurlBackColorRefresh()
             }
             guard !animated || completed else { return }
+            if animated, changesSelection, self.parent.sequence.usesTwoPageSpread,
+               let container = self.activeContainerViewController {
+                self.zoom.resetPageCurlSpreadZoom(in: container, animated: false)
+            }
             if animated, shouldPrepareOutgoingPageCurlPages {
                 self.preparePreviousPageCurlPagesForReuse(outgoingViewControllers)
             }
@@ -282,7 +289,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             onLongPress: { [weak self] page in
                 guard let self else { return }
                 let onPageLongPress = self.parent.onPageLongPress
-                self.callbackScheduler.publish {
+                let generation = self.interactionRuntime.navigationGeneration
+                self.callbackScheduler.publish { [weak self] in
+                    guard self?.interactionRuntime.navigationGeneration == generation else { return }
                     onPageLongPress(page)
                 }
             }

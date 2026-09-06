@@ -350,7 +350,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             onLongPress: { [weak self] page in
                 guard let self else { return }
                 let onPageLongPress = self.parent.onPageLongPress
-                self.callbackScheduler.publish {
+                let generation = self.interactionRuntime.navigationGeneration
+                self.callbackScheduler.publish { [weak self] in
+                    guard self?.interactionRuntime.navigationGeneration == generation else { return }
                     onPageLongPress(page)
                 }
             }
