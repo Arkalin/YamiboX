@@ -5,6 +5,12 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedReaderViewport: UIViewRepresentable {
+    static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
+        (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
+        (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
+        coordinator.gestures.input.detach()
+        coordinator.interactionRuntime.reset()
+    }
     let plan: MangaPagedReadingPlan
     let viewportPlacement: MangaNovelReaderViewportPlacement?
     let settings: MangaReaderSettings
@@ -79,9 +85,9 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
             context.coordinator.updateContentIfNeeded(in: collectionView)
         }
         let gestures = context.coordinator.gestures
-        controlPageTurnBridge.attemptEdgeReveal = { [weak gestures, weak collectionView] delta in
-            guard let gestures, let collectionView else { return false }
-            return gestures.attemptControlPageTurnEdgeReveal(delta: delta, in: collectionView)
+        controlPageTurnBridge.route = { [weak gestures, weak collectionView] step in
+            guard let gestures, let collectionView else { return }
+            gestures.routeControl(step, in: collectionView)
         }
     }
 }
