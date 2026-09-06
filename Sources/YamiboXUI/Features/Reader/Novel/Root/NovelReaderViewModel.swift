@@ -32,6 +32,8 @@ public final class NovelReaderViewModel {
     private let dependencies: NovelReaderDependencies
     @ObservationIgnored private var repository: NovelReaderRepository?
     @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
+    @ObservationIgnored var imagePrefetchCoordinator = NovelReaderImagePrefetchCoordinator()
+    @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
     @ObservationIgnored private var layout: NovelReaderLayout = .zero
     @ObservationIgnored private var latestRequestedLayout: NovelReaderLayout = .zero
@@ -397,10 +399,14 @@ public final class NovelReaderViewModel {
     }
 
     public func handleMemoryPressure() {
+        imagePrefetchSuspendedPosition = novelReaderPresentation.map(NovelReaderImagePrefetchPosition.init)
+        imagePrefetchCoordinator.cancel()
         readingWorkflow?.handleMemoryPressure()
     }
 
     public func close() {
+        imagePrefetchCoordinator.cancel()
+        imagePrefetchSuspendedPosition = nil
         appearanceSettingsApplicationSequence &+= 1
         layoutRequestSequence &+= 1
         latestRequestedLayout = layout
@@ -1013,6 +1019,19 @@ public final class NovelReaderViewModel {
         chromeProgressSnapshot = state.presentation.map(NovelReaderChromeProgressSnapshot.init) ?? .empty
         novelReaderPresentation = state.presentation
         currentStableResumePoint = readingWorkflow?.captureNovelReadingPosition()
+        guard let presentation = state.presentation else {
+            imagePrefetchCoordinator.cancel()
+            imagePrefetchSuspendedPosition = nil
+            return
+        }
+        guard imagePrefetchSuspendedPosition != NovelReaderImagePrefetchPosition(presentation) else { return }
+        imagePrefetchSuspendedPosition = nil
+        imagePrefetchCoordinator.update(sources: NovelReaderImagePrefetchPlan.sources(
+            presentation: presentation,
+            usesTwoPageSpread: isTwoPageSpreadActive,
+            threadID: context.threadID,
+            fallbackAuthorID: context.authorID
+        ))
     }
 
     // Internal (not private): the raw resume-point jump primitive, also used

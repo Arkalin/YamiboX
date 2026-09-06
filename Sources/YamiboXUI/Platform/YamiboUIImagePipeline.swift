@@ -84,21 +84,29 @@ public final class YamiboUIImagePipeline {
         cachedDisplayImage(for: source)?.image
     }
 
-    func image(for source: YamiboImageSource) async throws -> YamiboPlatformImage {
-        try await displayImage(for: source).image
+    func image(
+        for source: YamiboImageSource,
+        priority: ImageRequest.Priority = .normal
+    ) async throws -> YamiboPlatformImage {
+        try await displayImage(for: source, priority: priority).image
     }
 
     func cachedDisplayImage(for source: YamiboImageSource) -> YamiboDisplayImage? {
         pipeline.cache.cachedImage(for: nukeRequest(for: source)).map(YamiboDisplayImage.init(container:))
     }
 
-    func displayImage(for source: YamiboImageSource) async throws -> YamiboDisplayImage {
+    func displayImage(
+        for source: YamiboImageSource,
+        priority: ImageRequest.Priority = .normal
+    ) async throws -> YamiboDisplayImage {
         if let cached = cachedDisplayImage(for: source) {
             return cached
         }
 
         do {
-            let response = try await pipeline.imageTask(with: nukeRequest(for: source)).response
+            var request = nukeRequest(for: source)
+            request.priority = priority
+            let response = try await pipeline.imageTask(with: request).response
             return YamiboDisplayImage(container: response.container)
         } catch {
             throw Self.mapImagePipelineError(error)

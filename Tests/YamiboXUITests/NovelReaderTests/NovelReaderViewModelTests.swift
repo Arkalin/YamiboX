@@ -12,6 +12,121 @@ private typealias NovelTextLayoutFixture = @Sendable (
 ) throws -> NovelTextLayoutResult
 
 final class NovelReaderViewModelTests: XCTestCase {
+    @MainActor
+    func testImagePrefetchFollowsReadingPositionSettingsAndMemoryPressure() async throws {
+        var requested: [String] = []
+        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
+            requested.append($0.url.lastPathComponent)
+        })
+        let images = makeImageDocument(view: 1, maxView: 1, surfaceCount: 12)
+        let document = NovelReaderProjection(
+            threadID: images.threadID, view: 1, maxView: 1,
+            segments: images.segments + [.text("Text remains readable when inline images are disabled.", chapterTitle: nil)]
+        )
+        let model = try await makeModel(
+            documents: [document],
+            imagePrefetchCoordinator: prefetch
+        )
+        defer { model.close() }
+        try await waitFor { await MainActor.run { requested.count == 4 } }
+        XCTAssertEqual(requested, ["1-0.jpg", "1-1.jpg", "1-2.jpg", "1-3.jpg"])
+
+        model.selectSurface(5)
+        try await waitFor { await MainActor.run { requested.count == 9 } }
+        XCTAssertEqual(Array(requested.suffix(5)), ["1-5.jpg", "1-6.jpg", "1-7.jpg", "1-8.jpg", "1-4.jpg"])
+
+        model.handleMemoryPressure()
+        let afterPressure = requested.count
+        model.selectSurface(5)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(requested.count, afterPressure)
+        model.selectSurface(6)
+        try await waitFor { await MainActor.run { requested.count > afterPressure } }
+
+        var settings = model.settings
+        settings.loadsInlineImages = false
+        await model.commitNovelTextAppearance(settings)
+        XCTAssertFalse(model.settings.loadsInlineImages)
+        let disabledCount = requested.count
+        model.selectSurface(0)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(requested.count, disabledCount)
+
+        settings.loadsInlineImages = true
+        settings.readingMode = .vertical
+        await model.commitNovelTextAppearance(settings)
+        try await waitFor { await MainActor.run { requested.count > disabledCount } }
+        let beforeScroll = requested.count
+        model.updateVerticalViewportPosition(surfaceIndex: 10, intraSurfaceProgress: 0.5)
+        try await waitFor { await MainActor.run { requested.count > beforeScroll } }
+        XCTAssertTrue(requested.contains("1-11.jpg"))
+    }
+
+    @MainActor
+    func testImagePrefetchFollowsChapterJumpPrefetchedDocumentAndSpreadLayout() async throws {
+        var requested: [YamiboImageSource] = []
+        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
+            requested.append($0)
+        })
+        let model = try await makeModel(
+            documents: [
+                makeImageDocument(view: 1, maxView: 2, surfaceCount: 12),
+                makeImageDocument(view: 2, maxView: 2, surfaceCount: 12)
+            ],
+            settings: NovelReaderAppearanceSettings(showsTwoPagesInLandscapeOnPad: true),
+            imagePrefetchCoordinator: prefetch
+        )
+        defer { model.close() }
+        try await waitFor { await MainActor.run { requested.count == 4 } }
+        let chapter = try XCTUnwrap(model.chapters.last)
+        model.jumpToChapter(chapter)
+        let jumpRevision = try XCTUnwrap(model.novelReaderPresentation?.revision)
+        try await waitFor { await MainActor.run {
+            requested.contains { $0.url.lastPathComponent == "1-11.jpg" }
+        } }
+        try await waitFor { await MainActor.run { (model.novelReaderPresentation?.revision ?? 0) > jumpRevision } }
+        // Prefetched text is not yet part of the presentation, so its images stay untouched.
+        XCTAssertFalse(requested.contains { $0.url.lastPathComponent.hasPrefix("2-") })
+        await model.loadAdjacent(delta: 1)
+        try await waitFor { await MainActor.run {
+            requested.contains { $0.url.lastPathComponent == "2-3.jpg" }
+        } }
+        let secondPageSource = try XCTUnwrap(requested.first { $0.url.lastPathComponent == "2-0.jpg" })
+        XCTAssertEqual(secondPageSource.refererPageURL, YamiboRoute.threadByID(
+            tid: model.context.threadID, page: 2,
+            authorID: model.novelReaderPresentation?.readingState.authorID, reverse: false
+        ).url)
+        await model.commitNovelTextPresentationEnvironment(isPad: true)
+        await model.commitNovelTextLayout(NovelReaderLayout(width: 1024, height: 768))
+        try await waitFor { await MainActor.run {
+            requested.contains { $0.url.lastPathComponent == "2-7.jpg" }
+        } }
+        XCTAssertTrue(model.isTwoPageSpreadActive)
+    }
+
+    @MainActor
+    func testClosingReaderCancelsImagePrefetchWithoutStartingQueuedImages() async throws {
+        var started = 0
+        var cancelled = 0
+        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { _ in
+            started += 1
+            do {
+                try await Task.sleep(for: .seconds(30))
+            } catch {
+                cancelled += 1
+                throw error
+            }
+        })
+        let model = try await makeModel(
+            documents: [makeImageDocument(view: 1, maxView: 1, surfaceCount: 8)],
+            imagePrefetchCoordinator: prefetch
+        )
+        try await waitFor { await MainActor.run { started == 2 } }
+        model.close()
+        try await waitFor { await MainActor.run { cancelled == 2 } }
+        XCTAssertEqual(started, 2)
+    }
+
     func testPagedPagerIdentityChangesWhenRotationChangesPagedLayout() {
         let portrait = NovelReaderLayout(
             containerSize: CGSize(width: 1032, height: 1376),
@@ -3342,6 +3457,7 @@ private func makeModel(
     forumCacheStore: ForumCacheStore? = nil,
     offlineCacheStore: (any TestOfflineCacheStoring)? = nil,
     seedSourceCaches: Bool = true,
+    imagePrefetchCoordinator: NovelReaderImagePrefetchCoordinator? = nil,
     pagination: @escaping NovelTextLayoutFixture = novelReaderViewModelSegmentPagination
 ) async throws -> NovelReaderViewModel {
     let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
@@ -3389,7 +3505,7 @@ private func makeModel(
         session: session
     )
     let model = await MainActor.run {
-        NovelReaderViewModel(
+        let model = NovelReaderViewModel(
             context: launchContext ?? NovelLaunchContext(
                 threadID: documents[0].threadID,
                 threadTitle: "测试线程",
@@ -3398,6 +3514,10 @@ private func makeModel(
             appContext: appContext,
             pagination: pagination
         )
+        if let imagePrefetchCoordinator {
+            model.imagePrefetchCoordinator = imagePrefetchCoordinator
+        }
+        return model
     }
 
     await model.prepare(layout: NovelReaderLayout(width: 320, height: 568))
@@ -4040,6 +4160,7 @@ private extension NovelReaderViewModel {
             runtimeAdapter: NovelReaderViewModelFixtureRuntimeAdapter(fixture: pagination),
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
+        imagePrefetchCoordinator = NovelReaderImagePrefetchCoordinator(isCached: { _ in true }, load: { _ in })
     }
 }
 
