@@ -237,7 +237,21 @@ package struct NovelReadingSession: Sendable {
 
     @discardableResult
     public mutating func jumpRelativeSurface(_ delta: Int) -> NovelReadingNavigationRequest? {
-        guard delta != 0 else { return nil }
+        if case let .request(request) = turnRelativeSurface(delta) {
+            return request
+        }
+        return nil
+    }
+
+    package enum PageTurnResult: Equatable {
+        case unavailable
+        case moved
+        case request(NovelReadingNavigationRequest)
+        case boundary(ReaderPageBoundary)
+    }
+
+    package mutating func turnRelativeSurface(_ delta: Int) -> PageTurnResult {
+        guard delta != 0, !surfaces.isEmpty else { return .unavailable }
 
         if layoutResult?.viewportIndex.readingMode == .paged, usesPagedSpread, !spreads.isEmpty {
             let targetSpreadIndex = spreadIndex(
@@ -247,46 +261,42 @@ package struct NovelReadingSession: Sendable {
             ) + delta
             if targetSpreadIndex >= 0, targetSpreadIndex < spreads.count {
                 selectSurface(progressSurfaceIndex(forSpreadIndex: targetSpreadIndex, spreads: spreads))
-                return nil
+                return .moved
             }
             if targetSpreadIndex < 0 {
                 let previousView = max(snapshot.currentView - 1, 1)
                 guard previousView < snapshot.currentView else {
-                    selectSurface(progressSurfaceIndex(forSpreadIndex: 0, spreads: spreads))
-                    return nil
+                    return .boundary(.previous)
                 }
-                return .loadView(view: previousView, preferredSurfaceOrdinal: .max, resumePoint: nil)
+                return .request(.loadView(view: previousView, preferredSurfaceOrdinal: .max, resumePoint: nil))
             }
 
             let nextView = min(snapshot.currentView + 1, snapshot.maxView)
             guard nextView > snapshot.currentView else {
-                selectSurface(progressSurfaceIndex(forSpreadIndex: max(spreads.count - 1, 0), spreads: spreads))
-                return nil
+                return .boundary(.next)
             }
-            return .loadView(view: nextView, preferredSurfaceOrdinal: 0, resumePoint: nil)
+            return .request(.loadView(view: nextView, preferredSurfaceOrdinal: 0, resumePoint: nil))
         }
 
         let targetIndex = snapshot.selectedSurfaceOrdinal + delta
         if targetIndex >= 0, targetIndex < surfaces.count {
             selectSurface(targetIndex)
-            return nil
+            return .moved
         }
 
         if targetIndex < 0 {
             let previousView = max(snapshot.currentView - 1, 1)
             guard previousView < snapshot.currentView else {
-                selectSurface(0)
-                return nil
+                return .boundary(.previous)
             }
-            return .loadView(view: previousView, preferredSurfaceOrdinal: .max, resumePoint: nil)
+            return .request(.loadView(view: previousView, preferredSurfaceOrdinal: .max, resumePoint: nil))
         }
 
         let nextView = min(snapshot.currentView + 1, snapshot.maxView)
         guard nextView > snapshot.currentView else {
-            selectSurface(max(surfaces.count - 1, 0))
-            return nil
+            return .boundary(.next)
         }
-        return .loadView(view: nextView, preferredSurfaceOrdinal: 0, resumePoint: nil)
+        return .request(.loadView(view: nextView, preferredSurfaceOrdinal: 0, resumePoint: nil))
     }
 
     public mutating func updateVerticalViewportPosition(surfaceOrdinal: Int, intraSurfaceProgress: Double) {

@@ -34,6 +34,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     let canBoundaryPageTurn: (Int) -> Bool
     let onSelectionChange: (Int) -> Void
     let onBoundaryPageTurn: (Int) -> Void
+    var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderPagedTapZone) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
@@ -150,6 +151,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 canBoundaryPageTurn: parent.canBoundaryPageTurn,
                 onSelectionChange: parent.onSelectionChange,
                 onBoundaryPageTurn: parent.onBoundaryPageTurn,
+                onBoundaryPageTurnRejected: parent.onBoundaryPageTurnRejected,
                 onScrollAnimationRequestConsumed: parent.onScrollAnimationRequestConsumed,
                 pageTurnRestingBackgroundColor: { _ in .clear },
                 pageTurnBackgroundColor: { [parent] traitCollection, overlayAlpha in

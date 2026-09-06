@@ -33,6 +33,7 @@ struct MangaReaderChromeControls: View {
     let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onOpenOriginalPost: () -> Void
     let onJumpToLocalPage: (Int) -> Void
+    var onBottomChromeHeightChange: (CGFloat) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -69,7 +70,8 @@ struct MangaReaderChromeControls: View {
                 isBookmarked: isBookmarked,
                 annotationCapsule: annotationCapsule,
                 onOpenOriginalPost: onOpenOriginalPost,
-                onJumpToLocalPage: onJumpToLocalPage
+                onJumpToLocalPage: onJumpToLocalPage,
+                onHeightChange: onBottomChromeHeightChange
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

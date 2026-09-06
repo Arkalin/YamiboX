@@ -10,6 +10,7 @@ public final class NovelReaderViewModel {
     // exact same writes as before.
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
+    var pageBoundary: ReaderPageBoundary?
     public private(set) var novelReaderPresentation: NovelReaderPresentation?
     public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
     public var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
@@ -779,6 +780,7 @@ public final class NovelReaderViewModel {
     }
 
     public func jumpRelativeSurface(_ delta: Int) async {
+        guard delta != 0, !isLoading, !isNavigatingNovelReaderProjection else { return }
         guard let result = readingWorkflow?.jumpRelativeSurface(delta) else {
             scheduleProgressSync()
             Task {
@@ -786,6 +788,12 @@ public final class NovelReaderViewModel {
             }
             return
         }
+
+        if let boundary = result.boundary {
+            pageBoundary = boundary
+            return
+        }
+        pageBoundary = nil
 
         let direction: ReaderNavigationLinearReadingDirection = delta >= 0 ? .forward : .backward
         syncFromWorkflowState(result.state)
@@ -817,6 +825,13 @@ public final class NovelReaderViewModel {
                 navigation.recordLinearReading(direction: direction)
             }
         }
+    }
+
+    func reportVerticalPageBoundary(_ delta: Int) {
+        guard !isLoading, !isNavigatingNovelReaderProjection,
+              settings.readingMode == .vertical, !novelReaderSurfaces.isEmpty,
+              (delta < 0 && visibleView <= 1) || (delta > 0 && visibleView >= maxView) else { return }
+        pageBoundary = ReaderPageBoundary(delta: delta)
     }
 
     public func jumpToAdjacentChapter(_ delta: Int) {

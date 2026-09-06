@@ -127,6 +127,38 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(started, 2)
     }
 
+    func testTerminalPageTurnsPublishFeedbackWithoutChangingPositionOrHistory() async throws {
+        let model = try await makeModel(documents: [makeDocument(view: 1, maxView: 1, chapterTitles: ["Chapter"])])
+        let before = model.currentSurfaceNumber
+        let canNavigateBack = model.navigation.canNavigateBack
+        await model.jumpRelativeSurface(-1)
+        XCTAssertEqual(model.pageBoundary, .previous)
+        XCTAssertEqual(model.currentSurfaceNumber, before)
+        XCTAssertEqual(model.navigation.canNavigateBack, canNavigateBack)
+        await model.jumpRelativeSurface(-1)
+        XCTAssertEqual(model.pageBoundary, .previous)
+        model.pageBoundary = nil
+        await model.jumpRelativeSurface(-1)
+        XCTAssertEqual(model.pageBoundary?.message, L10n.string("reader.page_boundary.previous"))
+
+        model.jumpToSurface(model.surfaceCount - 1)
+        let last = model.currentSurfaceNumber
+        await model.jumpRelativeSurface(1)
+        XCTAssertEqual(model.pageBoundary, .next)
+        XCTAssertEqual(model.currentSurfaceNumber, last)
+    }
+
+    @MainActor
+    func testVerticalBoundaryFeedbackUsesWebPageLimits() async throws {
+        let model = try await makeModel(
+            documents: [makeDocument(view: 1, maxView: 2, chapterTitles: ["Chapter"])],
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical)
+        )
+        model.reportVerticalPageBoundary(1)
+        XCTAssertNil(model.pageBoundary)
+        model.reportVerticalPageBoundary(-1)
+        XCTAssertEqual(model.pageBoundary, .previous)
+    }
     func testPagedPagerIdentityChangesWhenRotationChangesPagedLayout() {
         let portrait = NovelReaderLayout(
             containerSize: CGSize(width: 1032, height: 1376),
@@ -215,12 +247,14 @@ final class NovelReaderViewModelTests: XCTestCase {
         await model.jumpRelativeSurface(1)
         await MainActor.run {
             XCTAssertEqual(model.currentView, 2)
+            XCTAssertNil(model.pageBoundary)
             XCTAssertEqual(model.currentSurfaceNumber, 1)
         }
 
         await model.jumpRelativeSurface(-1)
         await MainActor.run {
             XCTAssertEqual(model.currentView, 1)
+            XCTAssertNil(model.pageBoundary)
             XCTAssertEqual(model.currentSurfaceNumber, model.surfaceCount)
         }
     }

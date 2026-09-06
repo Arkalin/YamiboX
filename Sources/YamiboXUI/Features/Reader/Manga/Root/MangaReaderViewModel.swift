@@ -114,6 +114,7 @@ public final class MangaReaderViewModel {
     public private(set) var chapterCommentsLoadMoreError: String?
     public private(set) var chapterCommentsRefreshError: String?
     var chapterJumpErrorMessage: String?
+    var pageBoundary: ReaderPageBoundary?
     public private(set) var likedPageIDs: Set<String> = []
     /// Drives the 书签与喜欢 capsule (visibility + combined count).
     public private(set) var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
@@ -146,6 +147,7 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private var committedSettings = MangaReaderSettings()
     @ObservationIgnored private var chapterJumpTask: Task<Void, Never>?
     @ObservationIgnored private var adjacentPrefetchTask: Task<Void, Never>?
+    @ObservationIgnored private var adjacentChapterNavigationCount = 0
     @ObservationIgnored private var readerContentGeneration = 0
     @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
     @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
@@ -464,6 +466,7 @@ public final class MangaReaderViewModel {
             return
         }
 
+        pageBoundary = nil
         adjacentPrefetchTask?.cancel()
         readerContentGeneration += 1
         let previousProgressSnapshot = progressSnapshot(from: presentation)
@@ -524,6 +527,16 @@ public final class MangaReaderViewModel {
             sourcePosition: stableReadingPosition(from: loaded),
             workflow: workflow
         )
+    }
+
+    func reportVerticalPageBoundary(_ delta: Int) {
+        guard abs(delta) == 1, chapterJumpTask == nil, adjacentChapterNavigationCount == 0, let workflow,
+              presentation.settings.readingMode == .vertical,
+              case let .loaded(loaded) = presentation.state,
+              !loaded.pages.isEmpty,
+              let position = stableReadingPosition(from: loaded),
+              !workflow.canJumpToAdjacentChapter(from: position, delta: delta) else { return }
+        pageBoundary = ReaderPageBoundary(delta: delta)
     }
 
     public var currentChapterCommentTarget: ReaderChapterCommentTarget? {
@@ -912,10 +925,16 @@ public final class MangaReaderViewModel {
         sourcePosition: MangaReadingPosition?,
         workflow: MangaReaderWorkflow
     ) async {
+        guard abs(delta) == 1, sourcePosition != nil else { return }
         guard workflow.canJumpToAdjacentChapter(from: sourcePosition, delta: delta) else {
+            guard chapterJumpTask == nil, adjacentChapterNavigationCount == 0 else { return }
+            pageBoundary = ReaderPageBoundary(delta: delta)
             return
         }
 
+        pageBoundary = nil
+        adjacentChapterNavigationCount += 1
+        defer { adjacentChapterNavigationCount -= 1 }
         adjacentPrefetchTask?.cancel()
         readerContentGeneration += 1
         let generation = readerContentGeneration

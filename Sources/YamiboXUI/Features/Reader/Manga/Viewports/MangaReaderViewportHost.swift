@@ -17,6 +17,7 @@ struct MangaReaderPresentationContent: View {
     let canBoundaryPageTurn: (Int, Bool) -> Bool
     let onBoundaryPageTurn: (Int, Bool) -> Void
     let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
+    var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 
@@ -41,6 +42,7 @@ struct MangaReaderPresentationContent: View {
                     canBoundaryPageTurn: canBoundaryPageTurn,
                     onBoundaryPageTurn: onBoundaryPageTurn,
                     onControlScrollEdgeReached: onControlScrollEdgeReached,
+                    onVerticalBoundaryPull: onVerticalBoundaryPull,
                     onPageLongPress: onPageLongPress,
                     onTap: onTap
                 )
@@ -86,6 +88,7 @@ private struct MangaReaderLoadedContent: View {
     let canBoundaryPageTurn: (Int, Bool) -> Bool
     let onBoundaryPageTurn: (Int, Bool) -> Void
     let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
+    var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 
@@ -117,6 +120,7 @@ private struct MangaReaderLoadedContent: View {
                     likedPageIDs: likedPageIDs,
                     onCurrentPageChange: onCurrentPageChange,
                     onControlScrollEdgeReached: onControlScrollEdgeReached,
+                    onVerticalBoundaryPull: onVerticalBoundaryPull,
                     onPageLongPress: onPageLongPress,
                     onTap: onTap
                 )
@@ -151,6 +155,9 @@ private struct MangaReaderLoadedContent: View {
                             onBoundaryPageTurn: { delta in
                                 onBoundaryPageTurn(delta, usesTwoPageSpread)
                             },
+                            onBoundaryPageTurnRejected: { delta in
+                                onBoundaryPageTurn(delta, usesTwoPageSpread)
+                            },
                             onPageLongPress: onPageLongPress,
                             onTap: onTap
                         )
@@ -171,6 +178,9 @@ private struct MangaReaderLoadedContent: View {
                                 canBoundaryPageTurn(delta, usesTwoPageSpread)
                             },
                             onBoundaryPageTurn: { delta in
+                                onBoundaryPageTurn(delta, usesTwoPageSpread)
+                            },
+                            onBoundaryPageTurnRejected: { delta in
                                 onBoundaryPageTurn(delta, usesTwoPageSpread)
                             },
                             onPageLongPress: onPageLongPress,

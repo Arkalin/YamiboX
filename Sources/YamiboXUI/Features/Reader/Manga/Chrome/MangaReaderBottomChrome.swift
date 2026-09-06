@@ -22,6 +22,7 @@ struct MangaReaderBottomChrome: View {
     let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onOpenOriginalPost: () -> Void
     let onJumpToLocalPage: (Int) -> Void
+    var onHeightChange: (CGFloat) -> Void = { _ in }
 
     @State private var horizontalScrubState = ReaderProgressScrubState()
     @State private var activeVerticalProgressPreview: ReaderProgressScrubPreview?
@@ -113,6 +114,7 @@ struct MangaReaderBottomChrome: View {
         .padding(.top, layout.bottomChromeTopPadding)
         .padding(.horizontal, 12)
         .padding(.bottom, layout.bottomPadding(forBottomInset: bottomInset))
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeightChange)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .overlay {
             if let preview = centerProgressPreview {

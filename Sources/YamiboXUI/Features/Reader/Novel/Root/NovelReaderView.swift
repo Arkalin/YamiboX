@@ -226,6 +226,15 @@ public struct NovelReaderView: View {
                 }
             }
             .disabled(hasPresentedOverlay)
+            .transientMessage(
+                loadingOverlayPresentation.isPresented || hasPresentedOverlay
+                    ? nil : model.pageBoundary?.message,
+                bottomPadding: chromeState.showsChrome
+                    ? max(bottomChromeHeight, bottomInset + 210) + 8
+                    : max(bottomInset, 24) + 8
+            ) {
+                model.pageBoundary = nil
+            }
             .allowsHitTesting(!hasPresentedOverlay)
             .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
             .onChange(of: pagedPagerIdentity, initial: true) { _, newValue in
@@ -463,6 +472,9 @@ public struct NovelReaderView: View {
             onBoundaryPageTurn: { delta in
                 Task { await goRelativePage(delta, pagerIdentity: pagerIdentity) }
             },
+            onBoundaryPageTurnRejected: { delta in
+                Task { await goRelativePage(delta, pagerIdentity: pagerIdentity) }
+            },
             onPageTapZone: { zone in
                 handlePagedTapZone(zone, pagerIdentity: pagerIdentity)
             },
@@ -514,6 +526,7 @@ public struct NovelReaderView: View {
                     canBoundaryPageTurn: bindings.canBoundaryPageTurn,
                     onSelectionChange: bindings.onSelectionChange,
                     onBoundaryPageTurn: bindings.onBoundaryPageTurn,
+                    onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
                     onPageTapZone: bindings.onPageTapZone,
                     onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
                     onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
@@ -543,6 +556,7 @@ public struct NovelReaderView: View {
                     canBoundaryPageTurn: bindings.canBoundaryPageTurn,
                     onSelectionChange: bindings.onSelectionChange,
                     onBoundaryPageTurn: bindings.onBoundaryPageTurn,
+                    onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
                     onPageTapZone: bindings.onPageTapZone,
                     onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
                     onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
@@ -1464,7 +1478,12 @@ public struct NovelReaderView: View {
     }
 
     private func handleVerticalBoundaryPullRelease(_ direction: NovelReaderVerticalBoundaryDirection) async {
-        guard canNavigateVerticalBoundary(direction), !isHandlingVerticalBoundaryPull else { return }
+        guard !isHandlingVerticalBoundaryPull else { return }
+        guard canNavigateVerticalBoundary(direction) else {
+            model.reportVerticalPageBoundary(direction == .next ? 1 : -1)
+            return
+        }
+        model.pageBoundary = nil
         isHandlingVerticalBoundaryPull = true
         verticalBoundaryPullState = .idle
         cancelVerticalRestoreForUserScroll()

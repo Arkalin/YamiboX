@@ -21,6 +21,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int) -> Bool
     let onBoundaryPageTurn: (Int) -> Void
+    var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 

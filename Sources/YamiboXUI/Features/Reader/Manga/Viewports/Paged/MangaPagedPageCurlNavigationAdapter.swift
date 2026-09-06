@@ -36,7 +36,7 @@ final class MangaPagedPageCurlNavigationAdapter {
                 let zone = PhysicalZone.at(point, in: container.view.bounds)
                 let request: MangaNavigationRequest = role == .tap ? .tap(zone) :
                     .doubleTap(zone: zone, location: self.surfaceLocation(point, in: container))
-                self.route(request, in: container, allowsBoundary: false)
+                self.route(request, in: container)
             case .navigationPan:
                 if let pan = recognizer as? UIPanGestureRecognizer { self.finishBoundaryPan(pan) }
             case .surfacePan:
@@ -83,7 +83,7 @@ final class MangaPagedPageCurlNavigationAdapter {
     }
 
     func routeControl(_ step: NavigationStep, in container: MangaPagedPageCurlContainerViewController) {
-        route(.control(step), in: container, allowsBoundary: true)
+        route(.control(step), in: container)
     }
 
     private func permits(_ recognizer: UIGestureRecognizer) -> Bool {
@@ -102,7 +102,7 @@ final class MangaPagedPageCurlNavigationAdapter {
         let step = configuration.direction.step(toward: edge)
         if recognizer === input.navigationPan {
             let target = coordinator.parent.selectionIndex + step.rawValue
-            return (target < 0 || target >= coordinator.parent.sequence.pageCount) && coordinator.parent.canBoundaryPageTurn(step.rawValue)
+            return coordinator.parent.sequence.pageCount > 0 && (target < 0 || target >= coordinator.parent.sequence.pageCount)
         }
         guard let pageController = coordinator.activePageViewController,
               pageController.gestureRecognizers.contains(where: { $0 === recognizer }) else { return false }
@@ -120,12 +120,11 @@ final class MangaPagedPageCurlNavigationAdapter {
         // Admission was decided at began. Completion retains the native distance/velocity thresholds.
         guard let delta = ReaderPagedBoundaryPageTurn.boundaryDelta(selectionIndex: parent.selectionIndex,
             itemCount: parent.sequence.pageCount, translation: recognizer.translation(in: view), velocity: recognizer.velocity(in: view),
-            viewportWidth: view.bounds.width, horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection,
-            canBoundaryPageTurn: parent.canBoundaryPageTurn) else { return }
+            viewportWidth: view.bounds.width, horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection) else { return }
         publishBoundary(delta)
     }
 
-    private func route(_ request: MangaNavigationRequest, in container: MangaPagedPageCurlContainerViewController, allowsBoundary: Bool) {
+    private func route(_ request: MangaNavigationRequest, in container: MangaPagedPageCurlContainerViewController) {
         guard let coordinator else { return }
         let decision = withAnimation(.easeOut(duration: 0.2)) {
             coordinator.interactionRuntime.handleNavigation(request, surface: currentSurface, configuration: configuration)
@@ -135,7 +134,7 @@ final class MangaPagedPageCurlNavigationAdapter {
             let step = configuration.direction.step(toward: edge)
             let target = coordinator.parent.selectionIndex + step.rawValue
             if target < 0 || target >= coordinator.parent.sequence.pageCount {
-                if allowsBoundary && coordinator.parent.canBoundaryPageTurn(step.rawValue) { publishBoundary(step.rawValue) }
+                if coordinator.parent.sequence.pageCount > 0 { publishBoundary(step.rawValue) }
             } else {
                 coordinator.animateAdjacentSelection(delta: step.rawValue, in: container.pageViewController)
             }
@@ -152,7 +151,11 @@ final class MangaPagedPageCurlNavigationAdapter {
         let generation = coordinator.interactionRuntime.navigationGeneration
         coordinator.callbackScheduler.publish { [weak coordinator] in
             guard let coordinator, coordinator.interactionRuntime.navigationGeneration == generation else { return }
-            coordinator.parent.onBoundaryPageTurn(delta)
+            if coordinator.parent.canBoundaryPageTurn(delta) {
+                coordinator.parent.onBoundaryPageTurn(delta)
+            } else {
+                coordinator.parent.onBoundaryPageTurnRejected(delta)
+            }
         }
     }
 

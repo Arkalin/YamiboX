@@ -1047,6 +1047,37 @@ final class NovelReadingSessionTests: XCTestCase {
         XCTAssertEqual(request, .loadView(view: 2, preferredSurfaceOrdinal: 0, resumePoint: nil))
         XCTAssertEqual(session.snapshot.currentView, 1)
     }
+
+    func testPageTurnResultsDistinguishTerminalBoundariesWithoutChangingPosition() {
+        for usesSpread in [false, true] {
+            let document = makeNovelDocument(view: 1, maxView: 1, segments: [("Chapter", "Body")])
+            var session = NovelReadingSession(
+                document: document,
+                settings: NovelReaderAppearanceSettings(showsTwoPagesInLandscapeOnPad: usesSpread, readingMode: .paged),
+                layout: NovelReaderLayout(width: 1024, height: 768),
+                usesPadPresentation: usesSpread
+            )
+            let before = session.snapshot
+            XCTAssertEqual(session.turnRelativeSurface(-1), .boundary(.previous))
+            XCTAssertEqual(session.snapshot, before)
+            XCTAssertEqual(session.turnRelativeSurface(1), .boundary(.next))
+            XCTAssertEqual(session.snapshot, before)
+            XCTAssertEqual(session.turnRelativeSurface(0), .unavailable)
+        }
+    }
+
+    func testPageTurnResultDistinguishesWithinDocumentMovementAndLoading() {
+        let document = makeNovelDocument(view: 2, maxView: 3, segments: [("Chapter", "Body text")])
+        var session = NovelReadingSession(
+            document: document,
+            settings: NovelReaderAppearanceSettings(readingMode: .paged),
+            layout: NovelReaderLayout(width: 320, height: 568),
+            pagination: textRangePagination(defaultRanges: [0..<4, 4..<9], repaginatedRanges: [0..<4, 4..<9])
+        )
+        XCTAssertEqual(session.turnRelativeSurface(-1), .request(.loadView(view: 1, preferredSurfaceOrdinal: .max, resumePoint: nil)))
+        XCTAssertEqual(session.turnRelativeSurface(1), .moved)
+        XCTAssertEqual(session.turnRelativeSurface(1), .request(.loadView(view: 3, preferredSurfaceOrdinal: 0, resumePoint: nil)))
+    }
 }
 
 // makeNovelDocument(view:maxView:segments:) 已收敛到 YamiboXTestSupport
@@ -1289,4 +1320,3 @@ private func textRangePagination(
         )
     }
 }
-

@@ -150,7 +150,7 @@ struct ReaderPagedBoundaryPageTurn {
         translation: CGPoint,
         velocity: CGPoint,
         viewportWidth: CGFloat,
-        canBoundaryPageTurn: (Int) -> Bool
+        canBoundaryPageTurn: (Int) -> Bool = { _ in true }
     ) -> Int? {
         boundaryDelta(
             selectionIndex: selectionIndex,
@@ -170,7 +170,7 @@ struct ReaderPagedBoundaryPageTurn {
         velocity: CGPoint,
         viewportWidth: CGFloat,
         horizontalNavigationDirection: ReaderPagedHorizontalNavigationDirection,
-        canBoundaryPageTurn: (Int) -> Bool
+        canBoundaryPageTurn: (Int) -> Bool = { _ in true }
     ) -> Int? {
         guard itemCount > 0,
               let physicalDelta = horizontalDelta(
@@ -332,6 +332,7 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
     var canBoundaryPageTurn: (Int) -> Bool
     var onSelectionChange: (Int) -> Void
     var onBoundaryPageTurn: (Int) -> Void
+    var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     var onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     var pageTurnRestingBackgroundColor: (UITraitCollection) -> UIColor
     var pageTurnBackgroundColor: (UITraitCollection, CGFloat) -> UIColor
@@ -571,8 +572,7 @@ final class ReaderPagedPagingDriver {
             translation: translation,
             velocity: velocity,
             viewportWidth: view.bounds.width,
-            horizontalNavigationDirection: inputs.horizontalNavigationDirection,
-            canBoundaryPageTurn: inputs.canBoundaryPageTurn
+            horizontalNavigationDirection: inputs.horizontalNavigationDirection
         ) else {
             return false
         }
@@ -717,9 +717,12 @@ final class ReaderPagedPagingDriver {
         )
     }
 
-    private func publishBoundaryPageTurnIfPossible(_ delta: Int, inputs: ReaderPagedPagingInputs) {
-        guard inputs.canBoundaryPageTurn(delta) else { return }
-        let onBoundaryPageTurn = inputs.onBoundaryPageTurn
+    func publishBoundaryPageTurnIfPossible(_ delta: Int, inputs: ReaderPagedPagingInputs) {
+        guard inputs.itemCount > 0, abs(delta) == 1 else { return }
+        let targetIndex = inputs.selectionIndex + delta
+        guard targetIndex < 0 || targetIndex >= inputs.itemCount else { return }
+        let onBoundaryPageTurn = inputs.canBoundaryPageTurn(delta)
+            ? inputs.onBoundaryPageTurn : inputs.onBoundaryPageTurnRejected
         callbackScheduler.publish {
             onBoundaryPageTurn(delta)
         }
