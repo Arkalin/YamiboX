@@ -195,25 +195,10 @@ final class MangaPagedScrollGestureController: NSObject, UIGestureRecognizerDele
         }
         let velocity = recognizer.velocity(in: collectionView)
         let translation = recognizer.translation(in: collectionView)
-        let physicalEdge: MangaPagedImageSurfaceHorizontalEdge?
-        if parent.plan.usesTwoPageSpread {
-            physicalEdge = MangaPagedSurfaceEdgeInteraction.physicalEdge(
-                horizontalVelocityX: velocity.x,
-                horizontalTranslationX: translation.x
-            )
-        } else {
-            physicalEdge = MangaPagedSurfaceDragIntent.physicalEdge(
-                forPanTranslation: CGSize(width: translation.x, height: translation.y),
-                velocity: CGSize(width: velocity.x, height: velocity.y)
-            )
-        }
-        return MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
-            zoomEnabled: parent.zoomEnabled,
-            allowsUnzoomedSurfacePan: !parent.plan.usesTwoPageSpread,
-            isZoomActive: surfaceInteraction.isZoomActive,
-            hiddenEdges: surfaceInteraction.hiddenEdges,
-            physicalEdge: physicalEdge
-        )
+        return surfaceInteraction.runtime.decision(.pan(
+            translation: CGSize(width: translation.x, height: translation.y),
+            velocity: CGSize(width: velocity.x, height: velocity.y)
+        )) == .panImage
     }
 
     /// Non-touch equivalent of the edge-zone tap check in `handleTap`: `delta`

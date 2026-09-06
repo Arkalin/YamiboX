@@ -313,17 +313,10 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         }
         let velocity = recognizer.velocity(in: pageViewController.view)
         let translation = recognizer.translation(in: pageViewController.view)
-        let physicalEdge = MangaPagedSurfaceDragIntent.physicalEdge(
-            forPanTranslation: CGSize(width: translation.x, height: translation.y),
+        return surfaceInteraction.runtime.decision(.pan(
+            translation: CGSize(width: translation.x, height: translation.y),
             velocity: CGSize(width: velocity.x, height: velocity.y)
-        )
-        return MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
-            zoomEnabled: coordinator.parent.zoomEnabled,
-            allowsUnzoomedSurfacePan: true,
-            isZoomActive: surfaceInteraction.isZoomActive,
-            hiddenEdges: surfaceInteraction.hiddenEdges,
-            physicalEdge: physicalEdge
-        )
+        )) == .panImage
     }
 
     private enum PageCurlPanDirection {

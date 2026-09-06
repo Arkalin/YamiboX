@@ -8,6 +8,7 @@ import UIKit
 final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     var parent: MangaPagedPageCurlReaderViewport
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
+    let interactionRuntime = MangaPagedInteractionRuntime()
     private var selectionResolver = MangaPagedPageCurlSelectionResolver()
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var currentSelectionIndex: Int?
@@ -44,6 +45,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         activePageViewController = pageViewController
         let didChangeContentIdentity = contentIdentity != nextContentIdentity
         if didChangeContentIdentity {
+            interactionRuntime.reset()
             pageSurfaceInteractions = [:]
             pageCurlSurfaceInteractionIdentity = nil
             pageCurlPageAppearanceGenerations = [:]
@@ -317,7 +319,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         if let interaction = pageSurfaceInteractions[page.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction()
+        let interaction = MangaPagedReaderPageSurfaceInteraction(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
         pageSurfaceInteractions[page.id] = interaction
         return interaction
     }

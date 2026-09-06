@@ -4,298 +4,99 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
+/// Backend adapter: UIKit spread transforms use the same transaction as SwiftUI spreads.
 @MainActor
 final class MangaPagedPageCurlZoomController {
     private unowned let coordinator: MangaPagedPageCurlCoordinator
-
-    private var pageCurlSpreadHiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> = []
-    private var pageCurlSteadyScale: CGFloat = 1
-    private var pageCurlGestureScale: CGFloat = 1
-    private var pageCurlSteadyUserOffset: CGSize = .zero
-    private var pageCurlGestureUserOffset: CGSize = .zero
-    private var pageCurlPinchStartScale: CGFloat?
-
-    private var parent: MangaPagedPageCurlReaderViewport {
-        coordinator.parent
-    }
-
-    private var pageCurlZoomScale: CGFloat {
-        MangaPageZoomPolicy.clampedScale(pageCurlSteadyScale * pageCurlGestureScale)
-    }
+    private let runtime: MangaSurfaceRuntime
+    private let registry = MangaSurfaceGestureRegistry()
+    private lazy var panInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pan)
+    private lazy var pinchInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pinch)
 
     init(coordinator: MangaPagedPageCurlCoordinator) {
         self.coordinator = coordinator
+        runtime = coordinator.interactionRuntime.surface(SurfaceID(value: "curl-spread"))
     }
 
     func handleSpreadPinch(_ recognizer: UIPinchGestureRecognizer) {
-        guard let containerViewController = coordinator.activeContainerViewController,
-              isPageCurlSpreadZoomInteractionEnabled(in: containerViewController) else {
-            return
-        }
-        switch recognizer.state {
-        case .began:
-            pageCurlPinchStartScale = pageCurlSteadyScale
-        case .changed:
-            let startScale = pageCurlPinchStartScale ?? pageCurlSteadyScale
-            let targetScale = MangaPageZoomPolicy.clampedScale(startScale * recognizer.scale)
-            pageCurlGestureScale = targetScale / max(pageCurlSteadyScale, 0.001)
-            clampPageCurlSteadyUserOffset(in: containerViewController, scale: targetScale)
-            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
-        case .ended, .cancelled, .failed:
-            let startScale = pageCurlPinchStartScale ?? pageCurlSteadyScale
-            let targetScale = MangaPageZoomPolicy.clampedScale(startScale * recognizer.scale)
-            pageCurlPinchStartScale = nil
-            pageCurlSteadyScale = targetScale
-            pageCurlGestureScale = 1
-            if MangaPageZoomPolicy.isActive(targetScale) {
-                clampPageCurlSteadyUserOffset(in: containerViewController)
-                applyPageCurlSpreadZoomTransform(in: containerViewController, animated: true)
-            } else {
-                resetPageCurlSpreadZoom(in: containerViewController, animated: true)
-            }
-        default:
-            break
-        }
+        pinchInput.handle(recognizer, localTranslation: nil)
+        render(animated: false)
     }
 
     func handleSpreadPan(_ recognizer: UIPanGestureRecognizer) {
-        guard let containerViewController = coordinator.activeContainerViewController,
-              isPageCurlSpreadPanEnabled(in: containerViewController) else {
-            pageCurlGestureUserOffset = .zero
-            return
-        }
-        let translation = recognizer.translation(in: containerViewController.view)
-        switch recognizer.state {
-        case .began, .changed:
-            let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlZoomScale)
-            let proposed = CGSize(
-                width: pageCurlSteadyUserOffset.width + translation.x,
-                height: pageCurlSteadyUserOffset.height + translation.y
-            )
-            let clamped = layout.clampedUserOffset(proposed)
-            pageCurlGestureUserOffset = CGSize(
-                width: clamped.width - pageCurlSteadyUserOffset.width,
-                height: clamped.height - pageCurlSteadyUserOffset.height
-            )
-            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
-        case .ended, .cancelled, .failed:
-            let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlSteadyScale)
-            let proposed = CGSize(
-                width: pageCurlSteadyUserOffset.width + translation.x,
-                height: pageCurlSteadyUserOffset.height + translation.y
-            )
-            pageCurlSteadyUserOffset = layout.clampedUserOffset(proposed)
-            pageCurlGestureUserOffset = .zero
-            applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
-        default:
-            break
-        }
+        panInput.handle(recognizer, localTranslation: recognizer.translation(in: coordinator.activeContainerViewController?.view))
+        render(animated: false)
     }
 
-    func pageCurlContainerDidLayout(_ containerViewController: MangaPagedPageCurlContainerViewController) {
-        guard parent.sequence.usesTwoPageSpread else {
-            resetPageCurlSpreadZoom(in: containerViewController, animated: false)
-            return
-        }
-        clampPageCurlSteadyUserOffset(in: containerViewController)
-        applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
+    func pageCurlContainerDidLayout(_ container: MangaPagedPageCurlContainerViewController) {
+        updatePageCurlSpreadZoomAvailability(in: container, animated: false)
     }
 
-    func updatePageCurlSpreadZoomAvailability(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        animated: Bool
-    ) {
-        guard isPageCurlSpreadZoomInteractionEnabled(in: containerViewController) else {
-            resetPageCurlSpreadZoom(in: containerViewController, animated: animated)
-            return
+    func updatePageCurlSpreadZoomAvailability(in container: MangaPagedPageCurlContainerViewController, animated: Bool) {
+        let parent = coordinator.parent
+        let generation = runtime.generation
+        runtime.configure(MangaInteractionConfiguration(chromeVisible: parent.isChromeVisible,
+            zoomEnabled: parent.zoomEnabled && parent.sequence.usesTwoPageSpread, allowsUnzoomedPan: false),
+            geometry: .spread(viewport: container.view.bounds.size), imageLoaded: parent.sequence.usesTwoPageSpread &&
+                coordinator.pageSurfaceInteractions.values.contains { $0.runtime.imageLoaded })
+        if generation != runtime.generation {
+            let gestures = coordinator.gestures
+            for recognizer in [gestures.spreadPanGesture, gestures.spreadPinchGesture] as [UIGestureRecognizer] {
+                recognizer.isEnabled = false
+            }
         }
-        clampPageCurlSteadyUserOffset(in: containerViewController)
-        applyPageCurlSpreadZoomTransform(in: containerViewController, animated: false)
+        render(animated: animated)
     }
 
-    func consumePageCurlSpreadEdgeTap(
-        for zone: ReaderPagedTapZone,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> Bool {
-        guard parent.sequence.usesTwoPageSpread,
-              let physicalEdge = MangaPagedSurfaceEdgeInteraction.physicalEdge(forTapZone: zone),
-              MangaPagedSurfaceEdgeInteraction.shouldRevealHiddenContent(
-                  on: physicalEdge,
-                  hiddenEdges: pageCurlSpreadHiddenEdges
-              ) else {
-            return false
-        }
-        revealPageCurlSpreadHiddenContent(on: physicalEdge, in: containerViewController)
+    func consumePageCurlSpreadEdgeTap(for zone: ReaderPagedTapZone, in container: MangaPagedPageCurlContainerViewController) -> Bool {
+        guard coordinator.parent.sequence.usesTwoPageSpread,
+              let edge = MangaPagedSurfaceEdgeInteraction.physicalEdge(forTapZone: zone),
+              runtime.decision(.edge(edge)) == .reveal(edge) else { return false }
+        runtime.perform(.edge(edge))
+        render(animated: true)
         return true
     }
 
-    func shouldDeferPageCurlPanToSpreadContent(
-        _ recognizer: UIPanGestureRecognizer,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> Bool {
-        guard parent.sequence.usesTwoPageSpread else { return false }
-        let velocity = recognizer.velocity(in: containerViewController.view)
-        let translation = recognizer.translation(in: containerViewController.view)
-        let physicalEdge = MangaPagedSurfaceEdgeInteraction.physicalEdge(
-            horizontalVelocityX: velocity.x,
-            horizontalTranslationX: translation.x
-        )
-        return MangaPagedSurfaceEdgeInteraction.shouldDeferPageTurnPanToSurfaceContent(
-            zoomEnabled: parent.zoomEnabled,
-            allowsUnzoomedSurfacePan: false,
-            isZoomActive: MangaPageZoomPolicy.isActive(pageCurlZoomScale),
-            hiddenEdges: pageCurlSpreadHiddenEdges,
-            physicalEdge: physicalEdge
-        )
+    func shouldDeferPageCurlPanToSpreadContent(_ recognizer: UIPanGestureRecognizer,
+        in container: MangaPagedPageCurlContainerViewController) -> Bool {
+        guard coordinator.parent.sequence.usesTwoPageSpread else { return false }
+        let translation = recognizer.translation(in: container.view)
+        let velocity = recognizer.velocity(in: container.view)
+        return runtime.decision(.pan(translation: CGSize(width: translation.x, height: translation.y),
+            velocity: CGSize(width: velocity.x, height: velocity.y))) == .panImage
     }
 
-    func togglePageCurlSpreadZoom(
-        at location: CGPoint,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) {
-        if MangaPageZoomPolicy.isZoomedForDoubleTapReset(pageCurlSteadyScale) {
-            resetPageCurlSpreadZoom(in: containerViewController, animated: true)
-        } else {
-            zoomInPageCurlSpread(to: location, in: containerViewController)
-        }
+    func togglePageCurlSpreadZoom(at location: CGPoint, in container: MangaPagedPageCurlContainerViewController) {
+        runtime.perform(.doubleTap(location))
+        render(animated: true)
     }
 
-    func resetPageCurlSpreadZoom(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        animated: Bool
-    ) {
-        pageCurlSteadyScale = 1
-        pageCurlGestureScale = 1
-        pageCurlSteadyUserOffset = .zero
-        pageCurlGestureUserOffset = .zero
-        pageCurlPinchStartScale = nil
-        applyPageCurlSpreadZoomTransform(in: containerViewController, animated: animated)
+    func resetPageCurlSpreadZoom(in container: MangaPagedPageCurlContainerViewController, animated: Bool) {
+        runtime.invalidate(reset: true)
+        render(animated: animated)
     }
 
-    func isPageCurlSpreadZoomInteractionEnabled(
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> Bool {
-        parent.sequence.usesTwoPageSpread &&
-            parent.zoomEnabled &&
-            !parent.isChromeVisible &&
-            containerViewController.view.bounds.width > 0 &&
-            containerViewController.view.bounds.height > 0
+    func isPageCurlSpreadZoomInteractionEnabled(in container: MangaPagedPageCurlContainerViewController) -> Bool {
+        coordinator.parent.sequence.usesTwoPageSpread && coordinator.parent.zoomEnabled &&
+            !coordinator.parent.isChromeVisible && container.view.bounds.width > 0 && container.view.bounds.height > 0 &&
+            coordinator.pageSurfaceInteractions.values.contains { $0.runtime.imageLoaded }
     }
 
-    func isPageCurlSpreadPanEnabled(
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> Bool {
-        isPageCurlSpreadZoomInteractionEnabled(in: containerViewController) &&
-            MangaPageZoomPolicy.isActive(pageCurlZoomScale)
+    func isPageCurlSpreadPanEnabled(in container: MangaPagedPageCurlContainerViewController) -> Bool {
+        isPageCurlSpreadZoomInteractionEnabled(in: container) && (runtime.isZoomActive || runtime.isManipulating)
     }
 
-    private func zoomInPageCurlSpread(
-        to location: CGPoint,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) {
-        let targetScale = MangaPageZoomPolicy.doubleTapTargetScale
-        let targetLayout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: targetScale)
-        pageCurlSteadyScale = targetScale
-        pageCurlGestureScale = 1
-        pageCurlSteadyUserOffset = targetLayout.userOffsetAnchoring(location)
-        pageCurlGestureUserOffset = .zero
-        applyPageCurlSpreadZoomTransform(in: containerViewController, animated: true)
-    }
-
-    private func revealPageCurlSpreadHiddenContent(
-        on edge: MangaPagedImageSurfaceHorizontalEdge,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) {
-        let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlZoomScale)
-        let userOffset = proposedPageCurlSpreadUserOffset(layout: layout)
-        guard let targetUserOffset = layout.userOffsetRevealingContent(on: edge, fromUserOffset: userOffset) else {
-            updatePageCurlSpreadHiddenEdges(in: containerViewController)
-            return
-        }
-        pageCurlSteadyUserOffset = targetUserOffset
-        pageCurlGestureUserOffset = .zero
-        applyPageCurlSpreadZoomTransform(in: containerViewController, animated: true)
-    }
-
-    private func clampPageCurlSteadyUserOffset(
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) {
-        clampPageCurlSteadyUserOffset(in: containerViewController, scale: pageCurlSteadyScale)
-    }
-
-    private func clampPageCurlSteadyUserOffset(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        scale: CGFloat
-    ) {
-        let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: scale)
-        pageCurlSteadyUserOffset = layout.clampedUserOffset(pageCurlSteadyUserOffset)
-        pageCurlGestureUserOffset = .zero
-    }
-
-    private func applyPageCurlSpreadZoomTransform(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        animated: Bool
-    ) {
-        let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlZoomScale)
-        let userOffset = proposedPageCurlSpreadUserOffset(layout: layout)
-        let displayOffset = layout.displayOffset(forUserOffset: userOffset)
-        let pageViewController = containerViewController.pageViewController
+    private func render(animated: Bool) {
+        guard let container = coordinator.activeContainerViewController else { return }
+        let transform = runtime.transform
         let updates = {
-            pageViewController.view.transform = CGAffineTransform(translationX: displayOffset.width, y: displayOffset.height).scaledBy(
-                x: self.pageCurlZoomScale,
-                y: self.pageCurlZoomScale
-            )
+            container.pageViewController.view.transform = CGAffineTransform(
+                translationX: transform.offset.width, y: transform.offset.height)
+                .scaledBy(x: transform.scale, y: transform.scale)
         }
-        if animated {
-            UIView.animate(
-                withDuration: 0.2,
-                delay: 0,
-                options: [.curveEaseOut, .allowUserInteraction],
-                animations: updates
-            )
-        } else {
-            updates()
-        }
-        pageCurlSpreadHiddenEdges = hiddenPageCurlSpreadHorizontalEdges(layout: layout, userOffset: userOffset)
-        coordinator.gestures.updatePageCurlContainerGestureState(in: containerViewController)
-    }
-
-    private func updatePageCurlSpreadHiddenEdges(
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) {
-        let layout = pageCurlSpreadSurfaceLayout(in: containerViewController, scale: pageCurlZoomScale)
-        let userOffset = proposedPageCurlSpreadUserOffset(layout: layout)
-        pageCurlSpreadHiddenEdges = hiddenPageCurlSpreadHorizontalEdges(layout: layout, userOffset: userOffset)
-    }
-
-    private func proposedPageCurlSpreadUserOffset(layout: MangaPagedSpreadSurfaceZoomLayout) -> CGSize {
-        layout.clampedUserOffset(
-            CGSize(
-                width: pageCurlSteadyUserOffset.width + pageCurlGestureUserOffset.width,
-                height: pageCurlSteadyUserOffset.height + pageCurlGestureUserOffset.height
-            )
-        )
-    }
-
-    private func hiddenPageCurlSpreadHorizontalEdges(
-        layout: MangaPagedSpreadSurfaceZoomLayout,
-        userOffset: CGSize
-    ) -> Set<MangaPagedImageSurfaceHorizontalEdge> {
-        Set(
-            MangaPagedImageSurfaceHorizontalEdge.allCases.filter { edge in
-                layout.hasHiddenContent(on: edge, fromUserOffset: userOffset)
-            }
-        )
-    }
-
-    private func pageCurlSpreadSurfaceLayout(
-        in containerViewController: MangaPagedPageCurlContainerViewController,
-        scale: CGFloat
-    ) -> MangaPagedSpreadSurfaceZoomLayout {
-        MangaPagedSpreadSurfaceZoomLayout(
-            containerSize: containerViewController.view.bounds.size,
-            zoomScale: scale
-        )
+        if animated { UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut, .allowUserInteraction], animations: updates) }
+        else { updates() }
+        coordinator.gestures.updatePageCurlContainerGestureState(in: container)
     }
 }
 #endif

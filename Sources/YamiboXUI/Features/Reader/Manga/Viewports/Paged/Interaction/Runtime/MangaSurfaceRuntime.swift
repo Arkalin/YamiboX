@@ -21,10 +21,11 @@ final class MangaSurfaceRuntime {
 
     func unmount(_ instance: UUID) {
         guard mountingInstance == instance else { return }
-        invalidate(reset: true)
+        invalidate()
         imageLoaded = false
-        mountingInstance = nil
     }
+
+    func isMounted(_ instance: UUID) -> Bool { mountingInstance == instance }
 
     var hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> { geometry.hiddenEdges(transform) }
     var isZoomActive: Bool { MangaPageZoomPolicy.isActive(transform.scale) }

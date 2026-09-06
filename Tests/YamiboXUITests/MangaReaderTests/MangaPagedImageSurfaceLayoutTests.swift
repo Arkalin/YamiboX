@@ -424,69 +424,6 @@ struct MangaPagedImageSurfaceLayoutTests {
         }
     }
 
-    @MainActor
-    @Test func surfacePanGestureCoordinatorUsesUpdatedDelegateAndCleansUpStates() {
-        var delegateCallCount = 0
-        var changedTranslation: CGSize?
-        var endedTranslation: CGSize?
-        var cancelledCallCount = 0
-        var allowsUnzoomedSurfacePan = true
-        let hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> = [.right]
-
-        let shouldBegin: (CGSize, CGSize) -> Bool = { translation, velocity in
-            delegateCallCount += 1
-            return MangaPagedSurfaceDragIntent.shouldBeginSurfacePan(
-                isInteractionEnabled: true,
-                allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
-                isZoomActive: false,
-                hiddenEdges: hiddenEdges,
-                translation: translation,
-                velocity: velocity
-            )
-        }
-
-        let coordinator = MangaPagedSurfacePanGestureCoordinator(
-            shouldBegin: shouldBegin,
-            onChanged: { changedTranslation = $0 },
-            onEnded: { endedTranslation = $0 },
-            onCancelled: { cancelledCallCount += 1 }
-        )
-        let recognizer = ControlledPanGestureRecognizer(
-            translation: CGPoint(x: -2, y: 0),
-            velocity: .zero
-        )
-        recognizer.delegate = coordinator
-
-        #expect(coordinator.gestureRecognizerShouldBegin(recognizer))
-        #expect(delegateCallCount == 1)
-        #expect(coordinator.gestureRecognizer(
-            recognizer,
-            shouldRecognizeSimultaneouslyWith: UIPinchGestureRecognizer()
-        ))
-        #expect(coordinator.gestureRecognizer(
-            recognizer,
-            shouldRecognizeSimultaneouslyWith: UIPanGestureRecognizer()
-        ) == false)
-
-        allowsUnzoomedSurfacePan = false
-        coordinator.update(
-            shouldBegin: shouldBegin,
-            onChanged: { changedTranslation = $0 },
-            onEnded: { endedTranslation = $0 },
-            onCancelled: { cancelledCallCount += 1 }
-        )
-        #expect(!coordinator.gestureRecognizerShouldBegin(recognizer))
-        #expect(delegateCallCount == 2)
-
-        let changed = CGSize(width: -40, height: 3)
-        coordinator.handle(state: .changed, translation: changed)
-        coordinator.handle(state: .ended, translation: changed)
-        coordinator.handle(state: .cancelled, translation: .zero)
-
-        #expect(changedTranslation == changed)
-        #expect(endedTranslation == changed)
-        #expect(cancelledCallCount == 1)
-    }
     #endif
 
     @Test func fitWidthKeepsFixedPageSurfaceWithVerticalBlankSpace() {
