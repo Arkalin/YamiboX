@@ -21,7 +21,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     private var lastReportedGlobalIndex: Int?
     private var lastAppliedPlacementRevision: Int?
     private var lastLaidOutViewportSize: CGSize?
-    private(set) lazy var gestures = MangaPagedScrollGestureController(coordinator: self)
+    private(set) lazy var gestures = MangaPagedScrollNavigationAdapter(coordinator: self)
 
     var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
         pagingDriver.callbackScheduler

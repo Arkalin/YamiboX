@@ -84,7 +84,9 @@ final class MangaSurfaceRuntime {
         if cancelled { invalidate(); return }
         session?.end(input)
         if session?.members.isEmpty == true {
-            committed = transform
+            committed = session?.joined.contains(.pinch) == true && !MangaPageZoomPolicy.isActive(transform.scale)
+                ? MangaSurfaceTransform() : transform
+            transform = committed
             session = nil
         }
     }

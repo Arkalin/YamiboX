@@ -613,7 +613,10 @@ public struct MangaReaderView: View {
     /// page — the same defer-to-surface decision a tap in the edge zone
     /// already makes, surfaced through `controlPageTurnBridge`.
     private func performPageTurn(_ delta: Int, usesTwoPageSpread: Bool) {
-        guard !controlPageTurnBridge.attemptPageTurn(delta) else { return }
+        if model.presentation.settings.readingMode == .paged {
+            controlPageTurnBridge.requestPageTurn(delta)
+            return
+        }
         Task { await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread) }
     }
 

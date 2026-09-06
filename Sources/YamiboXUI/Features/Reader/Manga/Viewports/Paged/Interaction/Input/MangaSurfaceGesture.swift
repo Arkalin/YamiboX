@@ -41,6 +41,9 @@ final class MangaSurfaceGestureInput: NSObject, UIGestureRecognizerDelegate {
     var menuFrame: CGRect = .zero
     var onMenu: () -> Void = {}
     var instance: UUID?
+    var localLocation: () -> CGPoint? = { nil }
+    var localTranslation: () -> CGPoint? = { nil }
+    var localVelocity: () -> CGPoint? = { nil }
     private var token: UInt64?
 
     init(runtime: MangaSurfaceRuntime, registry: MangaSurfaceGestureRegistry, role: MangaSurfaceGestureRole) {
@@ -66,6 +69,10 @@ final class MangaSurfaceGestureInput: NSObject, UIGestureRecognizerDelegate {
     }
 
     func update(_ recognizer: UIGestureRecognizer) {
+        if let instance, !runtime.isMounted(instance) {
+            recognizer.isEnabled = false
+            return
+        }
         if let token, token != runtime.generation {
             self.token = nil
             recognizer.isEnabled = false
@@ -89,13 +96,13 @@ final class MangaSurfaceGestureInput: NSObject, UIGestureRecognizerDelegate {
         switch role {
         case .pan:
             guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
-            return runtime.decision(.pan(translation: size(pan.translation(in: pan.view)),
-                velocity: size(pan.velocity(in: pan.view)))) == .panImage
+            return runtime.decision(.pan(translation: size(localTranslation() ?? pan.translation(in: pan.view)),
+                velocity: size(localVelocity() ?? pan.velocity(in: pan.view)))) == .panImage
         case .pinch:
             return runtime.imageLoaded && runtime.configuration.zoomEnabled && !runtime.configuration.chromeVisible
         case .longPress:
             runtime.setMenuFrame(menuFrame)
-            return runtime.decision(.longPress(recognizer.location(in: recognizer.view))) == .menu
+            return runtime.decision(.longPress(localLocation() ?? recognizer.location(in: recognizer.view))) == .menu
         }
     }
 
@@ -156,6 +163,9 @@ struct MangaSurfaceGesture: UIGestureRecognizerRepresentable {
         context.coordinator.menuFrame = menuFrame
         context.coordinator.onMenu = onMenu
         context.coordinator.instance = instance
+        context.coordinator.localLocation = { context.converter.localLocation }
+        context.coordinator.localTranslation = { context.converter.localTranslation }
+        context.coordinator.localVelocity = { context.converter.localVelocity }
         context.coordinator.update(recognizer)
     }
 

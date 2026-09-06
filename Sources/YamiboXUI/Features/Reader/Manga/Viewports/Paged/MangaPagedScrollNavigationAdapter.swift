@@ -5,31 +5,38 @@ import YamiboXCore
 import UIKit
 
 @MainActor
-final class MangaPagedScrollGestureController: NSObject, UIGestureRecognizerDelegate {
+final class MangaPagedScrollNavigationAdapter: NSObject {
     private weak var coordinator: MangaPagedScrollCoordinator?
 
-    private(set) lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-    private(set) lazy var doubleTapGesture: UITapGestureRecognizer = {
-        let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
-        recognizer.numberOfTapsRequired = 2
-        return recognizer
-    }()
-    private(set) lazy var quickFadePanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleQuickFadePan(_:)))
+    let input = MangaNavigationInput()
+    var tapGesture: UITapGestureRecognizer { input.tap }
+    var doubleTapGesture: UITapGestureRecognizer { input.doubleTap }
+    var quickFadePanGesture: UIPanGestureRecognizer { input.navigationPan }
 
     init(coordinator: MangaPagedScrollCoordinator) {
         self.coordinator = coordinator
+        super.init()
+        input.generation = { [weak coordinator] in coordinator?.interactionRuntime.navigationGeneration ?? 0 }
+        input.permits = { [weak self] in self?.gestureRecognizerShouldBegin($0) ?? false }
+        input.receives = { [weak self] in self?.gestureRecognizer($0, shouldReceive: $1) ?? false }
+        input.onEvent = { [weak self] role, recognizer in
+            switch role {
+            case .tap: if let tap = recognizer as? UITapGestureRecognizer { self?.handleTap(tap) }
+            case .doubleTap: if let tap = recognizer as? UITapGestureRecognizer { self?.handleDoubleTap(tap) }
+            case .navigationPan: if let pan = recognizer as? UIPanGestureRecognizer { self?.handleQuickFadePan(pan) }
+            case .surfacePan: break
+            case .surfacePinch: break
+            }
+        }
     }
 
     func install(in collectionView: MangaPagedReaderCollectionView) {
         tapGesture.cancelsTouchesInView = false
-        tapGesture.delegate = self
         tapGesture.require(toFail: doubleTapGesture)
-        collectionView.addGestureRecognizer(tapGesture)
+        input.install(tapGesture, in: collectionView)
         doubleTapGesture.cancelsTouchesInView = false
-        doubleTapGesture.delegate = self
-        collectionView.addGestureRecognizer(doubleTapGesture)
-        quickFadePanGesture.delegate = self
-        collectionView.addGestureRecognizer(quickFadePanGesture)
+        input.install(doubleTapGesture, in: collectionView)
+        input.install(quickFadePanGesture, in: collectionView)
         collectionView.shouldBeginPanGesture = { [weak self, weak collectionView] recognizer in
             guard let self,
                   let collectionView else {
@@ -135,13 +142,6 @@ final class MangaPagedScrollGestureController: NSObject, UIGestureRecognizerDele
         )
     }
 
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        false
-    }
-
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === quickFadePanGesture,
               let panRecognizer = gestureRecognizer as? UIPanGestureRecognizer else {
@@ -201,14 +201,27 @@ final class MangaPagedScrollGestureController: NSObject, UIGestureRecognizerDele
         )) == .panImage
     }
 
-    /// Non-touch equivalent of the edge-zone tap check in `handleTap`: `delta`
-    /// is a reading-order step (+1 next/-1 previous), translated to a
-    /// physical edge the same way a tap zone is, so a keyboard/gamepad/Pencil
-    /// page turn defers to revealing hidden fit-height/zoomed content before
-    /// it's allowed to actually turn the page.
-    func attemptControlPageTurnEdgeReveal(delta: Int, in collectionView: UICollectionView) -> Bool {
-        let readingZone: ReaderPagedTapZone = delta > 0 ? .next : .previous
-        return consumeSurfaceEdgeTap(for: directionalTapZone(for: readingZone), in: collectionView)
+    func routeControl(_ step: NavigationStep, in collectionView: UICollectionView) {
+        guard let coordinator else { return }
+        let zone: ReaderPagedTapZone = step == .forward ? .next : .previous
+        guard let edge = MangaPagedSurfaceEdgeInteraction.physicalEdge(forTapZone: directionalTapZone(for: zone)) else { return }
+        let surface = coordinator.parent.plan.usesTwoPageSpread
+            ? currentSpreadSurfaceInteraction(in: collectionView) : currentPageSurfaceInteraction(in: collectionView)
+        let decision = surface?.runtime.perform(.control(edge)) ?? .navigate(edge)
+        if case .navigate = decision {
+            let inputs = coordinator.pagingInputs
+            let target = inputs.selectionIndex + step.rawValue
+            if target < 0 || target >= inputs.itemCount {
+                guard inputs.canBoundaryPageTurn(step.rawValue) else { return }
+                let generation = coordinator.interactionRuntime.navigationGeneration
+                coordinator.callbackScheduler.publish { [weak coordinator] in
+                    guard coordinator?.interactionRuntime.navigationGeneration == generation else { return }
+                    inputs.onBoundaryPageTurn(step.rawValue)
+                }
+            } else {
+                _ = coordinator.pagingDriver.animateAdjacentSelection(for: zone, in: collectionView, inputs: inputs)
+            }
+        }
     }
 
     private func consumeSurfaceEdgeTap(for zone: ReaderPagedTapZone, in collectionView: UICollectionView) -> Bool {

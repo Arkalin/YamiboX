@@ -98,9 +98,9 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
             context.coordinator.zoom.updatePageCurlSpreadZoomAvailability(in: containerViewController, animated: true)
         }
         let gestures = context.coordinator.gestures
-        controlPageTurnBridge.attemptEdgeReveal = { [weak gestures, weak containerViewController] delta in
-            guard let gestures, let containerViewController else { return false }
-            return gestures.attemptControlPageTurnEdgeReveal(delta: delta, in: containerViewController)
+        controlPageTurnBridge.route = { [weak gestures, weak containerViewController] step in
+            guard let gestures, let containerViewController else { return }
+            gestures.routeControl(step, in: containerViewController)
         }
     }
 }

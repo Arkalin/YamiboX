@@ -32,15 +32,8 @@ struct MangaPagedReaderScaledImage: View {
             let configuration = MangaInteractionConfiguration(chromeVisible: !isSurfaceInteractionEnabled,
                 zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: allowsUnzoomedSurfacePan)
 
-            ZStack {
-                pageEdgeFillStyle.color(for: colorScheme)
-                Image(uiImage: image).resizable()
-                    .frame(width: layout.contentSize.width, height: layout.contentSize.height)
-                    .offset(layout.displayOffset(forUserOffset: transform.offset))
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .contentShape(Rectangle())
-            .clipped()
+            MangaSurfaceDrawing(image: Image(uiImage: image), background: pageEdgeFillStyle.color(for: colorScheme),
+                layout: layout, offset: transform.offset)
             .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures, role: .pan, instance: instance))
             .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures, role: .pinch, instance: instance))
             .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures,

@@ -18,20 +18,13 @@ struct MangaPagedReaderSurfaceInteractionIdentity: Equatable {
     var zoomEnabled: Bool
 }
 
-/// Lets a non-touch page-turn trigger (keyboard, gamepad, Apple Pencil) defer
-/// to the active paged viewport's own edge-reveal logic before actually
-/// turning the page — the same "reveal hidden zoomed/fit-height content on
-/// this edge first" decision a tap in the edge zone already makes. Whichever
-/// paged viewport (collection-view or page-curl) is currently mounted
-/// re-registers `attemptEdgeReveal` on every update, so it always targets the
-/// live coordinator.
+/// Routes external controls to the mounted backend; absence never means permission to navigate.
 final class MangaPagedControlPageTurnBridge {
-    var attemptEdgeReveal: ((Int) -> Bool)?
+    var route: ((NavigationStep) -> Void)?
 
-    /// Returns `true` when the press was consumed to reveal hidden content
-    /// instead of turning the page.
-    func attemptPageTurn(_ delta: Int) -> Bool {
-        attemptEdgeReveal?(delta) ?? false
+    func requestPageTurn(_ delta: Int) {
+        guard let step = NavigationStep(rawValue: delta) else { return }
+        route?(step)
     }
 }
 

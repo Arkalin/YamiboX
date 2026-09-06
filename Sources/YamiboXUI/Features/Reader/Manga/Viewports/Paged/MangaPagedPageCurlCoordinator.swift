@@ -22,7 +22,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     private weak var pageCurlBackColorPageViewController: UIPageViewController?
     private var pageCurlBackColorDisplayLink: CADisplayLink?
     private let pageCurlBackColorFilterCache = MangaPageCurlBackColorFilterCache()
-    private(set) lazy var gestures = MangaPagedPageCurlGestureController(coordinator: self)
+    private(set) lazy var gestures = MangaPagedPageCurlNavigationAdapter(coordinator: self)
     private(set) lazy var zoom = MangaPagedPageCurlZoomController(coordinator: self)
 
     init(parent: MangaPagedPageCurlReaderViewport) {
@@ -45,7 +45,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         activePageViewController = pageViewController
         let didChangeContentIdentity = contentIdentity != nextContentIdentity
         if didChangeContentIdentity {
-            interactionRuntime.reset()
+            interactionRuntime.reset(keeping: [SurfaceID(value: "curl-spread")])
             pageSurfaceInteractions = [:]
             pageCurlSurfaceInteractionIdentity = nil
             pageCurlPageAppearanceGenerations = [:]
@@ -417,6 +417,11 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         }
 
         lastReportedGlobalIndex = globalIndex
+        if parent.sequence.usesTwoPageSpread {
+            interactionRuntime.activate(SurfaceID(value: "curl-spread"))
+        } else if let page = parent.plan.spread(at: selectionIndex)?.preferredPage {
+            interactionRuntime.activate(SurfaceID(value: "page:" + page.id))
+        }
         let onCurrentPageChange = parent.onCurrentPageChange
         callbackScheduler.publish {
             onCurrentPageChange(globalIndex)

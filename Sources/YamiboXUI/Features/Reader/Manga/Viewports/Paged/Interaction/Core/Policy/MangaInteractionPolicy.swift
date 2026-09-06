@@ -7,6 +7,7 @@ struct SurfaceID: Hashable { let value: String }
 enum MangaInteractionIntent {
     case pan(translation: CGSize, velocity: CGSize)
     case edge(MangaPagedImageSurfaceHorizontalEdge)
+    case control(MangaPagedImageSurfaceHorizontalEdge)
     case doubleTap(CGPoint)
     case longPress(CGPoint)
     case centerTap
@@ -53,6 +54,8 @@ enum MangaInteractionPolicy {
             return configuration.zoomEnabled && imageLoaded ? .zoom(point) : .ignore
         case let .edge(edge):
             if configuration.chromeVisible { return .toggleChrome }
+            return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)
+        case let .control(edge):
             return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)
         case let .pan(translation, velocity):
             guard !configuration.chromeVisible else { return .ignore }

@@ -1,5 +1,6 @@
 import SwiftUI
 import YamiboXCore
+import Observation
 
 #if os(iOS)
 import UIKit
@@ -12,6 +13,7 @@ final class MangaPagedPageCurlZoomController {
     private let registry = MangaSurfaceGestureRegistry()
     private lazy var panInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pan)
     private lazy var pinchInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pinch)
+    private var observationRevision: UInt64 = 0
 
     init(coordinator: MangaPagedPageCurlCoordinator) {
         self.coordinator = coordinator
@@ -21,6 +23,12 @@ final class MangaPagedPageCurlZoomController {
     func handleSpreadPinch(_ recognizer: UIPinchGestureRecognizer) {
         pinchInput.handle(recognizer, localTranslation: nil)
         render(animated: false)
+    }
+
+    func control(_ edge: MangaPagedImageSurfaceHorizontalEdge) -> MangaInteractionDecision {
+        let decision = runtime.perform(.control(edge))
+        render(animated: true)
+        return decision
     }
 
     func handleSpreadPan(_ recognizer: UIPanGestureRecognizer) {
@@ -46,6 +54,16 @@ final class MangaPagedPageCurlZoomController {
             }
         }
         render(animated: animated)
+        observationRevision &+= 1
+        let revision = observationRevision
+        withObservationTracking {
+            for surface in coordinator.pageSurfaceInteractions.values { _ = surface.runtime.imageLoaded }
+        } onChange: { [weak self, weak container] in
+            Task { @MainActor in
+                guard let self, let container, self.observationRevision == revision else { return }
+                self.updatePageCurlSpreadZoomAvailability(in: container, animated: false)
+            }
+        }
     }
 
     func consumePageCurlSpreadEdgeTap(for zone: ReaderPagedTapZone, in container: MangaPagedPageCurlContainerViewController) -> Bool {

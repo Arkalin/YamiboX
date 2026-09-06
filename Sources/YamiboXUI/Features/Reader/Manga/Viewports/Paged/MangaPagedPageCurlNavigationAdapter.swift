@@ -5,7 +5,7 @@ import YamiboXCore
 import UIKit
 
 @MainActor
-final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDelegate {
+final class MangaPagedPageCurlNavigationAdapter: NSObject {
     private weak var coordinator: MangaPagedPageCurlCoordinator?
     private var nativePanAdmissions: [ObjectIdentifier: MangaNativePanAdmission] = [:]
 
@@ -17,21 +17,28 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         }
     }
 
-    private(set) lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-    private(set) lazy var doubleTapGesture: UITapGestureRecognizer = {
-        let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
-        recognizer.numberOfTapsRequired = 2
-        return recognizer
-    }()
-    private(set) lazy var boundaryPageTurnPanGesture = UIPanGestureRecognizer(
-        target: self,
-        action: #selector(handleBoundaryPageTurnPan(_:))
-    )
-    private(set) lazy var spreadPinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handleSpreadPinch(_:)))
-    private(set) lazy var spreadPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleSpreadPan(_:)))
+    let input = MangaNavigationInput()
+    var tapGesture: UITapGestureRecognizer { input.tap }
+    var doubleTapGesture: UITapGestureRecognizer { input.doubleTap }
+    var boundaryPageTurnPanGesture: UIPanGestureRecognizer { input.navigationPan }
+    var spreadPanGesture: UIPanGestureRecognizer { input.surfacePan }
+    var spreadPinchGesture: UIPinchGestureRecognizer { input.surfacePinch }
 
     init(coordinator: MangaPagedPageCurlCoordinator) {
         self.coordinator = coordinator
+        super.init()
+        input.generation = { [weak coordinator] in coordinator?.interactionRuntime.navigationGeneration ?? 0 }
+        input.permits = { [weak self] in self?.gestureRecognizerShouldBegin($0) ?? false }
+        input.receives = { [weak self] in self?.gestureRecognizer($0, shouldReceive: $1) ?? false }
+        input.onEvent = { [weak self] role, recognizer in
+            switch role {
+            case .tap: if let tap = recognizer as? UITapGestureRecognizer { self?.handleTap(tap) }
+            case .doubleTap: if let tap = recognizer as? UITapGestureRecognizer { self?.handleDoubleTap(tap) }
+            case .navigationPan: if let pan = recognizer as? UIPanGestureRecognizer { self?.handleBoundaryPageTurnPan(pan) }
+            case .surfacePan: if let pan = recognizer as? UIPanGestureRecognizer { self?.handleSpreadPan(pan) }
+            case .surfacePinch: if let pinch = recognizer as? UIPinchGestureRecognizer { self?.handleSpreadPinch(pinch) }
+            }
+        }
     }
 
     func configureContainerGestures(in containerViewController: MangaPagedPageCurlContainerViewController) {
@@ -39,24 +46,20 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         coordinator.activeContainerViewController = containerViewController
         if tapGesture.view !== containerViewController.view {
             tapGesture.cancelsTouchesInView = false
-            tapGesture.delegate = self
             tapGesture.require(toFail: doubleTapGesture)
-            containerViewController.view.addGestureRecognizer(tapGesture)
+            input.install(tapGesture, in: containerViewController.view)
         }
         if doubleTapGesture.view !== containerViewController.view {
             doubleTapGesture.cancelsTouchesInView = false
-            doubleTapGesture.delegate = self
-            containerViewController.view.addGestureRecognizer(doubleTapGesture)
+            input.install(doubleTapGesture, in: containerViewController.view)
         }
         if spreadPinchGesture.view !== containerViewController.view {
             spreadPinchGesture.cancelsTouchesInView = false
-            spreadPinchGesture.delegate = self
-            containerViewController.view.addGestureRecognizer(spreadPinchGesture)
+            input.install(spreadPinchGesture, in: containerViewController.view)
         }
         if spreadPanGesture.view !== containerViewController.view {
             spreadPanGesture.cancelsTouchesInView = false
-            spreadPanGesture.delegate = self
-            containerViewController.view.addGestureRecognizer(spreadPanGesture)
+            input.install(spreadPanGesture, in: containerViewController.view)
         }
         updatePageCurlContainerGestureState(in: containerViewController)
     }
@@ -65,8 +68,7 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         guard let coordinator else { return }
         coordinator.activePageViewController = pageViewController
         if boundaryPageTurnPanGesture.view !== pageViewController.view {
-            boundaryPageTurnPanGesture.delegate = self
-            pageViewController.view.addGestureRecognizer(boundaryPageTurnPanGesture)
+            input.install(boundaryPageTurnPanGesture, in: pageViewController.view)
         }
         for recognizer in pageViewController.gestureRecognizers {
             if recognizer is UITapGestureRecognizer {
@@ -195,7 +197,9 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
             return
         }
         let onBoundaryPageTurn = parent.onBoundaryPageTurn
-        coordinator.callbackScheduler.publish {
+        let generation = coordinator.interactionRuntime.navigationGeneration
+        coordinator.callbackScheduler.publish { [weak coordinator] in
+            guard coordinator?.interactionRuntime.navigationGeneration == generation else { return }
             onBoundaryPageTurn(delta)
         }
     }
@@ -212,14 +216,6 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
             at: touch.location(in: containerViewController.view),
             in: containerViewController.view.bounds
         )
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        (gestureRecognizer === spreadPanGesture && otherGestureRecognizer === spreadPinchGesture) ||
-            (gestureRecognizer === spreadPinchGesture && otherGestureRecognizer === spreadPanGesture)
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -290,19 +286,29 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         return true
     }
 
-    /// Non-touch equivalent of the edge-zone tap check in `handleTap`: `delta`
-    /// is a reading-order step (+1 next/-1 previous), translated to a
-    /// physical edge the same way a tap zone is, so a keyboard/gamepad/Pencil
-    /// page turn defers to revealing hidden fit-height/zoomed content before
-    /// it's allowed to actually turn the page.
-    func attemptControlPageTurnEdgeReveal(
-        delta: Int,
-        in containerViewController: MangaPagedPageCurlContainerViewController
-    ) -> Bool {
-        let readingZone: ReaderPagedTapZone = delta > 0 ? .next : .previous
-        let physicalZone = directionalTapZone(for: readingZone)
-        return coordinator?.zoom.consumePageCurlSpreadEdgeTap(for: physicalZone, in: containerViewController) == true ||
-            consumeSurfaceEdgeTap(for: physicalZone, in: containerViewController.pageViewController)
+    func routeControl(_ step: NavigationStep, in container: MangaPagedPageCurlContainerViewController) {
+        guard let coordinator else { return }
+        let zone: ReaderPagedTapZone = step == .forward ? .next : .previous
+        guard let edge = MangaPagedSurfaceEdgeInteraction.physicalEdge(forTapZone: directionalTapZone(for: zone)) else { return }
+        let decision: MangaInteractionDecision
+        if coordinator.parent.sequence.usesTwoPageSpread {
+            decision = coordinator.zoom.control(edge)
+        } else {
+            decision = currentPageCurlSurfaceInteraction(in: container.pageViewController)?.runtime.perform(.control(edge)) ?? .navigate(edge)
+        }
+        if case .navigate = decision {
+            let target = coordinator.parent.selectionIndex + step.rawValue
+            if target < 0 || target >= coordinator.parent.sequence.pageCount {
+                guard coordinator.parent.canBoundaryPageTurn(step.rawValue) else { return }
+                let generation = coordinator.interactionRuntime.navigationGeneration
+                coordinator.callbackScheduler.publish { [weak coordinator] in
+                    guard let coordinator, coordinator.interactionRuntime.navigationGeneration == generation else { return }
+                    coordinator.parent.onBoundaryPageTurn(step.rawValue)
+                }
+            } else {
+                coordinator.animateAdjacentSelection(delta: step.rawValue, in: container.pageViewController)
+            }
+        }
     }
 
     private func consumeSurfaceEdgeTap(for zone: ReaderPagedTapZone, in pageViewController: UIPageViewController) -> Bool {
