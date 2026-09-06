@@ -34,7 +34,6 @@ final class ReaderInlineImageCacheTests: XCTestCase {
             XCTAssertFalse(failureLabel.frame.intersects(retry.frame))
             let hit = view.hitTest(retry.center, with: nil)
             XCTAssertTrue(hit?.isDescendant(of: retry) == true)
-            // These tests have no app host to dispatch UIKit target-actions.
             let action = try XCTUnwrap(retry.actions(forTarget: view, forControlEvent: .touchUpInside)?.first)
             _ = view.perform(NSSelectorFromString(action))
             XCTAssertTrue(retry.isHidden)
@@ -63,6 +62,43 @@ final class ReaderInlineImageCacheTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Timed out waiting for inline image state")
+    }
+
+    @MainActor
+    func testPrefetchWarmsDisplayCacheUsingOfflineBytes() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/prefetched.png")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let bytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .red)])
+        let pipeline = makeUIPipeline(bytes: bytes)
+        let prefetched = try await pipeline.image(for: source, priority: .low)
+        let displayed = try await pipeline.image(for: source)
+        XCTAssertTrue(prefetched === displayed)
+        let calls = await bytes.loadCallCount()
+        XCTAssertEqual(calls, 1)
+    }
+
+    @MainActor
+    func testCancellingPrefetchDoesNotCancelConcurrentDisplayLoad() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/shared-prefetch.png")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let bytes = BlockingOfflineImageBytes(data: testImageData(color: .blue))
+        let pipeline = YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: bytes))
+        let prefetch = Task { try await pipeline.image(for: source, priority: .low) }
+        let display = Task { try await pipeline.image(for: source) }
+        await bytes.waitUntilStarted()
+        // Both main-actor subscribers enter the pipeline before cancellation.
+        for _ in 0..<10 { await Task.yield() }
+        prefetch.cancel()
+        await bytes.release()
+        let image = try await display.value
+        _ = await prefetch.result
+        XCTAssertTrue(pipeline.cachedImage(for: source) === image)
+        let calls = await bytes.callCount
+        XCTAssertEqual(calls, 1)
     }
 
     @MainActor
@@ -174,6 +210,38 @@ private actor SequencedOfflineImageBytes: YamiboOfflineImageDataProviding {
 
     func loadCallCount() -> Int {
         callCount
+    }
+}
+
+private actor BlockingOfflineImageBytes: YamiboOfflineImageDataProviding {
+    let data: Data
+    var callCount = 0
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+
+    init(data: Data) { self.data = data }
+
+    func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? {
+        callCount += 1
+        startedWaiter?.resume()
+        startedWaiter = nil
+        if !released {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        return data
+    }
+
+    func waitUntilStarted() async {
+        if callCount == 0 {
+            await withCheckedContinuation { startedWaiter = $0 }
+        }
+    }
+
+    func release() {
+        released = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
     }
 }
 
