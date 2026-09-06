@@ -150,7 +150,7 @@ struct MangaPagedImageSurfaceLayout: Equatable {
         on edge: MangaPagedImageSurfaceHorizontalEdge,
         fromUserOffset userOffset: CGSize
     ) -> Bool {
-        guard fitMode == .fitHeight else { return false }
+        guard fitMode == .fitHeight || MangaPageZoomPolicy.isActive(zoomScale) else { return false }
         let horizontalOverflow = overflowBounds.width
         guard horizontalOverflow > Self.edgeVisibilityTolerance else { return false }
 
