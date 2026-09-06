@@ -710,6 +710,89 @@ import YamiboXTestSupport
 }
 
 @MainActor
+@Test func forumNovelDetailRefreshCompletesCacheWritesAfterGestureCancellationAndCanRefreshAgain() async throws {
+    let cached = try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "缓存章节")
+    let fresh = try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "新章节")
+    let started = AsyncStream<Void>.makeStream()
+    let release = AsyncStream<Void>.makeStream()
+    defer {
+        started.continuation.finish()
+        release.continuation.finish()
+    }
+    let loader = FakeForumNovelThreadPageLoader(
+        pages: [1: fresh], cachedPages: [1: cached],
+        beforeFetch: {
+            started.continuation.yield(())
+            // Like completeStartedRequest, this fetch can return a page even
+            // if the caller was cancelled. The cache operations still check.
+            for await _ in release.stream { break }
+        }
+    )
+    let model = try makeForumNovelDetailViewModel(
+        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    )
+    await model.reload()
+
+    let refresh = Task { await model.refresh() }
+    for await _ in started.stream { break }
+    await model.reload()
+    #expect(model.isLoading)
+    #expect(loader.cachedNovelCalls() == [1])
+    refresh.cancel()
+    release.continuation.finish()
+    await refresh.value
+
+    #expect(model.chapters.map(\.title) == ["新章节"])
+    #expect(loader.clearedThreadIDs() == ["900"])
+    #expect(loader.storedPages().count == 1)
+    #expect(model.favoriteActions.transientMessage == nil)
+    #expect(model.errorMessage == nil)
+    #expect(!model.isLoading)
+
+    await model.refresh()
+    #expect(loader.novelFetchCalls() == [1, 1])
+    #expect(loader.storedPages().count == 2)
+    #expect(model.favoriteActions.transientMessage == nil)
+    #expect(!model.isLoading)
+}
+
+@MainActor
+@Test(arguments: [0, 1, 2])
+func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancellationKind: Int) async throws {
+    let firstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "第一章")
+    let secondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "第二章")
+    let failure: any Error
+    switch cancellationKind {
+    case 0: failure = CancellationError()
+    case 1: failure = URLError(.cancelled)
+    default: failure = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+    }
+    let loader = FakeForumNovelThreadPageLoader(
+        pages: [1: firstPage, 2: secondPage], cachedPages: [1: firstPage, 2: secondPage],
+        failuresByPage: [1: [failure]]
+    )
+    let model = try makeForumNovelDetailViewModel(
+        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    )
+    await model.reload()
+    await model.toggleChapterSection(page: 2)
+    model.document = try await FakeForumNovelDocumentLoader().loadPage(NovelPageRequest(threadID: "900", view: 1, authorID: "42"))
+    let previousDocument = model.document
+    let previousSections = model.chapterSections.map(\.chapters)
+
+    await model.refresh()
+
+    #expect(model.errorMessage == nil)
+    #expect(model.favoriteActions.transientMessage == nil)
+    #expect(model.document == previousDocument)
+    #expect(model.chapterSections.map(\.chapters) == previousSections)
+    #expect(model.expandedChapterPages == [1, 2])
+    #expect(!model.isLoading)
+    #expect(loader.clearedThreadIDs().isEmpty)
+    #expect(loader.storedPages().isEmpty)
+}
+
+@MainActor
 @Test func forumNovelDetailRefreshFailurePreservesExistingContentAndShowsTransientMessage() async throws {
     let cachedFirstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "缓存第一章")
     let cachedSecondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "缓存第二章")
@@ -1323,6 +1406,7 @@ private struct FailingForumNovelDocumentLoader: ForumNovelDocumentLoading {
 
 private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading, @unchecked Sendable {
     private let pages: [Int: ForumThreadPage]
+    private let beforeFetch: (@Sendable () async -> Void)?
     private var cachedPages: [Int: ForumThreadPage]
     private var failuresByPage: [Int: [Error]]
     private var recordedCachedNovelPages: [Int] = []
@@ -1334,11 +1418,13 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
     init(
         pages: [Int: ForumThreadPage],
         cachedPages: [Int: ForumThreadPage] = [:],
-        failuresByPage: [Int: [Error]] = [:]
+        failuresByPage: [Int: [Error]] = [:],
+        beforeFetch: (@Sendable () async -> Void)? = nil
     ) {
         self.pages = pages
         self.cachedPages = cachedPages
         self.failuresByPage = failuresByPage
+        self.beforeFetch = beforeFetch
     }
 
     func cachedNovelThreadPage(context _: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage? {
@@ -1348,6 +1434,7 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
 
     func fetchNovelThreadPage(context _: NovelDetailLaunchContext, page: Int) async throws -> ForumThreadPage {
         recordedNovelFetches.append(page)
+        await beforeFetch?()
         if var failures = failuresByPage[page], !failures.isEmpty {
             let failure = failures.removeFirst()
             failuresByPage[page] = failures
@@ -1360,11 +1447,13 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
     }
 
     func clearCachedThreadPages(thread: ThreadIdentity) async throws {
+        try Task.checkCancellation()
         cachedPages.removeAll()
         recordedClearedThreads.append(thread)
     }
 
     func storeNovelThreadPage(_ pageDocument: ForumThreadPage, context: NovelDetailLaunchContext, pageNumber: Int) async throws {
+        try Task.checkCancellation()
         cachedPages[pageNumber] = pageDocument
         recordedStoredPages.append(
             ForumNovelThreadPageStore(

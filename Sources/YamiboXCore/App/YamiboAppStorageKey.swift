@@ -10,6 +10,8 @@ public enum YamiboAppStorageKey {
     public static let loginUsername = "yamibox.login.username"
     public static let appUpdateSkippedVersion = "yamibox.app_update.skipped_version"
     public static let readerSearchHistory = "yamibox.reader.search.history"
+    public static let novelDetailChapterLayout = "yamibox.novel.detail.chapter_layout"
+    public static let mangaDetailChapterLayout = "yamibox.manga.detail.chapter_layout"
     /// The highlight style the reader will use for the next annotation —
     /// "whatever I picked last time", global rather than per-work because a
     /// reader's colour semantics (yellow = a good line, blue = setting) stay
@@ -24,6 +26,8 @@ public enum YamiboAppStorageKey {
         favoriteTagSortOrder,
         appUpdateSkippedVersion,
         readerDefaultHighlightStyle,
-        readerSearchHistory
+        readerSearchHistory,
+        novelDetailChapterLayout,
+        mangaDetailChapterLayout
     ]
 }

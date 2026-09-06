@@ -146,11 +146,7 @@ final class ForumMangaDetailViewModel {
     }
 
     var readingProgressText: String? {
-        guard let manga = readingProgress?.manga else { return nil }
-        if let pageCount = manga.mangaPageCount {
-            return L10n.string("favorites.progress.manga_page_total", manga.lastChapter, manga.mangaPageIndex + 1, pageCount)
-        }
-        return L10n.string("favorites.progress.manga_page", manga.lastChapter, manga.mangaPageIndex + 1)
+        readingProgress?.manga?.lastChapter
     }
 
     var currentReadChapterProgressText: String? {
@@ -198,15 +194,23 @@ final class ForumMangaDetailViewModel {
         await reload()
     }
 
+    func refresh() async {
+        // A refresh-control task may be cancelled while its view updates.
+        // Keep the user-requested reload alive, and await its actual completion.
+        await Task { await reload() }.value
+    }
+
     func reload() async {
+        guard !isLoading, !Task.isCancelled else { return }
         isLoading = true
+        defer { isLoading = false }
         errorMessage = nil
         readingProgress = await loadReadingProgress()
         await favoriteActions.refreshFavorite()
         favoriteActions.errorMessage = nil
-        defer { isLoading = false }
 
         do {
+            try Task.checkCancellation()
             let loader = await dependencies.makeMangaReaderProjectionLoader()
             let document = try await loader.loadReaderProjection(
                 MangaReaderProjectionRequest(threadID: context.thread.tid)
@@ -238,6 +242,7 @@ final class ForumMangaDetailViewModel {
                 document: document,
                 store: dependencies.mangaDirectoryStore
             )
+            try Task.checkCancellation()
 
             currentDocument = document
             directory = resolvedDirectory
@@ -256,6 +261,10 @@ final class ForumMangaDetailViewModel {
                 startAutomaticCoverResolutionIfNeeded()
             }
         } catch {
+            let networkError = error as NSError
+            guard !Task.isCancelled,
+                  !(error is CancellationError),
+                  !(networkError.domain == NSURLErrorDomain && networkError.code == NSURLErrorCancelled) else { return }
             currentDocument = nil
             directory = nil
             readingProgress = await loadReadingProgress()

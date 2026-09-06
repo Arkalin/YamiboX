@@ -48,7 +48,7 @@ struct LocalFavoriteCoverThumbnail: View {
     }
 
     private func textFallback(in size: CGSize) -> some View {
-        LocalFavoriteCoverTextFallback(title: title, boxWidth: size.width)
+        BookCoverTextFallback(title: title, boxWidth: size.width)
             .frame(width: size.width, height: size.height)
     }
 }
@@ -78,73 +78,6 @@ struct LocalFavoriteSmartCardBadge: View {
     }
 }
 
-/// Title-on-color placeholder cover, mirroring the Android CoverTextFallback:
-/// the full title, bold, horizontally centered from the top, with the font
-/// size stepped by title length (32/24/19/15/12, Android parity) and
-/// overflow clipped. Always rendered through an explicit size from its
-/// caller (see `LocalFavoriteCoverThumbnail`) rather than sizing itself.
-///
-/// Android applies that step table as a fixed point size everywhere because
-/// its own grid and row cards happen to compute to nearly the same cover
-/// width. This app's row card is a fixed 92pt while the grid card's cover is
-/// ~150pt+, so the same fixed size that fits the grid overflows the row
-/// card. Scaling the whole table by `boxWidth / referenceWidth` keeps the
-/// row-card fallback a proportional miniature of the grid one instead of a
-/// truncated blob.
-struct LocalFavoriteCoverTextFallback: View {
-    let title: String
-    let boxWidth: CGFloat
-    @Environment(\.appTheme) private var appTheme
-
-    /// The cover width the 32/24/19/15/12 step table below was tuned for —
-    /// the fixed/staggered grid card's typical cover width on iPhone.
-    private static let referenceWidth: CGFloat = 150
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            Rectangle()
-                .fill(appTheme.controlAccent.opacity(0.12))
-            Text(trimmedTitle)
-                .font(.system(size: fontSize, weight: .bold))
-                .lineSpacing(fontSize * 0.15)
-                .foregroundStyle(appTheme.controlAccent.opacity(0.75))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, alignment: .top)
-                .padding(scaledPadding)
-        }
-        .clipped()
-    }
-
-    private var trimmedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var scale: CGFloat {
-        guard boxWidth.isFinite, boxWidth > 0 else { return 1 }
-        return boxWidth / Self.referenceWidth
-    }
-
-    private var scaledPadding: CGFloat {
-        max(2, 8 * scale)
-    }
-
-    private var fontSize: CGFloat {
-        // 10pt floor: below that the title stops being legible at all and the
-        // tile reads as noise (small mosaic tiles used to bottom out at 6pt).
-        max(10, baseFontSize * scale)
-    }
-
-    private var baseFontSize: CGFloat {
-        switch trimmedTitle.count {
-        case ...6: 32
-        case ...12: 24
-        case ...24: 19
-        case ...40: 15
-        default: 12
-        }
-    }
-}
-
 /// Width-filling 2x2 cover mosaic for the grid collection card: square tiles,
 /// empty slots (fewer than 4 members) staying as collection-tinted squares.
 /// Each occupied tile carries its own member's title, so a member with no
@@ -170,7 +103,7 @@ struct LocalFavoriteCollectionMosaic: View {
     private func tile(at index: Int) -> some View {
         Group {
             if index < tiles.count {
-                // Not layered under a background fill: LocalFavoriteCoverTextFallback's
+                // Not layered under a background fill: BookCoverTextFallback's
                 // own background is only ~12% opaque, so a collection-tinted
                 // rectangle painted underneath it would bleed through and tint
                 // every text-fallback tile with the collection's color.
