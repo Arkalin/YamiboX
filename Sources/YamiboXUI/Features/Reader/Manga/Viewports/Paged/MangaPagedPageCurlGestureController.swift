@@ -7,6 +7,15 @@ import UIKit
 @MainActor
 final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDelegate {
     private weak var coordinator: MangaPagedPageCurlCoordinator?
+    private var nativePanAdmissions: [ObjectIdentifier: MangaNativePanAdmission] = [:]
+
+    func detach() {
+        nativePanAdmissions.values.forEach { $0.detach() }
+        nativePanAdmissions.removeAll()
+        for recognizer in [tapGesture, doubleTapGesture, boundaryPageTurnPanGesture, spreadPanGesture, spreadPinchGesture] {
+            recognizer.view?.removeGestureRecognizer(recognizer)
+        }
+    }
 
     private(set) lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
     private(set) lazy var doubleTapGesture: UITapGestureRecognizer = {
@@ -62,8 +71,13 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         for recognizer in pageViewController.gestureRecognizers {
             if recognizer is UITapGestureRecognizer {
                 recognizer.isEnabled = false
-            } else if recognizer is UIPanGestureRecognizer {
-                recognizer.delegate = self
+            } else if let pan = recognizer as? UIPanGestureRecognizer {
+                let id = ObjectIdentifier(pan)
+                if nativePanAdmissions[id] == nil {
+                    nativePanAdmissions[id] = MangaNativePanAdmission(pan) { [weak self] pan in
+                        self?.gestureRecognizerShouldBegin(pan) ?? false
+                    }
+                }
                 recognizer.isEnabled = !coordinator.parent.isChromeVisible
             }
         }
@@ -204,10 +218,8 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        gestureRecognizer is UIPanGestureRecognizer ||
-            otherGestureRecognizer is UIPanGestureRecognizer ||
-            gestureRecognizer is UIPinchGestureRecognizer ||
-            otherGestureRecognizer is UIPinchGestureRecognizer
+        (gestureRecognizer === spreadPanGesture && otherGestureRecognizer === spreadPinchGesture) ||
+            (gestureRecognizer === spreadPinchGesture && otherGestureRecognizer === spreadPanGesture)
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -233,6 +245,14 @@ final class MangaPagedPageCurlGestureController: NSObject, UIGestureRecognizerDe
                 return false
             }
             let parent = coordinator.parent
+            if let container = coordinator.activeContainerViewController,
+               coordinator.zoom.shouldDeferPageCurlPanToSpreadContent(panRecognizer, in: container) {
+                return false
+            }
+            if let pageController = coordinator.activePageViewController,
+               shouldDeferPageCurlPanToSurfaceContent(panRecognizer, in: pageController) {
+                return false
+            }
             let velocity = panRecognizer.velocity(in: view)
             guard abs(velocity.x) > abs(velocity.y) else { return false }
             let physicalDelta = velocity.x < 0 ? 1 : -1

@@ -5,6 +5,10 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
+    static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
+        coordinator.gestures.detach()
+        coordinator.interactionRuntime.reset()
+    }
     let plan: MangaPagedReadingPlan
     let viewportPlacement: MangaNovelReaderViewportPlacement?
     let settings: MangaReaderSettings
