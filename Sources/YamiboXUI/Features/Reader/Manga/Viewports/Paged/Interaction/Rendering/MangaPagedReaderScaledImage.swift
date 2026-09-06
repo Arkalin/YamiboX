@@ -13,7 +13,7 @@ struct MangaPagedReaderScaledImage: View {
     let isSurfaceInteractionEnabled: Bool
     let isZoomInteractionEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
-    let surfaceInteraction: MangaPagedReaderPageSurfaceInteraction
+    let surfaceInteraction: MangaSurfaceAttachment
     let onLongPress: () -> Void
 
     @State private var instance = UUID()

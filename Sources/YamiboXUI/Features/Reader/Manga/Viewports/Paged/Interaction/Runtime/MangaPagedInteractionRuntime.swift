@@ -2,6 +2,38 @@ import Foundation
 
 @MainActor
 final class MangaPagedInteractionRuntime {
+    func navigationContext(
+        selectionIndex: Int,
+        surface: MangaSurfaceRuntime?,
+        configuration: MangaNavigationConfiguration
+    ) -> MangaNavigationSession.Context {
+        MangaNavigationSession.Context(viewportGeneration: navigationGeneration,
+            selectionIndex: selectionIndex, configuration: configuration,
+            surfaceIdentity: surface.map(ObjectIdentifier.init), surfaceGeneration: surface?.generation)
+    }
+
+    func navigationDecision(
+        _ request: MangaNavigationRequest,
+        surface: MangaSurfaceRuntime?,
+        configuration: MangaNavigationConfiguration
+    ) -> MangaInteractionDecision {
+        guard let intent = request.intent(direction: configuration.direction) else { return .ignore }
+        return MangaInteractionPolicy.decide(intent, configuration: configuration.surface,
+            scale: surface?.transform.scale ?? 1, hiddenEdges: surface?.hiddenEdges ?? [],
+            menuFrame: surface?.menuFrame ?? .zero, imageLoaded: surface?.imageLoaded ?? false)
+    }
+
+    @discardableResult
+    func handleNavigation(
+        _ request: MangaNavigationRequest,
+        surface: MangaSurfaceRuntime?,
+        configuration: MangaNavigationConfiguration
+    ) -> MangaInteractionDecision {
+        let decision = navigationDecision(request, surface: surface, configuration: configuration)
+        surface?.apply(decision)
+        return decision
+    }
+
     private var surfaces: [SurfaceID: MangaSurfaceRuntime] = [:]
     private(set) var activeSurface: SurfaceID?
     private(set) var navigationGeneration: UInt64 = 0

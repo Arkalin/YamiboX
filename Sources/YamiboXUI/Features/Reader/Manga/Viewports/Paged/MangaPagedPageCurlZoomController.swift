@@ -1,5 +1,3 @@
-import SwiftUI
-import YamiboXCore
 import Observation
 
 #if os(iOS)
@@ -9,7 +7,7 @@ import UIKit
 @MainActor
 final class MangaPagedPageCurlZoomController {
     private unowned let coordinator: MangaPagedPageCurlCoordinator
-    private let runtime: MangaSurfaceRuntime
+    let runtime: MangaSurfaceRuntime
     private let registry = MangaSurfaceGestureRegistry()
     private lazy var panInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pan)
     private lazy var pinchInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pinch)
@@ -23,12 +21,6 @@ final class MangaPagedPageCurlZoomController {
     func handleSpreadPinch(_ recognizer: UIPinchGestureRecognizer) {
         pinchInput.handle(recognizer, localTranslation: nil)
         render(animated: false)
-    }
-
-    func control(_ edge: MangaPagedImageSurfaceHorizontalEdge) -> MangaInteractionDecision {
-        let decision = runtime.perform(.control(edge))
-        render(animated: true)
-        return decision
     }
 
     func handleSpreadPan(_ recognizer: UIPanGestureRecognizer) {
@@ -66,45 +58,17 @@ final class MangaPagedPageCurlZoomController {
         }
     }
 
-    func consumePageCurlSpreadEdgeTap(for zone: ReaderPagedTapZone, in container: MangaPagedPageCurlContainerViewController) -> Bool {
-        guard coordinator.parent.sequence.usesTwoPageSpread,
-              let edge = MangaPagedSurfaceEdgeInteraction.physicalEdge(forTapZone: zone),
-              runtime.decision(.edge(edge)) == .reveal(edge) else { return false }
-        runtime.perform(.edge(edge))
-        render(animated: true)
-        return true
-    }
-
-    func shouldDeferPageCurlPanToSpreadContent(_ recognizer: UIPanGestureRecognizer,
-        in container: MangaPagedPageCurlContainerViewController) -> Bool {
-        guard coordinator.parent.sequence.usesTwoPageSpread else { return false }
-        let translation = recognizer.translation(in: container.view)
-        let velocity = recognizer.velocity(in: container.view)
-        return runtime.decision(.pan(translation: CGSize(width: translation.x, height: translation.y),
-            velocity: CGSize(width: velocity.x, height: velocity.y))) == .panImage
-    }
-
-    func togglePageCurlSpreadZoom(at location: CGPoint, in container: MangaPagedPageCurlContainerViewController) {
-        runtime.perform(.doubleTap(location))
-        render(animated: true)
-    }
-
     func resetPageCurlSpreadZoom(in container: MangaPagedPageCurlContainerViewController, animated: Bool) {
         runtime.invalidate(reset: true)
         render(animated: animated)
     }
 
-    func isPageCurlSpreadZoomInteractionEnabled(in container: MangaPagedPageCurlContainerViewController) -> Bool {
-        coordinator.parent.sequence.usesTwoPageSpread && coordinator.parent.zoomEnabled &&
-            !coordinator.parent.isChromeVisible && container.view.bounds.width > 0 && container.view.bounds.height > 0 &&
-            coordinator.pageSurfaceInteractions.values.contains { $0.runtime.imageLoaded }
+    func updateInputAvailability() {
+        panInput.update(coordinator.gestures.spreadPanGesture)
+        pinchInput.update(coordinator.gestures.spreadPinchGesture)
     }
 
-    func isPageCurlSpreadPanEnabled(in container: MangaPagedPageCurlContainerViewController) -> Bool {
-        isPageCurlSpreadZoomInteractionEnabled(in: container) && (runtime.isZoomActive || runtime.isManipulating)
-    }
-
-    private func render(animated: Bool) {
+    func render(animated: Bool) {
         guard let container = coordinator.activeContainerViewController else { return }
         let transform = runtime.transform
         let updates = {
@@ -114,7 +78,7 @@ final class MangaPagedPageCurlZoomController {
         }
         if animated { UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut, .allowUserInteraction], animations: updates) }
         else { updates() }
-        coordinator.gestures.updatePageCurlContainerGestureState(in: container)
+        updateInputAvailability()
     }
 }
 #endif

@@ -6,6 +6,7 @@ import UIKit
 
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
+        coordinator.invalidatePageCurlTransitions()
         coordinator.gestures.detach()
         coordinator.interactionRuntime.reset()
     }

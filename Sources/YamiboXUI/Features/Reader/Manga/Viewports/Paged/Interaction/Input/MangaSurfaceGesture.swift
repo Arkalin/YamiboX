@@ -77,14 +77,12 @@ final class MangaSurfaceGestureInput: NSObject, UIGestureRecognizerDelegate {
             self.token = nil
             recognizer.isEnabled = false
         }
-        let active = recognizer.state == .began || recognizer.state == .changed
         let enabled: Bool
         switch role {
         case .pan:
-            enabled = !runtime.configuration.chromeVisible && runtime.imageLoaded &&
-                (active || runtime.isZoomActive || (runtime.configuration.allowsUnzoomedPan && !runtime.hiddenEdges.isEmpty))
+            enabled = runtime.canPan
         case .pinch:
-            enabled = runtime.imageLoaded && !runtime.configuration.chromeVisible && runtime.configuration.zoomEnabled
+            enabled = runtime.canPinch
         case .longPress:
             enabled = runtime.imageLoaded && !menuFrame.isEmpty
         }
@@ -99,7 +97,7 @@ final class MangaSurfaceGestureInput: NSObject, UIGestureRecognizerDelegate {
             return runtime.decision(.pan(translation: size(localTranslation() ?? pan.translation(in: pan.view)),
                 velocity: size(localVelocity() ?? pan.velocity(in: pan.view)))) == .panImage
         case .pinch:
-            return runtime.imageLoaded && runtime.configuration.zoomEnabled && !runtime.configuration.chromeVisible
+            return runtime.canPinch
         case .longPress:
             runtime.setMenuFrame(menuFrame)
             return runtime.decision(.longPress(localLocation() ?? recognizer.location(in: recognizer.view))) == .menu
@@ -163,9 +161,10 @@ struct MangaSurfaceGesture: UIGestureRecognizerRepresentable {
         context.coordinator.menuFrame = menuFrame
         context.coordinator.onMenu = onMenu
         context.coordinator.instance = instance
-        context.coordinator.localLocation = { context.converter.localLocation }
-        context.coordinator.localTranslation = { context.converter.localTranslation }
-        context.coordinator.localVelocity = { context.converter.localVelocity }
+        let converter = context.converter
+        context.coordinator.localLocation = { converter.localLocation }
+        context.coordinator.localTranslation = { converter.localTranslation }
+        context.coordinator.localVelocity = { converter.localVelocity }
         context.coordinator.update(recognizer)
     }
 

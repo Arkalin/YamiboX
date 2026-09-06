@@ -14,7 +14,7 @@ struct MangaPagedReaderPageSurface: View {
     let isChromeVisible: Bool
     let zoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
-    let surfaceInteraction: MangaPagedReaderPageSurfaceInteraction
+    let surfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
     let onLongPress: (MangaReaderPageProjection) -> Void
 

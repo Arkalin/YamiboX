@@ -13,8 +13,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     let interactionRuntime = MangaPagedInteractionRuntime()
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var surfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
-    private(set) var pageSurfaceInteractions: [String: MangaPagedReaderPageSurfaceInteraction] = [:]
-    private(set) var spreadSurfaceInteractions: [String: MangaPagedReaderPageSurfaceInteraction] = [:]
+    private(set) var pageSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
+    private(set) var spreadSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
     private var pageSurfaceInitialHorizontalAlignments: [String: MangaPagedImageSurfaceInitialHorizontalAlignment] = [:]
     private var lastAppliedLikedPageIDs: Set<String> = []
     private var pendingInitialSpreadIndex: Int?
@@ -378,20 +378,20 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         return alignment
     }
 
-    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaPagedReaderPageSurfaceInteraction {
+    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaSurfaceAttachment {
         if let interaction = pageSurfaceInteractions[page.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
+        let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
         pageSurfaceInteractions[page.id] = interaction
         return interaction
     }
 
-    private func spreadSurfaceInteraction(for spread: MangaPageSpread) -> MangaPagedReaderPageSurfaceInteraction {
+    private func spreadSurfaceInteraction(for spread: MangaPageSpread) -> MangaSurfaceAttachment {
         if let interaction = spreadSurfaceInteractions[spread.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction(runtime: interactionRuntime.surface(SurfaceID(value: "spread:" + spread.id)))
+        let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "spread:" + spread.id)))
         spreadSurfaceInteractions[spread.id] = interaction
         return interaction
     }

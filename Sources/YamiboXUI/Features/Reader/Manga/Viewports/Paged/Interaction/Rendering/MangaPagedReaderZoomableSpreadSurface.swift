@@ -11,7 +11,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
     let isChromeVisible: Bool
     let isZoomInteractionEnabled: Bool
-    let spreadSurfaceInteraction: MangaPagedReaderPageSurfaceInteraction
+    let spreadSurfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
 
     @State private var instance = UUID()

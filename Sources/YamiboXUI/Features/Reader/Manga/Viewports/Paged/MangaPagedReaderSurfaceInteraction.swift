@@ -32,7 +32,7 @@ struct MangaPagedReaderSpreadPageSurface {
     let page: MangaReaderPageProjection
     let surfaceIdentity: MangaPagedReaderPageAppearanceIdentity
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
-    let surfaceInteraction: MangaPagedReaderPageSurfaceInteraction
+    let surfaceInteraction: MangaSurfaceAttachment
     let onLongPress: (MangaReaderPageProjection) -> Void
 }
 

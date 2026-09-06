@@ -28,8 +28,14 @@ final class MangaSurfaceRuntime {
     func isMounted(_ instance: UUID) -> Bool { mountingInstance == instance }
 
     var hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> { geometry.hiddenEdges(transform) }
-    var isZoomActive: Bool { MangaPageZoomPolicy.isActive(transform.scale) }
     var isManipulating: Bool { session != nil }
+    var canPinch: Bool { availableInputs.contains(.pinch) }
+    var canPan: Bool { availableInputs.contains(.pan) }
+
+    private var availableInputs: Set<MangaContinuousInput> {
+        MangaInteractionPolicy.availableInputs(configuration: configuration, scale: transform.scale, hiddenEdges: hiddenEdges,
+            imageLoaded: imageLoaded && geometry.viewport.width > 0 && geometry.viewport.height > 0, isManipulating: isManipulating)
+    }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {
         MangaInteractionPolicy.decide(intent, configuration: configuration, scale: transform.scale,
@@ -101,6 +107,11 @@ final class MangaSurfaceRuntime {
     @discardableResult
     func perform(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {
         let result = decision(intent)
+        apply(result)
+        return result
+    }
+
+    func apply(_ result: MangaInteractionDecision) {
         switch result {
         case let .reveal(edge):
             invalidate()
@@ -113,7 +124,6 @@ final class MangaSurfaceRuntime {
             transform = committed
         default: break
         }
-        return result
     }
 
     private func refresh() {

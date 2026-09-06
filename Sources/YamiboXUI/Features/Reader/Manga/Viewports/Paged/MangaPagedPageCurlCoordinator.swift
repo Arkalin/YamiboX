@@ -13,14 +13,17 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var currentSelectionIndex: Int?
     private var lastReportedGlobalIndex: Int?
-    private(set) var pageSurfaceInteractions: [String: MangaPagedReaderPageSurfaceInteraction] = [:]
+    private(set) var pageSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
     private var pageCurlSurfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
     private var pageCurlPageAppearanceGenerations: [String: Int] = [:]
     private var lastAppliedLikedPageIDs: Set<String> = []
     weak var activeContainerViewController: MangaPagedPageCurlContainerViewController?
     weak var activePageViewController: UIPageViewController?
     private weak var pageCurlBackColorPageViewController: UIPageViewController?
-    private var pageCurlBackColorDisplayLink: CADisplayLink?
+    private(set) var pageCurlBackColorDisplayLink: CADisplayLink?
+    private var pageCurlBackColorRefreshID: UUID?
+    private var selectionTransitionID = UUID()
+    private var interactivePageCurlTransition: (id: UUID, generation: UInt64)?
     private let pageCurlBackColorFilterCache = MangaPageCurlBackColorFilterCache()
     private(set) lazy var gestures = MangaPagedPageCurlNavigationAdapter(coordinator: self)
     private(set) lazy var zoom = MangaPagedPageCurlZoomController(coordinator: self)
@@ -45,6 +48,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         activePageViewController = pageViewController
         let didChangeContentIdentity = contentIdentity != nextContentIdentity
         if didChangeContentIdentity {
+            invalidatePageCurlTransitions()
             interactionRuntime.reset(keeping: [SurfaceID(value: "curl-spread")])
             pageSurfaceInteractions = [:]
             pageCurlSurfaceInteractionIdentity = nil
@@ -116,7 +120,10 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         _ pageViewController: UIPageViewController,
         willTransitionTo pendingViewControllers: [UIViewController]
     ) {
-        startPageCurlBackColorRefresh(in: pageViewController)
+        invalidatePageCurlTransitions()
+        let transitionID = UUID()
+        interactivePageCurlTransition = (transitionID, interactionRuntime.navigationGeneration)
+        startPageCurlBackColorRefresh(in: pageViewController, transitionID: transitionID)
     }
 
     func pageViewController(
@@ -134,8 +141,10 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         previousViewControllers: [UIViewController],
         transitionCompleted completed: Bool
     ) {
-        stopPageCurlBackColorRefresh()
-        guard completed else { return }
+        guard let transition = interactivePageCurlTransition else { return }
+        interactivePageCurlTransition = nil
+        stopPageCurlBackColorRefresh(for: transition.id)
+        guard completed, interactionRuntime.navigationGeneration == transition.generation else { return }
         preparePreviousPageCurlPagesForReuse(previousViewControllers)
         publishSelection(from: pageViewController)
     }
@@ -192,6 +201,8 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         animated: Bool,
         publishOnCompletion: Bool
     ) {
+        invalidatePageCurlTransitions()
+        let transitionID = selectionTransitionID
         let clampedSelectionIndex = min(max(selectionIndex, 0), max(parent.sequence.pageCount - 1, 0))
         let leafIndexes = parent.sequence.leafIndexes(forSelectionIndex: clampedSelectionIndex)
         let controllers = leafIndexes.compactMap(controller(forLeafIndex:))
@@ -212,15 +223,20 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             clampedSelectionIndex != currentSelectionIndex
         let generation = interactionRuntime.navigationGeneration
         let changesSelection = clampedSelectionIndex != currentSelectionIndex
+        if animated {
+            startPageCurlBackColorRefresh(in: pageViewController, transitionID: transitionID)
+        }
         pageViewController.setViewControllers(
             controllers,
             direction: direction,
             animated: animated
         ) { [weak self] completed in
-            guard let self, self.interactionRuntime.navigationGeneration == generation else { return }
+            guard let self else { return }
             if animated {
-                self.stopPageCurlBackColorRefresh()
+                self.stopPageCurlBackColorRefresh(for: transitionID)
             }
+            guard self.selectionTransitionID == transitionID,
+                  self.interactionRuntime.navigationGeneration == generation else { return }
             guard !animated || completed else { return }
             if animated, changesSelection, self.parent.sequence.usesTwoPageSpread,
                let container = self.activeContainerViewController {
@@ -234,9 +250,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
                 self.publishCurrentPageIfNeeded(selectionIndex: clampedSelectionIndex)
             }
         }
-        if animated {
-            startPageCurlBackColorRefresh(in: pageViewController)
-        } else {
+        if !animated {
             if shouldPrepareOutgoingPageCurlPages {
                 preparePreviousPageCurlPagesForReuse(outgoingViewControllers)
             }
@@ -324,11 +338,11 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         )
     }
 
-    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaPagedReaderPageSurfaceInteraction {
+    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaSurfaceAttachment {
         if let interaction = pageSurfaceInteractions[page.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
+        let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
         pageSurfaceInteractions[page.id] = interaction
         return interaction
     }
@@ -356,13 +370,20 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         }
     }
 
-    private func startPageCurlBackColorRefresh(in pageViewController: UIPageViewController) {
+    func invalidatePageCurlTransitions() {
+        selectionTransitionID = UUID()
+        interactivePageCurlTransition = nil
+        stopPageCurlBackColorRefresh()
+    }
+
+    private func startPageCurlBackColorRefresh(in pageViewController: UIPageViewController, transitionID: UUID) {
         guard !parent.sequence.usesTwoPageSpread else {
             applyPageBackground(to: pageViewController)
             return
         }
 
         pageCurlBackColorFilterCache.reset()
+        pageCurlBackColorRefreshID = transitionID
         pageCurlBackColorPageViewController = pageViewController
         applyPageBackground(to: pageViewController)
         guard pageCurlBackColorDisplayLink == nil else { return }
@@ -375,9 +396,12 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         pageCurlBackColorDisplayLink = displayLink
     }
 
-    private func stopPageCurlBackColorRefresh() {
+    private func stopPageCurlBackColorRefresh(for transitionID: UUID? = nil) {
+        // A delayed completion may release its own refresh, but not a replacement's.
+        if let transitionID, pageCurlBackColorRefreshID != transitionID { return }
         pageCurlBackColorDisplayLink?.invalidate()
         pageCurlBackColorDisplayLink = nil
+        pageCurlBackColorRefreshID = nil
         if let pageCurlBackColorPageViewController {
             applyPageBackground(to: pageCurlBackColorPageViewController)
         }

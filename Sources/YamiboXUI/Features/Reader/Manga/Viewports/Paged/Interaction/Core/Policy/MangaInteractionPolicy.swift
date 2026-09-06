@@ -30,6 +30,22 @@ struct MangaInteractionConfiguration: Equatable {
 }
 
 enum MangaInteractionPolicy {
+    static func availableInputs(
+        configuration: MangaInteractionConfiguration,
+        scale: CGFloat,
+        hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge>,
+        imageLoaded: Bool,
+        isManipulating: Bool
+    ) -> Set<MangaContinuousInput> {
+        guard imageLoaded, !configuration.chromeVisible else { return [] }
+        var result: Set<MangaContinuousInput> = []
+        if configuration.zoomEnabled { result.insert(.pinch) }
+        if isManipulating || MangaPageZoomPolicy.isActive(scale) || (configuration.allowsUnzoomedPan && !hiddenEdges.isEmpty) {
+            result.insert(.pan)
+        }
+        return result
+    }
+
     static func dragEdge(translation: CGSize, velocity: CGSize) -> MangaPagedImageSurfaceHorizontalEdge? {
         let vector = velocity == .zero ? translation : velocity
         guard vector.width != 0, abs(vector.width) > abs(vector.height) else { return nil }

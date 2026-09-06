@@ -16,7 +16,7 @@ extension ReaderPagedPageTurnCell {
         isChromeVisible: Bool,
         zoomEnabled: Bool,
         allowsUnzoomedSurfacePan: Bool,
-        spreadSurfaceInteraction: MangaPagedReaderPageSurfaceInteraction,
+        spreadSurfaceInteraction: MangaSurfaceAttachment,
         likedPageIDs: Set<String>,
         colorScheme: ColorScheme
     ) {
@@ -58,7 +58,7 @@ private struct MangaPagedReaderSpreadSurface: View {
     let isChromeVisible: Bool
     let zoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
-    let spreadSurfaceInteraction: MangaPagedReaderPageSurfaceInteraction
+    let spreadSurfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
 
     var body: some View {

@@ -7,16 +7,17 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
     enum Role { case tap, doubleTap, navigationPan, surfacePan, surfacePinch }
     let tap = UITapGestureRecognizer()
     let doubleTap = UITapGestureRecognizer()
-    let navigationPan = UIPanGestureRecognizer()
+    let navigationPan: UIPanGestureRecognizer
     let surfacePan = UIPanGestureRecognizer()
     let surfacePinch = UIPinchGestureRecognizer()
     var onEvent: (Role, UIGestureRecognizer) -> Void = { _, _ in }
     var permits: (UIGestureRecognizer) -> Bool = { _ in false }
     var receives: (UIGestureRecognizer, UITouch) -> Bool = { _, _ in true }
-    var generation: () -> UInt64 = { 0 }
-    private var navigationGeneration: UInt64?
+    var navigationContext: () -> MangaNavigationSession.Context? = { nil }
+    private var navigationSession = MangaNavigationSession()
 
-    override init() {
+    init(navigationPan: UIPanGestureRecognizer = UIPanGestureRecognizer()) {
+        self.navigationPan = navigationPan
         super.init()
         doubleTap.numberOfTapsRequired = 2
         tap.require(toFail: doubleTap)
@@ -33,7 +34,10 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
         view.addGestureRecognizer(recognizer)
     }
 
-    func detach() { recognizers.forEach { $0.view?.removeGestureRecognizer($0) } }
+    func detach() {
+        navigationSession.cancel()
+        recognizers.forEach { $0.view?.removeGestureRecognizer($0) }
+    }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool { permits(gestureRecognizer) }
 
@@ -63,8 +67,13 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
         else if recognizer === surfacePinch { role = .surfacePinch }
         else { return }
         if role == .navigationPan {
-            if recognizer.state == .began { navigationGeneration = generation() }
-            if recognizer.state == .ended, navigationGeneration != generation() { return }
+            switch recognizer.state {
+            case .began: navigationSession.begin(in: navigationContext())
+            case .ended:
+                guard navigationSession.finish(in: navigationContext()) else { return }
+            case .cancelled, .failed: navigationSession.cancel()
+            default: break
+            }
         }
         onEvent(role, recognizer)
     }
