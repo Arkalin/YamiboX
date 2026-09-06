@@ -123,12 +123,7 @@ enum BlogReaderHTMLParser {
     }
 
     private static func commentContainers(in document: Document) -> [Element] {
-        let scoped = document.selectAll("#comment_ul li, .commentlist li, .blog_comment li, li[id^=comment_], dl[id^=comment_], .cmt .ptm, .comment")
-        if !scoped.isEmpty {
-            return scoped
-        }
-        YamiboLog.forum.warning("commentContainers: no scoped blog-comment selectors matched, falling back to broad 'li, dl' scan")
-        return document.selectAll("li, dl")
+        document.selectAll("#comment_ul li, .commentlist li, .blog_comment li, li[id^=comment_], dl[id^=comment_], .cmt .ptm, .comment")
     }
 
     private static func commentContentElement(in container: Element) -> Element? {
