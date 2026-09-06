@@ -10,17 +10,18 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     var parent: MangaPagedReaderViewport
     let pagingDriver = ReaderPagedPagingDriver()
+    let interactionRuntime = MangaPagedInteractionRuntime()
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var surfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
-    private(set) var pageSurfaceInteractions: [String: MangaPagedReaderPageSurfaceInteraction] = [:]
-    private(set) var spreadSurfaceInteractions: [String: MangaPagedReaderPageSurfaceInteraction] = [:]
+    private(set) var pageSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
+    private(set) var spreadSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
     private var pageSurfaceInitialHorizontalAlignments: [String: MangaPagedImageSurfaceInitialHorizontalAlignment] = [:]
     private var lastAppliedLikedPageIDs: Set<String> = []
     private var pendingInitialSpreadIndex: Int?
     private var lastReportedGlobalIndex: Int?
     private var lastAppliedPlacementRevision: Int?
     private var lastLaidOutViewportSize: CGSize?
-    private(set) lazy var gestures = MangaPagedScrollGestureController(coordinator: self)
+    private(set) lazy var gestures = MangaPagedScrollNavigationAdapter(coordinator: self)
 
     var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
         pagingDriver.callbackScheduler
@@ -89,6 +90,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
 
         contentIdentity = nextIdentity
+        interactionRuntime.reset()
         surfaceInteractionIdentity = nil
         pageSurfaceInteractions = [:]
         spreadSurfaceInteractions = [:]
@@ -348,7 +350,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             onLongPress: { [weak self] page in
                 guard let self else { return }
                 let onPageLongPress = self.parent.onPageLongPress
-                self.callbackScheduler.publish {
+                let generation = self.interactionRuntime.navigationGeneration
+                self.callbackScheduler.publish { [weak self] in
+                    guard self?.interactionRuntime.navigationGeneration == generation else { return }
                     onPageLongPress(page)
                 }
             }
@@ -374,20 +378,20 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         return alignment
     }
 
-    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaPagedReaderPageSurfaceInteraction {
+    private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaSurfaceAttachment {
         if let interaction = pageSurfaceInteractions[page.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction()
+        let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
         pageSurfaceInteractions[page.id] = interaction
         return interaction
     }
 
-    private func spreadSurfaceInteraction(for spread: MangaPageSpread) -> MangaPagedReaderPageSurfaceInteraction {
+    private func spreadSurfaceInteraction(for spread: MangaPageSpread) -> MangaSurfaceAttachment {
         if let interaction = spreadSurfaceInteractions[spread.id] {
             return interaction
         }
-        let interaction = MangaPagedReaderPageSurfaceInteraction()
+        let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "spread:" + spread.id)))
         spreadSurfaceInteractions[spread.id] = interaction
         return interaction
     }
@@ -399,6 +403,12 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
 
         lastReportedGlobalIndex = globalIndex
+        let spread = parent.plan.spreads[spreadIndex]
+        if parent.plan.usesTwoPageSpread {
+            interactionRuntime.activate(SurfaceID(value: "spread:" + spread.id))
+        } else if let pageIndex = spread.pageIndexes.first, parent.plan.pages.indices.contains(pageIndex) {
+            interactionRuntime.activate(SurfaceID(value: "page:" + parent.plan.pages[pageIndex].id))
+        }
         let onCurrentPageChange = parent.onCurrentPageChange
         callbackScheduler.publish {
             onCurrentPageChange(globalIndex)
