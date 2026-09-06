@@ -113,6 +113,7 @@ public final class MangaReaderViewModel {
     public private(set) var isLoadingMoreChapterComments = false
     public private(set) var chapterCommentsLoadMoreError: String?
     public private(set) var chapterCommentsRefreshError: String?
+    var chapterJumpErrorMessage: String?
     public private(set) var likedPageIDs: Set<String> = []
     /// Drives the 书签与喜欢 capsule (visibility + combined count).
     public private(set) var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
@@ -783,6 +784,7 @@ public final class MangaReaderViewModel {
     // MARK: - Chapter jump and navigation history
 
     public func jumpToChapter(_ chapter: MangaChapter) async {
+        chapterJumpErrorMessage = nil
         chapterJumpTask?.cancel()
         invalidateReaderContent()
         chapterJumpGeneration += 1
@@ -848,7 +850,7 @@ public final class MangaReaderViewModel {
         } catch {
             guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
             YamiboLog.reader.error("Jumping to manga chapter failed: \(error.localizedDescription)")
-            directoryLane.refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            chapterJumpErrorMessage = error.localizedDescription
         }
     }
 

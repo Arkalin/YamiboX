@@ -229,6 +229,9 @@ public struct MangaReaderView: View {
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!isChromeVisible)
         .persistentSystemOverlays(isChromeVisible ? .automatic : .hidden)
+        .transientMessage(model.chapterJumpErrorMessage) {
+            model.chapterJumpErrorMessage = nil
+        }
         .sheet(isPresented: $isDirectoryPresented) {
             if case let .loaded(loaded) = model.presentation.state {
                 MangaDirectorySheet(
