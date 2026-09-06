@@ -331,7 +331,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            true
+            touch.view?.isDescendant(ofType: UIControl.self) != true
         }
 
         private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {

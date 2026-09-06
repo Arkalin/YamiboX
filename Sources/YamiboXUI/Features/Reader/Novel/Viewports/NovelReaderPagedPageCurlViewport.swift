@@ -439,7 +439,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            true
+            touch.view?.isDescendant(ofType: UIControl.self) != true
         }
 
         func configureSpine(in pageViewController: UIPageViewController) {

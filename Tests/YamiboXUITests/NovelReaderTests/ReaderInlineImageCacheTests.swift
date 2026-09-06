@@ -6,6 +6,66 @@ import YamiboXCore
 
 final class ReaderInlineImageCacheTests: XCTestCase {
     @MainActor
+    func testInlineImageFailureShowsRetryAndRecoversAfterRepeatedFailure() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/inline-retry.jpg")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let bytes = SequencedOfflineImageBytes(outputs: [
+            Data([0, 1, 2]), Data([0, 1, 2]), testImageData(color: .blue)
+        ])
+        let view = NovelReaderVerticalViewportImageView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 480),
+            pipeline: makeUIPipeline(bytes: bytes)
+        )
+        view.configure(source: source, title: "Chapter", isLiked: false, onTap: { _, _ in })
+        let failureLabel = try XCTUnwrap(view.subviews.compactMap { $0 as? UILabel }.first)
+        let indicator = try XCTUnwrap(view.subviews.compactMap { $0 as? UIActivityIndicatorView }.first)
+        try await waitUntil { !failureLabel.isHidden }
+        let retry = try XCTUnwrap(view.subviews.compactMap { $0 as? UIButton }.first)
+        XCTAssertFalse(retry.isHidden)
+        XCTAssertFalse(indicator.isAnimating)
+        XCTAssertNil(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)))
+
+        for attempt in 0..<2 {
+            view.layoutIfNeeded()
+            XCTAssertGreaterThanOrEqual(retry.bounds.height, 44)
+            XCTAssertTrue(view.bounds.contains(retry.frame))
+            XCTAssertFalse(failureLabel.frame.intersects(retry.frame))
+            let hit = view.hitTest(retry.center, with: nil)
+            XCTAssertTrue(hit?.isDescendant(of: retry) == true)
+            // These tests have no app host to dispatch UIKit target-actions.
+            let action = try XCTUnwrap(retry.actions(forTarget: view, forControlEvent: .touchUpInside)?.first)
+            _ = view.perform(NSSelectorFromString(action))
+            XCTAssertTrue(retry.isHidden)
+            XCTAssertTrue(failureLabel.isHidden)
+            XCTAssertTrue(indicator.isAnimating)
+            if attempt == 0 {
+                try await waitUntil { !failureLabel.isHidden }
+                XCTAssertFalse(retry.isHidden)
+            } else {
+                try await waitUntil { view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)) != nil }
+            }
+        }
+
+        XCTAssertTrue(retry.isHidden)
+        XCTAssertTrue(failureLabel.isHidden)
+        XCTAssertFalse(indicator.isAnimating)
+        XCTAssertEqual(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240))?.url, source.url)
+        let callCount = await bytes.loadCallCount()
+        XCTAssertEqual(callCount, 3)
+    }
+
+    @MainActor
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        for _ in 0..<200 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for inline image state")
+    }
+
+    @MainActor
     func testMemoryCacheUsesURLIdentityAcrossReferers() async throws {
         let imageURL = URL(string: "https://img.example.com/shared.jpg")!
         let scope = try XCTUnwrap(YamiboImageOfflineScope(tid: "42"))

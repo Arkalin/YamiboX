@@ -339,6 +339,10 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             otherGestureRecognizer.view?.isDescendant(ofType: NovelReaderVerticalViewportImageView.self) == true
         }
 
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            touch.view?.isDescendant(ofType: UIControl.self) != true
+        }
+
         private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {
             if parent.isChromeVisible {
                 let onChromeVisibleImageTap = parent.onChromeVisibleImageTap
@@ -1014,9 +1018,11 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
 }
 
 final class NovelReaderVerticalViewportImageView: UIView {
+    private let pipeline: YamiboUIImagePipeline
     private let imageView = UIImageView()
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let failureLabel = UILabel()
+    private let retryButton = UIButton(type: .system)
     private let likedBadgeView: UIImageView = {
         let badge = UIImageView(image: UIImage(systemName: "heart.fill"))
         badge.tintColor = .systemPink
@@ -1033,7 +1039,8 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private var title: String?
     private var sourceIdentity: YamiboImageSource?
 
-    override init(frame: CGRect) {
+    init(frame: CGRect = .zero, pipeline: YamiboUIImagePipeline = .shared) {
+        self.pipeline = pipeline
         super.init(frame: frame)
         configureViewHierarchy()
     }
@@ -1067,12 +1074,23 @@ final class NovelReaderVerticalViewportImageView: UIView {
             CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude)
         )
         let labelWidth = min(labelSize.width, availableWidth)
-        let labelHeight = min(labelSize.height, bounds.height)
+        let buttonSize = retryButton.sizeThatFits(CGSize(width: availableWidth, height: bounds.height))
+        let buttonWidth = min(max(buttonSize.width, 44), availableWidth)
+        let buttonHeight = min(max(buttonSize.height, 44), bounds.height)
+        let spacing = min(8, max(bounds.height - buttonHeight, 0))
+        let labelHeight = min(labelSize.height, max(bounds.height - buttonHeight - spacing, 0))
+        let contentHeight = labelHeight + spacing + buttonHeight
         failureLabel.frame = CGRect(
             x: bounds.midX - labelWidth / 2,
-            y: bounds.midY - labelHeight / 2,
+            y: bounds.midY - contentHeight / 2,
             width: labelWidth,
             height: labelHeight
+        )
+        retryButton.frame = CGRect(
+            x: bounds.midX - buttonWidth / 2,
+            y: failureLabel.frame.maxY + spacing,
+            width: buttonWidth,
+            height: buttonHeight
         )
     }
 
@@ -1099,19 +1117,24 @@ final class NovelReaderVerticalViewportImageView: UIView {
         likedBadgeView.isHidden = !isLiked
         guard sourceIdentity != source else { return }
         sourceIdentity = source
+        load(source: source)
+    }
+
+    private func load(source: YamiboImageSource) {
         task?.cancel()
-        if let cachedImage = YamiboUIImagePipeline.shared.cachedImage(for: source) {
-            Task { @MainActor [weak self] in
-                self?.show(image: cachedImage)
-            }
+        task = nil
+        if let cachedImage = pipeline.cachedImage(for: source) {
+            show(image: cachedImage)
             return
         }
         imageView.image = nil
         failureLabel.isHidden = true
+        retryButton.isHidden = true
         activityIndicator.startAnimating()
+        let pipeline = self.pipeline
         task = Task { [weak self] in
             do {
-                let image = try await YamiboUIImagePipeline.shared.image(for: source)
+                let image = try await pipeline.image(for: source)
                 guard !Task.isCancelled else { return }
                 self?.show(image: image)
             } catch {
@@ -1133,11 +1156,28 @@ final class NovelReaderVerticalViewportImageView: UIView {
         failureLabel.text = L10n.string("image.load_failed")
         failureLabel.textColor = .secondaryLabel
         failureLabel.font = .preferredFont(forTextStyle: .caption1)
+        failureLabel.adjustsFontForContentSizeCategory = true
+        failureLabel.numberOfLines = 0
         failureLabel.textAlignment = .center
         failureLabel.isHidden = true
         addSubview(failureLabel)
 
+        var retryConfiguration = UIButton.Configuration.plain()
+        retryConfiguration.title = L10n.string("common.retry")
+        retryConfiguration.image = UIImage(systemName: "arrow.clockwise")
+        retryConfiguration.imagePadding = 6
+        retryButton.configuration = retryConfiguration
+        retryButton.accessibilityIdentifier = "novel-inline-image-retry"
+        retryButton.isHidden = true
+        retryButton.addTarget(self, action: #selector(retryImageLoad), for: .touchUpInside)
+        addSubview(retryButton)
+
         addSubview(likedBadgeView)
+    }
+
+    @objc private func retryImageLoad() {
+        guard !retryButton.isHidden, let source = sourceIdentity else { return }
+        load(source: source)
     }
 
     func imageTapPayloadIfHit(at point: CGPoint) -> (url: URL, title: String?)? {
@@ -1157,6 +1197,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private func show(image: UIImage) {
         activityIndicator.stopAnimating()
         failureLabel.isHidden = true
+        retryButton.isHidden = true
         imageView.image = image
     }
 
@@ -1164,7 +1205,9 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private func showFailure() {
         activityIndicator.stopAnimating()
         failureLabel.isHidden = false
+        retryButton.isHidden = false
         imageView.image = nil
+        setNeedsLayout()
     }
 }
 
