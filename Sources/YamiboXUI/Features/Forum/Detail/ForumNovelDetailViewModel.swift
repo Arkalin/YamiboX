@@ -183,7 +183,11 @@ final class ForumNovelDetailViewModel {
     }
 
     func refresh() async {
-        await loadDetail(preferCache: false, refreshesPersistentCache: true, preservesCurrentContentOnFailure: threadPage != nil)
+        // Protect cache replacement as well as the network request from the
+        // refresh-control task's cancellation, matching manga detail refresh.
+        await Task {
+            await loadDetail(preferCache: false, refreshesPersistentCache: true, preservesCurrentContentOnFailure: threadPage != nil)
+        }.value
     }
 
     private func loadDetail(
@@ -191,6 +195,8 @@ final class ForumNovelDetailViewModel {
         refreshesPersistentCache: Bool,
         preservesCurrentContentOnFailure: Bool
     ) async {
+        guard !isLoading, !Task.isCancelled else { return }
+        let previousDocument = document
         isLoading = true
         errorMessage = nil
         favoriteActions.transientMessage = nil
@@ -205,11 +211,13 @@ final class ForumNovelDetailViewModel {
             novelReaderSettings = await dependencies.settingsStore.load().novelReader
             favoriteActions.errorMessage = nil
             let threadRepository = await threadRepositoryProvider()
+            try Task.checkCancellation()
             let initialPages = try await loadInitialPages(repository: threadRepository, preferCache: preferCache)
             let headerPage = initialPages.headerPage
             let contentPage = initialPages.contentPage
             let authorID = initialPages.authorID
             let contentContext = initialPages.contentContext
+            try Task.checkCancellation()
             if refreshesPersistentCache {
                 try await threadRepository.clearCachedThreadPages(thread: context.thread)
                 try await threadRepository.storeNovelThreadPage(headerPage, context: context, pageNumber: 1)
@@ -217,6 +225,7 @@ final class ForumNovelDetailViewModel {
                     try await threadRepository.storeNovelThreadPage(contentPage, context: contentContext, pageNumber: 1)
                 }
             }
+            try Task.checkCancellation()
             resolvedAuthorID = authorID
             threadPage = headerPage
             loadedThreadPages = [1: contentPage]
@@ -228,6 +237,12 @@ final class ForumNovelDetailViewModel {
             rebuildChapterDirectory()
             preloadReaderDocument()
         } catch {
+            let networkError = error as NSError
+            if Task.isCancelled || error is CancellationError ||
+                (networkError.domain == NSURLErrorDomain && networkError.code == NSURLErrorCancelled) {
+                document = previousDocument
+                return
+            }
             readingProgress = await dependencies.readingProgressStore.load(threadID: context.thread.tid)
             contentCover = await loadContentCover()
             if preservesCurrentContentOnFailure {
@@ -680,4 +695,3 @@ final class ForumNovelDetailViewModel {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-

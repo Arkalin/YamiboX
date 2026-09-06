@@ -1,46 +1,63 @@
 import SwiftUI
 import YamiboXCore
 
-/// The 86×112 book cover used by the manga/novel detail headers: brown
-/// wash under a remote image, glyph fallback, hairline border.
+/// Remote book artwork with a shared text fallback and a stable aspect ratio.
 struct ForumBookCoverView: View {
     @Environment(\.forumTheme) private var theme
+    @Namespace private var imageBrowserZoomNamespace
+    @State private var imageBrowserItem: ImageBrowserItem?
     let source: YamiboImageSource?
-    var placeholderSystemImage = "book.closed"
+    let title: String
+    var width: CGFloat = 86
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(theme.mutedAccent.opacity(0.12))
-
             if let source {
                 YamiboRemoteImage(source: source) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
+                    Button {
+                        imageBrowserItem = ImageBrowserItem(id: source.cacheKey, source: source, title: title)
+                    } label: {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: width, height: width * 112 / 86)
+                            .background(theme.mutedAccent.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .imageBrowserZoomSource(id: source.cacheKey, in: imageBrowserZoomNamespace)
+                    .accessibilityLabel(L10n.string("cover.view"))
+                    .accessibilityValue(title)
                 } placeholder: {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(theme.mutedAccent)
+                    placeholder
                 } failure: {
                     placeholder
                 }
+                .id(source.cacheKey)
             } else {
                 placeholder
             }
         }
-        .frame(width: 86, height: 112)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(width: width, height: width * 112 / 86)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(theme.border.opacity(0.7), lineWidth: 1)
         }
-        .accessibilityHidden(true)
+        .fullScreenCover(item: $imageBrowserItem) { item in
+            ImageBrowserView(
+                items: [item],
+                initialItemID: item.id,
+                mode: .single,
+                presentation: .zoom(imageBrowserZoomNamespace),
+                onDismiss: { imageBrowserItem = nil }
+            )
+        }
     }
 
     private var placeholder: some View {
-        Image(systemName: placeholderSystemImage)
-            .font(.title2)
-            .foregroundStyle(theme.mutedAccent.opacity(0.55))
+        BookCoverTextFallback(title: title, boxWidth: width)
+            .frame(width: width, height: width * 112 / 86)
+            .accessibilityHidden(true)
     }
 }

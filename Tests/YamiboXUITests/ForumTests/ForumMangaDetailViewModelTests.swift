@@ -5,6 +5,91 @@ import Testing
 import YamiboXTestSupport
 @testable import YamiboXUI
 
+@MainActor
+@Test(arguments: [0, 1, 2])
+func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int) async throws {
+    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+    let previousDirectory = model.directory
+    let previousDocument = model.currentDocument
+    let previousProgress = model.readingProgress
+    let previousCover = model.contentCover
+    let failure: any Error
+    switch cancellationKind {
+    case 0: failure = CancellationError()
+    case 1: failure = URLError(.cancelled)
+    default: failure = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+    }
+    await loader.setFailure(failure)
+
+    await model.reload()
+
+    #expect(model.errorMessage == nil)
+    #expect(!model.isLoading)
+    #expect(model.directory == previousDirectory)
+    #expect(model.currentDocument == previousDocument)
+    #expect(model.readingProgress == previousProgress)
+    #expect(model.contentCover == previousCover)
+    #expect(model.continueLaunchContext()?.initialPage == 5)
+}
+
+@MainActor
+@Test func forumMangaDetailGestureCancellationDoesNotCancelRefresh() async throws {
+    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+    let started = AsyncStream<Void>.makeStream()
+    let release = AsyncStream<Void>.makeStream()
+    defer {
+        started.continuation.finish()
+        release.continuation.finish()
+    }
+    await loader.pauseNextLoad(until: release.stream, started: started.continuation)
+    let refresh = Task { await model.refresh() }
+    for await _ in started.stream { break }
+    #expect(model.isLoading)
+
+    refresh.cancel()
+    release.continuation.yield(())
+    await refresh.value
+
+    #expect(await loader.successfulLoadCount == 2)
+    #expect(model.directory != nil)
+    #expect(model.errorMessage == nil)
+    #expect(!model.isLoading)
+    #expect(model.continueLaunchContext()?.initialPage == 5)
+}
+
+@MainActor
+@Test func forumMangaDetailOverlappingReloadDoesNotReplaceActiveLoad() async throws {
+    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+    let started = AsyncStream<Void>.makeStream()
+    let release = AsyncStream<Void>.makeStream()
+    defer {
+        started.continuation.finish()
+        release.continuation.finish()
+    }
+    await loader.pauseNextLoad(until: release.stream, started: started.continuation)
+    let refresh = Task { await model.refresh() }
+    for await _ in started.stream { break }
+
+    await model.reload()
+    #expect(await loader.loadCount == 2)
+    #expect(model.isLoading)
+    release.continuation.yield(())
+    await refresh.value
+    #expect(!model.isLoading)
+}
+
+@MainActor
+@Test func forumMangaDetailRealLoadFailureStillShowsAnError() async throws {
+    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+    let failure = URLError(.timedOut)
+    await loader.setFailure(failure)
+
+    await model.reload()
+
+    #expect(model.errorMessage == failure.localizedDescription)
+    #expect(!model.isLoading)
+}
+
 /// Regression coverage for the precise directory-scoped reading-progress
 /// lookup `ForumMangaDetailViewModel` must use once its `MangaDirectory` is
 /// known — see `ForumMangaDetailViewModel.loadReadingProgress()`. Mirrors
@@ -73,6 +158,7 @@ import YamiboXTestSupport
     #expect(model.errorMessage == nil)
     let resolvedDirectory = try #require(model.directory)
     #expect(resolvedDirectory.cleanBookName == "测试漫画")
+    #expect(model.readingProgressText == "第二话")
 
     let context = try #require(model.continueLaunchContext())
     #expect(context.chapterTID == "911")
@@ -144,6 +230,7 @@ import YamiboXTestSupport
         chapterView: 2,
         chapterTitle: "第二话",
         pageIndex: 3,
+        pageCount: 12,
         mangaID: directory.favoriteIdentity
     )
 
@@ -153,6 +240,7 @@ import YamiboXTestSupport
 
     #expect(model.readingProgress?.manga?.chapterThreadID == "921")
     #expect(model.readingProgress?.manga?.mangaPageIndex == 3)
+    #expect(model.readingProgressText == "第二话")
 }
 
 /// Correction flow: renaming the directory through the detail page must
@@ -841,7 +929,7 @@ private func makeForumMangaDetailTestDirectoryStore(suiteName: String) throws ->
 private func makeForumMangaDetailDependencies(
     readingProgressStore: ReadingProgressStore,
     mangaDirectoryStore: MangaDirectoryStore,
-    projectionLoader: FakeMangaReaderProjectionLoader,
+    projectionLoader: any MangaReaderProjectionSnapshotLoading,
     directoryRepository: (any MangaDirectoryRepository)? = nil,
     mangaOfflineCacheStore: (any MangaOfflineCacheStoring)? = nil
 ) throws -> ForumDependencies {
@@ -881,6 +969,71 @@ private func makeForumMangaDetailDependencies(
         makeMangaDirectoryRepository: { directoryRepository ?? UnusedMangaDirectoryRepository() },
         makeThreadRouteResolver: { YamiboThreadRouteResolver(client: await makeClient()) }
     )
+}
+
+@MainActor
+private func makeForumMangaDetailRefreshFixture() async throws -> (ForumMangaDetailViewModel, RefreshMangaReaderProjectionLoader) {
+    let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-refresh")
+    let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
+    let directoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let progressStore = ReadingProgressStore(defaults: defaults, key: "reading-progress")
+    let directory = MangaDirectory(
+        cleanBookName: "测试漫画", strategy: .tag, sourceKey: "测试漫画",
+        chapters: [MangaChapter(tid: "910", rawTitle: "第一话", chapterNumber: 1)],
+        lastUpdatedAt: Date()
+    )
+    try await directoryStore.saveDirectory(directory)
+    _ = try await progressStore.saveMangaTitle(
+        cleanBookName: directory.cleanBookName, chapterThreadID: "910", chapterTitle: "第一话",
+        pageIndex: 5, mangaID: directory.favoriteIdentity
+    )
+    let loader = RefreshMangaReaderProjectionLoader(projection: makeTestMangaReaderProjection(tid: "910", chapterTitle: "第一话"))
+    let dependencies = try makeForumMangaDetailDependencies(
+        readingProgressStore: progressStore, mangaDirectoryStore: directoryStore, projectionLoader: loader
+    )
+    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "910")
+    await model.reload()
+    _ = try #require(model.directory)
+    return (model, loader)
+}
+
+private actor RefreshMangaReaderProjectionLoader: MangaReaderProjectionSnapshotLoading {
+    let projection: MangaReaderProjection
+    private var failure: (any Error)?
+    private var pause: AsyncStream<Void>?
+    private var started: AsyncStream<Void>.Continuation?
+    private(set) var loadCount = 0
+    private(set) var successfulLoadCount = 0
+
+    init(projection: MangaReaderProjection) {
+        self.projection = projection
+    }
+
+    func setFailure(_ failure: any Error) {
+        self.failure = failure
+    }
+
+    func pauseNextLoad(until release: AsyncStream<Void>, started: AsyncStream<Void>.Continuation) {
+        pause = release
+        self.started = started
+    }
+
+    func loadReaderProjection(_ request: MangaReaderProjectionRequest) async throws -> MangaReaderProjection {
+        loadCount += 1
+        if let pause {
+            self.pause = nil
+            started?.yield(())
+            for await _ in pause { break }
+        }
+        try Task.checkCancellation()
+        if let failure { throw failure }
+        successfulLoadCount += 1
+        return projection
+    }
+
+    func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest) async throws -> MangaReaderProjectionSnapshot {
+        fatalError("Snapshot loading is not exercised by detail refresh tests")
+    }
 }
 
 /// Always injects a thread-cover-page repository stub: the view model's

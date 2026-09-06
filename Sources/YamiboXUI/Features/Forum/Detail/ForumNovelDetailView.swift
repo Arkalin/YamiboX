@@ -6,7 +6,6 @@ import UIKit
 #endif
 
 struct ForumNovelDetailView: View {
-    @Environment(\.forumTheme) private var theme
     @State private var model: ForumNovelDetailViewModel
 
     let onChapterTap: (NovelLaunchContext) -> Void
@@ -32,45 +31,50 @@ struct ForumNovelDetailView: View {
             expandedPages: model.expandedChapterPages,
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
-            refresh: {
-                await model.refresh()
-            },
-            onChapterTap: { chapter in
-                onChapterTap(model.launchContext(for: chapter))
-            },
+            refresh: { await model.refresh() },
+            onChapterTap: { onChapterTap(model.launchContext(for: $0)) },
             onSectionToggle: { page in
-                Task {
-                    await model.toggleChapterSection(page: page)
-                }
+                Task { await model.toggleChapterSection(page: page) }
             },
             onSectionRetry: { page in
-                Task {
-                    await model.loadChapterSection(page: page)
-                }
+                Task { await model.loadChapterSection(page: page) }
             },
-            onReadStart: {
-                onChapterTap(model.continueLaunchContext())
-            },
+            onReadStart: { onChapterTap(model.continueLaunchContext()) },
             hasReadingProgress: model.hasReadingProgress,
             onFavoriteTap: {
-                Task {
-                    await model.favoriteActions.toggleFavorite()
-                }
+                Task { await model.favoriteActions.toggleFavorite() }
             },
             onFavoriteLongPress: {
-                Task {
-                    await model.favoriteActions.presentLocationPicker()
-                }
+                Task { await model.favoriteActions.presentLocationPicker() }
             },
             onAuthorTap: onUserTap,
-            onCopyText: copyText,
-            onViewThread: onViewThread
+            onCopyText: copyText
         )
-        .navigationTitle(model.navigationTitle)
+        .navigationTitle(L10n.string("forum.thread_route.novel_detail_title"))
         .yamiboInlineNavigationTitleDisplayMode()
-        .task {
-            await model.load()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(action: onViewThread) {
+                        Label(L10n.string("forum.detail.view_thread"), systemImage: "text.bubble")
+                    }
+                    ShareLink(item: YamiboRoute.threadByID(
+                        tid: model.headerSummary.threadID,
+                        page: 1,
+                        authorID: nil,
+                        reverse: false
+                    ).url) {
+                        Label(L10n.string("forum.thread.share"), systemImage: "square.and.arrow.up")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel(L10n.string("common.more"))
+                .accessibilityIdentifier("forum.detail.more")
+                .help(L10n.string("common.more"))
+            }
         }
+        .task { await model.load() }
         .favoriteActionInterface(model.favoriteActions)
     }
 
@@ -82,8 +86,9 @@ struct ForumNovelDetailView: View {
     }
 }
 
-private struct ForumNovelDetailBodyView: View {
+struct ForumNovelDetailBodyView: View {
     @Environment(\.forumTheme) private var theme
+    @AppStorage(YamiboAppStorageKey.novelDetailChapterLayout) private var storedLayout = ChapterDirectoryLayout.list.rawValue
     let header: ForumNovelDetailHeaderSummary
     let sections: [ForumNovelChapterSection]
     let expandedPages: Set<Int>
@@ -99,56 +104,51 @@ private struct ForumNovelDetailBodyView: View {
     let onFavoriteLongPress: () -> Void
     let onAuthorTap: (String, String?) -> Void
     let onCopyText: ((String) -> Void)?
-    let onViewThread: () -> Void
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForumNovelDetailHeader(
-                    summary: header,
-                    canReadStart: !isLoading && errorMessage == nil,
-                    hasReadingProgress: hasReadingProgress,
-                    onFavoriteTap: onFavoriteTap,
-                    onFavoriteLongPress: onFavoriteLongPress,
-                    onAuthorTap: onAuthorTap,
-                    onCopyText: onCopyText,
-                    onReadStart: onReadStart,
-                    onViewThread: onViewThread
-                )
+        VStack(spacing: 0) {
+            ForumNovelDetailHeader(
+                summary: header,
+                canReadStart: !isLoading && errorMessage == nil,
+                hasReadingProgress: hasReadingProgress,
+                onFavoriteTap: onFavoriteTap,
+                onFavoriteLongPress: onFavoriteLongPress,
+                onAuthorTap: onAuthorTap,
+                onCopyText: onCopyText,
+                onReadStart: onReadStart
+            )
 
-                if let firstFloorPreviewText = header.firstFloorPreviewText {
-                    ForumNovelFirstFloorPreview(text: firstFloorPreviewText, onCopyText: onCopyText)
+            ForumChapterDirectory(
+                layout: Binding(
+                    get: { ChapterDirectoryLayout(storedValue: storedLayout) },
+                    set: { storedLayout = $0.rawValue }
+                ),
+                sections: sections.map { section in
+                    ChapterDirectorySection(
+                        id: String(section.page),
+                        title: L10n.string("reader.page_number_spaced", section.page),
+                        isExpanded: expandedPages.contains(section.page),
+                        isLoaded: section.isLoaded,
+                        isLoading: section.isLoading,
+                        errorMessage: section.errorMessage,
+                        items: section.chapters.enumerated().map { ChapterDirectoryItem.novel($0.element, indexInPage: $0.offset) }
+                    )
+                },
+                countText: L10n.string("forum.detail.loaded_chapters", sections.reduce(0) { $0 + $1.chapters.count }),
+                isLoading: isLoading,
+                errorMessage: errorMessage,
+                refresh: refresh,
+                onSectionToggle: { if let page = Int($0) { onSectionToggle(page) } },
+                onSectionRetry: { if let page = Int($0) { onSectionRetry(page) } },
+                onChapterTap: { id in
+                    guard let chapter = sections.flatMap(\.chapters).first(where: { $0.id == id }) else { return }
+                    onChapterTap(chapter)
                 }
-
-                if !sections.isEmpty {
-                    ForEach(sections) { section in
-                        ForumNovelChapterSectionView(
-                            section: section,
-                            isExpanded: expandedPages.contains(section.page),
-                            onToggle: {
-                                onSectionToggle(section.page)
-                            },
-                            onRetry: {
-                                onSectionRetry(section.page)
-                            },
-                            onChapterTap: onChapterTap
-                        )
-                    }
-                } else if isLoading {
-                    ForumContentLoadingView()
-                } else if let errorMessage {
-                    ForumContentErrorView(message: errorMessage) {
-                        Task {
-                            await refresh()
-                        }
-                    }
+            ) {
+                if let text = header.firstFloorPreviewText {
+                    ForumNovelFirstFloorPreview(text: text, onCopyText: onCopyText)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-        }
-        .refreshable {
-            await refresh()
         }
         .forumPageBackground()
         .tint(theme.accentText)
@@ -157,41 +157,34 @@ private struct ForumNovelDetailBodyView: View {
 
 private struct ForumNovelFirstFloorPreview: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isExpanded = false
     let text: String
     let onCopyText: ((String) -> Void)?
 
-    @State private var isExpanded = false
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "text.alignleft")
-                    .foregroundStyle(theme.mutedAccent)
-                Text(L10n.string("forum.thread_route.first_floor_preview"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.primaryText)
-                Spacer(minLength: 0)
-                Button {
-                    withAnimation(.snappy(duration: 0.18)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text(L10n.string("forum.thread_route.first_floor_preview"))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .frame(width: 28, height: 28)
-                        .expandedHitTarget()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(
-                    L10n.string(isExpanded ? "forum.thread_route.collapse_preview" : "forum.thread_route.expand_preview")
-                )
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string(isExpanded ? "forum.thread_route.collapse_preview" : "forum.thread_route.expand_preview"))
 
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(theme.primaryText)
+                .foregroundStyle(theme.secondaryText)
                 .lineSpacing(3)
-                .lineLimit(isExpanded ? nil : 6)
+                .lineLimit(isExpanded ? nil : 3)
                 .textSelection(.enabled)
                 .contextMenu {
                     if let onCopyText {
@@ -203,142 +196,15 @@ private struct ForumNovelFirstFloorPreview: View {
                     }
                 }
         }
-        .padding(14)
+        .foregroundStyle(theme.primaryText)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .forumCardBackground()
     }
 }
 
-private struct ForumNovelChapterSectionView: View {
-    @Environment(\.forumTheme) private var theme
-    let section: ForumNovelChapterSection
-    let isExpanded: Bool
-    let onToggle: () -> Void
-    let onRetry: () -> Void
-    let onChapterTap: (ForumNovelChapterSummary) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button(action: onToggle) {
-                HStack(spacing: 10) {
-                    Text(String(format: L10n.string("reader.page_number_spaced"), section.page))
-                        .font(.subheadline.weight(section.page == 1 ? .semibold : .medium))
-                        .foregroundStyle(theme.accentText)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(theme.mutedAccent.opacity(0.65))
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(
-                    (section.page == 1 ? theme.accent : theme.mutedAccent).opacity(section.page == 1 ? 0.08 : 0.06),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                if section.isLoading {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(theme.mutedAccent)
-                        Spacer()
-                    }
-                    .frame(height: 56)
-                } else if let errorMessage = section.errorMessage {
-                    ForumContentErrorView(message: errorMessage, retry: onRetry)
-                } else {
-                    ForEach(section.chapters) { chapter in
-                        ForumNovelChapterRow(chapter: chapter) {
-                            onChapterTap(chapter)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct ForumNovelChapterRow: View {
-    @Environment(\.forumTheme) private var theme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    let chapter: ForumNovelChapterSummary
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ForumNovelChapterLeadingBadge(
-                    floorText: chapter.floorText,
-                    isCurrentRead: chapter.isCurrentRead
-                )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(chapter.title)
-                        .font(.subheadline)
-                        .foregroundStyle(chapter.isCurrentRead ? theme.accentText : theme.primaryText)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-
-                    if let progressText = chapter.progressText {
-                        Text(progressText)
-                            .font(.caption2)
-                            .foregroundStyle(theme.mutedAccent)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.tertiaryText)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .forumCardBackground()
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct ForumNovelChapterLeadingBadge: View {
-    @Environment(\.forumTheme) private var theme
-    let floorText: String?
-    let isCurrentRead: Bool
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            if let floorText {
-                Text(floorText)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(isCurrentRead ? .white : theme.accentText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        isCurrentRead ? theme.accent : theme.mutedAccent.opacity(0.1),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    )
-            } else {
-                Image(systemName: "text.book.closed")
-                    .foregroundStyle(theme.mutedAccent)
-                    .frame(width: 24)
-            }
-
-            if isCurrentRead {
-                Image(systemName: "bookmark.fill")
-                    .font(.caption2)
-                    .foregroundStyle(theme.warning)
-                    .offset(x: 5, y: 6)
-            }
-        }
-        .frame(minWidth: 28)
-    }
-}
-
-private struct ForumNovelDetailHeader: View {
-    @Environment(\.forumTheme) private var theme
+struct ForumNovelDetailHeader: View {
     let summary: ForumNovelDetailHeaderSummary
     let canReadStart: Bool
     let hasReadingProgress: Bool
@@ -347,193 +213,89 @@ private struct ForumNovelDetailHeader: View {
     let onAuthorTap: (String, String?) -> Void
     let onCopyText: ((String) -> Void)?
     let onReadStart: () -> Void
-    let onViewThread: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                cover
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(summary.title)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(theme.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                        .contextMenu {
-                            if let onCopyText {
-                                Button {
-                                    onCopyText(summary.title)
-                                } label: {
-                                    Label(L10n.string("reader.copy"), systemImage: "doc.on.doc")
-                                }
-                            }
-                        }
-
-                    if let authorName = summary.authorName {
-                        ForumNovelAuthorButton(
-                            authorID: summary.authorID,
-                            authorName: authorName,
-                            onAuthorTap: onAuthorTap,
-                            onCopyText: onCopyText
-                        )
-                    }
-
-                    if let postedAtText = summary.postedAtText {
-                        Text(String(format: L10n.string("forum.thread_route.posted_at_format"), postedAtText))
-                            .font(.caption2)
-                            .foregroundStyle(theme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let lastUpdatedText = summary.lastUpdatedText {
-                        Text(String(format: L10n.string("forum.thread_route.updated_at_format"), lastUpdatedText))
-                            .font(.caption2)
-                            .foregroundStyle(theme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let readingProgressText = summary.readingProgressText {
-                        Label(readingProgressText, systemImage: "bookmark.fill")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(theme.warning)
-                            .lineLimit(2)
-                    }
-
-                    FlowStatRow(summary: summary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let threadURL = YamiboRoute.threadByID(tid: summary.threadID, page: 1, authorID: nil, reverse: false).url
+        ForumDetailHeader(
+            title: summary.title,
+            coverSource: summary.coverURL.map { YamiboImageSource(url: $0, refererPageURL: threadURL) },
+            onCopyText: onCopyText
+        ) { compact in
+            ForumNovelHeaderMetadata(
+                summary: summary,
+                compact: compact,
+                onAuthorTap: onAuthorTap,
+                onCopyText: onCopyText
+            )
+        } actions: {
+            ForumDetailPrimaryActions {
+                ForumDetailReadButton(
+                    hasProgress: hasReadingProgress,
+                    isEnabled: canReadStart,
+                    progressText: summary.readingProgressText,
+                    action: onReadStart
+                )
+                ForumDetailFavoriteButton(isFavorited: summary.isFavorited, action: onFavoriteTap, onLongPress: onFavoriteLongPress)
             }
-
-            ForumNovelHeaderActions(
-                isFavorited: summary.isFavorited,
-                canReadStart: canReadStart,
-                hasReadingProgress: hasReadingProgress,
-                threadID: summary.threadID,
-                onFavoriteTap: onFavoriteTap,
-                onFavoriteLongPress: onFavoriteLongPress,
-                onReadStart: onReadStart,
-                onViewThread: onViewThread
+        } details: {
+            ForumNovelHeaderMetadata(
+                summary: summary,
+                compact: false,
+                showsAllDetails: true,
+                onAuthorTap: onAuthorTap,
+                onCopyText: onCopyText
             )
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .forumCardBackground()
     }
-
-    private var cover: some View {
-        ForumBookCoverView(
-            source: summary.coverURL.map { coverURL in
-                YamiboImageSource(
-                    url: coverURL,
-                    refererPageURL: YamiboRoute.threadByID(
-                        tid: summary.threadID,
-                        page: 1,
-                        authorID: nil,
-                        reverse: false
-                    ).url
-                )
-            }
-        )
-    }
-
 }
 
-private struct ForumNovelHeaderActions: View {
+private struct ForumNovelHeaderMetadata: View {
     @Environment(\.forumTheme) private var theme
-    let isFavorited: Bool
-    let canReadStart: Bool
-    let hasReadingProgress: Bool
-    let threadID: String
-    let onFavoriteTap: () -> Void
-    let onFavoriteLongPress: () -> Void
-    let onReadStart: () -> Void
-    let onViewThread: () -> Void
-
-    private var threadURL: URL {
-        YamiboRoute.threadByID(tid: threadID, page: 1, authorID: nil, reverse: false).url
-    }
+    let summary: ForumNovelDetailHeaderSummary
+    let compact: Bool
+    var showsAllDetails = false
+    let onAuthorTap: (String, String?) -> Void
+    let onCopyText: ((String) -> Void)?
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                readButton
-                favoriteButton
-                shareButton
-                discussionButton(showsTitle: true)
+        VStack(alignment: .leading, spacing: showsAllDetails ? 12 : 2) {
+            if let authorName = summary.authorName {
+                ForumNovelAuthorButton(
+                    authorID: summary.authorID,
+                    authorName: authorName,
+                    onAuthorTap: onAuthorTap,
+                    onCopyText: onCopyText
+                )
             }
-            HStack(spacing: 8) {
-                readButton
-                favoriteButton
-                shareButton
-                discussionButton(showsTitle: false)
-            }
-        }
-    }
-
-    private var readButton: some View {
-        Button(action: onReadStart) {
-            Label(
-                L10n.string(hasReadingProgress ? "forum.thread_route.continue_novel" : "forum.thread_route.read_novel"),
-                systemImage: "book"
-            )
-            .font(.subheadline.weight(.semibold))
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 38)
-            .foregroundStyle(.white)
-            .background(theme.accent, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!canReadStart)
-        .opacity(canReadStart ? 1 : 0.55)
-    }
-
-    private var favoriteButton: some View {
-        Button(action: onFavoriteTap) {
-            Image(systemName: isFavorited ? "star.fill" : "star")
-                .contentTransition(.symbolEffect(.replace))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.accentText)
-                .frame(minWidth: 42, minHeight: 38)
-                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
-                .expandedHitTarget()
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onFavoriteLongPress() })
-        .accessibilityLabel(isFavorited ? L10n.string("forum.thread.favorited") : L10n.string("forum.thread.favorite"))
-    }
-
-    private var shareButton: some View {
-        ShareLink(item: threadURL) {
-            Image(systemName: "square.and.arrow.up")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.accentText)
-                .frame(minWidth: 42, minHeight: 38)
-                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
-                .expandedHitTarget()
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.string("forum.thread.share"))
-    }
-
-    private func discussionButton(showsTitle: Bool) -> some View {
-        Button(action: onViewThread) {
-            HStack(spacing: 6) {
-                Image(systemName: "text.bubble")
-                if showsTitle {
-                    Text(L10n.string("forum.thread_route.view_discussion"))
+            if !compact {
+                if let lastUpdated = summary.lastUpdatedText {
+                    Text(L10n.string("forum.thread_route.updated_at_format", lastUpdated))
+                }
+                if showsAllDetails, let postedAt = summary.postedAtText {
+                    Text(L10n.string("forum.thread_route.posted_at_format", postedAt))
+                }
+                if summary.totalViews != nil || summary.totalReplies != nil || (showsAllDetails && summary.forumName != nil) {
+                    ForumDetailActionsLayout(spacing: 12) {
+                        if let views = summary.totalViews {
+                            Label(views.formatted(), systemImage: "eye")
+                        }
+                        if let replies = summary.totalReplies {
+                            Label(replies.formatted(), systemImage: "text.bubble")
+                        }
+                        if showsAllDetails, let forumName = summary.forumName {
+                            Label(forumName, systemImage: "number")
+                        }
+                    }
                 }
             }
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .foregroundStyle(theme.accentText)
-                .padding(.horizontal, showsTitle ? 12 : 0)
-                .frame(minWidth: showsTitle ? nil : 42, minHeight: 38)
-                .background(theme.mutedAccent.opacity(0.16), in: Capsule())
+            if showsAllDetails, let progress = summary.readingProgressText {
+                Label(progress, systemImage: "bookmark.fill")
+                    .foregroundStyle(theme.accentText)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.string("forum.thread_route.view_discussion"))
+        .font(showsAllDetails ? .body : .caption)
+        .foregroundStyle(theme.secondaryText)
+        .lineLimit(showsAllDetails ? nil : 1)
     }
 }
 
@@ -550,17 +312,16 @@ private struct ForumNovelAuthorButton: View {
                 Button {
                     onAuthorTap(authorID, authorName)
                 } label: {
-                    Label(authorName, systemImage: "person.fill")
-                        .lineLimit(1)
+                    Label(authorName, systemImage: "person")
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             } else {
-                Label(authorName, systemImage: "person.fill")
-                    .lineLimit(1)
+                Label(authorName, systemImage: "person")
             }
         }
-        .font(.caption)
-        .foregroundStyle(theme.mutedAccent)
+        .foregroundStyle(theme.accentText)
         .contextMenu {
             if let onCopyText {
                 Button {
@@ -570,59 +331,5 @@ private struct ForumNovelAuthorButton: View {
                 }
             }
         }
-    }
-}
-
-private struct FlowStatRow: View {
-    @Environment(\.forumTheme) private var theme
-    let summary: ForumNovelDetailHeaderSummary
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                chips
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                chips
-            }
-        }
-        .font(.caption2.weight(.medium))
-        .foregroundStyle(theme.secondaryText)
-    }
-
-    @ViewBuilder
-    private var chips: some View {
-        if let totalViews = summary.totalViews {
-            ForumNovelDetailStatChip(
-                text: totalViews.formatted(),
-                systemImage: "eye"
-            )
-        }
-        if let totalReplies = summary.totalReplies {
-            ForumNovelDetailStatChip(
-                text: totalReplies.formatted(),
-                systemImage: "text.bubble"
-            )
-        }
-        if let forumName = summary.forumName {
-            ForumNovelDetailStatChip(
-                text: forumName,
-                systemImage: "number"
-            )
-        }
-    }
-}
-
-private struct ForumNovelDetailStatChip: View {
-    @Environment(\.forumTheme) private var theme
-    let text: String
-    let systemImage: String
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(theme.mutedAccent.opacity(0.08), in: Capsule())
     }
 }
