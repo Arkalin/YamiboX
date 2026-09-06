@@ -51,6 +51,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
                 self?.publishCurrentPageIfNeeded(spreadIndex: spreadIndex)
             },
             onBoundaryPageTurn: parent.onBoundaryPageTurn,
+            onBoundaryPageTurnRejected: parent.onBoundaryPageTurnRejected,
             onScrollAnimationRequestConsumed: { _ in },
             pageTurnRestingBackgroundColor: { [parent] _ in parent.pageEdgeFillColor },
             pageTurnBackgroundColor: { [parent] _, overlayAlpha in

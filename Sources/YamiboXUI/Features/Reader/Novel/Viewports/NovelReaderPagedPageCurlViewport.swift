@@ -150,6 +150,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     let canBoundaryPageTurn: (Int) -> Bool
     let onSelectionChange: (Int) -> Void
     let onBoundaryPageTurn: (Int) -> Void
+    var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderPagedTapZone) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
@@ -397,12 +398,12 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 translation: recognizer.translation(in: view),
                 velocity: recognizer.velocity(in: view),
                 viewportWidth: view.bounds.width,
-                horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection,
-                canBoundaryPageTurn: parent.canBoundaryPageTurn
+                horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection
             ) else {
                 return
             }
-            let onBoundaryPageTurn = parent.onBoundaryPageTurn
+            let onBoundaryPageTurn = parent.canBoundaryPageTurn(delta)
+                ? parent.onBoundaryPageTurn : parent.onBoundaryPageTurnRejected
             callbackScheduler.publish {
                 onBoundaryPageTurn(delta)
             }
@@ -435,7 +436,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             )
             let targetItem = parent.selectionIndex + delta
             guard targetItem < 0 || targetItem >= parent.sequence.pageCount else { return true }
-            return parent.canBoundaryPageTurn(delta)
+            return parent.sequence.pageCount > 0
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

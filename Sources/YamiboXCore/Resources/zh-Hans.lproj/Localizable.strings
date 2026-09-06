@@ -781,6 +781,8 @@
 "reader.comment_source.rating_reason" = "评分";
 "reader.comment_source.others_post" = "帖子";
 "reader.comments" = "评论";
+"reader.page_boundary.previous" = "当前已无上一页";
+"reader.page_boundary.next" = "当前已无下一页";
 "reader.comments_empty" = "暂无评论";
 "reader.copy" = "拷贝";
 "reader.look_up" = "查询";

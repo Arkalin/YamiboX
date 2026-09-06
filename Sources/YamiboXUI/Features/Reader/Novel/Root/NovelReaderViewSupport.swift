@@ -334,6 +334,7 @@ struct NovelReaderPagedViewportBindings {
     let canBoundaryPageTurn: (Int) -> Bool
     let onSelectionChange: (Int) -> Void
     let onBoundaryPageTurn: (Int) -> Void
+    var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderPagedTapZone) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void

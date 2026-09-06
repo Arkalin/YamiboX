@@ -15,7 +15,7 @@ enum NovelReaderControlScrollOutcome {
 }
 
 final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerDelegate {
-    static let boundaryTriggerDistance: CGFloat = 72
+    static let boundaryTriggerDistance = ReaderVerticalBoundaryAttempt.triggerDistance
 
     var onBoundaryPullRelease: ((NovelReaderVerticalBoundaryDirection) -> Void)?
     var onViewportMetricsChange: (() -> Void)?
@@ -337,7 +337,7 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         case .ended, .cancelled, .failed:
             let releasedState = currentBoundaryPullState
             updateBoundaryPullState(.idle)
-            guard releasedState.isArmed,
+            guard recognizer.state == .ended, releasedState.isArmed,
                   let direction = releasedState.direction else {
                 return
             }

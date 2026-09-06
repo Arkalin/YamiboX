@@ -41,7 +41,7 @@ final class MangaPagedScrollNavigationAdapter {
                 let zone = PhysicalZone.at(point, in: collection.bounds)
                 let request: MangaNavigationRequest = role == .tap ? .tap(zone) :
                     .doubleTap(zone: zone, location: self.surfaceLocation(point, in: collection))
-                self.route(request, in: collection, allowsBoundary: false)
+                self.route(request, in: collection)
             case .navigationPan:
                 guard let pan = recognizer as? UIPanGestureRecognizer, let coordinator = self.coordinator else { return }
                 coordinator.pagingDriver.handleQuickFadePan(pan, inputs: coordinator.pagingInputs)
@@ -62,7 +62,7 @@ final class MangaPagedScrollNavigationAdapter {
     }
 
     func routeControl(_ step: NavigationStep, in collection: UICollectionView) {
-        route(.control(step), in: collection, allowsBoundary: true)
+        route(.control(step), in: collection)
     }
 
     private func navigationStep(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> NavigationStep? {
@@ -76,7 +76,7 @@ final class MangaPagedScrollNavigationAdapter {
         return configuration.direction.step(toward: edge)
     }
 
-    private func route(_ request: MangaNavigationRequest, in collection: UICollectionView, allowsBoundary: Bool) {
+    private func route(_ request: MangaNavigationRequest, in collection: UICollectionView) {
         guard let coordinator else { return }
         let decision = withAnimation(.easeOut(duration: 0.2)) {
             coordinator.interactionRuntime.handleNavigation(request, surface: currentSurface(in: collection), configuration: configuration)
@@ -87,11 +87,15 @@ final class MangaPagedScrollNavigationAdapter {
             let inputs = coordinator.pagingInputs
             let target = inputs.selectionIndex + step.rawValue
             if target < 0 || target >= inputs.itemCount {
-                guard allowsBoundary, inputs.canBoundaryPageTurn(step.rawValue) else { return }
+                guard inputs.itemCount > 0 else { return }
                 let generation = coordinator.interactionRuntime.navigationGeneration
                 coordinator.callbackScheduler.publish { [weak coordinator] in
                     guard coordinator?.interactionRuntime.navigationGeneration == generation else { return }
-                    inputs.onBoundaryPageTurn(step.rawValue)
+                    if inputs.canBoundaryPageTurn(step.rawValue) {
+                        inputs.onBoundaryPageTurn(step.rawValue)
+                    } else {
+                        inputs.onBoundaryPageTurnRejected(step.rawValue)
+                    }
                 }
             } else {
                 _ = coordinator.pagingDriver.animateAdjacentSelection(for: step.readerTapZone, in: collection, inputs: inputs)

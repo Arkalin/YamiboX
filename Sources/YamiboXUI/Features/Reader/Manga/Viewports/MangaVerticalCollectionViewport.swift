@@ -15,6 +15,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let likedPageIDs: Set<String>
     let onCurrentPageChange: (Int) -> Void
     let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
+    var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 
@@ -39,6 +40,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         collectionView.showsVerticalScrollIndicator = false
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
+        collectionView.panGestureRecognizer.addTarget(context.coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
         collectionView.register(
             MangaVerticalCollectionPageCell.self,
             forCellWithReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier
@@ -66,6 +68,10 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         context.coordinator.callbackScheduler.performViewUpdate {
             context.coordinator.updateContentIfNeeded(in: collectionView)
         }
+    }
+
+    static func dismantleUIView(_ collectionView: UICollectionView, coordinator: Coordinator) {
+        collectionView.panGestureRecognizer.removeTarget(coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
     }
 
     private static func makeLayout(
@@ -96,6 +102,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         var parent: MangaVerticalCollectionViewport
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
+        private var pendingBoundaryPull: ReaderPageBoundary?
         private var contentIdentity: [String] = []
         private var heightToWidthRatios: [String: CGFloat] = [:]
         private var lastAppliedLikedPageIDs: Set<String> = []
@@ -230,6 +237,34 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 return
             }
             publishCurrentPageIfNeeded(from: collectionView)
+        }
+
+        @objc func handleBoundaryPan(_ recognizer: UIPanGestureRecognizer) {
+            guard let collectionView = recognizer.view as? UICollectionView else { return }
+            switch recognizer.state {
+            case .began, .changed:
+                guard pendingInitialPageIndex == nil, !parent.pages.isEmpty,
+                      pinchGesture.state != .began, pinchGesture.state != .changed else {
+                    pendingBoundaryPull = nil
+                    return
+                }
+                let minY = -collectionView.adjustedContentInset.top
+                let maxY = max(minY, collectionView.contentSize.height - collectionView.bounds.height
+                    + collectionView.adjustedContentInset.bottom)
+                pendingBoundaryPull = ReaderVerticalBoundaryAttempt.boundary(
+                    offsetY: collectionView.contentOffset.y, minOffsetY: minY, maxOffsetY: maxY,
+                    translationY: recognizer.translation(in: collectionView).y
+                )
+            case .ended:
+                defer { pendingBoundaryPull = nil }
+                guard let boundary = pendingBoundaryPull else { return }
+                let onVerticalBoundaryPull = parent.onVerticalBoundaryPull
+                callbackScheduler.publish { onVerticalBoundaryPull(boundary) }
+            case .cancelled, .failed:
+                pendingBoundaryPull = nil
+            default:
+                break
+            }
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {

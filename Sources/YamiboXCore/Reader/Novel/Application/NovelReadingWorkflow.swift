@@ -622,9 +622,20 @@ public final class NovelReadingWorkflow {
     }
 
     @discardableResult
-    package func jumpRelativeSurface(_ delta: Int) -> (state: NovelReadingWorkflowState, request: NovelReadingNavigationRequest?)? {
-        guard session != nil else { return nil }
-        var request = session?.jumpRelativeSurface(delta)
+    package func jumpRelativeSurface(_ delta: Int) -> (state: NovelReadingWorkflowState, request: NovelReadingNavigationRequest?, boundary: ReaderPageBoundary?)? {
+        guard let result = session?.turnRelativeSurface(delta) else { return nil }
+        var request: NovelReadingNavigationRequest?
+        switch result {
+        case .unavailable:
+            return nil
+        case let .boundary(boundary):
+            guard let state else { return nil }
+            return (state, nil, boundary)
+        case .moved:
+            break
+        case let .request(nextRequest):
+            request = nextRequest
+        }
         if case let .loadView(view, preferredSurfaceOrdinal, resumePoint) = request,
            prefetchedProjection?.view == view {
             request = .promotePrefetched(
@@ -633,7 +644,7 @@ public final class NovelReadingWorkflow {
             )
         }
         guard let state = updateStateFromSession(cachedViews: state?.cachedViews ?? []) else { return nil }
-        return (state, request)
+        return (state, request, nil)
     }
 
     public func captureNovelReadingPosition() -> NovelResumePoint? {

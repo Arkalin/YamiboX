@@ -7,12 +7,13 @@ import YamiboXCore
 
 @MainActor @Suite("Paged interaction UIKit integration")
 struct MangaInteractionUIKitTests {
-    @Test(arguments: [false, true])
-    func mountedBackendsRouteExternalBoundaryExactlyOnce(curl: Bool) throws {
+    @Test(arguments: [false, true], [false, true])
+    func mountedBackendsRouteExternalBoundaryExactlyOnce(curl: Bool, canNavigate: Bool) throws {
         let page = try makePipelinePage()
         let plan = MangaPagedReadingPlan(pages: [page], currentPageIndex: 0)
         let bridge = MangaPagedControlPageTurnBridge()
         var boundaries: [Int] = []
+        var rejections: [Int] = []
         let loader = MangaReaderPageImageLoader(imageSource: { _ in
             YamiboImageSource(url: URL(fileURLWithPath: "/nonexistent/manga-interaction-test.png"))
         })
@@ -21,13 +22,15 @@ struct MangaInteractionUIKitTests {
         if curl {
             root = AnyView(MangaPagedPageCurlReaderViewport(plan: plan, viewportPlacement: nil, settings: settings,
                 imageLoader: loader, isChromeVisible: false, zoomEnabled: true, likedPageIDs: [],
-                controlPageTurnBridge: bridge, onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in true },
-                onBoundaryPageTurn: { boundaries.append($0) }, onPageLongPress: { _ in }, onTap: {}))
+                controlPageTurnBridge: bridge, onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in canNavigate },
+                onBoundaryPageTurn: { boundaries.append($0) }, onBoundaryPageTurnRejected: { rejections.append($0) },
+                onPageLongPress: { _ in }, onTap: {}))
         } else {
             root = AnyView(MangaPagedReaderViewport(plan: plan, viewportPlacement: nil, settings: settings,
                 imageLoader: loader, isChromeVisible: false, zoomEnabled: true, likedPageIDs: [],
-                controlPageTurnBridge: bridge, onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in true },
-                onBoundaryPageTurn: { boundaries.append($0) }, onPageLongPress: { _ in }, onTap: {}))
+                controlPageTurnBridge: bridge, onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in canNavigate },
+                onBoundaryPageTurn: { boundaries.append($0) }, onBoundaryPageTurnRejected: { rejections.append($0) },
+                onPageLongPress: { _ in }, onTap: {}))
         }
         let host = UIHostingController(rootView: root)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
@@ -39,7 +42,10 @@ struct MangaInteractionUIKitTests {
         #expect(bridge.route != nil)
         bridge.requestPageTurn(1)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        #expect(boundaries == [1])
+        bridge.requestPageTurn(-1)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(boundaries == (canNavigate ? [1, -1] : []))
+        #expect(rejections == (canNavigate ? [] : [1, -1]))
     }
 
     @Test func nativeAdmissionPreservesOriginalDelegateAndDetaches() {

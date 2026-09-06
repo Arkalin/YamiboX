@@ -17,6 +17,7 @@ public struct MangaReaderView: View {
     @State private var model: MangaReaderViewModel
     @State private var isDismissing = false
     @State private var isChromeVisible = true
+    @State private var bottomChromeHeight: CGFloat = 0
     @State private var isDirectoryPresented = false
     @State private var isChapterCommentsPresented = false
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
@@ -108,6 +109,9 @@ public struct MangaReaderView: View {
                     Task {
                         await model.jumpToAdjacentChapterFromVerticalBoundary(direction == .down ? 1 : -1)
                     }
+                },
+                onVerticalBoundaryPull: { boundary in
+                    model.reportVerticalPageBoundary(boundary == .next ? 1 : -1)
                 },
                 onPageLongPress: { page in
                     guard !isSavingImage else { return }
@@ -205,11 +209,23 @@ public struct MangaReaderView: View {
                     onOpenOriginalPost: openOriginalPost,
                     onJumpToLocalPage: { targetIndex in
                         Task { await model.jumpToPage(localIndex: targetIndex) }
+                    },
+                    onBottomChromeHeightChange: { height in
+                        bottomChromeHeight = height
                     }
                 )
             }
             .task {
                 await model.prepare()
+            }
+            .transientMessage(
+                model.chapterJumpErrorMessage != nil || imageSavePresentation.feedback != nil
+                    ? nil : model.pageBoundary?.message,
+                bottomPadding: isChromeVisible
+                    ? max(bottomChromeHeight, bottomInset + 210) + 8
+                    : max(bottomInset, 24) + 8
+            ) {
+                model.pageBoundary = nil
             }
             .onAppear {
                 guard controlHandlerToken == nil else { return }

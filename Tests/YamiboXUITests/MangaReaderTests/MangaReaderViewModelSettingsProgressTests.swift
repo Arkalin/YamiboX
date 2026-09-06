@@ -556,6 +556,49 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
         await fixture.model.jumpRelativePage(-1, usesTwoPageSpread: false)
 
         XCTAssertEqual(fixture.model.presentation, initialPresentation)
+        XCTAssertEqual(fixture.model.pageBoundary, .previous)
+    }
+
+    func testSinglePageTerminalFeedbackForBothDirectionsAndSpreadModes() async throws {
+        for usesSpread in [false, true] {
+            let fixture = try await makeFixture(
+                imageCount: 1,
+                appSettings: AppSettings(manga: MangaReaderSettings(readingMode: .paged))
+            )
+            await fixture.model.jumpRelativePage(1, usesTwoPageSpread: usesSpread)
+            XCTAssertNil(fixture.model.pageBoundary)
+            await fixture.model.prepare()
+            let before = fixture.model.presentation
+            let canNavigateBack = fixture.model.canNavigateBack
+            for delta in [-1, 1] {
+                await fixture.model.jumpRelativePage(delta, usesTwoPageSpread: usesSpread)
+                XCTAssertEqual(fixture.model.pageBoundary, ReaderPageBoundary(delta: delta))
+                XCTAssertEqual(fixture.model.presentation, before)
+                XCTAssertEqual(fixture.model.canNavigateBack, canNavigateBack)
+                fixture.model.pageBoundary = nil
+                await fixture.model.jumpRelativePage(delta, usesTwoPageSpread: usesSpread)
+                XCTAssertEqual(fixture.model.pageBoundary, ReaderPageBoundary(delta: delta))
+            }
+        }
+    }
+
+    func testVerticalEdgeReportsTerminalBoundaryButNotAnUnloadedAdjacentChapter() async throws {
+        let current = try makeFixtureDocument(tid: "701", pageCount: 1)
+        let next = try makeFixtureDocument(tid: "702", pageCount: 1)
+        let fixture = try await makeFixture(
+            document: current,
+            appSettings: AppSettings(manga: MangaReaderSettings(readingMode: .vertical)),
+            documents: [current, next],
+            directory: makeFixtureDirectory(tids: ["701", "702"])
+        )
+        await fixture.model.prepare()
+        fixture.model.reportVerticalPageBoundary(1)
+        XCTAssertNil(fixture.model.pageBoundary)
+        fixture.model.reportVerticalPageBoundary(-1)
+        XCTAssertEqual(fixture.model.pageBoundary, .previous)
+        fixture.model.pageBoundary = nil
+        await fixture.model.jumpToAdjacentChapterFromVerticalBoundary(-1)
+        XCTAssertEqual(fixture.model.pageBoundary, .previous)
     }
 
     func testJumpRelativePageAtPreviousBoundaryLoadsPreviousChapterLastPage() async throws {
@@ -582,6 +625,7 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
             "701#0", "701#1", "701#2", "701#3"
         ])
         XCTAssertEqual(loaded.currentPage?.id, "700#3")
+        XCTAssertNil(fixture.model.pageBoundary)
         XCTAssertEqual(loaded.readingPosition, MangaReadingPosition(tid: "700", localIndex: 3))
         XCTAssertEqual(loaded.viewportPlacement?.targetPageIndex, 3)
         XCTAssertTrue(loaded.viewportPlacement?.animated == true)
@@ -618,6 +662,7 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
             "702#0", "702#1", "702#2"
         ])
         XCTAssertEqual(loaded.currentPage?.id, "702#0")
+        XCTAssertNil(fixture.model.pageBoundary)
         XCTAssertEqual(loaded.readingPosition, MangaReadingPosition(tid: "702", localIndex: 0))
         XCTAssertEqual(loaded.viewportPlacement?.targetPageIndex, 4)
         XCTAssertTrue(loaded.viewportPlacement?.animated == true)
@@ -669,6 +714,7 @@ final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
         try await Task.sleep(nanoseconds: 80_000_000)
 
         XCTAssertEqual(fixture.model.presentation, before)
+        XCTAssertNil(fixture.model.pageBoundary)
         let savedPositions = await progressAdapter.savedPositions
         let storedResumeRoute = await fixture.resumeRouteStore.load()
         XCTAssertTrue(savedPositions.isEmpty)
