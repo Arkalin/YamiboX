@@ -40,9 +40,15 @@ final class UserSpaceViewModel {
     var addFriendForm: UserSpaceAddFriendForm?
     var isLoadingAddFriendForm = false
     var isSubmittingAddFriend = false
-    var addFriendErrorMessage: String?
+    var addFriendErrorMessage: String? {
+        didSet { addFriendErrorDetails = nil }
+    }
+    private(set) var addFriendErrorDetails: LoadFailureDetails?
     var addFriendResultMessage: String?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     let uid: String?
     let titleHint: String?
@@ -231,7 +237,10 @@ final class UserSpaceViewModel {
             let repository = await repositoryProvider()
             addFriendForm = try await repository.fetchAddFriendForm(uid: targetUID, nameHint: profile?.username)
         } catch {
-            addFriendErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                addFriendErrorMessage = error.localizedDescription
+                addFriendErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -246,7 +255,10 @@ final class UserSpaceViewModel {
             let repository = await repositoryProvider()
             addFriendForm = try await repository.fetchAddFriendForm(uid: uid, nameHint: addFriendTargetName)
         } catch {
-            addFriendErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                addFriendErrorMessage = error.localizedDescription
+                addFriendErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -267,7 +279,10 @@ final class UserSpaceViewModel {
             isSubmittingAddFriend = false
             dismissAddFriend()
         } catch {
-            addFriendErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                addFriendErrorMessage = error.localizedDescription
+                addFriendErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -302,7 +317,10 @@ final class UserSpaceViewModel {
             profile = loadedProfile
         } catch {
             guard requestGeneration == profileGeneration else { return }
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -349,7 +367,10 @@ final class UserSpaceViewModel {
             guard requestGeneration == contentGeneration else { return }
             content = nil
             currentPage = page
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 

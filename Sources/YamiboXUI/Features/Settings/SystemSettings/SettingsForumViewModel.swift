@@ -73,7 +73,10 @@ final class SettingsForumViewModel: AppSettingsPersisting {
                 if boardReader == updated {
                     boardReader = previous
                 }
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

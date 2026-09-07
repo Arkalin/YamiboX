@@ -8,6 +8,7 @@ struct LoadFailureView: View {
     var title: String = L10n.string("common.load_failed")
     var systemImage: String = "exclamationmark.triangle"
     let message: String
+    var details: LoadFailureDetails?
     var prominentRetry = false
     let retry: () -> Void
 
@@ -17,11 +18,14 @@ struct LoadFailureView: View {
         } description: {
             Text(message)
         } actions: {
-            if prominentRetry {
-                Button(L10n.string("common.retry"), action: retry)
-                    .buttonStyle(.borderedProminent)
-            } else {
-                Button(L10n.string("common.retry"), action: retry)
+            VStack(spacing: 0) {
+                if prominentRetry {
+                    Button(L10n.string("common.retry"), action: retry)
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Button(L10n.string("common.retry"), action: retry)
+                }
+                LoadFailureDetailsButton(details: details, message: message)
             }
         }
     }

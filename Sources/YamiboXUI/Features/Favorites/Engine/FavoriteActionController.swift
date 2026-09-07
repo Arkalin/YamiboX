@@ -45,8 +45,15 @@ final class FavoriteActionController {
     }
 
     var favorite: Favorite?
-    var errorMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     var addPromptPresented = false
     var removePrompt: FavoriteRemovePrompt?
     var locationPickerContext: FavoriteLocationPickerContext?
@@ -213,10 +220,13 @@ final class FavoriteActionController {
                 remoteRepository: await dependencies.makeFavoriteRepository()
             )
             favorite = result.favorite
-            transientMessage = result.remote.addFeedbackMessage
+            transientFeedback = result.feedback
             onFavoriteDidChange?()
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             favorite = await localFavoriteItem()?.favorite(type: type)
             onFavoriteDidChange?()
         }
@@ -231,7 +241,10 @@ final class FavoriteActionController {
             )
             transientMessage = L10n.string("favorites.quick.relocated")
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -250,7 +263,10 @@ final class FavoriteActionController {
                 : L10n.string("favorites.quick.removed")
             onFavoriteDidChange?()
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             self.favorite = await localFavoriteItem()?.favorite(type: type)
             onFavoriteDidChange?()
         }

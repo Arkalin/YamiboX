@@ -27,8 +27,15 @@ final class BrowsingHistoryViewModel {
     var hasLoaded = false
     var favoritedThreadIDs: Set<String> = []
     var coverURLsByEntryID: [String: URL] = [:]
-    var errorMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     var favoriteAddPromptPresented = false
     var favoriteRemovePrompt: FavoriteRemovePrompt?
     var favoriteLocationPickerContext: FavoriteLocationPickerContext?
@@ -159,7 +166,10 @@ final class BrowsingHistoryViewModel {
         do {
             try await browsingHistoryStore.delete(id: entry.id)
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             await reload()
         }
     }
@@ -170,7 +180,10 @@ final class BrowsingHistoryViewModel {
         do {
             try await browsingHistoryStore.clearAll()
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             await reload()
         }
     }
@@ -334,9 +347,12 @@ final class BrowsingHistoryViewModel {
                 remoteRepository: await makeFavoriteRepository()
             )
             favoritedThreadIDs.insert(threadID)
-            transientMessage = result.remote.addFeedbackMessage
+            transientFeedback = result.feedback
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             await refreshFavoritedThreadIDs()
         }
     }
@@ -350,7 +366,10 @@ final class BrowsingHistoryViewModel {
             )
             transientMessage = L10n.string("favorites.quick.relocated")
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -368,7 +387,10 @@ final class BrowsingHistoryViewModel {
                 ? L10n.string("favorites.quick.removed_with_remote")
                 : L10n.string("favorites.quick.removed")
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             await refreshFavoritedThreadIDs()
         }
     }

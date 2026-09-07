@@ -38,10 +38,20 @@ final class ForumThreadReaderViewModel {
     var page: ForumThreadPage?
     var currentPage = 1
     var isLoading = false
-    var errorMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     var isFavorited = false
-    var favoriteErrorMessage: String?
+    var favoriteErrorMessage: String? {
+        didSet { favoriteErrorDetails = nil }
+    }
+    var favoriteErrorDetails: LoadFailureDetails?
     var favoriteAddPromptPresented = false
     var favoriteRemovePrompt: FavoriteRemovePrompt?
     var favoriteLocationPickerContext: FavoriteLocationPickerContext?
@@ -242,11 +252,20 @@ final class ForumThreadReaderViewModel {
             generation += 1
             let requestGeneration = generation
             isLoading = true
-            let resolved = await resolveThreadAuthorID()
+            let resolved: String?
+            do {
+                resolved = try await resolveThreadAuthorID()
+            } catch {
+                guard requestGeneration == generation else { return }
+                isLoading = false
+                transientFeedback = .failure(error, message: L10n.string("forum.thread.author_only_unavailable"))
+                return
+            }
             guard requestGeneration == generation else { return }
             isLoading = false
             guard let resolved else {
-                transientMessage = L10n.string("forum.thread.author_only_unavailable")
+                guard !Task.isCancelled else { return }
+                transientFeedback = .failure(L10n.string("forum.thread.author_only_unavailable"))
                 return
             }
             threadAuthorID = resolved
@@ -395,12 +414,18 @@ final class ForumThreadReaderViewModel {
             }
             isFavorited = true
             if let directoryTitle = await autoAttributionDirectoryTitle(localFavoriteLibraryStore: localFavoriteLibraryStore) {
-                transientMessage = L10n.string("favorites.quick.auto_attributed", result.remote.addFeedbackMessage, directoryTitle)
+                transientFeedback = TransientFeedback(
+                    message: L10n.string("favorites.quick.auto_attributed", result.remote.addFeedbackMessage, directoryTitle),
+                    details: result.failureDetails
+                )
             } else {
-                transientMessage = result.remote.addFeedbackMessage
+                transientFeedback = result.feedback
             }
         } catch {
-            favoriteErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                favoriteErrorMessage = error.localizedDescription
+                favoriteErrorDetails = LoadFailureDetails(error: error)
+            }
             await refreshFavoriteState()
         }
     }
@@ -422,7 +447,10 @@ final class ForumThreadReaderViewModel {
                 ? L10n.string("favorites.quick.removed_with_remote")
                 : L10n.string("favorites.quick.removed")
         } catch {
-            favoriteErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                favoriteErrorMessage = error.localizedDescription
+                favoriteErrorDetails = LoadFailureDetails(error: error)
+            }
             await refreshFavoriteState()
         }
     }
@@ -439,7 +467,10 @@ final class ForumThreadReaderViewModel {
             )
             transientMessage = L10n.string("favorites.quick.relocated")
         } catch {
-            favoriteErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                favoriteErrorMessage = error.localizedDescription
+                favoriteErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -530,18 +561,24 @@ final class ForumThreadReaderViewModel {
     }
 
     func votePoll(optionIDs: [String]) async throws -> String {
-        guard let forumID = normalizedForumID, let formHash = normalizedFormHash else {
-            throw YamiboError.underlying(L10n.string("forum.thread.login_info_failed"))
+        let requestGeneration = generation
+        do {
+            guard let forumID = normalizedForumID, let formHash = normalizedFormHash else {
+                throw YamiboError.underlying(L10n.string("forum.thread.login_info_failed"))
+            }
+            let repository = await repositoryProvider()
+            let message = try await repository.votePoll(
+                forumID: forumID,
+                threadID: threadID,
+                optionIDs: optionIDs,
+                formHash: formHash
+            )
+            await refresh()
+            return message
+        } catch {
+            if requestGeneration == generation { transientFeedback = .failure(error) }
+            throw error
         }
-        let repository = await repositoryProvider()
-        let message = try await repository.votePoll(
-            forumID: forumID,
-            threadID: threadID,
-            optionIDs: optionIDs,
-            formHash: formHash
-        )
-        await refresh()
-        return message
     }
 
     func ratePost(
@@ -690,7 +727,7 @@ final class ForumThreadReaderViewModel {
                 self.page = cached
                 currentPage = cached.pageNavigation?.currentPage ?? page
                 errorMessage = nil
-                transientMessage = L10n.string("forum.thread.refresh_failed", error.localizedDescription)
+                transientFeedback = .failure(error, message: L10n.string("forum.thread.refresh_failed", error.localizedDescription))
                 captureThreadAuthorIDIfNeeded(from: cached)
                 handlePageLoadSuccess(previousLoadedPage: previousLoadedPage)
                 return
@@ -699,11 +736,14 @@ final class ForumThreadReaderViewModel {
             guard requestGeneration == generation else { return }
             if preservesCurrentContentOnFailure, self.page != nil {
                 errorMessage = nil
-                transientMessage = L10n.string("forum.thread.refresh_failed", error.localizedDescription)
+                transientFeedback = .failure(error, message: L10n.string("forum.thread.refresh_failed", error.localizedDescription))
             } else {
                 self.page = nil
                 currentPage = page
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }
@@ -743,15 +783,15 @@ final class ForumThreadReaderViewModel {
     /// Looks up the thread starter's uid for a session that never loaded
     /// page 1 — cached copy first, then one network read. Returns nil when the
     /// page carries no uid at all (a deleted or guest first floor).
-    private func resolveThreadAuthorID() async -> String? {
+    private func resolveThreadAuthorID() async throws -> String? {
         if let threadAuthorID { return threadAuthorID }
         let repository = await repositoryProvider()
         if let cached = await repository.cachedThreadPage(context: context, page: 1, authorID: nil, reverse: false),
            let uid = cached.posts.first?.author.uid?.nilIfBlank {
             return uid
         }
-        let fetched = try? await repository.fetchThreadPage(context: context, page: 1, authorID: nil, reverse: false)
-        return fetched?.posts.first?.author.uid?.nilIfBlank
+        let fetched = try await repository.fetchThreadPage(context: context, page: 1, authorID: nil, reverse: false)
+        return fetched.posts.first?.author.uid?.nilIfBlank
     }
 
     // MARK: - Reading progress + browsing history
@@ -875,4 +915,3 @@ final class ForumThreadReaderViewModel {
         }
     }
 }
-

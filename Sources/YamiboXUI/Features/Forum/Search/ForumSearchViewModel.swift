@@ -14,7 +14,10 @@ extension ForumRepository: ForumSearchPageLoading {}
 final class ForumSearchViewModel {
     var query = ""
     var page: ForumSearchPage?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
     var isLoading = false
     var currentPage = 1
     var currentSearchID: String?
@@ -122,7 +125,10 @@ final class ForumSearchViewModel {
             guard requestGeneration == generation else { return }
             page = nil
             currentPage = pageNumber
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }

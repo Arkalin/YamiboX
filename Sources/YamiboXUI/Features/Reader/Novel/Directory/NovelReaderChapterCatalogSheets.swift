@@ -49,6 +49,11 @@ struct NovelReaderChapterSheet: View {
         // The chapter sheet and its popover get their own hosting controllers
         // on iOS 27, so inherit the app accent explicitly at this boundary.
         .tint(appTheme.controlAccent)
+        .failureToast(message: isActive ? navigation.chapterDirectory.error : nil,
+                      details: navigation.chapterDirectory.errorDetails,
+                      eventID: navigation.chapterDirectory.failureEventID,
+                      clear: navigation.clearChapterDirectoryFailure)
+        .onDisappear { navigation.resetChapterDirectoryBrowsing() }
     }
 
     private var chapterContent: some View {
@@ -62,12 +67,6 @@ struct NovelReaderChapterSheet: View {
                     } else {
                         List {
                             Section {
-                                if let error = navigation.chapterDirectory.error {
-                                    Label(error, systemImage: "exclamationmark.triangle")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-
                                 ForEach(navigation.visibleChapterDirectoryChapters, id: \.ordinal) { chapter in
                                     Button {
                                         onSelect(chapter)
@@ -128,6 +127,7 @@ struct NovelReaderChapterSheet: View {
                 .onChange(of: isActive) { _, isActive in
                     guard isActive else {
                         showingWebPicker = false
+                        navigation.resetChapterDirectoryBrowsing()
                         return
                     }
                     navigation.resetChapterDirectoryBrowsing()

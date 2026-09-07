@@ -21,7 +21,10 @@ final class MessageCenterViewModel {
     var content: Content?
     var currentPage = 1
     var isLoading = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any MessageCenterPageLoading
     @ObservationIgnored private var generation = 0
@@ -115,7 +118,10 @@ final class MessageCenterViewModel {
             guard requestGeneration == generation else { return }
             content = nil
             currentPage = page
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }

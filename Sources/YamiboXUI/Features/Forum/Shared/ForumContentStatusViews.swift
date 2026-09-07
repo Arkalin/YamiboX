@@ -44,6 +44,7 @@ struct ForumContentLoadingView: View {
 struct ForumContentErrorView: View {
     @Environment(\.forumTheme) private var theme
     let message: String
+    var details: LoadFailureDetails?
     let retry: () -> Void
 
     var body: some View {
@@ -61,6 +62,7 @@ struct ForumContentErrorView: View {
                 Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
+            LoadFailureDetailsButton(details: details, message: message)
         }
         .padding(18)
         .frame(maxWidth: .infinity)

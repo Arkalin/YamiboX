@@ -157,7 +157,10 @@ final class OfflineCacheManagementViewModel: SystemSettingsActivityReporting {
             await refreshOfflineCacheManagementRows()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }

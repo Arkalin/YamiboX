@@ -15,9 +15,13 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
     @Published var direction: WebDAVSyncDirection = .upload
     @Published private(set) var activeAction: WebDAVSyncSettingsAction?
     @Published private(set) var lastSyncedAt: Date?
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    @Published var errorDetails: LoadFailureDetails?
     @Published var successMessage: String?
     @Published var isShowingAccountMismatchConfirmation = false
+    @Published private(set) var accountMismatchDetails: LoadFailureDetails?
 
     private let dependencies: WebDAVSyncDependencies
 
@@ -77,15 +81,22 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
             lastSyncedAt = updatedSettings.lastSyncedAt
             successMessage = L10n.string("webdav.sync_success")
             return true
-        } catch WebDAVSyncError.accountMismatch {
+        } catch let WebDAVSyncError.accountMismatch(localUID, remoteUID) {
+            guard !Task.isCancelled else { return false }
+            let error = WebDAVSyncError.accountMismatch(localUID: localUID, remoteUID: remoteUID)
             if direction == .upload {
+                accountMismatchDetails = LoadFailureDetails(error: error)
                 isShowingAccountMismatchConfirmation = true
             } else {
                 errorMessage = L10n.string("webdav.error.account_mismatch")
+                errorDetails = LoadFailureDetails(error: error)
             }
             return false
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -203,23 +214,26 @@ public struct WebDAVSyncSettingsView: View {
             .task {
                 await viewModel.load()
             }
-            .alert(
+            .failureAlert(
                 L10n.string("common.operation_failed"),
+                message: viewModel.errorMessage,
+                details: viewModel.errorDetails,
                 isPresented: .presentation(
                     isPresented: { viewModel.errorMessage != nil },
                     clearOnDismiss: { viewModel.errorMessage = nil }
-                ),
-                actions: {
-                    Button(L10n.string("common.ok")) {}
-                },
-                message: {
-                    Text(viewModel.errorMessage ?? "")
-                }
-            )
-            .alert(L10n.string("webdav.account_mismatch_title"), isPresented: .presentation(
-                isPresented: { viewModel.isShowingAccountMismatchConfirmation },
-                clearOnDismiss: { viewModel.isShowingAccountMismatchConfirmation = false }
-            ), actions: {
+                )
+            ) {
+                Button(L10n.string("common.ok")) {}
+            }
+            .failureAlert(
+                L10n.string("webdav.account_mismatch_title"),
+                message: L10n.string("webdav.account_mismatch_message"),
+                details: viewModel.accountMismatchDetails,
+                isPresented: .presentation(
+                    isPresented: { viewModel.isShowingAccountMismatchConfirmation },
+                    clearOnDismiss: { viewModel.isShowingAccountMismatchConfirmation = false }
+                )
+            ) {
                 Button(L10n.string("webdav.account_mismatch_overwrite"), role: .destructive) {
                     Task {
                         let didSync = await viewModel.continueSync(allowingAccountMismatch: true)
@@ -229,9 +243,7 @@ public struct WebDAVSyncSettingsView: View {
                     }
                 }
                 Button(L10n.string("common.cancel"), role: .cancel) {}
-            }, message: {
-                Text(L10n.string("webdav.account_mismatch_message"))
-            })
+            }
     }
 
     private func labeledTextField(

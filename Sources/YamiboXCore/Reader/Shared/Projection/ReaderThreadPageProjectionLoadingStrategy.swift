@@ -47,16 +47,20 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
 
         let thread = ThreadIdentity(tid: request.threadID)
         let discoveryPage: ForumThreadPage
+        var sourceHTML: String?
         if !ignoresCache,
            let cached = await adapter.forumCacheStore.loadThreadPage(thread: thread, page: 1, authorID: nil) {
             discoveryPage = cached
         } else {
             let html = try await fetchThreadHTML(threadID: thread.tid, view: 1, authorID: nil)
-            discoveryPage = try ForumThreadPageHTMLParser.parsePage(
-                from: html,
-                thread: thread,
-                fallbackTitle: nil
-            )
+            sourceHTML = html
+            discoveryPage = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
+                try ForumThreadPageHTMLParser.parsePage(
+                    from: html,
+                    thread: thread,
+                    fallbackTitle: nil
+                )
+            }
             do {
                 try await adapter.forumCacheStore.saveThreadPage(
                     discoveryPage,
@@ -77,7 +81,11 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         if let authorID = Self.normalizedAuthorID(discoveryPage.posts.first?.author.uid) {
             return adapter.makeIdentity(request: request, authorID: authorID)
         }
-        throw YamiboError.parsingFailed(context: adapter.authorScopeErrorContext)
+        throw LoadDiagnosticError.attaching(
+            to: YamiboError.parsingFailed(context: adapter.authorScopeErrorContext),
+            requestContext: YamiboRoute.threadByID(tid: thread.tid, page: 1, authorID: nil, reverse: false).url.absoluteString,
+            html: sourceHTML
+        )
     }
 
     func onlineSourcePage(
@@ -100,7 +108,9 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
             view: identity.view,
             authorID: identity.authorID
         )
-        let parsed = try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
+        let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
+            try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
+        }
         do {
             try await adapter.forumCacheStore.saveThreadPage(
                 parsed,
@@ -111,7 +121,7 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         } catch {
             YamiboLog.forum.warning("onlineSourcePage(for:identity:ignoresCache:): failed to cache thread page tid=\(thread.tid, privacy: .public) page=\(identity.view, privacy: .public): \(error)")
         }
-        return ReaderProjectionSourcePageLoad(sourcePage: parsed, loadedOnline: true)
+        return ReaderProjectionSourcePageLoad(sourcePage: parsed, loadedOnline: true, sourceHTML: html)
     }
 
     func offlineSourcePage(
@@ -150,14 +160,15 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
     private func fetchThreadHTML(threadID: String, view: Int, authorID: String?) async throws -> String {
         do {
             return try await adapter.client.fetchThreadById(tid: threadID, authorID: authorID, page: view)
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as URLError {
-            switch error.code {
+        } catch {
+            let source = LoadDiagnosticError.classificationError(error)
+            guard let urlError = source as? URLError else { throw error }
+            if LoadDiagnosticError.isCancellation(error) { throw error }
+            switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
-                throw YamiboError.offline
+                throw LoadDiagnosticError.mapping(error, to: YamiboError.offline)
             default:
-                throw YamiboError.underlying(error.localizedDescription)
+                throw LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
             }
         }
     }

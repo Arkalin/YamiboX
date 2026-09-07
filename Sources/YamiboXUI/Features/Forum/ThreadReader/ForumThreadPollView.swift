@@ -6,7 +6,6 @@ struct ForumThreadPollView: View {
     @State private var selectedOptionIDs: Set<String>
     @State private var isSubmitting = false
     @State private var resultMessage: String?
-    @State private var errorMessage: String?
 
     let poll: ForumThreadPoll
     let onVote: (([String]) async throws -> String)?
@@ -54,13 +53,6 @@ struct ForumThreadPollView: View {
                 }
             }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(theme.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             if let resultMessage {
                 Text(resultMessage)
                     .font(.caption)
@@ -98,7 +90,6 @@ struct ForumThreadPollView: View {
     }
 
     private func toggle(_ optionID: String) {
-        errorMessage = nil
         resultMessage = nil
         if poll.type == .multipleChoice {
             if selectedOptionIDs.contains(optionID) {
@@ -117,13 +108,12 @@ struct ForumThreadPollView: View {
             .filter { selectedOptionIDs.contains($0) }
         guard !optionIDs.isEmpty else { return }
         isSubmitting = true
-        errorMessage = nil
         resultMessage = nil
         Task {
             do {
                 resultMessage = try await onVote(optionIDs)
             } catch {
-                errorMessage = error.localizedDescription
+                // The page owner presents vote failures above the scroll content.
             }
             isSubmitting = false
         }

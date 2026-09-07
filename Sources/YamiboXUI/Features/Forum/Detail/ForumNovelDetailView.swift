@@ -31,6 +31,7 @@ struct ForumNovelDetailView: View {
             expandedPages: model.expandedChapterPages,
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             refresh: { await model.refresh() },
             onChapterTap: { onChapterTap(model.launchContext(for: $0)) },
             onSectionToggle: { page in
@@ -94,6 +95,7 @@ struct ForumNovelDetailBodyView: View {
     let expandedPages: Set<Int>
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let refresh: () async -> Void
     let onChapterTap: (ForumNovelChapterSummary) -> Void
     let onSectionToggle: (Int) -> Void
@@ -131,12 +133,14 @@ struct ForumNovelDetailBodyView: View {
                         isLoaded: section.isLoaded,
                         isLoading: section.isLoading,
                         errorMessage: section.errorMessage,
+                        errorDetails: section.errorDetails,
                         items: section.chapters.enumerated().map { ChapterDirectoryItem.novel($0.element, indexInPage: $0.offset) }
                     )
                 },
                 countText: L10n.string("forum.detail.loaded_chapters", sections.reduce(0) { $0 + $1.chapters.count }),
                 isLoading: isLoading,
                 errorMessage: errorMessage,
+                errorDetails: errorDetails,
                 refresh: refresh,
                 onSectionToggle: { if let page = Int($0) { onSectionToggle(page) } },
                 onSectionRetry: { if let page = Int($0) { onSectionRetry(page) } },

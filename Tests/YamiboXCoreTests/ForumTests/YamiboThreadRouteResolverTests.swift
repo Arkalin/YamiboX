@@ -773,8 +773,10 @@ struct YamiboThreadRouteResolverTests {
         yamiboThreadRouteHTTPResponse(url: request.url!, body: "")
     }
 
-    await #expect(throws: YamiboError.emptyHTML) {
+    await #expect {
         _ = try await resolver.resolve(YamiboThreadRouteRequest(threadURL: url))
+    } throws: { error in
+        (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.emptyHTML
     }
 }
 

@@ -2,7 +2,7 @@ import Foundation
 
 public enum NovelReaderProjectionLoadSource: Hashable, Sendable {
     case online
-    case offlineFallback(updatedAt: Date?)
+    case offlineFallback(updatedAt: Date?, failure: LoadFailureDetails? = nil)
 
     public var isOfflineFallback: Bool {
         if case .offlineFallback = self {

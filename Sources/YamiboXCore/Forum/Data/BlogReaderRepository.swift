@@ -17,7 +17,9 @@ public actor BlogReaderRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try BlogReaderHTMLParser.parsePage(from: html, blogID: normalizedBlogID, uidHint: uid)
+        return try LoadDiagnosticError.parsing(html: html, context: "BlogReaderHTMLParser.parsePage") {
+            try BlogReaderHTMLParser.parsePage(from: html, blogID: normalizedBlogID, uidHint: uid)
+        }
     }
 
     public func postBlogComment(blogID: String, uid: String, message: String, formHash: String) async throws -> String {
@@ -43,7 +45,9 @@ public actor BlogReaderRepository {
                 ("message", normalizedMessage)
             ]
         )
-        return try BlogReaderHTMLParser.parseCommentResult(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "BlogReaderHTMLParser.parseCommentResult") {
+            try BlogReaderHTMLParser.parseCommentResult(from: html)
+        }
     }
 
     private func normalized(_ value: String?) -> String? {

@@ -109,7 +109,7 @@ public final class YamiboUIImagePipeline {
             let response = try await pipeline.imageTask(with: request).response
             return YamiboDisplayImage(container: response.container)
         } catch {
-            throw Self.mapImagePipelineError(error)
+            throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
         }
     }
 
@@ -160,7 +160,7 @@ public final class YamiboUIImagePipeline {
         case .dataLoadingFailed(let underlying):
             return underlying
         case .dataIsEmpty, .decoderNotRegistered, .decodingFailed:
-            return YamiboError.invalidImageData
+            return LoadDiagnosticError.mapping(error, to: YamiboError.invalidImageData)
         default:
             return error
         }

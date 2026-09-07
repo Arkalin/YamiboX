@@ -127,6 +127,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(started, 2)
     }
 
+    @MainActor
     func testTerminalPageTurnsPublishFeedbackWithoutChangingPositionOrHistory() async throws {
         let model = try await makeModel(documents: [makeDocument(view: 1, maxView: 1, chapterTitles: ["Chapter"])])
         let before = model.currentSurfaceNumber
@@ -3118,7 +3119,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         await model.loadChapterComments(for: target)
 
         await MainActor.run {
-            guard case let .failed(failedTarget, message) = model.chapterComments.state else {
+            guard case let .failed(failedTarget, message, _) = model.chapterComments.state else {
                 XCTFail("Expected failed chapter comments state")
                 return
             }

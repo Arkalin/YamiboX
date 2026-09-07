@@ -13,8 +13,13 @@ public actor ReaderChapterCommentsRepository {
             authorID: target.authorID,
             page: target.view
         )
-        var page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
-        if let fullRatingsURL = try ChapterCommentsHTMLParser.fullRatingReasonsURL(html: html, target: target) {
+        var page = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseInitialPage") {
+            try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
+        }
+        let fullRatingsURL = try LoadDiagnosticError.parsing(html: html, context: target.threadID) {
+            try ChapterCommentsHTMLParser.fullRatingReasonsURL(html: html, target: target)
+        }
+        if let fullRatingsURL {
             let fullRatingsHTML: String?
             do {
                 fullRatingsHTML = try await client.fetchHTML(url: fullRatingsURL)
@@ -23,10 +28,12 @@ public actor ReaderChapterCommentsRepository {
                 fullRatingsHTML = nil
             }
             if let fullRatingsHTML {
-                let fullRatings = try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(
-                    html: fullRatingsHTML,
-                    target: target
-                )
+                let fullRatings = try LoadDiagnosticError.parsing(html: fullRatingsHTML, context: "ChapterCommentsHTMLParser.parseFullRatingReasonsPage") {
+                    try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(
+                        html: fullRatingsHTML,
+                        target: target
+                    )
+                }
                 if !fullRatings.isEmpty {
                     page.comments = Self.replacingPreviewRatings(in: page.comments, with: fullRatings)
                 }
@@ -47,10 +54,12 @@ public actor ReaderChapterCommentsRepository {
                 )) ?? target.view
                 var unfilteredTarget = target
                 unfilteredTarget.view = unfilteredView
-                let unfilteredPage = try ChapterCommentsHTMLParser.parseInitialPage(
-                    html: unfilteredHTML,
-                    target: unfilteredTarget
-                )
+                let unfilteredPage = try LoadDiagnosticError.parsing(html: unfilteredHTML, context: "ChapterCommentsHTMLParser.parseInitialPage") {
+                    try ChapterCommentsHTMLParser.parseInitialPage(
+                        html: unfilteredHTML,
+                        target: unfilteredTarget
+                    )
+                }
                 page = Self.appendingSamePageReplies(from: unfilteredPage, to: page)
             }
         }
@@ -66,7 +75,9 @@ public actor ReaderChapterCommentsRepository {
             page: view,
             cachePolicy: .reloadIgnoringLocalCacheData
         )
-        return try ChapterCommentsHTMLParser.parseContinuationPage(html: html, target: target, view: view)
+        return try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseContinuationPage") {
+            try ChapterCommentsHTMLParser.parseContinuationPage(html: html, target: target, view: view)
+        }
     }
 
     private func loadUnfilteredChapterCommentHTML(for target: ReaderChapterCommentTarget) async throws -> String {

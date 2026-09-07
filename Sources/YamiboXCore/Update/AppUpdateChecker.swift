@@ -30,6 +30,18 @@ public enum AppUpdateCheckResult: Equatable, Sendable {
     case failure(AppUpdateCheckFailure)
 }
 
+public struct AppUpdateCheckOutcome: Sendable {
+    public let result: AppUpdateCheckResult
+    public let details: LoadFailureDetails?
+    public let isCancelled: Bool
+
+    public init(result: AppUpdateCheckResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false) {
+        self.result = result
+        self.details = details
+        self.isCancelled = isCancelled
+    }
+}
+
 public struct AppUpdateChecker: Sendable {
     public static let defaultSourceURL = URL(string: "https://raw.githubusercontent.com/Arkalin/YamiboX/main/app-repo.json")!
 
@@ -55,16 +67,29 @@ public struct AppUpdateChecker: Sendable {
         currentBundleIdentifier: String,
         currentVersion: String
     ) async -> AppUpdateCheckResult {
+        await checkForUpdateWithDetails(
+            sourceURL: sourceURL, currentBundleIdentifier: currentBundleIdentifier, currentVersion: currentVersion
+        ).result
+    }
+
+    public func checkForUpdateWithDetails(
+        sourceURL: URL = Self.defaultSourceURL,
+        currentBundleIdentifier: String,
+        currentVersion: String
+    ) async -> AppUpdateCheckOutcome {
         do {
             let (data, response) = try await fetchData(sourceURL)
-            return Self.checkForUpdate(
+            return Self.checkForUpdateWithDetails(
                 data: data,
                 response: response,
                 currentBundleIdentifier: currentBundleIdentifier,
                 currentVersion: currentVersion
             )
         } catch {
-            return .failure(.network(error.localizedDescription))
+            let cancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+            return .init(result: .failure(.network(error.localizedDescription)),
+                         details: cancelled ? nil : LoadFailureDetails(error: error, requestContext: sourceURL.absoluteString),
+                         isCancelled: cancelled)
         }
     }
 
@@ -74,25 +99,40 @@ public struct AppUpdateChecker: Sendable {
         currentBundleIdentifier: String,
         currentVersion: String
     ) -> AppUpdateCheckResult {
+        checkForUpdateWithDetails(data: data, response: response,
+                                  currentBundleIdentifier: currentBundleIdentifier, currentVersion: currentVersion).result
+    }
+
+    private static func checkForUpdateWithDetails(
+        data: Data,
+        response: URLResponse,
+        currentBundleIdentifier: String,
+        currentVersion: String
+    ) -> AppUpdateCheckOutcome {
         guard let httpResponse = response as? HTTPURLResponse else {
-            return .failure(.invalidResponse(statusCode: nil))
+            return .init(result: .failure(.invalidResponse(statusCode: nil)))
         }
         guard 200 ..< 300 ~= httpResponse.statusCode else {
-            return .failure(.invalidResponse(statusCode: httpResponse.statusCode))
+            let failure = AppUpdateCheckFailure.invalidResponse(statusCode: httpResponse.statusCode)
+            return .init(result: .failure(failure), details: LoadFailureDetails(error:
+                LoadDiagnosticError.attaching(to: failure, requestContext: response.url?.absoluteString,
+                                              httpStatus: httpResponse.statusCode)
+            ))
         }
         guard !data.isEmpty else {
-            return .failure(.emptyBody)
+            return .init(result: .failure(.emptyBody))
         }
 
         do {
             let source = try JSONDecoder().decode(AppSource.self, from: data)
-            return checkForUpdate(
+            return .init(result: checkForUpdate(
                 source: source,
                 currentBundleIdentifier: currentBundleIdentifier,
                 currentVersion: currentVersion
-            )
+            ))
         } catch {
-            return .failure(.decodingFailed(error.localizedDescription))
+            return .init(result: .failure(.decodingFailed(error.localizedDescription)),
+                         details: LoadFailureDetails(error: error, requestContext: response.url?.absoluteString))
         }
     }
 

@@ -1023,6 +1023,15 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let failureLabel = UILabel()
     private let retryButton = UIButton(type: .system)
+    private let detailsButton = UIButton(type: .system)
+    private weak var presentedDetailsController: UIViewController?
+    private var failureDetails: LoadFailureDetails? {
+        didSet {
+            guard oldValue != failureDetails else { return }
+            presentedDetailsController?.dismiss(animated: true)
+            presentedDetailsController = nil
+        }
+    }
     private let likedBadgeView: UIImageView = {
         let badge = UIImageView(image: UIImage(systemName: "heart.fill"))
         badge.tintColor = .systemPink
@@ -1075,11 +1084,12 @@ final class NovelReaderVerticalViewportImageView: UIView {
         )
         let labelWidth = min(labelSize.width, availableWidth)
         let buttonSize = retryButton.sizeThatFits(CGSize(width: availableWidth, height: bounds.height))
-        let buttonWidth = min(max(buttonSize.width, 44), availableWidth)
-        let buttonHeight = min(max(buttonSize.height, 44), bounds.height)
-        let spacing = min(8, max(bounds.height - buttonHeight, 0))
-        let labelHeight = min(labelSize.height, max(bounds.height - buttonHeight - spacing, 0))
-        let contentHeight = labelHeight + spacing + buttonHeight
+        let detailsSize = detailsButton.sizeThatFits(CGSize(width: availableWidth, height: bounds.height))
+        let buttonWidth = min(max(buttonSize.width, detailsSize.width, 44), availableWidth)
+        let buttonHeight = min(max(buttonSize.height, detailsSize.height, 44), max(bounds.height / 2, 0))
+        let spacing = min(8, max(bounds.height - buttonHeight * 2, 0) / 2)
+        let labelHeight = min(labelSize.height, max(bounds.height - buttonHeight * 2 - spacing * 2, 0))
+        let contentHeight = labelHeight + spacing * 2 + buttonHeight * 2
         failureLabel.frame = CGRect(
             x: bounds.midX - labelWidth / 2,
             y: bounds.midY - contentHeight / 2,
@@ -1089,6 +1099,12 @@ final class NovelReaderVerticalViewportImageView: UIView {
         retryButton.frame = CGRect(
             x: bounds.midX - buttonWidth / 2,
             y: failureLabel.frame.maxY + spacing,
+            width: buttonWidth,
+            height: buttonHeight
+        )
+        detailsButton.frame = CGRect(
+            x: bounds.midX - buttonWidth / 2,
+            y: retryButton.frame.maxY + spacing,
             width: buttonWidth,
             height: buttonHeight
         )
@@ -1130,6 +1146,8 @@ final class NovelReaderVerticalViewportImageView: UIView {
         imageView.image = nil
         failureLabel.isHidden = true
         retryButton.isHidden = true
+        detailsButton.isHidden = true
+        failureDetails = nil
         activityIndicator.startAnimating()
         let pipeline = self.pipeline
         task = Task { [weak self] in
@@ -1138,8 +1156,9 @@ final class NovelReaderVerticalViewportImageView: UIView {
                 guard !Task.isCancelled else { return }
                 self?.show(image: image)
             } catch {
-                guard !Task.isCancelled else { return }
-                self?.showFailure()
+                guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                      self?.sourceIdentity == source else { return }
+                self?.showFailure(error: error, source: source)
             }
         }
     }
@@ -1169,10 +1188,23 @@ final class NovelReaderVerticalViewportImageView: UIView {
         retryButton.configuration = retryConfiguration
         retryButton.accessibilityIdentifier = "novel-inline-image-retry"
         retryButton.isHidden = true
+        detailsButton.isHidden = true
+        failureDetails = nil
         retryButton.addTarget(self, action: #selector(retryImageLoad), for: .touchUpInside)
         addSubview(retryButton)
+        detailsButton.setTitle(L10n.string("load_failure.details"), for: .normal)
+        detailsButton.accessibilityIdentifier = "load-failure-details"
+        detailsButton.addTarget(self, action: #selector(showDetails), for: .touchUpInside)
+        addSubview(detailsButton)
 
         addSubview(likedBadgeView)
+    }
+
+    @objc private func showDetails() {
+        guard let failureDetails, !detailsButton.isHidden else { return }
+        if let controller = LoadFailureDetailsPresenter.present(failureDetails, from: self) {
+            presentedDetailsController = controller
+        }
     }
 
     @objc private func retryImageLoad() {
@@ -1198,14 +1230,18 @@ final class NovelReaderVerticalViewportImageView: UIView {
         activityIndicator.stopAnimating()
         failureLabel.isHidden = true
         retryButton.isHidden = true
+        detailsButton.isHidden = true
+        failureDetails = nil
         imageView.image = image
     }
 
     @MainActor
-    private func showFailure() {
+    private func showFailure(error: any Error, source: YamiboImageSource) {
         activityIndicator.stopAnimating()
         failureLabel.isHidden = false
         retryButton.isHidden = false
+        detailsButton.isHidden = false
+        failureDetails = LoadFailureDetails(error: error, requestContext: source.url.absoluteString)
         imageView.image = nil
         setNeedsLayout()
     }

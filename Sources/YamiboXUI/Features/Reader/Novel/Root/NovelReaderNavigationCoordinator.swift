@@ -15,6 +15,8 @@ struct NovelReaderChapterDirectoryState: Equatable {
     var pageCount = 0
     var isLoading = false
     var error: String? = nil
+    var errorDetails: LoadFailureDetails? = nil
+    var failureEventID: UUID? = nil
 }
 
 /// Owns the novel reader's wayfinding: browsing the chapter catalog of other
@@ -49,6 +51,7 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
 
     private let reading: Reading
     private var chapterDirectoryAnchors: [Int: NovelChapterAnchor] = [:]
+    private var chapterDirectoryRequestID = UUID()
     private var linearReadingHistoryExpiration = ReaderNavigationLinearReadingExpiration<NovelReaderLinearReadingPageKey>()
     private var navigationRequestSequence: UInt64 = 0
 
@@ -212,6 +215,7 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
     }
 
     func resetChapterDirectoryBrowsing() {
+        chapterDirectoryRequestID = UUID()
         chapterDirectory = NovelReaderChapterDirectoryState()
         chapterDirectoryAnchors = [:]
     }
@@ -223,20 +227,34 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
             return
         }
 
+        let requestID = UUID()
+        chapterDirectoryRequestID = requestID
         chapterDirectory = NovelReaderChapterDirectoryState(view: clampedView, isLoading: true)
         do {
             let entries = try await reading.previewChapterCatalog(clampedView)
+            guard chapterDirectoryRequestID == requestID else { return }
+            chapterDirectory.isLoading = false
+            guard !Task.isCancelled else { return }
             chapterDirectory.chapters = entries.map(\.chapter)
             chapterDirectoryAnchors = Dictionary(
                 uniqueKeysWithValues: entries.compactMap { entry in
                     entry.anchor.map { (entry.chapter.ordinal, $0) }
                 }
             )
-            chapterDirectory.isLoading = false
         } catch {
-            chapterDirectory.error = error.localizedDescription
+            guard chapterDirectoryRequestID == requestID else { return }
             chapterDirectory.isLoading = false
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            chapterDirectory.error = error.localizedDescription
+            chapterDirectory.errorDetails = LoadFailureDetails(error: error)
+            chapterDirectory.failureEventID = UUID()
         }
+    }
+
+    func clearChapterDirectoryFailure() {
+        chapterDirectory.error = nil
+        chapterDirectory.errorDetails = nil
+        chapterDirectory.failureEventID = nil
     }
 
     func jumpToChapterDirectoryChapter(_ chapter: NovelReaderChapter) async {

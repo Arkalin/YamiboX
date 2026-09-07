@@ -11,7 +11,11 @@ final class ForumThreadRateSheetModel {
     private(set) var isLoadingOptions = false
     private(set) var isSubmitting = false
     private(set) var hintMessage: String?
-    private(set) var errorMessage: String?
+    private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
+    private(set) var errorEventID = UUID()
 
     @ObservationIgnored private let postID: String
     @ObservationIgnored private let loadOptions: (String) async throws -> ForumThreadRateOptionsPage
@@ -33,6 +37,7 @@ final class ForumThreadRateSheetModel {
 
     func loadRateOptions() async {
         isLoadingOptions = true
+        errorMessage = nil
         hintMessage = L10n.string("forum.thread.rate_loading_options")
         defer { isLoadingOptions = false }
 
@@ -40,12 +45,20 @@ final class ForumThreadRateSheetModel {
             options = try await loadOptions(postID)
             hintMessage = nil
         } catch {
-            hintMessage = L10n.string("forum.thread.rate_options_failed")
+            hintMessage = nil
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = L10n.string("forum.thread.rate_options_failed")
+                errorDetails = LoadFailureDetails(error: error)
+                errorEventID = UUID()
+            }
         }
     }
 
+    func clearError() { errorMessage = nil }
+
     /// Returns true when the rating was submitted and the sheet should dismiss.
     func submitRate() async -> Bool {
+        errorEventID = UUID()
         guard let score = Int(scoreText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = L10n.string("forum.thread.rate_score_invalid")
             return false
@@ -56,9 +69,12 @@ final class ForumThreadRateSheetModel {
 
         do {
             _ = try await submit(postID, score, reason, noticeAuthor)
-            return true
+            return !Task.isCancelled
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -68,6 +84,7 @@ struct ForumThreadRateSheet: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadRateSheetModel
+    @State private var submissionTask: Task<Void, Never>?
 
     init(
         postID: String,
@@ -117,15 +134,10 @@ struct ForumThreadRateSheet: View {
                     }
                 }
 
-                if let errorMessage = model.errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundStyle(theme.danger)
-                    }
-                }
             }
             .navigationTitle(L10n.string("forum.thread.ratings"))
+            .failureToast(message: model.errorMessage, details: model.errorDetails,
+                          eventID: model.errorEventID, clear: model.clearError)
             .yamiboInlineNavigationTitleDisplayMode()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -135,7 +147,7 @@ struct ForumThreadRateSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(model.isSubmitting ? L10n.string("forum.thread.submitting") : L10n.string("forum.thread.submit")) {
-                        Task {
+                        submissionTask = Task {
                             if await model.submitRate() {
                                 dismiss()
                             }
@@ -153,5 +165,6 @@ struct ForumThreadRateSheet: View {
         .task {
             await model.loadRateOptions()
         }
+        .onDisappear { submissionTask?.cancel() }
     }
 }

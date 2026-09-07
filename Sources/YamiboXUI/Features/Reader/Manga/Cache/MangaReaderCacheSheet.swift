@@ -36,7 +36,7 @@ struct MangaReaderCacheSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let errorMessage = model.errorMessage {
-                        MangaReaderCacheErrorBanner(message: errorMessage)
+                        MangaReaderCacheErrorBanner(message: errorMessage, details: model.errorDetails)
                     }
 
                     MangaReaderCacheChapterSection(
@@ -103,21 +103,16 @@ struct MangaReaderCacheSheet: View {
                 selectedTIDs.formIntersection(validTIDs)
             }
             .sensoryFeedback(.selection, trigger: selectedTIDs)
-            .alert(
+            .failureAlert(
                 L10n.string("manga.offline_cache.add_favorite_title"),
+                message: favoriteRequiredMessage,
                 isPresented: .presentation(
                     isPresented: { model.prompt != nil },
                     clearOnDismiss: { model.clearPrompt() }
-                ),
-                presenting: model.prompt
-            ) { _ in
+                )
+            ) {
                 Button(L10n.string("common.ok"), role: .cancel) {
                     model.clearPrompt()
-                }
-            } message: { prompt in
-                switch prompt {
-                case let .addFavorite(title):
-                    Text(L10n.string("manga.offline_cache.add_favorite_message", title))
                 }
             }
         }
@@ -141,6 +136,11 @@ struct MangaReaderCacheSheet: View {
 
     private var selectionState: ReaderCacheSelectionState {
         model.selectionState(for: selectedTIDs)
+    }
+
+    private var favoriteRequiredMessage: String? {
+        guard case let .addFavorite(title) = model.prompt else { return nil }
+        return L10n.string("manga.offline_cache.add_favorite_message", title)
     }
 
     private var selectionActions: [SelectionToolbarAction] {
@@ -346,9 +346,13 @@ private struct MangaReaderCacheQueueFlightBadge: View {
 
 private struct MangaReaderCacheErrorBanner: View {
     let message: String
+    let details: LoadFailureDetails?
 
     var body: some View {
-        Label(message, systemImage: "exclamationmark.triangle")
+        VStack(alignment: .leading, spacing: 0) {
+            Label(message, systemImage: "exclamationmark.triangle")
+            LoadFailureDetailsButton(details: details, message: message)
+        }
             .font(.caption)
             .foregroundStyle(.orange)
             .padding(16)

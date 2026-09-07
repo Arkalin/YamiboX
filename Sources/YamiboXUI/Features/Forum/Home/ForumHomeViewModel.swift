@@ -13,8 +13,15 @@ extension ForumRepository: ForumHomePageLoading {}
 @Observable
 final class ForumHomeViewModel {
     var page: ForumHomePage?
-    var errorMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     var isLoading = false
     var isRefreshing = false
     var expandedCategoryIDs: Set<String> = []
@@ -45,6 +52,7 @@ final class ForumHomeViewModel {
     func load() async {
         guard !isLoading else { return }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
 
         let repository = await repositoryProvider()
@@ -58,7 +66,10 @@ final class ForumHomeViewModel {
             apply(try await repository.fetchForumHome(preferCache: false))
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -81,6 +92,7 @@ final class ForumHomeViewModel {
     private func refresh(presentsErrors: Bool) async {
         guard !isRefreshing else { return }
         isRefreshing = true
+        errorMessage = nil
         defer { isRefreshing = false }
 
         do {
@@ -91,9 +103,12 @@ final class ForumHomeViewModel {
         } catch {
             if presentsErrors, page != nil {
                 errorMessage = nil
-                transientMessage = L10n.string("forum.home.refresh_failed", error.localizedDescription)
+                transientFeedback = .failure(error, message: L10n.string("forum.home.refresh_failed", error.localizedDescription))
             } else if presentsErrors || page == nil {
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             } else {
                 YamiboLog.forum.warning("Silent background forum home refresh failed: \(error)")
             }

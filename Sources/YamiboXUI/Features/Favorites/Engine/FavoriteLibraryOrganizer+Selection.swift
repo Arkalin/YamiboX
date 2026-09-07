@@ -400,7 +400,7 @@ extension FavoriteLibraryOrganizer {
             let skippedSmartCardFavoriteIDs = allSelectedFavoriteIDs.filter(isSmartCardFavoriteID)
             favoriteIDs = allSelectedFavoriteIDs.subtracting(skippedSmartCardFavoriteIDs)
             if !skippedSmartCardFavoriteIDs.isEmpty {
-                transientMessage = L10n.string("favorites.bulk_delete_skipped_smart_manga_message")
+                transientFeedback = .failure(L10n.string("favorites.bulk_delete_skipped_smart_manga_message"))
             }
         }
         let collectionIDs = selection.selectedCollectionIDs

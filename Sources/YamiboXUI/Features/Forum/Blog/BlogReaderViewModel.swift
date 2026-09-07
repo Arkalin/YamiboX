@@ -18,7 +18,10 @@ final class BlogReaderViewModel {
     var currentPage = 1
     var isLoading = false
     var isSubmittingComment = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
     var commentResultMessage: String?
 
     let blogID: String
@@ -135,7 +138,10 @@ final class BlogReaderViewModel {
             commentText = ""
             await loadPage(currentPage)
         } catch {
-            errorMessage = L10n.string("blog_reader.comment_failed", error.localizedDescription)
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = L10n.string("blog_reader.comment_failed", error.localizedDescription)
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -156,7 +162,10 @@ final class BlogReaderViewModel {
         } catch {
             self.page = nil
             currentPage = page
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }

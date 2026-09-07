@@ -58,13 +58,16 @@ struct BrowsingHistoryView: View {
                 }
             )
         }
-        .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: model.errorMessage,
+            details: model.errorDetails,
+            isPresented: errorIsPresented
+        ) {
             Button(L10n.string("common.ok")) {
                 model.clearError()
             }
-        }, message: {
-            Text(model.errorMessage ?? "")
-        })
+        }
         .overlay {
             if model.hasLoaded, model.entries.isEmpty, !model.isLoading {
                 ContentUnavailableView(
@@ -93,7 +96,7 @@ struct BrowsingHistoryView: View {
         .onChange(of: model.searchText) {
             model.scheduleReload()
         }
-        .transientMessage(model.transientMessage, bottomPadding: 24) {
+        .transientMessage(model.transientFeedback, bottomPadding: 24) {
             model.clearTransientMessage()
         }
     }

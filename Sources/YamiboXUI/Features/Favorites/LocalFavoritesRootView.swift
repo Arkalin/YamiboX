@@ -119,7 +119,10 @@ struct LocalFavoritesRootView: View {
             present(target)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for favorite \(item.id): \(error.localizedDescription)")
-            organizer.errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                organizer.errorMessage = error.localizedDescription
+                organizer.errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -129,13 +132,16 @@ struct LocalFavoritesRootView: View {
     private func openMangaDirectoryEvent(cleanBookName: String) async {
         do {
             guard let target = try await openTargetResolver.openTarget(forMangaDirectoryCleanBookName: cleanBookName) else {
-                organizer.transientMessage = L10n.string("favorites.updates.event_target_missing")
+                organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                 return
             }
             present(target)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for manga directory update \(cleanBookName): \(error.localizedDescription)")
-            organizer.errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                organizer.errorMessage = error.localizedDescription
+                organizer.errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 

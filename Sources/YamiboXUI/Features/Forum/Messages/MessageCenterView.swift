@@ -29,6 +29,7 @@ struct MessageCenterView: View {
             currentPage: model.currentPage,
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             selectTab: selectTab,
             refresh: refresh,
             retry: retry,
@@ -86,6 +87,7 @@ private struct MessageCenterBodyView: View {
     let currentPage: Int
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let selectTab: (MessageCenterTab) -> Void
     let refresh: () async -> Void
     let retry: () -> Void
@@ -100,7 +102,7 @@ private struct MessageCenterBodyView: View {
                 MessageCenterTabPickerView(selectedTab: selectedTab, selectTab: selectTab)
 
                 if let errorMessage, content == nil {
-                    LoadFailureView(message: errorMessage, retry: retry)
+                    LoadFailureView(message: errorMessage, details: errorDetails, retry: retry)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
                 } else if isLoading && content == nil {

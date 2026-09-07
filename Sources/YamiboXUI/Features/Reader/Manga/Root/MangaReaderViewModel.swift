@@ -112,8 +112,23 @@ public final class MangaReaderViewModel {
     public private(set) var chapterCommentsState: ReaderChapterCommentsState = .idle
     public private(set) var isLoadingMoreChapterComments = false
     public private(set) var chapterCommentsLoadMoreError: String?
+    private(set) var chapterCommentsLoadMoreErrorDetails: LoadFailureDetails?
     public private(set) var chapterCommentsRefreshError: String?
-    var chapterJumpErrorMessage: String?
+    private(set) var chapterCommentsRefreshErrorDetails: LoadFailureDetails?
+    private(set) var chapterCommentsFailureEventID: UUID?
+    var chapterJumpErrorMessage: String? {
+        didSet {
+            chapterJumpErrorDetails = nil
+            chapterJumpFeedbackID = UUID()
+        }
+    }
+    var chapterJumpErrorDetails: LoadFailureDetails?
+    private var chapterJumpFeedbackID = UUID()
+    var chapterJumpFeedback: TransientFeedback? {
+        chapterJumpErrorMessage.map {
+            TransientFeedback(message: $0, details: chapterJumpErrorDetails ?? LoadFailureDetails(message: $0), id: chapterJumpFeedbackID)
+        }
+    }
     var pageBoundary: ReaderPageBoundary?
     public private(set) var likedPageIDs: Set<String> = []
     /// Drives the 书签与喜欢 capsule (visibility + combined count).
@@ -601,6 +616,11 @@ public final class MangaReaderViewModel {
         await coverModule.setMangaCover(page: page)
     }
 
+    var coverActionFailureDetails: LoadFailureDetails? { coverModule.failureDetails }
+    var coverActionWasCancelled: Bool { coverModule.actionWasCancelled }
+    var likeActionFailureDetails: LoadFailureDetails? { likeModule.failureDetails }
+    var likeActionWasCancelled: Bool { likeModule.actionWasCancelled }
+
     func restoreAutomaticMangaCover() async -> Bool {
         await coverModule.restoreAutomaticMangaCover()
     }
@@ -769,6 +789,14 @@ public final class MangaReaderViewModel {
         await chapterCommentsModule.loadNextPage()
     }
 
+    func clearChapterCommentsFailure() {
+        chapterCommentsModule.clearTransientFailure()
+    }
+
+    func clearDirectoryFailure() {
+        directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
+    }
+
     // MARK: - Settings
 
     public func applySettings(_ settings: MangaReaderSettings) {
@@ -863,7 +891,10 @@ public final class MangaReaderViewModel {
         } catch {
             guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
             YamiboLog.reader.error("Jumping to manga chapter failed: \(error.localizedDescription)")
-            chapterJumpErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                chapterJumpErrorMessage = error.localizedDescription
+                chapterJumpErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -1136,7 +1167,10 @@ public final class MangaReaderViewModel {
         chapterCommentsState = snapshot.state
         isLoadingMoreChapterComments = snapshot.isLoadingMore
         chapterCommentsLoadMoreError = snapshot.loadMoreError
+        chapterCommentsLoadMoreErrorDetails = snapshot.loadMoreErrorDetails
         chapterCommentsRefreshError = snapshot.refreshError
+        chapterCommentsRefreshErrorDetails = snapshot.refreshErrorDetails
+        chapterCommentsFailureEventID = snapshot.failureEventID
     }
 
     private static func normalizedSettings(_ settings: MangaReaderSettings) -> MangaReaderSettings {

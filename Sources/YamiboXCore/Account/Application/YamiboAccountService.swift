@@ -115,13 +115,17 @@ public struct YamiboAccountService: Sendable {
     private func fetchLoginForm() async throws -> YamiboLoginForm {
         let client = YamiboClient(session: session, userAgent: userAgent, wafRecoverer: wafRecoverer)
         let html = try await client.fetchHTML(for: .login, cachePolicy: .reloadIgnoringLocalCacheData)
-        return try YamiboLoginFormParser.parse(html)
+        return try LoadDiagnosticError.parsing(html: html, context: "YamiboLoginFormParser.parse") {
+            try YamiboLoginFormParser.parse(html)
+        }
     }
 
     private func fetchProfile(credentials: YamiboRequestCredentials) async throws -> YamiboProfile {
         let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer)
         let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
-        return try YamiboProfileParser.parse(html)
+        return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
+            try YamiboProfileParser.parse(html)
+        }
     }
 
     private func loginFields(

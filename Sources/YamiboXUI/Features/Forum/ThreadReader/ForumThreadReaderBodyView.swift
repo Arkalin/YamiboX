@@ -18,6 +18,7 @@ struct ForumThreadReaderBodyView: View {
     let onVisibleAnchorChange: (String?) -> Void
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let isFavorited: Bool
     /// 倒序浏览: page 1 opens on the newest replies, so no post on it carries
     /// the thread's title and counters.
@@ -126,7 +127,7 @@ struct ForumThreadReaderBodyView: View {
                     } else if isLoading {
                         ForumContentLoadingView()
                     } else if let errorMessage {
-                        ForumContentErrorView(message: errorMessage, retry: retry)
+                        ForumContentErrorView(message: errorMessage, details: errorDetails, retry: retry)
                     }
                 }
                 .padding(.horizontal, 16)

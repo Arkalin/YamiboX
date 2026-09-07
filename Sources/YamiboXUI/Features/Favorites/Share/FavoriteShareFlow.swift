@@ -17,8 +17,15 @@ final class FavoriteShareFlowModel {
     private(set) var pendingImportData: Data?
     var isFileImporterPresented = false
     var isFileExporterPresented = false
-    var errorMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
 
     init(service: FavoriteShareService) {
         self.service = service
@@ -35,7 +42,10 @@ final class FavoriteShareFlowModel {
             preparedExport = try await service.export(categoryIDs: exportCategoryIDs)
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -69,7 +79,10 @@ final class FavoriteShareFlowModel {
             importPreview = preview
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             pendingImportData = nil
             importPreview = nil
             return false
@@ -95,7 +108,10 @@ final class FavoriteShareFlowModel {
             cancelImport()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -114,7 +130,10 @@ final class FavoriteShareFlowModel {
             preparedExport = nil
             exportCategoryIDs = []
         case let .failure(error):
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -123,7 +142,10 @@ final class FavoriteShareFlowModel {
         guard cocoaError.domain != NSCocoaErrorDomain || cocoaError.code != NSUserCancelledError else {
             return
         }
-        errorMessage = error.localizedDescription
+        if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+            errorMessage = error.localizedDescription
+            errorDetails = LoadFailureDetails(error: error)
+        }
     }
 }
 

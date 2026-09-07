@@ -28,12 +28,16 @@ import Testing
     )
     try await cacheStore.save(authorFiltered)
 
-    await #expect(throws: YamiboError.offline) {
+    await #expect {
         _ = try await repository.loadPage(NovelPageRequest(threadID: "22", view: 1))
+    } throws: { error in
+        (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
     }
 
-    await #expect(throws: YamiboError.offline) {
+    await #expect {
         _ = try await repository.loadPage(NovelPageRequest(threadID: "22", view: 1, authorID: "42"))
+    } throws: { error in
+        (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
     }
 }
 
@@ -325,8 +329,10 @@ private func makeReaderRepositoryThreadPage(
         forumCacheStore: forumCacheStore
     )
 
-    await #expect(throws: YamiboError.offline) {
+    await #expect {
         _ = try await repository.loadPage(NovelPageRequest(threadID: "31", view: 1, authorID: "42"))
+    } throws: { error in
+        (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
     }
 }
 
@@ -371,7 +377,12 @@ private func makeReaderRepositoryThreadPage(
         for: NovelPageRequest(threadID: "34", view: 1, authorID: "42")
     )
 
-    #expect(load.source == .offlineFallback(updatedAt: updatedAt))
+    guard case let .offlineFallback(date, failure) = load.source else {
+        Issue.record("Expected offline fallback")
+        return
+    }
+    #expect(date == updatedAt)
+    #expect(failure?.causes.first?.code == URLError.notConnectedToInternet.rawValue)
     #expect(load.projection.segments.contains(.text("离线章节\n离线正文", chapterTitle: "离线章节")))
     #expect(load.projection.projectionSourceFingerprint != nil)
     #expect(load.projection.projectionSchemaVersion == 1)
@@ -428,7 +439,12 @@ private func makeReaderRepositoryThreadPage(
 
     let cachedLoad = try await repository.loadPageResult(NovelPageRequest(threadID: "341", view: 1, authorID: "42"))
 
-    #expect(cachedLoad.source == .offlineFallback(updatedAt: updatedAt))
+    guard case let .offlineFallback(date, failure) = cachedLoad.source else {
+        Issue.record("Expected offline fallback")
+        return
+    }
+    #expect(date == updatedAt)
+    #expect(failure?.causes.first?.code == URLError.notConnectedToInternet.rawValue)
     #expect(cachedLoad.projection.segments == cachedProjection.segments)
 }
 

@@ -194,7 +194,7 @@ public actor NovelReaderRepository {
     public func fetchThreadDisplayTitle(threadID: String, authorID: String? = nil) async throws -> String {
         let html = try await client.fetchThreadById(tid: threadID, authorID: authorID, page: 1)
         guard let title = YamiboHTMLPageInspector.pageTitle(from: html) else {
-            throw YamiboError.parsingFailed(context: L10n.string("context.thread_title"))
+            throw LoadDiagnosticError.attaching(to: YamiboError.parsingFailed(context: L10n.string("context.thread_title")), html: html)
         }
         return title
     }
@@ -207,10 +207,10 @@ public actor NovelReaderRepository {
             await autoRefreshNovelOfflineCacheIfNeeded(loaded, sourceLoadedOnline: sourceLoadedOnline)
             return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
         }
-        if case let .offlineFallback(updatedAt) = loaded.source {
+        if case let .offlineFallback(updatedAt, failure) = loaded.source {
             return NovelReaderProjectionLoad(
                 projection: loaded.projection,
-                source: .offlineFallback(updatedAt: updatedAt)
+                source: .offlineFallback(updatedAt: updatedAt, failure: failure)
             )
         }
         return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)

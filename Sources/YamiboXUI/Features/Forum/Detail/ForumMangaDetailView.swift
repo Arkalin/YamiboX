@@ -134,7 +134,6 @@ private struct ForumMangaDetailBodyView: View {
                     coverURL: model.coverURL,
                     latestChapterText: model.latestChapterText,
                     readingProgressText: model.readingProgressText,
-                    actionErrorMessage: model.directoryActionErrorMessage,
                     hasReadingProgress: model.hasReadingProgress,
                     updateButtonTitle: model.updateButtonTitle,
                     isUpdateButtonEnabled: model.isUpdateButtonEnabled,
@@ -171,6 +170,7 @@ private struct ForumMangaDetailBodyView: View {
                 countText: L10n.string("manga_directory.chapter_count", model.directory?.chapters.count ?? 0),
                 isLoading: model.isLoading,
                 errorMessage: model.errorMessage,
+                errorDetails: model.errorDetails,
                 initialFocusID: model.focusedChapterTID,
                 refresh: { await model.refresh() },
                 onChapterTap: { id in
@@ -190,7 +190,6 @@ struct ForumMangaDetailHeader: View {
     let coverURL: URL?
     let latestChapterText: String?
     let readingProgressText: String?
-    let actionErrorMessage: String?
     let hasReadingProgress: Bool
     let updateButtonTitle: String
     let isUpdateButtonEnabled: Bool
@@ -213,7 +212,6 @@ struct ForumMangaDetailHeader: View {
                 updatedAt: directory.lastUpdatedAt,
                 latestChapterText: latestChapterText,
                 readingProgressText: readingProgressText,
-                actionErrorMessage: actionErrorMessage,
                 compact: compact
             )
         } actions: {
@@ -242,7 +240,6 @@ struct ForumMangaDetailHeader: View {
                 updatedAt: directory.lastUpdatedAt,
                 latestChapterText: latestChapterText,
                 readingProgressText: readingProgressText,
-                actionErrorMessage: actionErrorMessage,
                 compact: false,
                 showsAllDetails: true
             )
@@ -256,7 +253,6 @@ private struct ForumMangaHeaderMetadata: View {
     let updatedAt: Date?
     let latestChapterText: String?
     let readingProgressText: String?
-    let actionErrorMessage: String?
     let compact: Bool
     var showsAllDetails = false
 
@@ -276,10 +272,6 @@ private struct ForumMangaHeaderMetadata: View {
             if showsAllDetails, let readingProgressText {
                 Label(readingProgressText, systemImage: "bookmark.fill")
                     .foregroundStyle(theme.accentText)
-            }
-            if let actionErrorMessage {
-                Label(actionErrorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(theme.warning)
             }
         }
         .font(showsAllDetails ? .body : .caption)

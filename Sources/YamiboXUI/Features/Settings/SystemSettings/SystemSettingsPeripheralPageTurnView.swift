@@ -124,13 +124,16 @@ struct SystemSettingsPeripheralPageTurnView: View {
             cancelCaptureIfNeeded()
             cancelKeyboardCaptureIfNeeded()
         }
-        .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: errorIsPresented
+        ) {
             Button(L10n.string("common.ok")) {
                 viewModel.errorMessage = nil
             }
-        }, message: {
-            Text(viewModel.errorMessage ?? "")
-        })
+        }
     }
 
     private var errorIsPresented: Binding<Bool> {

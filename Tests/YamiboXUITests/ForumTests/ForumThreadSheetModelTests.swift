@@ -119,7 +119,7 @@ private enum SheetModelTestError: LocalizedError {
 }
 
 @MainActor
-@Test func rateSheetModelLoadOptionsFailureShowsHintInsteadOfOptions() async {
+@Test func rateSheetModelLoadOptionsFailureProducesToastDetailsInsteadOfInlineHint() async {
     let model = ForumThreadRateSheetModel(
         postID: "4001",
         loadOptions: { _ in throw SheetModelTestError.plannedFailure },
@@ -129,7 +129,9 @@ private enum SheetModelTestError: LocalizedError {
     await model.loadRateOptions()
 
     #expect(model.options == nil)
-    #expect(model.hintMessage == L10n.string("forum.thread.rate_options_failed"))
+    #expect(model.hintMessage == nil)
+    #expect(model.errorMessage == L10n.string("forum.thread.rate_options_failed"))
+    #expect(model.errorDetails?.summary == SheetModelTestError.plannedFailure.localizedDescription)
     #expect(!model.isLoadingOptions)
 }
 
@@ -165,4 +167,42 @@ private enum SheetModelTestError: LocalizedError {
 
     #expect(!shouldDismiss)
     #expect(model.errorMessage == SheetModelTestError.plannedFailure.localizedDescription)
+    let firstID = model.errorEventID
+    #expect(await model.submitComment() == false)
+    #expect(model.errorEventID != firstID)
+}
+
+@MainActor
+@Test func rateSheetRepeatedValidationFailuresHaveDistinctEvents() async {
+    let model = ForumThreadRateSheetModel(
+        postID: "4001", loadOptions: { _ in .init(availableScores: [], defaultReasons: []) },
+        submit: { _, _, _, _ in "" }
+    )
+    model.scoreText = "invalid"
+    _ = await model.submitRate()
+    let firstID = model.errorEventID
+    _ = await model.submitRate()
+    #expect(model.errorEventID != firstID)
+    #expect(model.errorDetails == nil)
+    model.clearError()
+    #expect(model.errorMessage == nil)
+}
+
+@MainActor
+@Test func commentAndRateCancellationDoesNotProduceFailureFeedback() async {
+    let comment = ForumThreadCommentSheetModel(postID: "4001") { _, _ in throw URLError(.cancelled) }
+    comment.message = "Comment"
+    #expect(await comment.submitComment() == false)
+    #expect(comment.errorMessage == nil)
+    #expect(comment.errorDetails == nil)
+    let rate = ForumThreadRateSheetModel(
+        postID: "4001", loadOptions: { _ in throw CancellationError() },
+        submit: { _, _, _, _ in throw URLError(.cancelled) }
+    )
+    await rate.loadRateOptions()
+    #expect(rate.hintMessage == nil)
+    #expect(rate.errorMessage == nil)
+    rate.scoreText = "2"
+    #expect(await rate.submitRate() == false)
+    #expect(rate.errorMessage == nil)
 }

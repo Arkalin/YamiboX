@@ -196,10 +196,12 @@ struct MangaReaderTestsReaderProjectionLoader {
             forumCacheStore: fixtures.forumCacheStore
         )
 
-        await #expect(throws: YamiboError.parsingFailed(context: L10n.string("context.current_page_not_manga_chapter"))) {
+        await #expect {
             _ = try await loader.loadReaderProjection(
                 MangaReaderProjectionRequest(threadID: "704")
             )
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.parsingFailed(context: L10n.string("context.current_page_not_manga_chapter"))
         }
     }
 
@@ -355,14 +357,18 @@ struct MangaReaderTestsReaderProjectionLoader {
             offlineCacheStore: fixtures.offlineCacheStore
         )
 
-        await #expect(throws: YamiboError.offline) {
+        await #expect {
             _ = try await loader.loadReaderProjection(MangaReaderProjectionRequest(threadID: "708"))
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
         }
-        await #expect(throws: YamiboError.offline) {
+        await #expect {
             _ = try await loader.loadReaderProjection(MangaReaderProjectionRequest(
                 threadID: "708",
                 offlineOwnerName: "离线漫画"
             ))
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
         }
     }
 
@@ -393,12 +399,14 @@ struct MangaReaderTestsReaderProjectionLoader {
             offlineCacheStore: fixtures.offlineCacheStore
         )
 
-        await #expect(throws: YamiboError.offline) {
+        await #expect {
             _ = try await loader.loadReaderProjection(MangaReaderProjectionRequest(
                 threadID: "709",
                 view: 1,
                 offlineOwnerName: "离线漫画"
             ))
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.offline
         }
     }
 
@@ -430,12 +438,14 @@ struct MangaReaderTestsReaderProjectionLoader {
             offlineCacheStore: fixtures.offlineCacheStore
         )
 
-        await #expect(throws: YamiboError.parsingFailed(context: L10n.string("context.current_page_not_manga_chapter"))) {
+        await #expect {
             _ = try await loader.loadReaderProjection(MangaReaderProjectionRequest(
                 threadID: "710",
                 authorID: "42",
                 offlineOwnerName: "离线漫画"
             ))
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.parsingFailed(context: L10n.string("context.current_page_not_manga_chapter"))
         }
     }
 

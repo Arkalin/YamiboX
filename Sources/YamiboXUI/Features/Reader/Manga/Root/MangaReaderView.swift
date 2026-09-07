@@ -245,13 +245,14 @@ public struct MangaReaderView: View {
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!isChromeVisible)
         .persistentSystemOverlays(isChromeVisible ? .automatic : .hidden)
-        .transientMessage(model.chapterJumpErrorMessage) {
+        .transientMessage(model.chapterJumpFeedback) {
             model.chapterJumpErrorMessage = nil
         }
         .sheet(isPresented: $isDirectoryPresented) {
             if case let .loaded(loaded) = model.presentation.state {
                 MangaDirectorySheet(
                     panel: loaded.directoryPanel,
+                    onClearFailure: model.clearDirectoryFailure,
                     onSortOrderChange: { sortOrder in
                         var settings = model.presentation.settings
                         settings.directorySortOrder = sortOrder
@@ -284,7 +285,11 @@ public struct MangaReaderView: View {
                 state: model.chapterCommentsState,
                 isLoadingMore: model.isLoadingMoreChapterComments,
                 loadMoreError: model.chapterCommentsLoadMoreError,
+                loadMoreErrorDetails: model.chapterCommentsLoadMoreErrorDetails,
                 refreshError: model.chapterCommentsRefreshError,
+                refreshErrorDetails: model.chapterCommentsRefreshErrorDetails,
+                failureEventID: model.chapterCommentsFailureEventID,
+                clearFailure: model.clearChapterCommentsFailure,
                 loadInitial: model.loadChapterComments(for:),
                 refresh: model.refreshChapterComments(for:),
                 loadNext: model.loadNextChapterCommentsPage,
@@ -340,6 +345,7 @@ public struct MangaReaderView: View {
                             ) { isActive, onNavigationStateChange in
                                 MangaDirectorySheet(
                                     panel: loaded.directoryPanel,
+                                    onClearFailure: model.clearDirectoryFailure,
                                     onSortOrderChange: { sortOrder in
                                         var settings = model.presentation.settings
                                         settings.directorySortOrder = sortOrder
@@ -480,19 +486,23 @@ public struct MangaReaderView: View {
                 likedItemForActionTarget = nil
             }
         }
-        .overlay(alignment: .bottom) {
+        .transientFeedbackOverlay(
+            imageSavePresentation.feedback?.transientFeedback,
+            bottomPadding: 28, horizontalPadding: 20, minimumSeconds: 1.8,
+            animation: .easeInOut(duration: 0.18)
+        ) { _, showDetails in
             if let feedback = imageSavePresentation.feedback {
-                MangaImageSaveFeedbackToast(feedback: feedback)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .move(edge: .bottom).combined(with: .opacity)
-                    )
+                MangaImageSaveFeedbackToast(feedback: feedback, showDetails: showDetails)
             }
+        } clear: {
+            imageSavePresentation.feedback = nil
         }
-        .animation(.easeInOut(duration: 0.18), value: imageSavePresentation.feedback?.id)
+        .onChange(of: imageSavePresentation.feedback?.id) {
+            if imageSavePresentation.feedback != nil { model.chapterJumpErrorMessage = nil }
+        }
+        .onChange(of: model.chapterJumpFeedback?.id) {
+            if model.chapterJumpFeedback != nil { imageSavePresentation.feedback = nil }
+        }
         .sensoryFeedback(trigger: imageSavePresentation.feedback?.id) { _, _ in
             switch imageSavePresentation.feedback?.kind {
             case .success, .custom:
@@ -503,18 +513,10 @@ public struct MangaReaderView: View {
                 nil
             }
         }
-        .task(id: imageSavePresentation.feedback?.id) {
-            guard let feedback = imageSavePresentation.feedback else { return }
-            announceFeedbackForAccessibility(feedback)
-            let text = "\(feedback.title)\(feedback.message)"
-            let seconds = min(max(1.8, Double(text.count) * 0.12), 8)
-            try? await Task.sleep(for: .seconds(seconds))
-            await MainActor.run {
-                imageSavePresentation.clearFeedback(id: feedback.id)
-            }
-        }
-        .alert(
+        .failureAlert(
             L10n.string("image.save_photo_permission_denied_title"),
+            message: L10n.string("image.save_photo_permission_denied"),
+            details: LoadFailureDetails(error: MangaImagePhotoSaveError.authorizationDenied),
             isPresented: $isPhotoPermissionAlertPresented
         ) {
             Button(L10n.string("favorites.updates.notifications_open_settings")) {
@@ -523,15 +525,7 @@ public struct MangaReaderView: View {
                 }
             }
             Button(L10n.string("common.cancel"), role: .cancel) {}
-        } message: {
-            Text(L10n.string("image.save_photo_permission_denied"))
         }
-    }
-
-    private func announceFeedbackForAccessibility(_ feedback: MangaImageSaveFeedback) {
-        var announcement = AttributedString("\(feedback.title)，\(feedback.message)")
-        announcement.accessibilitySpeechAnnouncementPriority = .high
-        AccessibilityNotification.Announcement(announcement).post()
     }
 
     private func toggleChrome() {
@@ -684,11 +678,14 @@ public struct MangaReaderView: View {
             try await photoSaver.saveImageData(data)
             imageSavePresentation.finishSave(with: .success)
         } catch MangaImagePhotoSaveError.authorizationDenied {
+            guard !Task.isCancelled else { return }
             YamiboLog.reader.warning("Manga page image save denied: Photos authorization was not granted")
             isPhotoPermissionAlertPresented = true
         } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             YamiboLog.reader.error("Failed to save manga page image: \(error.localizedDescription)")
-            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.save_failed")))
+            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.save_failed"),
+                                                           details: LoadFailureDetails(error: error)))
         }
     }
 
@@ -696,24 +693,26 @@ public struct MangaReaderView: View {
     private func setMangaCover(_ page: MangaReaderPageProjection) async {
         imageSavePresentation.clearActionTarget()
         let succeeded = await model.setMangaCover(page: page)
+        guard !Task.isCancelled, !model.coverActionWasCancelled else { return }
         imageSavePresentation.finishSave(with: succeeded
             ? .custom(
                 title: L10n.string("cover.action_success_title"),
                 message: L10n.string("cover.set_success_message")
             )
-            : .failure(message: L10n.string("image.action_failed")))
+            : .failure(message: L10n.string("image.action_failed"), details: model.coverActionFailureDetails))
     }
 
     @MainActor
     private func restoreMangaCover() async {
         imageSavePresentation.clearActionTarget()
         let succeeded = await model.restoreAutomaticMangaCover()
+        guard !Task.isCancelled, !model.coverActionWasCancelled else { return }
         imageSavePresentation.finishSave(with: succeeded
             ? .custom(
                 title: L10n.string("cover.action_success_title"),
                 message: L10n.string("cover.restore_success_message")
             )
-            : .failure(message: L10n.string("image.action_failed")))
+            : .failure(message: L10n.string("image.action_failed"), details: model.coverActionFailureDetails))
     }
 
     @MainActor
@@ -721,7 +720,9 @@ public struct MangaReaderView: View {
         imageSavePresentation.clearActionTarget()
         likedItemForActionTarget = nil
         guard let outcome = await model.likePage(page) else {
-            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed")))
+            guard !Task.isCancelled, !model.likeActionWasCancelled else { return }
+            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed"),
+                                                           details: model.likeActionFailureDetails))
             return
         }
         switch outcome {
@@ -741,7 +742,9 @@ public struct MangaReaderView: View {
         imageSavePresentation.clearActionTarget()
         likedItemForActionTarget = nil
         guard let outcome = await model.likePage(page) else {
-            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed")))
+            guard !Task.isCancelled, !model.likeActionWasCancelled else { return }
+            imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed"),
+                                                           details: model.likeActionFailureDetails))
             return
         }
 
@@ -756,9 +759,10 @@ public struct MangaReaderView: View {
         imageSavePresentation.clearActionTarget()
         likedItemForActionTarget = nil
         let succeeded = await model.unlikePage(item)
+        guard !Task.isCancelled, !model.likeActionWasCancelled else { return }
         imageSavePresentation.finishSave(with: succeeded
             ? .custom(title: L10n.string("likes.remove_like"), message: "")
-            : .failure(message: L10n.string("image.action_failed")))
+            : .failure(message: L10n.string("image.action_failed"), details: model.likeActionFailureDetails))
     }
 
     private var annotationSegmentBinding: Binding<ReaderAnnotationSegment> {

@@ -18,7 +18,10 @@ final class PrivateMessageViewModel {
     var currentPage = 1
     var isLoading = false
     var isSending = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
     var sendResultMessage: String?
 
     let uid: String
@@ -108,7 +111,10 @@ final class PrivateMessageViewModel {
             inputText = ""
             await loadPage(currentPage)
         } catch {
-            errorMessage = L10n.string("private_message.send_failed", error.localizedDescription)
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = L10n.string("private_message.send_failed", error.localizedDescription)
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -131,7 +137,10 @@ final class PrivateMessageViewModel {
             page = loadedPage
             currentPage = loadedPage.pageNavigation?.currentPage ?? requestedPage ?? 1
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }

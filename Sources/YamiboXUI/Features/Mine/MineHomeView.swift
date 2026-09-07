@@ -102,13 +102,16 @@ public struct MineHomeView: View {
             .task {
                 await viewModel.load()
             }
-            .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+            .failureAlert(
+                L10n.string("common.operation_failed"),
+                message: viewModel.errorMessage,
+                details: viewModel.errorDetails,
+                isPresented: errorIsPresented
+            ) {
                 Button(L10n.string("common.ok")) {
                     clearErrorMessages()
                 }
-            }, message: {
-                Text(viewModel.errorMessage ?? viewModel.offlineQueue.errorMessage ?? "")
-            })
+            }
             .transientMessage(viewModel.checkInResultMessage) {
                 viewModel.checkInResultMessage = nil
             }
@@ -127,9 +130,11 @@ public struct MineHomeView: View {
                     peripheralInput: appModel.peripheralInput,
                     onSignOut: {
                         await viewModel.signOut()
-                        let message = viewModel.errorMessage
+                        let details = viewModel.errorMessage.map {
+                            viewModel.errorDetails ?? LoadFailureDetails(message: $0)
+                        }
                         viewModel.errorMessage = nil
-                        return message
+                        return details
                     },
                     onApplicationReset: {
                         await appModel.bootstrap()
@@ -163,7 +168,7 @@ public struct MineHomeView: View {
     private var errorIsPresented: Binding<Bool> {
         Binding(
             get: {
-                (viewModel.errorMessage != nil || viewModel.offlineQueue.errorMessage != nil)
+                viewModel.errorMessage != nil
                     && !showingLoginSheet
             },
             set: { isPresented in
@@ -176,7 +181,6 @@ public struct MineHomeView: View {
 
     private func clearErrorMessages() {
         viewModel.errorMessage = nil
-        viewModel.offlineQueue.errorMessage = nil
     }
 
 }

@@ -19,15 +19,20 @@ struct MangaImageSaveFeedback: Identifiable {
 
     let id = UUID()
     let kind: Kind
+    var details: LoadFailureDetails? = nil
 
-    static let success = MangaImageSaveFeedback(kind: .success)
+    static var success: MangaImageSaveFeedback { MangaImageSaveFeedback(kind: .success) }
 
     static func custom(title: String, message: String) -> MangaImageSaveFeedback {
         MangaImageSaveFeedback(kind: .custom(title: title, message: message))
     }
 
-    static func failure(message: String) -> MangaImageSaveFeedback {
-        MangaImageSaveFeedback(kind: .failure(message))
+    static func failure(message: String, details: LoadFailureDetails? = nil) -> MangaImageSaveFeedback {
+        MangaImageSaveFeedback(kind: .failure(message), details: details ?? LoadFailureDetails(message: message))
+    }
+
+    var transientFeedback: TransientFeedback {
+        TransientFeedback(message: "\(title)\(message)", details: details, id: id)
     }
 
     var title: String {

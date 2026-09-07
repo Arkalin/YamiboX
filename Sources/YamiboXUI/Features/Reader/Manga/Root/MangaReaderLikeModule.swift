@@ -22,6 +22,8 @@ final class MangaReaderLikeModule {
     }
 
     private let reading: Reading
+    private(set) var failureDetails: LoadFailureDetails?
+    private(set) var actionWasCancelled = false
     private var likeChangeObservationTask: Task<Void, Never>?
 
     init(reading: Reading) {
@@ -58,16 +60,25 @@ final class MangaReaderLikeModule {
     }
 
     func likePage(_ page: MangaReaderPageProjection) async -> LikeCaptureOutcome? {
+        failureDetails = nil
+        actionWasCancelled = false
         guard let workKey = likeWorkKey, let like = reading.makeLikeDependencies() else { return nil }
         let anchor = MangaImageLikeAnchor(chapterTID: page.tid, pageLocalIndex: page.localIndex, forumID: reading.forumID)
         let source = reading.imageSource(page)
         let service = MangaImageLikeCaptureService(likeStore: like.likeStore, likeImageStore: like.likeImageStore)
-        let outcome = try? await service.like(
+        let outcome: LikeCaptureOutcome?
+        do {
+            outcome = try await service.like(
             workKey: workKey,
             anchor: anchor,
             sourceImageURL: source.url,
             imageData: { try await YamiboImagePipeline.shared.data(for: source) }
-        )
+            )
+        } catch {
+            actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+            if !actionWasCancelled { failureDetails = LoadFailureDetails(error: error) }
+            outcome = nil
+        }
         await refreshLikedPageIDs()
         return outcome
     }
@@ -84,6 +95,8 @@ final class MangaReaderLikeModule {
     }
 
     func unlikePage(_ item: LikeItem) async -> Bool {
+        failureDetails = nil
+        actionWasCancelled = false
         guard let like = reading.makeLikeDependencies() else { return false }
         do {
             // Terminal write: shield against the long-press confirmation dialog's
@@ -93,6 +106,8 @@ final class MangaReaderLikeModule {
                 try await like.likeImageStore.delete(id: item.id)
             }.value
         } catch {
+            actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+            if !actionWasCancelled { failureDetails = LoadFailureDetails(error: error) }
             return false
         }
         await refreshLikedPageIDs()

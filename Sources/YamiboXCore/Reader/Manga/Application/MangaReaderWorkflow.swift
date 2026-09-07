@@ -136,12 +136,14 @@ public final class MangaReaderWorkflow {
             shouldAutoUpdateDirectoryAfterPrepare = resolution.shouldAutoUpdateAfterInitialLoad
             presentation = loadedPresentation(from: window, placementPageIndex: MangaReaderPageProjection.resolvedPageIndex(for: window))
         } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return presentation }
             window = nil
             presentation = MangaReaderPresentation(
                 state: .failed(
                     MangaReaderErrorPresentation(
                         title: L10n.string("common.load_failed"),
-                        message: error.localizedDescription
+                        message: error.localizedDescription,
+                        details: LoadFailureDetails(error: error)
                     )
                 ),
                 settings: settings
@@ -681,7 +683,9 @@ public final class MangaReaderWorkflow {
             shouldForceSearchOnUpdate: forcedRemaining != nil,
             isUpdating: directoryPanelCommandState.isUpdating,
             editDraft: directoryWorkflow.editDraft(for: window.directory, currentTID: window.resolvedPosition?.tid),
-            errorMessage: directoryPanelCommandState.errorMessage
+            errorMessage: directoryPanelCommandState.errorMessage,
+            errorDetails: directoryPanelCommandState.errorDetails,
+            failureEventID: directoryPanelCommandState.failureEventID
         )
     }
 

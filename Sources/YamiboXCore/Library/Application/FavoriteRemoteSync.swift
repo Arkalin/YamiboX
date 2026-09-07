@@ -102,6 +102,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     public func run(
         snapshot initial: FavoriteRemoteSyncSnapshot,
         interruptionReason: @escaping @Sendable () -> FavoriteRemoteSyncWarning? = { nil },
+        onFailure: @escaping @Sendable (LoadFailureDetails) async -> Void = { _ in },
         persist: @escaping @Sendable (FavoriteRemoteSyncSnapshot) async -> Void
     ) async -> FavoriteRemoteSyncSnapshot {
         var snapshot = initial
@@ -479,6 +480,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 YamiboLog.sync.error("Failed to save queued favorite sync mutations after run failure: \(saveError)")
             }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            await onFailure(LoadFailureDetails(error: error))
             await commit { snapshot in
                 snapshot.status = .failed
                 snapshot.phase = .failed
@@ -577,7 +579,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 return false
             }
         }
-        guard let yamiboError = error as? YamiboError else { return false }
+        guard let yamiboError = LoadDiagnosticError.classificationError(error) as? YamiboError else { return false }
         switch yamiboError {
         case .notAuthenticated, .floodControl:
             return true

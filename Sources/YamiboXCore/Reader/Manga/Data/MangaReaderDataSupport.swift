@@ -21,14 +21,15 @@ enum MangaReaderDataSupport {
     static func mapNetworkErrors<T>(_ operation: () async throws -> T) async throws -> T {
         do {
             return try await operation()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as URLError {
-            switch error.code {
+        } catch {
+            let source = LoadDiagnosticError.classificationError(error)
+            guard let urlError = source as? URLError else { throw error }
+            if LoadDiagnosticError.isCancellation(error) { throw error }
+            switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
-                throw YamiboError.offline
+                throw LoadDiagnosticError.mapping(error, to: YamiboError.offline)
             default:
-                throw YamiboError.underlying(error.localizedDescription)
+                throw LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
             }
         }
     }

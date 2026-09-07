@@ -26,13 +26,16 @@ struct MineLoginSheet: View {
                     Button(L10n.string("common.cancel"), action: close)
                 }
             }
-            .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+            .failureAlert(
+                L10n.string("common.operation_failed"),
+                message: viewModel.errorMessage,
+                details: viewModel.errorDetails,
+                isPresented: errorIsPresented
+            ) {
                 Button(L10n.string("common.ok")) {
                     viewModel.errorMessage = nil
                 }
-            }, message: {
-                Text(viewModel.errorMessage ?? "")
-            })
+            }
         }
         .sheet(isPresented: $isWebLoginPresented, onDismiss: refreshAfterWebLogin) {
             MineWebLoginSheet(

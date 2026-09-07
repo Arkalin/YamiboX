@@ -30,6 +30,7 @@ struct BlogReaderView: View {
             commentText: model.commentText,
             commentPlaceholder: model.commentPlaceholder,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             refresh: refresh,
             retry: retry,
             goToPage: goToPage,
@@ -46,8 +47,10 @@ struct BlogReaderView: View {
         .transientMessage(model.commentResultMessage) {
             model.clearCommentResult()
         }
-        .alert(
+        .failureAlert(
             L10n.string("blog_reader.comment_failed_title"),
+            message: model.errorMessage,
+            details: model.errorDetails,
             isPresented: Binding(
                 get: { model.page != nil && model.errorMessage != nil },
                 set: { isPresented in
@@ -60,8 +63,6 @@ struct BlogReaderView: View {
             Button(L10n.string("common.ok")) {
                 model.errorMessage = nil
             }
-        } message: {
-            Text(model.errorMessage ?? "")
         }
     }
 
@@ -104,6 +105,7 @@ private struct BlogReaderBodyView: View {
     let commentText: String
     let commentPlaceholder: String
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let refresh: () async -> Void
     let retry: () -> Void
     let goToPage: (Int) -> Void
@@ -135,7 +137,7 @@ private struct BlogReaderBodyView: View {
                 } else if isLoading {
                     ForumContentLoadingView()
                 } else if let errorMessage {
-                    LoadFailureView(message: errorMessage, retry: retry)
+                    LoadFailureView(message: errorMessage, details: errorDetails, retry: retry)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
                 }
@@ -424,5 +426,3 @@ private struct BlogReaderCommentRow: View {
         .forumCardBackground()
     }
 }
-
-

@@ -94,6 +94,11 @@ final class SystemSettingsViewModel {
         set { activity.errorMessage = newValue }
     }
 
+    var errorDetails: LoadFailureDetails? {
+        get { activity.errorDetails }
+        set { activity.errorDetails = newValue }
+    }
+
     /// One settings-store read populates every page, exactly as the
     /// pre-split monolith loaded — pages render instantly when pushed
     /// instead of each doing its own first load.

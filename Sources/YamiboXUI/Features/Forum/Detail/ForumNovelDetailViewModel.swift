@@ -34,6 +34,7 @@ struct ForumNovelChapterSection: Identifiable, Hashable, Sendable {
     var isLoaded: Bool
     var isLoading: Bool
     var errorMessage: String?
+    var errorDetails: LoadFailureDetails?
 
     var id: Int { page }
 }
@@ -66,7 +67,10 @@ final class ForumNovelDetailViewModel {
     var readingProgress: ReadingProgressRecord?
     var contentCover: ContentCover?
     var isLoading = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     /// Favorite-star state and actions (add/remove/relocate prompts, location
     /// picker, transient feedback) — shared orchestration with the manga
@@ -82,6 +86,7 @@ final class ForumNovelDetailViewModel {
     @ObservationIgnored private var resolvedAuthorID: String?
     @ObservationIgnored private var loadingChapterPages: Set<Int> = []
     @ObservationIgnored private var chapterPageErrors: [Int: String] = [:]
+    @ObservationIgnored private var chapterPageErrorDetails: [Int: LoadFailureDetails] = [:]
     @ObservationIgnored private var totalChapterPages = 1
     @ObservationIgnored private var novelReaderSettings = NovelReaderAppearanceSettings()
     @ObservationIgnored private var documentPreloadTask: Task<Void, Never>?
@@ -232,6 +237,7 @@ final class ForumNovelDetailViewModel {
             await refreshContentCover(from: headerPage)
             totalChapterPages = Self.totalPages(from: contentPage, fallback: 1)
             chapterPageErrors = [:]
+            chapterPageErrorDetails = [:]
             loadingChapterPages = []
             expandedChapterPages = [1]
             rebuildChapterDirectory()
@@ -248,7 +254,7 @@ final class ForumNovelDetailViewModel {
             if preservesCurrentContentOnFailure {
                 document = nil
                 errorMessage = nil
-                favoriteActions.transientMessage = L10n.string("forum.novel_detail.refresh_failed", error.localizedDescription)
+                favoriteActions.transientFeedback = .failure(error, message: L10n.string("forum.novel_detail.refresh_failed", error.localizedDescription))
             } else {
                 document = nil
                 threadPage = nil
@@ -257,8 +263,12 @@ final class ForumNovelDetailViewModel {
                 loadedThreadPages = [:]
                 resolvedAuthorID = nil
                 chapterPageErrors = [:]
+                chapterPageErrorDetails = [:]
                 loadingChapterPages = []
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }
@@ -363,6 +373,7 @@ final class ForumNovelDetailViewModel {
 
         loadingChapterPages.insert(normalizedPage)
         chapterPageErrors[normalizedPage] = nil
+        chapterPageErrorDetails[normalizedPage] = nil
         rebuildChapterDirectory()
         defer {
             loadingChapterPages.remove(normalizedPage)
@@ -382,8 +393,11 @@ final class ForumNovelDetailViewModel {
             loadedThreadPages[normalizedPage] = loaded
             totalChapterPages = max(totalChapterPages, Self.totalPages(from: loaded, fallback: normalizedPage))
             chapterPageErrors[normalizedPage] = nil
+            chapterPageErrorDetails[normalizedPage] = nil
         } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             chapterPageErrors[normalizedPage] = error.localizedDescription
+            chapterPageErrorDetails[normalizedPage] = LoadFailureDetails(error: error)
         }
     }
 
@@ -397,6 +411,7 @@ final class ForumNovelDetailViewModel {
         totalPages: Int,
         loadingPages: Set<Int> = [],
         pageErrors: [Int: String] = [:],
+        pageErrorDetails: [Int: LoadFailureDetails] = [:],
         readingProgress: ReadingProgressRecord? = nil,
         favorite: Favorite? = nil,
         novelReaderSettings: NovelReaderAppearanceSettings = .init(),
@@ -432,7 +447,8 @@ final class ForumNovelDetailViewModel {
                 },
                 isLoaded: pageDocument != nil,
                 isLoading: loadingPages.contains(page),
-                errorMessage: pageErrors[page]
+                errorMessage: pageErrors[page],
+                errorDetails: pageErrorDetails[page]
             )
         }
     }
@@ -443,6 +459,7 @@ final class ForumNovelDetailViewModel {
             totalPages: totalChapterPages,
             loadingPages: loadingChapterPages,
             pageErrors: chapterPageErrors,
+            pageErrorDetails: chapterPageErrorDetails,
             readingProgress: readingProgress,
             favorite: favoriteActions.favorite,
             novelReaderSettings: novelReaderSettings,

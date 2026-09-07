@@ -48,7 +48,7 @@ struct MangaReaderPresentationContent: View {
                 )
             case let .failed(error):
                 ReaderLoadStateView(
-                    status: .failed(message: error.message),
+                    status: .failed(message: error.message, details: error.details),
                     retryAction: onRetryInitialLoad,
                     tint: .white
                 )

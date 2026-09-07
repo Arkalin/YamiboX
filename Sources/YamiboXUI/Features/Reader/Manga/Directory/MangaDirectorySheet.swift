@@ -6,6 +6,7 @@ import UIKit
 
 struct MangaDirectorySheet: View {
     let panel: MangaDirectoryPanelPresentation
+    let onClearFailure: @MainActor () -> Void
     let onSortOrderChange: (MangaDirectorySortOrder) -> Void
     let onUpdateDirectory: () -> Void
     let onResetDirectory: () -> Void
@@ -32,6 +33,7 @@ struct MangaDirectorySheet: View {
 
     init(
         panel: MangaDirectoryPanelPresentation,
+        onClearFailure: @escaping @MainActor () -> Void = {},
         onSortOrderChange: @escaping (MangaDirectorySortOrder) -> Void,
         onUpdateDirectory: @escaping () -> Void,
         onResetDirectory: @escaping () -> Void,
@@ -43,6 +45,7 @@ struct MangaDirectorySheet: View {
         onNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)? = nil
     ) {
         self.panel = panel
+        self.onClearFailure = onClearFailure
         self.onSortOrderChange = onSortOrderChange
         self.onUpdateDirectory = onUpdateDirectory
         self.onResetDirectory = onResetDirectory
@@ -120,6 +123,9 @@ struct MangaDirectorySheet: View {
                 }
         }
             .listStyle(.plain)
+            .failureToast(message: isActive ? panel.errorMessage : nil,
+                          details: panel.errorDetails,
+                          eventID: panel.failureEventID, clear: onClearFailure)
             .scrollContentBackground(.hidden)
             .background(YamiboColors.SystemSurface.groupedBackground)
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -181,10 +187,10 @@ struct MangaDirectorySheet: View {
                 publishNavigationState()
             }
             .sensoryFeedback(.selection, trigger: selectedChapterTIDs)
-            .alert(L10n.string("manga.delete_current_chapter_failed"), isPresented: $isCurrentChapterDeleteAlertPresented) {
+            .failureAlert(L10n.string("manga.delete_current_chapter_failed"),
+                          message: L10n.string("manga.delete_current_chapter_failed_message"),
+                          isPresented: $isCurrentChapterDeleteAlertPresented) {
                 Button(L10n.string("common.ok"), role: .cancel) {}
-            } message: {
-                Text(L10n.string("manga.delete_current_chapter_failed_message"))
             }
             .destructiveConfirmationDialog(
                 L10n.string("manga.delete_selected_chapters_confirm_title", selectedChapterTIDs.count),
@@ -389,11 +395,6 @@ private struct MangaDirectoryMetadataSection: View {
                 .disabled(!panel.isUpdateButtonEnabled || isSelecting)
             }
 
-            if let errorMessage = panel.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(appTheme.controlAccent)
-            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

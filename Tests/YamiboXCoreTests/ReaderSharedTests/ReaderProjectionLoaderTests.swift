@@ -4,6 +4,21 @@ import Testing
 
 @Suite("ReaderSharedTests: Projection Loader", .serialized)
 struct ReaderProjectionLoaderTests {
+    @Test func downstreamProjectionFailureRetainsTransientHTML() async throws {
+        let state = ReaderProjectionLoaderTestState()
+        let loader = ReaderProjectionLoader(strategy: TestProjectionLoadingStrategy(state: state))
+        let source = "<html><p>source for broken projection</p></html>"
+        do {
+            _ = try await loader.load(TestProjectionRequest(id: "broken", onlineBody: "unparseable", sourceHTML: source))
+            Issue.record("Expected projection failure")
+        } catch {
+            let details = LoadFailureDetails(error: error)
+            #expect(details.html == source)
+            #expect(details.isHTMLParsingFailure)
+        }
+        #expect(state.saveCount == 0)
+    }
+
     @Test func onlineCacheHitReusesProjectionWithoutDeriving() async throws {
         let state = ReaderProjectionLoaderTestState()
         state.seed(TestProjection(id: "42", fingerprint: "online-body", body: "cached"))
@@ -59,7 +74,12 @@ struct ReaderProjectionLoaderTests {
         )
 
         #expect(loaded.projection == TestProjection(id: "45", fingerprint: "offline-body", body: "offline-body"))
-        #expect(loaded.source == .offlineFallback(updatedAt: TestProjectionRequest.offlineUpdatedAt))
+        guard case let .offlineFallback(updatedAt, failure) = loaded.source else {
+            Issue.record("Expected offline fallback")
+            return
+        }
+        #expect(updatedAt == TestProjectionRequest.offlineUpdatedAt)
+        #expect(failure?.summary == YamiboError.offline.localizedDescription)
         #expect(state.saveCount == 1)
     }
 
@@ -89,6 +109,7 @@ private struct TestProjectionRequest: Sendable {
     var onlineBody: String
     var onlineError: TestProjectionOnlineError?
     var offlineBody: String?
+    var sourceHTML: String?
 }
 
 private enum TestProjectionOnlineError: Sendable {
@@ -175,7 +196,7 @@ private struct TestProjectionLoadingStrategy: ReaderProjectionLoadingStrategy {
         case .parser:
             throw YamiboError.parsingFailed(context: "test projection")
         case nil:
-            return ReaderProjectionSourcePageLoad(sourcePage: request.onlineBody, loadedOnline: true)
+            return ReaderProjectionSourcePageLoad(sourcePage: request.onlineBody, loadedOnline: true, sourceHTML: request.sourceHTML)
         }
     }
 

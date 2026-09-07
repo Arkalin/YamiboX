@@ -40,7 +40,10 @@ extension AppSettingsPersisting {
                 if self[keyPath: keyPath] == value {
                     self[keyPath: keyPath] = previous
                 }
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }
@@ -65,7 +68,10 @@ extension AppSettingsPersisting {
                 _ = try await dependencies.settingsStore.update(mutate)
             } catch {
                 self[keyPath: keyPath] = previous
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

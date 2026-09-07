@@ -142,53 +142,57 @@ struct YamiboClient: Sendable {
         userAgent: String,
         cancellationPolicy: YamiboRequestCancellationPolicy
     ) async throws -> String {
-        let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw YamiboError.invalidResponse(statusCode: nil)
-        }
-
-        guard YamiboWAFResponseDetector.matches(data: initialData, response: httpResponse, requestURL: request.url ?? YamiboDomain.baseURL) else {
-            return try decodeHTML(from: initialData, response: response)
-        }
-
-        guard let wafRecoverer, let url = request.url else {
-            throw YamiboError.securityVerificationRequired
-        }
-        if cancellationPolicy == .propagateCancellation {
-            try Task.checkCancellation()
-        }
-
-        let clearance = credentials.cookies.first {
-            $0.name == "nox_jst_v1" && $0.matches(url)
-        }
-        let challenge = YamiboWAFChallenge(
-            url: url,
-            method: request.httpMethod ?? "GET",
-            userAgent: userAgent,
-            clearanceFingerprint: clearance.map { YamiboWAFChallenge.clearanceFingerprint(for: $0.value) },
-            clearanceExpiresAt: clearance?.expiresAt
-        )
-        let refreshedCredentials: YamiboRequestCredentials
         do {
-            refreshedCredentials = try await wafRecoverer.recover(from: challenge)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw YamiboError.securityVerificationRequired
-        }
+            let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw YamiboError.invalidResponse(statusCode: nil)
+            }
 
-        var retry = request
-        retry.cachePolicy = .reloadIgnoringLocalCacheData
-        applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
-        let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy)
-        guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
-            throw YamiboError.invalidResponse(statusCode: nil)
+            guard YamiboWAFResponseDetector.matches(data: initialData, response: httpResponse, requestURL: request.url ?? YamiboDomain.baseURL) else {
+                return try decodeHTML(from: initialData, response: response)
+            }
+
+            guard let wafRecoverer, let url = request.url else {
+                throw YamiboError.securityVerificationRequired
+            }
+            if cancellationPolicy == .propagateCancellation {
+                try Task.checkCancellation()
+            }
+
+            let clearance = credentials.cookies.first {
+                $0.name == "nox_jst_v1" && $0.matches(url)
+            }
+            let challenge = YamiboWAFChallenge(
+                url: url,
+                method: request.httpMethod ?? "GET",
+                userAgent: userAgent,
+                clearanceFingerprint: clearance.map { YamiboWAFChallenge.clearanceFingerprint(for: $0.value) },
+                clearanceExpiresAt: clearance?.expiresAt
+            )
+            let refreshedCredentials: YamiboRequestCredentials
+            do {
+                refreshedCredentials = try await wafRecoverer.recover(from: challenge)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw LoadDiagnosticError.mapping(error, to: YamiboError.securityVerificationRequired)
+            }
+
+            var retry = request
+            retry.cachePolicy = .reloadIgnoringLocalCacheData
+            applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
+            let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy)
+            guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
+                throw YamiboError.invalidResponse(statusCode: nil)
+            }
+            if YamiboWAFResponseDetector.matches(data: retryData, response: retryHTTPResponse, requestURL: url) {
+                await wafRecoverer.presentFallback(for: challenge)
+                throw YamiboError.securityVerificationRequired
+            }
+            return try decodeHTML(from: retryData, response: retryResponse)
+        } catch {
+            throw LoadDiagnosticError.attaching(to: error, requestContext: request.url?.absoluteString)
         }
-        if YamiboWAFResponseDetector.matches(data: retryData, response: retryHTTPResponse, requestURL: url) {
-            await wafRecoverer.presentFallback(for: challenge)
-            throw YamiboError.securityVerificationRequired
-        }
-        return try decodeHTML(from: retryData, response: retryResponse)
     }
 
     private func applyCredentials(
@@ -203,23 +207,27 @@ struct YamiboClient: Sendable {
     }
 
     private func decodeHTML(from data: Data, response: URLResponse) throws -> String {
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw YamiboError.invalidResponse(statusCode: nil)
-        }
-        guard 200 ..< 300 ~= httpResponse.statusCode else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                throw YamiboError.notAuthenticated
+        do {
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw YamiboError.invalidResponse(statusCode: nil)
             }
-            throw YamiboError.invalidResponse(statusCode: httpResponse.statusCode)
-        }
+            guard 200 ..< 300 ~= httpResponse.statusCode else {
+                if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                    throw YamiboError.notAuthenticated
+                }
+                throw YamiboError.invalidResponse(statusCode: httpResponse.statusCode)
+            }
 
-        guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) else {
-            throw YamiboError.unreadableBody
+            guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) else {
+                throw YamiboError.unreadableBody
+            }
+            guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw YamiboError.emptyHTML
+            }
+            return html
+        } catch {
+            throw LoadDiagnosticError.attaching(to: error, requestContext: response.url?.absoluteString, httpStatus: (response as? HTTPURLResponse)?.statusCode)
         }
-        guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw YamiboError.emptyHTML
-        }
-        return html
     }
 
     private func formBody(_ fields: [(String, String)]) -> Data? {

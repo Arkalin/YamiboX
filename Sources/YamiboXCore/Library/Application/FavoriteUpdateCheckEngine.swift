@@ -77,6 +77,13 @@ public final class FavoriteUpdateCheckEngine {
     public private(set) var errorMessage: String? {
         didSet { onStateChange?(.errorMessage) }
     }
+    public private(set) var errorDetails: LoadFailureDetails?
+
+    private func reportError(_ error: any Error) {
+        guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+        errorDetails = LoadFailureDetails(error: error)
+        errorMessage = error.localizedDescription
+    }
 
     // Lane extensions (+SmartManga, +Notifications) share these members.
     let updateStore: FavoriteUpdateStore
@@ -247,7 +254,7 @@ public final class FavoriteUpdateCheckEngine {
             try await updateStore.saveRun(startedSnapshot)
         } catch {
             YamiboLog.persistence.error("Failed to persist initial running snapshot for favorite update run \(startedSnapshot.runID): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
             return nil
         }
         checkTask?.cancel()
@@ -377,7 +384,7 @@ public final class FavoriteUpdateCheckEngine {
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
             YamiboLog.persistence.error("Failed to mark favorite update event \(eventID) read: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -389,7 +396,7 @@ public final class FavoriteUpdateCheckEngine {
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
             YamiboLog.persistence.error("Failed to dismiss favorite update event \(eventID): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -401,7 +408,7 @@ public final class FavoriteUpdateCheckEngine {
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
             YamiboLog.persistence.error("Failed to dismiss all favorite update events: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -411,7 +418,7 @@ public final class FavoriteUpdateCheckEngine {
             await load()
         } catch {
             YamiboLog.persistence.error("Failed to toggle favorite update forum filter \(fid): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -421,7 +428,7 @@ public final class FavoriteUpdateCheckEngine {
             await load()
         } catch {
             YamiboLog.persistence.error("Failed to toggle favorite update category filter \(categoryID): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -600,7 +607,7 @@ public final class FavoriteUpdateCheckEngine {
             try await updateStore.saveRun(snapshot)
         } catch {
             YamiboLog.persistence.error("Failed to persist favorite update run snapshot \(snapshot.runID): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -804,10 +811,10 @@ public final class FavoriteUpdateCheckEngine {
     /// `URLError` codes that mean "no network," as opposed to a server- or
     /// parsing-side failure specific to this one target.
     private static func isOfflineError(_ error: any Error) -> Bool {
-        if let yamiboError = error as? YamiboError, case .offline = yamiboError {
+        if let yamiboError = LoadDiagnosticError.classificationError(error) as? YamiboError, case .offline = yamiboError {
             return true
         }
-        if let urlError = error as? URLError {
+        if let urlError = LoadDiagnosticError.classificationError(error) as? URLError {
             return urlError.code == .notConnectedToInternet || urlError.code == .networkConnectionLost
         }
         return false

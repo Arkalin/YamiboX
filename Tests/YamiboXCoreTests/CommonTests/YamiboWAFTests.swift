@@ -148,8 +148,10 @@ private struct YamiboWAFTests {
         )
         let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php"))
 
-        await #expect(throws: YamiboError.securityVerificationRequired) {
+        await #expect {
             try await client.fetchHTML(url: url)
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.securityVerificationRequired
         }
 
         #expect(await recoverer.recoveryCount == 1)

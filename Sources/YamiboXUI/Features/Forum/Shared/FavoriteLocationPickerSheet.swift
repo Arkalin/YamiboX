@@ -42,7 +42,10 @@ struct FavoriteLocationPickerSheet: View {
     @State private var selection: Set<FavoriteLocation>
     @State private var categoryNameDraft: LocalFavoriteCategoryNameDraft?
     @State private var pendingCollectionDraft: PendingCollectionDraft?
-    @State private var errorMessage: String?
+    @State private var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    @State private var errorDetails: LoadFailureDetails?
     @Environment(\.appTheme) private var appTheme
 
     init(
@@ -131,8 +134,10 @@ struct FavoriteLocationPickerSheet: View {
                 }
             )
         }
-        .alert(
+        .failureAlert(
             L10n.string("common.operation_failed"),
+            message: errorMessage,
+            details: errorDetails,
             isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { isPresented in
@@ -141,8 +146,6 @@ struct FavoriteLocationPickerSheet: View {
             )
         ) {
             Button(L10n.string("common.ok")) { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "")
         }
     }
 
@@ -193,7 +196,10 @@ struct FavoriteLocationPickerSheet: View {
             document.categories.append(category)
             selection.insert(.category(category.id))
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -207,7 +213,10 @@ struct FavoriteLocationPickerSheet: View {
             document.collections.append(collection)
             selection.insert(.collection(categoryID: categoryID, collectionID: collection.id))
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }

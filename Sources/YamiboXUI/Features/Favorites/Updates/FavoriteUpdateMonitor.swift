@@ -24,7 +24,10 @@ final class FavoriteUpdateMonitor: ObservableObject {
     /// a view can clear a shown alert (`errorMessage = nil`) without that
     /// clear being resurrected by unrelated engine state changes — the engine
     /// only pushes this field when it actually writes a new error.
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    @Published var errorDetails: LoadFailureDetails?
 
     private let engine: FavoriteUpdateCheckEngine
 
@@ -80,6 +83,7 @@ final class FavoriteUpdateMonitor: ObservableObject {
             trackedTargets = engine.trackedTargets
         case .errorMessage:
             errorMessage = engine.errorMessage
+            errorDetails = engine.errorDetails
         }
     }
 

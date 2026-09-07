@@ -23,12 +23,15 @@ struct FavoriteBoardListView: View {
             .task {
                 await model.load()
             }
-            .alert(L10n.string("common.operation_failed"), isPresented: actionErrorBinding) {
+            .failureAlert(
+                L10n.string("common.operation_failed"),
+                message: model.actionErrorMessage,
+                details: model.actionErrorDetails,
+                isPresented: actionErrorBinding
+            ) {
                 Button(L10n.string("common.ok")) {
                     model.actionErrorMessage = nil
                 }
-            } message: {
-                Text(model.actionErrorMessage ?? "")
             }
             .destructiveConfirmationAlert(
                 item: $pendingDeletion,
@@ -46,7 +49,8 @@ struct FavoriteBoardListView: View {
             LoadFailureView(
                 title: L10n.string("favorites.boards.load_failed"),
                 systemImage: "wifi.exclamationmark",
-                message: errorMessage
+                message: errorMessage,
+                details: model.errorDetails
             ) {
                 Task { await model.refresh() }
             }

@@ -146,6 +146,7 @@ public struct NovelReaderView: View {
                     VStack(spacing: 0) {
                         NovelReaderOfflineFallbackBanner(
                             message: sourceStatusText,
+                            details: model.offlineFailureDetails,
                             retry: refreshReader,
                             dismiss: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -425,6 +426,7 @@ public struct NovelReaderView: View {
                     .multilineTextAlignment(.center)
                 Button(L10n.string("common.retry"), action: retryLoad)
                     .buttonStyle(.borderedProminent)
+                LoadFailureDetailsButton(details: model.errorDetails, message: errorMessage)
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

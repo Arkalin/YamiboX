@@ -59,7 +59,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             await storageUsage.refresh()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -73,7 +76,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             await storageUsage.refresh()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -101,7 +107,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             try await dependencies.favoriteUpdateStore.clearAll()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -121,7 +130,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             storageUsage.resetToZero()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }

@@ -909,6 +909,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     #expect(model.expandedChapterPages == [1, 2])
     #expect(model.chapterSections[1].isLoaded == false)
     #expect(model.chapterSections[1].errorMessage != nil)
+    #expect(model.chapterSections[1].errorDetails?.summary == FakeForumNovelThreadPageLoaderError.plannedFailure(page: 2).localizedDescription)
     #expect(model.chapterSections[1].chapters.isEmpty)
 
     await model.loadChapterSection(page: 2)
@@ -916,7 +917,25 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     #expect(loader.novelFetchCalls() == [1, 2, 2])
     #expect(model.chapterSections[1].isLoaded)
     #expect(model.chapterSections[1].errorMessage == nil)
+    #expect(model.chapterSections[1].errorDetails == nil)
     #expect(model.chapterSections[1].chapters.map(\.title) == ["第二章"])
+}
+
+@MainActor
+@Test func forumNovelDetailConcurrentChapterFailuresKeepSeparateDiagnostics() async throws {
+    let loader = ConcurrentFailingChapterLoader(
+        firstPage: try makeNovelDetailThreadPage(page: 1, totalPages: 3, postID: "1001", chapterTitle: "第一章")
+    )
+    let model = try makeForumNovelDetailViewModel(
+        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    )
+    await model.reload()
+    async let second: Void = model.loadChapterSection(page: 2)
+    async let third: Void = model.loadChapterSection(page: 3)
+    _ = await (second, third)
+    #expect(model.chapterSections[1].errorDetails?.causes.first?.code == URLError.timedOut.rawValue)
+    #expect(model.chapterSections[2].errorDetails?.causes.first?.code == URLError.notConnectedToInternet.rawValue)
+    #expect(model.chapterSections[0].errorDetails == nil)
 }
 
 @MainActor
@@ -1393,6 +1412,20 @@ private struct FakeForumNovelDocumentLoader: ForumNovelDocumentLoading {
                 .text("第一章\n正文", chapterTitle: "第一章")
             ]
         )
+    }
+}
+
+private struct ConcurrentFailingChapterLoader: ForumNovelThreadPageLoading {
+    let firstPage: ForumThreadPage
+
+    func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage? { nil }
+    func clearCachedThreadPages(thread: ThreadIdentity) async throws {}
+    func storeNovelThreadPage(_ page: ForumThreadPage, context: NovelDetailLaunchContext, pageNumber: Int) async throws {}
+
+    func fetchNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async throws -> ForumThreadPage {
+        if page == 1 { return firstPage }
+        await Task.yield()
+        throw URLError(page == 2 ? .timedOut : .notConnectedToInternet)
     }
 }
 

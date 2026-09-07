@@ -79,12 +79,15 @@ struct LocalFavoritesOrganizationView: View {
                     statusCards
                 }
             }
-            .alert(L10n.string("common.operation_failed"), isPresented: errorAlertBinding) {
+            .failureAlert(
+                L10n.string("common.operation_failed"),
+                message: combinedErrorMessage,
+                details: combinedErrorDetails,
+                isPresented: errorAlertBinding
+            ) {
                 Button(L10n.string("common.ok")) {
                     clearErrorMessages()
                 }
-            } message: {
-                Text(combinedErrorMessage ?? "")
             }
             .alert(
                 dialogTitle,
@@ -128,7 +131,7 @@ struct LocalFavoritesOrganizationView: View {
                 defaultFilename: favoriteShare.preparedExport?.fileName ?? "yamibo-favorites.json",
                 onCompletion: favoriteShare.handleExporterResult
             )
-            .transientMessage(favoriteShare.transientMessage ?? organizer.transientMessage) {
+            .transientMessage(TransientFeedback.latest(favoriteShare.transientFeedback, organizer.transientFeedback)) {
                 favoriteShare.transientMessage = nil
                 organizer.transientMessage = nil
             }
@@ -147,7 +150,7 @@ struct LocalFavoritesOrganizationView: View {
                         switch event.target {
                         case .favorite:
                             guard let item = organizer.favoriteItems.first(where: { $0.target.id == event.target.id }) else {
-                                organizer.transientMessage = L10n.string("favorites.updates.event_target_missing")
+                                organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                                 return
                             }
                             await onOpen(item, .resume, .boardDefault)
@@ -255,7 +258,7 @@ struct LocalFavoritesOrganizationView: View {
                 .selectionBottomToolbarCapsule()
             }
         }
-        .transientMessage(organizer.transientMessage) {
+        .transientMessage(organizer.transientFeedback) {
             organizer.transientMessage = nil
         }
     }
@@ -365,7 +368,7 @@ struct LocalFavoritesOrganizationView: View {
                 .selectionBottomToolbarCapsule()
             }
         }
-        .transientMessage(organizer.transientMessage) {
+        .transientMessage(organizer.transientFeedback) {
             organizer.transientMessage = nil
         }
     }
@@ -748,6 +751,22 @@ struct LocalFavoritesOrganizationView: View {
 
     private var combinedErrorMessage: String? {
         favoriteShare.errorMessage ?? organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage
+    }
+
+    private var combinedErrorDetails: LoadFailureDetails? {
+        let failures: [(String?, LoadFailureDetails?)] = [
+            (favoriteShare.errorMessage, favoriteShare.errorDetails),
+            (organizer.errorMessage, organizer.errorDetails),
+            (remoteSync.errorMessage, remoteSync.errorDetails),
+            (updateMonitor.errorMessage, updateMonitor.errorDetails)
+        ]
+        let items = failures.compactMap { message, details -> LoadFailureDetails.Item? in
+            guard let message else { return nil }
+            return .init(title: message, details: details ?? LoadFailureDetails(message: message))
+        }
+        if items.count == 1 { return items[0].details }
+        guard !items.isEmpty else { return nil }
+        return LoadFailureDetails(message: combinedErrorMessage ?? "", failures: items)
     }
 
     private func clearErrorMessages() {

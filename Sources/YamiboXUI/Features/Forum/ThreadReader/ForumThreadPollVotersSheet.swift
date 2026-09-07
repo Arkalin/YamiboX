@@ -16,7 +16,10 @@ final class ForumThreadPollVotersSheetModel {
     private(set) var pageNumber = 1
     private(set) var votersPage: ForumThreadPollVotersPage?
     private(set) var isLoading = false
-    private(set) var errorMessage: String?
+    private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     @ObservationIgnored private let load: (String?, Int) async throws -> ForumThreadPollVotersPage
 
@@ -56,7 +59,10 @@ final class ForumThreadPollVotersSheetModel {
         do {
             votersPage = try await load(selectedOptionID, pageNumber)
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }
@@ -83,7 +89,7 @@ struct ForumThreadPollVotersSheet: View {
                 if model.isLoading && model.votersPage == nil {
                     ForumContentLoadingView()
                 } else if let errorMessage = model.errorMessage, model.votersPage == nil {
-                    ForumContentErrorView(message: errorMessage) {
+                    ForumContentErrorView(message: errorMessage, details: model.errorDetails) {
                         Task {
                             await model.loadPage()
                         }

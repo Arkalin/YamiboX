@@ -29,6 +29,26 @@ public enum YamiboCheckInResult: Equatable, Sendable {
 
 public protocol YamiboCheckInServicing: Sendable {
     func checkInIfNeeded(force: Bool) async -> YamiboCheckInResult
+    func checkInWithDetails(force: Bool) async -> YamiboCheckInOutcome
+}
+
+public struct YamiboCheckInOutcome: Sendable {
+    public let result: YamiboCheckInResult
+    public let details: LoadFailureDetails?
+    public let isCancelled: Bool
+
+    public init(result: YamiboCheckInResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false) {
+        self.result = result
+        self.details = details
+        self.isCancelled = isCancelled
+    }
+}
+
+public extension YamiboCheckInServicing {
+    func checkInWithDetails(force: Bool) async -> YamiboCheckInOutcome {
+        let result = await checkInIfNeeded(force: force)
+        return YamiboCheckInOutcome(result: result, isCancelled: Task.isCancelled)
+    }
 }
 
 struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
@@ -62,15 +82,19 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
     }
 
     func checkInIfNeeded(force: Bool = false) async -> YamiboCheckInResult {
+        await checkInWithDetails(force: force).result
+    }
+
+    func checkInWithDetails(force: Bool) async -> YamiboCheckInOutcome {
         let sessionState = await sessionStore.load()
         guard sessionState.isLoggedIn, !sessionState.cookie.isEmpty else {
-            return .notAuthenticated
+            return .init(result: .notAuthenticated)
         }
 
         if !force {
             let needsCheckIn = await checkInStore.needsCheckIn(session: sessionState)
             if !needsCheckIn {
-                return .skippedToday
+                return .init(result: .skippedToday)
             }
         }
 
@@ -86,22 +110,25 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         do {
             checkInPageHTML = try await client.fetchHTML(url: Self.checkInPageURL)
         } catch {
-            return mapNetworkError(error)
+            return networkFailureOutcome(error)
         }
 
         if Self.isAlreadyCheckedIn(in: checkInPageHTML) {
             await checkInStore.markCheckedIn(session: sessionState)
-            return .alreadyCheckedInToday
+            return .init(result: .alreadyCheckedInToday)
         }
 
         guard let checkInURL = Self.extractCheckInURL(from: checkInPageHTML) else {
-            return .parseFailed
+            return .init(result: .parseFailed, details: LoadFailureDetails(
+                error: YamiboError.parsingFailed(context: L10n.string("yamibo_check_in.parse_failed")),
+                requestContext: Self.checkInPageURL.absoluteString, html: checkInPageHTML
+            ))
         }
 
         do {
             _ = try await client.fetchHTML(url: checkInURL)
         } catch {
-            return mapNetworkError(error)
+            return networkFailureOutcome(error)
         }
 
         if verificationDelayNanoseconds > 0 {
@@ -111,12 +138,12 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         do {
             let verificationHTML = try await client.fetchHTML(url: Self.checkInPageURL)
             guard Self.isAlreadyCheckedIn(in: verificationHTML) else {
-                return .verificationFailed
+                return .init(result: .verificationFailed)
             }
             await checkInStore.markCheckedIn(session: sessionState)
-            return .success
+            return .init(result: .success)
         } catch {
-            return mapNetworkError(error)
+            return networkFailureOutcome(error)
         }
     }
 
@@ -177,8 +204,17 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         return credentials.cookieHeader(for: url).isEmpty ? nil : credentials
     }
 
+    private func networkFailureOutcome(_ error: Error) -> YamiboCheckInOutcome {
+        let cancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+        return YamiboCheckInOutcome(
+            result: mapNetworkError(error),
+            details: cancelled ? nil : LoadFailureDetails(error: error),
+            isCancelled: cancelled
+        )
+    }
+
     private func mapNetworkError(_ error: Error) -> YamiboCheckInResult {
-        if let yamiboError = error as? YamiboError, yamiboError == .notAuthenticated {
+        if let yamiboError = LoadDiagnosticError.classificationError(error) as? YamiboError, yamiboError == .notAuthenticated {
             return .notAuthenticated
         }
         let message = (error as? LocalizedError)?.errorDescription ?? L10n.string("yamibo_check_in.network_failed")

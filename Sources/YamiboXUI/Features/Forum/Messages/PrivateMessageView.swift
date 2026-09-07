@@ -17,6 +17,7 @@ struct PrivateMessageView: View {
                 currentPage: model.currentPage,
                 isLoading: model.isLoading,
                 errorMessage: model.errorMessage,
+                errorDetails: model.errorDetails,
                 refresh: refresh,
                 retry: retry,
                 goToPage: goToPage
@@ -85,6 +86,7 @@ private struct PrivateMessageContentView: View {
     let currentPage: Int
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let refresh: () async -> Void
     let retry: () -> Void
     let goToPage: (Int) -> Void
@@ -118,7 +120,7 @@ private struct PrivateMessageContentView: View {
             } else if isLoading {
                 ForumContentLoadingView(layout: .fills)
             } else if let errorMessage {
-                LoadFailureView(message: errorMessage, retry: retry)
+                LoadFailureView(message: errorMessage, details: errorDetails, retry: retry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding()
             } else {

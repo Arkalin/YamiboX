@@ -15,8 +15,10 @@ private struct FavoriteActionInterfaceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert(
+            .failureAlert(
                 L10n.string("forum.thread.favorite_failed"),
+                message: actions.errorMessage,
+                details: actions.errorDetails,
                 isPresented: Binding(
                     get: { actions.errorMessage != nil },
                     set: { isPresented in
@@ -29,8 +31,6 @@ private struct FavoriteActionInterfaceModifier: ViewModifier {
                 Button(L10n.string("common.ok")) {
                     actions.clearError()
                 }
-            } message: {
-                Text(actions.errorMessage ?? "")
             }
             .favoriteQuickActionDialogs(
                 addPromptPresented: $actions.addPromptPresented,
@@ -51,7 +51,7 @@ private struct FavoriteActionInterfaceModifier: ViewModifier {
                     }
                 )
             }
-            .transientMessage(actions.transientMessage) {
+            .transientMessage(actions.transientFeedback) {
                 actions.clearTransientMessage()
             }
     }

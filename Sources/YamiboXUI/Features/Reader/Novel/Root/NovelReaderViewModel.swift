@@ -9,7 +9,14 @@ public final class NovelReaderViewModel {
     // migration; they stay tracked so the views keep re-rendering on the
     // exact same writes as before.
     public private(set) var isLoading = false
-    public private(set) var errorMessage: String?
+    public private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
+    var offlineFailureDetails: LoadFailureDetails? {
+        guard case let .offlineFallback(_, failure) = novelReaderPresentation?.pageLoadSource else { return nil }
+        return failure
+    }
     var pageBoundary: ReaderPageBoundary?
     public private(set) var novelReaderPresentation: NovelReaderPresentation?
     public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
@@ -83,8 +90,9 @@ public final class NovelReaderViewModel {
                     authorID: nil
                 )
             },
-            onError: { [weak self] message in
-                self?.errorMessage = message
+            onError: { [weak self] details in
+                self?.errorMessage = details.summary
+                self?.errorDetails = details
             }
         )
     )
@@ -346,7 +354,10 @@ public final class NovelReaderViewModel {
             syncFromWorkflowState(state)
         } catch {
             usesPadPresentation = previousUsesPadPresentation
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -436,7 +447,7 @@ public final class NovelReaderViewModel {
 
     var sourceStatusText: String? {
         guard let pageLoadSource = novelReaderPresentation?.pageLoadSource,
-              case let .offlineFallback(updatedAt) = pageLoadSource else {
+              case let .offlineFallback(updatedAt, _) = pageLoadSource else {
             return nil
         }
         guard let updatedAt else {
@@ -560,7 +571,10 @@ public final class NovelReaderViewModel {
         } catch {
             guard layoutRequestSequence == requestSequence else { return }
             latestRequestedLayout = self.layout
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -659,7 +673,10 @@ public final class NovelReaderViewModel {
         } catch {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
             applePencilPageTurnSettings = oldApplePencilPageTurnSettings
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -887,6 +904,10 @@ public final class NovelReaderViewModel {
         await chapterCommentsModule.loadNextPage()
     }
 
+    func clearChapterCommentsFailure() {
+        chapterCommentsModule.clearTransientFailure()
+    }
+
     @discardableResult
     // MARK: - Page loads
 
@@ -927,7 +948,10 @@ public final class NovelReaderViewModel {
             return true
         } catch {
             if reportsError {
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             } else {
                 YamiboLog.reader.warning("load(view:) failed on a non-reporting fallback path (reportsError=false); error dropped without surfacing to UI: \(error)")
             }
@@ -956,7 +980,10 @@ public final class NovelReaderViewModel {
                 await prefetchIfNeeded(for: selectedSurfaceIndex)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             isLoading = false
         }
     }
@@ -1128,7 +1155,10 @@ public final class NovelReaderViewModel {
             isLoading = false
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             isLoading = false
             return false
         }
@@ -1351,7 +1381,10 @@ public final class NovelReaderViewModel {
             return true
         } catch {
             if reportsError {
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             } else {
                 YamiboLog.reader.warning("promotePrefetchedDocument failed on a non-reporting fallback path (reportsError=false); error dropped without surfacing to UI: \(error)")
             }
@@ -1378,7 +1411,10 @@ public final class NovelReaderViewModel {
                 try await dependencies.settingsStore.save(appSettings)
             } catch {
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
+                    if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                        self.errorMessage = error.localizedDescription
+                        self.errorDetails = LoadFailureDetails(error: error)
+                    }
                 }
             }
         }

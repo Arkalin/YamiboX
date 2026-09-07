@@ -10,7 +10,10 @@ final class ForumMangaDetailViewModel {
     var readingProgress: ReadingProgressRecord?
     var contentCover: ContentCover?
     var isLoading = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     /// Directory command surface mirroring the reader directory sheet's
     /// update/search button: a single in-flight flag shared by "update
@@ -20,7 +23,10 @@ final class ForumMangaDetailViewModel {
     var isDirectoryActionRunning = false
     var directoryCooldownRemaining = 0
     var forcedSearchShortcutRemaining: Int?
-    var directoryActionErrorMessage: String?
+    var directoryActionErrorMessage: String? {
+        didSet { directoryActionErrorDetails = nil }
+    }
+    var directoryActionErrorDetails: LoadFailureDetails?
 
     /// Favorite-star state and actions (add/remove/relocate prompts, location
     /// picker, transient feedback) — shared orchestration with the novel
@@ -269,7 +275,10 @@ final class ForumMangaDetailViewModel {
             directory = nil
             readingProgress = await loadReadingProgress()
             contentCover = nil
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -388,7 +397,11 @@ final class ForumMangaDetailViewModel {
                 directoryCooldownExpiresAt = cooldown
                 forcedSearchShortcutExpiresAt = nil
             }
-            directoryActionErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                directoryActionErrorMessage = error.localizedDescription
+                directoryActionErrorDetails = LoadFailureDetails(error: error)
+                favoriteActions.transientFeedback = .failure(error)
+            }
         }
     }
 
@@ -433,7 +446,11 @@ final class ForumMangaDetailViewModel {
                 directoryCooldownExpiresAt = cooldown
                 forcedSearchShortcutExpiresAt = nil
             }
-            directoryActionErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                directoryActionErrorMessage = error.localizedDescription
+                directoryActionErrorDetails = LoadFailureDetails(error: error)
+                favoriteActions.transientFeedback = .failure(error)
+            }
         }
     }
 
@@ -493,11 +510,19 @@ final class ForumMangaDetailViewModel {
             contentCover = await loadContentCover()
             startAutomaticCoverResolutionIfNeeded()
             directoryActionErrorMessage = cacheRenameError?.localizedDescription
+            if let cacheRenameError, !LoadDiagnosticError.isCancellation(cacheRenameError) {
+                directoryActionErrorDetails = LoadFailureDetails(error: cacheRenameError)
+                favoriteActions.transientFeedback = .failure(cacheRenameError)
+            }
         } catch is CancellationError {
         } catch {
             guard !Task.isCancelled else { return }
             YamiboLog.forum.error("Manga detail directory rename failed: \(error.localizedDescription)")
-            directoryActionErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                directoryActionErrorMessage = error.localizedDescription
+                directoryActionErrorDetails = LoadFailureDetails(error: error)
+                favoriteActions.transientFeedback = .failure(error)
+            }
         }
     }
 

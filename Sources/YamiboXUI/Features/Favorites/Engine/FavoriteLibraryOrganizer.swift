@@ -110,9 +110,16 @@ final class FavoriteLibraryOrganizer {
     /// collection/merged-group detail pages alike.
     private(set) var backgroundSettings = FavoriteBackgroundSettings()
     private(set) var backgroundImageData: Data?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
     /// Short-lived toast feedback (single-item sync results and similar).
-    var transientMessage: String?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     /// Non-nil while a delete-everywhere action waits for the user's "also
     /// delete from Yamibo?" answer (`removeRemotePromptEnabled`). The view
     /// renders it as a confirmation dialog; both confirm variants route back
@@ -340,7 +347,10 @@ final class FavoriteLibraryOrganizer {
         } catch {
             // Keep whatever the UI currently shows; an empty placeholder here
             // would read as "all favorites gone".
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return
         }
         let threadCovers = await loadContentCovers(for: loadedDocument.items)
@@ -578,7 +588,10 @@ final class FavoriteLibraryOrganizer {
             }
         } catch {
             YamiboLog.sync.error("Failed to sync favorite item \(item.id) to Yamibo: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -950,7 +963,10 @@ final class FavoriteLibraryOrganizer {
             return nil
         } catch {
             YamiboLog.persistence.error("Favorite library document commit failed: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return nil
         }
     }
@@ -1004,7 +1020,10 @@ final class FavoriteLibraryOrganizer {
                 YamiboLog.persistence.error("Failed to persist favorites view preferences: \(error.localizedDescription)")
                 await MainActor.run {
                     rollback()
-                    errorMessage = error.localizedDescription
+                    if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                        errorMessage = error.localizedDescription
+                        errorDetails = LoadFailureDetails(error: error)
+                    }
                 }
             }
         }

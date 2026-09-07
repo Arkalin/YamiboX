@@ -84,8 +84,10 @@ struct ForumBoardReaderSettingsSheet: View {
             model.boardReaderErrorMessage = nil
             await model.refreshBoardReaderEntry()
         }
-        .alert(
+        .failureAlert(
             L10n.string("common.operation_failed"),
+            message: model.boardReaderErrorMessage,
+            details: model.boardReaderErrorDetails,
             isPresented: Binding(
                 get: { model.boardReaderErrorMessage != nil },
                 set: { isPresented in
@@ -98,8 +100,6 @@ struct ForumBoardReaderSettingsSheet: View {
             Button(L10n.string("common.ok")) {
                 model.boardReaderErrorMessage = nil
             }
-        } message: {
-            Text(model.boardReaderErrorMessage ?? "")
         }
     }
 

@@ -104,7 +104,10 @@ extension FavoriteLibraryOrganizer {
             try await contentCoverStore.setTextCoverForced(forced, for: key)
         } catch {
             YamiboLog.library.error("Failed to toggle text cover for \(card.item.id): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
         let cover = await contentCoverStore.cover(for: key)

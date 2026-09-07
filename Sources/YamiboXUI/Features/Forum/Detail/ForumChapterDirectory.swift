@@ -88,6 +88,7 @@ struct ChapterDirectorySection: Identifiable, Equatable {
     var isLoaded = true
     var isLoading = false
     var errorMessage: String?
+    var errorDetails: LoadFailureDetails?
     var items: [ChapterDirectoryItem]
 }
 
@@ -133,6 +134,7 @@ struct ForumChapterDirectory<Prelude: View>: View {
     let countText: String
     var isLoading = false
     var errorMessage: String?
+    var errorDetails: LoadFailureDetails?
     var initialFocusID: String?
     let refresh: () async -> Void
     var onSectionToggle: (String) -> Void = { _ in }
@@ -153,7 +155,7 @@ struct ForumChapterDirectory<Prelude: View>: View {
                             if isLoading {
                                 ForumContentLoadingView()
                             } else if let errorMessage {
-                                ForumContentErrorView(message: errorMessage) {
+                                ForumContentErrorView(message: errorMessage, details: errorDetails) {
                                     Task { await refresh() }
                                 }
                                 .padding(16)
@@ -333,7 +335,7 @@ private struct ForumChapterDirectorySectionView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 64)
                 } else if let errorMessage = section.errorMessage {
-                    ForumContentErrorView(message: errorMessage, retry: onRetry)
+                    ForumContentErrorView(message: errorMessage, details: section.errorDetails, retry: onRetry)
                         .padding(16)
                 } else if section.isLoaded && section.items.isEmpty {
                     ForumChapterDirectoryEmptyView()

@@ -32,6 +32,7 @@ struct UserSpaceAddFriendSheet: View {
     let isLoading: Bool
     let isSubmitting: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let retry: () -> Void
     let submit: (String, Int) -> Void
     let dismiss: () -> Void
@@ -44,7 +45,7 @@ struct UserSpaceAddFriendSheet: View {
                 if isLoading {
                     UserSpaceAddFriendLoadingView()
                 } else if let errorMessage {
-                    UserSpaceErrorView(message: errorMessage, retry: retry)
+                    UserSpaceErrorView(message: errorMessage, details: errorDetails, retry: retry)
                 } else if let form {
                     UserSpaceAddFriendFormView(
                         targetName: form.name ?? targetName,

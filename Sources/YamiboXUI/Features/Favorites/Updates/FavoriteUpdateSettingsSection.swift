@@ -39,8 +39,9 @@ struct FavoriteUpdateSettingsSection: View {
         .onAppear {
             Task { await reload() }
         }
-        .alert(
+        .failureAlert(
             L10n.string("favorites.updates.notifications_denied_title"),
+            message: L10n.string("favorites.updates.notifications_denied_message"),
             isPresented: $showsNotificationDeniedAlert
         ) {
             #if canImport(UIKit)
@@ -51,8 +52,6 @@ struct FavoriteUpdateSettingsSection: View {
             }
             #endif
             Button(L10n.string("common.cancel"), role: .cancel) {}
-        } message: {
-            Text(L10n.string("favorites.updates.notifications_denied_message"))
         }
     }
 

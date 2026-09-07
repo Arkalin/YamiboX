@@ -848,8 +848,8 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
                 guard !Task.isCancelled else { return }
                 self?.show(image: image, pageID: page.id)
             } catch {
-                guard !Task.isCancelled else { return }
-                self?.showFailure(pageID: page.id)
+                guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+                self?.showFailure(pageID: page.id, error: error)
             }
         }
     }
@@ -874,12 +874,12 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         updateHeightToWidthRatio(for: image)
     }
 
-    private func showFailure(pageID: String) {
+    private func showFailure(pageID: String, error: any Error) {
         guard currentPageID == pageID else { return }
         imageView.image = nil
         imageView.isHidden = true
         loadStateOverlay.show(
-            status: .failed(title: L10n.string("image.load_failed"), message: ""),
+            status: .failed(title: L10n.string("image.load_failed"), message: "", details: LoadFailureDetails(error: error, requestContext: pageID)),
             retryAction: { [weak self] in
                 self?.retryImageLoad()
             },

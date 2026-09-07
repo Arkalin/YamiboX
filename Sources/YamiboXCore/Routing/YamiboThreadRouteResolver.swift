@@ -168,10 +168,12 @@ public actor YamiboThreadRouteResolver {
     private func loadMetadata(for url: URL, fallbackURL: URL) async throws -> YamiboThreadMetadata {
         do {
             let html = try await client.fetchHTML(for: .thread(url: url, page: 1, authorID: nil))
-            return try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
-        } catch YamiboError.notAuthenticated {
+            return try LoadDiagnosticError.parsing(html: html, context: url.absoluteString) {
+                try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
+            }
+        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
             throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
-        } catch YamiboError.floodControl {
+        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .floodControl {
             throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
         }
     }
@@ -276,11 +278,9 @@ public actor YamiboThreadRouteResolver {
         }
 
         let html = try await client.fetchHTML(url: requestURL, cachePolicy: .reloadIgnoringLocalCacheData)
-        let page = try ForumThreadPageHTMLParser.parsePage(
-            from: html,
-            thread: thread,
-            fallbackTitle: title
-        )
+        let page = try LoadDiagnosticError.parsing(html: html, context: requestURL.absoluteString) {
+            try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: title)
+        }
         return page.pageNavigation?.currentPage ?? baseInitialPage
     }
 

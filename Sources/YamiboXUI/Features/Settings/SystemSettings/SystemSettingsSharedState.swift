@@ -18,7 +18,10 @@ import YamiboXCore
 @Observable
 final class SystemSettingsActivity {
     var activeAction: SystemSettingsAction?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
 
     var isBusy: Bool {
         activeAction != nil
@@ -36,6 +39,11 @@ protocol SystemSettingsActivityReporting: AnyObject {
 }
 
 extension SystemSettingsActivityReporting {
+    var errorDetails: LoadFailureDetails? {
+        get { activity.errorDetails }
+        set { activity.errorDetails = newValue }
+    }
+
     var isBusy: Bool {
         activity.isBusy
     }

@@ -13,7 +13,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseProfile(from: html, uidHint: uid, titleHint: titleHint)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseProfile") {
+            try UserSpaceHTMLParser.parseProfile(from: html, uidHint: uid, titleHint: titleHint)
+        }
     }
 
     public func fetchThreads(uid: String?, page: Int) async throws -> UserSpaceThreadPage {
@@ -22,7 +24,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseThreads(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseThreads") {
+            try UserSpaceHTMLParser.parseThreads(from: html)
+        }
     }
 
     public func fetchReplies(uid: String?, page: Int) async throws -> UserSpaceReplyPage {
@@ -31,7 +35,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseReplies(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseReplies") {
+            try UserSpaceHTMLParser.parseReplies(from: html)
+        }
     }
 
     public func fetchBlogs(uid: String?, page: Int) async throws -> UserSpaceBlogPage {
@@ -44,7 +50,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseBlogs(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseBlogs") {
+            try UserSpaceHTMLParser.parseBlogs(from: html)
+        }
     }
 
     public func fetchFriendBlogs(page: Int) async throws -> UserSpaceBlogPage {
@@ -53,7 +61,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseBlogs(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseBlogs") {
+            try UserSpaceHTMLParser.parseBlogs(from: html)
+        }
     }
 
     public func fetchViewAllBlogs(filter: UserSpaceViewAllBlogFilter, page: Int) async throws -> UserSpaceBlogPage {
@@ -62,7 +72,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseBlogs(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseBlogs") {
+            try UserSpaceHTMLParser.parseBlogs(from: html)
+        }
     }
 
     public func fetchFriends(uid: String?, page: Int) async throws -> UserSpaceFriendPage {
@@ -71,7 +83,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseFriends(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseFriends") {
+            try UserSpaceHTMLParser.parseFriends(from: html)
+        }
     }
 
     public func fetchFriendPage(type: UserSpaceFriendType, page: Int) async throws -> UserSpaceFriendPage {
@@ -80,7 +94,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseFriends(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseFriends") {
+            try UserSpaceHTMLParser.parseFriends(from: html)
+        }
     }
 
     public func fetchPrivateMessages(page: Int) async throws -> UserSpacePrivateMessagePage {
@@ -89,7 +105,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parsePrivateMessageList(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parsePrivateMessageList") {
+            try UserSpaceHTMLParser.parsePrivateMessageList(from: html)
+        }
     }
 
     public func fetchNotices(page: Int) async throws -> UserSpaceNoticePage {
@@ -98,7 +116,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parseNotices(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseNotices") {
+            try UserSpaceHTMLParser.parseNotices(from: html)
+        }
     }
 
     public func fetchAddFriendForm(uid: String, nameHint: String? = nil) async throws -> UserSpaceAddFriendForm {
@@ -110,7 +130,9 @@ public actor UserSpaceRepository {
             for: .userSpaceAddFriendForm(uid: normalizedUID),
             cachePolicy: .reloadIgnoringLocalCacheData
         )
-        return try UserSpaceHTMLParser.parseAddFriendForm(from: html, uid: normalizedUID, nameHint: nameHint)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseAddFriendForm") {
+            try UserSpaceHTMLParser.parseAddFriendForm(from: html, uid: normalizedUID, nameHint: nameHint)
+        }
     }
 
     public func addFriend(uid: String, formHash: String, note: String, groupID: Int) async throws -> String {
@@ -129,7 +151,9 @@ public actor UserSpaceRepository {
                 ("note", note.trimmingCharacters(in: .whitespacesAndNewlines))
             ]
         )
-        return try UserSpaceHTMLParser.parseAddFriendResult(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseAddFriendResult") {
+            try UserSpaceHTMLParser.parseAddFriendResult(from: html)
+        }
     }
 
     public func fetchPrivateMessagePage(uid: String, page: Int? = nil, titleHint: String? = nil) async throws -> PrivateMessagePage {
@@ -142,7 +166,9 @@ public actor UserSpaceRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try UserSpaceHTMLParser.parsePrivateMessagePage(from: html, toUID: normalizedUID, titleHint: titleHint)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parsePrivateMessagePage") {
+            try UserSpaceHTMLParser.parsePrivateMessagePage(from: html, toUID: normalizedUID, titleHint: titleHint)
+        }
     }
 
     public func sendPrivateMessage(privateMessageID: String, uid: String, formHash: String, message: String) async throws -> String {
@@ -167,7 +193,9 @@ public actor UserSpaceRepository {
                 ("message", normalizedMessage)
             ]
         )
-        return try UserSpaceHTMLParser.parsePrivateMessageSendResult(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parsePrivateMessageSendResult") {
+            try UserSpaceHTMLParser.parsePrivateMessageSendResult(from: html)
+        }
     }
 
     private func normalized(_ value: String?) -> String? {

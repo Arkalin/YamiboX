@@ -41,7 +41,7 @@ struct YamiboURLSessionImageDataLoaderTests {
 
         let outcome = await performStreamingLoad(url: url)
 
-        #expect(outcome.error as? YamiboError == .notAuthenticated)
+        #expect(LoadDiagnosticError.classificationError(try #require(outcome.error)) as? YamiboError == .notAuthenticated)
         #expect(outcome.chunks.isEmpty)
     }
 
@@ -56,7 +56,7 @@ struct YamiboURLSessionImageDataLoaderTests {
 
         let outcome = await performStreamingLoad(url: url)
 
-        #expect(outcome.error as? YamiboError == .invalidResponse(statusCode: 500))
+        #expect(LoadDiagnosticError.classificationError(try #require(outcome.error)) as? YamiboError == .invalidResponse(statusCode: 500))
         #expect(outcome.chunks.isEmpty)
     }
 
@@ -75,7 +75,7 @@ struct YamiboURLSessionImageDataLoaderTests {
             ImageLoaderStreamingStubURLProtocol.signal(url)
         }
 
-        #expect(outcome.error as? YamiboError == .offline)
+        #expect(LoadDiagnosticError.classificationError(try #require(outcome.error)) as? YamiboError == .offline)
         #expect(!outcome.chunks.isEmpty)
         #expect(outcome.chunks.reduce(Data(), +) == partial)
     }
@@ -89,7 +89,7 @@ struct YamiboURLSessionImageDataLoaderTests {
 
         let outcome = await performStreamingLoad(url: url)
 
-        #expect(outcome.error as? YamiboError == .offline)
+        #expect(LoadDiagnosticError.classificationError(try #require(outcome.error)) as? YamiboError == .offline)
         #expect(outcome.chunks.isEmpty)
     }
 }

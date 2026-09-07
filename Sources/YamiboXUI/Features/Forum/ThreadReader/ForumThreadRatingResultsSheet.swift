@@ -14,7 +14,10 @@ struct ForumThreadRatingResultsRequest: Identifiable, Equatable {
 final class ForumThreadRatingResultsSheetModel {
     private(set) var page: ForumThreadRatingResultsPage?
     private(set) var isLoading = false
-    private(set) var errorMessage: String?
+    private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
 
     private let postID: String
     @ObservationIgnored private let load: (String) async throws -> ForumThreadRatingResultsPage
@@ -32,7 +35,10 @@ final class ForumThreadRatingResultsSheetModel {
         do {
             page = try await load(postID)
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 }
@@ -59,7 +65,7 @@ struct ForumThreadRatingResultsSheet: View {
                 if model.isLoading && model.page == nil {
                     ForumContentLoadingView()
                 } else if let errorMessage = model.errorMessage, model.page == nil {
-                    ForumContentErrorView(message: errorMessage) {
+                    ForumContentErrorView(message: errorMessage, details: model.errorDetails) {
                         Task {
                             await model.loadPage()
                         }

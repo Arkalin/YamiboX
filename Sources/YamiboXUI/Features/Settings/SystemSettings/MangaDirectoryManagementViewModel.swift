@@ -152,7 +152,10 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
 
         if let deletionError {
-            errorMessage = deletionError.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(deletionError) {
+                errorMessage = deletionError.localizedDescription
+                errorDetails = LoadFailureDetails(error: deletionError)
+            }
             return false
         }
         return true

@@ -7,7 +7,10 @@ import YamiboXCore
 final class MineHomeViewModel {
     var session = SessionState()
     var profile: YamiboProfile?
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
     var isLoading = false
     var isRefreshingProfile = false
     var isLoggingIn = false
@@ -101,7 +104,10 @@ final class MineHomeViewModel {
             checkInResultMessage = nil
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -120,7 +126,10 @@ final class MineHomeViewModel {
             errorMessage = nil
             checkInResultMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -134,7 +143,9 @@ final class MineHomeViewModel {
         isCheckingIn = true
         defer { isCheckingIn = false }
 
-        let result = await checkInService.checkInIfNeeded(force: false)
+        let outcome = await checkInService.checkInWithDetails(force: false)
+        guard !Task.isCancelled, !outcome.isCancelled else { return }
+        let result = outcome.result
         checkInResultMessage = nil
         switch result {
         case .success:
@@ -149,8 +160,10 @@ final class MineHomeViewModel {
         case .notAuthenticated:
             hasCheckedInToday = false
             errorMessage = result.message
+            errorDetails = outcome.details
         case .parseFailed, .verificationFailed, .networkFailed:
             errorMessage = result.message
+            errorDetails = outcome.details
         }
     }
 
@@ -171,7 +184,7 @@ final class MineHomeViewModel {
             profile = try await dependencies.makeAccountService().refreshProfile()
             session = await dependencies.sessionStore.load()
             errorMessage = nil
-        } catch YamiboError.notAuthenticated {
+        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
             do {
                 try await dependencies.makeAccountService().clearLocalAuthentication()
             } catch {
@@ -185,7 +198,10 @@ final class MineHomeViewModel {
             }
         } catch {
             if presentsErrors {
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

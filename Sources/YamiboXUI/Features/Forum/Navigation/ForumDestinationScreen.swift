@@ -157,7 +157,7 @@ struct ForumThreadLinkScreen: View {
         case resolving
         case thread(ThreadNovelLaunchContext)
         case web(URL)
-        case failed(String)
+        case failed(LoadFailureDetails)
     }
 
     var body: some View {
@@ -190,8 +190,8 @@ struct ForumThreadLinkScreen: View {
                 appModel: navigator.appModel,
                 listensToForumNavigationRequest: false
             )
-        case let .failed(message):
-            LoadFailureView(message: message, prominentRetry: true) {
+        case let .failed(details):
+            LoadFailureView(message: details.summary, details: details, prominentRetry: true) {
                 resolution = .resolving
                 Task {
                     await resolveIfNeeded()
@@ -228,7 +228,8 @@ struct ForumThreadLinkScreen: View {
                 resolution = .web(fallbackURL)
             }
         } catch {
-            resolution = .failed(error.localizedDescription)
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            resolution = .failed(LoadFailureDetails(error: error, requestContext: url.absoluteString))
         }
     }
 }

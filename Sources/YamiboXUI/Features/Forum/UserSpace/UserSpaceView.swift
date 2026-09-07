@@ -46,6 +46,7 @@ struct UserSpaceView: View {
             isLoadingContent: model.isLoadingContent,
             isSelf: model.isSelf,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             selectSubPage: selectSubPage,
             selectViewAllBlogFilter: selectViewAllBlogFilter,
             beginAddFriend: beginAddFriend,
@@ -96,6 +97,7 @@ struct UserSpaceView: View {
                 isLoading: model.isLoadingAddFriendForm,
                 isSubmitting: model.isSubmittingAddFriend,
                 errorMessage: model.addFriendErrorMessage,
+                errorDetails: model.addFriendErrorDetails,
                 retry: retryAddFriendForm,
                 submit: submitAddFriend,
                 dismiss: { model.dismissAddFriend() }

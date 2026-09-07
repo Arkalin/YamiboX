@@ -75,7 +75,7 @@ public actor FavoriteRepository {
                 throw error
             }
             if !parsed.documentParsed {
-                throw YamiboError.parsingFailed(context: L10n.string("context.board_favorites_page"))
+                throw LoadDiagnosticError.attaching(to: YamiboError.parsingFailed(context: L10n.string("context.board_favorites_page")), html: html)
             }
         }
         return BoardFavoriteRemotePage(

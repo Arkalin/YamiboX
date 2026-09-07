@@ -71,7 +71,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
             let (data, _) = try await pipeline.data(for: nukeRequest(for: source, client: client))
             return data
         } catch {
-            throw Self.mapImagePipelineError(error)
+            throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
         }
     }
 
@@ -116,15 +116,16 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         case .dataLoadingFailed(let underlying):
             return mapUnderlyingError(underlying)
         case .dataIsEmpty:
-            return YamiboError.unreadableBody
+            return LoadDiagnosticError.mapping(error, to: YamiboError.unreadableBody)
         case .cancelled:
             return CancellationError()
         default:
-            return YamiboError.underlying(error.localizedDescription)
+            return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
         }
     }
 
     private static func mapUnderlyingError(_ error: Error) -> Error {
+        if error is LoadDiagnosticError || LoadDiagnosticError.isCancellation(error) { return error }
         if let yamiboError = error as? YamiboError {
             return yamiboError
         }
@@ -138,12 +139,12 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
-                return YamiboError.offline
+                return LoadDiagnosticError.mapping(error, to: YamiboError.offline)
             default:
-                return YamiboError.underlying(urlError.localizedDescription)
+                return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(urlError.localizedDescription))
             }
         }
-        return YamiboError.underlying(error.localizedDescription)
+        return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
     }
 }
 
@@ -202,12 +203,13 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
     }
 
     private static func mapNetworkError(_ error: Error) -> Error {
+        if LoadDiagnosticError.isCancellation(error) { return error }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
-                return YamiboError.offline
+                return LoadDiagnosticError.mapping(error, to: YamiboError.offline)
             default:
-                return YamiboError.underlying(urlError.localizedDescription)
+                return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(urlError.localizedDescription))
             }
         }
         return error
@@ -236,7 +238,7 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
         ) {
             if let error = YamiboURLSessionImageDataLoader.validationError(for: response) {
-                validationError = error
+                validationError = LoadDiagnosticError.attaching(to: error, requestContext: response.url?.absoluteString, httpStatus: (response as? HTTPURLResponse)?.statusCode)
                 completionHandler(.cancel)
                 return
             }

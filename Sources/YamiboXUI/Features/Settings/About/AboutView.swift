@@ -39,12 +39,14 @@ public struct AboutView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .alert(
+        .failureAlert(
             updateViewModel.alert?.title ?? "",
-            isPresented: updateAlertIsPresented,
-            presenting: updateViewModel.alert
-        ) { alert in
-            if let downloadURL = alert.downloadURL {
+            message: updateViewModel.alert?.message,
+            details: updateViewModel.alert?.details,
+            offersDetails: updateViewModel.alert?.details != nil,
+            isPresented: updateAlertIsPresented
+        ) {
+            if let downloadURL = updateViewModel.alert?.downloadURL {
                 Button(L10n.string("app_update.open_download")) {
                     openURL(downloadURL)
                 }
@@ -53,8 +55,6 @@ public struct AboutView: View {
                 }
             }
             Button(L10n.string("common.ok"), role: .cancel) {}
-        } message: { alert in
-            Text(alert.message)
         }
     }
 
@@ -220,24 +220,28 @@ final class AboutUpdateViewModel: ObservableObject {
     private let sourceURL: URL
     private let currentBundleIdentifier: String
     private let currentVersion: String
-    private let checkForUpdate: CheckForUpdate
+    private let checkForUpdate: @Sendable (URL, String, String) async -> AppUpdateCheckOutcome
 
     init(
         sourceURL: URL = AppUpdateChecker.defaultSourceURL,
         currentBundleIdentifier: String = Bundle.main.bundleIdentifier ?? "",
         currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-        checkForUpdate: @escaping CheckForUpdate = { sourceURL, bundleIdentifier, version in
-            await AppUpdateChecker().checkForUpdate(
-                sourceURL: sourceURL,
-                currentBundleIdentifier: bundleIdentifier,
-                currentVersion: version
-            )
-        }
+        checkForUpdate: CheckForUpdate? = nil
     ) {
         self.sourceURL = sourceURL
         self.currentBundleIdentifier = currentBundleIdentifier
         self.currentVersion = currentVersion
-        self.checkForUpdate = checkForUpdate
+        if let checkForUpdate {
+            self.checkForUpdate = { url, bundleIdentifier, version in
+                await AppUpdateCheckOutcome(result: checkForUpdate(url, bundleIdentifier, version))
+            }
+        } else {
+            self.checkForUpdate = { url, bundleIdentifier, version in
+                await AppUpdateChecker().checkForUpdateWithDetails(
+                    sourceURL: url, currentBundleIdentifier: bundleIdentifier, currentVersion: version
+                )
+            }
+        }
     }
 
     func checkForUpdates() async {
@@ -245,8 +249,11 @@ final class AboutUpdateViewModel: ObservableObject {
         isCheckingForUpdates = true
         defer { isCheckingForUpdates = false }
 
-        let result = await checkForUpdate(sourceURL, currentBundleIdentifier, currentVersion)
-        alert = AboutUpdateAlert(result: result)
+        let outcome = await checkForUpdate(sourceURL, currentBundleIdentifier, currentVersion)
+        guard !Task.isCancelled, !outcome.isCancelled else { return }
+        var nextAlert = AboutUpdateAlert(result: outcome.result)
+        if let details = outcome.details { nextAlert.details = details }
+        alert = nextAlert
     }
 }
 
@@ -260,6 +267,7 @@ struct AboutUpdateAlert: Identifiable, Equatable {
 
     let id = UUID()
     var kind: Kind
+    var details: LoadFailureDetails?
 
     init(result: AppUpdateCheckResult) {
         switch result {
@@ -269,8 +277,10 @@ struct AboutUpdateAlert: Identifiable, Equatable {
             kind = .updateAvailable(version)
         case .sourceDoesNotContainCurrentApp:
             kind = .sourceDoesNotContainCurrentApp
+            details = LoadFailureDetails(message: L10n.string("app_update.error.source_missing"))
         case let .failure(error):
             kind = .failure(error.localizedDescription)
+            details = LoadFailureDetails(error: error)
         }
     }
 

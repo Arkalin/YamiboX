@@ -20,10 +20,16 @@ final class FavoriteBoardListViewModel {
     private(set) var isLoading = false
     /// First-load failure with nothing to show; renders as a full-screen
     /// error state with retry.
-    private(set) var errorMessage: String?
+    private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
     /// Failures of row-level deletes and of refreshes that keep existing
     /// content; shown as an alert on top of the list.
-    var actionErrorMessage: String?
+    var actionErrorMessage: String? {
+        didSet { actionErrorDetails = nil }
+    }
+    var actionErrorDetails: LoadFailureDetails?
     private var deletingFavoriteIDs: Set<String> = []
 
     /// The remote list pages at ~20 rows and favorited boards rarely exceed
@@ -63,7 +69,10 @@ final class FavoriteBoardListViewModel {
             try await repositoryProvider().deleteFavorite(remoteFavoriteID: favid)
             boards?.removeAll { $0.fid == board.fid }
         } catch {
-            actionErrorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                actionErrorMessage = error.localizedDescription
+                actionErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -93,9 +102,14 @@ final class FavoriteBoardListViewModel {
             boards = all
         } catch {
             if boards == nil {
+                guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
                 errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
             } else {
-                actionErrorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    actionErrorMessage = error.localizedDescription
+                    actionErrorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

@@ -4,9 +4,8 @@ import YamiboXCore
 /// Owns the manga reader's cover management: the mode-gated cover key,
 /// manual cover set/restore from a long-pressed page, and the one-shot
 /// automatic `.thread(tid:)` cover resolution that mode-off sessions run
-/// after a successful prepare. Stateless toward the UI — outcomes surface
-/// through the cover store and the caller's own feedback toasts — so the
-/// module carries no published state.
+/// after a successful prepare. Outcomes surface through the cover store and
+/// the caller's feedback toasts; failure snapshots are transient, not published.
 @MainActor
 final class MangaReaderCoverModule {
     /// Reading context supplied by the owning view model.
@@ -22,6 +21,8 @@ final class MangaReaderCoverModule {
     }
 
     private let reading: Reading
+    private(set) var failureDetails: LoadFailureDetails?
+    private(set) var actionWasCancelled = false
     private var autoThreadCoverResolutionTask: Task<Void, Never>?
 
     init(reading: Reading) {
@@ -68,23 +69,31 @@ final class MangaReaderCoverModule {
     }
 
     func setMangaCover(page: MangaReaderPageProjection) async -> Bool {
+        failureDetails = nil
+        actionWasCancelled = false
         guard let key = mangaCoverKey, let store = reading.makeContentCoverStore() else { return false }
         do {
             try await store.setManualCover(reading.imageSource(page).url, for: key)
             return true
         } catch {
             YamiboLog.library.error("Failed to set manual manga cover: \(error.localizedDescription)")
+            actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+            if !actionWasCancelled { failureDetails = LoadFailureDetails(error: error) }
             return false
         }
     }
 
     func restoreAutomaticMangaCover() async -> Bool {
+        failureDetails = nil
+        actionWasCancelled = false
         guard let key = mangaCoverKey, let store = reading.makeContentCoverStore() else { return false }
         do {
             try await store.clearManualCover(for: key)
             return true
         } catch {
             YamiboLog.library.error("Failed to clear manual manga cover: \(error.localizedDescription)")
+            actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
+            if !actionWasCancelled { failureDetails = LoadFailureDetails(error: error) }
             return false
         }
     }

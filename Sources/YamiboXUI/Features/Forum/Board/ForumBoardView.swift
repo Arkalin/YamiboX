@@ -51,6 +51,7 @@ struct ForumBoardView: View {
             isLoading: model.isLoading,
             isRefreshing: model.isRefreshing,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             retry: retry,
             refresh: refresh,
             goToPage: goToPage,
@@ -102,8 +103,10 @@ struct ForumBoardView: View {
         .sheet(isPresented: $isReaderSettingsPresented) {
             ForumBoardReaderSettingsSheet(model: model)
         }
-        .alert(
+        .failureAlert(
             L10n.string("common.operation_failed"),
+            message: model.favoriteMessage,
+            details: model.favoriteDetails,
             isPresented: Binding(
                 get: { model.favoriteMessage != nil },
                 set: { isPresented in
@@ -116,10 +119,8 @@ struct ForumBoardView: View {
             Button(L10n.string("common.ok")) {
                 model.favoriteMessage = nil
             }
-        } message: {
-            Text(model.favoriteMessage ?? "")
         }
-        .transientMessage(model.transientMessage) {
+        .transientMessage(model.transientFeedback) {
             model.clearTransientMessage()
         }
         .task {
@@ -177,6 +178,7 @@ private struct ForumBoardBodyView: View {
     let isLoading: Bool
     let isRefreshing: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let retry: () -> Void
     let refresh: () async -> Void
     let goToPage: (Int) -> Void
@@ -193,7 +195,7 @@ private struct ForumBoardBodyView: View {
         if isLoading && page == nil {
             ForumContentLoadingView(layout: .fillsPage)
         } else if let errorMessage, page == nil {
-            ForumBoardErrorView(message: errorMessage, retry: retry)
+            ForumBoardErrorView(message: errorMessage, details: errorDetails, retry: retry)
         } else if let page {
             ForumBoardContentView(
                 board: page.board,
@@ -638,6 +640,7 @@ private struct ForumPinnedRowView: View {
 private struct ForumBoardErrorView: View {
     @Environment(\.forumTheme) private var theme
     let message: String
+    var details: LoadFailureDetails?
     let retry: () -> Void
 
     var body: some View {
@@ -664,6 +667,7 @@ private struct ForumBoardErrorView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 8)
+                LoadFailureDetailsButton(details: details, message: message)
             }
             .padding(28)
             .frame(maxWidth: 360)

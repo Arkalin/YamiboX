@@ -229,13 +229,16 @@ struct SettingsFavoritesView: View {
                 )
             }
         }
-        .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: errorIsPresented
+        ) {
             Button(L10n.string("common.ok")) {
                 viewModel.errorMessage = nil
             }
-        }, message: {
-            Text(viewModel.errorMessage ?? "")
-        })
+        }
     }
 
     private var errorIsPresented: Binding<Bool> {
@@ -453,7 +456,10 @@ struct SettingsFavoritesView: View {
                 favoriteBackgroundEditorDraft = draft
             }
         } catch {
-            viewModel.errorMessage = L10n.string("favorite_background.load_failed")
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                viewModel.errorMessage = L10n.string("favorite_background.load_failed")
+                viewModel.errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 

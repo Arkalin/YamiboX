@@ -31,9 +31,19 @@ extension ForumRepository: ForumBoardPageLoading {}
 @Observable
 final class ForumBoardViewModel {
     var page: ForumBoardPage?
-    var errorMessage: String?
-    var favoriteMessage: String?
-    var transientMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    private(set) var errorDetails: LoadFailureDetails?
+    var favoriteMessage: String? {
+        didSet { favoriteDetails = nil }
+    }
+    var favoriteDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
+    var transientMessage: String? {
+        get { transientFeedback?.message }
+        set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
+    }
     var isLoading = false
     var isRefreshing = false
     var isFavoriting = false
@@ -41,7 +51,10 @@ final class ForumBoardViewModel {
     var selectedOrderOptionID: String?
     var currentPage: Int
     var boardReaderEntry: BoardReaderSettings.Entry?
-    var boardReaderErrorMessage: String?
+    var boardReaderErrorMessage: String? {
+        didSet { boardReaderErrorDetails = nil }
+    }
+    var boardReaderErrorDetails: LoadFailureDetails?
 
     let fid: String
     let initialTitle: String?
@@ -216,7 +229,10 @@ final class ForumBoardViewModel {
             // non-modal transient channel; only failures interrupt via alert.
             transientMessage = try await repository.addBoardFavorite(fid: fid, formHash: page?.formHash)
         } catch {
-            favoriteMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                favoriteMessage = error.localizedDescription
+                favoriteDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -264,7 +280,10 @@ final class ForumBoardViewModel {
                 if boardReaderEntry == updated {
                     boardReaderEntry = previous
                 }
-                boardReaderErrorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    boardReaderErrorMessage = error.localizedDescription
+                    boardReaderErrorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }
@@ -336,9 +355,12 @@ final class ForumBoardViewModel {
             guard requestGeneration == generation else { return }
             if failurePresentation == .refreshToast, page != nil {
                 errorMessage = nil
-                transientMessage = L10n.string("forum.board.refresh_failed", error.localizedDescription)
+                transientFeedback = .failure(error, message: L10n.string("forum.board.refresh_failed", error.localizedDescription))
             } else {
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    errorMessage = error.localizedDescription
+                    errorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

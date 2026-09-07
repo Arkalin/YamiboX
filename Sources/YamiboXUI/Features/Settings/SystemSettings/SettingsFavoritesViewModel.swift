@@ -100,7 +100,10 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
             } catch {
                 YamiboLog.persistence.warning("Failed to roll back favorite background image after save failure: \(error)")
             }
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }
@@ -119,7 +122,10 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
             }
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             return false
         }
     }

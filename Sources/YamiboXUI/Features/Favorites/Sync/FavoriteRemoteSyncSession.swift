@@ -21,7 +21,10 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     ) async -> FavoriteRemoteSyncSnapshot
 
     @Published private(set) var snapshot: FavoriteRemoteSyncSnapshot?
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    @Published var errorDetails: LoadFailureDetails?
 
     private let libraryStore: FavoriteLibraryStore
     private let runStore: FavoriteSyncRunStore
@@ -42,6 +45,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     private let makeThreadRouteResolver: @Sendable () async -> YamiboThreadRouteResolver
     private let runnerOverride: EngineRunner?
     private let interruptionReasonBox = FavoriteSyncInterruptionReasonBox()
+    private var terminalFailureDetails: LoadFailureDetails?
 
     private var syncTask: Task<Void, Never>?
 #if canImport(UIKit)
@@ -108,6 +112,8 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             logEntries: [.started(categoryName: categoryName)]
         )
         interruptionReasonBox.set(nil)
+        terminalFailureDetails = nil
+        errorMessage = nil
         let backgroundTaskAvailable = beginBackgroundTask(runID: startedSnapshot.runID)
         if !backgroundTaskAvailable {
             startedSnapshot.warnings.append(.backgroundUnavailable)
@@ -176,6 +182,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             errorMessage = nil
         case .failed:
             errorMessage = final.errorMessages.last
+            errorDetails = terminalFailureDetails
         case .running, .interrupted:
             break
         }
@@ -201,7 +208,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         let makeFavoriteRepository = makeFavoriteRepository
         let makeForumThreadReaderRepository = makeForumThreadReaderRepository
         let makeThreadRouteResolver = makeThreadRouteResolver
-        return { snapshot, interruptionReason, persist in
+        return { [weak self] snapshot, interruptionReason, persist in
             let repository = await makeFavoriteRepository()
             let resolver = await makeThreadRouteResolver()
             let coverRepository = await makeForumThreadReaderRepository()
@@ -256,12 +263,20 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             return await engine.run(
                 snapshot: snapshot,
                 interruptionReason: interruptionReason,
+                onFailure: { [weak self] details in
+                    await self?.retainTerminalFailure(details, runID: snapshot.runID)
+                },
                 persist: persist
             )
         }
     }
 
     // MARK: - Snapshot state
+
+    private func retainTerminalFailure(_ details: LoadFailureDetails, runID: String) {
+        guard snapshot?.runID == runID else { return }
+        terminalFailureDetails = details
+    }
 
     private func interruptedSnapshotIfNeeded(_ snapshot: FavoriteRemoteSyncSnapshot?) async -> FavoriteRemoteSyncSnapshot? {
         guard var snapshot else { return nil }
@@ -288,7 +303,10 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             }.value
         } catch {
             YamiboLog.sync.error("Failed to persist favorite sync snapshot for run \(snapshot.runID): \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 

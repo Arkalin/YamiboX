@@ -9,10 +9,11 @@ struct UserSpaceLoadingView: View {
 
 struct UserSpaceErrorView: View {
     let message: String
+    var details: LoadFailureDetails?
     let retry: () -> Void
 
     var body: some View {
-        LoadFailureView(message: message, retry: retry)
+        LoadFailureView(message: message, details: details, retry: retry)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 36)
     }

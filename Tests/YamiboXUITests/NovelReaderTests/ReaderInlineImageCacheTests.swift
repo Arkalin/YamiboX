@@ -23,20 +23,38 @@ final class ReaderInlineImageCacheTests: XCTestCase {
         let indicator = try XCTUnwrap(view.subviews.compactMap { $0 as? UIActivityIndicatorView }.first)
         try await waitUntil { !failureLabel.isHidden }
         let retry = try XCTUnwrap(view.subviews.compactMap { $0 as? UIButton }.first)
+        let details = try XCTUnwrap(view.subviews.compactMap { $0 as? UIButton }.first {
+            $0.accessibilityIdentifier == "load-failure-details"
+        })
+        XCTAssertFalse(details.isHidden)
         XCTAssertFalse(retry.isHidden)
         XCTAssertFalse(indicator.isAnimating)
         XCTAssertNil(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)))
 
+        for height in [CGFloat(100), CGFloat(30)] {
+            view.frame.size.height = height
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            XCTAssertTrue(view.bounds.contains(details.frame))
+            XCTAssertTrue(view.bounds.contains(retry.frame))
+            XCTAssertGreaterThanOrEqual(details.frame.minY, retry.frame.maxY)
+        }
+        view.frame.size.height = 480
+        view.setNeedsLayout()
         for attempt in 0..<2 {
             view.layoutIfNeeded()
             XCTAssertGreaterThanOrEqual(retry.bounds.height, 44)
             XCTAssertTrue(view.bounds.contains(retry.frame))
             XCTAssertFalse(failureLabel.frame.intersects(retry.frame))
+            XCTAssertGreaterThanOrEqual(details.frame.minY, retry.frame.maxY)
+            XCTAssertGreaterThanOrEqual(details.bounds.height, 44)
+            XCTAssertTrue(view.bounds.contains(details.frame))
             let hit = view.hitTest(retry.center, with: nil)
             XCTAssertTrue(hit?.isDescendant(of: retry) == true)
             let action = try XCTUnwrap(retry.actions(forTarget: view, forControlEvent: .touchUpInside)?.first)
             _ = view.perform(NSSelectorFromString(action))
             XCTAssertTrue(retry.isHidden)
+            XCTAssertTrue(details.isHidden)
             XCTAssertTrue(failureLabel.isHidden)
             XCTAssertTrue(indicator.isAnimating)
             if attempt == 0 {
@@ -48,11 +66,32 @@ final class ReaderInlineImageCacheTests: XCTestCase {
         }
 
         XCTAssertTrue(retry.isHidden)
+        XCTAssertTrue(details.isHidden)
         XCTAssertTrue(failureLabel.isHidden)
         XCTAssertFalse(indicator.isAnimating)
         XCTAssertEqual(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240))?.url, source.url)
         let callCount = await bytes.loadCallCount()
         XCTAssertEqual(callCount, 3)
+    }
+
+    @MainActor
+    func testReusingFailedInlineImageClearsDetailsBeforeNewImageLoads() async throws {
+        let scope = YamiboImageOfflineScope(tid: "42")
+        let first = YamiboImageSource(url: URL(string: "https://img.example.com/old.jpg")!, offlineScope: scope)
+        let second = YamiboImageSource(url: URL(string: "https://img.example.com/new.jpg")!, offlineScope: scope)
+        let bytes = SequencedOfflineImageBytes(outputs: [Data([0, 1]), testImageData(color: .blue)])
+        let view = NovelReaderVerticalViewportImageView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 480), pipeline: makeUIPipeline(bytes: bytes)
+        )
+        view.configure(source: first, title: nil, isLiked: false, onTap: { _, _ in })
+        let details = try XCTUnwrap(view.subviews.compactMap { $0 as? UIButton }.first {
+            $0.accessibilityIdentifier == "load-failure-details"
+        })
+        try await waitUntil { !details.isHidden }
+        view.configure(source: second, title: nil, isLiked: false, onTap: { _, _ in })
+        XCTAssertTrue(details.isHidden)
+        try await waitUntil { view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240))?.url == second.url }
+        XCTAssertTrue(details.isHidden)
     }
 
     @MainActor
@@ -167,7 +206,7 @@ final class ReaderInlineImageCacheTests: XCTestCase {
         do {
             _ = try await pipeline.image(for: source)
             XCTFail("Expected invalid image data")
-        } catch YamiboError.invalidImageData {
+        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .invalidImageData {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }

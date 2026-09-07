@@ -307,7 +307,7 @@ final class ForumDetailLayoutTests: XCTestCase {
         )
         let header = ForumMangaDetailHeader(
             directory: directory, coverURL: nil, latestChapterText: "第123话",
-            readingProgressText: "第12话 · 第3页", actionErrorMessage: nil,
+            readingProgressText: "第12话 · 第3页",
             hasReadingProgress: true, updateButtonTitle: "更新目录", isUpdateButtonEnabled: true,
             isSearchMode: false, isForcedSearchShortcutActive: false, isFavorited: false,
             onContinueTap: {}, onUpdateDirectoryTap: {}, onFavoriteTap: {},

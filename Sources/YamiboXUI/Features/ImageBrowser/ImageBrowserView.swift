@@ -136,12 +136,13 @@ struct ImageBrowserView: View {
         .task {
             await reloadCoverActions()
         }
-        .alert(
+        .failureAlert(
             feedback?.title ?? "",
-            isPresented: isFeedbackPresented,
-            presenting: feedback
-        ) { feedback in
-            if feedback.offersOpenSettings {
+            message: feedback?.message,
+            details: feedback?.details,
+            isPresented: isFeedbackPresented
+        ) {
+            if feedback?.offersOpenSettings == true {
                 Button(L10n.string("favorites.updates.notifications_open_settings")) {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
@@ -151,8 +152,6 @@ struct ImageBrowserView: View {
             } else {
                 Button(L10n.string("common.done"), role: .cancel) {}
             }
-        } message: { feedback in
-            Text(feedback.message)
         }
         .transientMessage(transientMessage) {
             transientMessage = nil
@@ -326,10 +325,12 @@ struct ImageBrowserView: View {
         do {
             try await action(currentItem)
         } catch MangaImagePhotoSaveError.authorizationDenied {
+            guard !Task.isCancelled else { return }
             feedback = .photoPermissionDenied()
         } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             YamiboLog.reader.error("Image browser action failed for item \(currentItem.id): \(error)")
-            feedback = .failure(message: L10n.string("image.action_failed"))
+            feedback = .failure(message: L10n.string("image.action_failed"), details: LoadFailureDetails(error: error))
         }
     }
 
@@ -425,7 +426,8 @@ private struct ImageBrowserPageView: View {
     @State private var image: UIImage?
     @State private var animatedData: Data?
     @State private var animationFrame: UIImage?
-    @State private var didFail = false
+    @State private var failureDetails: LoadFailureDetails?
+    private var didFail: Bool { failureDetails != nil }
     @State private var attempt = 0
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
@@ -452,8 +454,9 @@ private struct ImageBrowserPageView: View {
             ImageBrowserPageStatusOverlay(
                 isLoading: image == nil && !didFail,
                 didFail: didFail,
+                details: failureDetails,
                 retry: {
-                    didFail = false
+                    failureDetails = nil
                     attempt += 1
                 }
             )
@@ -466,6 +469,7 @@ private struct ImageBrowserPageView: View {
         }
         .onChange(of: pageDistance) { _, _ in
             if !isWithinKeepWindow {
+                failureDetails = nil
                 image = nil
                 animatedData = nil
                 animationFrame = nil
@@ -496,23 +500,26 @@ private struct ImageBrowserPageView: View {
 
     private func load() async {
         guard isWithinLoadWindow, image == nil else { return }
+        failureDetails = nil
         if let localDataProvider = item.localDataProvider,
            let localData = await localDataProvider(),
            let localImage = UIImage(data: localData) {
+            guard !Task.isCancelled else { return }
             image = localImage
             animatedData = YamiboAnimatedImage.isAnimated(localData) ? localData : nil
             return
         }
         do {
             let loaded = try await YamiboUIImagePipeline.shared.displayImage(for: item.source)
+            guard !Task.isCancelled else { return }
             image = loaded.image
             animatedData = loaded.animatedData
         } catch {
             // Leaving the load window cancels the task mid-flight; that is
             // routine paging, not a failure the retry UI should surface.
-            guard !Task.isCancelled, !(error is CancellationError) else { return }
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             YamiboLog.reader.warning("Failed to load image for browser item \(item.id): \(error)")
-            didFail = true
+            failureDetails = LoadFailureDetails(error: error, requestContext: item.source.url.absoluteString)
         }
     }
 
@@ -531,6 +538,7 @@ private struct ImageBrowserPageView: View {
 private struct ImageBrowserPageStatusOverlay: View {
     let isLoading: Bool
     let didFail: Bool
+    let details: LoadFailureDetails?
     let retry: () -> Void
 
     var body: some View {
@@ -541,7 +549,7 @@ private struct ImageBrowserPageStatusOverlay: View {
                 .opacity(isLoading ? 1 : 0)
                 .accessibilityHidden(!isLoading)
 
-            ImageBrowserFailureView(retry: retry)
+            ImageBrowserFailureView(details: details, retry: retry)
                 .opacity(didFail ? 1 : 0)
                 .accessibilityHidden(!didFail)
         }
@@ -746,6 +754,7 @@ private struct ImageBrowserZoomableImagePage: View {
 }
 
 private struct ImageBrowserFailureView: View {
+    var details: LoadFailureDetails?
     let retry: (() -> Void)?
 
     var body: some View {
@@ -759,6 +768,8 @@ private struct ImageBrowserFailureView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                LoadFailureDetailsButton(details: details, message: L10n.string("image.load_failed"))
+                    .foregroundStyle(.white)
             }
         }
         .padding(24)
@@ -932,16 +943,18 @@ private struct ImageBrowserFeedback: Identifiable {
     let title: String
     let message: String
     var offersOpenSettings = false
+    var details: LoadFailureDetails? = nil
 
-    static func failure(message: String) -> ImageBrowserFeedback {
-        ImageBrowserFeedback(title: L10n.string("common.operation_failed"), message: message)
+    static func failure(message: String, details: LoadFailureDetails? = nil) -> ImageBrowserFeedback {
+        ImageBrowserFeedback(title: L10n.string("common.operation_failed"), message: message, details: details)
     }
 
     static func photoPermissionDenied() -> ImageBrowserFeedback {
         ImageBrowserFeedback(
             title: L10n.string("image.save_photo_permission_denied_title"),
             message: L10n.string("image.save_photo_permission_denied"),
-            offersOpenSettings: true
+            offersOpenSettings: true,
+            details: LoadFailureDetails(error: MangaImagePhotoSaveError.authorizationDenied)
         )
     }
 }

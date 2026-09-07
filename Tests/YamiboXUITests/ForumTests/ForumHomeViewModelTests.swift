@@ -4,6 +4,33 @@ import XCTest
 
 @MainActor
 final class ForumHomeViewModelTests: XCTestCase {
+    func testDetailsFollowLatestFailureAndAreClearedOnSuccess() async {
+        let firstError = LoadDiagnosticError.attaching(
+            to: YamiboError.parsingFailed(context: "home"),
+            html: "<p>broken home</p>"
+        )
+        let repository = ForumHomeChangingRepository(result: .failure(firstError))
+        let model = ForumHomeViewModel(repository: repository)
+        await model.load()
+        XCTAssertEqual(model.errorDetails?.html, "<p>broken home</p>")
+        await repository.setResult(.failure(URLError(.timedOut)))
+        await model.refresh()
+        XCTAssertNil(model.errorDetails?.html)
+        XCTAssertEqual(model.errorDetails?.causes.first?.code, URLError.timedOut.rawValue)
+        await repository.setResult(.success(makeHome(categoryIDs: ["recovered"])))
+        await model.refresh()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.errorDetails)
+    }
+
+    func testCancelledLoadDoesNotShowDetails() async {
+        let repository = ForumHomeRepositoryStub(cached: nil, error: URLError(.cancelled))
+        let model = ForumHomeViewModel(repository: repository)
+        await model.load()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.errorDetails)
+    }
+
     func testLoadShowsCachedHomeThenRefreshesWithoutResettingExpansion() async throws {
         let cached = makeHome(categoryIDs: ["a", "b", "c", "d"])
         let refreshed = makeHome(categoryIDs: ["a", "b", "c", "d", "e"])
@@ -86,6 +113,14 @@ final class ForumHomeViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertNil(model.transientMessage)
     }
+}
+
+private actor ForumHomeChangingRepository: ForumHomePageLoading {
+    var result: Result<ForumHomePage, any Error>
+    init(result: Result<ForumHomePage, any Error>) { self.result = result }
+    func setResult(_ result: Result<ForumHomePage, any Error>) { self.result = result }
+    func cachedForumHome(allowExpired: Bool) async -> ForumHomePage? { nil }
+    func fetchForumHome(preferCache: Bool) async throws -> ForumHomePage { try result.get() }
 }
 
 private actor ForumHomeRepositoryStub: ForumHomePageLoading {

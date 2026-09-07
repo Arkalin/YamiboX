@@ -29,7 +29,10 @@ final class OfflineCacheQueueViewModel {
     var isCommandRunning = false
     var selectedWorkIDs: Set<OfflineCacheWorkID> = []
     var isSelectionMode = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    var errorDetails: LoadFailureDetails?
 
     private let dependencies: AccountDependencies
     @ObservationIgnored private var controller: (any OfflineCacheQueueControlling)?
@@ -203,7 +206,10 @@ final class OfflineCacheQueueViewModel {
             try await command()
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
         await refresh()
     }

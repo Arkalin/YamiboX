@@ -243,6 +243,11 @@ private final class YamiboCheckInPromotionRequestRecorder: @unchecked Sendable {
     let result = await service.checkInIfNeeded(force: true)
 
     #expect(result == .parseFailed)
+    let outcome = await service.checkInWithDetails(force: true)
+    #expect(outcome.result == .parseFailed)
+    #expect(outcome.details?.isHTMLParsingFailure == true)
+    #expect(outcome.details?.html?.contains("signbtn") == true)
+    #expect(!outcome.isCancelled)
 }
 
 @Test func yamiboCheckInReturnsVerificationFailedWhenServerDoesNotConfirmCheckIn() async throws {

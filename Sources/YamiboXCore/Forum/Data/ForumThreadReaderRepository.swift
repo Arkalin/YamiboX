@@ -31,11 +31,13 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        let parsed = try ForumThreadPageHTMLParser.parsePage(
-            from: html,
-            thread: context.thread,
-            fallbackTitle: context.title
-        )
+        let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
+            try ForumThreadPageHTMLParser.parsePage(
+                from: html,
+                thread: context.thread,
+                fallbackTitle: context.title
+            )
+        }
         if !reverse {
             do {
                 try await cacheStore.saveThreadPage(parsed, thread: context.thread, pageNumber: page, authorID: authorID)
@@ -54,11 +56,13 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        let parsed = try ForumThreadPageHTMLParser.parsePage(
-            from: html,
-            thread: context.thread,
-            fallbackTitle: context.title
-        )
+        let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
+            try ForumThreadPageHTMLParser.parsePage(
+                from: html,
+                thread: context.thread,
+                fallbackTitle: context.title
+            )
+        }
         do {
             try await cacheStore.saveThreadPage(parsed, thread: context.thread, pageNumber: page, authorID: context.authorID)
         } catch {
@@ -122,7 +126,9 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             for: .threadRatingResults(tid: threadID, pid: postID),
             cachePolicy: .reloadIgnoringLocalCacheData
         )
-        return try ForumThreadPageHTMLParser.parseRatingResults(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseRatingResults") {
+            try ForumThreadPageHTMLParser.parseRatingResults(from: html)
+        }
     }
 
     public func fetchRateOptions(threadID: String, postID: String) async throws -> ForumThreadRateOptionsPage {
@@ -130,7 +136,9 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             for: .threadRateOptions(tid: threadID, pid: postID),
             cachePolicy: .reloadIgnoringLocalCacheData
         )
-        return try ForumThreadPageHTMLParser.parseRateOptions(from: html)
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseRateOptions") {
+            try ForumThreadPageHTMLParser.parseRateOptions(from: html)
+        }
     }
 
     public func fetchPollVoters(
@@ -142,11 +150,13 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             for: .threadPollVoters(tid: threadID, pollOptionID: optionID, page: page),
             cachePolicy: .reloadIgnoringLocalCacheData
         )
-        return try ForumThreadPageHTMLParser.parsePollVoters(
-            from: html,
-            threadID: threadID,
-            requestedOptionID: optionID
-        )
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePollVoters") {
+            try ForumThreadPageHTMLParser.parsePollVoters(
+                from: html,
+                threadID: threadID,
+                requestedOptionID: optionID
+            )
+        }
     }
 
     public func votePoll(
@@ -178,10 +188,12 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             for: .threadPollVote(fid: normalizedForumID, tid: normalizedThreadID),
             fields: fields
         )
-        return try ForumThreadPageHTMLParser.parseThreadActionResult(
-            from: html,
-            context: L10n.string("forum.thread.poll")
-        )
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
+            try ForumThreadPageHTMLParser.parseThreadActionResult(
+                from: html,
+                context: L10n.string("forum.thread.poll")
+            )
+        }
     }
 
     public func ratePost(
@@ -215,10 +227,12 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         }
 
         let html = try await client.submitForm(for: .threadRateSubmit, fields: fields)
-        return try ForumThreadPageHTMLParser.parseThreadActionResult(
-            from: html,
-            context: L10n.string("forum.thread.ratings")
-        )
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
+            try ForumThreadPageHTMLParser.parseThreadActionResult(
+                from: html,
+                context: L10n.string("forum.thread.ratings")
+            )
+        }
     }
 
     public func commentPost(
@@ -247,9 +261,11 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
                 ("message", normalizedMessage)
             ]
         )
-        return try ForumThreadPageHTMLParser.parseThreadActionResult(
-            from: html,
-            context: L10n.string("forum.thread.comments")
-        )
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
+            try ForumThreadPageHTMLParser.parseThreadActionResult(
+                from: html,
+                context: L10n.string("forum.thread.comments")
+            )
+        }
     }
 }

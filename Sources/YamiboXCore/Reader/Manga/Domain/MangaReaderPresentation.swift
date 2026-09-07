@@ -63,17 +63,23 @@ public struct MangaDirectoryPanelCommandState: Hashable, Sendable {
     public var cooldownRemaining: Int
     public var forcedSearchShortcutRemaining: Int?
     public var errorMessage: String?
+    public var errorDetails: LoadFailureDetails?
+    public var failureEventID: UUID?
 
     public init(
         isUpdating: Bool = false,
         cooldownRemaining: Int = 0,
         forcedSearchShortcutRemaining: Int? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        errorDetails: LoadFailureDetails? = nil,
+        failureEventID: UUID? = nil
     ) {
         self.isUpdating = isUpdating
         self.cooldownRemaining = max(0, cooldownRemaining)
         self.forcedSearchShortcutRemaining = forcedSearchShortcutRemaining.map { max(0, $0) }
         self.errorMessage = errorMessage
+        self.errorDetails = errorDetails
+        self.failureEventID = failureEventID
     }
 }
 
@@ -90,6 +96,8 @@ public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
     public var isUpdating: Bool
     public var editDraft: MangaDirectoryEditDraft?
     public var errorMessage: String?
+    public var errorDetails: LoadFailureDetails?
+    public var failureEventID: UUID?
 
     public init(
         directoryTitle: String = "",
@@ -103,7 +111,9 @@ public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
         shouldForceSearchOnUpdate: Bool = false,
         isUpdating: Bool = false,
         editDraft: MangaDirectoryEditDraft? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        errorDetails: LoadFailureDetails? = nil,
+        failureEventID: UUID? = nil
     ) {
         self.directoryTitle = directoryTitle
         self.displayChapters = displayChapters
@@ -117,6 +127,8 @@ public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
         self.isUpdating = isUpdating
         self.editDraft = editDraft
         self.errorMessage = errorMessage
+        self.errorDetails = errorDetails
+        self.failureEventID = failureEventID
     }
 }
 
@@ -135,9 +147,11 @@ public struct MangaNovelReaderViewportPlacement: Hashable, Sendable {
 public struct MangaReaderErrorPresentation: Hashable, Sendable {
     public var title: String
     public var message: String
+    public var details: LoadFailureDetails?
 
-    public init(title: String, message: String) {
+    public init(title: String, message: String, details: LoadFailureDetails? = nil) {
         self.title = title
         self.message = message
+        self.details = details
     }
 }

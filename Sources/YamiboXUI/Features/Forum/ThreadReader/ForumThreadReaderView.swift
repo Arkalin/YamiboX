@@ -32,6 +32,7 @@ struct ForumThreadReaderView: View {
             },
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             isFavorited: model.isFavorited,
             isReverseOrder: model.isReverseOrder,
             refresh: refresh,
@@ -83,18 +84,16 @@ struct ForumThreadReaderView: View {
                 .accessibilityLabel(L10n.string("common.more"))
             }
         }
-        .alert(
+        .failureAlert(
             L10n.string("forum.thread.favorite_failed"),
-            isPresented: favoriteErrorBinding,
-            actions: {
+            message: model.favoriteErrorMessage,
+            details: model.favoriteErrorDetails,
+            isPresented: favoriteErrorBinding
+        ) {
                 Button(L10n.string("common.ok")) {
                     model.clearFavoriteError()
                 }
-            },
-            message: {
-                Text(model.favoriteErrorMessage ?? "")
             }
-        )
         .favoriteQuickActionDialogs(
             addPromptPresented: Bindable(model).favoriteAddPromptPresented,
             removePrompt: Bindable(model).favoriteRemovePrompt,
@@ -120,7 +119,7 @@ struct ForumThreadReaderView: View {
         .onDisappear {
             model.flushReadingProgress()
         }
-        .transientMessage(model.transientMessage, bottomPadding: model.page == nil ? 24 : 82) {
+        .transientMessage(model.transientFeedback, bottomPadding: model.page == nil ? 24 : 82) {
             model.clearTransientMessage()
         }
     }

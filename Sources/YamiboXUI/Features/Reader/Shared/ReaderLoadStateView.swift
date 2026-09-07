@@ -7,7 +7,7 @@ import UIKit
 
 enum ReaderLoadStateStatus: Equatable, Sendable {
     case loading
-    case failed(title: String = L10n.string("common.load_failed"), message: String)
+    case failed(title: String = L10n.string("common.load_failed"), message: String, details: LoadFailureDetails? = nil)
 }
 
 struct ReaderLoadStateView: View {
@@ -29,10 +29,11 @@ struct ReaderLoadStateView: View {
         switch status {
         case .loading:
             ReaderLoadStateLoadingContent(tint: tint)
-        case let .failed(title, message):
+        case let .failed(title, message, details):
             ReaderLoadStateFailureContent(
                 title: title,
                 message: message,
+                details: details,
                 retryAction: retryAction,
                 tint: tint
             )
@@ -55,6 +56,7 @@ private struct ReaderLoadStateLoadingContent: View {
 private struct ReaderLoadStateFailureContent: View {
     let title: String
     let message: String
+    let details: LoadFailureDetails?
     let retryAction: (() -> Void)?
     let tint: Color
 
@@ -73,6 +75,7 @@ private struct ReaderLoadStateFailureContent: View {
                 Button(L10n.string("common.retry"), action: retryAction)
                     .buttonStyle(.borderedProminent)
                     .tint(tint)
+                LoadFailureDetailsButton(details: details, message: message.isEmpty ? title : message)
             }
         }
         .foregroundStyle(tint)
@@ -91,7 +94,16 @@ final class ReaderLoadStateOverlayView: UIView {
     private let failureTitleLabel = UILabel()
     private let failureMessageLabel = UILabel()
     private let retryButton = UIButton(type: .system)
+    private let detailsButton = UIButton(type: .system)
     private var retryAction: (() -> Void)?
+    private weak var presentedDetailsController: UIViewController?
+    private var failureDetails: LoadFailureDetails? {
+        didSet {
+            guard oldValue != failureDetails else { return }
+            presentedDetailsController?.dismiss(animated: true)
+            presentedDetailsController = nil
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -114,22 +126,27 @@ final class ReaderLoadStateOverlayView: UIView {
 
         switch status {
         case .loading:
+            self.retryAction = nil
+            failureDetails = nil
             failureStack.isHidden = true
             loadingStack.isHidden = false
             loadingIndicator.startAnimating()
-        case let .failed(title, message):
+        case let .failed(title, message, details):
             loadingIndicator.stopAnimating()
             loadingStack.isHidden = true
             failureTitleLabel.text = title
             failureMessageLabel.text = message
             failureMessageLabel.isHidden = message.isEmpty
             retryButton.isHidden = retryAction == nil
+            detailsButton.isHidden = retryAction == nil
+            failureDetails = details ?? LoadFailureDetails(message: message.isEmpty ? title : message)
             failureStack.isHidden = false
         }
     }
 
     func hide() {
         retryAction = nil
+        failureDetails = nil
         loadingIndicator.stopAnimating()
         loadingStack.isHidden = true
         failureStack.isHidden = true
@@ -162,6 +179,9 @@ final class ReaderLoadStateOverlayView: UIView {
         failureMessageLabel.numberOfLines = 0
         retryButton.setTitle(L10n.string("common.retry"), for: .normal)
         retryButton.addTarget(self, action: #selector(handleRetryButtonTap), for: .touchUpInside)
+        detailsButton.setTitle(L10n.string("load_failure.details"), for: .normal)
+        detailsButton.accessibilityIdentifier = "load-failure-details"
+        detailsButton.addTarget(self, action: #selector(handleDetailsButtonTap), for: .touchUpInside)
         failureStack.axis = .vertical
         failureStack.alignment = .center
         failureStack.spacing = 12
@@ -170,9 +190,12 @@ final class ReaderLoadStateOverlayView: UIView {
         failureStack.addArrangedSubview(failureTitleLabel)
         failureStack.addArrangedSubview(failureMessageLabel)
         failureStack.addArrangedSubview(retryButton)
+        failureStack.addArrangedSubview(detailsButton)
         addSubview(failureStack)
 
         NSLayoutConstraint.activate([
+            retryButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            detailsButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             loadingStack.centerXAnchor.constraint(equalTo: centerXAnchor),
             loadingStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             loadingStack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32),
@@ -191,10 +214,18 @@ final class ReaderLoadStateOverlayView: UIView {
         failureTitleLabel.textColor = color
         failureMessageLabel.textColor = color
         retryButton.tintColor = color
+        detailsButton.tintColor = color
     }
 
     @objc private func handleRetryButtonTap() {
         retryAction?()
+    }
+
+    @objc private func handleDetailsButtonTap() {
+        guard let failureDetails else { return }
+        if let controller = LoadFailureDetailsPresenter.present(failureDetails, from: self) {
+            presentedDetailsController = controller
+        }
     }
 }
 #endif

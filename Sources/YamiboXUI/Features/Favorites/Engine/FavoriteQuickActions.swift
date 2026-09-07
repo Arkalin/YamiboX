@@ -48,6 +48,14 @@ enum FavoriteQuickActions {
     struct AddResult: Sendable {
         var favorite: Favorite
         var remote: RemotePushResult
+        var failureDetails: LoadFailureDetails? = nil
+
+        var feedback: TransientFeedback {
+            if case .failed = remote {
+                return .failure(remote.addFeedbackMessage, details: failureDetails)
+            }
+            return TransientFeedback(message: remote.addFeedbackMessage)
+        }
     }
 
     static func addFavorite(
@@ -100,8 +108,12 @@ enum FavoriteQuickActions {
             synced.remoteMapping = FavoriteRemoteMapping(yamiboFavoriteID: remoteFavoriteID, lastSeenAt: .now)
             return AddResult(favorite: synced.favorite(type: type), remote: .synced)
         } catch {
+            if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw CancellationError() }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            return AddResult(favorite: item.favorite(type: type), remote: .failed(message))
+            return AddResult(
+                favorite: item.favorite(type: type), remote: .failed(message),
+                failureDetails: LoadFailureDetails(error: error, requestContext: threadID)
+            )
         }
     }
 

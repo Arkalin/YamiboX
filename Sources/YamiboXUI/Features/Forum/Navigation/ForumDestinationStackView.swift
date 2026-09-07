@@ -21,13 +21,16 @@ struct ForumDestinationStackView<Root: View>: View {
                     ForumDestinationScreen(destination: destination, navigator: navigator)
                 }
         }
-        .alert(L10n.string("forum.open_native_failed"), isPresented: actionErrorBinding, actions: {
+        .failureAlert(
+            L10n.string("forum.open_native_failed"),
+            message: navigator.actionErrorMessage,
+            details: navigator.actionErrorDetails,
+            isPresented: actionErrorBinding
+        ) {
             Button(L10n.string("common.ok")) {
                 navigator.actionErrorMessage = nil
             }
-        }, message: {
-            Text(navigator.actionErrorMessage ?? "")
-        })
+        }
     }
 
     private var actionErrorBinding: Binding<Bool> {

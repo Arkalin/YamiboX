@@ -4,6 +4,112 @@ import XCTest
 
 @MainActor
 final class ReaderChapterCommentsModuleTests: XCTestCase {
+    func testRepeatedPaginationFailureKeepsCursorAndHasNewFeedbackIdentity() async throws {
+        let target = makeTarget()
+        let adapter = ChapterCommentsAdapterSpy(
+            initialResults: [.success(makePage(target: target, bodies: ["first"], nextView: 2))],
+            moreResults: [.failure(URLError(.timedOut)), .failure(URLError(.timedOut)),
+                          .success(makePage(target: target, bodies: ["second"]))]
+        )
+        let module = makeModule(adapter: adapter)
+        await module.load(target)
+        await module.loadNextPage()
+        let firstID = try XCTUnwrap(module.failureEventID)
+        XCTAssertEqual(module.loadMoreErrorDetails?.causes.first?.code, URLError.timedOut.rawValue)
+        await module.loadNextPage()
+        XCTAssertNotEqual(module.failureEventID, firstID)
+        guard case let .loaded(_, page) = module.state else { return XCTFail("Expected retained content") }
+        XCTAssertEqual(page.nextView, 2)
+        XCTAssertEqual(page.comments.map(\.body), ["first"])
+        module.clearTransientFailure()
+        XCTAssertNil(module.loadMoreError)
+        XCTAssertNil(module.loadMoreErrorDetails)
+        XCTAssertNil(module.failureEventID)
+        await module.loadNextPage()
+        guard case let .loaded(_, result) = module.state else { return XCTFail("Expected retry recovery") }
+        XCTAssertEqual(result.comments.map(\.body), ["first", "second"])
+        XCTAssertNil(result.nextView)
+        let requests = await adapter.moreRequests
+        XCTAssertEqual(requests.map(\.view), [2, 2, 2])
+    }
+
+    func testRefreshFailureRetainsOriginalErrorWithoutDiscardingCachedComments() async {
+        let target = makeTarget()
+        let adapter = ChapterCommentsAdapterSpy(initialResults: [
+            .success(makePage(target: target, bodies: ["cached"])), .failure(URLError(.cannotFindHost))
+        ])
+        let module = makeModule(adapter: adapter)
+        await module.load(target)
+        await module.refresh(target)
+        XCTAssertNotNil(module.failureEventID)
+        XCTAssertEqual(module.refreshErrorDetails?.causes.first?.code, URLError.cannotFindHost.rawValue)
+        module.clearTransientFailure()
+        XCTAssertNil(module.refreshErrorDetails)
+        guard case let .loaded(_, page) = module.state else { return XCTFail("Expected retained content") }
+        XCTAssertEqual(page.comments.map(\.body), ["cached"])
+    }
+
+    func testCancelledPaginationHasNoFailureFeedbackAndKeepsRetryCursor() async {
+        let target = makeTarget()
+        let module = makeModule(adapter: ChapterCommentsAdapterSpy(
+            initialResults: [.success(makePage(target: target, bodies: ["cached"], nextView: 2))],
+            moreResults: [.failure(URLError(.cancelled))]
+        ))
+        await module.load(target)
+        await module.loadNextPage()
+        XCTAssertNil(module.loadMoreError)
+        XCTAssertNil(module.loadMoreErrorDetails)
+        XCTAssertNil(module.failureEventID)
+        guard case let .loaded(_, page) = module.state else { return XCTFail("Expected retained content") }
+        XCTAssertEqual(page.nextView, 2)
+    }
+
+    func testRetryReplacesFailureDetailsAndSuccessClearsThem() async {
+        let target = makeTarget()
+        let adapter = ChapterCommentsAdapterSpy(initialResults: [
+            .failure(URLError(.timedOut)),
+            .failure(URLError(.cannotFindHost)),
+            .success(makePage(target: target, bodies: ["recovered"]))
+        ])
+        let module = makeModule(adapter: adapter)
+        await module.load(target)
+        guard case let .failed(_, _, first) = module.state else { return XCTFail("Expected failure") }
+        XCTAssertEqual(first?.causes.first?.code, URLError.timedOut.rawValue)
+        await module.load(target)
+        guard case let .failed(_, _, second) = module.state else { return XCTFail("Expected failure") }
+        XCTAssertEqual(second?.causes.first?.code, URLError.cannotFindHost.rawValue)
+        await module.load(target)
+        guard case .loaded = module.state else { return XCTFail("Expected recovery") }
+    }
+
+    func testCancelledInitialRequestDoesNotCreateFailureDetails() async {
+        let errors: [any Error] = [CancellationError(), URLError(.cancelled)]
+        for error in errors {
+            let module = makeModule(adapter: ChapterCommentsAdapterSpy(initialResults: [.failure(error)]))
+            await module.load(makeTarget())
+            XCTAssertEqual(module.state, .idle)
+        }
+    }
+
+    func testLateFailureCannotReplaceAnotherTargetsDetails() async {
+        let first = makeTarget()
+        var second = first
+        second.threadID = "another-thread"
+        let gate = ChapterCommentsFailureGate()
+        let module = ReaderChapterCommentsModule(adapter: .init(loadInitial: { target in
+            if target == first { return try await gate.load() }
+            throw URLError(.cannotFindHost)
+        }, loadMore: { _, _ in throw URLError(.badURL) }), onChange: nil)
+        let oldRequest = Task { await module.load(first) }
+        await gate.waitUntilStarted()
+        await module.load(second)
+        await gate.fail()
+        await oldRequest.value
+        guard case let .failed(target, _, details) = module.state else { return XCTFail("Expected failure") }
+        XCTAssertEqual(target, second)
+        XCTAssertEqual(details?.causes.first?.code, URLError.cannotFindHost.rawValue)
+    }
+
     func testLoadUsesCachedPageWithoutCallingAdapterAgain() async throws {
         let target = makeTarget()
         let adapter = ChapterCommentsAdapterSpy(
@@ -62,7 +168,12 @@ final class ReaderChapterCommentsModuleTests: XCTestCase {
 
         await module.refresh(target)
 
-        XCTAssertEqual(module.state, .failed(target, "initial failed"))
+        guard case let .failed(failedTarget, message, details) = module.state else {
+            return XCTFail("Expected failed state with details")
+        }
+        XCTAssertEqual(failedTarget, target)
+        XCTAssertEqual(message, "initial failed")
+        XCTAssertEqual(details?.summary, message)
         XCTAssertNil(module.refreshError)
     }
 
@@ -233,6 +344,29 @@ final class ReaderChapterCommentsModuleTests: XCTestCase {
         XCTAssertEqual(page.comments.map(\.body), ["cached"])
         XCTAssertNil(module.refreshError)
         XCTAssertEqual(module.loadMoreError, "more failed")
+    }
+}
+
+private actor ChapterCommentsFailureGate {
+    private var pending: CheckedContinuation<ChapterCommentsPage, any Error>?
+    private var started: CheckedContinuation<Void, Never>?
+
+    func load() async throws -> ChapterCommentsPage {
+        try await withCheckedThrowingContinuation { continuation in
+            pending = continuation
+            started?.resume()
+            started = nil
+        }
+    }
+
+    func waitUntilStarted() async {
+        if pending != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+
+    func fail() {
+        pending?.resume(throwing: URLError(.timedOut))
+        pending = nil
     }
 }
 

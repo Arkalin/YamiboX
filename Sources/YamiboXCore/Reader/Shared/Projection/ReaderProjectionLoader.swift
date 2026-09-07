@@ -2,7 +2,7 @@ import Foundation
 
 enum ReaderProjectionLoadSource: Hashable, Sendable {
     case online(sourceLoadedOnline: Bool)
-    case offlineFallback(updatedAt: Date?)
+    case offlineFallback(updatedAt: Date?, failure: LoadFailureDetails? = nil)
 }
 
 struct ReaderProjectionLoadedValue<Projection: Sendable, SourcePage: Sendable>: Sendable {
@@ -39,6 +39,7 @@ struct ReaderProjectionPreparedSourcePage<Projection: Sendable, SourcePage: Send
 
 enum ReaderProjectionFallbackPolicy {
     static func isEligibleOfflineFallbackTrigger(_ error: Error) -> Bool {
+        let error = LoadDiagnosticError.classificationError(error)
         if error is CancellationError {
             return false
         }
@@ -98,10 +99,12 @@ protocol ReaderProjectionLoadingStrategy: Sendable {
 struct ReaderProjectionSourcePageLoad<SourcePage: Sendable>: Sendable {
     var sourcePage: SourcePage
     var loadedOnline: Bool
+    var sourceHTML: String?
 
-    init(sourcePage: SourcePage, loadedOnline: Bool) {
+    init(sourcePage: SourcePage, loadedOnline: Bool, sourceHTML: String? = nil) {
         self.sourcePage = sourcePage
         self.loadedOnline = loadedOnline
+        self.sourceHTML = sourceHTML
     }
 }
 
@@ -140,7 +143,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             )
         } catch {
             guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error),
-                  let fallback = await loadOfflineFallback(request) else {
+                  let fallback = await loadOfflineFallback(request, failure: LoadFailureDetails(error: error)) else {
                 throw error
             }
             return fallback
@@ -181,11 +184,16 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
                 )
             }
 
-            let projection = try strategy.deriveProjection(
-                sourcePage: sourceLoad.sourcePage,
-                identity: identity,
-                fingerprint: fingerprint
-            )
+            let projection: Strategy.Projection
+            do {
+                projection = try strategy.deriveProjection(
+                    sourcePage: sourceLoad.sourcePage,
+                    identity: identity,
+                    fingerprint: fingerprint
+                )
+            } catch {
+                throw LoadDiagnosticError.attaching(to: error, html: sourceLoad.sourceHTML)
+            }
             do {
                 try await strategy.saveProjection(projection)
             } catch {
@@ -209,7 +217,8 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
     }
 
     private func loadOfflineFallback(
-        _ request: Strategy.Request
+        _ request: Strategy.Request,
+        failure: LoadFailureDetails
     ) async -> ReaderProjectionLoadedValue<Strategy.Projection, Strategy.SourcePage>? {
         guard let sourceLoad = await strategy.offlineSourcePage(for: request) else { return nil }
         let fingerprint = strategy.fingerprint(sourcePage: sourceLoad.sourcePage, identity: sourceLoad.identity)
@@ -218,7 +227,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             return ReaderProjectionLoadedValue(
                 projection: cached,
                 sourcePage: sourceLoad.sourcePage,
-                source: .offlineFallback(updatedAt: sourceLoad.updatedAt)
+                source: .offlineFallback(updatedAt: sourceLoad.updatedAt, failure: failure)
             )
         }
 
@@ -241,7 +250,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
         return ReaderProjectionLoadedValue(
             projection: projection,
             sourcePage: sourceLoad.sourcePage,
-            source: .offlineFallback(updatedAt: sourceLoad.updatedAt)
+            source: .offlineFallback(updatedAt: sourceLoad.updatedAt, failure: failure)
         )
     }
 }

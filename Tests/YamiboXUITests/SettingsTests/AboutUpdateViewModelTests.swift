@@ -17,6 +17,7 @@ final class AboutUpdateViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.alert?.message, L10n.string("app_update.up_to_date_message"))
         XCTAssertNil(viewModel.alert?.downloadURL)
         XCTAssertFalse(viewModel.isCheckingForUpdates)
+        XCTAssertNil(viewModel.alert?.details)
     }
 
     func testViewModelBuildsUpdateAvailableAlert() async {
@@ -39,6 +40,7 @@ final class AboutUpdateViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.alert?.message.contains("1.2.0") ?? false)
         XCTAssertTrue(viewModel.alert?.message.contains("Release notes") ?? false)
         XCTAssertEqual(viewModel.alert?.downloadURL, downloadURL)
+        XCTAssertNil(viewModel.alert?.details)
     }
 
     func testViewModelBuildsFailureAlert() async {
@@ -52,5 +54,6 @@ final class AboutUpdateViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.alert?.title, L10n.string("app_update.failed_title"))
         XCTAssertEqual(viewModel.alert?.message, L10n.string("app_update.error.empty_body"))
+        XCTAssertEqual(viewModel.alert?.details?.causes.first?.message, L10n.string("app_update.error.empty_body"))
     }
 }

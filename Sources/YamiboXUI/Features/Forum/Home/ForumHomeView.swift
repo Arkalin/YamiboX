@@ -12,7 +12,7 @@ struct ForumHomeView: View {
             if model.isLoading && model.page == nil {
                 ForumHomeSkeletonView()
             } else if let error = model.errorMessage, model.page == nil {
-                LoadFailureView(message: error, retry: retry)
+                LoadFailureView(message: error, details: model.errorDetails, retry: retry)
             } else if model.categories.isEmpty {
                 ForumHomeEmptyView()
             } else {
@@ -29,7 +29,7 @@ struct ForumHomeView: View {
             }
         }
         .forumPageBackground()
-        .transientMessage(model.transientMessage) {
+        .transientMessage(model.transientFeedback) {
             model.clearTransientMessage()
         }
     }

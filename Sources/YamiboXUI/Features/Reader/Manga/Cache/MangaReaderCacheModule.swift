@@ -30,7 +30,10 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     @Published public private(set) var rows: [MangaReaderCacheRow] = []
     @Published public private(set) var favorite: Favorite?
     @Published public private(set) var prompt: MangaReaderCachePrompt?
-    @Published public private(set) var errorMessage: String?
+    @Published public private(set) var errorMessage: String? {
+        didSet { errorDetails = nil }
+    }
+    @Published var errorDetails: LoadFailureDetails?
     @Published public private(set) var offlineCacheQueueEntryCount = 0
 
     private let context: MangaLaunchContext
@@ -142,7 +145,10 @@ public final class MangaReaderCacheViewModel: ObservableObject {
             await refreshRows()
         } catch {
             YamiboLog.offlineCache.error("Failed to cache selected manga chapters: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
             await refreshRows()
         }
     }
@@ -160,7 +166,10 @@ public final class MangaReaderCacheViewModel: ObservableObject {
             await refreshRows()
         } catch {
             YamiboLog.offlineCache.error("Failed to delete selected manga offline cache chapters: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 
@@ -222,4 +231,3 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     }
 
 }
-

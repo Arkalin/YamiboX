@@ -57,6 +57,7 @@ struct OfflineCacheQueueScreen: View {
                 .padding(16)
             }
             .background(YamiboColors.SystemSurface.groupedBackground)
+            .offlineCacheQueueFailureAlert(viewModel, isActive: selectedGroupID == nil)
             .navigationTitle(
                 viewModel.isSelectionMode
                     ? L10n.string("mine.offline_queue.selected_count", viewModel.selectedWorkCount)
@@ -392,11 +393,26 @@ private struct OfflineCacheQueueOwnerScreen: View {
                 }
             }
             .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
+            .offlineCacheQueueFailureAlert(viewModel)
     }
 
     private func dismissIfGroupIsEmpty() {
         if group == nil {
             dismiss()
+        }
+    }
+}
+
+private extension View {
+    func offlineCacheQueueFailureAlert(_ model: OfflineCacheQueueViewModel, isActive: Bool = true) -> some View {
+        failureAlert(
+            L10n.string("common.operation_failed"), message: model.errorMessage, details: model.errorDetails,
+            isPresented: Binding(
+                get: { isActive && model.errorMessage != nil },
+                set: { if !$0, isActive { model.errorMessage = nil } }
+            )
+        ) {
+            Button(L10n.string("common.ok"), role: .cancel) { model.errorMessage = nil }
         }
     }
 }

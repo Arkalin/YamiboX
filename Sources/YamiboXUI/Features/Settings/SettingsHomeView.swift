@@ -7,7 +7,7 @@ import YamiboXCore
 public struct SettingsHomeView: View {
     private let dependencies: SettingsDependencies
     private let peripheralInput: ReaderPeripheralInputManager?
-    private let onSignOut: @MainActor () async -> String?
+    private let onSignOut: @MainActor () async -> LoadFailureDetails?
     private let onApplicationReset: @MainActor () async -> Void
     private let onClose: () -> Void
 
@@ -27,7 +27,7 @@ public struct SettingsHomeView: View {
     public init(
         dependencies: SettingsDependencies,
         peripheralInput: ReaderPeripheralInputManager? = nil,
-        onSignOut: @escaping @MainActor () async -> String?,
+        onSignOut: @escaping @MainActor () async -> LoadFailureDetails?,
         onApplicationReset: @escaping @MainActor () async -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -65,13 +65,16 @@ public struct SettingsHomeView: View {
         .navigationDestination(item: $pushedCategory) { category in
             categoryView(for: category)
         }
-        .alert(L10n.string("common.operation_failed"), isPresented: errorIsPresented, actions: {
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: errorIsPresented
+        ) {
             Button(L10n.string("common.ok")) {
                 viewModel.errorMessage = nil
             }
-        }, message: {
-            Text(viewModel.errorMessage ?? "")
-        })
+        }
         .destructiveConfirmationAlert(
             item: $pendingConfirmation,
             title: \.title,
@@ -213,10 +216,11 @@ public struct SettingsHomeView: View {
     private func handleConfirmation(_ confirmation: SystemSettingsConfirmation) async {
         guard confirmation == .signOut else { return }
         isSigningOut = true
-        let failureMessage = await onSignOut()
+        let failureDetails = await onSignOut()
         isSigningOut = false
-        if let failureMessage {
-            viewModel.errorMessage = failureMessage
+        if let failureDetails {
+            viewModel.errorMessage = failureDetails.summary
+            viewModel.errorDetails = failureDetails
         } else {
             onClose()
         }

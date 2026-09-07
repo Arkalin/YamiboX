@@ -167,8 +167,10 @@ struct YamiboImagePipelineTests {
             MangaReaderDataTestResponse(statusCode: 403, data: Data([1]))
         }
         let authPipeline = authHarness.makeImagePipeline()
-        await #expect(throws: YamiboError.notAuthenticated) {
+        await #expect {
             _ = try await authPipeline.data(for: imageSource())
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.notAuthenticated
         }
 
         let emptyHarness = MangaReaderDataTestHarness()
@@ -177,8 +179,10 @@ struct YamiboImagePipelineTests {
             MangaReaderDataTestResponse(data: Data())
         }
         let emptyPipeline = emptyHarness.makeImagePipeline()
-        await #expect(throws: YamiboError.unreadableBody) {
+        await #expect {
             _ = try await emptyPipeline.data(for: imageSource())
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.unreadableBody
         }
     }
 

@@ -8,7 +8,10 @@ import YamiboXCore
 @Observable
 final class ForumDestinationNavigator {
     var path: [ForumDestination] = []
-    var actionErrorMessage: String?
+    var actionErrorMessage: String? {
+        didSet { actionErrorDetails = nil }
+    }
+    var actionErrorDetails: LoadFailureDetails?
 
     @ObservationIgnored let dependencies: ForumDependencies
     @ObservationIgnored let appModel: YamiboAppModel
@@ -122,7 +125,10 @@ final class ForumDestinationNavigator {
                 )
                 openYamiboThreadRouteTarget(target, isDiscussionView: isDiscussionView)
             } catch {
-                actionErrorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    actionErrorMessage = error.localizedDescription
+                    actionErrorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }
@@ -157,7 +163,10 @@ final class ForumDestinationNavigator {
                 )
                 openYamiboThreadRouteTarget(target)
             } catch {
-                actionErrorMessage = error.localizedDescription
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    actionErrorMessage = error.localizedDescription
+                    actionErrorDetails = LoadFailureDetails(error: error)
+                }
             }
         }
     }

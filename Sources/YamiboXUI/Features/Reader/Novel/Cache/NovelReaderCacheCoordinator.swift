@@ -20,7 +20,7 @@ final class NovelReaderCacheCoordinator: ObservableObject {
         var maxView: @MainActor () -> Int
         var displayedView: @MainActor () -> Int
         var operationContext: @MainActor () -> NovelReaderCacheOperationContext
-        var onError: @MainActor (String) -> Void
+        var onError: @MainActor (LoadFailureDetails) -> Void
     }
 
     @Published private(set) var state = NovelReaderCacheState()
@@ -116,7 +116,9 @@ final class NovelReaderCacheCoordinator: ObservableObject {
                 repository: repository
             )
         } catch {
-            reading.onError(error.localizedDescription)
+            if !LoadDiagnosticError.isCancellation(error) {
+                reading.onError(LoadFailureDetails(error: error))
+            }
         }
     }
 
@@ -129,7 +131,7 @@ final class NovelReaderCacheCoordinator: ObservableObject {
         if result.failedViews.isEmpty {
             await refresh()
         } else {
-            reading.onError(L10n.string("common.operation_failed"))
+            reading.onError(LoadFailureDetails(message: L10n.string("common.operation_failed")))
         }
     }
 

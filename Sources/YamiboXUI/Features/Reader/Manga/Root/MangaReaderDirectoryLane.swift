@@ -212,7 +212,9 @@ final class MangaReaderDirectoryLane {
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             YamiboLog.reader.error("Manga directory update failed: \(error.localizedDescription)")
             await applyDirectoryFailureCooldown(error, workflow: workflow)
-            refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            if !LoadDiagnosticError.isCancellation(error) {
+                refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
+            }
         }
     }
 
@@ -240,7 +242,9 @@ final class MangaReaderDirectoryLane {
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             YamiboLog.reader.error("Manga directory reset failed: \(error.localizedDescription)")
             await applyDirectoryFailureCooldown(error, workflow: workflow)
-            refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            if !LoadDiagnosticError.isCancellation(error) {
+                refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
+            }
         }
     }
 
@@ -280,14 +284,17 @@ final class MangaReaderDirectoryLane {
             }
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             reader.publishPresentation(workflow.presentation, previousProgressSnapshot)
-            refreshDirectoryPanelTiming(errorMessage: cacheRenameError?.localizedDescription)
+            refreshDirectoryPanelTiming(errorMessage: cacheRenameError?.localizedDescription,
+                                        details: cacheRenameError.map { LoadFailureDetails(error: $0) })
         } catch is CancellationError {
             guard directoryMutationGeneration == mutationGeneration else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
         } catch {
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             YamiboLog.reader.error("Manga directory rename failed: \(error.localizedDescription)")
-            refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            if !LoadDiagnosticError.isCancellation(error) {
+                refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
+            }
         }
     }
 
@@ -315,7 +322,9 @@ final class MangaReaderDirectoryLane {
         } catch {
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             YamiboLog.reader.error("Deleting manga directory chapters failed: \(error.localizedDescription)")
-            refreshDirectoryPanelTiming(errorMessage: error.localizedDescription)
+            if !LoadDiagnosticError.isCancellation(error) {
+                refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
+            }
         }
     }
 
@@ -326,7 +335,14 @@ final class MangaReaderDirectoryLane {
         return loaded.directoryPanel.errorMessage
     }
 
-    func refreshDirectoryPanelTiming(errorMessage: String?) {
+    private var directoryErrorDetails: LoadFailureDetails?
+    private var directoryFailureEventID: UUID?
+
+    func refreshDirectoryPanelTiming(errorMessage: String?, details: LoadFailureDetails? = nil) {
+        if let details {
+            directoryErrorDetails = details
+            directoryFailureEventID = UUID()
+        }
         setDirectoryPanelCommandState(
             isUpdating: false,
             errorMessage: errorMessage
@@ -339,6 +355,10 @@ final class MangaReaderDirectoryLane {
         errorMessage: String?
     ) {
         guard let workflow = reader.workflow() else { return }
+        if errorMessage == nil {
+            directoryErrorDetails = nil
+            directoryFailureEventID = nil
+        }
         let now = dependencies.directoryWorkflowConfiguration.now()
         let cooldownRemaining = remainingSecondsValue(until: directoryCooldownExpiresAt, now: now)
         let forcedRemaining = remainingSeconds(until: forcedSearchShortcutExpiresAt, now: now)
@@ -353,7 +373,9 @@ final class MangaReaderDirectoryLane {
                 isUpdating: isUpdating,
                 cooldownRemaining: cooldownRemaining,
                 forcedSearchShortcutRemaining: forcedRemaining,
-                errorMessage: errorMessage
+                errorMessage: errorMessage,
+                errorDetails: directoryErrorDetails,
+                failureEventID: directoryFailureEventID
             )
         ))
     }

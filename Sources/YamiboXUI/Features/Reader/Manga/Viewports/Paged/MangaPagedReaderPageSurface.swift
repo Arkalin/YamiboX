@@ -22,6 +22,8 @@ struct MangaPagedReaderPageSurface: View {
     @State private var loadedPageID: String?
     @State private var loadingPageID: String?
     @State private var failedPageID: String?
+    @State private var failureDetails: LoadFailureDetails?
+    @State private var activeRequestID: UUID?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -51,7 +53,7 @@ struct MangaPagedReaderPageSurface: View {
                 )
             } else if failedPageID == page.id {
                 ReaderLoadStateView(
-                    status: .failed(title: L10n.string("image.load_failed"), message: ""),
+                    status: .failed(title: L10n.string("image.load_failed"), message: "", details: failureDetails),
                     retryAction: {
                         Task { await loadImage() }
                     },
@@ -77,6 +79,7 @@ struct MangaPagedReaderPageSurface: View {
         .task(id: page.id) { @MainActor in
             await loadImage()
         }
+        .onDisappear { activeRequestID = nil }
     }
 
     private var displayedImage: UIImage? {
@@ -89,31 +92,38 @@ struct MangaPagedReaderPageSurface: View {
 
     @MainActor
     private func loadImage() async {
+        let requestID = UUID()
+        activeRequestID = requestID
         if let cachedImage = imageLoader.cachedImage(for: page) {
             loadedImage = cachedImage
             loadedPageID = page.id
             loadingPageID = nil
             failedPageID = nil
+            failureDetails = nil
             return
         }
 
         loadingPageID = page.id
         failedPageID = nil
+        failureDetails = nil
 
         do {
             let image = try await imageLoader.image(for: page)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, activeRequestID == requestID else { return }
             loadedImage = image
             loadedPageID = page.id
             loadingPageID = nil
             failedPageID = nil
+            failureDetails = nil
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, activeRequestID == requestID,
+                  !LoadDiagnosticError.isCancellation(error) else { return }
             if loadedPageID != page.id {
                 loadedImage = nil
             }
             loadingPageID = nil
             failedPageID = page.id
+            failureDetails = LoadFailureDetails(error: error, requestContext: page.id)
         }
     }
 }

@@ -14,6 +14,7 @@ struct UserSpaceBodyView: View {
     let isLoadingContent: Bool
     let isSelf: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let selectSubPage: (UserSpaceSubPage) -> Void
     let selectViewAllBlogFilter: (UserSpaceViewAllBlogFilter) -> Void
     let beginAddFriend: () -> Void
@@ -37,6 +38,7 @@ struct UserSpaceBodyView: View {
                         isSelf: isSelf,
                         isLoading: isLoadingProfile,
                         errorMessage: errorMessage,
+                        errorDetails: errorDetails,
                         onSectionTap: onSectionTap,
                         beginAddFriend: beginAddFriend,
                         onMessageCenterTap: onMessageCenterTap,
@@ -53,6 +55,7 @@ struct UserSpaceBodyView: View {
                         currentPage: currentPage,
                         isLoadingContent: isLoadingContent,
                         errorMessage: errorMessage,
+                        errorDetails: errorDetails,
                         selectSubPage: selectSubPage,
                         selectViewAllBlogFilter: selectViewAllBlogFilter,
                         retry: retry,
@@ -83,6 +86,7 @@ private struct UserSpaceProfileContentView: View {
     let isSelf: Bool
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
     let beginAddFriend: () -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
@@ -100,7 +104,7 @@ private struct UserSpaceProfileContentView: View {
                 onWebTap: onWebTap
             )
         } else if let errorMessage {
-            UserSpaceErrorView(message: errorMessage, retry: retry)
+            UserSpaceErrorView(message: errorMessage, details: errorDetails, retry: retry)
         } else if isLoading {
             UserSpaceLoadingView()
         } else {
@@ -119,6 +123,7 @@ private struct UserSpaceSubPageContentView: View {
     let currentPage: Int
     let isLoadingContent: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let selectSubPage: (UserSpaceSubPage) -> Void
     let selectViewAllBlogFilter: (UserSpaceViewAllBlogFilter) -> Void
     let retry: () -> Void
@@ -146,7 +151,7 @@ private struct UserSpaceSubPageContentView: View {
         }
 
         if let errorMessage, content == nil {
-            UserSpaceErrorView(message: errorMessage, retry: retry)
+            UserSpaceErrorView(message: errorMessage, details: errorDetails, retry: retry)
         } else if isLoadingContent && content == nil {
             UserSpaceLoadingView()
         } else {

@@ -137,7 +137,11 @@ struct NovelReaderPresentationModifier: ViewModifier {
                         state: model.chapterComments.state,
                         isLoadingMore: model.chapterComments.isLoadingMore,
                         loadMoreError: model.chapterComments.loadMoreError,
+                        loadMoreErrorDetails: model.chapterComments.loadMoreErrorDetails,
                         refreshError: model.chapterComments.refreshError,
+                        refreshErrorDetails: model.chapterComments.refreshErrorDetails,
+                        failureEventID: model.chapterComments.failureEventID,
+                        clearFailure: model.clearChapterCommentsFailure,
                         loadInitial: model.loadChapterComments(for:),
                         refresh: model.refreshChapterComments(for:),
                         loadNext: model.loadNextChapterCommentsPage,
@@ -283,6 +287,7 @@ struct NovelReaderChromeHeightObserverModifier: ViewModifier {
 
 struct NovelReaderOfflineFallbackBanner: View {
     let message: String
+    var details: LoadFailureDetails?
     let retry: () -> Void
     let dismiss: () -> Void
 
@@ -298,13 +303,16 @@ struct NovelReaderOfflineFallbackBanner: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: retry) {
-                Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
+            VStack(spacing: 0) {
+                Button(action: retry) {
+                    Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel(L10n.string("common.retry"))
+                LoadFailureDetailsButton(details: details, message: message)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .accessibilityLabel(L10n.string("common.retry"))
 
             Button(action: dismiss) {
                 Label(L10n.string("common.close"), systemImage: "xmark")

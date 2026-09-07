@@ -30,6 +30,7 @@ struct ForumSearchView: View {
             currentPage: model.currentPage,
             isLoading: model.isLoading,
             errorMessage: model.errorMessage,
+            errorDetails: model.errorDetails,
             submit: submit,
             goToPage: goToPage,
             onThreadTap: onThreadTap,
@@ -70,6 +71,7 @@ private struct ForumSearchBodyView: View {
     let currentPage: Int
     let isLoading: Bool
     let errorMessage: String?
+    var errorDetails: LoadFailureDetails? = nil
     let submit: () -> Void
     let goToPage: (Int) -> Void
     let onThreadTap: (ForumThreadSummary) -> Void
@@ -83,7 +85,7 @@ private struct ForumSearchBodyView: View {
                 if isLoading && results.isEmpty {
                     ForumContentLoadingView(text: L10n.string("forum.search.loading"))
                 } else if let errorMessage, results.isEmpty {
-                    LoadFailureView(message: errorMessage, retry: submit)
+                    LoadFailureView(message: errorMessage, details: errorDetails, retry: submit)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
                 } else if results.isEmpty {
@@ -172,4 +174,3 @@ private struct ForumSearchIdleView: View {
         .padding(.vertical, 36)
     }
 }
-

@@ -1,16 +1,40 @@
 import SwiftUI
+import YamiboXCore
 
 #if os(iOS)
 struct MangaImageSaveFeedbackToast: View {
     let feedback: MangaImageSaveFeedback
+    var showDetails: (() -> Void)? = nil
 
     var body: some View {
+        if let showDetails {
+            Button(action: showDetails) {
+                toastContent
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L10n.string("load_failure.details"))
+            .accessibilityHint(L10n.string("load_failure.details"))
+            .accessibilityIdentifier("toast-failure-details")
+        } else {
+            toastContent
+        }
+    }
+
+    private var toastContent: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(feedback.title)
                     .font(.headline)
-                Text(feedback.message)
-                    .font(.subheadline)
+                HStack(spacing: 8) {
+                    Text(feedback.message)
+                        .font(.subheadline)
+                    if showDetails != nil {
+                        Image(systemName: "info.circle")
+                            .font(.subheadline)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
         } icon: {
             Image(systemName: systemImageName)

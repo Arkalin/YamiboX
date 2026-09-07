@@ -12,7 +12,6 @@ private enum ChapterCommentSourcePalette {
 }
 
 struct ReaderChapterCommentsContent: View {
-    static let refreshErrorRowID = "__refresh_error__"
     static let loadNextRowID = "__load_next__"
 
     @Environment(\.appTheme) private var appTheme
@@ -20,7 +19,11 @@ struct ReaderChapterCommentsContent: View {
     let state: ReaderChapterCommentsState
     let isLoadingMore: Bool
     let loadMoreError: String?
+    var loadMoreErrorDetails: LoadFailureDetails? = nil
     let refreshError: String?
+    var refreshErrorDetails: LoadFailureDetails? = nil
+    var failureEventID: UUID? = nil
+    var clearFailure: @MainActor () -> Void = {}
     @Binding var scrollTarget: String?
     let retry: (ReaderChapterCommentTarget) -> Void
     let loadNext: () -> Void
@@ -30,6 +33,9 @@ struct ReaderChapterCommentsContent: View {
     var body: some View {
         content
             .background(Color(.systemBackground).ignoresSafeArea())
+            .failureToast(message: loadMoreError ?? refreshError,
+                          details: loadMoreError != nil ? loadMoreErrorDetails : refreshErrorDetails,
+                          eventID: failureEventID, clear: clearFailure)
     }
 
     // Keep this as a ScrollView rather than a List: `scrollPosition(id:)`
@@ -51,8 +57,8 @@ struct ReaderChapterCommentsContent: View {
                 L10n.string("reader.chapter_comments_unsupported"),
                 systemImage: "text.bubble"
             )
-        case let .failed(target, message):
-            LoadFailureView(message: message, prominentRetry: true) {
+        case let .failed(target, message, details):
+            LoadFailureView(message: message, details: details, prominentRetry: true) {
                 retry(target)
             }
             .padding()
@@ -65,10 +71,6 @@ struct ReaderChapterCommentsContent: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if let refreshError {
-                            refreshErrorRow(refreshError)
-                                .id(Self.refreshErrorRowID)
-                        }
                         ForEach(page.comments) { comment in
                             commentListRow(comment, target: target, page: page)
                                 .id(comment.id)
@@ -83,18 +85,6 @@ struct ReaderChapterCommentsContent: View {
                 .scrollPosition(id: $scrollTarget, anchor: .top)
             }
         }
-    }
-
-    private func refreshErrorRow(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                Divider()
-            }
     }
 
     private func commentListRow(
@@ -127,7 +117,7 @@ struct ReaderChapterCommentsContent: View {
                     ProgressView()
                         .tint(appTheme.controlAccent)
                 } else {
-                    Text(loadMoreError ?? L10n.string("reader.chapter_comments_load_next"))
+                    Text(L10n.string("reader.chapter_comments_load_next"))
                         .font(.footnote.weight(.medium))
                 }
                 Spacer()
@@ -149,7 +139,11 @@ struct ReaderChapterCommentsSheet: View {
     let state: ReaderChapterCommentsState
     let isLoadingMore: Bool
     let loadMoreError: String?
+    var loadMoreErrorDetails: LoadFailureDetails? = nil
     let refreshError: String?
+    let refreshErrorDetails: LoadFailureDetails?
+    let failureEventID: UUID?
+    let clearFailure: @MainActor () -> Void
     let loadInitial: (ReaderChapterCommentTarget?) async -> Void
     let refresh: (ReaderChapterCommentTarget?) async -> Void
     let loadNext: () async -> Void
@@ -163,13 +157,18 @@ struct ReaderChapterCommentsSheet: View {
     @State private var threadOverlayItem: ForumThreadOverlayItem?
     @State private var scrollTarget: String?
     @State private var controlHandlerToken: UUID?
+    @State private var actionTask: Task<Void, Never>?
 
     init(
         target: ReaderChapterCommentTarget?,
         state: ReaderChapterCommentsState,
         isLoadingMore: Bool,
         loadMoreError: String?,
+        loadMoreErrorDetails: LoadFailureDetails? = nil,
         refreshError: String?,
+        refreshErrorDetails: LoadFailureDetails? = nil,
+        failureEventID: UUID? = nil,
+        clearFailure: @escaping @MainActor () -> Void = {},
         loadInitial: @escaping (ReaderChapterCommentTarget?) async -> Void,
         refresh: @escaping (ReaderChapterCommentTarget?) async -> Void,
         loadNext: @escaping () async -> Void,
@@ -182,7 +181,11 @@ struct ReaderChapterCommentsSheet: View {
         self.state = state
         self.isLoadingMore = isLoadingMore
         self.loadMoreError = loadMoreError
+        self.loadMoreErrorDetails = loadMoreErrorDetails
         self.refreshError = refreshError
+        self.refreshErrorDetails = refreshErrorDetails
+        self.failureEventID = failureEventID
+        self.clearFailure = clearFailure
         self.loadInitial = loadInitial
         self.refresh = refresh
         self.loadNext = loadNext
@@ -199,7 +202,11 @@ struct ReaderChapterCommentsSheet: View {
                 state: state,
                 isLoadingMore: isLoadingMore,
                 loadMoreError: loadMoreError,
+                loadMoreErrorDetails: loadMoreErrorDetails,
                 refreshError: refreshError,
+                refreshErrorDetails: refreshErrorDetails,
+                failureEventID: failureEventID,
+                clearFailure: clearFailure,
                 scrollTarget: $scrollTarget,
                 retry: retry(_:),
                 loadNext: loadNextPage,
@@ -238,6 +245,7 @@ struct ReaderChapterCommentsSheet: View {
             )
         }
         .task(id: target) {
+            actionTask?.cancel()
             await loadInitial(target)
         }
         .onAppear {
@@ -247,6 +255,8 @@ struct ReaderChapterCommentsSheet: View {
             }
         }
         .onDisappear {
+            actionTask?.cancel()
+            actionTask = nil
             peripheralInput?.removeHandler(controlHandlerToken)
             controlHandlerToken = nil
         }
@@ -310,15 +320,19 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func retry(_ target: ReaderChapterCommentTarget) {
-        Task { await loadInitial(target) }
+        actionTask?.cancel()
+        actionTask = Task { await loadInitial(target) }
     }
 
     private func loadNextPage() {
-        Task { await loadNext() }
+        guard !isLoadingMore else { return }
+        actionTask?.cancel()
+        actionTask = Task { await loadNext() }
     }
 
     private func refreshCurrent() {
-        Task { await refresh(target) }
+        actionTask?.cancel()
+        actionTask = Task { await refresh(target) }
     }
 
     /// 查看原帖 opens the original post as a full-screen cover above this

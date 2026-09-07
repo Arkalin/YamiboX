@@ -131,8 +131,10 @@ struct MangaReaderPresentationInfrastructureTests {
         let pageImageLoader = makeMangaReaderPageImageLoader(dataLoader: loader)
         let page = try makePipelinePage()
 
-        await #expect(throws: YamiboError.invalidImageData) {
+        await #expect {
             _ = try await pageImageLoader.image(for: page)
+        } throws: { error in
+            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.invalidImageData
         }
         let image = try await pageImageLoader.image(for: page)
 

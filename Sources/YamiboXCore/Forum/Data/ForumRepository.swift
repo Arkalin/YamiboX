@@ -47,7 +47,9 @@ public actor ForumRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        let page = try ForumHTMLParser.parseHomePage(from: html, fetchedAt: now())
+        let page = try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseHomePage") {
+            try ForumHTMLParser.parseHomePage(from: html, fetchedAt: now())
+        }
         try await saveHomeCompletingStartedWork(page)
         return page
     }
@@ -71,7 +73,9 @@ public actor ForumRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        let board = try ForumHTMLParser.parseBoardPage(from: html, fid: fid, title: title, fetchedAt: now())
+        let board = try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseBoardPage") {
+            try ForumHTMLParser.parseBoardPage(from: html, fid: fid, title: title, fetchedAt: now())
+        }
         try await saveBoardCompletingStartedWork(
             board,
             fid: fid,
@@ -111,7 +115,9 @@ public actor ForumRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseSearchPage") {
+            try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
+        }
     }
 
     public func searchForumPage(query: String, searchID: String, page: Int) async throws -> ForumSearchPage {
@@ -126,7 +132,9 @@ public actor ForumRepository {
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .completeStartedRequest
         )
-        return try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseSearchPage") {
+            try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
+        }
     }
 
     private func saveHomeCompletingStartedWork(_ page: ForumHomePage) async throws {
