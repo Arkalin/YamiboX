@@ -108,7 +108,7 @@ struct YamiboThreadRouteResolverTests {
 
 // smart-comic-mode design decision #1/#2/#12: fid 46 defaults to Smart
 // Comic Mode off, so a manga-kind thread there should route directly to the
-// reader instead of `ForumMangaDetailView`.
+// reader instead of `MangaDetailView`.
 @Test func yamiboThreadRouteResolverRoutesDirectlyToMangaReaderWhenBoardModeIsOff() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-smart-comic-mode-default")
     let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")
@@ -132,7 +132,7 @@ struct YamiboThreadRouteResolverTests {
 }
 
 // Same board, but with its toggle explicitly turned on: routing must fall
-// back to today's `ForumMangaDetailView` behavior.
+// back to today's `MangaDetailView` behavior.
 @Test func yamiboThreadRouteResolverRoutesToMangaDetailWhenBoardModeIsOn() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-smart-comic-mode-enabled")
     let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")
@@ -159,7 +159,7 @@ struct YamiboThreadRouteResolverTests {
 
 // A board with no configuration entry never reports Smart Comic Mode on —
 // even a thread explicitly classified as manga via `knownThreadKind` opens
-// the reader directly instead of `ForumMangaDetailView`.
+// the reader directly instead of `MangaDetailView`.
 @Test func yamiboThreadRouteResolverRoutesDirectlyToMangaReaderForUnconfiguredBoard() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "route-resolver-smart-comic-mode-out-of-scope")
     let settingsStore = try SettingsStore(testSuiteName: suiteName, key: "settings")

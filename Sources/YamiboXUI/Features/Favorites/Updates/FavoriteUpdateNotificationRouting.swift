@@ -47,6 +47,10 @@ public enum FavoriteUpdateNotificationRouting {
                 return
             }
             switch target {
+            case .novelDetail, .mangaDetail:
+                // Notifications request explicit resume, never the tap preference.
+                // Keep the same safe fallback if that resolver contract changes.
+                appModel.selectTab(.favorites)
             case let .novelReader(context):
                 appModel.selectTab(.favorites)
                 appModel.presentNovelReader(context)

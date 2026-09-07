@@ -92,37 +92,6 @@ public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
     }
 }
 
-public struct NovelDetailLaunchContext: Codable, Hashable, Sendable {
-    public var thread: ThreadIdentity
-    public var title: String
-    public var authorID: String?
-
-    public init(thread: ThreadIdentity, title: String, authorID: String? = nil) {
-        self.thread = thread
-        self.title = title.nilIfBlank ?? L10n.string("reader.title")
-        self.authorID = authorID?.nilIfBlank
-    }
-}
-
-public struct MangaDetailLaunchContext: Codable, Hashable, Sendable {
-    public var thread: ThreadIdentity
-    public var title: String
-    public var focusedChapterTID: String?
-    public var directoryNameHint: String?
-
-    public init(
-        thread: ThreadIdentity,
-        title: String,
-        focusedChapterTID: String? = nil,
-        directoryNameHint: String? = nil
-    ) {
-        self.thread = thread
-        self.title = title.nilIfBlank ?? L10n.string("manga.reader.title")
-        self.focusedChapterTID = focusedChapterTID?.nilIfBlank
-        self.directoryNameHint = directoryNameHint?.nilIfBlank
-    }
-}
-
 public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
     public var thread: ThreadIdentity
     public var title: String
@@ -211,7 +180,7 @@ public enum YamiboThreadRouteTarget: Hashable, Sendable {
     /// configured as manga in `BoardReaderSettings`), but the board's Smart
     /// Comic Mode bit is off, so the caller should open the manga reader
     /// directly for this one thread instead of routing through
-    /// `ForumMangaDetailView`.
+    /// `MangaDetailView`.
     case mangaDirect(YamiboThreadRoutePayload)
     case thread(YamiboThreadRoutePayload)
     case webFallback(URL)

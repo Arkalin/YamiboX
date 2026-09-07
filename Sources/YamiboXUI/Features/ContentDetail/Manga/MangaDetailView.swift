@@ -5,9 +5,9 @@ import YamiboXCore
 import UIKit
 #endif
 
-struct ForumMangaDetailView: View {
+struct MangaDetailView: View {
     @Environment(\.forumTheme) private var theme
-    @State private var model: ForumMangaDetailViewModel
+    @State private var model: MangaDetailViewModel
     @State private var isCorrectionPresented = false
     @State private var isResetConfirmationPresented = false
     @State private var correctionDraft = MangaDirectoryEditDraft(
@@ -20,7 +20,7 @@ struct ForumMangaDetailView: View {
     let onViewThread: () -> Void
 
     init(
-        model: ForumMangaDetailViewModel,
+        model: MangaDetailViewModel,
         onChapterTap: @escaping (MangaLaunchContext) -> Void,
         onViewThread: @escaping () -> Void
     ) {
@@ -30,7 +30,7 @@ struct ForumMangaDetailView: View {
     }
 
     var body: some View {
-        ForumMangaDetailBodyView(
+        MangaDetailBodyView(
             model: model,
             onContinueTap: {
                 guard let context = model.continueLaunchContext() else { return }
@@ -115,10 +115,10 @@ struct ForumMangaDetailView: View {
     }
 }
 
-private struct ForumMangaDetailBodyView: View {
+private struct MangaDetailBodyView: View {
     @Environment(\.forumTheme) private var theme
     @AppStorage(YamiboAppStorageKey.mangaDetailChapterLayout) private var storedLayout = ChapterDirectoryLayout.list.rawValue
-    let model: ForumMangaDetailViewModel
+    let model: MangaDetailViewModel
     let onContinueTap: () -> Void
     let onChapterTap: (MangaChapter) -> Void
     let onUpdateDirectoryTap: () -> Void
@@ -129,7 +129,7 @@ private struct ForumMangaDetailBodyView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let directory = model.directory {
-                ForumMangaDetailHeader(
+                MangaDetailHeader(
                     directory: directory,
                     coverURL: model.coverURL,
                     latestChapterText: model.latestChapterText,
@@ -148,7 +148,7 @@ private struct ForumMangaDetailBodyView: View {
                 )
             }
 
-            ForumChapterDirectory(
+            ChapterDirectory(
                 layout: Binding(
                     get: { ChapterDirectoryLayout(storedValue: storedLayout) },
                     set: { storedLayout = $0.rawValue }
@@ -185,7 +185,7 @@ private struct ForumMangaDetailBodyView: View {
     }
 }
 
-struct ForumMangaDetailHeader: View {
+struct MangaDetailHeader: View {
     let directory: MangaDirectory
     let coverURL: URL?
     let latestChapterText: String?
@@ -203,31 +203,31 @@ struct ForumMangaDetailHeader: View {
     let onCopyText: ((String) -> Void)?
 
     var body: some View {
-        ForumDetailHeader(
+        ContentDetailHeader(
             title: directory.cleanBookName,
             coverSource: coverURL.map { YamiboImageSource(url: $0) },
             onCopyText: onCopyText
         ) { compact in
-            ForumMangaHeaderMetadata(
+            MangaHeaderMetadata(
                 updatedAt: directory.lastUpdatedAt,
                 latestChapterText: latestChapterText,
                 readingProgressText: readingProgressText,
                 compact: compact
             )
         } actions: {
-            ForumDetailPrimaryActions {
-                ForumDetailReadButton(
+            ContentDetailPrimaryActions {
+                ContentDetailReadButton(
                     hasProgress: hasReadingProgress,
                     isEnabled: !directory.chapters.isEmpty,
                     progressText: readingProgressText,
                     action: onContinueTap
                 )
-                ForumDetailFavoriteButton(
+                ContentDetailFavoriteButton(
                     isFavorited: isFavorited,
                     action: onFavoriteTap,
                     onLongPress: onFavoriteLongPress
                 )
-                ForumMangaDirectoryUpdateButton(
+                MangaDirectoryUpdateButton(
                     title: updateButtonTitle,
                     isEnabled: isUpdateButtonEnabled,
                     isSearchMode: isSearchMode,
@@ -236,7 +236,7 @@ struct ForumMangaDetailHeader: View {
                 )
             }
         } details: {
-            ForumMangaHeaderMetadata(
+            MangaHeaderMetadata(
                 updatedAt: directory.lastUpdatedAt,
                 latestChapterText: latestChapterText,
                 readingProgressText: readingProgressText,
@@ -248,7 +248,7 @@ struct ForumMangaDetailHeader: View {
     }
 }
 
-private struct ForumMangaHeaderMetadata: View {
+private struct MangaHeaderMetadata: View {
     @Environment(\.forumTheme) private var theme
     let updatedAt: Date?
     let latestChapterText: String?
@@ -280,7 +280,7 @@ private struct ForumMangaHeaderMetadata: View {
     }
 }
 
-struct ForumMangaDirectoryUpdateButton: View {
+struct MangaDirectoryUpdateButton: View {
     @Environment(\.forumTheme) private var theme
     let title: String
     let isEnabled: Bool

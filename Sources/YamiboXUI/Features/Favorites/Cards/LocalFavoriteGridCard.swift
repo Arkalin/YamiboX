@@ -67,7 +67,7 @@ struct LocalFavoriteGridCard: View {
             // "查看归档收藏" archive page.
             selection.toggleFavoriteSelection(id: card.id)
         } else {
-            actions.open(card, .resume)
+                actions.open(card, .preferred)
         }
     }
 

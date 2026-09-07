@@ -4,7 +4,7 @@ import YamiboXCore
 
 @MainActor
 @Observable
-final class ForumMangaDetailViewModel {
+final class MangaDetailViewModel {
     var directory: MangaDirectory?
     var currentDocument: MangaReaderProjection?
     var readingProgress: ReadingProgressRecord?
@@ -35,7 +35,7 @@ final class ForumMangaDetailViewModel {
 
     let context: MangaDetailLaunchContext
 
-    @ObservationIgnored private let dependencies: ForumDependencies
+    @ObservationIgnored private let dependencies: MangaDetailDependencies
     @ObservationIgnored private var readingProgressUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var contentCoverUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var mangaDirectoryUpdatesTask: Task<Void, Never>?
@@ -48,7 +48,7 @@ final class ForumMangaDetailViewModel {
 
     init(
         context: MangaDetailLaunchContext,
-        dependencies: ForumDependencies,
+        dependencies: MangaDetailDependencies,
         workflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
         // Test seam mirroring `MangaReaderDependencies.makeThreadCoverPageRepository`:
         // the default resolves covers through the real forum thread reader
@@ -61,7 +61,9 @@ final class ForumMangaDetailViewModel {
             threadID: context.thread.tid,
             type: .manga,
             defaultTitle: context.title,
-            dependencies: dependencies
+            localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
+            settingsStore: dependencies.settingsStore,
+            makeFavoriteRepository: dependencies.makeFavoriteRepository
         )
         // Stamp the launching board's fid over the injected configuration
         // (mirroring MangaReaderViewModel's construction): the detail page's
@@ -228,14 +230,8 @@ final class ForumMangaDetailViewModel {
                 displayTitle: context.title,
                 source: .forum,
                 directoryName: context.directoryNameHint,
-                // `ForumMangaDetailView` (and this view model) is only ever
-                // reached via `YamiboThreadRouteTarget.manga`, which
-                // `YamiboThreadRouteResolver` only produces when the board's
-                // Smart Comic Mode is on — the mode-off case routes to
-                // `.mangaDirect` instead and never reaches here. Hardcoding
-                // `true` (rather than re-querying `AppSettings`) keeps this
-                // view model from needing its own settings dependency for a
-                // fact its caller already established.
+                // Both forum and favorite callers establish Smart Comic Mode
+                // before opening this work-level detail page.
                 isSmartModeEnabled: true,
                 forumID: context.thread.fid
             )

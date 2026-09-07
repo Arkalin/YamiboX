@@ -7,6 +7,42 @@ import YamiboXTestSupport
 // the former SystemSettingsViewModelTests.
 @MainActor
 final class SettingsFavoritesViewModelTests: XCTestCase {
+    func testItemTapActionLoadsPersistsAndResets() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        await settings.load()
+        XCTAssertEqual(settings.favorites.favoriteItemTapAction, .detail)
+
+        for action in [FavoriteItemTapAction.read, .detail] {
+            settings.favorites.updateFavoriteItemTapAction(action)
+            XCTAssertEqual(settings.favorites.favoriteItemTapAction, action)
+            try await waitForSettings { await fixture.settingsStore.load().favorites.itemTapAction == action }
+            let reloaded = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+            await reloaded.load()
+            XCTAssertEqual(reloaded.favorites.favoriteItemTapAction, action)
+        }
+
+        settings.favorites.applyLoadedSettings(AppSettings(favorites: .init(itemTapAction: .read)))
+        settings.favorites.restoreDefaultsAfterApplicationReset()
+        XCTAssertEqual(settings.favorites.favoriteItemTapAction, .detail)
+    }
+
+    func testItemTapActionSaveFailureRollsBackAndReportsError() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let viewModel = SettingsFavoritesViewModel(
+            dependencies: fixture.appContext.settingsDependencies,
+            activity: SystemSettingsActivity(),
+            updateSettings: { _ in throw YamiboError.underlying("Tap preference save failed") }
+        )
+        viewModel.updateFavoriteItemTapAction(.read)
+        XCTAssertEqual(viewModel.favoriteItemTapAction, .read)
+        try await waitForSettings { viewModel.errorMessage != nil }
+        XCTAssertEqual(viewModel.favoriteItemTapAction, .detail)
+        XCTAssertNotNil(viewModel.errorDetails)
+        let saved = await fixture.settingsStore.load()
+        XCTAssertEqual(saved.favorites.itemTapAction, .detail)
+    }
+
     func testLoadReadsFavoriteBackgroundSettings() async throws {
         let fixture = try makeSystemSettingsFixture()
         let savedSettings = FavoriteBackgroundSettings(

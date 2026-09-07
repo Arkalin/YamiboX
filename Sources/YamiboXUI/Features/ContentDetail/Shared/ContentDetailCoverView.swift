@@ -2,7 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 /// Remote book artwork with a shared text fallback and a stable aspect ratio.
-struct ForumBookCoverView: View {
+struct ContentDetailCoverView: View {
     @Environment(\.forumTheme) private var theme
     @Namespace private var imageBrowserZoomNamespace
     @State private var imageBrowserItem: ImageBrowserItem?

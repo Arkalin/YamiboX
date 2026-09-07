@@ -1895,7 +1895,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(resumeContext.initialView, savedResumePoint.view)
     }
 
-    func testForumNovelProgressDoesNotCreateFavorite() async throws {
+    func testNovelProgressDoesNotCreateFavorite() async throws {
         let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
         let settingsStore = try SettingsStore(testSuiteName: defaultsSuiteName, key: "settings")
         let cacheStore = NovelReaderProjectionStore(
@@ -2131,7 +2131,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertNil(routeAfterLateSave)
     }
 
-    func testForumNovelProgressUpdatesExistingFavorite() async throws {
+    func testNovelProgressUpdatesExistingFavorite() async throws {
         let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
         let settingsStore = try SettingsStore(testSuiteName: defaultsSuiteName, key: "settings")
         let cacheStore = NovelReaderProjectionStore(

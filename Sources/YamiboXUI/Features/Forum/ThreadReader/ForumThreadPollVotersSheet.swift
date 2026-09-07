@@ -87,9 +87,9 @@ struct ForumThreadPollVotersSheet: View {
         NavigationStack {
             Group {
                 if model.isLoading && model.votersPage == nil {
-                    ForumContentLoadingView()
+                    ContentLoadingView()
                 } else if let errorMessage = model.errorMessage, model.votersPage == nil {
-                    ForumContentErrorView(message: errorMessage, details: model.errorDetails) {
+                    ContentErrorView(message: errorMessage, details: model.errorDetails) {
                         Task {
                             await model.loadPage()
                         }

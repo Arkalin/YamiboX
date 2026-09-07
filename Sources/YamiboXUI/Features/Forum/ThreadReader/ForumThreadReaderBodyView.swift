@@ -125,9 +125,9 @@ struct ForumThreadReaderBodyView: View {
                             hidesOnSinglePage: true
                         )
                     } else if isLoading {
-                        ForumContentLoadingView()
+                        ContentLoadingView()
                     } else if let errorMessage {
-                        ForumContentErrorView(message: errorMessage, details: errorDetails, retry: retry)
+                        ContentErrorView(message: errorMessage, details: errorDetails, retry: retry)
                     }
                 }
                 .padding(.horizontal, 16)

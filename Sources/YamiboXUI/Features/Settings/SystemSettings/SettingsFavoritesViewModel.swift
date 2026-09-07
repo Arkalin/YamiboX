@@ -13,6 +13,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     var favoriteSortOrder: LocalFavoriteLibrarySortOrder = .organization
     var favoriteSortDescending = false
     var favoriteShowsCategoryCounts = true
+    var favoriteItemTapAction: FavoriteItemTapAction = .detail
     /// Android-style favorite sync behavior switches: each action has an
     /// "ask every time" toggle and, when asking is off, a silent default.
     /// The quick-action prompts' "remember" variants write the same fields,
@@ -26,10 +27,16 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
+    private let updateSettings: AtomicSettingsUpdater?
 
-    init(dependencies: SettingsDependencies, activity: SystemSettingsActivity) {
+    init(
+        dependencies: SettingsDependencies,
+        activity: SystemSettingsActivity,
+        updateSettings: AtomicSettingsUpdater? = nil
+    ) {
         self.dependencies = dependencies
         self.activity = activity
+        self.updateSettings = updateSettings
     }
 
     func applyLoadedSettings(_ settings: AppSettings) {
@@ -39,6 +46,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         favoriteSortOrder = settings.favorites.sortOrder
         favoriteSortDescending = settings.favorites.sortDescending
         favoriteShowsCategoryCounts = settings.favorites.showsCategoryCounts
+        favoriteItemTapAction = settings.favorites.itemTapAction
         favoriteAddSyncPromptEnabled = settings.favorites.addSyncPromptEnabled
         favoriteAddSyncDefault = settings.favorites.addSyncDefault
         favoriteRemoveRemotePromptEnabled = settings.favorites.removeRemotePromptEnabled
@@ -47,12 +55,13 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         favoriteSmartMangaBadgeEnabled = settings.favorites.smartMangaBadgeEnabled
     }
 
-    /// Application reset restores only the background here: the display and
+    /// Application reset restores the background and tap preference here: the other display and
     /// sync-behavior fields are wiped in the *store* by `resetApplicationData`
     /// too, but the pre-split view model never mirrored them back to defaults
     /// in memory, and this refactor keeps that behavior unchanged.
     func restoreDefaultsAfterApplicationReset() {
         favoriteBackground = FavoriteBackgroundSettings()
+        favoriteItemTapAction = .detail
     }
 
     // MARK: - Background image
@@ -131,6 +140,12 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     }
 
     // MARK: - Library display
+
+    func updateFavoriteItemTapAction(_ value: FavoriteItemTapAction) {
+        persistSettingsAtomically(\.favoriteItemTapAction, to: value, updateSettings: updateSettings) {
+            $0.favorites.itemTapAction = value
+        }
+    }
 
     func updateFavoriteLayoutMode(_ value: FavoriteLibraryLayoutMode) {
         persistSettings(\.favoriteLayoutMode, to: value) { [self] settings in

@@ -2,6 +2,8 @@ import Foundation
 import YamiboXCore
 
 enum FavoriteLaunchMode: Sendable {
+    /// Card taps follow the saved preference; explicit reading actions do not.
+    case preferred
     case start
     case resume
 }

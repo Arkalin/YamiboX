@@ -73,6 +73,17 @@ struct SettingsFavoritesView: View {
                     isOn: favoriteShowsCategoryCountsBinding
                 )
                 .disabled(viewModel.isBusy)
+
+                Picker(selection: favoriteItemTapActionBinding) {
+                    ForEach(FavoriteItemTapAction.allCases) { action in
+                        Text(action.title).tag(action)
+                    }
+                } label: {
+                    Text(L10n.string("settings.favorite_item_tap_action"))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .pickerStyle(.menu)
+                .disabled(viewModel.isBusy)
             }
 
             Section {
@@ -326,6 +337,13 @@ struct SettingsFavoritesView: View {
         Binding(
             get: { viewModel.favoriteLayoutMode },
             set: { viewModel.updateFavoriteLayoutMode($0) }
+        )
+    }
+
+    private var favoriteItemTapActionBinding: Binding<FavoriteItemTapAction> {
+        Binding(
+            get: { viewModel.favoriteItemTapAction },
+            set: { viewModel.updateFavoriteItemTapAction($0) }
         )
     }
 

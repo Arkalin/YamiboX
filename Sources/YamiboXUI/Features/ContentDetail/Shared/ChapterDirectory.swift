@@ -19,7 +19,7 @@ struct ChapterDirectoryItem: Identifiable, Equatable {
     var isCurrentRead = false
     var isFocused = false
 
-    static func novel(_ chapter: ForumNovelChapterSummary, indexInPage: Int) -> Self {
+    static func novel(_ chapter: NovelChapterSummary, indexInPage: Int) -> Self {
         let floor = chapter.floorText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return Self(
             id: chapter.id,
@@ -118,7 +118,7 @@ final class ChapterDirectoryScrollAnchor {
     }
 }
 
-struct ForumChapterDirectory<Prelude: View>: View {
+struct ChapterDirectory<Prelude: View>: View {
     @Environment(\.forumTheme) private var theme
     @ScaledMetric(relativeTo: .body) private var itemHeight: CGFloat = 48
     @Binding var layout: ChapterDirectoryLayout
@@ -153,18 +153,18 @@ struct ForumChapterDirectory<Prelude: View>: View {
                     Section {
                         if sections.isEmpty {
                             if isLoading {
-                                ForumContentLoadingView()
+                                ContentLoadingView()
                             } else if let errorMessage {
-                                ForumContentErrorView(message: errorMessage, details: errorDetails) {
+                                ContentErrorView(message: errorMessage, details: errorDetails) {
                                     Task { await refresh() }
                                 }
                                 .padding(16)
                             } else {
-                                ForumChapterDirectoryEmptyView()
+                                ChapterDirectoryEmptyView()
                             }
                         } else {
                             ForEach(sections) { section in
-                                ForumChapterDirectorySectionView(
+                                ChapterDirectorySectionView(
                                     section: section,
                                     layout: layout,
                                     toolbarHeight: toolbarHeight,
@@ -183,7 +183,7 @@ struct ForumChapterDirectory<Prelude: View>: View {
                             }
                         }
                     } header: {
-                        ForumChapterDirectoryToolbar(
+                        ChapterDirectoryToolbar(
                             countText: countText,
                             layout: Binding(
                                 get: { layout },
@@ -254,7 +254,7 @@ private struct ChapterDirectoryScrollRequest: Equatable {
     let anchor: UnitPoint
 }
 
-struct ForumChapterDirectoryToolbar: View {
+struct ChapterDirectoryToolbar: View {
     @Environment(\.forumTheme) private var theme
     let countText: String
     @Binding var layout: ChapterDirectoryLayout
@@ -293,7 +293,7 @@ struct ForumChapterDirectoryToolbar: View {
     }
 }
 
-private struct ForumChapterDirectorySectionView: View {
+private struct ChapterDirectorySectionView: View {
     @Environment(\.forumTheme) private var theme
     @ScaledMetric(relativeTo: .body) private var minimumColumnWidth: CGFloat = 56
     let section: ChapterDirectorySection
@@ -335,10 +335,10 @@ private struct ForumChapterDirectorySectionView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 64)
                 } else if let errorMessage = section.errorMessage {
-                    ForumContentErrorView(message: errorMessage, details: section.errorDetails, retry: onRetry)
+                    ContentErrorView(message: errorMessage, details: section.errorDetails, retry: onRetry)
                         .padding(16)
                 } else if section.isLoaded && section.items.isEmpty {
-                    ForumChapterDirectoryEmptyView()
+                    ChapterDirectoryEmptyView()
                 } else {
                     LazyVGrid(
                         columns: layout == .grid
@@ -347,7 +347,7 @@ private struct ForumChapterDirectorySectionView: View {
                         spacing: layout == .grid ? 8 : 0
                     ) {
                         ForEach(section.items) { item in
-                            ForumChapterDirectoryItemView(item: item, layout: layout) {
+                            ChapterDirectoryItemView(item: item, layout: layout) {
                                 onChapterTap(item.id)
                             }
                             .id(item.id)
@@ -370,7 +370,7 @@ private struct ForumChapterDirectorySectionView: View {
     }
 }
 
-struct ForumChapterDirectoryItemView: View {
+struct ChapterDirectoryItemView: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var minimumHeight: CGFloat = 48
@@ -460,13 +460,13 @@ struct ForumChapterDirectoryItemView: View {
             }
         }
         .sheet(isPresented: $showsTitle) {
-            ForumDetailInformationSheet(title: item.title, onCopyText: nil) {
+            ContentDetailInformationSheet(title: item.title, onCopyText: nil) {
                 Text(item.numberAccessibilityLabel)
                     .foregroundStyle(theme.secondaryText)
                 if !item.informationText.isEmpty {
                     Text(item.informationText)
                 }
-                ForumDetailReadButton(hasProgress: false) {
+                ContentDetailReadButton(hasProgress: false) {
                     showsTitle = false
                     action()
                 }
@@ -477,7 +477,7 @@ struct ForumChapterDirectoryItemView: View {
     }
 }
 
-private struct ForumChapterDirectoryEmptyView: View {
+private struct ChapterDirectoryEmptyView: View {
     var body: some View {
         ContentUnavailableView(L10n.string("forum.detail.empty_chapters"), systemImage: "list.bullet")
             .frame(maxWidth: .infinity)

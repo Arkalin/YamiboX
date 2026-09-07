@@ -329,6 +329,20 @@ public enum SmartMangaUpdateCheckInterval: String, Codable, Hashable, CaseIterab
     }
 }
 
+public enum FavoriteItemTapAction: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
+    case detail
+    case read
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .detail: L10n.string("settings.favorite_item_tap_action.detail")
+        case .read: L10n.string("settings.favorite_item_tap_action.read")
+        }
+    }
+}
+
 public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     public static let minimumGridCardScale = 0.7
     public static let maximumGridCardScale = 2.5
@@ -352,6 +366,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     public var selectedCategoryID: String?
     public var selectedCollectionID: String?
     public var showsCategoryCounts: Bool
+    public var itemTapAction: FavoriteItemTapAction
     public var collapsesSections: Bool
     /// Whether adding a favorite asks about pushing it to Yamibo; once the
     /// user picks "remember", this turns off and `addSyncDefault` applies.
@@ -406,7 +421,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
         updateNotificationsEnabled: Bool = false,
         smartMangaUpdateCheckInterval: SmartMangaUpdateCheckInterval = .threeDays,
         smartMangaBulkDeleteEnabled: Bool = true,
-        smartMangaBadgeEnabled: Bool = true
+        smartMangaBadgeEnabled: Bool = true,
+        itemTapAction: FavoriteItemTapAction = .detail
     ) {
         self.background = background
         self.layoutMode = layoutMode
@@ -416,6 +432,7 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
         self.selectedCategoryID = Self.normalizedID(selectedCategoryID)
         self.selectedCollectionID = Self.normalizedID(selectedCollectionID)
         self.showsCategoryCounts = showsCategoryCounts
+        self.itemTapAction = itemTapAction
         self.collapsesSections = collapsesSections
         self.addSyncPromptEnabled = addSyncPromptEnabled
         self.addSyncDefault = addSyncDefault
@@ -448,7 +465,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
             updateNotificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .updateNotificationsEnabled) ?? false,
             smartMangaUpdateCheckInterval: try container.decodeIfPresent(SmartMangaUpdateCheckInterval.self, forKey: .smartMangaUpdateCheckInterval) ?? .threeDays,
             smartMangaBulkDeleteEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBulkDeleteEnabled) ?? true,
-            smartMangaBadgeEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBadgeEnabled) ?? true
+            smartMangaBadgeEnabled: try container.decodeIfPresent(Bool.self, forKey: .smartMangaBadgeEnabled) ?? true,
+            itemTapAction: try container.decodeIfPresent(FavoriteItemTapAction.self, forKey: .itemTapAction) ?? .detail
         )
     }
 

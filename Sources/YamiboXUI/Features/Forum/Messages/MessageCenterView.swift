@@ -106,7 +106,7 @@ private struct MessageCenterBodyView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
                 } else if isLoading && content == nil {
-                    ForumContentLoadingView()
+                    ContentLoadingView()
                 } else {
                     MessageCenterContentView(
                         selectedTab: selectedTab,

@@ -7,8 +7,8 @@ import YamiboXTestSupport
 
 @MainActor
 @Test(arguments: [0, 1, 2])
-func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int) async throws {
-    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+func mangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int) async throws {
+    let (model, loader) = try await makeMangaDetailRefreshFixture()
     let previousDirectory = model.directory
     let previousDocument = model.currentDocument
     let previousProgress = model.readingProgress
@@ -33,8 +33,8 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 }
 
 @MainActor
-@Test func forumMangaDetailGestureCancellationDoesNotCancelRefresh() async throws {
-    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+@Test func mangaDetailGestureCancellationDoesNotCancelRefresh() async throws {
+    let (model, loader) = try await makeMangaDetailRefreshFixture()
     let started = AsyncStream<Void>.makeStream()
     let release = AsyncStream<Void>.makeStream()
     defer {
@@ -58,8 +58,8 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 }
 
 @MainActor
-@Test func forumMangaDetailOverlappingReloadDoesNotReplaceActiveLoad() async throws {
-    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+@Test func mangaDetailOverlappingReloadDoesNotReplaceActiveLoad() async throws {
+    let (model, loader) = try await makeMangaDetailRefreshFixture()
     let started = AsyncStream<Void>.makeStream()
     let release = AsyncStream<Void>.makeStream()
     defer {
@@ -79,8 +79,8 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 }
 
 @MainActor
-@Test func forumMangaDetailRealLoadFailureStillShowsAnError() async throws {
-    let (model, loader) = try await makeForumMangaDetailRefreshFixture()
+@Test func mangaDetailRealLoadFailureStillShowsAnError() async throws {
+    let (model, loader) = try await makeMangaDetailRefreshFixture()
     let failure = URLError(.timedOut)
     await loader.setFailure(failure)
 
@@ -91,15 +91,15 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 }
 
 /// Regression coverage for the precise directory-scoped reading-progress
-/// lookup `ForumMangaDetailViewModel` must use once its `MangaDirectory` is
-/// known — see `ForumMangaDetailViewModel.loadReadingProgress()`. Mirrors
+/// lookup `MangaDetailViewModel` must use once its `MangaDirectory` is
+/// known — see `MangaDetailViewModel.loadReadingProgress()`. Mirrors
 /// `LocalFavoriteOpenTargetResolver.mangaDirectoryResumeTarget`'s existing
 /// pattern and the collision scenario documented there.
 @MainActor
-@Test func forumMangaDetailReloadUsesDirectoryLevelProgressNotStaleChapterThreadRecord() async throws {
+@Test func mangaDetailReloadUsesDirectoryLevelProgressNotStaleChapterThreadRecord() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-precise-progress")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -144,14 +144,14 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         )
     )
 
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
             "910": makeTestMangaReaderProjection(tid: "910", chapterTitle: "第一话")
         ])
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "910")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "910")
 
     await model.reload()
 
@@ -171,14 +171,14 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// a progress update saved elsewhere (e.g. Favorites reading the same
 /// directory) must reach `readingProgress` via the same precise
 /// directory-scoped query, not just at `reload()` time. Mirrors
-/// `forumNovelDetailRefreshesReadingProgressWhenReadingProgressStoreChanges`'s
+/// `novelDetailRefreshesReadingProgressWhenReadingProgressStoreChanges`'s
 /// polling style, since the update arrives asynchronously through
 /// `ReadingProgressStore.changes()`.
 @MainActor
-@Test func forumMangaDetailLiveUpdateUsesDirectoryLevelProgressAfterReload() async throws {
+@Test func mangaDetailLiveUpdateUsesDirectoryLevelProgressAfterReload() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-live-progress")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -209,14 +209,14 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         )
     )
 
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
             "920": makeTestMangaReaderProjection(tid: "920", chapterTitle: "第一话")
         ])
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "920")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "920")
 
     await model.reload()
     #expect(model.directory != nil)
@@ -249,10 +249,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// the offline-cache owner directory — the same cascade the reader's
 /// correction sheet performs.
 @MainActor
-@Test func forumMangaDetailSaveCorrectionRenamesDirectoryAndMigratesReferences() async throws {
+@Test func mangaDetailSaveCorrectionRenamesDirectoryAndMigratesReferences() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-correction")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -278,7 +278,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     )
 
     let offlineCacheStore = RenameRecordingMangaOfflineCacheStore()
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -286,7 +286,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         ]),
         mangaOfflineCacheStore: offlineCacheStore
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "930")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "930")
 
     await model.reload()
     #expect(model.directory?.cleanBookName == "旧名漫画")
@@ -318,10 +318,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// a non-tag directory update performs a forum search, merges the found
 /// chapters, and arms the shared search cooldown countdown.
 @MainActor
-@Test func forumMangaDetailUpdateDirectoryMergesSearchedChaptersAndStartsCooldown() async throws {
+@Test func mangaDetailUpdateDirectoryMergesSearchedChaptersAndStartsCooldown() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-update-search")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -343,7 +343,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
             MangaChapter(tid: "941", rawTitle: "测试漫画三 第2话", chapterNumber: 2, view: 1)
         ]
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -352,7 +352,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         directoryRepository: repository
     )
     let fixedNow = Date()
-    let model = makeForumMangaDetailViewModel(
+    let model = makeMangaDetailViewModel(
         dependencies: dependencies,
         threadTID: "940",
         workflowConfiguration: MangaDirectoryWorkflowConfiguration(now: { fixedNow })
@@ -383,10 +383,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// manually-corrected row) and rebuild the directory from a fresh network
 /// seed, while keeping the directory's `cleanBookName` identity.
 @MainActor
-@Test func forumMangaDetailResetDirectoryReseedsFromNetworkDiscardingStaleChapters() async throws {
+@Test func mangaDetailResetDirectoryReseedsFromNetworkDiscardingStaleChapters() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-reset")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -414,7 +414,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
             MangaChapter(tid: "951", rawTitle: "测试漫画四 第2话", chapterNumber: 2, view: 1)
         ]
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -422,7 +422,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         ]),
         directoryRepository: repository
     )
-    let model = makeForumMangaDetailViewModel(
+    let model = makeMangaDetailViewModel(
         dependencies: dependencies,
         threadTID: "950"
     )
@@ -443,10 +443,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// search offers the 5-second forced-search shortcut, and tapping the button
 /// inside that window escalates to a real global search.
 @MainActor
-@Test func forumMangaDetailTagUpdateOffersForcedSearchShortcutThenRunsGlobalSearch() async throws {
+@Test func mangaDetailTagUpdateOffersForcedSearchShortcutThenRunsGlobalSearch() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-forced-search")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -471,7 +471,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
             MangaChapter(tid: "951", rawTitle: "测试漫画四 第2话", chapterNumber: 2, view: 1)
         ]
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -480,7 +480,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         directoryRepository: repository
     )
     let fixedNow = Date()
-    let model = makeForumMangaDetailViewModel(
+    let model = makeMangaDetailViewModel(
         dependencies: dependencies,
         threadTID: "950",
         workflowConfiguration: MangaDirectoryWorkflowConfiguration(now: { fixedNow })
@@ -509,10 +509,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// A freshly created tag directory (`lastUpdatedAt == nil`) auto-updates once
 /// right after the initial load, matching the reader's behavior.
 @MainActor
-@Test func forumMangaDetailAutoUpdatesFreshTagDirectoryAfterInitialLoad() async throws {
+@Test func mangaDetailAutoUpdatesFreshTagDirectoryAfterInitialLoad() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-auto-update")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -534,7 +534,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
             MangaChapter(tid: "961", rawTitle: "第2话", chapterNumber: 2, view: 1)
         ]
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -542,7 +542,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         ]),
         directoryRepository: repository
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "960")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "960")
 
     await model.reload()
 
@@ -559,10 +559,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// own automatic cover when the store has none — otherwise an unfavorited
 /// manga's detail page shows the placeholder forever.
 @MainActor
-@Test func forumMangaDetailResolvesMissingSmartMangaCoverAfterReload() async throws {
+@Test func mangaDetailResolvesMissingSmartMangaCoverAfterReload() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-cover-backfill")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -582,7 +582,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     )
     try await mangaDirectoryStore.saveDirectory(directory)
 
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -608,7 +608,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         ],
         pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: 1)
     )
-    let model = makeForumMangaDetailViewModel(
+    let model = makeMangaDetailViewModel(
         dependencies: dependencies,
         threadTID: "971",
         threadCoverPageRepository: FixedPageThreadCoverPageRepository(firstPage: coverPage)
@@ -632,10 +632,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// automatic resolution untouched: resolution only fills genuinely missing
 /// covers.
 @MainActor
-@Test func forumMangaDetailDoesNotOverrideExistingSmartMangaCover() async throws {
+@Test func mangaDetailDoesNotOverrideExistingSmartMangaCover() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-cover-existing")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -652,7 +652,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     )
     try await mangaDirectoryStore.saveDirectory(directory)
 
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
@@ -681,7 +681,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
         ],
         pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: 1)
     )
-    let model = makeForumMangaDetailViewModel(
+    let model = makeMangaDetailViewModel(
         dependencies: dependencies,
         threadTID: "980",
         threadCoverPageRepository: FixedPageThreadCoverPageRepository(firstPage: coverPage)
@@ -710,10 +710,10 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// derived from `directory`) never updated until some unrelated action
 /// forced a full `reload()`.
 @MainActor
-@Test func forumMangaDetailLiveUpdatesDirectoryAndCoverWhenMangaDirectoryStoreChangesExternally() async throws {
+@Test func mangaDetailLiveUpdatesDirectoryAndCoverWhenMangaDirectoryStoreChangesExternally() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-external-directory-change")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
@@ -732,14 +732,14 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     )
     try await mangaDirectoryStore.saveDirectory(directory)
 
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [
             "990": makeTestMangaReaderProjection(tid: "990", chapterTitle: "第一话")
         ])
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "990")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "990")
 
     await model.reload()
     #expect(model.directory?.cleanBookName == "旧名漫画二")
@@ -774,15 +774,15 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// add-sync prompt still applies afterward — this test disables it so the
 /// add completes silently and `favorite` ends up set.
 @MainActor
-@Test func forumMangaDetailLocationPickerCreatesNewFavoriteWithPickedLocations() async throws {
+@Test func mangaDetailLocationPickerCreatesNewFavoriteWithPickedLocations() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-location-picker-add")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [:])
@@ -795,7 +795,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     let category = document.createCategory(name: "长按新建分类")
     try await dependencies.localFavoriteLibraryStore.save(document)
 
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "920")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "920")
 
     await model.favoriteActions.presentLocationPicker()
     let context = try #require(model.favoriteActions.locationPickerContext)
@@ -816,15 +816,15 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// replace, not additive) without touching Yamibo — no add/remove prompt,
 /// just the "已更新收藏位置" toast.
 @MainActor
-@Test func forumMangaDetailLocationPickerRelocatesAlreadyFavoritedItem() async throws {
+@Test func mangaDetailLocationPickerRelocatesAlreadyFavoritedItem() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-location-picker-relocate")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [:])
@@ -840,7 +840,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     ))
     try await dependencies.localFavoriteLibraryStore.save(document)
 
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "921")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "921")
     model.favoriteActions.favorite = Favorite(title: "已收藏漫画", threadID: "921", type: .manga)
 
     await model.favoriteActions.presentLocationPicker()
@@ -862,15 +862,15 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// routed through the normal remove-sync decision, not a silent relocate to
 /// an empty location set (which the domain model forbids anyway).
 @MainActor
-@Test func forumMangaDetailLocationPickerWithEmptySelectionRemovesFavorite() async throws {
+@Test func mangaDetailLocationPickerWithEmptySelectionRemovesFavorite() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-location-picker-remove")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
     )
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: readingProgressStore,
         mangaDirectoryStore: mangaDirectoryStore,
         projectionLoader: FakeMangaReaderProjectionLoader(projectionsByTID: [:])
@@ -889,7 +889,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
     ))
     try await dependencies.localFavoriteLibraryStore.save(document)
 
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "922")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "922")
     model.favoriteActions.favorite = Favorite(title: "待取消收藏的漫画", threadID: "922", type: .manga)
 
     await model.favoriteActions.presentLocationPicker()
@@ -908,7 +908,7 @@ func forumMangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int
 /// `YamiboXCoreTests` target only, so this file builds its own GRDB pool
 /// directly — mirroring `LocalFavoriteOpenTargetResolverTests
 /// .makeMangaDirectoryStore(suiteName:)`.
-private func makeForumMangaDetailTestDirectoryStore(suiteName: String) throws -> MangaDirectoryStore {
+private func makeMangaDetailTestDirectoryStore(suiteName: String) throws -> MangaDirectoryStore {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("forum-manga-detail-view-model-tests", isDirectory: true)
         .appendingPathComponent(suiteName, isDirectory: true)
@@ -916,23 +916,23 @@ private func makeForumMangaDetailTestDirectoryStore(suiteName: String) throws ->
     return MangaDirectoryStore(databasePool: database)
 }
 
-/// Builds a `ForumDependencies` package backed by isolated per-test stores.
+/// Builds a `MangaDetailDependencies` package backed by isolated per-test stores.
 /// Factories for repositories this file never exercises trap loudly — the
 /// manga directory is always pre-seeded so `MangaDirectoryWorkflow
 /// .resolveInitialDirectory` resolves it via `store.directory(containingTID:)`
 /// without ever reaching `makeMangaDirectoryRepository`. Unlike
-/// `ForumNovelDetailViewModel`, `ForumMangaDetailViewModel` has no injectable
+/// `NovelDetailViewModel`, `MangaDetailViewModel` has no injectable
 /// provider for its projection loader — it calls
 /// `dependencies.makeMangaReaderProjectionLoader()` directly — so the fake
 /// loader is threaded straight into that factory closure here.
 @MainActor
-private func makeForumMangaDetailDependencies(
+private func makeMangaDetailDependencies(
     readingProgressStore: ReadingProgressStore,
     mangaDirectoryStore: MangaDirectoryStore,
     projectionLoader: any MangaReaderProjectionSnapshotLoading,
     directoryRepository: (any MangaDirectoryRepository)? = nil,
     mangaOfflineCacheStore: (any MangaOfflineCacheStoring)? = nil
-) throws -> ForumDependencies {
+) throws -> MangaDetailDependencies {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-deps")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
     let sessionStore = SessionStore(defaults: defaults, key: "session")
@@ -949,9 +949,7 @@ private func makeForumMangaDetailDependencies(
         baseDirectory: FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
     )
-    return ForumDependencies(
-        sessionStore: sessionStore,
-        profileStore: YamiboProfileStore(defaults: defaults, key: "profile"),
+    return MangaDetailDependencies(
         localFavoriteLibraryStore: FavoriteLibraryStore(defaults: defaults, key: "local-favorites"),
         readingProgressStore: readingProgressStore,
         settingsStore: SettingsStore(defaults: defaults, key: "settings"),
@@ -959,23 +957,18 @@ private func makeForumMangaDetailDependencies(
         mangaDirectoryStore: mangaDirectoryStore,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState(),
         mangaOfflineCacheStore: mangaOfflineCacheStore,
-        makeForumRepository: { ForumRepository(client: await makeClient(), cacheStore: forumCacheStore) },
-        makeForumThreadReaderRepository: { ForumThreadReaderRepository(client: await makeClient(), cacheStore: forumCacheStore) },
-        makeUserSpaceRepository: { UserSpaceRepository(client: await makeClient()) },
-        makeBlogReaderRepository: { BlogReaderRepository(client: await makeClient()) },
         makeFavoriteRepository: { FavoriteRepository(client: await makeClient()) },
-        makeNovelReaderRepository: { fatalError("makeNovelReaderRepository is not exercised by ForumMangaDetailViewModelTests") },
+        makeForumThreadReaderRepository: { ForumThreadReaderRepository(client: await makeClient(), cacheStore: forumCacheStore) },
         makeMangaReaderProjectionLoader: { projectionLoader },
-        makeMangaDirectoryRepository: { directoryRepository ?? UnusedMangaDirectoryRepository() },
-        makeThreadRouteResolver: { YamiboThreadRouteResolver(client: await makeClient()) }
+        makeMangaDirectoryRepository: { directoryRepository ?? UnusedMangaDirectoryRepository() }
     )
 }
 
 @MainActor
-private func makeForumMangaDetailRefreshFixture() async throws -> (ForumMangaDetailViewModel, RefreshMangaReaderProjectionLoader) {
+private func makeMangaDetailRefreshFixture() async throws -> (MangaDetailViewModel, RefreshMangaReaderProjectionLoader) {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-refresh")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
-    let directoryStore = try makeForumMangaDetailTestDirectoryStore(suiteName: suiteName)
+    let directoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
     let progressStore = ReadingProgressStore(defaults: defaults, key: "reading-progress")
     let directory = MangaDirectory(
         cleanBookName: "测试漫画", strategy: .tag, sourceKey: "测试漫画",
@@ -988,10 +981,10 @@ private func makeForumMangaDetailRefreshFixture() async throws -> (ForumMangaDet
         pageIndex: 5, mangaID: directory.favoriteIdentity
     )
     let loader = RefreshMangaReaderProjectionLoader(projection: makeTestMangaReaderProjection(tid: "910", chapterTitle: "第一话"))
-    let dependencies = try makeForumMangaDetailDependencies(
+    let dependencies = try makeMangaDetailDependencies(
         readingProgressStore: progressStore, mangaDirectoryStore: directoryStore, projectionLoader: loader
     )
-    let model = makeForumMangaDetailViewModel(dependencies: dependencies, threadTID: "910")
+    let model = makeMangaDetailViewModel(dependencies: dependencies, threadTID: "910")
     await model.reload()
     _ = try #require(model.directory)
     return (model, loader)
@@ -1041,14 +1034,14 @@ private actor RefreshMangaReaderProjectionLoader: MangaReaderProjectionSnapshotL
 /// real network-backed `ForumThreadReaderRepository` in the background on
 /// every `reload()`. The default stub simply resolves nothing.
 @MainActor
-private func makeForumMangaDetailViewModel(
-    dependencies: ForumDependencies,
+private func makeMangaDetailViewModel(
+    dependencies: MangaDetailDependencies,
     threadTID: String,
     workflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
     threadCoverPageRepository: (any ThreadCoverPageResolving)? = nil
-) -> ForumMangaDetailViewModel {
+) -> MangaDetailViewModel {
     let coverPageRepository = threadCoverPageRepository ?? FixedPageThreadCoverPageRepository(firstPage: nil)
-    return ForumMangaDetailViewModel(
+    return MangaDetailViewModel(
         context: MangaDetailLaunchContext(
             thread: ThreadIdentity(tid: threadTID, fid: "30"),
             title: "测试漫画"
@@ -1079,7 +1072,7 @@ private struct FixedPageThreadCoverPageRepository: ThreadCoverPageResolving {
         authorID _: String?,
         page _: Int
     ) async throws -> ForumThreadPage {
-        throw YamiboError.parsingFailed(context: "thread cover page fetch is not exercised by ForumMangaDetailViewModelTests")
+        throw YamiboError.parsingFailed(context: "thread cover page fetch is not exercised by MangaDetailViewModelTests")
     }
 }
 
@@ -1114,7 +1107,7 @@ private final class ConfigurableMangaDirectoryRepository: MangaDirectoryReposito
 
     func loadDirectorySeed(for threadID: String) async throws -> MangaDirectorySeed {
         guard let seed else {
-            fatalError("loadDirectorySeed is not exercised by ForumMangaDetailViewModelTests")
+            fatalError("loadDirectorySeed is not exercised by MangaDetailViewModelTests")
         }
         lock.withLock { _seedCallCount += 1 }
         return seed
@@ -1171,11 +1164,11 @@ private final class RenameRecordingMangaOfflineCacheStore: MangaOfflineCacheStor
     func mangaOfflineCacheDiskUsageByOwner() async -> [MangaOfflineCacheOwnerUsage] { [] }
 
     func enqueueMangaOfflineCacheWork(_ request: MangaOfflineCacheWorkRequest) async throws -> MangaOfflineCacheEnqueueResult {
-        fatalError("enqueueMangaOfflineCacheWork is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("enqueueMangaOfflineCacheWork is not exercised by MangaDetailViewModelTests")
     }
 
     func mangaOfflineCacheState(ownerName: String, tid: String) async -> MangaOfflineCacheState {
-        fatalError("mangaOfflineCacheState is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("mangaOfflineCacheState is not exercised by MangaDetailViewModelTests")
     }
 }
 
@@ -1197,15 +1190,15 @@ private func makeTestMangaReaderProjection(tid: String, chapterTitle: String) ->
 /// `loadTagDirectory` and trap.
 private struct UnusedMangaDirectoryRepository: MangaDirectoryRepository {
     func loadDirectorySeed(for threadID: String) async throws -> MangaDirectorySeed {
-        fatalError("loadDirectorySeed is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("loadDirectorySeed is not exercised by MangaDetailViewModelTests")
     }
 
     func loadTagDirectory(tagIDs: [String], allowedForumID: String) async throws -> [MangaChapter] {
-        fatalError("loadTagDirectory is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("loadTagDirectory is not exercised by MangaDetailViewModelTests")
     }
 
     func searchDirectory(keyword: String, forumID: String) async throws -> [MangaChapter] {
-        fatalError("searchDirectory is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("searchDirectory is not exercised by MangaDetailViewModelTests")
     }
 }
 
@@ -1224,7 +1217,7 @@ private final class FakeMangaReaderProjectionLoader: MangaReaderProjectionSnapsh
     }
 
     func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest) async throws -> MangaReaderProjectionSnapshot {
-        fatalError("loadReaderProjectionSnapshot is not exercised by ForumMangaDetailViewModelTests")
+        fatalError("loadReaderProjectionSnapshot is not exercised by MangaDetailViewModelTests")
     }
 }
 

@@ -131,6 +131,12 @@ enum SettingsSearchRegistry {
             keywords: ["排序", "顺序"]
         ),
         SettingsSearchEntry(
+            id: "favorites.item_tap_action",
+            title: L10n.string("settings.favorite_item_tap_action"),
+            category: .favorites,
+            keywords: ["点击", "小说", "智能漫画", "查看详情", "阅读", "打开"]
+        ),
+        SettingsSearchEntry(
             id: "favorites.background",
             title: L10n.string("settings.favorite_background"),
             category: .favorites,

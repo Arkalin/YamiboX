@@ -7,11 +7,13 @@ import YamiboXCore
 /// grid content views, which read the organizer and browse session directly.
 struct LocalFavoritesOrganizationView: View {
     @Bindable var organizer: FavoriteLibraryOrganizer
+    let navigator: ForumDestinationNavigator
     @Bindable var favoriteShare: FavoriteShareFlowModel
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     @ObservedObject private var selection: LocalFavoriteBrowseSession
-    @StateObject private var routes = LocalFavoritesRoutes()
+    @ObservedObject private var routes: LocalFavoritesRoutes
+    let detailScreen: (ContentDetailDestination) -> ContentDetailScreen
 
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
     /// Opens a smart-manga update event by its `cleanBookName` alone — a
@@ -27,6 +29,9 @@ struct LocalFavoritesOrganizationView: View {
 
     init(
         organizer: FavoriteLibraryOrganizer,
+        navigator: ForumDestinationNavigator,
+        routes: LocalFavoritesRoutes,
+        detailScreen: @escaping (ContentDetailDestination) -> ContentDetailScreen,
         favoriteShare: FavoriteShareFlowModel,
         remoteSync: FavoriteRemoteSyncSession,
         updateMonitor: FavoriteUpdateMonitor,
@@ -36,6 +41,9 @@ struct LocalFavoritesOrganizationView: View {
         onOpenBoard: @escaping (BoardFavorite) -> Void
     ) {
         self.organizer = organizer
+        self.navigator = navigator
+        self.routes = routes
+        self.detailScreen = detailScreen
         self.favoriteShare = favoriteShare
         self.remoteSync = remoteSync
         self.updateMonitor = updateMonitor
@@ -47,7 +55,7 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: LocalFavoritesNavigation(organizer: organizer, routes: routes, navigator: navigator).binding) {
             backgrounded {
                 content(derived: organizer.rootDerived, isCollectionDetail: false)
                     .overlay { emptyStateOverlay(derived: organizer.rootDerived, isCollectionDetail: false) }
@@ -135,63 +143,9 @@ struct LocalFavoritesOrganizationView: View {
                 favoriteShare.transientMessage = nil
                 organizer.transientMessage = nil
             }
-            .navigationDestination(isPresented: collectionDetailBinding) {
-                collectionDetail
-            }
-            .navigationDestination(isPresented: mergedGroupDetailBinding) {
-                mergedGroupDetail
-            }
-            .navigationDestination(isPresented: $routes.isUpdatesPagePushed) {
-                FavoriteUpdatesPage(
-                    updateMonitor: updateMonitor,
-                    routes: routes,
-                    isEventVisible: isEventInFilterScope,
-                    onOpen: { event in
-                        switch event.target {
-                        case .favorite:
-                            guard let item = organizer.favoriteItems.first(where: { $0.target.id == event.target.id }) else {
-                                organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
-                                return
-                            }
-                            await onOpen(item, .resume, .boardDefault)
-                        case let .mangaDirectory(cleanBookName):
-                            await onOpenMangaDirectory(cleanBookName)
-                        }
-                    }
-                )
-                .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            }
-            .navigationDestination(isPresented: $routes.isBoardFavoritesPushed) {
-                FavoriteBoardListView(
-                    model: FavoriteBoardListViewModel(repositoryProvider: makeFavoriteRepository),
-                    onOpenBoard: onOpenBoard
-                )
-                .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            }
-            .navigationDestination(isPresented: $routes.isSyncProgressPushed) {
-                FavoriteRemoteSyncProgressSheet(
-                    snapshot: remoteSync.snapshot,
-                    onResume: {
-                        await remoteSync.resume()
-                    },
-                    onInterrupt: {
-                        await remoteSync.interrupt()
-                    },
-                    onHide: {
-                        await remoteSync.hideCard()
-                    },
-                    showsCloseButton: false
-                )
-                .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            }
+            .navigationDestination(for: LocalFavoritesDestination.self, destination: destinationView)
             #if DEBUG
-            // `START_FAVORITES_SELECTION=1` launch hook (`START_TAB`'s
-            // sibling): keeps the first favorite card selected so simulator
-            // sessions without touch injection can screenshot the selection
-            // UI. Re-asserts on every derived-state change (`initial: true`
-            // covering the appearance-time value the old `$rootDerived`
-            // subscription emitted) because startup reloads can prune the
-            // selection away again.
+            // Keep the debug selection hook independent of navigation changes.
             .onChange(of: organizer.rootDerived, initial: true) { _, derived in
                 guard ProcessInfo.processInfo.environment["START_FAVORITES_SELECTION"] == "1",
                       !selection.isSelectionMode,
@@ -202,26 +156,69 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
+    @ViewBuilder
+    private func destinationView(_ destination: LocalFavoritesDestination) -> some View {
+        switch destination {
+        case .collection:
+            collectionDetail
+        case .mergedGroup:
+            mergedGroupDetail
+        case let .forum(route):
+            ForumDestinationScreen(destination: route, navigator: navigator)
+        case let .detail(destination):
+            detailScreen(destination)
+        case .updates:
+            FavoriteUpdatesPage(
+                updateMonitor: updateMonitor,
+                routes: routes,
+                isEventVisible: isEventInFilterScope,
+                onOpen: { event in
+                    switch event.target {
+                    case .favorite:
+                        guard let item = organizer.favoriteItems.first(where: { $0.target.id == event.target.id }) else {
+                            organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
+                            return
+                        }
+                        await onOpen(item, .resume, .boardDefault)
+                    case let .mangaDirectory(cleanBookName):
+                        await onOpenMangaDirectory(cleanBookName)
+                    }
+                }
+            )
+            .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        case .boardFavorites:
+            FavoriteBoardListView(
+                model: FavoriteBoardListViewModel(repositoryProvider: makeFavoriteRepository),
+                onOpenBoard: onOpenBoard
+            )
+            .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        case .syncProgress:
+            FavoriteRemoteSyncProgressSheet(
+                snapshot: remoteSync.snapshot,
+                onResume: {
+                    await remoteSync.resume()
+                },
+                onInterrupt: {
+                    await remoteSync.interrupt()
+                },
+                onHide: {
+                    await remoteSync.hideCard()
+                },
+                showsCloseButton: false
+            )
+            .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        }
+    }
+
     // MARK: - Collection detail
 
     /// Opened collections push a detail page (iOS navigation instead of the
     /// Android in-place switch). The pushed page's content is scoped by the
     /// `organizer.derived` explicitly passed to it, not read ambiently,
-    /// because `organizer.selectedCollectionID` only resets once this
+    /// because `organizer.selectedCollectionID` only resets once the path
     /// binding's `set` fires (i.e. once the pop fully commits) — during an
     /// interactive edge-swipe-back gesture it stays non-nil for the whole
     /// drag, while the root screen underneath is already visible.
-    private var collectionDetailBinding: Binding<Bool> {
-        Binding(
-            get: { organizer.selectedCollectionID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    organizer.closeCollection()
-                }
-            }
-        )
-    }
-
     private var collectionDetail: some View {
         backgrounded {
             content(derived: organizer.derived, isCollectionDetail: true)
@@ -309,22 +306,6 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     // MARK: - Merged smart-comic group detail
-
-    /// A merged card's "查看归档收藏" action pushes this detail page, mirroring
-    /// `collectionDetailBinding` exactly — same reasoning about reading
-    /// `organizer.selectedMergedGroupCleanBookName` directly (not a locally
-    /// captured value) so an interactive edge-swipe-back gesture doesn't
-    /// desync from the organizer's own navigation state mid-drag.
-    private var mergedGroupDetailBinding: Binding<Bool> {
-        Binding(
-            get: { organizer.selectedMergedGroupCleanBookName != nil },
-            set: { isPresented in
-                if !isPresented {
-                    organizer.closeMergedGroup()
-                }
-            }
-        )
-    }
 
     /// Lists every individual favorite currently merged into the card that
     /// was opened — per-item management (delete/move/tag/etc.) happens here
@@ -750,7 +731,7 @@ struct LocalFavoritesOrganizationView: View {
     // MARK: - Errors
 
     private var combinedErrorMessage: String? {
-        favoriteShare.errorMessage ?? organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage
+        favoriteShare.errorMessage ?? organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage ?? navigator.actionErrorMessage
     }
 
     private var combinedErrorDetails: LoadFailureDetails? {
@@ -758,7 +739,8 @@ struct LocalFavoritesOrganizationView: View {
             (favoriteShare.errorMessage, favoriteShare.errorDetails),
             (organizer.errorMessage, organizer.errorDetails),
             (remoteSync.errorMessage, remoteSync.errorDetails),
-            (updateMonitor.errorMessage, updateMonitor.errorDetails)
+            (updateMonitor.errorMessage, updateMonitor.errorDetails),
+            (navigator.actionErrorMessage, navigator.actionErrorDetails)
         ]
         let items = failures.compactMap { message, details -> LoadFailureDetails.Item? in
             guard let message else { return nil }
@@ -774,6 +756,7 @@ struct LocalFavoritesOrganizationView: View {
         organizer.errorMessage = nil
         remoteSync.errorMessage = nil
         updateMonitor.errorMessage = nil
+        navigator.actionErrorMessage = nil
     }
 
     private var errorAlertBinding: Binding<Bool> {

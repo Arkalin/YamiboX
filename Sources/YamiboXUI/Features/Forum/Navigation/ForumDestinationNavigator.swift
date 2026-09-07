@@ -60,7 +60,7 @@ final class ForumDestinationNavigator {
             switch mode {
             case .forumTab:
                 path = []
-            case .readerOverlay:
+            case .readerOverlay, .contentBrowser:
                 // There is no forum home inside an overlay stack, and popping
                 // to its root would land on the original post instead — show
                 // the web home so the link still leads somewhere sensible.
@@ -178,7 +178,7 @@ final class ForumDestinationNavigator {
     func threadReaderOverrideHandler(
         containingFid: String?
     ) -> ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)? {
-        guard mode == .forumTab else { return nil }
+        guard mode != .readerOverlay else { return nil }
         return { thread, readerOverride in
             self.openThread(thread, containingFid: containingFid, readerOverride: readerOverride)
         }
@@ -190,7 +190,7 @@ final class ForumDestinationNavigator {
     func pinnedReaderOverrideHandler(
         containingFid: String?
     ) -> ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)? {
-        guard mode == .forumTab else { return nil }
+        guard mode != .readerOverlay else { return nil }
         return { item, readerOverride in
             self.openPinnedItem(item, containingFid: containingFid, readerOverride: readerOverride)
         }
@@ -284,7 +284,7 @@ final class ForumDestinationNavigator {
         case let .mangaDirect(payload):
             // Board's Smart Comic Mode is off (decision #2/#12): open the
             // manga reader directly for this one thread instead of pushing
-            // `ForumMangaDetailView`, using the same full-screen presentation
+            // `MangaDetailView`, using the same full-screen presentation
             // path as favorites/likes/the chapter picker
             // (`appModel.presentMangaReader`) rather than a NavigationStack
             // destination. No directory concept applies here — this thread
@@ -292,7 +292,7 @@ final class ForumDestinationNavigator {
             // decision #2), just rendered with the manga reader — so the
             // title is used as-is (no `cleanBookName` cleanup) and page 0 is
             // the only sensible start (no resume, matching
-            // `ForumMangaDetailViewModel.launchContext(for chapter:)`'s
+            // `MangaDetailViewModel.launchContext(for chapter:)`'s
             // existing convention of never passing `initialPage`).
             let context = MangaLaunchContext(
                 originalThreadID: payload.thread.tid,

@@ -135,7 +135,7 @@ private struct BlogReaderBodyView: View {
                         onWebTap: onWebTap
                     )
                 } else if isLoading {
-                    ForumContentLoadingView()
+                    ContentLoadingView()
                 } else if let errorMessage {
                     LoadFailureView(message: errorMessage, details: errorDetails, retry: retry)
                         .frame(maxWidth: .infinity)

@@ -1064,6 +1064,9 @@
 "settings.section.backup_sync" = "备份与同步";
 "settings.section.reset" = "重置";
 "settings.section.favorites_browsing" = "浏览与排序";
+"settings.favorite_item_tap_action" = "点击小说和智能漫画收藏项";
+"settings.favorite_item_tap_action.detail" = "查看详情";
+"settings.favorite_item_tap_action.read" = "阅读";
 "settings.search.placeholder" = "搜索设置";
 "settings.search.no_results" = "没有找到相关设置";
 "settings.confirm_sign_out" = "确认退出登录";

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// The favorite-star orchestration shared by the forum detail pages: routes
+/// The favorite-star orchestration shared by the content detail pages: routes
 /// the button through the remembered add/remove sync decisions, owns the
 /// location-picker and prompt state, performs the local-first add / remove /
 /// relocate calls via `FavoriteQuickActions`, and keeps `favorite` fresh by
@@ -66,7 +66,9 @@ final class FavoriteActionController {
     private let threadID: String
     private let type: FavoriteType
     private let defaultTitle: String
-    @ObservationIgnored private let dependencies: ForumDependencies
+    @ObservationIgnored private let localFavoriteLibraryStore: FavoriteLibraryStore
+    @ObservationIgnored private let settingsStore: SettingsStore
+    @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
     /// Wired by the owner right after init (it needs `self` for its current
     /// media state, which Swift's init rules forbid while the controller
     /// property is still being assigned). Unset falls back to `defaultTitle`.
@@ -79,15 +81,19 @@ final class FavoriteActionController {
         threadID: String,
         type: FavoriteType,
         defaultTitle: String,
-        dependencies: ForumDependencies
+        localFavoriteLibraryStore: FavoriteLibraryStore,
+        settingsStore: SettingsStore,
+        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository
     ) {
         self.threadID = threadID
         self.type = type
         self.defaultTitle = defaultTitle
-        self.dependencies = dependencies
+        self.localFavoriteLibraryStore = localFavoriteLibraryStore
+        self.settingsStore = settingsStore
+        self.makeFavoriteRepository = makeFavoriteRepository
         favoriteUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = dependencies.localFavoriteLibraryStore] in store.changes() },
-            changeID: { [store = dependencies.localFavoriteLibraryStore] in store.changeID }
+            changes: { [store = localFavoriteLibraryStore] in store.changes() },
+            changeID: { [store = localFavoriteLibraryStore] in store.changeID }
         ) { [weak self] in
             await self?.refreshFavorite()
         }
@@ -101,7 +107,7 @@ final class FavoriteActionController {
     /// choices: either performs the action silently or raises the prompt.
     func toggleFavorite() async {
         errorMessage = nil
-        let settings = await dependencies.settingsStore.load().favorites
+        let settings = await settingsStore.load().favorites
 
         if let favorite {
             let canRemoveRemote = favorite.remoteFavoriteID?.isEmpty == false
@@ -125,7 +131,7 @@ final class FavoriteActionController {
     func confirmAdd(syncToRemote: Bool, remember: Bool) async {
         addPromptPresented = false
         if remember {
-            await FavoriteQuickActions.rememberAddSyncChoice(syncToRemote, settingsStore: dependencies.settingsStore)
+            await FavoriteQuickActions.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
         }
         await performAdd(syncToRemote: syncToRemote)
     }
@@ -133,7 +139,7 @@ final class FavoriteActionController {
     func confirmRemoval(_ favorite: Favorite, removeRemote: Bool, remember: Bool) async {
         removePrompt = nil
         if remember {
-            await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: dependencies.settingsStore)
+            await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
         }
         await performRemoval(favorite, removeRemote: removeRemote)
     }
@@ -141,13 +147,13 @@ final class FavoriteActionController {
     /// Star button long-press: opens the location picker pre-filled with
     /// this item's current locations (empty if not yet favorited).
     func presentLocationPicker() async {
-        let document = (try? await dependencies.localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
+        let document = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
         let currentLocations = await localFavoriteItem()?.locations ?? []
         locationPickerContext = FavoriteLocationPickerContext(
             document: document,
             initialSelection: Set(currentLocations),
             isFavorited: favorite != nil,
-            localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore
+            localFavoriteLibraryStore: localFavoriteLibraryStore
         )
     }
 
@@ -161,7 +167,7 @@ final class FavoriteActionController {
         guard let favorite else {
             guard !locations.isEmpty else { return }
             pendingLocations = Array(locations)
-            let settings = await dependencies.settingsStore.load().favorites
+            let settings = await settingsStore.load().favorites
             switch FavoriteAddSyncDecision.resolve(settings: settings, canSyncRemote: true) {
             case .prompt:
                 addPromptPresented = true
@@ -171,7 +177,7 @@ final class FavoriteActionController {
             return
         }
         guard !locations.isEmpty else {
-            let settings = await dependencies.settingsStore.load().favorites
+            let settings = await settingsStore.load().favorites
             let canRemoveRemote = favorite.remoteFavoriteID?.isEmpty == false
             switch FavoriteRemoveRemoteDecision.resolve(settings: settings, canRemoveRemote: canRemoveRemote) {
             case .prompt:
@@ -215,9 +221,9 @@ final class FavoriteActionController {
                 locations: locations,
                 formHash: metadata.formHash,
                 syncToRemote: syncToRemote,
-                boardReaderSettings: await dependencies.settingsStore.load().boardReader,
-                localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
-                remoteRepository: await dependencies.makeFavoriteRepository()
+                boardReaderSettings: await settingsStore.load().boardReader,
+                localFavoriteLibraryStore: localFavoriteLibraryStore,
+                remoteRepository: await makeFavoriteRepository()
             )
             favorite = result.favorite
             transientFeedback = result.feedback
@@ -237,7 +243,7 @@ final class FavoriteActionController {
             try await FavoriteQuickActions.relocateFavorite(
                 threadID: threadID,
                 locations: locations,
-                localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore
+                localFavoriteLibraryStore: localFavoriteLibraryStore
             )
             transientMessage = L10n.string("favorites.quick.relocated")
         } catch {
@@ -253,9 +259,9 @@ final class FavoriteActionController {
             try await FavoriteQuickActions.removeFavorite(
                 favorite,
                 removeRemote: removeRemote,
-                boardReaderSettings: await dependencies.settingsStore.load().boardReader,
-                localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
-                remoteRepository: await dependencies.makeFavoriteRepository()
+                boardReaderSettings: await settingsStore.load().boardReader,
+                localFavoriteLibraryStore: localFavoriteLibraryStore,
+                remoteRepository: await makeFavoriteRepository()
             )
             self.favorite = nil
             transientMessage = removeRemote
@@ -274,7 +280,7 @@ final class FavoriteActionController {
 
     private func localFavoriteItem() async -> FavoriteItem? {
         let target = favoriteTarget
-        return (try? await dependencies.localFavoriteLibraryStore.load())?.items.first { item in
+        return (try? await localFavoriteLibraryStore.load())?.items.first { item in
             item.target.id == target.id || item.target.threadID == target.threadID
         }
     }

@@ -2,22 +2,22 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumNovelDocumentLoading: Sendable {
+protocol NovelDetailDocumentLoading: Sendable {
     func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection
 }
 
-extension NovelReaderRepository: ForumNovelDocumentLoading {}
+extension NovelReaderRepository: NovelDetailDocumentLoading {}
 
-protocol ForumNovelThreadPageLoading: Sendable {
+protocol NovelDetailThreadPageLoading: Sendable {
     func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage?
     func fetchNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async throws -> ForumThreadPage
     func clearCachedThreadPages(thread: ThreadIdentity) async throws
     func storeNovelThreadPage(_ page: ForumThreadPage, context: NovelDetailLaunchContext, pageNumber: Int) async throws
 }
 
-extension ForumThreadReaderRepository: ForumNovelThreadPageLoading {}
+extension ForumThreadReaderRepository: NovelDetailThreadPageLoading {}
 
-struct ForumNovelChapterSummary: Identifiable, Hashable, Sendable {
+struct NovelChapterSummary: Identifiable, Hashable, Sendable {
     var id: String
     var title: String
     var view: Int
@@ -28,9 +28,9 @@ struct ForumNovelChapterSummary: Identifiable, Hashable, Sendable {
     var isCurrentRead: Bool = false
 }
 
-struct ForumNovelChapterSection: Identifiable, Hashable, Sendable {
+struct NovelChapterSection: Identifiable, Hashable, Sendable {
     var page: Int
-    var chapters: [ForumNovelChapterSummary]
+    var chapters: [NovelChapterSummary]
     var isLoaded: Bool
     var isLoading: Bool
     var errorMessage: String?
@@ -39,7 +39,7 @@ struct ForumNovelChapterSection: Identifiable, Hashable, Sendable {
     var id: Int { page }
 }
 
-struct ForumNovelDetailHeaderSummary: Equatable, Sendable {
+struct NovelDetailHeaderSummary: Equatable, Sendable {
     var title: String
     var threadID: String
     var authorID: String?
@@ -58,11 +58,11 @@ struct ForumNovelDetailHeaderSummary: Equatable, Sendable {
 
 @MainActor
 @Observable
-final class ForumNovelDetailViewModel {
+final class NovelDetailViewModel {
     var document: NovelReaderProjection?
     var threadPage: ForumThreadPage?
-    var chapters: [ForumNovelChapterSummary] = []
-    var chapterSections: [ForumNovelChapterSection] = []
+    var chapters: [NovelChapterSummary] = []
+    var chapterSections: [NovelChapterSection] = []
     var expandedChapterPages: Set<Int> = [1]
     var readingProgress: ReadingProgressRecord?
     var contentCover: ContentCover?
@@ -80,7 +80,7 @@ final class ForumNovelDetailViewModel {
 
     let context: NovelDetailLaunchContext
 
-    @ObservationIgnored private let dependencies: ForumDependencies
+    @ObservationIgnored private let dependencies: NovelDetailDependencies
     // Detail-scoped page cache mirroring Android's pagePostsCache; reload owns invalidation.
     @ObservationIgnored private var loadedThreadPages: [Int: ForumThreadPage] = [:]
     @ObservationIgnored private var resolvedAuthorID: String?
@@ -91,14 +91,14 @@ final class ForumNovelDetailViewModel {
     @ObservationIgnored private var novelReaderSettings = NovelReaderAppearanceSettings()
     @ObservationIgnored private var documentPreloadTask: Task<Void, Never>?
     @ObservationIgnored private var readingProgressUpdatesTask: Task<Void, Never>?
-    @ObservationIgnored private let novelRepositoryProvider: @Sendable () async -> any ForumNovelDocumentLoading
-    @ObservationIgnored private let threadRepositoryProvider: @Sendable () async -> any ForumNovelThreadPageLoading
+    @ObservationIgnored private let novelRepositoryProvider: @Sendable () async -> any NovelDetailDocumentLoading
+    @ObservationIgnored private let threadRepositoryProvider: @Sendable () async -> any NovelDetailThreadPageLoading
 
     init(
         context: NovelDetailLaunchContext,
-        dependencies: ForumDependencies,
-        novelRepositoryProvider: (@Sendable () async -> any ForumNovelDocumentLoading)? = nil,
-        threadRepositoryProvider: (@Sendable () async -> any ForumNovelThreadPageLoading)? = nil
+        dependencies: NovelDetailDependencies,
+        novelRepositoryProvider: (@Sendable () async -> any NovelDetailDocumentLoading)? = nil,
+        threadRepositoryProvider: (@Sendable () async -> any NovelDetailThreadPageLoading)? = nil
     ) {
         self.context = context
         self.dependencies = dependencies
@@ -106,7 +106,9 @@ final class ForumNovelDetailViewModel {
             threadID: context.thread.tid,
             type: .novel,
             defaultTitle: context.title,
-            dependencies: dependencies
+            localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
+            settingsStore: dependencies.settingsStore,
+            makeFavoriteRepository: dependencies.makeFavoriteRepository
         )
         self.novelRepositoryProvider = novelRepositoryProvider ?? {
             await dependencies.makeNovelReaderRepository()
@@ -149,10 +151,10 @@ final class ForumNovelDetailViewModel {
         Self.hasReadingProgress(readingProgress, favorite: favoriteActions.favorite)
     }
 
-    var headerSummary: ForumNovelDetailHeaderSummary {
+    var headerSummary: NovelDetailHeaderSummary {
         let firstPost = threadPage?.posts.first
         let previewPost = loadedThreadPages[1]?.posts.first
-        return ForumNovelDetailHeaderSummary(
+        return NovelDetailHeaderSummary(
             title: displayTitle(threadPage?.title ?? context.title),
             threadID: context.thread.tid,
             authorID: resolvedAuthorID ?? Self.trimmedNonEmpty(firstPost?.author.uid) ?? context.authorID,
@@ -274,7 +276,7 @@ final class ForumNovelDetailViewModel {
     }
 
     private func loadInitialPages(
-        repository: any ForumNovelThreadPageLoading,
+        repository: any NovelDetailThreadPageLoading,
         preferCache: Bool
     ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext) {
         if let authorID = Self.trimmedNonEmpty(context.authorID) {
@@ -294,7 +296,7 @@ final class ForumNovelDetailViewModel {
         context: NovelDetailLaunchContext,
         page: Int,
         preferCache: Bool,
-        repository: any ForumNovelThreadPageLoading
+        repository: any NovelDetailThreadPageLoading
     ) async throws -> ForumThreadPage {
         if preferCache,
            let cached = await repository.cachedNovelThreadPage(context: context, page: page) {
@@ -325,7 +327,7 @@ final class ForumNovelDetailViewModel {
         }
     }
 
-    func launchContext(for chapter: ForumNovelChapterSummary?) -> NovelLaunchContext {
+    func launchContext(for chapter: NovelChapterSummary?) -> NovelLaunchContext {
         NovelLaunchContext(
             threadID: context.thread.tid,
             threadTitle: context.title,
@@ -416,7 +418,7 @@ final class ForumNovelDetailViewModel {
         favorite: Favorite? = nil,
         novelReaderSettings: NovelReaderAppearanceSettings = .init(),
         authorID: String? = nil
-    ) -> [ForumNovelChapterSection] {
+    ) -> [NovelChapterSection] {
         let normalizedTotal = max(1, totalPages)
         return (1...normalizedTotal).map { page in
             let pageDocument = loadedPages[page]
@@ -433,7 +435,7 @@ final class ForumNovelDetailViewModel {
                 readingProgress: readingProgress,
                 favorite: favorite
             )
-            return ForumNovelChapterSection(
+            return NovelChapterSection(
                 page: page,
                 chapters: chapters.enumerated().map { index, chapter in
                     var updatedChapter = chapter
@@ -486,7 +488,7 @@ final class ForumNovelDetailViewModel {
         page pageNumber: Int,
         novelReaderSettings: NovelReaderAppearanceSettings,
         authorID: String?
-    ) -> [ForumNovelChapterSummary] {
+    ) -> [NovelChapterSummary] {
         let resolvedAuthorID = trimmedNonEmpty(authorID) ?? trimmedNonEmpty(page.posts.first?.author.uid)
         guard let resolvedAuthorID else { return [] }
         let request = NovelPageRequest(
@@ -513,7 +515,7 @@ final class ForumNovelDetailViewModel {
             .entries(from: document, settings: novelReaderSettings)
             .map { entry in
                 let postID = entry.ownerPostID
-                return ForumNovelChapterSummary(
+                return NovelChapterSummary(
                     id: "\(pageNumber)|\(postID ?? String(entry.chapter.ordinal))",
                     title: entry.chapter.title,
                     view: pageNumber,
@@ -619,7 +621,7 @@ final class ForumNovelDetailViewModel {
     }
 
     private static func chapterProgressText(
-        for chapter: ForumNovelChapterSummary,
+        for chapter: NovelChapterSummary,
         readingProgress: ReadingProgressRecord?,
         favorite: Favorite?
     ) -> String? {
@@ -631,7 +633,7 @@ final class ForumNovelDetailViewModel {
     /// identity is available at all, and only ever returns the first matching chapter,
     /// so floors that share an identical extracted title are never all marked at once.
     private static func currentReadChapterIndex(
-        in chapters: [ForumNovelChapterSummary],
+        in chapters: [NovelChapterSummary],
         readingProgress: ReadingProgressRecord?,
         favorite: Favorite?
     ) -> Int? {

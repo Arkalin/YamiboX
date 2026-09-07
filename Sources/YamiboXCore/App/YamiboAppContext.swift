@@ -141,6 +141,34 @@ public final class YamiboAppContext: Sendable {
 
     // MARK: - Feature dependency packages
 
+    public var novelDetailDependencies: NovelDetailDependencies {
+        NovelDetailDependencies(
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            readingProgressStore: readingProgressStore,
+            settingsStore: settingsStore,
+            contentCoverStore: contentCoverStore,
+            makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
+            makeNovelReaderRepository: { [self] in await makeNovelReaderRepository() },
+            makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() }
+        )
+    }
+
+    public var mangaDetailDependencies: MangaDetailDependencies {
+        MangaDetailDependencies(
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            readingProgressStore: readingProgressStore,
+            settingsStore: settingsStore,
+            contentCoverStore: contentCoverStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
+            mangaOfflineCacheStore: offlineCacheStore,
+            makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
+            makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
+            makeMangaReaderProjectionLoader: { [self] in await makeMangaReaderProjectionLoader() },
+            makeMangaDirectoryRepository: { [self] in await makeMangaDirectoryRepository() }
+        )
+    }
+
     public var forumDependencies: ForumDependencies {
         ForumDependencies(
             sessionStore: sessionStore,
@@ -151,16 +179,13 @@ public final class YamiboAppContext: Sendable {
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
-            mangaOfflineCacheStore: offlineCacheStore,
+            novelDetailDependencies: novelDetailDependencies,
+            mangaDetailDependencies: mangaDetailDependencies,
             makeForumRepository: { [self] in await makeForumRepository() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
             makeUserSpaceRepository: { [self] in await makeUserSpaceRepository() },
             makeBlogReaderRepository: { [self] in await makeBlogReaderRepository() },
             makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
-            makeNovelReaderRepository: { [self] in await makeNovelReaderRepository() },
-            makeMangaReaderProjectionLoader: { [self] in await makeMangaReaderProjectionLoader() },
-            makeMangaDirectoryRepository: { [self] in await makeMangaDirectoryRepository() },
             makeThreadRouteResolver: { [self] in await makeThreadRouteResolver() }
         )
     }

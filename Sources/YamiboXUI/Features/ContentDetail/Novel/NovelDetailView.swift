@@ -5,15 +5,15 @@ import YamiboXCore
 import UIKit
 #endif
 
-struct ForumNovelDetailView: View {
-    @State private var model: ForumNovelDetailViewModel
+struct NovelDetailView: View {
+    @State private var model: NovelDetailViewModel
 
     let onChapterTap: (NovelLaunchContext) -> Void
     let onUserTap: (String, String?) -> Void
     let onViewThread: () -> Void
 
     init(
-        model: ForumNovelDetailViewModel,
+        model: NovelDetailViewModel,
         onChapterTap: @escaping (NovelLaunchContext) -> Void,
         onUserTap: @escaping (String, String?) -> Void,
         onViewThread: @escaping () -> Void
@@ -25,7 +25,7 @@ struct ForumNovelDetailView: View {
     }
 
     var body: some View {
-        ForumNovelDetailBodyView(
+        NovelDetailBodyView(
             header: model.headerSummary,
             sections: model.chapterSections,
             expandedPages: model.expandedChapterPages,
@@ -87,17 +87,17 @@ struct ForumNovelDetailView: View {
     }
 }
 
-struct ForumNovelDetailBodyView: View {
+struct NovelDetailBodyView: View {
     @Environment(\.forumTheme) private var theme
     @AppStorage(YamiboAppStorageKey.novelDetailChapterLayout) private var storedLayout = ChapterDirectoryLayout.list.rawValue
-    let header: ForumNovelDetailHeaderSummary
-    let sections: [ForumNovelChapterSection]
+    let header: NovelDetailHeaderSummary
+    let sections: [NovelChapterSection]
     let expandedPages: Set<Int>
     let isLoading: Bool
     let errorMessage: String?
     var errorDetails: LoadFailureDetails? = nil
     let refresh: () async -> Void
-    let onChapterTap: (ForumNovelChapterSummary) -> Void
+    let onChapterTap: (NovelChapterSummary) -> Void
     let onSectionToggle: (Int) -> Void
     let onSectionRetry: (Int) -> Void
     let onReadStart: () -> Void
@@ -109,9 +109,10 @@ struct ForumNovelDetailBodyView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForumNovelDetailHeader(
+            NovelDetailHeader(
                 summary: header,
-                canReadStart: !isLoading && errorMessage == nil,
+                // Metadata can fail while the reader's offline content is available.
+                canReadStart: !isLoading,
                 hasReadingProgress: hasReadingProgress,
                 onFavoriteTap: onFavoriteTap,
                 onFavoriteLongPress: onFavoriteLongPress,
@@ -120,7 +121,7 @@ struct ForumNovelDetailBodyView: View {
                 onReadStart: onReadStart
             )
 
-            ForumChapterDirectory(
+            ChapterDirectory(
                 layout: Binding(
                     get: { ChapterDirectoryLayout(storedValue: storedLayout) },
                     set: { storedLayout = $0.rawValue }
@@ -150,7 +151,7 @@ struct ForumNovelDetailBodyView: View {
                 }
             ) {
                 if let text = header.firstFloorPreviewText {
-                    ForumNovelFirstFloorPreview(text: text, onCopyText: onCopyText)
+                    NovelFirstFloorPreview(text: text, onCopyText: onCopyText)
                 }
             }
         }
@@ -159,7 +160,7 @@ struct ForumNovelDetailBodyView: View {
     }
 }
 
-private struct ForumNovelFirstFloorPreview: View {
+private struct NovelFirstFloorPreview: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = false
@@ -208,8 +209,8 @@ private struct ForumNovelFirstFloorPreview: View {
     }
 }
 
-struct ForumNovelDetailHeader: View {
-    let summary: ForumNovelDetailHeaderSummary
+struct NovelDetailHeader: View {
+    let summary: NovelDetailHeaderSummary
     let canReadStart: Bool
     let hasReadingProgress: Bool
     let onFavoriteTap: () -> Void
@@ -220,29 +221,29 @@ struct ForumNovelDetailHeader: View {
 
     var body: some View {
         let threadURL = YamiboRoute.threadByID(tid: summary.threadID, page: 1, authorID: nil, reverse: false).url
-        ForumDetailHeader(
+        ContentDetailHeader(
             title: summary.title,
             coverSource: summary.coverURL.map { YamiboImageSource(url: $0, refererPageURL: threadURL) },
             onCopyText: onCopyText
         ) { compact in
-            ForumNovelHeaderMetadata(
+            NovelHeaderMetadata(
                 summary: summary,
                 compact: compact,
                 onAuthorTap: onAuthorTap,
                 onCopyText: onCopyText
             )
         } actions: {
-            ForumDetailPrimaryActions {
-                ForumDetailReadButton(
+            ContentDetailPrimaryActions {
+                ContentDetailReadButton(
                     hasProgress: hasReadingProgress,
                     isEnabled: canReadStart,
                     progressText: summary.readingProgressText,
                     action: onReadStart
                 )
-                ForumDetailFavoriteButton(isFavorited: summary.isFavorited, action: onFavoriteTap, onLongPress: onFavoriteLongPress)
+                ContentDetailFavoriteButton(isFavorited: summary.isFavorited, action: onFavoriteTap, onLongPress: onFavoriteLongPress)
             }
         } details: {
-            ForumNovelHeaderMetadata(
+            NovelHeaderMetadata(
                 summary: summary,
                 compact: false,
                 showsAllDetails: true,
@@ -253,9 +254,9 @@ struct ForumNovelDetailHeader: View {
     }
 }
 
-private struct ForumNovelHeaderMetadata: View {
+private struct NovelHeaderMetadata: View {
     @Environment(\.forumTheme) private var theme
-    let summary: ForumNovelDetailHeaderSummary
+    let summary: NovelDetailHeaderSummary
     let compact: Bool
     var showsAllDetails = false
     let onAuthorTap: (String, String?) -> Void
@@ -264,7 +265,7 @@ private struct ForumNovelHeaderMetadata: View {
     var body: some View {
         VStack(alignment: .leading, spacing: showsAllDetails ? 12 : 2) {
             if let authorName = summary.authorName {
-                ForumNovelAuthorButton(
+                NovelAuthorButton(
                     authorID: summary.authorID,
                     authorName: authorName,
                     onAuthorTap: onAuthorTap,
@@ -279,7 +280,7 @@ private struct ForumNovelHeaderMetadata: View {
                     Text(L10n.string("forum.thread_route.posted_at_format", postedAt))
                 }
                 if summary.totalViews != nil || summary.totalReplies != nil || (showsAllDetails && summary.forumName != nil) {
-                    ForumDetailActionsLayout(spacing: 12) {
+                    ContentDetailActionsLayout(spacing: 12) {
                         if let views = summary.totalViews {
                             Label(views.formatted(), systemImage: "eye")
                         }
@@ -303,7 +304,7 @@ private struct ForumNovelHeaderMetadata: View {
     }
 }
 
-private struct ForumNovelAuthorButton: View {
+private struct NovelAuthorButton: View {
     @Environment(\.forumTheme) private var theme
     let authorID: String?
     let authorName: String

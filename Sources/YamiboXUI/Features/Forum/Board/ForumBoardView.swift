@@ -193,7 +193,7 @@ private struct ForumBoardBodyView: View {
 
     var body: some View {
         if isLoading && page == nil {
-            ForumContentLoadingView(layout: .fillsPage)
+            ContentLoadingView(layout: .fillsPage)
         } else if let errorMessage, page == nil {
             ForumBoardErrorView(message: errorMessage, details: errorDetails, retry: retry)
         } else if let page {

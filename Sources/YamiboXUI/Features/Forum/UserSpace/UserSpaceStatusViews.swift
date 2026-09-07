@@ -3,7 +3,7 @@ import YamiboXCore
 
 struct UserSpaceLoadingView: View {
     var body: some View {
-        ForumContentLoadingView()
+        ContentLoadingView()
     }
 }
 

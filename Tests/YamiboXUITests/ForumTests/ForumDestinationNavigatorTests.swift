@@ -130,23 +130,52 @@ private func makeNavigator(
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
     let sessionStore = SessionStore(defaults: defaults, key: "session")
     let settingsStore = SettingsStore(defaults: defaults, key: "settings")
+    let localFavoriteLibraryStore = FavoriteLibraryStore(defaults: defaults, key: "local-favorites")
+    let readingProgressStore = ReadingProgressStore(defaults: defaults, key: "reading-progress")
+    let contentCoverStore = ContentCoverStore(defaults: defaults, key: "content-covers")
+    let mangaDirectoryStore = NavigatorTestsUnusedMangaDirectoryStore()
+    let makeFavoriteRepository: @Sendable () async -> FavoriteRepository = {
+        fatalError("makeFavoriteRepository is not exercised by ForumDestinationNavigatorTests")
+    }
+    let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository = {
+        fatalError("makeForumThreadReaderRepository is not exercised by ForumDestinationNavigatorTests")
+    }
+    let novelDetailDependencies = NovelDetailDependencies(
+        localFavoriteLibraryStore: localFavoriteLibraryStore,
+        readingProgressStore: readingProgressStore,
+        settingsStore: settingsStore,
+        contentCoverStore: contentCoverStore,
+        makeFavoriteRepository: makeFavoriteRepository,
+        makeNovelReaderRepository: { fatalError("makeNovelReaderRepository is not exercised by ForumDestinationNavigatorTests") },
+        makeForumThreadReaderRepository: makeForumThreadReaderRepository
+    )
+    let mangaDetailDependencies = MangaDetailDependencies(
+        localFavoriteLibraryStore: localFavoriteLibraryStore,
+        readingProgressStore: readingProgressStore,
+        settingsStore: settingsStore,
+        contentCoverStore: contentCoverStore,
+        mangaDirectoryStore: mangaDirectoryStore,
+        mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState(),
+        makeFavoriteRepository: makeFavoriteRepository,
+        makeForumThreadReaderRepository: makeForumThreadReaderRepository,
+        makeMangaReaderProjectionLoader: { fatalError("makeMangaReaderProjectionLoader is not exercised by ForumDestinationNavigatorTests") },
+        makeMangaDirectoryRepository: { fatalError("makeMangaDirectoryRepository is not exercised by ForumDestinationNavigatorTests") }
+    )
     let dependencies = ForumDependencies(
         sessionStore: sessionStore,
         profileStore: YamiboProfileStore(defaults: defaults, key: "profile"),
-        localFavoriteLibraryStore: FavoriteLibraryStore(defaults: defaults, key: "local-favorites"),
-        readingProgressStore: ReadingProgressStore(defaults: defaults, key: "reading-progress"),
+        localFavoriteLibraryStore: localFavoriteLibraryStore,
+        readingProgressStore: readingProgressStore,
         settingsStore: settingsStore,
-        contentCoverStore: ContentCoverStore(defaults: defaults, key: "content-covers"),
-        mangaDirectoryStore: NavigatorTestsUnusedMangaDirectoryStore(),
-        mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState(),
+        contentCoverStore: contentCoverStore,
+        mangaDirectoryStore: mangaDirectoryStore,
+        novelDetailDependencies: novelDetailDependencies,
+        mangaDetailDependencies: mangaDetailDependencies,
         makeForumRepository: { fatalError("makeForumRepository is not exercised by ForumDestinationNavigatorTests") },
-        makeForumThreadReaderRepository: { fatalError("makeForumThreadReaderRepository is not exercised by ForumDestinationNavigatorTests") },
+        makeForumThreadReaderRepository: makeForumThreadReaderRepository,
         makeUserSpaceRepository: { fatalError("makeUserSpaceRepository is not exercised by ForumDestinationNavigatorTests") },
         makeBlogReaderRepository: { fatalError("makeBlogReaderRepository is not exercised by ForumDestinationNavigatorTests") },
-        makeFavoriteRepository: { fatalError("makeFavoriteRepository is not exercised by ForumDestinationNavigatorTests") },
-        makeNovelReaderRepository: { fatalError("makeNovelReaderRepository is not exercised by ForumDestinationNavigatorTests") },
-        makeMangaReaderProjectionLoader: { fatalError("makeMangaReaderProjectionLoader is not exercised by ForumDestinationNavigatorTests") },
-        makeMangaDirectoryRepository: { fatalError("makeMangaDirectoryRepository is not exercised by ForumDestinationNavigatorTests") },
+        makeFavoriteRepository: makeFavoriteRepository,
         makeThreadRouteResolver: { fatalError("navigator pushes must not resolve thread routes synchronously") }
     )
     let navigatorRootDirectory = FileManager.default.temporaryDirectory

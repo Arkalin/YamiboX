@@ -63,8 +63,23 @@ import YamiboXTestSupport
         makeForumThreadReaderRepository: { ForumThreadReaderRepository(client: await makeClient(), cacheStore: forumCacheStore) }
     )
 
+    let appContext = try makeSystemSettingsFixture().appContext
     let view = LocalFavoritesOrganizationView(
         organizer: organizer,
+        navigator: ForumDestinationNavigator(
+            dependencies: appContext.forumDependencies,
+            appModel: YamiboAppModel(appContext: appContext),
+            mode: .contentBrowser
+        ),
+        routes: LocalFavoritesRoutes(),
+        detailScreen: { destination in
+            ContentDetailScreen(
+                destination: destination,
+                novelDependencies: appContext.novelDetailDependencies,
+                mangaDependencies: appContext.mangaDetailDependencies,
+                onAction: { _ in }
+            )
+        },
         favoriteShare: FavoriteShareFlowModel(
             service: FavoriteShareService(
                 libraryStore: libraryStore,

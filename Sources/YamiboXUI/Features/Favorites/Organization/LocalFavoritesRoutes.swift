@@ -73,6 +73,7 @@ final class LocalFavoritesRoutes: ObservableObject {
 
     @Published var sheet: Sheet?
     @Published var dialog: Dialog?
+    @Published var detail: ContentDetailDestination?
     /// The sync progress page is pushed (a full screen, not a sheet).
     @Published var isSyncProgressPushed = false
     /// The favorite-updates page is pushed (toolbar bell entry).

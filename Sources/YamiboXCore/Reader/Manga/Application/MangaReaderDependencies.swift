@@ -20,7 +20,7 @@ public struct MangaReaderDependencies: Sendable {
     /// Smart Comic Mode off (design decision #16): the reader reuses
     /// `ThreadCoverResolver` to auto-resolve a `.thread(tid:)` cover for the
     /// chapter being read, the same mechanism
-    /// `ForumThreadReaderViewModel`/`ForumNovelDetailViewModel` already use
+    /// `ForumThreadReaderViewModel`/`NovelDetailViewModel` already use
     /// for normal threads — this is what drives it.
     public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
     /// The cache sheet embeds the account feature's offline queue view model.

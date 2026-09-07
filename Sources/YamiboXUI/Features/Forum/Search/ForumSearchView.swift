@@ -83,7 +83,7 @@ private struct ForumSearchBodyView: View {
                 ForumSearchInputView(query: $query, isLoading: isLoading, submit: submit)
 
                 if isLoading && results.isEmpty {
-                    ForumContentLoadingView(text: L10n.string("forum.search.loading"))
+                    ContentLoadingView(text: L10n.string("forum.search.loading"))
                 } else if let errorMessage, results.isEmpty {
                     LoadFailureView(message: errorMessage, details: errorDetails, retry: submit)
                         .frame(maxWidth: .infinity)

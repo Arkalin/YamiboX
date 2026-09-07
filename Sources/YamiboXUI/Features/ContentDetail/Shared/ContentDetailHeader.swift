@@ -1,7 +1,7 @@
 import SwiftUI
 import YamiboXCore
 
-struct ForumDetailHeader<Metadata: View, Actions: View, Details: View>: View {
+struct ContentDetailHeader<Metadata: View, Actions: View, Details: View>: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -18,7 +18,7 @@ struct ForumDetailHeader<Metadata: View, Actions: View, Details: View>: View {
         let compact = verticalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                ForumBookCoverView(source: coverSource, title: title, width: compact ? 80 : 104)
+                ContentDetailCoverView(source: coverSource, title: title, width: compact ? 80 : 104)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .top, spacing: 0) {
@@ -75,14 +75,14 @@ struct ForumDetailHeader<Metadata: View, Actions: View, Details: View>: View {
         }
         .accessibilityIdentifier("forum.detail.header")
         .sheet(isPresented: $showsDetails) {
-            ForumDetailInformationSheet(title: title, onCopyText: onCopyText, content: details)
+            ContentDetailInformationSheet(title: title, onCopyText: onCopyText, content: details)
                 .environment(\.forumTheme, theme)
                 .presentationDetents([.medium, .large])
         }
     }
 }
 
-struct ForumDetailInformationSheet<Content: View>: View {
+struct ContentDetailInformationSheet<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.forumTheme) private var theme
     let title: String
@@ -126,7 +126,7 @@ struct ForumDetailInformationSheet<Content: View>: View {
 
 /// Wrap actions using their intrinsic widths instead of compressing their
 /// labels or duplicating interactive controls in ViewThatFits alternatives.
-struct ForumDetailActionsLayout: Layout {
+struct ContentDetailActionsLayout: Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -173,12 +173,12 @@ struct ForumDetailActionsLayout: Layout {
     }
 }
 
-struct ForumDetailPrimaryActions<Content: View>: View {
+struct ContentDetailPrimaryActions<Content: View>: View {
     @ScaledMetric(relativeTo: .subheadline) private var minimumReadingWidth: CGFloat = 144
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ForumDetailPrimaryActionsLayout(minimumReadingWidth: minimumReadingWidth) {
+        ContentDetailPrimaryActionsLayout(minimumReadingWidth: minimumReadingWidth) {
             content()
         }
     }
@@ -186,7 +186,7 @@ struct ForumDetailPrimaryActions<Content: View>: View {
 
 /// The first action expands; secondary actions keep their labels intact. Measure
 /// the primary at its allocated width so long progress never dictates wrapping.
-struct ForumDetailPrimaryActionsLayout: Layout {
+struct ContentDetailPrimaryActionsLayout: Layout {
     var minimumReadingWidth: CGFloat = 144
     var spacing: CGFloat = 8
 
@@ -252,7 +252,7 @@ struct ForumDetailPrimaryActionsLayout: Layout {
     }
 }
 
-struct ForumDetailReadButton: View {
+struct ContentDetailReadButton: View {
     @Environment(\.forumTheme) private var theme
     let hasProgress: Bool
     var isEnabled = true
@@ -296,7 +296,7 @@ struct ForumDetailReadButton: View {
     }
 }
 
-struct ForumDetailActionIcon: View {
+struct ContentDetailActionIcon: View {
     @Environment(\.forumTheme) private var theme
     let systemImage: String
 
@@ -312,14 +312,14 @@ struct ForumDetailActionIcon: View {
     }
 }
 
-struct ForumDetailFavoriteButton: View {
+struct ContentDetailFavoriteButton: View {
     let isFavorited: Bool
     let action: () -> Void
     let onLongPress: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ForumDetailActionIcon(systemImage: isFavorited ? "star.fill" : "star")
+            ContentDetailActionIcon(systemImage: isFavorited ? "star.fill" : "star")
         }
         .buttonStyle(.plain)
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onLongPress() })

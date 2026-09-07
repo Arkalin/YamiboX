@@ -5,8 +5,8 @@ import YamiboXTestSupport
 @testable import YamiboXUI
 
 @MainActor
-@Test func forumNovelDetailContinueStartsAtFirstViewWithoutHistory() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailContinueStartsAtFirstViewWithoutHistory() throws {
+    let model = try makeNovelDetailViewModel()
 
     let context = model.continueLaunchContext()
 
@@ -17,8 +17,8 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailContinueUsesReadingProgressResumePointWhenAvailable() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailContinueUsesReadingProgressResumePointWhenAvailable() throws {
+    let model = try makeNovelDetailViewModel()
     let resumePoint = NovelResumePoint(
         view: 5,
         displayedTextOffset: 128,
@@ -54,8 +54,8 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailContinueUsesIndependentReadingProgressWithoutFavorite() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailContinueUsesIndependentReadingProgressWithoutFavorite() throws {
+    let model = try makeNovelDetailViewModel()
     let resumePoint = NovelResumePoint(
         view: 4,
         displayedTextOffset: 96,
@@ -91,8 +91,8 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailContinueUsesStoredChapterReadingProgress() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailContinueUsesStoredChapterReadingProgress() throws {
+    let model = try makeNovelDetailViewModel()
     model.readingProgress = ReadingProgressRecord(
         threadID: model.context.thread.tid,
         kind: .novel,
@@ -111,13 +111,13 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailHeaderSummaryUsesThreadPageCoverCandidateWhenPersistedCoverMissing() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailHeaderSummaryUsesThreadPageCoverCandidateWhenPersistedCoverMissing() throws {
+    let model = try makeNovelDetailViewModel()
     let ignoredURL = try #require(URL(string: "https://bbs.yamibo.com/static/image/smiley/default/none.gif"))
     let coverURL = try #require(URL(string: "https://bbs.yamibo.com/data/attachment/forum/cover.jpg"))
     model.chapters = [
-        ForumNovelChapterSummary(id: "1|序章", title: "序章", view: 1),
-        ForumNovelChapterSummary(id: "1|第一章", title: "第一章", view: 1)
+        NovelChapterSummary(id: "1|序章", title: "序章", view: 1),
+        NovelChapterSummary(id: "1|第一章", title: "第一章", view: 1)
     ]
     model.threadPage = ForumThreadPage(
         thread: ThreadIdentity(
@@ -174,8 +174,8 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailUsesSanitizedDiscuzTitle() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailUsesSanitizedDiscuzTitle() throws {
+    let model = try makeNovelDetailViewModel()
     model.threadPage = ForumThreadPage(
         thread: model.context.thread,
         title: "文学区版规已更新 请各位会员阅读知悉 - 文學區 - 百合会 - 手机版 - Powered by Discuz!",
@@ -195,8 +195,8 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailHeaderFallsBackToPostedAtForLastUpdatedText() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailHeaderFallsBackToPostedAtForLastUpdatedText() throws {
+    let model = try makeNovelDetailViewModel()
     model.threadPage = ForumThreadPage(
         thread: model.context.thread,
         title: "小说标题",
@@ -217,7 +217,7 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailHeaderPrefersPersistedContentCover() async throws {
+@Test func novelDetailHeaderPrefersPersistedContentCover() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-cover")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let coverStore = ContentCoverStore(
@@ -228,8 +228,8 @@ import YamiboXTestSupport
     let persisted = try #require(URL(string: "https://img.example.com/persisted.jpg"))
     let pageCandidate = try #require(URL(string: "https://img.example.com/page.jpg"))
     try await coverStore.setAutomaticCover(persisted, for: key)
-    let dependencies = try makeForumDetailDependencies(contentCoverStore: coverStore)
-    let model = try makeForumNovelDetailViewModel(dependencies: dependencies)
+    let dependencies = try makeNovelDetailDependencies(contentCoverStore: coverStore)
+    let model = try makeNovelDetailViewModel(dependencies: dependencies)
     model.contentCover = await coverStore.cover(for: key)
     model.threadPage = ForumThreadPage(
         thread: model.context.thread,
@@ -255,16 +255,16 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailReloadStoresInitialPageCoverWithoutRefetchingThreadPage() async throws {
+@Test func novelDetailReloadStoresInitialPageCoverWithoutRefetchingThreadPage() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-initial-cover")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let coverStore = ContentCoverStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "content-covers"
     )
-    let dependencies = try makeForumDetailDependencies(contentCoverStore: coverStore)
+    let dependencies = try makeNovelDetailDependencies(contentCoverStore: coverStore)
     let initialImage = try #require(URL(string: "https://img.example.com/initial-owner.jpg"))
-    let threadPageLoader = FakeForumNovelThreadPageLoader(pages: [
+    let threadPageLoader = FakeNovelThreadPageLoader(pages: [
         1: ForumThreadPage(
             thread: ThreadIdentity(tid: "900", fid: "49"),
             title: "小说标题",
@@ -289,9 +289,9 @@ import YamiboXTestSupport
             pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: 1)
         )
     ])
-    let model = try makeForumNovelDetailViewModel(
+    let model = try makeNovelDetailViewModel(
         dependencies: dependencies,
-        documentLoader: FakeForumNovelDocumentLoader(),
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: threadPageLoader
     )
 
@@ -306,7 +306,7 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailReloadUsesCachedInitialThreadPageWithoutFetching() async throws {
+@Test func novelDetailReloadUsesCachedInitialThreadPageWithoutFetching() async throws {
     let cachedPage = ForumThreadPage(
         thread: ThreadIdentity(tid: "900", fid: "49"),
         title: "缓存小说标题",
@@ -321,9 +321,9 @@ import YamiboXTestSupport
         ],
         pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: 1)
     )
-    let threadPageLoader = FakeForumNovelThreadPageLoader(pages: [:], cachedPages: [1: cachedPage])
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let threadPageLoader = FakeNovelThreadPageLoader(pages: [:], cachedPages: [1: cachedPage])
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: threadPageLoader
     )
 
@@ -336,7 +336,7 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailReloadKeepsCachedInitialThreadPageWhenReaderDocumentTimesOut() async throws {
+@Test func novelDetailReloadKeepsCachedInitialThreadPageWhenReaderDocumentTimesOut() async throws {
     let cachedPage = ForumThreadPage(
         thread: ThreadIdentity(tid: "900", fid: "49"),
         title: "缓存小说标题",
@@ -351,9 +351,9 @@ import YamiboXTestSupport
         ],
         pageNavigation: ForumPageNavigation(currentPage: 1, totalPages: 1)
     )
-    let threadPageLoader = FakeForumNovelThreadPageLoader(pages: [:], cachedPages: [1: cachedPage])
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FailingForumNovelDocumentLoader(error: URLError(.timedOut)),
+    let threadPageLoader = FakeNovelThreadPageLoader(pages: [:], cachedPages: [1: cachedPage])
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FailingNovelDocumentLoader(error: URLError(.timedOut)),
         threadPageLoader: threadPageLoader
     )
 
@@ -368,7 +368,7 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailLoadChapterSectionUsesCachedThreadPageWithoutFetching() async throws {
+@Test func novelDetailLoadChapterSectionUsesCachedThreadPageWithoutFetching() async throws {
     let firstPage = ForumThreadPage(
         thread: ThreadIdentity(tid: "900", fid: "49"),
         title: "小说标题",
@@ -397,15 +397,15 @@ import YamiboXTestSupport
         ],
         pageNavigation: ForumPageNavigation(currentPage: 2, totalPages: 2)
     )
-    let threadPageLoader = FakeForumNovelThreadPageLoader(
+    let threadPageLoader = FakeNovelThreadPageLoader(
         pages: [:],
         cachedPages: [
             1: firstPage,
             2: secondPage
         ]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: threadPageLoader
     )
 
@@ -418,15 +418,15 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshContentCoverStoresOwnerPostCandidateOnly() async throws {
+@Test func novelDetailRefreshContentCoverStoresOwnerPostCandidateOnly() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-auto-cover")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let coverStore = ContentCoverStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "content-covers"
     )
-    let dependencies = try makeForumDetailDependencies(contentCoverStore: coverStore)
-    let model = try makeForumNovelDetailViewModel(dependencies: dependencies)
+    let dependencies = try makeNovelDetailDependencies(contentCoverStore: coverStore)
+    let model = try makeNovelDetailViewModel(dependencies: dependencies)
     let key = ContentCoverKey(targetType: .thread, targetID: "900")
     let replyImage = try #require(URL(string: "https://img.example.com/reply.jpg"))
     let ownerImage = try #require(URL(string: "https://img.example.com/owner.jpg"))
@@ -487,15 +487,15 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshContentCoverDoesNotStoreWithoutFirstFloorOwner() async throws {
+@Test func novelDetailRefreshContentCoverDoesNotStoreWithoutFirstFloorOwner() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-cover-no-owner")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let coverStore = ContentCoverStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "content-covers"
     )
-    let dependencies = try makeForumDetailDependencies(contentCoverStore: coverStore)
-    let model = try makeForumNovelDetailViewModel(dependencies: dependencies)
+    let dependencies = try makeNovelDetailDependencies(contentCoverStore: coverStore)
+    let model = try makeNovelDetailViewModel(dependencies: dependencies)
     let key = ContentCoverKey(targetType: .thread, targetID: "900")
     let page = ForumThreadPage(
         thread: model.context.thread,
@@ -529,15 +529,15 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailReloadDoesNotScanLaterThreadPagesForCover() async throws {
+@Test func novelDetailReloadDoesNotScanLaterThreadPagesForCover() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-later-cover")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let coverStore = ContentCoverStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "content-covers"
     )
-    let dependencies = try makeForumDetailDependencies(contentCoverStore: coverStore)
-    let threadPageLoader = FakeForumNovelThreadPageLoader(pages: [
+    let dependencies = try makeNovelDetailDependencies(contentCoverStore: coverStore)
+    let threadPageLoader = FakeNovelThreadPageLoader(pages: [
         1: ForumThreadPage(
             thread: ThreadIdentity(tid: "900", fid: "49"),
             title: "小说标题",
@@ -597,9 +597,9 @@ import YamiboXTestSupport
             pageNavigation: ForumPageNavigation(currentPage: 2, totalPages: 2)
         )
     ])
-    let model = try makeForumNovelDetailViewModel(
+    let model = try makeNovelDetailViewModel(
         dependencies: dependencies,
-        documentLoader: FakeForumNovelDocumentLoader(),
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: threadPageLoader
     )
 
@@ -614,15 +614,15 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailReusesLoadedChapterPagesUntilReload() async throws {
+@Test func novelDetailReusesLoadedChapterPagesUntilReload() async throws {
     let firstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "第一章")
     let secondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "第二章")
-    let loader = FakeForumNovelThreadPageLoader(pages: [
+    let loader = FakeNovelThreadPageLoader(pages: [
         1: firstPage,
         2: secondPage
     ])
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader
     )
 
@@ -663,12 +663,12 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshBypassesCacheClearsPersistentPagesAndReloadsFirstPage() async throws {
+@Test func novelDetailRefreshBypassesCacheClearsPersistentPagesAndReloadsFirstPage() async throws {
     let cachedFirstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "缓存第一章")
     let cachedSecondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "缓存第二章")
     let freshFirstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "刷新第一章")
     let freshSecondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "刷新第二章")
-    let loader = FakeForumNovelThreadPageLoader(
+    let loader = FakeNovelThreadPageLoader(
         pages: [
             1: freshFirstPage,
             2: freshSecondPage
@@ -678,8 +678,8 @@ import YamiboXTestSupport
             2: cachedSecondPage
         ]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader
     )
 
@@ -696,7 +696,7 @@ import YamiboXTestSupport
     #expect(loader.novelFetchCalls() == [1])
     #expect(loader.clearedThreadIDs() == ["900"])
     #expect(loader.storedPages() == [
-        ForumNovelThreadPageStore(authorID: "42", page: 1, title: "小说标题")
+        NovelThreadPageStore(authorID: "42", page: 1, title: "小说标题")
     ])
     #expect(model.favoriteActions.transientMessage == nil)
     #expect(model.expandedChapterPages == [1])
@@ -710,7 +710,7 @@ import YamiboXTestSupport
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshCompletesCacheWritesAfterGestureCancellationAndCanRefreshAgain() async throws {
+@Test func novelDetailRefreshCompletesCacheWritesAfterGestureCancellationAndCanRefreshAgain() async throws {
     let cached = try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "缓存章节")
     let fresh = try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "新章节")
     let started = AsyncStream<Void>.makeStream()
@@ -719,7 +719,7 @@ import YamiboXTestSupport
         started.continuation.finish()
         release.continuation.finish()
     }
-    let loader = FakeForumNovelThreadPageLoader(
+    let loader = FakeNovelThreadPageLoader(
         pages: [1: fresh], cachedPages: [1: cached],
         beforeFetch: {
             started.continuation.yield(())
@@ -728,8 +728,8 @@ import YamiboXTestSupport
             for await _ in release.stream { break }
         }
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(), threadPageLoader: loader
     )
     await model.reload()
 
@@ -758,7 +758,7 @@ import YamiboXTestSupport
 
 @MainActor
 @Test(arguments: [0, 1, 2])
-func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancellationKind: Int) async throws {
+func novelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancellationKind: Int) async throws {
     let firstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "第一章")
     let secondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "第二章")
     let failure: any Error
@@ -767,17 +767,20 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     case 1: failure = URLError(.cancelled)
     default: failure = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
     }
-    let loader = FakeForumNovelThreadPageLoader(
+    let loader = FakeNovelThreadPageLoader(
         pages: [1: firstPage, 2: secondPage], cachedPages: [1: firstPage, 2: secondPage],
         failuresByPage: [1: [failure]]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(), threadPageLoader: loader
     )
     await model.reload()
     await model.toggleChapterSection(page: 2)
-    model.document = try await FakeForumNovelDocumentLoader().loadPage(NovelPageRequest(threadID: "900", view: 1, authorID: "42"))
-    let previousDocument = model.document
+    // Observe the real preload instead of racing it with a manually assigned document.
+    for _ in 0..<100 where model.document == nil {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    let previousDocument = try #require(model.document)
     let previousSections = model.chapterSections.map(\.chapters)
 
     await model.refresh()
@@ -793,10 +796,10 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshFailurePreservesExistingContentAndShowsTransientMessage() async throws {
+@Test func novelDetailRefreshFailurePreservesExistingContentAndShowsTransientMessage() async throws {
     let cachedFirstPage = try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "缓存第一章")
     let cachedSecondPage = try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "缓存第二章")
-    let loader = FakeForumNovelThreadPageLoader(
+    let loader = FakeNovelThreadPageLoader(
         pages: [
             1: cachedFirstPage,
             2: cachedSecondPage
@@ -806,11 +809,11 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
             2: cachedSecondPage
         ],
         failuresByPage: [
-            1: [FakeForumNovelThreadPageLoaderError.plannedFailure(page: 1)]
+            1: [FakeNovelThreadPageLoaderError.plannedFailure(page: 1)]
         ]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader
     )
 
@@ -819,7 +822,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     await model.refresh()
 
     #expect(model.errorMessage == nil)
-    #expect(model.favoriteActions.transientMessage == L10n.string("forum.novel_detail.refresh_failed", FakeForumNovelThreadPageLoaderError.plannedFailure(page: 1).localizedDescription))
+    #expect(model.favoriteActions.transientMessage == L10n.string("forum.novel_detail.refresh_failed", FakeNovelThreadPageLoaderError.plannedFailure(page: 1).localizedDescription))
     #expect(model.expandedChapterPages == [1, 2])
     #expect(model.chapterSections[0].chapters.map(\.title) == ["缓存第一章"])
     #expect(model.chapterSections[1].chapters.map(\.title) == ["缓存第二章"])
@@ -828,15 +831,15 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshFailureWithoutExistingContentUsesPageError() async throws {
-    let loader = FakeForumNovelThreadPageLoader(
+@Test func novelDetailRefreshFailureWithoutExistingContentUsesPageError() async throws {
+    let loader = FakeNovelThreadPageLoader(
         pages: [:],
         failuresByPage: [
-            1: [FakeForumNovelThreadPageLoaderError.plannedFailure(page: 1)]
+            1: [FakeNovelThreadPageLoaderError.plannedFailure(page: 1)]
         ]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader
     )
 
@@ -845,16 +848,16 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     #expect(model.threadPage == nil)
     #expect(model.chapters.isEmpty)
     #expect(model.favoriteActions.transientMessage == nil)
-    #expect(model.errorMessage == FakeForumNovelThreadPageLoaderError.plannedFailure(page: 1).localizedDescription)
+    #expect(model.errorMessage == FakeNovelThreadPageLoaderError.plannedFailure(page: 1).localizedDescription)
 }
 
 @MainActor
-@Test func forumNovelDetailKnownAuthorLoadsInitialPageOnce() async throws {
-    let loader = FakeForumNovelThreadPageLoader(pages: [
+@Test func novelDetailKnownAuthorLoadsInitialPageOnce() async throws {
+    let loader = FakeNovelThreadPageLoader(pages: [
         1: try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "第一章")
     ])
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader,
         authorID: "42"
     )
@@ -868,12 +871,34 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailMissingAuthorDiscoversAuthorBeforeLoadingContent() async throws {
-    let loader = FakeForumNovelThreadPageLoader(pages: [
+@Test func novelDetailOfflineMetadataFailureStillOffersTheSavedReaderPosition() async throws {
+    let dependencies = try makeNovelDetailDependencies()
+    try await dependencies.readingProgressStore.saveNovel(
+        NovelReadingPosition(threadID: "900", view: 6, authorID: "42")
+    )
+    let model = try makeNovelDetailViewModel(
+        dependencies: dependencies,
+        documentLoader: FakeNovelDocumentLoader(),
+        threadPageLoader: FakeNovelThreadPageLoader(pages: [:], failuresByPage: [1: [URLError(.notConnectedToInternet)]])
+    )
+
+    await model.load()
+
+    #expect(model.errorMessage != nil)
+    #expect(!model.isLoading)
+    let context = model.continueLaunchContext()
+    #expect(context.threadID == "900")
+    #expect(context.initialView == 6)
+    #expect(context.authorID == "42")
+}
+
+@MainActor
+@Test func novelDetailMissingAuthorDiscoversAuthorBeforeLoadingContent() async throws {
+    let loader = FakeNovelThreadPageLoader(pages: [
         1: try makeNovelDetailThreadPage(page: 1, totalPages: 1, postID: "1001", chapterTitle: "第一章")
     ])
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader,
         authorID: nil
     )
@@ -887,18 +912,18 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailDoesNotCacheFailedChapterPageLoads() async throws {
-    let loader = FakeForumNovelThreadPageLoader(
+@Test func novelDetailDoesNotCacheFailedChapterPageLoads() async throws {
+    let loader = FakeNovelThreadPageLoader(
         pages: [
             1: try makeNovelDetailThreadPage(page: 1, totalPages: 2, postID: "1001", chapterTitle: "第一章"),
             2: try makeNovelDetailThreadPage(page: 2, totalPages: 2, postID: "2001", chapterTitle: "第二章")
         ],
         failuresByPage: [
-            2: [FakeForumNovelThreadPageLoaderError.plannedFailure(page: 2)]
+            2: [FakeNovelThreadPageLoaderError.plannedFailure(page: 2)]
         ]
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(),
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(),
         threadPageLoader: loader
     )
 
@@ -909,7 +934,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     #expect(model.expandedChapterPages == [1, 2])
     #expect(model.chapterSections[1].isLoaded == false)
     #expect(model.chapterSections[1].errorMessage != nil)
-    #expect(model.chapterSections[1].errorDetails?.summary == FakeForumNovelThreadPageLoaderError.plannedFailure(page: 2).localizedDescription)
+    #expect(model.chapterSections[1].errorDetails?.summary == FakeNovelThreadPageLoaderError.plannedFailure(page: 2).localizedDescription)
     #expect(model.chapterSections[1].chapters.isEmpty)
 
     await model.loadChapterSection(page: 2)
@@ -922,12 +947,12 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailConcurrentChapterFailuresKeepSeparateDiagnostics() async throws {
+@Test func novelDetailConcurrentChapterFailuresKeepSeparateDiagnostics() async throws {
     let loader = ConcurrentFailingChapterLoader(
         firstPage: try makeNovelDetailThreadPage(page: 1, totalPages: 3, postID: "1001", chapterTitle: "第一章")
     )
-    let model = try makeForumNovelDetailViewModel(
-        documentLoader: FakeForumNovelDocumentLoader(), threadPageLoader: loader
+    let model = try makeNovelDetailViewModel(
+        documentLoader: FakeNovelDocumentLoader(), threadPageLoader: loader
     )
     await model.reload()
     async let second: Void = model.loadChapterSection(page: 2)
@@ -939,8 +964,8 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailGroupsChapterDirectoryByThreadPage() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailGroupsChapterDirectoryByThreadPage() throws {
+    let model = try makeNovelDetailViewModel()
     let firstPage = ForumThreadPage(
         thread: model.context.thread,
         title: "小说标题",
@@ -980,7 +1005,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
         pageNavigation: ForumPageNavigation(currentPage: 2, totalPages: 2)
     )
 
-    let sections = ForumNovelDetailViewModel.chapterSections(
+    let sections = NovelDetailViewModel.chapterSections(
         from: [
             1: firstPage,
             2: secondPage
@@ -1001,9 +1026,9 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailChapterTapUsesPostResumePoint() throws {
-    let model = try makeForumNovelDetailViewModel()
-    let section = ForumNovelDetailViewModel.chapterSections(
+@Test func novelDetailChapterTapUsesPostResumePoint() throws {
+    let model = try makeNovelDetailViewModel()
+    let section = NovelDetailViewModel.chapterSections(
         from: [
             1: ForumThreadPage(
                 thread: model.context.thread,
@@ -1032,8 +1057,8 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailChapterDirectoryUsesReaderAuthorReplyVisibilitySetting() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailChapterDirectoryUsesReaderAuthorReplyVisibilitySetting() throws {
+    let model = try makeNovelDetailViewModel()
     let page = ForumThreadPage(
         thread: model.context.thread,
         title: "小说标题",
@@ -1062,7 +1087,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
         ]
     )
 
-    let sections = ForumNovelDetailViewModel.chapterSections(
+    let sections = NovelDetailViewModel.chapterSections(
         from: [1: page],
         totalPages: 1,
         novelReaderSettings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false)
@@ -1073,8 +1098,8 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailChapterTitleUsesReaderParserTitle() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailChapterTitleUsesReaderParserTitle() throws {
+    let model = try makeNovelDetailViewModel()
     let page = ForumThreadPage(
         thread: model.context.thread,
         title: "小说标题",
@@ -1104,14 +1129,14 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
         ]
     )
 
-    let sections = ForumNovelDetailViewModel.chapterSections(from: [1: page], totalPages: 1)
+    let sections = NovelDetailViewModel.chapterSections(from: [1: page], totalPages: 1)
 
     #expect(sections[0].chapters.map(\.title) == ["引用里的旧标题"])
 }
 
 @MainActor
-@Test func forumNovelDetailMarksCurrentReadChapterFromReadingProgressResumePoint() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailMarksCurrentReadChapterFromReadingProgressResumePoint() throws {
+    let model = try makeNovelDetailViewModel()
     model.readingProgress = ReadingProgressRecord(
         threadID: model.context.thread.tid,
         kind: .novel,
@@ -1153,7 +1178,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
         ]
     )
 
-    let sections = ForumNovelDetailViewModel.chapterSections(
+    let sections = NovelDetailViewModel.chapterSections(
         from: [1: firstPage],
         totalPages: 1,
         readingProgress: model.readingProgress,
@@ -1166,8 +1191,8 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailMarksOnlyIdentityMatchedFloorWhenChapterTitlesDuplicate() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailMarksOnlyIdentityMatchedFloorWhenChapterTitlesDuplicate() throws {
+    let model = try makeNovelDetailViewModel()
     model.readingProgress = ReadingProgressRecord(
         threadID: model.context.thread.tid,
         kind: .novel,
@@ -1198,7 +1223,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     }
     let firstPage = ForumThreadPage(thread: model.context.thread, title: "小说标题", posts: posts)
 
-    let sections = ForumNovelDetailViewModel.chapterSections(
+    let sections = NovelDetailViewModel.chapterSections(
         from: [1: firstPage],
         totalPages: 1,
         readingProgress: model.readingProgress,
@@ -1210,8 +1235,8 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailTitleFallbackMarksOnlyFirstDuplicateWhenNoResumePointIdentityExists() throws {
-    let model = try makeForumNovelDetailViewModel()
+@Test func novelDetailTitleFallbackMarksOnlyFirstDuplicateWhenNoResumePointIdentityExists() throws {
+    let model = try makeNovelDetailViewModel()
     model.readingProgress = ReadingProgressRecord(
         threadID: model.context.thread.tid,
         kind: .novel,
@@ -1232,7 +1257,7 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     }
     let firstPage = ForumThreadPage(thread: model.context.thread, title: "小说标题", posts: posts)
 
-    let sections = ForumNovelDetailViewModel.chapterSections(
+    let sections = NovelDetailViewModel.chapterSections(
         from: [1: firstPage],
         totalPages: 1,
         readingProgress: model.readingProgress,
@@ -1243,21 +1268,21 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
 }
 
 @MainActor
-@Test func forumNovelDetailRefreshesReadingProgressWhenReadingProgressStoreChanges() async throws {
+@Test func novelDetailRefreshesReadingProgressWhenReadingProgressStoreChanges() async throws {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-progress-refresh")
     _ = try YamiboTestDefaults.make(suiteName: suiteName)
     let readingProgressStore = ReadingProgressStore(
         defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
         key: "reading-progress"
     )
-    let dependencies = try makeForumDetailDependencies(
+    let dependencies = try makeNovelDetailDependencies(
         contentCoverStore: ContentCoverStore(
             defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
             key: "content-covers"
         ),
         readingProgressStore: readingProgressStore
     )
-    let model = try makeForumNovelDetailViewModel(dependencies: dependencies)
+    let model = try makeNovelDetailViewModel(dependencies: dependencies)
     let threadID = model.context.thread.tid
 
     try await readingProgressStore.saveNovel(
@@ -1301,13 +1326,13 @@ func forumNovelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancell
     #expect(model.headerSummary.readingProgressText == "第二章")
 }
 
-/// Builds a `ForumDependencies` package backed by isolated per-test stores.
+/// Builds a `NovelDetailDependencies` package backed by isolated per-test stores.
 /// Factories for repositories this file never exercises trap loudly.
 @MainActor
-private func makeForumDetailDependencies(
+private func makeNovelDetailDependencies(
     contentCoverStore: ContentCoverStore? = nil,
     readingProgressStore: ReadingProgressStore? = nil
-) throws -> ForumDependencies {
+) throws -> NovelDetailDependencies {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "novel-detail-deps")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
     let sessionStore = SessionStore(defaults: defaults, key: "session")
@@ -1324,49 +1349,32 @@ private func makeForumDetailDependencies(
         baseDirectory: FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
     )
-    return ForumDependencies(
-        sessionStore: sessionStore,
-        profileStore: YamiboProfileStore(defaults: defaults, key: "profile"),
+    return NovelDetailDependencies(
         localFavoriteLibraryStore: FavoriteLibraryStore(defaults: defaults, key: "local-favorites"),
         readingProgressStore: readingProgressStore ?? ReadingProgressStore(defaults: defaults, key: "reading-progress"),
         settingsStore: SettingsStore(defaults: defaults, key: "settings"),
         contentCoverStore: contentCoverStore ?? ContentCoverStore(defaults: defaults, key: "content-covers"),
-        mangaDirectoryStore: ForumDetailTestsUnusedMangaDirectoryStore(),
-        mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState(),
-        makeForumRepository: { ForumRepository(client: await makeClient(), cacheStore: forumCacheStore) },
-        makeForumThreadReaderRepository: { ForumThreadReaderRepository(client: await makeClient(), cacheStore: forumCacheStore) },
-        makeUserSpaceRepository: { UserSpaceRepository(client: await makeClient()) },
-        makeBlogReaderRepository: { BlogReaderRepository(client: await makeClient()) },
         makeFavoriteRepository: { FavoriteRepository(client: await makeClient()) },
-        makeNovelReaderRepository: { fatalError("makeNovelReaderRepository is not exercised by ForumNovelDetailViewModelTests") },
-        makeMangaReaderProjectionLoader: { fatalError("makeMangaReaderProjectionLoader is not exercised by ForumNovelDetailViewModelTests") },
-        makeMangaDirectoryRepository: { fatalError("makeMangaDirectoryRepository is not exercised by ForumNovelDetailViewModelTests") },
-        makeThreadRouteResolver: { YamiboThreadRouteResolver(client: await makeClient()) }
+        makeNovelReaderRepository: { fatalError("makeNovelReaderRepository is not exercised by NovelDetailViewModelTests") },
+        makeForumThreadReaderRepository: { ForumThreadReaderRepository(client: await makeClient(), cacheStore: forumCacheStore) }
     )
 }
 
-private struct ForumDetailTestsUnusedMangaDirectoryStore: MangaDirectoryPersisting {
-    func directory(named name: String) async throws -> MangaDirectory? { nil }
-    func directory(containingTID tid: String) async throws -> MangaDirectory? { nil }
-    func saveDirectory(_ directory: MangaDirectory) async throws {}
-    func deleteDirectory(named name: String) async throws {}
-}
-
 @MainActor
-private func makeForumNovelDetailViewModel(
-    dependencies: ForumDependencies? = nil,
-    documentLoader: (any ForumNovelDocumentLoading)? = nil,
-    threadPageLoader: (any ForumNovelThreadPageLoading)? = nil,
+private func makeNovelDetailViewModel(
+    dependencies: NovelDetailDependencies? = nil,
+    documentLoader: (any NovelDetailDocumentLoading)? = nil,
+    threadPageLoader: (any NovelDetailThreadPageLoading)? = nil,
     authorID: String? = "42"
-) throws -> ForumNovelDetailViewModel {
-    let resolvedDependencies = try dependencies ?? makeForumDetailDependencies()
-    let novelRepositoryProvider: (@Sendable () async -> any ForumNovelDocumentLoading)? = documentLoader.map { loader in
+) throws -> NovelDetailViewModel {
+    let resolvedDependencies = try dependencies ?? makeNovelDetailDependencies()
+    let novelRepositoryProvider: (@Sendable () async -> any NovelDetailDocumentLoading)? = documentLoader.map { loader in
         { @Sendable in loader }
     }
-    let threadRepositoryProvider: (@Sendable () async -> any ForumNovelThreadPageLoading)? = threadPageLoader.map { loader in
+    let threadRepositoryProvider: (@Sendable () async -> any NovelDetailThreadPageLoading)? = threadPageLoader.map { loader in
         { @Sendable in loader }
     }
-    return ForumNovelDetailViewModel(
+    return NovelDetailViewModel(
         context: NovelDetailLaunchContext(
             thread: ThreadIdentity(tid: "900", fid: "49"),
             title: "小说标题",
@@ -1401,7 +1409,7 @@ private func makeNovelDetailThreadPage(
     )
 }
 
-private struct FakeForumNovelDocumentLoader: ForumNovelDocumentLoading {
+private struct FakeNovelDocumentLoader: NovelDetailDocumentLoading {
     func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection {
         NovelReaderProjection(
             threadID: request.threadID,
@@ -1415,7 +1423,7 @@ private struct FakeForumNovelDocumentLoader: ForumNovelDocumentLoading {
     }
 }
 
-private struct ConcurrentFailingChapterLoader: ForumNovelThreadPageLoading {
+private struct ConcurrentFailingChapterLoader: NovelDetailThreadPageLoading {
     let firstPage: ForumThreadPage
 
     func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage? { nil }
@@ -1429,7 +1437,7 @@ private struct ConcurrentFailingChapterLoader: ForumNovelThreadPageLoading {
     }
 }
 
-private struct FailingForumNovelDocumentLoader: ForumNovelDocumentLoading {
+private struct FailingNovelDocumentLoader: NovelDetailDocumentLoading {
     let error: Error
 
     func loadPage(_: NovelPageRequest) async throws -> NovelReaderProjection {
@@ -1437,16 +1445,16 @@ private struct FailingForumNovelDocumentLoader: ForumNovelDocumentLoading {
     }
 }
 
-private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading, @unchecked Sendable {
+private final class FakeNovelThreadPageLoader: NovelDetailThreadPageLoading, @unchecked Sendable {
     private let pages: [Int: ForumThreadPage]
     private let beforeFetch: (@Sendable () async -> Void)?
     private var cachedPages: [Int: ForumThreadPage]
     private var failuresByPage: [Int: [Error]]
     private var recordedCachedNovelPages: [Int] = []
     private var recordedNovelFetches: [Int] = []
-    private var recordedThreadFetches: [ForumNovelThreadPageFetch] = []
+    private var recordedThreadFetches: [NovelThreadPageFetch] = []
     private var recordedClearedThreads: [ThreadIdentity] = []
-    private var recordedStoredPages: [ForumNovelThreadPageStore] = []
+    private var recordedStoredPages: [NovelThreadPageStore] = []
 
     init(
         pages: [Int: ForumThreadPage],
@@ -1474,7 +1482,7 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
             throw failure
         }
         guard let pageDocument = pages[page] else {
-            throw FakeForumNovelThreadPageLoaderError.missingPage(page: page)
+            throw FakeNovelThreadPageLoaderError.missingPage(page: page)
         }
         return pageDocument
     }
@@ -1489,7 +1497,7 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
         try Task.checkCancellation()
         cachedPages[pageNumber] = pageDocument
         recordedStoredPages.append(
-            ForumNovelThreadPageStore(
+            NovelThreadPageStore(
                 authorID: context.authorID,
                 page: pageNumber,
                 title: pageDocument.title
@@ -1503,14 +1511,14 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
         authorID: String?,
         page: Int
     ) async throws -> ForumThreadPage {
-        recordedThreadFetches.append(ForumNovelThreadPageFetch(authorID: authorID, page: page))
+        recordedThreadFetches.append(NovelThreadPageFetch(authorID: authorID, page: page))
         guard let pageDocument = pages[page] else {
-            throw FakeForumNovelThreadPageLoaderError.missingPage(page: page)
+            throw FakeNovelThreadPageLoaderError.missingPage(page: page)
         }
         return pageDocument
     }
 
-    func threadFetchCalls() -> [ForumNovelThreadPageFetch] {
+    func threadFetchCalls() -> [NovelThreadPageFetch] {
         recordedThreadFetches
     }
 
@@ -1526,22 +1534,22 @@ private final class FakeForumNovelThreadPageLoader: ForumNovelThreadPageLoading,
         recordedClearedThreads.map(\.tid)
     }
 
-    func storedPages() -> [ForumNovelThreadPageStore] {
+    func storedPages() -> [NovelThreadPageStore] {
         recordedStoredPages
     }
 }
 
-private enum FakeForumNovelThreadPageLoaderError: Error {
+private enum FakeNovelThreadPageLoaderError: Error {
     case missingPage(page: Int)
     case plannedFailure(page: Int)
 }
 
-private struct ForumNovelThreadPageFetch: Equatable {
+private struct NovelThreadPageFetch: Equatable {
     var authorID: String?
     var page: Int
 }
 
-private struct ForumNovelThreadPageStore: Equatable {
+private struct NovelThreadPageStore: Equatable {
     var authorID: String?
     var page: Int
     var title: String

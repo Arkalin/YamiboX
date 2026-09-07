@@ -374,7 +374,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             // Classification into `.mangaThread` only depends on the board's
             // thread kind, never on the mode toggle (decision #4) — the
             // toggle only changes which UI a *live tap* routes to (through
-            // `ForumMangaDetailView` vs. straight into the manga reader), not
+            // `MangaDetailView` vs. straight into the manga reader), not
             // how a *synced* favorite is classified. That's why `.manga` and
             // `.mangaDirect` — the resolver's only distinction between them
             // is whether the board's Smart Comic Mode happens to be on —

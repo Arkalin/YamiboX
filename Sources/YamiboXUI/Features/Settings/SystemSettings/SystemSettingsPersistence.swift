@@ -1,6 +1,10 @@
 import Foundation
 import YamiboXCore
 
+typealias AtomicSettingsUpdater = @Sendable (
+    _ mutate: @Sendable (inout AppSettings) -> Void
+) async throws -> AppSettings
+
 /// Shared persistence template for the settings pages: optimistic UI update,
 /// persist, and roll back with an error message on failure. This replaces the
 /// per-method `let previous` + load-mutate-save-rollback boilerplate the
@@ -58,6 +62,7 @@ extension AppSettingsPersisting {
     func persistSettingsAtomically<Value>(
         _ keyPath: ReferenceWritableKeyPath<Self, Value>,
         to value: Value,
+        updateSettings: AtomicSettingsUpdater? = nil,
         mutate: @escaping @Sendable (inout AppSettings) -> Void
     ) {
         let previous = self[keyPath: keyPath]
@@ -65,7 +70,11 @@ extension AppSettingsPersisting {
 
         Task {
             do {
-                _ = try await dependencies.settingsStore.update(mutate)
+                if let updateSettings {
+                    _ = try await updateSettings(mutate)
+                } else {
+                    _ = try await dependencies.settingsStore.update(mutate)
+                }
             } catch {
                 self[keyPath: keyPath] = previous
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

@@ -6,7 +6,7 @@ import YamiboXTestSupport
 @testable import YamiboXUI
 
 @MainActor @Suite("Detail directory presentation")
-struct ForumDetailPresentationTests {
+struct ContentDetailPresentationTests {
     @Test func layoutsDefaultToListAndRememberIndependentPreferences() throws {
         let defaults = try YamiboTestDefaults.make(suiteName: YamiboTestDefaults.suiteName(prefix: "detail-layout"))
         let novelKey = YamiboAppStorageKey.novelDetailChapterLayout
@@ -26,7 +26,7 @@ struct ForumDetailPresentationTests {
 
     @Test(arguments: ["楼主", "123#", "2楼"])
     func novelNumbersRetainRealFloorLabels(floor: String) {
-        let chapter = ForumNovelChapterSummary(id: "page|post", title: "Chapter", view: 2, floorText: floor)
+        let chapter = NovelChapterSummary(id: "page|post", title: "Chapter", view: 2, floorText: floor)
         let item = ChapterDirectoryItem.novel(chapter, indexInPage: 0)
         #expect(item.id == chapter.id)
         #expect(item.number == floor)
@@ -35,7 +35,7 @@ struct ForumDetailPresentationTests {
 
     @Test(arguments: [nil, "", "  "] as [String?])
     func missingFloorUsesExplicitPageLocalOrdinal(floor: String?) {
-        let chapter = ForumNovelChapterSummary(id: "page|post", title: "Chapter", view: 12, floorText: floor, isCurrentRead: true)
+        let chapter = NovelChapterSummary(id: "page|post", title: "Chapter", view: 12, floorText: floor, isCurrentRead: true)
         let item = ChapterDirectoryItem.novel(chapter, indexInPage: 3)
         #expect(item.number == "4")
         #expect(item.numberAccessibilityLabel == L10n.string("forum.detail.page_item", 4))
@@ -78,7 +78,7 @@ struct ForumDetailPresentationTests {
     }
 
     @Test func chapterInformationRetainsNovelReadingProgress() {
-        let chapter = ForumNovelChapterSummary(id: "page|post", title: "Chapter", view: 2, progressText: "35%", isCurrentRead: true)
+        let chapter = NovelChapterSummary(id: "page|post", title: "Chapter", view: 2, progressText: "35%", isCurrentRead: true)
         let item = ChapterDirectoryItem.novel(chapter, indexInPage: 0)
         #expect(item.subtitle == "35%")
         #expect(item.informationText == "\(L10n.string("forum.detail.current_read")), 35%")
@@ -131,7 +131,7 @@ struct ForumDetailPresentationTests {
 }
 
 @MainActor
-final class ForumDetailLayoutTests: XCTestCase {
+final class ContentDetailLayoutTests: XCTestCase {
     func testGridCellMaintainsSizeAcrossReadAndFocusedStates() {
         for current in [false, true] {
             for focused in [false, true] {
@@ -139,7 +139,7 @@ final class ForumDetailLayoutTests: XCTestCase {
                     id: "1", number: "123#", numberAccessibilityLabel: "123#",
                     title: "A long chapter title", isCurrentRead: current, isFocused: focused
                 )
-                let host = UIHostingController(rootView: ForumChapterDirectoryItemView(item: item, layout: .grid, action: {}))
+                let host = UIHostingController(rootView: ChapterDirectoryItemView(item: item, layout: .grid, action: {}))
                 let size = host.sizeThatFits(in: CGSize(width: 56, height: 1000))
                 XCTAssertEqual(size.width, 56, accuracy: 0.5)
                 XCTAssertEqual(size.height, 48, accuracy: 0.5)
@@ -150,17 +150,17 @@ final class ForumDetailLayoutTests: XCTestCase {
     func testAccessibilityGridCellsGrowInsteadOfClipping() {
         let item = ChapterDirectoryItem(id: "1", number: "SP", numberAccessibilityLabel: "SP", title: "Special")
         let host = UIHostingController(rootView:
-            ForumChapterDirectoryItemView(item: item, layout: .grid, action: {})
+            ChapterDirectoryItemView(item: item, layout: .grid, action: {})
                 .environment(\.dynamicTypeSize, .accessibility3)
         )
         XCTAssertGreaterThan(host.sizeThatFits(in: CGSize(width: 120, height: 1000)).height, 48)
     }
 
     func testHeaderActionsWrapWithoutCompressingTargets() {
-        let view = ForumDetailPrimaryActions {
-            ForumDetailReadButton(hasProgress: true, action: {})
-            ForumDetailFavoriteButton(isFavorited: false, action: {}, onLongPress: {})
-            ForumDetailActionIcon(systemImage: "arrow.clockwise")
+        let view = ContentDetailPrimaryActions {
+            ContentDetailReadButton(hasProgress: true, action: {})
+            ContentDetailFavoriteButton(isFavorited: false, action: {}, onLongPress: {})
+            ContentDetailActionIcon(systemImage: "arrow.clockwise")
         }
         let host = UIHostingController(rootView: view)
         let wide = host.sizeThatFits(in: CGSize(width: 400, height: 1000))
@@ -172,16 +172,16 @@ final class ForumDetailLayoutTests: XCTestCase {
 
     func testReadingProgressStaysInlineWithoutIncreasingButtonHeight() {
         for progress in [nil, "", "  ", "第12话 · 第3页", String(repeating: "很长的章节标题和阅读进度", count: 30)] as [String?] {
-            let view = ForumDetailPrimaryActions {
-                ForumDetailReadButton(hasProgress: true, progressText: progress, action: {})
+            let view = ContentDetailPrimaryActions {
+                ContentDetailReadButton(hasProgress: true, progressText: progress, action: {})
             }
             let size = UIHostingController(rootView: view)
                 .sizeThatFits(in: CGSize(width: 288, height: 1000))
             XCTAssertEqual(size.height, 48, accuracy: 0.5)
             XCTAssertEqual(size.width, 288, accuracy: 0.5)
         }
-        let newBook = ForumDetailPrimaryActions {
-            ForumDetailReadButton(hasProgress: false, progressText: "Stale progress", action: {})
+        let newBook = ContentDetailPrimaryActions {
+            ContentDetailReadButton(hasProgress: false, progressText: "Stale progress", action: {})
         }
         XCTAssertEqual(UIHostingController(rootView: newBook).sizeThatFits(in: CGSize(width: 288, height: 1000)).height, 48, accuracy: 0.5)
     }
@@ -224,7 +224,7 @@ final class ForumDetailLayoutTests: XCTestCase {
     }
 
     func testNovelHeaderFitsLongTitleAndMissingMetadata() {
-        var summary = ForumNovelDetailHeaderSummary(
+        var summary = NovelDetailHeaderSummary(
             title: "【自翻】【犬甘あんず】我心爱之人的妹妹 第一卷【完】", threadID: "1",
             authorID: "2", authorName: "誹夜", lastUpdatedText: "2025-7-14 22:15",
             totalViews: 47670, totalReplies: 298, chapterCount: 25,
@@ -239,7 +239,7 @@ final class ForumDetailLayoutTests: XCTestCase {
                 summary.totalReplies = nil
                 summary.readingProgressText = nil
             }
-            let header = ForumNovelDetailHeader(
+            let header = NovelDetailHeader(
                 summary: summary, canReadStart: true, hasReadingProgress: !missing,
                 onFavoriteTap: {}, onFavoriteLongPress: {}, onAuthorTap: { _, _ in },
                 onCopyText: nil, onReadStart: {}
@@ -305,7 +305,7 @@ final class ForumDetailLayoutTests: XCTestCase {
             sourceKey: "test",
             chapters: [MangaChapter(tid: "1", rawTitle: "第一话", chapterNumber: 1)]
         )
-        let header = ForumMangaDetailHeader(
+        let header = MangaDetailHeader(
             directory: directory, coverURL: nil, latestChapterText: "第123话",
             readingProgressText: "第12话 · 第3页",
             hasReadingProgress: true, updateButtonTitle: "更新目录", isUpdateButtonEnabled: true,
@@ -374,15 +374,15 @@ private struct ActionLayoutFixture: View {
     let recorder: ActionFrameRecorder
 
     var body: some View {
-        ForumDetailPrimaryActions {
-            ForumDetailReadButton(
+        ContentDetailPrimaryActions {
+            ContentDetailReadButton(
                 hasProgress: true,
                 progressText: String(repeating: "第123话 · 很长的章节标题 · 第3页", count: 20), action: {}
             )
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("actions")) } action: { recorder.frames["read"] = $0 }
-            ForumDetailFavoriteButton(isFavorited: true, action: {}, onLongPress: {})
+            ContentDetailFavoriteButton(isFavorited: true, action: {}, onLongPress: {})
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("actions")) } action: { recorder.frames["favorite"] = $0 }
-            ForumMangaDirectoryUpdateButton(
+            MangaDirectoryUpdateButton(
                 title: "更新目录", isEnabled: true, isSearchMode: false,
                 isForcedSearchShortcutActive: false, action: {}
             )
@@ -420,18 +420,18 @@ private struct DirectoryFixture: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForumDetailHeader(title: "小说与漫画详情", coverSource: nil, onCopyText: nil) { _ in
+            ContentDetailHeader(title: "小说与漫画详情", coverSource: nil, onCopyText: nil) { _ in
                 Text("测试作者 · 更新于 2026-09-06")
                     .font(.caption)
             } actions: {
-                ForumDetailPrimaryActions {
-                    ForumDetailReadButton(hasProgress: true, action: {})
-                    ForumDetailFavoriteButton(isFavorited: true, action: {}, onLongPress: {})
+                ContentDetailPrimaryActions {
+                    ContentDetailReadButton(hasProgress: true, action: {})
+                    ContentDetailFavoriteButton(isFavorited: true, action: {}, onLongPress: {})
                 }
             } details: {
                 Text("作品信息")
             }
-            ForumChapterDirectory(
+            ChapterDirectory(
                 layout: $state.layout,
                 sections: sections,
                 countText: "180 项",

@@ -219,7 +219,7 @@ public actor ReadingProgressStore {
     /// never happens (e.g. the calling Task is cancelled between the two
     /// `await`s), and every mode-on reader
     /// (`LocalFavoriteOpenTargetResolver.mangaDirectoryResumeTarget`,
-    /// `ForumMangaDetailViewModel`, `AppContinuityWorkflow`'s mode-on branch)
+    /// `MangaDetailViewModel`, `AppContinuityWorkflow`'s mode-on branch)
     /// already resolves progress via `.mangaTitle`, not `.mangaThread` — so a
     /// mode-on `.mangaThread` row would have no reader. Accepted trade-off:
     /// if a board's mode is later toggled off, mode-off resume for a chapter

@@ -2,8 +2,8 @@ import SwiftUI
 import YamiboXCore
 
 /// One favorite row in the list layouts: cover thumbnail, two-line title,
-/// source, plain time lines, and tag chips. No visible buttons — tap resumes
-/// reading, long-press opens the context menu, swipes carry delete and tags.
+/// source, plain time lines, and tag chips. Taps follow the saved open
+/// preference; long-press opens the menu, swipes carry delete and tags.
 struct LocalFavoriteItemRow: View {
     let card: FavoriteCardProjection
     let showsCover: Bool
@@ -29,7 +29,7 @@ struct LocalFavoriteItemRow: View {
                 // "查看归档收藏" archive page.
                 onToggleSelection()
             } else {
-                actions.open(card, .resume)
+                actions.open(card, .preferred)
             }
         } label: {
             rowContent

@@ -2,7 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 /// Item actions reachable from a card's context menu and swipe actions.
-/// Cards carry no visible buttons: tap continues reading, long-press opens
+/// Cards carry no visible buttons: tap follows the open preference, long-press opens
 /// the menu (mirroring the Android cards, expressed as the iOS context menu).
 struct LocalFavoriteCardActions {
     /// Takes the whole card (not just `card.item`) so `standard(...)` can

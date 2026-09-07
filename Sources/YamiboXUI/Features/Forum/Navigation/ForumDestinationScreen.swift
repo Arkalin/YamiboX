@@ -88,28 +88,9 @@ struct ForumDestinationScreen: View {
             )
             .forumNavigationBarStyle()
         case let .novelDetail(context):
-            ForumNovelDetailView(
-                model: ForumNovelDetailViewModel(context: context, dependencies: dependencies),
-                onChapterTap: { launchContext in
-                    navigator.appModel.presentNovelReader(launchContext)
-                },
-                onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
-                onViewThread: {
-                    navigator.push(.threadReader(ThreadNovelLaunchContext(thread: context.thread, title: context.title, authorID: context.authorID, isDiscussionView: true)))
-                }
-            )
-            .forumNavigationBarStyle()
+            detailScreen(.novel(context))
         case let .mangaDetail(context):
-            ForumMangaDetailView(
-                model: ForumMangaDetailViewModel(context: context, dependencies: dependencies),
-                onChapterTap: { launchContext in
-                    navigator.appModel.presentMangaReader(launchContext)
-                },
-                onViewThread: {
-                    navigator.push(.threadReader(ThreadNovelLaunchContext(thread: context.thread, title: context.title, isDiscussionView: true)))
-                }
-            )
-            .forumNavigationBarStyle()
+            detailScreen(.manga(context))
         case let .threadReader(context):
             ForumThreadReaderView(
                 model: ForumThreadReaderViewModel(context: context, dependencies: dependencies),
@@ -135,6 +116,21 @@ struct ForumDestinationScreen: View {
                 listensToForumNavigationRequest: false
             )
             .forumNavigationBarStyle()
+        }
+    }
+
+    private func detailScreen(_ destination: ContentDetailDestination) -> some View {
+        ContentDetailScreen(
+            destination: destination,
+            novelDependencies: dependencies.novelDetailDependencies,
+            mangaDependencies: dependencies.mangaDetailDependencies
+        ) { action in
+            switch action {
+            case let .readNovel(context): navigator.appModel.presentNovelReader(context)
+            case let .readManga(context): navigator.appModel.presentMangaReader(context)
+            case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
+            case let .discussion(context): navigator.push(.threadReader(context))
+            }
         }
     }
 }
@@ -171,7 +167,7 @@ struct ForumThreadLinkScreen: View {
     private var content: some View {
         switch resolution {
         case .resolving:
-            ForumContentLoadingView(
+            ContentLoadingView(
                 text: L10n.string("forum.thread_link.loading"),
                 layout: .fillsPage
             )

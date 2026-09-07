@@ -10,12 +10,19 @@ struct LocalFavoritesRootView: View {
     @StateObject private var remoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
     @State private var threadOverlayItem: ForumThreadOverlayItem?
+    @State private var navigator: ForumDestinationNavigator
+    @StateObject private var routes = LocalFavoritesRoutes()
 
     private let openTargetResolver: LocalFavoriteOpenTargetResolver
     private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
     let appModel: YamiboAppModel
 
     init(dependencies: LibraryDependencies, appModel: YamiboAppModel) {
+        _navigator = State(initialValue: ForumDestinationNavigator(
+            dependencies: appModel.appContext.forumDependencies,
+            appModel: appModel,
+            mode: .contentBrowser
+        ))
         _organizer = State(initialValue: FavoriteLibraryOrganizer(
             libraryStore: dependencies.localFavoriteLibraryStore,
             readingProgressStore: dependencies.readingProgressStore,
@@ -72,6 +79,9 @@ struct LocalFavoritesRootView: View {
     var body: some View {
         LocalFavoritesOrganizationView(
             organizer: organizer,
+            navigator: navigator,
+            routes: routes,
+            detailScreen: detailScreen,
             favoriteShare: favoriteShare,
             remoteSync: remoteSync,
             updateMonitor: updateMonitor,
@@ -147,6 +157,10 @@ struct LocalFavoritesRootView: View {
 
     private func present(_ target: LocalFavoriteOpenTarget) {
         switch target {
+        case let .novelDetail(context):
+            routes.detail = .novel(context)
+        case let .mangaDetail(context):
+            routes.detail = .manga(context)
         case let .novelReader(context):
             appModel.presentNovelReader(context)
         case let .mangaReader(context):
@@ -156,6 +170,21 @@ struct LocalFavoritesRootView: View {
             // favorites tab stays put underneath, mirroring the reader's
             // 打开原帖 behavior.
             threadOverlayItem = ForumThreadOverlayItem(url: url, title: title)
+        }
+    }
+
+    private func detailScreen(_ destination: ContentDetailDestination) -> ContentDetailScreen {
+        ContentDetailScreen(
+            destination: destination,
+            novelDependencies: appModel.appContext.novelDetailDependencies,
+            mangaDependencies: appModel.appContext.mangaDetailDependencies
+        ) { action in
+            switch action {
+            case let .readNovel(context): appModel.presentNovelReader(context)
+            case let .readManga(context): appModel.presentMangaReader(context)
+            case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
+            case let .discussion(context): navigator.push(.threadReader(context))
+            }
         }
     }
 }

@@ -118,7 +118,7 @@ private struct PrivateMessageContentView: View {
                 }
                 .topRefreshIndicator(isVisible: isLoading)
             } else if isLoading {
-                ForumContentLoadingView(layout: .fills)
+                ContentLoadingView(layout: .fills)
             } else if let errorMessage {
                 LoadFailureView(message: errorMessage, details: errorDetails, retry: retry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

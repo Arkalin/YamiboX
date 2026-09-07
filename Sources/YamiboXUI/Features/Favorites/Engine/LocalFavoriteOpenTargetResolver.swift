@@ -2,17 +2,17 @@ import Foundation
 import YamiboXCore
 
 enum LocalFavoriteOpenTarget: Sendable {
+    case novelDetail(NovelDetailLaunchContext)
+    case mangaDetail(MangaDetailLaunchContext)
     case novelReader(NovelLaunchContext)
     case mangaReader(MangaLaunchContext)
     case nativeThread(url: URL, title: String)
 }
 
-/// Resolves a favorite item into a concrete reader launch target, combining
-/// the latest stored item with its reading progress.
+/// Resolves a favorite using its latest stored metadata, settings and progress.
+/// Preferred card taps may open details; explicit resume/start always read.
 ///
-/// `.mangaThread` favorites always resolve to the reader directly (mirroring
-/// the pre-refactor `.mangaTitle` behavior of skipping the forum detail page)
-/// — see smart-comic-mode design decision #7. Per decision #15's 2026-07-08
+/// Manga reading retains the existing resume policy. Per decision #15's 2026-07-08
 /// update, which progress record backs the resume position depends on
 /// whether the favorite's board currently has Smart Comic Mode on:
 /// - Mode on: resume via the directory-level `.mangaTitle` record. The
@@ -31,17 +31,6 @@ enum LocalFavoriteOpenTarget: Sendable {
 /// its members this way, matching how it renders them as ordinary non-smart
 /// cards (see `FavoriteMangaReadingScope`).
 ///
-/// TODO(Phase F): favorites now compute virtual merged-directory grouping
-/// (`LocalFavoriteLibraryProjection.cards`/`FavoriteCardProjection
-/// .mangaDirectory`/`.mergedMembers`), but this resolver still only knows
-/// about individual `FavoriteItem`s. A tap on a *merged card* should
-/// presumably resolve through here using `mangaDirectory`'s identity
-/// directly (`FavoriteContentTarget(mangaID: directory.favoriteIdentity,
-/// mangaCleanBookName: directory.cleanBookName)`, the same key
-/// `mangaDirectoryResumeTarget` below already reads) rather than picking one
-/// member's tid and going through the existing single-item path — Phase F's
-/// UI work needs to decide how it calls into this resolver for a merged card
-/// before this can be filled in.
 struct LocalFavoriteOpenTargetResolver {
     let libraryStore: FavoriteLibraryStore
     let readingProgressStore: ReadingProgressStore
@@ -73,11 +62,20 @@ struct LocalFavoriteOpenTargetResolver {
         // One settings snapshot backs both the effective-kind dispatch and
         // the manga path's smart bit, so a concurrent configuration change
         // can't make the two disagree within a single resolve.
-        let boardReader = await settingsStore.load().boardReader
+        let settings = await settingsStore.load()
+        let boardReader = settings.boardReader
+        let opensDetails = mode == .preferred && settings.favorites.itemTapAction == .detail
 
         switch effectiveOpenKind(for: latestItem, boardReader: boardReader) {
         case .novelThread:
             let novel = await readingProgressStore.load(threadID: threadID)?.novel
+            if opensDetails {
+                return .novelDetail(NovelDetailLaunchContext(
+                    thread: ThreadIdentity(tid: threadID, fid: latestItem.forumID),
+                    title: latestItem.resolvedDisplayTitle,
+                    authorID: novel?.novelResumePoint?.authorID ?? novel?.authorID
+                ))
+            }
             let resumePoint = mode == .start ? nil : novel?.novelResumePoint
             return .novelReader(
                 NovelLaunchContext(
@@ -103,6 +101,16 @@ struct LocalFavoriteOpenTargetResolver {
                 smartModeEnabled = boardReader.isSmartComicModeEnabled(forumID: latestItem.forumID)
             case .singleThread:
                 smartModeEnabled = false
+            }
+            if opensDetails, smartModeEnabled {
+                let directory = try await mangaDirectoryStore.directory(containingTID: threadID)
+                let title = directory?.cleanBookName ?? MangaTitleCleaner.cleanBookName(latestItem.resolvedDisplayTitle)
+                return .mangaDetail(MangaDetailLaunchContext(
+                    thread: ThreadIdentity(tid: threadID, fid: latestItem.forumID),
+                    title: title,
+                    focusedChapterTID: threadID,
+                    directoryNameHint: title
+                ))
             }
             // Unlike the old `.mangaTitle` merged identity, every
             // `.mangaThread` favorite already carries a real chapter tid, so

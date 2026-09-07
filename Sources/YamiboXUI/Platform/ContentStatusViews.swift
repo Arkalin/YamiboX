@@ -1,7 +1,7 @@
 import SwiftUI
 import YamiboXCore
 
-struct ForumContentLoadingView: View {
+struct ContentLoadingView: View {
     @Environment(\.forumTheme) private var theme
     /// How the placeholder occupies its container: embedded in scroll
     /// content, stretched over the available space, or stretched with the
@@ -41,7 +41,7 @@ struct ForumContentLoadingView: View {
     }
 }
 
-struct ForumContentErrorView: View {
+struct ContentErrorView: View {
     @Environment(\.forumTheme) private var theme
     let message: String
     var details: LoadFailureDetails?
