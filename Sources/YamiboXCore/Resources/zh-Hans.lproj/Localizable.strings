@@ -640,7 +640,7 @@
 "forum.novel_detail.refresh_failed" = "刷新失败：%@";
 "forum.home.search_placeholder" = "搜索论坛";
 "forum.home.today_count" = "今日 %d";
-"forum.history" = "浏览历史";
+"forum.history" = "浏览记录";
 "forum.open_native_failed" = "无法原生打开";
 "forum.thread_link.loading" = "正在打开原帖…";
 "forum.unsupported_native_thread" = "当前帖子不适合原生阅读。";
@@ -984,7 +984,7 @@
 "settings.favorite_add_sync_prompt" = "新增收藏时询问是否同步";
 "settings.favorite_remove_sync_default" = "移除收藏默认动作";
 "settings.favorite_remove_sync_prompt" = "移除收藏时询问是否同步删除";
-"settings.favorite_sync_behavior.footer" = "适用于所有收藏入口，包括详情页、阅读页、浏览历史，以及收藏页的“彻底删除”。关闭询问后将按默认动作静默执行；在任意询问弹窗中选择“不再询问”也会更新这里的开关。";
+"settings.favorite_sync_behavior.footer" = "适用于所有收藏入口，包括详情页、阅读页、浏览记录，以及收藏页的“彻底删除”。关闭询问后将按默认动作静默执行；在任意询问弹窗中选择“不再询问”也会更新这里的开关。";
 "settings.favorite_smart_manga_bulk_delete" = "允许批量删除智能漫画收藏";
 "settings.favorite_smart_manga_bulk_delete.footer" = "开启后，智能漫画收藏卡片的长按菜单会新增删除按钮，多选工具栏在选中智能漫画收藏时也会显示删除；删除会移除该卡片归档下的全部收藏项，而不仅是代表项。关闭后仅能通过“查看归档收藏”页面逐项删除。";
 "settings.home_page" = "启动App后进入";
@@ -1082,7 +1082,7 @@
 "home.kind.smart_manga" = "智能漫画";
 "home.empty" = "暂无阅读记录";
 "home.previous.empty" = "暂无更早的阅读记录";
-"home.open_failed" = "暂时无法打开这条阅读记录，请从浏览历史重试。";
+"home.open_failed" = "暂时无法打开这条阅读记录，请从浏览记录重试。";
 "tab.mine" = "我的";
 "translation.original" = "原文";
 "translation.simplified" = "简体";
@@ -1120,7 +1120,7 @@
 "history.empty" = "还没有浏览记录";
 "history.empty.search" = "没有匹配的记录";
 "history.clear_all" = "清空";
-"history.clear_all.title" = "清空浏览历史";
+"history.clear_all.title" = "清空浏览记录";
 "history.clear_all.message" = "将删除全部浏览记录，阅读进度不受影响。";
 "history.search.prompt" = "搜索标题";
 "history.section.today" = "今天";
