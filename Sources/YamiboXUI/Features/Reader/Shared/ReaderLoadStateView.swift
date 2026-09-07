@@ -72,9 +72,11 @@ private struct ReaderLoadStateFailureContent: View {
             }
 
             if let retryAction {
-                Button(L10n.string("common.retry"), action: retryAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(tint)
+                Button(action: retryAction) {
+                    Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .tint(tint)
                 LoadFailureDetailsButton(details: details, message: message.isEmpty ? title : message)
             }
         }
