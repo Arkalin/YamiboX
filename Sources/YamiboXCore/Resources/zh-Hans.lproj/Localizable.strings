@@ -270,6 +270,7 @@
 "favorites.location_picker.title" = "选择收藏位置";
 "favorites.quick.add_prompt.local_only" = "仅本地收藏";
 "favorites.quick.add_prompt.local_remember" = "仅本地（不再询问）";
+"favorites.quick.add_prompt.remember" = "不再询问";
 "favorites.quick.add_prompt.message" = "把这条收藏也加入你的百合会网站收藏吗？";
 "favorites.quick.add_prompt.sync" = "同步到百合会";
 "favorites.quick.add_prompt.sync_remember" = "总是同步（不再询问）";
