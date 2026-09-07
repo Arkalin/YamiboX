@@ -76,6 +76,26 @@ struct SettingsStorageView: View {
                 .disabled(viewModel.isBusy)
 
                 Button {
+                    pendingConfirmation = .clearReadingProgress
+                } label: {
+                    SystemSettingsRow(
+                        title: L10n.string("settings.clear_reading_progress"),
+                        showsChevron: false
+                    )
+                }
+                .disabled(viewModel.isBusy)
+
+                Button {
+                    pendingConfirmation = .clearBrowsingHistory
+                } label: {
+                    SystemSettingsRow(
+                        title: L10n.string("settings.clear_browsing_history"),
+                        showsChevron: false
+                    )
+                }
+                .disabled(viewModel.isBusy || dependencies.library.browsingHistoryStore == nil)
+
+                Button {
                     showingMangaDirectoryManagement = true
                 } label: {
                     SystemSettingsRow(
@@ -182,6 +202,10 @@ struct SettingsStorageView: View {
             _ = await viewModel.clearOtherCaches()
         case .clearImageCache:
             _ = await viewModel.clearImageCache()
+        case .clearReadingProgress:
+            _ = await viewModel.clearReadingProgress()
+        case .clearBrowsingHistory:
+            _ = await viewModel.clearBrowsingHistory()
         case .resetApplication:
             let didReset = await viewModel.resetApplication()
             guard didReset else { return }

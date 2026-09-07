@@ -9,6 +9,50 @@ import YamiboXTestSupport
 // composition root's other pages.
 @MainActor
 final class SettingsStorageViewModelTests: XCTestCase {
+    func testClearReadingProgressPreservesHistoryAndCaches() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let progress = fixture.appContext.readingProgressStore
+        let history = fixture.appContext.browsingHistoryStore
+        try await progress.saveNormalThread(threadID: "100", page: 3)
+        try await history.record(BrowsingHistoryEntry(target: .normalThread(threadID: "100"), title: "Thread"))
+        try await seedNovelCache(fixture)
+        let cacheBytes = await fixture.novelReaderCacheStore.totalDiskUsageBytes()
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+
+        let didClear = await settings.storage.clearReadingProgress()
+
+        let records = await progress.loadAll()
+        let entries = await history.entries()
+        let remainingBytes = await fixture.novelReaderCacheStore.totalDiskUsageBytes()
+        XCTAssertTrue(didClear)
+        XCTAssertTrue(records.isEmpty)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(remainingBytes, cacheBytes)
+        XCTAssertFalse(settings.storage.isBusy)
+        XCTAssertNil(settings.storage.errorMessage)
+    }
+
+    func testClearBrowsingHistoryPreservesReadingProgress() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let progress = fixture.appContext.readingProgressStore
+        let history = fixture.appContext.browsingHistoryStore
+        try await progress.saveNormalThread(threadID: "100", page: 3)
+        let savedProgress = await progress.loadAll()
+        XCTAssertEqual(savedProgress.count, 1)
+        try await history.record(BrowsingHistoryEntry(target: .normalThread(threadID: "100"), title: "Thread"))
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+
+        let didClear = await settings.storage.clearBrowsingHistory()
+
+        let records = await progress.loadAll()
+        let entries = await history.entries()
+        XCTAssertTrue(didClear)
+        XCTAssertTrue(entries.isEmpty)
+        XCTAssertEqual(records, savedProgress)
+        XCTAssertFalse(settings.storage.isBusy)
+        XCTAssertNil(settings.storage.errorMessage)
+    }
+
     func testLoadReadsStorageUsageAcrossAllCacheCategories() async throws {
         let fixture = try makeSystemSettingsFixture()
         try await seedNovelCache(fixture)

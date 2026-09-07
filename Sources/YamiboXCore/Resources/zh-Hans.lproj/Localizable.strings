@@ -1061,6 +1061,10 @@
 "settings.section.favorites" = "收藏";
 "settings.section.reading" = "阅读";
 "settings.section.data_storage" = "数据与存储";
+"settings.clear_reading_progress" = "清理阅读进度";
+"settings.clear_browsing_history" = "清理浏览记录";
+"settings.confirm_clear_reading_progress" = "确认清理阅读进度";
+"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度，浏览记录、收藏和离线缓存不受影响。";
 "settings.section.backup_sync" = "备份与同步";
 "settings.section.reset" = "重置";
 "settings.section.favorites_browsing" = "浏览与排序";

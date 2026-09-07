@@ -7,6 +7,8 @@ enum SystemSettingsAction: Equatable {
     case clearingContentCoverCache
     case clearingOtherCaches
     case clearingImageCache
+    case clearingReadingProgress
+    case clearingBrowsingHistory
     case clearingOfflineCache
     case clearingMangaDirectory
     case resettingApplication
@@ -112,6 +114,8 @@ enum SystemSettingsConfirmation: String, Identifiable {
     case clearContentCoverCache
     case clearOtherCaches
     case clearImageCache
+    case clearReadingProgress
+    case clearBrowsingHistory
     case restoreBoardReaderDefaults
     case resetApplication
     case signOut
@@ -128,6 +132,10 @@ enum SystemSettingsConfirmation: String, Identifiable {
             L10n.string("settings.confirm_clear_other_caches")
         case .clearImageCache:
             L10n.string("settings.confirm_clear_image_cache")
+        case .clearReadingProgress:
+            L10n.string("settings.confirm_clear_reading_progress")
+        case .clearBrowsingHistory:
+            L10n.string("history.clear_all.title")
         case .restoreBoardReaderDefaults:
             L10n.string("settings.board_reader.confirm_restore_default")
         case .resetApplication:
@@ -139,7 +147,8 @@ enum SystemSettingsConfirmation: String, Identifiable {
 
     var buttonTitle: String {
         switch self {
-        case .clearWebReaderCache, .clearContentCoverCache, .clearOtherCaches, .clearImageCache:
+        case .clearWebReaderCache, .clearContentCoverCache, .clearOtherCaches, .clearImageCache,
+             .clearReadingProgress, .clearBrowsingHistory:
             L10n.string("common.clear")
         case .restoreBoardReaderDefaults:
             L10n.string("settings.board_reader.restore")
@@ -160,6 +169,10 @@ enum SystemSettingsConfirmation: String, Identifiable {
             L10n.string("settings.clear_other_caches_message")
         case .clearImageCache:
             L10n.string("settings.clear_image_cache_message")
+        case .clearReadingProgress:
+            L10n.string("settings.clear_reading_progress_message")
+        case .clearBrowsingHistory:
+            L10n.string("history.clear_all.message")
         case .restoreBoardReaderDefaults:
             L10n.string("settings.board_reader.restore_default_message")
         case .resetApplication:

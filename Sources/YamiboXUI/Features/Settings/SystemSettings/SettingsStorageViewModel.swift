@@ -115,6 +115,39 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         }
     }
 
+    func clearReadingProgress() async -> Bool {
+        activeAction = .clearingReadingProgress
+        defer { activeAction = nil }
+
+        do {
+            try await dependencies.library.readingProgressStore.clearAll()
+            return true
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+            return false
+        }
+    }
+
+    func clearBrowsingHistory() async -> Bool {
+        guard let store = dependencies.library.browsingHistoryStore else { return false }
+        activeAction = .clearingBrowsingHistory
+        defer { activeAction = nil }
+
+        do {
+            try await store.clearAll()
+            return true
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+            return false
+        }
+    }
+
     // MARK: - Application reset
 
     func resetApplication() async -> Bool {

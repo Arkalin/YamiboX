@@ -215,6 +215,18 @@ enum SettingsSearchRegistry {
             keywords: ["清理", "缓存", "空间", "封面", "索引"]
         ),
         SettingsSearchEntry(
+            id: "storage.clear_reading_progress",
+            title: L10n.string("settings.clear_reading_progress"),
+            category: .storage,
+            keywords: ["清理", "阅读", "进度"]
+        ),
+        SettingsSearchEntry(
+            id: "storage.clear_browsing_history",
+            title: L10n.string("settings.clear_browsing_history"),
+            category: .storage,
+            keywords: ["清理", "清空", "浏览", "记录", "历史"]
+        ),
+        SettingsSearchEntry(
             id: "storage.manga_directory",
             title: L10n.string("settings.manga_directory.cleanup"),
             category: .storage,
