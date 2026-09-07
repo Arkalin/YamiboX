@@ -4,7 +4,7 @@ import XCTest
 final class NovelNovelReaderVerticalViewportPositionUpdateTimingTests: XCTestCase {
     func testTextViewportSampleChangeAppliesProgressImmediately() {
         XCTAssertEqual(
-            NovelReaderVerticalViewportPositionUpdateTiming.updateMode(for: .textViewportSampleChanged),
+            NovelReaderVerticalViewportPositionUpdateTiming.updateMode(for: .viewportSampleChanged),
             .immediate
         )
     }

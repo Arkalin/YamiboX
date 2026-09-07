@@ -1,6 +1,14 @@
 import CoreGraphics
 
 enum NovelReaderVerticalPositioning {
+    static func nearestSurfaceIndex(to referenceLineY: CGFloat, frames: [Int: CGRect]) -> Int? {
+        frames.min { lhs, rhs in
+            let lhsDistance = pageDistance(from: referenceLineY, to: lhs.value)
+            let rhsDistance = pageDistance(from: referenceLineY, to: rhs.value)
+            return lhsDistance == rhsDistance ? lhs.key < rhs.key : lhsDistance < rhsDistance
+        }?.key
+    }
+
     static func viewportReadingAnchorLineY(in bounds: CGRect) -> CGFloat {
         min(max(bounds.height * 0.16, 96), max(bounds.height - 96, 0))
     }

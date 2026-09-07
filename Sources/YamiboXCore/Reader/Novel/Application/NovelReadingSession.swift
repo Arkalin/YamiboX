@@ -99,7 +99,7 @@ package struct NovelReadingSession: Sendable {
     private var usesPagedSpread: Bool
     private var pageTurnDirection: ReaderPageTurnDirection
     private var pendingResumePoint: NovelResumePoint?
-    private var preservedTextResumePoint: NovelResumePoint?
+    private var preservedResumePoint: NovelResumePoint?
 
     init(
         projection: NovelReaderProjection,
@@ -116,7 +116,7 @@ package struct NovelReadingSession: Sendable {
             usesPagedSpread: usesPagedSpread,
             pageTurnDirection: pageTurnDirection
         )
-        preservedTextResumePoint = resumePoint
+        preservedResumePoint = resumePoint
         consumeCommittedLayoutResult(
             layoutResult,
             for: projection,
@@ -140,7 +140,7 @@ package struct NovelReadingSession: Sendable {
             usesPagedSpread: usesPagedSpread,
             pageTurnDirection: pageTurnDirection
         )
-        preservedTextResumePoint = resumePoint
+        preservedResumePoint = resumePoint
         try validateCommittedLayoutResult(layoutResult, for: projection)
         consumeCommittedLayoutResult(
             layoutResult,
@@ -164,7 +164,7 @@ package struct NovelReadingSession: Sendable {
         self.usesPagedSpread = usesPagedSpread
         self.pageTurnDirection = pageTurnDirection
         self.pendingResumePoint = nil
-        self.preservedTextResumePoint = nil
+        self.preservedResumePoint = nil
         self.snapshot = NovelReadingSnapshot(
             selectedSurfaceOrdinal: 0,
             currentSurfaceIntraProgress: 0,
@@ -223,6 +223,7 @@ package struct NovelReadingSession: Sendable {
 
     public mutating func selectSurface(_ surfaceOrdinal: Int) {
         updateLocation(surfaceOrdinal: surfaceOrdinal, intraSurfaceProgress: 0)
+        preserveCurrentResumePointIfAvailable()
     }
 
     @discardableResult
@@ -231,7 +232,7 @@ package struct NovelReadingSession: Sendable {
             return false
         }
         setCurrentLocation(target)
-        preserveCurrentTextResumePointIfAvailable()
+        preserveCurrentResumePointIfAvailable()
         return true
     }
 
@@ -301,7 +302,7 @@ package struct NovelReadingSession: Sendable {
 
     public mutating func updateVerticalViewportPosition(surfaceOrdinal: Int, intraSurfaceProgress: Double) {
         updateLocation(surfaceOrdinal: surfaceOrdinal, intraSurfaceProgress: intraSurfaceProgress)
-        preserveCurrentTextResumePointIfAvailable()
+        preserveCurrentResumePointIfAvailable()
     }
 
     public mutating func updateVerticalViewportPosition(sample: NovelTextViewportSample) {
@@ -311,7 +312,7 @@ package struct NovelReadingSession: Sendable {
             return
         }
         setCurrentLocation(target)
-        preserveCurrentTextResumePointIfAvailable()
+        preserveCurrentResumePointIfAvailable()
     }
 
     package mutating func updateMaximumView(_ maxView: Int) {
@@ -340,12 +341,27 @@ package struct NovelReadingSession: Sendable {
     }
 
     public func captureNovelReadingPosition() -> NovelResumePoint? {
-        currentNovelReadingPosition() ?? preservedTextResumePoint
+        currentNovelReadingPosition() ?? preservedResumePoint
     }
 
     private func currentNovelReadingPosition() -> NovelResumePoint? {
-        guard let page = selectedViewportSurface,
-              let chapterOrdinal = page.chapterOrdinal,
+        guard let page = selectedViewportSurface else { return nil }
+        if let image = page.externalBlocks.first,
+           let imageIdentity = image.imageSegmentIdentity,
+           let chapterOrdinal = image.chapterOrdinal ?? page.chapterOrdinal {
+            return NovelResumePoint(
+                view: page.documentView,
+                chapterIdentity: image.chapterIdentity,
+                textSegmentIdentity: imageIdentity,
+                displayedTextOffset: 0,
+                chapterOrdinal: chapterOrdinal,
+                chapterTitle: image.chapterTitle ?? page.chapterTitle,
+                segmentProgress: 0,
+                authorID: snapshot.currentAuthorID,
+                readingModeHint: layoutResult?.viewportIndex.readingMode ?? .paged
+            )
+        }
+        guard let chapterOrdinal = page.chapterOrdinal,
               let position = page.semanticTextPosition(
                 for: snapshot.currentSurfaceIntraProgress,
                 in: currentProjection
@@ -511,7 +527,7 @@ package struct NovelReadingSession: Sendable {
             currentAuthorID: projection.resolvedAuthorID ?? snapshot.currentAuthorID
         )
         pendingResumePoint = nil
-        preserveCurrentTextResumePointIfAvailable()
+        preserveCurrentResumePointIfAvailable()
     }
 
     package func surfaceCount(in view: Int) -> Int {
@@ -534,9 +550,9 @@ package struct NovelReadingSession: Sendable {
         layoutResult
     }
 
-    private mutating func preserveCurrentTextResumePointIfAvailable() {
+    private mutating func preserveCurrentResumePointIfAvailable() {
         guard let resumePoint = currentNovelReadingPosition() else { return }
-        preservedTextResumePoint = resumePoint
+        preservedResumePoint = resumePoint
     }
 
     private func displayedViewCandidate(for preferredSurfaceOrdinal: Int, surfaces: [NovelTextViewportIndexSurface]) -> Int {

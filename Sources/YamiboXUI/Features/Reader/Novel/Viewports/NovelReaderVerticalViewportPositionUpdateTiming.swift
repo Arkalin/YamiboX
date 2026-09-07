@@ -1,6 +1,6 @@
 enum NovelReaderVerticalViewportPositionUpdateTiming {
     enum Trigger: Equatable, Sendable {
-        case textViewportSampleChanged
+        case viewportSampleChanged
         case viewportGeometryChanged
     }
 
@@ -11,7 +11,7 @@ enum NovelReaderVerticalViewportPositionUpdateTiming {
 
     static func updateMode(for trigger: Trigger) -> UpdateMode {
         switch trigger {
-        case .textViewportSampleChanged:
+        case .viewportSampleChanged:
             return .immediate
         case .viewportGeometryChanged:
             return .deferred

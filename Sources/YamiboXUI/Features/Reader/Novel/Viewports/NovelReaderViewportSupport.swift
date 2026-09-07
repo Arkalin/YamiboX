@@ -27,6 +27,11 @@ struct NovelReaderVerticalSurfaceFrameValue: Equatable {
     let frame: CGRect
 }
 
+enum NovelReaderVerticalViewportSample: Equatable {
+    case text(NovelTextViewportSample)
+    case image(NovelReaderSurfaceIdentity)
+}
+
 /// Per-scroll-frame pixel data (surface frames, TextKit viewport samples)
 /// only needs to be *available* to imperative restore/position-tracking code
 /// — it is never read from `NovelReaderView.body`. Holding it in a plain
@@ -36,7 +41,7 @@ struct NovelReaderVerticalSurfaceFrameValue: Equatable {
 @MainActor
 final class NovelReaderVerticalViewportSamplingBox {
     var surfaceFrames: [Int: NovelReaderVerticalSurfaceFrameValue] = [:]
-    var textViewportSample: NovelTextViewportSample?
+    var viewportSample: NovelReaderVerticalViewportSample?
 }
 
 struct NovelReaderVerticalPositioningFingerprint: Equatable {

@@ -746,6 +746,19 @@ public final class NovelReaderViewModel {
         promoteIfNeededAfterLocationUpdate()
     }
 
+    func updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample) {
+        guard settings.readingMode == .vertical else { return }
+        switch sample {
+        case let .text(textSample):
+            updateVerticalViewportPosition(sample: textSample)
+        case let .image(identity):
+            guard let index = novelReaderPresentation?.surfaces.firstIndex(where: {
+                $0.identity == identity && $0.kind == .externalBlock
+            }) else { return }
+            updateVerticalViewportPosition(surfaceIndex: index, intraSurfaceProgress: 0)
+        }
+    }
+
     package func updateVerticalViewportPosition(sample: NovelTextViewportSample) {
         let oldSurfaceIndex = selectedSurfaceIndex
         let oldProgress = currentSurfaceIntraProgress

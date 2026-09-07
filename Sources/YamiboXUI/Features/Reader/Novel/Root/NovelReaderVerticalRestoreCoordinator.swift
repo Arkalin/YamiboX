@@ -112,14 +112,13 @@ final class NovelReaderVerticalRestoreCoordinator {
         applyVerticalViewportPositionUpdate(for: .viewportGeometryChanged, model: model)
     }
 
-    /// Body of the old `onTextViewportSampleChange` closure.
-    func handleTextViewportSampleChange(
-        _ sample: NovelTextViewportSample?,
+    func handleViewportSampleChange(
+        _ sample: NovelReaderVerticalViewportSample?,
         model: NovelReaderViewModel
     ) {
-        guard verticalViewportSampling.textViewportSample != sample else { return }
-        verticalViewportSampling.textViewportSample = sample
-        applyVerticalViewportPositionUpdate(for: .textViewportSampleChanged, model: model)
+        guard verticalViewportSampling.viewportSample != sample else { return }
+        verticalViewportSampling.viewportSample = sample
+        applyVerticalViewportPositionUpdate(for: .viewportSampleChanged, model: model)
     }
 
     // MARK: - Fingerprint bookkeeping
@@ -190,7 +189,12 @@ final class NovelReaderVerticalRestoreCoordinator {
 
     private func makeVerticalScrollRequest(model: NovelReaderViewModel) -> NovelReaderVerticalScrollRequest {
         let resumePoint = model.currentNovelResumePoint
-        let textAnchor = resumePoint?.view == model.visibleView
+        let isImage = model.novelReaderSurfaces.contains { surface in
+            surface.documentView == resumePoint?.view && surface.externalBlocks.contains {
+                $0.imageSegmentIdentity != nil && $0.imageSegmentIdentity == resumePoint?.textSegmentIdentity
+            }
+        }
+        let textAnchor = !isImage && resumePoint?.view == model.visibleView
             ? resumePoint.map(NovelReaderVerticalTextAnchor.init(position:))
             : nil
         verticalScrollRequestCommandID &+= 1
@@ -220,7 +224,7 @@ final class NovelReaderVerticalRestoreCoordinator {
             return
         }
 
-        if let sample = verticalViewportSampling.textViewportSample {
+        if let sample = verticalViewportSampling.viewportSample {
             model.updateVerticalViewportPosition(sample: sample)
             rememberCurrentVerticalPositioningFingerprint(model: model)
         }

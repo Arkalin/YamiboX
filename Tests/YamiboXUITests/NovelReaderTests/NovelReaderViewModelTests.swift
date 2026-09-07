@@ -13,6 +13,67 @@ private typealias NovelTextLayoutFixture = @Sendable (
 
 final class NovelReaderViewModelTests: XCTestCase {
     @MainActor
+    func testVerticalImageSamplesSaveRestoreAndRejectStaleGeneration() async throws {
+        let model = try await makeModel(
+            documents: [makeImageProgressDocument()],
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            imagePrefetchCoordinator: ReaderImagePrefetchCoordinator(isCached: { _ in true }, load: { _ in }),
+            pagination: { document, settings, layout in
+                try NovelTextLayout.layout(document: document, settings: settings, layout: layout)
+            }
+        )
+        defer { model.close() }
+        let restore = NovelReaderVerticalRestoreCoordinator()
+        defer { restore.cancelPendingRestoreWork() }
+        let scrollCoordinator = NovelReaderVerticalScrollCoordinator()
+        let image = try XCTUnwrap(model.novelReaderSurfaces.last { $0.kind == .externalBlock })
+        let imageIdentity = try XCTUnwrap(image.externalBlocks.first?.imageSegmentIdentity)
+
+        restore.handleViewportSampleChange(.image(image.identity), model: model)
+        XCTAssertEqual(model.currentNovelResumePoint?.textSegmentIdentity, imageIdentity)
+        restore.handleViewportSampleChange(nil, model: model)
+        restore.syncVerticalViewportBeforeSave(model: model, scrollCoordinator: scrollCoordinator)
+        let context = await model.saveProgress()
+        XCTAssertEqual(context.initialResumePoint?.textSegmentIdentity, imageIdentity)
+
+        let imageRestore = NovelReaderVerticalRestoreCoordinator()
+        defer { imageRestore.cancelPendingRestoreWork() }
+        imageRestore.restoreVerticalPositionIfNeeded(model: model, scrollCoordinator: scrollCoordinator)
+        let request = try XCTUnwrap(imageRestore.verticalScrollRequest)
+        XCTAssertNil(request.textAnchor)
+        XCTAssertEqual(request.surfaceIndex, image.presentationIndex)
+        XCTAssertEqual(request.intraSurfaceProgress, 0)
+        imageRestore.cancelPendingRestoreWork()
+        imageRestore.cancelVerticalRestoreForUserScroll()
+
+        await model.commitNovelTextLayout(NovelReaderLayout(width: 390, height: 700))
+        let newImage = try XCTUnwrap(model.novelReaderSurfaces.last { $0.kind == .externalBlock })
+        XCTAssertNotEqual(newImage.identity.generation, image.identity.generation)
+        XCTAssertEqual(model.currentNovelResumePoint?.textSegmentIdentity, imageIdentity)
+
+        let text = try XCTUnwrap(model.novelReaderSurfaces.first { $0.kind == .text })
+        model.selectSurface(text.presentationIndex)
+        let textPosition = try XCTUnwrap(model.currentNovelResumePoint)
+        model.updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample.image(image.identity))
+        XCTAssertEqual(model.currentNovelResumePoint, textPosition)
+
+        model.updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample.image(newImage.identity))
+        XCTAssertEqual(model.currentNovelResumePoint?.textSegmentIdentity, imageIdentity)
+        let sample = NovelTextViewportSample(
+            surfaceIdentity: text.identity, documentView: text.documentView,
+            textSegmentIdentity: try XCTUnwrap(textPosition.textSegmentIdentity), displayedTextOffset: 1
+        )
+        model.updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample.text(sample))
+        XCTAssertEqual(model.currentNovelResumePoint?.textSegmentIdentity, textPosition.textSegmentIdentity)
+        XCTAssertEqual(model.currentNovelResumePoint?.displayedTextOffset, 1)
+
+        let textRestore = NovelReaderVerticalRestoreCoordinator()
+        defer { textRestore.cancelPendingRestoreWork() }
+        textRestore.restoreVerticalPositionIfNeeded(model: model, scrollCoordinator: scrollCoordinator)
+        XCTAssertNotNil(textRestore.verticalScrollRequest?.textAnchor)
+    }
+
+    @MainActor
     func testImagePrefetchFollowsReadingPositionSettingsAndMemoryPressure() async throws {
         var requested: [String] = []
         let prefetch = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {

@@ -31,7 +31,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let onScrollRequestHandled: (NovelReaderVerticalScrollRequest) -> Void
     let onScrollViewReady: (UIScrollView) -> Void
     let onSurfaceFramesChange: ([Int: NovelReaderVerticalSurfaceFrameValue]) -> Void
-    let onTextViewportSampleChange: (NovelTextViewportSample?) -> Void
+    let onViewportSampleChange: (NovelReaderVerticalViewportSample?) -> Void
     let onViewportChange: () -> Void
     let onScrollSettled: () -> Void
     let onTap: () -> Void
@@ -112,8 +112,8 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         private var handledScrollRequest: NovelReaderVerticalScrollRequest?
         private var lastPublishedSurfaceFrames: [Int: NovelReaderVerticalSurfaceFrameValue]?
         private var lastPublishedVisibleSurfaceIdentities: [NovelReaderSurfaceIdentity]?
-        private var lastPublishedTextViewportSample: NovelTextViewportSample?
-        private var hasPublishedNilTextViewportSample = false
+        private var lastPublishedViewportSample: NovelReaderVerticalViewportSample?
+        private var hasPublishedNilViewportSample = false
         private var isImmediateVisibleTextRedrawScheduled = false
         private var isDelayedVisibleTextRedrawScheduled = false
         lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
@@ -414,34 +414,36 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             }
 
             let referenceLineY = NovelReaderVerticalPositioning.viewportReadingAnchorLineY(in: scrollView.bounds)
-            let textSample = collectionView.indexPathsForVisibleItems
-                .compactMap { indexPath -> (distance: CGFloat, sample: NovelTextViewportSample)? in
-                    guard verticalSurface(for: indexPath.item) != nil,
-                          let cell = collectionView.cellForItem(at: indexPath) as? NovelReaderVerticalViewportCell,
-                          let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
-                        return nil
-                    }
-                    let visibleFrame = attributes.frame.offsetBy(
-                        dx: -collectionView.contentOffset.x,
-                        dy: -collectionView.contentOffset.y
-                    )
-                    guard let sample = cell.textViewportSample(
-                        referenceLineY: referenceLineY,
-                        surfaceFrame: visibleFrame
-                    ) else {
-                        return nil
-                    }
-                    return (NovelReaderVerticalPositioning.pageDistance(from: referenceLineY, to: visibleFrame), sample)
-                }
-                .min { $0.distance < $1.distance }?.sample
-            let onTextViewportSampleChange = parent.onTextViewportSampleChange
-            if shouldPublishTextViewportSample(textSample) {
-                lastPublishedTextViewportSample = textSample
-                hasPublishedNilTextViewportSample = textSample == nil
+            let sample = viewportSample(in: collectionView, frames: frames, referenceLineY: referenceLineY)
+            let onViewportSampleChange = parent.onViewportSampleChange
+            if shouldPublishViewportSample(sample) {
+                lastPublishedViewportSample = sample
+                hasPublishedNilViewportSample = sample == nil
                 callbackScheduler.publish {
-                    onTextViewportSampleChange(textSample)
+                    onViewportSampleChange(sample)
                 }
             }
+        }
+
+        private func viewportSample(
+            in collectionView: UICollectionView,
+            frames: [Int: NovelReaderVerticalSurfaceFrameValue],
+            referenceLineY: CGFloat
+        ) -> NovelReaderVerticalViewportSample? {
+            // Select the surface before asking TextKit for a sample so nearby
+            // text cannot take the reading position away from an image.
+            guard let index = NovelReaderVerticalPositioning.nearestSurfaceIndex(
+                to: referenceLineY, frames: frames.mapValues(\.frame)
+            ), let surface = verticalSurface(for: index) else { return nil }
+            if surface.kind == .externalBlock {
+                return .image(surface.identity)
+            }
+            guard let frame = frames[index]?.frame,
+                  let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? NovelReaderVerticalViewportCell,
+                  let sample = cell.textViewportSample(referenceLineY: referenceLineY, surfaceFrame: frame) else {
+                return nil
+            }
+            return .text(sample)
         }
 
         private func scheduleVisibleTextRedraw(in collectionView: UICollectionView, includeDelayedPass: Bool) {
@@ -470,15 +472,15 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         private func resetPublishedViewportCache() {
             lastPublishedSurfaceFrames = nil
             lastPublishedVisibleSurfaceIdentities = nil
-            lastPublishedTextViewportSample = nil
-            hasPublishedNilTextViewportSample = false
+            lastPublishedViewportSample = nil
+            hasPublishedNilViewportSample = false
         }
 
-        private func shouldPublishTextViewportSample(_ sample: NovelTextViewportSample?) -> Bool {
+        private func shouldPublishViewportSample(_ sample: NovelReaderVerticalViewportSample?) -> Bool {
             guard let sample else {
-                return !hasPublishedNilTextViewportSample || lastPublishedTextViewportSample != nil
+                return !hasPublishedNilViewportSample || lastPublishedViewportSample != nil
             }
-            return lastPublishedTextViewportSample != sample
+            return lastPublishedViewportSample != sample
         }
 
         private func publishScrollSettled(from scrollView: UIScrollView) {

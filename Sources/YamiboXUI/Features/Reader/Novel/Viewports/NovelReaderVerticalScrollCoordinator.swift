@@ -58,9 +58,8 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
     }
 
     var referenceLineY: CGFloat {
-        let height = max(currentViewportMetrics.viewportHeight, 0)
-        guard height > 0 else { return 96 }
-        return min(max(height * 0.22, 72), 160)
+        guard let bounds = scrollView?.bounds else { return 96 }
+        return NovelReaderVerticalPositioning.viewportReadingAnchorLineY(in: bounds)
     }
 
     var hasAttachedScrollView: Bool {

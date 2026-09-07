@@ -630,8 +630,8 @@ public struct NovelReaderView: View {
                     scrollCoordinator: verticalScrollCoordinator
                 )
             },
-            onTextViewportSampleChange: { sample in
-                verticalRestore.handleTextViewportSampleChange(sample, model: model)
+            onViewportSampleChange: { sample in
+                verticalRestore.handleViewportSampleChange(sample, model: model)
             },
             onViewportChange: {
                 verticalRestore.applyVerticalViewportPositionUpdate(
