@@ -512,7 +512,9 @@ final class NovelReadingWorkflowTests: XCTestCase {
     func testWorkflowPublishesPresentationWithGenerationScopedSurfaceIdentities() async throws {
         let threadID = "9192"
         let repository = RecordingNovelReadingRepository(documents: [
-            1: makeNovelDocument(threadID: threadID, view: 1, maxView: 1, authorID: "author-1")
+            1: makeSegmentedNovelDocument(
+                threadID: threadID, view: 1, maxView: 1, authorID: "author-1", segmentCount: 2
+            )
         ])
         let workflow = makeWorkflow(threadID: threadID, repository: repository)
 
@@ -527,10 +529,15 @@ final class NovelReadingWorkflowTests: XCTestCase {
         XCTAssertEqual(initialReference.generation, initialPresentation.generation)
         XCTAssertFalse(initialReference.isStale)
 
-        let navigated = try XCTUnwrap(workflow.jumpRelativeSurface(1)?.state)
+        XCTAssertEqual(initialPresentation.surfaces.count, 2)
+        let navigation = try XCTUnwrap(workflow.jumpRelativeSurface(1))
+        XCTAssertNil(navigation.request)
+        XCTAssertNil(navigation.boundary)
+        let navigated = navigation.state
         let navigatedPresentation = try XCTUnwrap(navigated.presentation)
 
         XCTAssertEqual(navigatedPresentation.generation, initialPresentation.generation)
+        XCTAssertEqual(navigatedPresentation.selectedSurfaceIdentity, initialPresentation.surfaces[1].identity)
         XCTAssertEqual(navigatedPresentation.revision, initialPresentation.revision + 1)
         XCTAssertEqual(workflow.displayReference(for: initialSurface)?.generation, initialPresentation.generation)
 

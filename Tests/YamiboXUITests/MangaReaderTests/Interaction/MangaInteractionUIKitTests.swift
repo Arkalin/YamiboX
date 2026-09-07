@@ -5,10 +5,10 @@ import Testing
 import YamiboXCore
 @testable import YamiboXUI
 
-@MainActor @Suite("Paged interaction UIKit integration")
+@MainActor @Suite("Paged interaction UIKit integration", .serialized)
 struct MangaInteractionUIKitTests {
     @Test(arguments: [false, true], [false, true])
-    func mountedBackendsRouteExternalBoundaryExactlyOnce(curl: Bool, canNavigate: Bool) throws {
+    func mountedBackendsRouteExternalBoundaryExactlyOnce(curl: Bool, canNavigate: Bool) async throws {
         let page = try makePipelinePage()
         let plan = MangaPagedReadingPlan(pages: [page], currentPageIndex: 0)
         let bridge = MangaPagedControlPageTurnBridge()
@@ -38,12 +38,12 @@ struct MangaInteractionUIKitTests {
         window.isHidden = false
         defer { window.isHidden = true; window.rootViewController = nil }
         host.view.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        try await waitUntil { bridge.route != nil }
         #expect(bridge.route != nil)
         bridge.requestPageTurn(1)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        try await waitUntil { boundaries.count + rejections.count >= 1 }
         bridge.requestPageTurn(-1)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        try await waitUntil { boundaries.count + rejections.count >= 2 }
         #expect(boundaries == (canNavigate ? [1, -1] : []))
         #expect(rejections == (canNavigate ? [] : [1, -1]))
     }
@@ -77,10 +77,14 @@ struct MangaInteractionUIKitTests {
         let view = UIView(frame: CGRect(x: 40, y: 80, width: 400, height: 800))
         view.addGestureRecognizer(pan)
         view.addGestureRecognizer(pinch)
-        pan.setTranslation(CGPoint(x: -2, y: 0), in: view)
+        // SwiftUI supplies converted samples; an idle UIKit pan has no touch translation.
+        input.localTranslation = { CGPoint(x: -2, y: 0) }
+        input.localVelocity = { .zero }
         #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == true)
-        pan.setTranslation(CGPoint(x: 2, y: 0), in: view)
+        input.localTranslation = { CGPoint(x: 2, y: 0) }
         #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == false)
+        input.localVelocity = { CGPoint(x: -100, y: 0) }
+        #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == true)
         #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: pinch) == true)
         #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: UIPinchGestureRecognizer()) == false)
         #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: UILongPressGestureRecognizer()) == false)
@@ -89,37 +93,35 @@ struct MangaInteractionUIKitTests {
         #expect(!pan.isEnabled)
     }
 
-    @Test(arguments: [CGFloat(400), 600, 800, 1200])
-    func productionViewInstallsLongPressInFixedViewport(imageWidth: CGFloat) throws {
-        let image = UIGraphicsImageRenderer(size: CGSize(width: imageWidth, height: 800)).image { context in
-            UIColor.red.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: imageWidth, height: 800))
-        }
-        let surface = MangaSurfaceAttachment()
-        let root = MangaPagedReaderScaledImage(image: image, pageID: "layout", pageScaleMode: .fitHeight,
-            initialHorizontalAlignment: .left, pageEdgeFillStyle: .system,
-            isSurfaceInteractionEnabled: true, isZoomInteractionEnabled: true, allowsUnzoomedSurfacePan: true,
-            surfaceInteraction: surface, onLongPress: {})
-        let host = UIHostingController(rootView: root)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true; window.rootViewController = nil }
-        host.view.frame = window.bounds
-        host.view.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        let recognizers = allRecognizers(host.view)
-        let longPress = try #require(recognizers.compactMap { $0 as? UILongPressGestureRecognizer }
-            .first { $0.delegate is MangaSurfaceGestureInput })
-        let input = try #require(longPress.delegate as? MangaSurfaceGestureInput)
+    @Test func longPressRecognizerUsesMenuPolicyAndConfiguredThresholds() throws {
+        let runtime = MangaSurfaceRuntime()
+        runtime.configure(MangaInteractionConfiguration(),
+            geometry: .spread(viewport: CGSize(width: 400, height: 800)), imageLoaded: true)
+        let input = MangaSurfaceGestureInput(runtime: runtime, registry: MangaSurfaceGestureRegistry(), role: .longPress)
+        let longPress = try #require(input.makeRecognizer() as? UILongPressGestureRecognizer)
+        #expect(longPress.delegate === input)
         #expect(longPress.minimumPressDuration == 0.45)
         #expect(longPress.allowableMovement == 10)
-        #expect(abs(input.menuFrame.midX - 200) < 0.5)
-        #expect(abs(input.menuFrame.width - 400 / 3) < 0.5)
+        input.menuFrame = CGRect(x: CGFloat(400) / 3, y: 0, width: CGFloat(400) / 3, height: 800)
+        input.update(longPress)
+        #expect(longPress.isEnabled)
+        input.localLocation = { CGPoint(x: 200, y: 400) }
+        #expect(longPress.delegate?.gestureRecognizerShouldBegin?(longPress) == true)
+        #expect(runtime.menuFrame == input.menuFrame)
+        input.localLocation = { CGPoint(x: 100, y: 400) }
+        #expect(longPress.delegate?.gestureRecognizerShouldBegin?(longPress) == false)
+        input.menuFrame = .zero
+        input.update(longPress)
+        #expect(!longPress.isEnabled)
     }
 
-    private func allRecognizers(_ view: UIView) -> [UIGestureRecognizer] {
-        (view.gestureRecognizers ?? []) + view.subviews.flatMap(allRecognizers)
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !condition(), ContinuousClock.now < deadline {
+            // Yield the main actor so deferred view-update callbacks can actually run.
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(condition())
     }
 
     private final class OriginalDelegate: NSObject, UIGestureRecognizerDelegate {

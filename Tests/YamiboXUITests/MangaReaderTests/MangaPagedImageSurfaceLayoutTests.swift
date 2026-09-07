@@ -122,9 +122,9 @@ struct MangaPagedImageSurfaceLayoutTests {
     @Test func pageLongPressHitFrameStaysInViewportForFitHeightAtEachHorizontalPosition() {
         let pageBounds = CGRect(x: 0, y: 0, width: 400, height: 800)
         let expectedFrame = CGRect(
-            x: 400 / 3,
+            x: pageBounds.width / 3,
             y: 0,
-            width: 400 / 3,
+            width: pageBounds.width / 3,
             height: 800
         )
 
