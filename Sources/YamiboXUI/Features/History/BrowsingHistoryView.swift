@@ -1,12 +1,9 @@
 import SwiftUI
 import YamiboXCore
 
-/// Browsing-history page pushed from the Mine tab's "浏览历史" entry.
-///
-/// Time-descending timeline with date-group headers, a four-way type filter,
-/// local title search, swipe-to-delete, a confirm-guarded clear-all, and a
-/// quick-favorite heart per row (browsing-history decision #10).
+/// Searchable reading timeline shared by Mine and the previous-reading shelf.
 struct BrowsingHistoryView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: BrowsingHistoryViewModel
     private let appModel: YamiboAppModel
 
@@ -17,7 +14,14 @@ struct BrowsingHistoryView: View {
 
     var body: some View {
         historyList
-        .listStyle(.insetGrouped)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            categoryPicker
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(.background)
+                .overlay(alignment: .bottom) { Divider() }
+        }
         .navigationTitle(L10n.string(model.showsPreviousReading ? "home.previous" : "forum.history"))
         .yamiboInlineNavigationTitleDisplayMode()
         .searchable(text: searchTextBinding, prompt: L10n.string("history.search.prompt"))
@@ -70,16 +74,6 @@ struct BrowsingHistoryView: View {
                 model.clearError()
             }
         }
-        .overlay {
-            if model.hasLoaded, model.entries.isEmpty, !model.isLoading {
-                ContentUnavailableView(
-                    isFiltering
-                        ? L10n.string("history.empty.search")
-                        : L10n.string("history.empty"),
-                    systemImage: "clock.arrow.circlepath"
-                )
-            }
-        }
         .task {
             await model.load()
         }
@@ -105,16 +99,42 @@ struct BrowsingHistoryView: View {
 
     private var historyList: some View {
         List {
-            Section {
-                categoryPicker
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    .listRowBackground(Color.clear)
-            }
-
             ForEach(daySections) { section in
-                Section(section.title) {
+                Section {
                     ForEach(section.entries) { entry in
                         row(for: entry)
+                            .listRowInsets(EdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 16))
+                            .alignmentGuide(.listRowSeparatorLeading) { _ in 64 }
+                    }
+                } header: {
+                    Text(section.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .textCase(nil)
+                        .padding(.vertical, 8)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .listSectionSeparator(.hidden)
+            }
+        }
+        .listStyle(.plain)
+        .scrollDismissesKeyboard(.interactively)
+        .overlay {
+            if model.isLoading, model.entries.isEmpty {
+                ProgressView()
+            } else if model.hasLoaded, model.entries.isEmpty {
+                ContentUnavailableView {
+                    Label(
+                        L10n.string(isFiltering ? "history.empty.search" : "history.empty"),
+                        systemImage: isFiltering ? "magnifyingglass" : "clock"
+                    )
+                } actions: {
+                    if isFiltering {
+                        Button(L10n.string("history.filter.reset")) {
+                            model.searchText = ""
+                            model.selectedCategory = nil
+                        }
+                        .buttonStyle(.bordered)
                     }
                 }
             }
@@ -154,7 +174,16 @@ struct BrowsingHistoryView: View {
         )
     }
 
+    @ViewBuilder
     private var categoryPicker: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            categoryOptions.pickerStyle(.menu)
+        } else {
+            categoryOptions.pickerStyle(.segmented)
+        }
+    }
+
+    private var categoryOptions: some View {
         Picker(L10n.string("history.filter.all"), selection: Bindable(model).selectedCategory) {
             Text(L10n.string("history.filter.all")).tag(BrowsingHistoryCategory?.none)
             if !model.showsPreviousReading {
@@ -163,7 +192,6 @@ struct BrowsingHistoryView: View {
             Text(L10n.string("history.filter.novel")).tag(BrowsingHistoryCategory?.some(.novel))
             Text(L10n.string("history.filter.manga")).tag(BrowsingHistoryCategory?.some(.manga))
         }
-        .pickerStyle(.segmented)
         .labelsHidden()
     }
 
@@ -263,6 +291,8 @@ struct BrowsingHistoryView: View {
 }
 
 private struct BrowsingHistoryRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.appTheme) private var appTheme
     let entry: BrowsingHistoryEntry
     /// Effective category (board configuration applied) — drives the
     /// position-text format so the row reads like the reader it would
@@ -276,48 +306,55 @@ private struct BrowsingHistoryRow: View {
     let onToggleFavoriteLongPress: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 8) {
             Button(action: onOpen) {
-                HStack(spacing: 12) {
-                    LocalFavoriteCoverThumbnail(url: coverURL, title: entry.title)
-                        .frame(width: 52, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                HStack(alignment: .top, spacing: 12) {
+                    cover
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 8) {
+                                categoryLabel
+                                visitTime
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                categoryLabel
+                                visitTime
+                            }
+                        }
+
                         Text(entry.title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.body.weight(.medium))
                             .foregroundStyle(.primary)
-                            .lineLimit(2)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                             .multilineTextAlignment(.leading)
 
                         if let positionText {
                             Text(positionText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         }
-
-                        Text(Self.relativeTimeText(for: entry.lastVisitTime))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
                     }
-
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
                 }
+                .frame(minHeight: 76, alignment: .center)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("history.open.\(entry.id)")
 
             if canToggleFavorite {
                 Button(action: onToggleFavorite) {
                     Image(systemName: isFavorited ? "star.fill" : "star")
-                        .font(.body)
-                        .foregroundStyle(isFavorited ? Color.yellow : Color.secondary)
-                        .frame(width: 34, height: 34)
-                        .minimumHitTarget()
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(isFavorited ? appTheme.controlAccent : Color.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(
+                .highPriorityGesture(
                     LongPressGesture(minimumDuration: 0.5).onEnded { _ in onToggleFavoriteLongPress() }
                 )
                 .accessibilityLabel(
@@ -325,8 +362,40 @@ private struct BrowsingHistoryRow: View {
                         ? L10n.string("history.favorite.remove")
                         : L10n.string("history.favorite.add")
                 )
+                .accessibilityIdentifier("history.favorite.\(entry.id)")
             }
         }
+    }
+
+    private var cover: some View {
+        Group {
+            if category == .normal, coverURL == nil {
+                Image(systemName: "text.bubble")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 52, height: 76)
+                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            } else {
+                LocalFavoriteCoverThumbnail(url: coverURL, title: entry.title)
+                    .frame(width: 52, height: 76)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var categoryLabel: some View {
+        Text(L10n.string("history.filter.\(category.rawValue)"))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(appTheme.controlAccent)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var visitTime: some View {
+        Text(entry.lastVisitTime, format: .dateTime.hour().minute())
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var positionText: String? {
@@ -361,21 +430,5 @@ private struct BrowsingHistoryRow: View {
             }
             return pageText
         }
-    }
-
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter
-    }()
-
-    private static func relativeTimeText(for date: Date, now: Date = .now) -> String {
-        // Collapse the whole sub-minute range to "刚刚" instead of letting
-        // RelativeDateTimeFormatter spell out seconds (and, right at zero
-        // difference, misfire as "0秒后"). Mirrors LocalFavoriteRelativeDate.
-        guard now.timeIntervalSince(date) >= 60 else {
-            return L10n.string("common.just_now")
-        }
-        return relativeFormatter.localizedString(for: date, relativeTo: now)
     }
 }

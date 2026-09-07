@@ -1117,6 +1117,7 @@
 "history.filter.normal" = "普通帖";
 "history.filter.novel" = "小说";
 "history.filter.manga" = "漫画";
+"history.filter.reset" = "重置筛选";
 "history.empty" = "还没有浏览记录";
 "history.empty.search" = "没有匹配的记录";
 "history.clear_all" = "清空";
