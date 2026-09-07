@@ -598,6 +598,11 @@ struct LocalFavoritesOrganizationView: View {
                     Label(L10n.string("favorites.category.manage"), systemImage: "slider.horizontal.3")
                 }
                 Button {
+                    routes.sheet = .categoryName(LocalFavoriteCategoryNameDraft(mode: .create))
+                } label: {
+                    Label(L10n.string("favorites.category.create"), systemImage: "plus")
+                }
+                Button {
                     routes.sheet = .collectionEditor(LocalFavoriteCollectionDraft(mode: .create))
                 } label: {
                     Label(L10n.string("favorites.create_collection"), systemImage: "folder.badge.plus")
