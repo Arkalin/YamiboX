@@ -26,6 +26,7 @@ struct LocalFavoriteCategoryNameSheet: View {
             onCancel: onCancel,
             onSave: onSave
         )
+        .presentationDetents([.medium])
     }
 
     private var title: String {

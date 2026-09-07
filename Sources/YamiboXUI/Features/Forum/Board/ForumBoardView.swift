@@ -102,6 +102,7 @@ struct ForumBoardView: View {
         }
         .sheet(isPresented: $isReaderSettingsPresented) {
             ForumBoardReaderSettingsSheet(model: model)
+                .presentationDetents([.medium])
         }
         .failureAlert(
             L10n.string("common.operation_failed"),

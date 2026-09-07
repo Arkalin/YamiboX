@@ -64,6 +64,7 @@ struct LocalFavoriteCollectionEditorSheet: View {
                 }
             }
         }
+        .presentationDetents([.medium])
     }
 
     private var title: String {
