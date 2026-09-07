@@ -69,7 +69,7 @@ struct NovelReaderChromeState: Equatable {
     }
 
     mutating func toggleChrome() {
-        mode = mode == .immersiveHidden ? .visible : .immersiveHidden
+        mode = showsChrome ? .immersiveHidden : .visible
         showsChrome = mode.showsChrome
     }
 

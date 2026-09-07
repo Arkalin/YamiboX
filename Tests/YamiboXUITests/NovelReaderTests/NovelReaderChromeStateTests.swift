@@ -2,6 +2,35 @@ import XCTest
 @testable import YamiboXUI
 
 final class NovelNovelReaderChromeStateTests: XCTestCase {
+    func testVerticalLoadingTapRevealsChrome() {
+        var state = NovelReaderChromeState(showsChrome: false)
+        state.update(
+            isLoading: true,
+            errorMessage: nil,
+            hasPages: false,
+            hasPresentedOverlay: false,
+            usesVerticalReadingMode: true
+        )
+
+        state.toggleChrome()
+        XCTAssertTrue(state.showsChrome)
+        XCTAssertEqual(state.mode, .visible)
+    }
+
+    func testLoadingOverlayAllowsChromeForEveryLoadingReason() {
+        for reason in 0..<4 {
+            let presentation = NovelReaderLoadingOverlayPresentation(
+                isLoading: true,
+                hasSurfaces: reason != 0,
+                isApplyingAppearanceSettings: reason == 1,
+                isNavigatingNovelReaderProjection: reason == 2,
+                shouldConcealViewportContent: reason == 3
+            )
+            XCTAssertTrue(presentation.isPresented)
+            XCTAssertTrue(presentation.allowsChrome)
+        }
+    }
+
     func testInitialContentLoadAutoHidesOnce() {
         var state = NovelReaderChromeState()
 

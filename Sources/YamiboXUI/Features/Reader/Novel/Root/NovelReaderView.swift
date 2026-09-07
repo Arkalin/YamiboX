@@ -133,6 +133,7 @@ public struct NovelReaderView: View {
                     }
                 }
                 .opacity(loadingOverlayPresentation.isPresented ? 0 : 1)
+                .allowsHitTesting(!loadingOverlayPresentation.isPresented)
 
                 // Chrome-visible only, and only once the top chrome has
                 // reported its height: on the first chrome frame
@@ -223,7 +224,7 @@ public struct NovelReaderView: View {
 
                 if loadingOverlayPresentation.isPresented {
                     readerLoadingOverlay
-                        .zIndex(4)
+                        .zIndex(1)
                 }
             }
             .disabled(hasPresentedOverlay)
@@ -682,6 +683,7 @@ public struct NovelReaderView: View {
                 ProgressView(L10n.string("common.loading"))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onTapGesture(perform: toggleChrome)
     }
 
     private func verticalBoundaryPullOverlayLayer(topInset: CGFloat, bottomInset: CGFloat) -> some View {
@@ -900,8 +902,7 @@ public struct NovelReaderView: View {
     // MARK: - Chrome state and control events
 
     private func toggleChrome() {
-        guard !model.novelReaderSurfaces.isEmpty else { return }
-        guard !hasPresentedOverlay else { return }
+        guard !isDismissing, !hasPresentedOverlay else { return }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             chromeState.toggleChrome()
         }

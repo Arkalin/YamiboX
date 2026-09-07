@@ -37,7 +37,8 @@ struct NovelReaderLoadingOverlayPresentation: Equatable, Sendable {
     }
 
     var allowsChrome: Bool {
-        !isPresented
+        // Loading conceals unfinished content, not the reader's controls.
+        true
     }
 }
 
