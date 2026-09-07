@@ -78,12 +78,21 @@ struct SystemSettingsTests {
         let local = AppSettings(appearance: .init(themePreset: .rose))
         let synced = WebDAVSyncedAppSettings(settings: local)
 
-        #expect(synced == .init(homePage: .forum, webBrowser: WebBrowserSettings()))
+        #expect(synced == .init(homePage: .home, webBrowser: WebBrowserSettings()))
         #expect(synced.applying(to: local).appearance.themePreset == .rose)
     }
 
     @Test func enhancedCheckInDefaultsToDisabled() {
         #expect(SystemSettings().enhancedCheckInEnabled == false)
+    }
+
+    @Test func homePageDefaultsAndSavedChoicesRoundTrip() throws {
+        #expect(SystemSettings().homePage == .home)
+        for page in AppHomePage.allCases {
+            let data = try JSONEncoder().encode(SystemSettings(homePage: page))
+            #expect(try JSONDecoder().decode(SystemSettings.self, from: data).homePage == page)
+        }
+        #expect(try JSONDecoder().decode(SystemSettings.self, from: Data("{}".utf8)).homePage == .forum)
     }
 
     @Test func legacyAppSettingsDecodeWithEnhancedCheckInDisabled() throws {

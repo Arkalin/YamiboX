@@ -10,7 +10,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         _ mutate: @Sendable (inout AppSettings) -> Void
     ) async throws -> AppSettings
 
-    var homePage: AppHomePage = .forum
+    var homePage: AppHomePage = .home
     var themePreset = AppThemePreset.classic
 
     let dependencies: SettingsDependencies
@@ -69,7 +69,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     /// Mirrors what `resetApplicationData()` just persisted; see the storage
     /// page's reset action, which fans out to every page.
     func restoreDefaultsAfterApplicationReset() {
-        homePage = .forum
+        homePage = .home
         themePreset = .classic
     }
 }

@@ -10,25 +10,27 @@ struct BrowsingHistoryView: View {
     @State private var model: BrowsingHistoryViewModel
     private let appModel: YamiboAppModel
 
-    init(dependencies: LibraryDependencies, appModel: YamiboAppModel) {
-        _model = State(initialValue: BrowsingHistoryViewModel(dependencies: dependencies))
+    init(dependencies: LibraryDependencies, appModel: YamiboAppModel, showsPreviousReading: Bool = false) {
+        _model = State(initialValue: BrowsingHistoryViewModel(dependencies: dependencies, showsPreviousReading: showsPreviousReading))
         self.appModel = appModel
     }
 
     var body: some View {
         historyList
         .listStyle(.insetGrouped)
-        .navigationTitle(L10n.string("forum.history"))
+        .navigationTitle(L10n.string(model.showsPreviousReading ? "home.previous" : "forum.history"))
         .yamiboInlineNavigationTitleDisplayMode()
         .searchable(text: searchTextBinding, prompt: L10n.string("history.search.prompt"))
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.clearAllConfirmationPresented = true
-                } label: {
-                    Label(L10n.string("history.clear_all"), systemImage: "trash")
+            if !model.showsPreviousReading {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.clearAllConfirmationPresented = true
+                    } label: {
+                        Label(L10n.string("history.clear_all"), systemImage: "trash")
+                    }
+                    .disabled(model.entries.isEmpty)
                 }
-                .disabled(model.entries.isEmpty)
             }
         }
         .destructiveConfirmationDialog(
@@ -155,7 +157,9 @@ struct BrowsingHistoryView: View {
     private var categoryPicker: some View {
         Picker(L10n.string("history.filter.all"), selection: Bindable(model).selectedCategory) {
             Text(L10n.string("history.filter.all")).tag(BrowsingHistoryCategory?.none)
-            Text(L10n.string("history.filter.normal")).tag(BrowsingHistoryCategory?.some(.normal))
+            if !model.showsPreviousReading {
+                Text(L10n.string("history.filter.normal")).tag(BrowsingHistoryCategory?.some(.normal))
+            }
             Text(L10n.string("history.filter.novel")).tag(BrowsingHistoryCategory?.some(.novel))
             Text(L10n.string("history.filter.manga")).tag(BrowsingHistoryCategory?.some(.manga))
         }

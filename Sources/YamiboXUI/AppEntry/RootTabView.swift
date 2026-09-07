@@ -96,6 +96,12 @@ public struct RootTabView: View {
 
     private var content: some View {
         TabView(selection: selectedTabBinding) {
+            ReadingHomeView(appModel: appModel)
+                .tag(AppTab.home)
+                .tabItem {
+                    Label(L10n.string("tab.home"), systemImage: "house")
+                }
+
             ForumNavigationHostView(
                 dependencies: appModel.appContext.forumDependencies,
                 appModel: appModel,

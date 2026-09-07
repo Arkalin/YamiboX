@@ -21,7 +21,7 @@ struct SystemSettingsHomePageSelector: View {
                 .foregroundStyle(.primary)
 
             HStack(spacing: 10) {
-                ForEach([AppHomePage.forum, .favorites], id: \.self) { option in
+                ForEach([AppHomePage.home, .forum, .favorites], id: \.self) { option in
                     Button {
                         onSelect(option)
                     } label: {

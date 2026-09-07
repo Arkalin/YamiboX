@@ -1,11 +1,13 @@
 import Foundation
 
 public enum AppHomePage: String, Codable, Hashable, CaseIterable, Sendable {
+    case home
     case favorites
     case forum
 
     public var title: String {
         switch self {
+        case .home: L10n.string("tab.home")
         case .favorites: L10n.string("app.home.favorites")
         case .forum: L10n.string("app.home.forum")
         }
@@ -13,6 +15,7 @@ public enum AppHomePage: String, Codable, Hashable, CaseIterable, Sendable {
 
     public var systemImageName: String {
         switch self {
+        case .home: "house"
         case .favorites: "heart.text.square"
         case .forum: "text.bubble"
         }
@@ -77,7 +80,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
     public var keyboard: KeyboardSettings
 
     public init(
-        homePage: AppHomePage = .forum,
+        homePage: AppHomePage = .home,
         usesDataSaverMode: Bool = false,
         enhancedCheckInEnabled: Bool = false,
         applePencilPageTurn: ApplePencilPageTurnSettings = .init(),

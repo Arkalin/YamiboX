@@ -14,6 +14,7 @@ import YamiboXCore
 @MainActor
 @Observable
 final class BrowsingHistoryViewModel {
+    let showsPreviousReading: Bool
     var entries: [BrowsingHistoryEntry] = []
     var selectedCategory: BrowsingHistoryCategory?
     /// Snapshot of the per-board reader configuration taken at reload time —
@@ -63,7 +64,8 @@ final class BrowsingHistoryViewModel {
     /// Drops stale reload results when a newer reload has since started.
     @ObservationIgnored private var reloadGeneration = 0
 
-    init(dependencies: LibraryDependencies) {
+    init(dependencies: LibraryDependencies, showsPreviousReading: Bool = false) {
+        self.showsPreviousReading = showsPreviousReading
         browsingHistoryStore = dependencies.browsingHistoryStore
         favoriteLibraryStore = dependencies.localFavoriteLibraryStore
         contentCoverStore = dependencies.contentCoverStore
@@ -100,11 +102,16 @@ final class BrowsingHistoryViewModel {
         let boardReader = await settingsStore.load().boardReader
         let loadedEntries = await browsingHistoryStore.entries(
             category: nil,
-            searchText: searchQuery.isEmpty ? nil : searchQuery
+            searchText: showsPreviousReading || searchQuery.isEmpty ? nil : searchQuery
         )
         guard generation == reloadGeneration else { return }
         boardReaderSettings = boardReader
-        entries = loadedEntries.filter { entry in
+        let scopedEntries = showsPreviousReading
+            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader).previous
+            : loadedEntries
+        entries = scopedEntries.filter { entry in
+            if showsPreviousReading, !searchQuery.isEmpty,
+               !entry.title.localizedStandardContains(searchQuery) { return false }
             guard let selectedCategory else { return true }
             return entry.category(boardReader: boardReader) == selectedCategory
         }

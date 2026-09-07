@@ -3,6 +3,12 @@ import XCTest
 @testable import YamiboXUI
 
 final class AppTabLaunchResolverTests: XCTestCase {
+    func testResolvesHomeAndKeepsDebugOverrides() {
+        XCTAssertEqual(AppTabLaunchResolver.resolveInitialTab(environment: [:]), .home)
+        XCTAssertEqual(AppTabLaunchResolver.resolveInitialTab(environment: [:], homePage: .home), .home)
+        XCTAssertEqual(AppTabLaunchResolver.resolveInitialTab(environment: ["START_TAB": "home"], homePage: .favorites), .home)
+        XCTAssertEqual(AppTabLaunchResolver.resolveInitialTab(environment: ["START_TAB": "forum"], homePage: .home), .forum)
+    }
     func testResolvesFavoritesFromSavedHomePage() {
         let tab = AppTabLaunchResolver.resolveInitialTab(
             environment: [:],
