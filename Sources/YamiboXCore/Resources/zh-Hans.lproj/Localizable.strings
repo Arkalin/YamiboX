@@ -920,7 +920,7 @@
 "settings.app_theme.teal" = "青岚";
 "settings.app_theme.rose" = "樱墨";
 "settings.clear_content_cover_cache" = "清理封面索引";
-"settings.clear_content_cover_cache_message" = "将清除本地记录的自动与手动封面索引，封面会在下次打开时重新拉取。";
+"settings.clear_content_cover_cache_message" = "将清除全部自动与手动封面索引及封面显示偏好。此操作会通过 WebDAV 同步到云端和其他设备，下载不会撤销清理；重新打开内容后仍可生成新的自动封面。";
 "settings.clear_image_cache" = "清理图片缓存";
 "settings.clear_image_cache_message" = "将清除应用临时图片缓存数据，包括阅读图片和头像；不会删除漫画离线缓存或其他阅读缓存。";
 "settings.clear_other_caches" = "清理其他缓存";
@@ -1064,7 +1064,7 @@
 "settings.clear_reading_progress" = "清理阅读进度";
 "settings.clear_browsing_history" = "清理浏览记录";
 "settings.confirm_clear_reading_progress" = "确认清理阅读进度";
-"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度，浏览记录、收藏和离线缓存不受影响。";
+"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度，并通过 WebDAV 同步清除云端和其他设备的旧进度，下载不会撤销清理。浏览记录、收藏和离线缓存不受影响，清理后可重新记录进度。";
 "settings.section.backup_sync" = "备份与同步";
 "settings.section.reset" = "重置";
 "settings.section.favorites_browsing" = "浏览与排序";
@@ -1110,7 +1110,9 @@
 "webdav.error.not_authenticated" = "WebDAV 用户名或密码不正确。";
 "webdav.error.not_found" = "服务器上没有找到同步数据，请先上传。";
 "webdav.error.login_required" = "请先登录再同步。";
-"webdav.error.unsupported_version" = "不支持的同步数据版本（%d）。";
+"webdav.error.unsupported_version" = "不支持的同步数据版本（%d），请将参与同步的所有设备升级到最新版本。";
+"webdav.error.unsafe_conditional_write" = "WebDAV 服务不支持可靠的条件写入，已停止上传以防止覆盖其他设备的数据。本地修改仍保留，等待同步。";
+"webdav.error.write_conflict" = "其他设备正在修改云端数据，多次重试后仍有冲突。本地修改仍保留，请稍后重试同步。";
 "webdav.last_synced" = "上次同步：%@";
 "webdav.operation" = "操作";
 "webdav.password" = "密码";

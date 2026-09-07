@@ -279,13 +279,14 @@ public actor LikeStore {
         }
     }
 
-    public func deleteAll(workKey: LikeWorkKey) async throws {
+    public func deleteAll(workKey: LikeWorkKey, date: Date = .now) async throws {
         do {
             try await database.write { db in
-                try db.execute(
-                    sql: "DELETE FROM like_items WHERE work_kind = ? AND work_id = ?",
+                let ids = try String.fetchAll(db,
+                    sql: "SELECT id FROM like_items WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
                     arguments: [workKey.kind.rawValue, workKey.id]
                 )
+                for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
             }
             postChangeNotification()
         } catch let error as YamiboError {
@@ -299,7 +300,10 @@ public actor LikeStore {
 
     public func clearAll() async throws {
         do {
-            try await database.write { db in try db.execute(sql: "DELETE FROM like_items") }
+            try await database.write { db in
+                try db.execute(sql: "DELETE FROM like_items")
+                try db.execute(sql: "DELETE FROM like_sync_state")
+            }
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
@@ -378,6 +382,35 @@ public actor LikeStore {
         }
     }
 
+    func syncSnapshot() async throws -> SyncRecordSnapshot<LikeItem> {
+        try await database.read { db in try Self.syncSnapshot(in: db) }
+    }
+
+    private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<LikeItem> {
+        let records = try Self.fetchAllIncludingDeleted(in: db)
+        var deletions = try SyncDeletionState.load(from: "like_sync_state", in: db)
+        for record in records {
+            if let date = record.deletedAt { deletions.recordDeletion(of: record.id, at: date) }
+        }
+        return SyncRecordSnapshot(records: records, deletions: deletions)
+    }
+
+    @discardableResult
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<LikeItem>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = try Self.syncSnapshot(in: db)
+            let result = try transform(&snapshot)
+            try db.execute(sql: "DELETE FROM like_items")
+            for record in snapshot.records { try Self.upsertRow(record, in: db) }
+            try snapshot.deletions.save(to: "like_sync_state", in: db)
+            return result
+        }
+        postChangeNotification()
+        return result
+    }
+
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()
     }
@@ -415,7 +448,12 @@ public actor LikeStore {
         try Row.fetchAll(
             db,
             sql: Self.selectColumns + " ORDER BY created_at ASC, id ASC"
-        ).compactMap { try Self.item(from: $0) }
+        ).map {
+            guard let item = try Self.item(from: $0) else {
+                throw YamiboPersistenceError(context: "Invalid like row")
+            }
+            return item
+        }
     }
 
     private static func fetchWorkSummaries(in db: Database) throws -> [LikeWorkSummary] {
@@ -478,17 +516,20 @@ public actor LikeStore {
     }
 
     private static func softDeleteRow(id: String, date: Date, in db: Database) throws {
+        var deletions = try SyncDeletionState.load(from: "like_sync_state", in: db)
+        deletions.recordDeletion(of: id, at: date)
+        try deletions.save(to: "like_sync_state", in: db)
         try db.execute(
             sql: "UPDATE like_items SET deleted_at = ?, updated_at = ? WHERE id = ?",
             arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
         )
     }
 
-    static func renameMangaTitleLikes(from oldName: String, to newName: String, in db: Database) throws {
+    static func renameMangaTitleLikes(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
         guard oldName != newName else { return }
         try db.execute(
-            sql: "UPDATE like_items SET work_id = ? WHERE work_kind = ? AND work_id = ?",
-            arguments: [newName, LikeWorkKind.manga.rawValue, oldName]
+            sql: "UPDATE like_items SET work_id = ?, updated_at = MAX(updated_at, ?) WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
+            arguments: [newName, date.timeIntervalSince1970, LikeWorkKind.manga.rawValue, oldName]
         )
     }
 

@@ -318,16 +318,16 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     /// at all: since the smart-comic-mode Phase A type refactor they can only
     /// carry thread-based identities (normalThread/novelThread/mangaThread),
     /// never the title-merged `.mangaTitle` identity a rename would touch.
-    static func renameRelatedStructuredMetadata(from oldName: String, to newName: String, in db: Database) throws {
+    static func renameRelatedStructuredMetadata(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
         guard oldName != newName else { return }
-        try renameReadingProgressMangaTargets(from: oldName, to: newName, in: db)
-        try ContentCoverStore.renameSmartMangaCover(from: oldName, to: newName, in: db)
-        try LikeStore.renameMangaTitleLikes(from: oldName, to: newName, in: db)
-        try BookmarkStore.renameMangaTitleBookmarks(from: oldName, to: newName, in: db)
+        try renameReadingProgressMangaTargets(from: oldName, to: newName, date: date, in: db)
+        try ContentCoverStore.renameSmartMangaCover(from: oldName, to: newName, date: date, in: db)
+        try LikeStore.renameMangaTitleLikes(from: oldName, to: newName, date: date, in: db)
+        try BookmarkStore.renameMangaTitleBookmarks(from: oldName, to: newName, date: date, in: db)
         try FavoriteUpdateStore.renameMangaDirectoryTracking(from: oldName, to: newName, in: db)
     }
 
-    private static func renameReadingProgressMangaTargets(from oldName: String, to newName: String, in db: Database) throws {
+    private static func renameReadingProgressMangaTargets(from oldName: String, to newName: String, date: Date, in db: Database) throws {
         let rows = try Row.fetchAll(
             db,
             sql: """
@@ -344,6 +344,10 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
                 ? newName
                 : (existingMangaID?.mangaReaderTrimmedNonEmpty ?? newName)
             let newID = FavoriteContentTarget(mangaID: mangaID, mangaCleanBookName: newName).id
+            if newID != oldID {
+                try ReadingProgressStore.recordSyncDeletion(id: oldID,
+                    at: max(date, Date(timeIntervalSince1970: row["updated_at"])), in: db)
+            }
             if newID != oldID,
                let existing = try Row.fetchOne(
                    db,
@@ -361,10 +365,10 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
             try db.execute(
                 sql: """
                 UPDATE reading_progress
-                SET id = ?, manga_id = ?, clean_book_name = ?
+                SET id = ?, manga_id = ?, clean_book_name = ?, updated_at = MAX(updated_at, ?)
                 WHERE id = ?
                 """,
-                arguments: [newID, mangaID, newName, oldID]
+                arguments: [newID, mangaID, newName, date.timeIntervalSince1970, oldID]
             )
         }
     }

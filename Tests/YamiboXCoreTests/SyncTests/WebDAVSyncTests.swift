@@ -3,15 +3,27 @@ import Testing
 import os
 @testable import YamiboXCore
 
-private final class WebDAVTestURLProtocol: URLProtocol {
+final class WebDAVTestURLProtocol: URLProtocol {
     typealias Handler = (URLRequest) throws -> (Data, HTTPURLResponse)
 
     nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
     private static let lock = NSLock()
 
-    static func setHandler(for host: String, _ handler: @escaping Handler) {
+    static func setHandler(for host: String, emulatesConditionalSupport: Bool = true, _ handler: @escaping Handler) {
+        let probeServer = WebDAVMemoryServer()
         lock.withLock {
-            handlers[host] = handler
+            handlers[host] = { request in
+                if emulatesConditionalSupport, request.url?.lastPathComponent.hasPrefix(".yamibox-sync-probe-") == true {
+                    return try probeServer.respond(request)
+                }
+                let (data, response) = try handler(request)
+                if emulatesConditionalSupport, request.httpMethod == "GET", response.statusCode == 200 {
+                    let etag = "\"\(try WebDAVSyncFingerprint.make(data))\""
+                    return (data, HTTPURLResponse(url: response.url!, statusCode: response.statusCode,
+                        httpVersion: nil, headerFields: ["ETag": etag])!)
+                }
+                return (data, response)
+            }
         }
     }
 
@@ -445,12 +457,7 @@ private enum WebDAVTestError: Error {
     bumpedSettings.localUpdatedAt = remoteUpdatedAt.addingTimeInterval(60)
     try await fixture.settingsStore.save(bumpedSettings)
 
-    var remoteDocument = FavoriteLibraryDocument()
-    try remoteDocument.upsertItem(FavoriteItem(
-        target: localTarget,
-        title: "本地收藏",
-        locations: [.category(remoteDocument.defaultCategory.id)]
-    ))
+    var remoteDocument = localDocument
     try remoteDocument.upsertItem(FavoriteItem(
         target: FavoriteItemTarget(kind: .normalThread, threadID: "222"),
         title: "B设备新收藏",
@@ -524,9 +531,11 @@ private enum WebDAVTestError: Error {
     #expect(seeded.localUpdatedAt == seedDate)
     #expect(!seeded.dirtyDatasetIDs.isEmpty)
 
-    // Simulate a completed sync round: dirty flags cleared, fingerprint
-    // baselines kept.
+    // Only a completed sync establishes the acknowledged fingerprint.
     seeded.dirtyDatasetIDs = []
+    seeded.lastSyncedFingerprintByDatasetID["favoriteLibrary"] = try await FavoriteLibraryWebDAVParticipant(store: fixture.localFavoriteLibraryStore).readLocalFingerprint()
+    seeded.lastSyncedFingerprintByDatasetID["readingProgress"] = try await ReadingProgressWebDAVParticipant(store: fixture.readingProgressStore).readLocalFingerprint()
+    seeded.lastSyncedFingerprintByDatasetID["appSettings"] = try await AppSettingsWebDAVParticipant(store: fixture.appSettingsStore).readLocalFingerprint()
     try await fixture.settingsStore.save(seeded)
 
     try await service.markLocalDataChanged(at: Date(timeIntervalSince1970: 2_000))
@@ -835,12 +844,7 @@ private enum WebDAVTestError: Error {
     // Device B (clock an hour behind) merged this device's upload, added
     // thread 222, and uploaded revision 5 with an older wall-clock stamp.
     let remoteUpdatedAt = firstUploadUpdatedAt.addingTimeInterval(-3600)
-    var remoteDocument = FavoriteLibraryDocument()
-    try remoteDocument.upsertItem(FavoriteItem(
-        target: localTarget,
-        title: "本机收藏",
-        locations: [.category(remoteDocument.defaultCategory.id)]
-    ))
+    var remoteDocument = seededUpload.library
     try remoteDocument.upsertItem(FavoriteItem(
         target: FavoriteItemTarget(kind: .normalThread, threadID: "222"),
         title: "B设备新收藏",
@@ -1168,15 +1172,18 @@ private final class MutableContentWebDAVParticipant: WebDAVSyncParticipant, @unc
         WebDAVRemotePayloadInfo(updatedAt: try JSONDecoder().decode(Payload.self, from: data).updatedAt)
     }
 
-    func mergeAndExport(remoteData _: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
-        try JSONEncoder().encode(Payload(updatedAt: updatedAt, content: currentContent))
+    func mergeAndExportSnapshot(remoteData _: Data?, updatedAt: Date, accountUID _: String) async throws -> WebDAVExportSnapshot {
+        let content = currentContent
+        return WebDAVExportSnapshot(data: try JSONEncoder().encode(Payload(updatedAt: updatedAt, content: content)), fingerprint: content)
     }
 
-    func applyRemote(_ data: Data) async throws {
-        setContent(try JSONDecoder().decode(Payload.self, from: data).content)
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
+        let content = try JSONDecoder().decode(Payload.self, from: data).content
+        setContent(content)
+        return WebDAVApplySnapshot(fingerprint: content, requiresUpload: false)
     }
 
-    func localFingerprint() async -> String? {
+    func readLocalFingerprint() async throws -> String? {
         currentContent
     }
 }

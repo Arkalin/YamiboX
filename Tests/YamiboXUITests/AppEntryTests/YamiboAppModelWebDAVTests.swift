@@ -6,14 +6,10 @@ import YamiboXTestSupport
 final class YamiboAppModelWebDAVTests: XCTestCase {
     @MainActor
     func testReadingProgressChangeSchedulesWebDAVLocalUpdate() async throws {
-        let suiteName = YamiboTestDefaults.suiteName(prefix: "app-model-reading-progress-webdav")
-        _ = try YamiboTestDefaults.make(suiteName: suiteName)
-        let webDAVSettingsStore = WebDAVSyncSettingsStore(
-            defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
-            key: "webdav"
-        )
+        let fixture = try makeSystemSettingsFixture()
+        let appContext = fixture.appContext
+        let webDAVSettingsStore = appContext.webDAVSyncSettingsStore
         try await webDAVSettingsStore.save(WebDAVSyncSettings(isAutoSyncEnabled: true))
-        let appContext = YamiboAppContext(webDAVSyncSettingsStore: webDAVSettingsStore)
         let appModel = YamiboAppModel(appContext: appContext)
 
         appModel.scheduleWebDAVUploadForReadingProgressChange()
@@ -31,21 +27,11 @@ final class YamiboAppModelWebDAVTests: XCTestCase {
 
     @MainActor
     func testReadingProgressStoreNotificationSchedulesWebDAVLocalUpdate() async throws {
-        let suiteName = YamiboTestDefaults.suiteName(prefix: "app-model-reading-progress-notification")
-        _ = try YamiboTestDefaults.make(suiteName: suiteName)
-        let webDAVSettingsStore = WebDAVSyncSettingsStore(
-            defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
-            key: "webdav"
-        )
-        let readingProgressStore = ReadingProgressStore(
-            defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
-            key: "reading-progress"
-        )
+        let fixture = try makeSystemSettingsFixture()
+        let appContext = fixture.appContext
+        let webDAVSettingsStore = appContext.webDAVSyncSettingsStore
+        let readingProgressStore = appContext.readingProgressStore
         try await webDAVSettingsStore.save(WebDAVSyncSettings(isAutoSyncEnabled: true))
-        let appContext = YamiboAppContext(
-            webDAVSyncSettingsStore: webDAVSettingsStore,
-            readingProgressStore: readingProgressStore
-        )
         let appModel = YamiboAppModel(appContext: appContext)
         let observerTask = Task {
             await RootTabView.observeReadingProgressChanges(appContext: appContext) {

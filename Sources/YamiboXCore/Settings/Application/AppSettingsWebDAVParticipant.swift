@@ -26,32 +26,31 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
         )
     }
 
-    func mergeAndExport(remoteData _: Data?, updatedAt: Date, accountUID: String) async throws -> Data {
+    func mergeAndExportSnapshot(remoteData _: Data?, updatedAt: Date, accountUID: String) async throws -> WebDAVExportSnapshot {
         let payload = AppSettingsWebDAVPayload(
             updatedAt: updatedAt,
             accountUID: accountUID,
             appSettings: WebDAVSyncedAppSettings(settings: await store.load())
         )
-        return try encoder.encode(payload)
+        return WebDAVExportSnapshot(data: try encoder.encode(payload), fingerprint: try Self.fingerprint(payload.appSettings))
     }
 
-    func applyRemote(_ data: Data) async throws {
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
         let payload = try decoder.decode(AppSettingsWebDAVPayload.self, from: data)
-        let currentSettings = await store.load()
-        try await store.save(payload.appSettings.applying(to: currentSettings))
+        let applied = try await store.update { settings in
+            settings = payload.appSettings.applying(to: settings)
+        }
+        return WebDAVApplySnapshot(fingerprint: try Self.fingerprint(WebDAVSyncedAppSettings(settings: applied)), requiresUpload: false)
     }
 
-    func localFingerprint() async -> String? {
-        let snapshot = WebDAVSyncedAppSettings(settings: await store.load())
+    func readLocalFingerprint() async throws -> String? {
+        try Self.fingerprint(WebDAVSyncedAppSettings(settings: await store.load()))
+    }
+
+    private static func fingerprint(_ snapshot: WebDAVSyncedAppSettings) throws -> String {
         let fingerprintEncoder = JSONEncoder()
         fingerprintEncoder.outputFormatting = [.sortedKeys]
-        let data: Data
-        do {
-            data = try fingerprintEncoder.encode(snapshot)
-        } catch {
-            YamiboLog.sync.warning("Failed to encode app settings fingerprint for WebDAV sync: \(error)")
-            return nil
-        }
+        let data = try fingerprintEncoder.encode(snapshot)
         return data.base64EncodedString()
     }
 }
@@ -96,6 +95,21 @@ struct AppSettingsWebDAVPayload: Codable, Equatable, Sendable {
     /// (`decodeIfPresent`) and omits the key when nil.
     var syncRevision: UInt64?
     var appSettings: WebDAVSyncedAppSettings
+
+    private enum CodingKeys: String, CodingKey {
+        case version, updatedAt, accountUID, syncRevision, appSettings
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decode(Int.self, forKey: .version)
+        guard version == Self.currentVersion else { throw WebDAVSyncError.unsupportedPayloadVersion(version) }
+        self.version = version
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        accountUID = try container.decodeIfPresent(String.self, forKey: .accountUID)
+        syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
+        appSettings = try container.decode(WebDAVSyncedAppSettings.self, forKey: .appSettings)
+    }
 
     init(
         version: Int = Self.currentVersion,

@@ -11,8 +11,8 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     /// Datasets flagged as changed since the last sync; only consulted for
     /// participants that upload exclusively when marked dirty.
     public var dirtyDatasetIDs: Set<String>
-    /// Fingerprint of each fingerprint-tracked dataset as of the last time it
-    /// was marked or synchronized, used for change detection.
+    /// Fingerprint of the last committed sync snapshot, never advanced just
+    /// because a local edit was detected.
     public var lastSyncedFingerprintByDatasetID: [String: String]
     /// `updatedAt` of the newest remote payload whose content this device has
     /// absorbed (by applying it or by producing it through an upload), per
@@ -126,6 +126,8 @@ public enum WebDAVSyncError: LocalizedError, Equatable, Sendable {
     case notFound
     case notAuthenticated
     case unsupportedPayloadVersion(Int)
+    case unsafeConditionalWrite
+    case writeConflict
     case invalidResponse(Int?)
     case emptyPayload
     case accountMismatch(localUID: String, remoteUID: String)
@@ -141,6 +143,10 @@ public enum WebDAVSyncError: LocalizedError, Equatable, Sendable {
             L10n.string("webdav.error.not_authenticated")
         case let .unsupportedPayloadVersion(version):
             L10n.string("webdav.error.unsupported_version", version)
+        case .unsafeConditionalWrite:
+            L10n.string("webdav.error.unsafe_conditional_write")
+        case .writeConflict:
+            L10n.string("webdav.error.write_conflict")
         case let .invalidResponse(statusCode):
             if let statusCode {
                 L10n.string("webdav.error.invalid_response_with_status", statusCode)

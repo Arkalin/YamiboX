@@ -87,30 +87,40 @@ public actor ReadingProgressStore {
         }
     }
 
-    public func migrateMangaTitleKey(from oldCleanBookName: String, to newCleanBookName: String) async throws {
-        var recordsByKey = Dictionary(uniqueKeysWithValues: await loadAll().map { ($0.id, $0) })
-        let oldTarget = FavoriteContentTarget(mangaCleanBookName: oldCleanBookName)
-        let newTarget = FavoriteContentTarget(mangaCleanBookName: newCleanBookName)
-        if var record = recordsByKey.removeValue(forKey: oldTarget.id) {
-            record.contentTarget = newTarget
-            recordsByKey[newTarget.id] = record
-            try await replaceAll(Array(recordsByKey.values))
-            return
+    public func migrateMangaTitleKey(from oldCleanBookName: String, to newCleanBookName: String, date: Date = .now) async throws {
+        try await updateSyncSnapshot { snapshot in
+            var recordsByKey = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
+            let oldTarget = FavoriteContentTarget(mangaCleanBookName: oldCleanBookName)
+            let newTarget = FavoriteContentTarget(mangaCleanBookName: newCleanBookName)
+            if var record = recordsByKey.removeValue(forKey: oldTarget.id) {
+                if oldTarget.id != newTarget.id { snapshot.deletions.recordDeletion(of: oldTarget.id, at: date) }
+                record.contentTarget = newTarget
+                record.updatedAt = max(record.updatedAt, date)
+                recordsByKey[newTarget.id] = record
+                snapshot.records = Array(recordsByKey.values)
+                return
+            }
+            guard let existing = recordsByKey.first(where: { _, record in
+                record.contentTarget?.mangaCleanBookName == oldCleanBookName
+            }) else { return }
+            var record = existing.value
+            recordsByKey.removeValue(forKey: existing.key)
+            let renamedTarget = record.contentTarget?.renamedMangaTitle(to: newCleanBookName) ?? newTarget
+            record.contentTarget = renamedTarget
+            if existing.key != renamedTarget.id { snapshot.deletions.recordDeletion(of: existing.key, at: date) }
+            record.updatedAt = max(record.updatedAt, date)
+            recordsByKey[renamedTarget.id] = record
+            snapshot.records = Array(recordsByKey.values)
         }
-        guard let existing = recordsByKey.first(where: { _, record in
-            record.contentTarget?.mangaCleanBookName == oldCleanBookName
-        }) else { return }
-        var record = existing.value
-        recordsByKey.removeValue(forKey: existing.key)
-        let renamedTarget = record.contentTarget?.renamedMangaTitle(to: newCleanBookName) ?? newTarget
-        record.contentTarget = renamedTarget
-        recordsByKey[renamedTarget.id] = record
-        try await replaceAll(Array(recordsByKey.values))
     }
 
-    public func delete(threadID: String) async throws {
+    public func delete(threadID: String, date: Date = .now) async throws {
         guard let threadID = Self.trimmedNonEmpty(threadID) else { return }
         try await database.write { db in
+            let ids = try String.fetchAll(db,
+                sql: "SELECT id FROM reading_progress WHERE thread_id = ? OR manga_chapter_thread_id = ?",
+                arguments: [threadID, threadID])
+            for id in ids { try Self.recordSyncDeletion(id: id, at: date, in: db) }
             try db.execute(
                 sql: "DELETE FROM reading_progress WHERE thread_id = ? OR manga_chapter_thread_id = ?",
                 arguments: [threadID, threadID]
@@ -144,8 +154,56 @@ public actor ReadingProgressStore {
     public func clearAll() async throws {
         try await database.write { db in
             try db.execute(sql: "DELETE FROM reading_progress")
+            try db.execute(sql: "DELETE FROM reading_progress_sync_state")
         }
         postChangeNotification()
+    }
+
+    public func clearAllForSync(at date: Date = .now) async throws {
+        try await database.write { db in
+            var deletions = try SyncDeletionState.load(from: "reading_progress_sync_state", in: db)
+            deletions.clear(at: date)
+            try deletions.save(to: "reading_progress_sync_state", in: db)
+            try db.execute(sql: "DELETE FROM reading_progress")
+        }
+        postChangeNotification()
+    }
+
+    func syncSnapshot() async throws -> SyncRecordSnapshot<ReadingProgressRecord> {
+        try await database.read { db in try Self.syncSnapshot(in: db) }
+    }
+
+    @discardableResult
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ReadingProgressRecord>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = try Self.syncSnapshot(in: db)
+            let result = try transform(&snapshot)
+            try db.execute(sql: "DELETE FROM reading_progress")
+            for record in snapshot.records { try Self.upsert(Self.normalizedRecord(record), in: db) }
+            try snapshot.deletions.save(to: "reading_progress_sync_state", in: db)
+            return result
+        }
+        postChangeNotification()
+        return result
+    }
+
+    private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<ReadingProgressRecord> {
+        let records = try Row.fetchAll(db, sql: "SELECT * FROM reading_progress ORDER BY updated_at DESC, id ASC").map { row in
+            guard let record = try Self.record(from: row) else {
+                throw YamiboPersistenceError(context: "Invalid reading progress row")
+            }
+            return record
+        }
+        return SyncRecordSnapshot(records: records,
+            deletions: try SyncDeletionState.load(from: "reading_progress_sync_state", in: db))
+    }
+
+    static func recordSyncDeletion(id: String, at date: Date, in db: Database) throws {
+        var deletions = try SyncDeletionState.load(from: "reading_progress_sync_state", in: db)
+        deletions.recordDeletion(of: id, at: date)
+        try deletions.save(to: "reading_progress_sync_state", in: db)
     }
 
     /// Saves a normal thread's page + floor-anchor resume position — the
@@ -320,6 +378,7 @@ public actor ReadingProgressStore {
                 cleanBookName: cleanBookName,
                 chapterTID: chapterTID
             ) {
+                try Self.recordSyncDeletion(id: candidateID, at: date, in: db)
                 try db.execute(sql: "DELETE FROM reading_progress WHERE id = ?", arguments: [candidateID])
             }
             try Self.upsert(Self.normalizedRecord(record), in: db)

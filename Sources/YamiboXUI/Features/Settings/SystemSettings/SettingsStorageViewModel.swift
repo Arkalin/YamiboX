@@ -72,7 +72,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         defer { activeAction = nil }
 
         do {
-            try await dependencies.contentCoverStore.clearAll()
+            try await dependencies.contentCoverStore.clearAllForSync()
             await storageUsage.refresh()
             return true
         } catch {
@@ -120,7 +120,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         defer { activeAction = nil }
 
         do {
-            try await dependencies.library.readingProgressStore.clearAll()
+            try await dependencies.library.readingProgressStore.clearAllForSync()
             return true
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

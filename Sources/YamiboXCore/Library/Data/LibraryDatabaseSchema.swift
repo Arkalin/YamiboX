@@ -47,11 +47,15 @@ enum LibraryDatabaseSchema: DatabaseSchemaModule {
             }
             try db.create(index: "favorite_sync_runs_updated_idx", on: "favorite_sync_runs", columns: ["updated_at"])
         }
+        migrator.registerMigration("library.v4.cover-sync-deletions") { db in
+            try SyncDeletionState.createTable("content_cover_sync_state", in: db)
+        }
     }
 
     static func erase(in db: Database) throws {
         try deleteAllRows(in: db)
         try db.execute(sql: "DELETE FROM content_cover")
+        try db.execute(sql: "DELETE FROM content_cover_sync_state")
         try db.execute(sql: "DELETE FROM favorite_sync_runs")
     }
 

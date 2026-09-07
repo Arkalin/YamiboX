@@ -435,6 +435,12 @@ public final class YamiboAppContext: Sendable {
     }
 
     func resetApplicationData() async throws {
+        try await webDAVSyncSettingsStore.syncCoordinator.reset { [self] in
+            try await resetLocalApplicationData()
+        }
+    }
+
+    private func resetLocalApplicationData() async throws {
         try await sessionStore.reset()
         await profileStore.clear()
         await checkInStore.clearAll()

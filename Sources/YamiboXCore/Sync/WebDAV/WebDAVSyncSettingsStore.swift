@@ -1,6 +1,7 @@
 import Foundation
 
 public actor WebDAVSyncSettingsStore {
+    nonisolated let syncCoordinator = WebDAVSyncCoordinator()
     public static let defaultKey = "yamibox.webdav.sync.settings"
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
@@ -28,6 +29,15 @@ public actor WebDAVSyncSettingsStore {
 
     public func reset() async throws {
         try await save(WebDAVSyncSettings())
+    }
+
+    @discardableResult
+    func update(_ transform: @Sendable (inout WebDAVSyncSettings) -> Void) throws -> WebDAVSyncSettings {
+        var settings = storage.load(default: WebDAVSyncSettings())
+        transform(&settings)
+        try storage.save(settings)
+        postChangeNotification()
+        return settings
     }
 
     private nonisolated func postChangeNotification() {

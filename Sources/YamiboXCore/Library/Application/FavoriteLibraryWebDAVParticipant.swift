@@ -25,7 +25,7 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
         )
     }
 
-    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> Data {
+    func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> WebDAVExportSnapshot {
         let remote = try remoteData.map { try decoder.decode(FavoriteLibraryWebDAVPayload.self, from: $0) }
         // Atomic update: merging against the same document state that gets
         // overwritten, so local edits landing mid-merge are never lost.
@@ -39,20 +39,15 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
             document = merged.library
             return merged
         }
-        return try encoder.encode(merged)
+        return WebDAVExportSnapshot(data: try encoder.encode(merged), fingerprint: try WebDAVSyncFingerprint.make(merged.library))
     }
 
-    func applyRemote(_ data: Data) async throws {
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
         let payload = try decoder.decode(FavoriteLibraryWebDAVPayload.self, from: data)
-        // Codable decoding bypasses `FavoriteLibraryDocument`'s normalizing
-        // initializer; rebuild through it so a malformed remote payload
-        // (duplicate target ids, dangling locations) cannot persist invariant
-        // violations into the local store. Carries the remote's own deletion
-        // tombstones through too (not the public 4-param initializer, which
-        // would silently reset them) — this device is adopting the remote's
-        // full history here, and dropping its tombstones would let a still-
-        // stale third peer revive something the remote already knows is gone.
-        try await store.save(payload.library.rebuiltPreservingTombstones())
+        let result = try await mergeAndExportSnapshot(remoteData: data, updatedAt: payload.updatedAt,
+            accountUID: payload.accountUID ?? "")
+        return WebDAVApplySnapshot(fingerprint: result.fingerprint,
+            requiresUpload: result.fingerprint != (try WebDAVSyncFingerprint.make(payload.library.rebuiltPreservingTombstones())))
     }
 
     // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
@@ -61,24 +56,8 @@ struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
     // locally stored document — including its deletion tombstones and each
     // item's per-field clocks, both genuinely local state now (see
     // `FavoriteLibraryDocument`'s and `FavoriteItem`'s doc comments).
-    func localFingerprint() async -> String? {
-        let document: FavoriteLibraryDocument
-        do {
-            document = try await store.load()
-        } catch {
-            YamiboLog.sync.warning("Failed to load favorite library for WebDAV fingerprint: \(error)")
-            return nil
-        }
-        let fingerprintEncoder = JSONEncoder()
-        fingerprintEncoder.outputFormatting = [.sortedKeys]
-        let data: Data
-        do {
-            data = try fingerprintEncoder.encode(document)
-        } catch {
-            YamiboLog.sync.warning("Failed to encode favorite library fingerprint for WebDAV sync: \(error)")
-            return nil
-        }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    func readLocalFingerprint() async throws -> String? {
+        try WebDAVSyncFingerprint.make(await store.load())
     }
 }
 

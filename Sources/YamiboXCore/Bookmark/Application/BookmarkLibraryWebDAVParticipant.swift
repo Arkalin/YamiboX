@@ -26,48 +26,39 @@ struct BookmarkLibraryWebDAVParticipant: WebDAVSyncParticipant {
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
     }
 
-    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
-        let localSnapshot = await store.allIncludingDeleted()
+    func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> WebDAVExportSnapshot {
         let remote = try remoteData.map { try decoder.decode(BookmarkLibraryWebDAVPayload.self, from: $0) }
-        let outcome = BookmarkLibraryWebDAVMerger().merge(
-            localSnapshot: localSnapshot,
-            remote: remote,
-            updatedAt: updatedAt
-        )
-        try await store.replaceAll(outcome.storageSnapshot)
-        return try encoder.encode(outcome.payload)
+        let payload = try await merge(remote: remote, at: updatedAt)
+        return WebDAVExportSnapshot(data: try encoder.encode(payload), fingerprint: try payload.contentFingerprint())
     }
 
-    func applyRemote(_ data: Data) async throws {
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
         let payload = try decoder.decode(BookmarkLibraryWebDAVPayload.self, from: data)
-        // A straight overwrite has nothing local left to protect against
-        // revival, so bare tombstones (no known item data) don't need to be
-        // materialized as placeholder rows here.
-        try await store.replaceAll(payload.items)
+        let merged = try await merge(remote: payload, at: payload.updatedAt)
+        let fingerprint = try merged.contentFingerprint()
+        return WebDAVApplySnapshot(fingerprint: fingerprint, requiresUpload: fingerprint != (try payload.contentFingerprint()))
     }
 
-    /// Hashed rather than base64-of-full-JSON, matching
-    /// `LikeLibraryWebDAVParticipant`: this dataset can grow and the
-    /// fingerprint is persisted inside the UserDefaults-backed
-    /// `WebDAVSyncSettings` blob. Includes deleted rows so a delete alone still
-    /// marks the dataset dirty.
-    func localFingerprint() async -> String? {
-        let snapshot = await store.allIncludingDeleted()
-        let fingerprintEncoder = JSONEncoder()
-        fingerprintEncoder.outputFormatting = [.sortedKeys]
-        let data: Data
-        do {
-            data = try fingerprintEncoder.encode(snapshot)
-        } catch {
-            YamiboLog.sync.warning("Failed to encode bookmark library fingerprint for WebDAV sync: \(error)")
-            return nil
+    private func merge(remote: BookmarkLibraryWebDAVPayload?, at date: Date) async throws -> BookmarkLibraryWebDAVPayload {
+        try await store.updateSyncSnapshot { snapshot in
+            let outcome = BookmarkLibraryWebDAVMerger().merge(localSnapshot: snapshot.records,
+                remote: remote, updatedAt: date, localTombstones: snapshot.deletions.tombstones)
+            snapshot.records = outcome.storageSnapshot
+            snapshot.deletions.tombstones = outcome.payload.tombstones
+            return outcome.payload
         }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func readLocalFingerprint() async throws -> String? {
+        let snapshot = try await store.syncSnapshot()
+        return try BookmarkLibraryWebDAVPayload(updatedAt: .distantPast,
+            items: snapshot.records.filter { $0.deletedAt == nil },
+            tombstones: snapshot.deletions.tombstones).contentFingerprint()
     }
 }
 
 struct BookmarkLibraryWebDAVPayload: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
     var updatedAt: Date
@@ -120,14 +111,16 @@ struct BookmarkLibraryWebDAVPayload: Codable, Equatable, Sendable {
         guard let version = try container.decodeIfPresent(Int.self, forKey: .version) else {
             throw WebDAVSyncError.unsupportedPayloadVersion(0)
         }
-        guard version == Self.currentVersion else {
+        guard version == 1 || version == Self.currentVersion else {
             throw WebDAVSyncError.unsupportedPayloadVersion(version)
         }
         self.version = version
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.items = try container.decode([BookmarkItem].self, forKey: .items)
-        self.tombstones = try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
+        self.tombstones = version == 1
+            ? try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
+            : try container.decode([String: Date].self, forKey: .tombstones)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -138,10 +131,15 @@ struct BookmarkLibraryWebDAVPayload: Codable, Equatable, Sendable {
         try container.encode(items, forKey: .items)
         try container.encode(tombstones, forKey: .tombstones)
     }
+
+    func contentFingerprint() throws -> String {
+        try WebDAVSyncFingerprint.make(SyncRecordSnapshot(records: items.sorted { $0.id < $1.id },
+            deletions: SyncDeletionState(tombstones: tombstones)))
+    }
 }
 
 struct BookmarkLibraryWebDAVMerger: Sendable {
-    struct MergeOutcome {
+    struct MergeOutcome: Sendable {
         var storageSnapshot: [BookmarkItem]
         var payload: BookmarkLibraryWebDAVPayload
     }
@@ -151,30 +149,23 @@ struct BookmarkLibraryWebDAVMerger: Sendable {
     func merge(
         localSnapshot: [BookmarkItem],
         remote: BookmarkLibraryWebDAVPayload?,
-        updatedAt: Date
+        updatedAt: Date,
+        localTombstones: [String: Date] = [:]
     ) -> MergeOutcome {
-        guard let remote else {
-            let payload = BookmarkLibraryWebDAVPayload(updatedAt: updatedAt, localSnapshot: localSnapshot)
-            return MergeOutcome(storageSnapshot: localSnapshot, payload: payload)
-        }
-
-        var byID = Dictionary(uniqueKeysWithValues: localSnapshot.map { ($0.id, $0) })
-        for remoteItem in remote.items {
+        var byID = Dictionary(localSnapshot.map { ($0.id, $0) }, uniquingKeysWith: { $0.updatedAt >= $1.updatedAt ? $0 : $1 })
+        for remoteItem in remote?.items ?? [] {
             if let existing = byID[remoteItem.id], existing.updatedAt >= remoteItem.updatedAt {
                 continue
             }
             byID[remoteItem.id] = remoteItem
         }
 
-        let localTombstones = Dictionary(uniqueKeysWithValues: localSnapshot.compactMap { item in
+        let rowTombstones = Dictionary(localSnapshot.compactMap { item in
             item.deletedAt.map { (item.id, $0) }
-        })
-        let mergedTombstones = maxDateDictionary(localTombstones, remote.tombstones)
+        }, uniquingKeysWith: max)
+        let mergedTombstones = maxDateDictionary(maxDateDictionary(localTombstones, rowTombstones), remote?.tombstones ?? [:])
 
-        // Tombstones only cover ids we still have some data for (from either
-        // side's live snapshot); a bare tombstone with no known item data has
-        // nothing to write a row for, but still rides along in
-        // `mergedTombstones` so this device keeps forwarding it on export.
+        // Bare tombstones are persisted separately from the optional content.
         let storageSnapshot: [BookmarkItem] = byID.values.map { item in
             var resolved = item
             if let deletedAt = mergedTombstones[item.id], deletedAt >= item.updatedAt {

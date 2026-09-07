@@ -172,6 +172,9 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
                 table.add(column: "thread_anchor_post_id", .text)
             }
         }
+        migrator.registerMigration("reader.v3.sync-deletions") { db in
+            try SyncDeletionState.createTable("reading_progress_sync_state", in: db)
+        }
     }
 
     /// Every offline-cache table, ordered so child tables are wiped before the
@@ -198,5 +201,6 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
         try db.execute(sql: "DELETE FROM manga_directory_chapters")
         try db.execute(sql: "DELETE FROM manga_directories")
         try db.execute(sql: "DELETE FROM reading_progress")
+        try db.execute(sql: "DELETE FROM reading_progress_sync_state")
     }
 }

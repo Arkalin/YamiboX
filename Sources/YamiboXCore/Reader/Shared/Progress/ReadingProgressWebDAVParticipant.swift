@@ -21,48 +21,37 @@ struct ReadingProgressWebDAVParticipant: WebDAVSyncParticipant {
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
     }
 
-    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
-        let local = ReadingProgressWebDAVPayload(
-            updatedAt: updatedAt,
-            records: await store.loadAll()
-        )
+    func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> WebDAVExportSnapshot {
         let remote = try remoteData.map { try decoder.decode(ReadingProgressWebDAVPayload.self, from: $0) }
-        let merged = ReadingProgressWebDAVMerger().merge(local: local, remote: remote, updatedAt: updatedAt)
-        try await store.replaceAll(merged.records)
-        return try encoder.encode(merged)
+        let merged = try await merge(remote: remote, at: updatedAt)
+        return WebDAVExportSnapshot(data: try encoder.encode(merged), fingerprint: try merged.contentFingerprint())
     }
 
-    func applyRemote(_ data: Data) async throws {
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
         let payload = try decoder.decode(ReadingProgressWebDAVPayload.self, from: data)
-        try await store.replaceAll(payload.records)
+        let merged = try await merge(remote: payload, at: payload.updatedAt)
+        let fingerprint = try merged.contentFingerprint()
+        return WebDAVApplySnapshot(fingerprint: fingerprint, requiresUpload: fingerprint != (try payload.contentFingerprint()))
     }
 
-    // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
-    // this dataset can hold thousands of records, and the fingerprint is persisted
-    // inside the (already UserDefaults-backed) WebDAVSyncSettings blob.
-    func localFingerprint() async -> String? {
-        let records: [ReadingProgressWebDAVRecord]
-        do {
-            records = try await store.loadAll().map { try ReadingProgressWebDAVRecord(record: $0) }
-        } catch {
-            YamiboLog.sync.warning("Failed to build reading progress fingerprint for WebDAV sync: \(error)")
-            return nil
+    private func merge(remote: ReadingProgressWebDAVPayload?, at date: Date) async throws -> ReadingProgressWebDAVPayload {
+        try await store.updateSyncSnapshot { snapshot in
+            let local = ReadingProgressWebDAVPayload(updatedAt: date, records: snapshot.records, deletions: snapshot.deletions)
+            let merged = ReadingProgressWebDAVMerger().merge(local: local, remote: remote, updatedAt: date)
+            snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
+            return merged
         }
-        let fingerprintEncoder = JSONEncoder()
-        fingerprintEncoder.outputFormatting = [.sortedKeys]
-        let data: Data
-        do {
-            data = try fingerprintEncoder.encode(records)
-        } catch {
-            YamiboLog.sync.warning("Failed to encode reading progress fingerprint for WebDAV sync: \(error)")
-            return nil
-        }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func readLocalFingerprint() async throws -> String? {
+        let snapshot = try await store.syncSnapshot()
+        return try ReadingProgressWebDAVPayload(updatedAt: .distantPast, records: snapshot.records,
+            deletions: snapshot.deletions).contentFingerprint()
     }
 }
 
 struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     var version: Int
     var updatedAt: Date
@@ -71,12 +60,14 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
     /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var records: [ReadingProgressRecord]
+    var deletions: SyncDeletionState
 
-    init(version: Int = Self.currentVersion, updatedAt: Date, syncRevision: UInt64? = nil, records: [ReadingProgressRecord]) {
+    init(version: Int = Self.currentVersion, updatedAt: Date, syncRevision: UInt64? = nil, records: [ReadingProgressRecord], deletions: SyncDeletionState = .init()) {
         self.version = version
         self.updatedAt = updatedAt
         self.syncRevision = syncRevision
         self.records = records
+        self.deletions = deletions
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -84,6 +75,7 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         case updatedAt
         case syncRevision
         case records
+        case deletions
     }
 
     init(from decoder: any Decoder) throws {
@@ -91,7 +83,7 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         guard let version = try container.decodeIfPresent(Int.self, forKey: .version) else {
             throw WebDAVSyncError.unsupportedPayloadVersion(0)
         }
-        guard version == Self.currentVersion else {
+        guard version == 2 || version == Self.currentVersion else {
             throw WebDAVSyncError.unsupportedPayloadVersion(version)
         }
         self.version = version
@@ -99,6 +91,7 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.records = try container.decode([ReadingProgressWebDAVRecord].self, forKey: .records)
             .map { try $0.record() }
+        self.deletions = version == 2 ? .init() : try container.decode(SyncDeletionState.self, forKey: .deletions)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -107,6 +100,13 @@ struct ReadingProgressWebDAVPayload: Codable, Equatable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(syncRevision, forKey: .syncRevision)
         try container.encode(try records.map { try ReadingProgressWebDAVRecord(record: $0) }, forKey: .records)
+        try container.encode(deletions, forKey: .deletions)
+    }
+
+    func contentFingerprint() throws -> String {
+        try WebDAVSyncFingerprint.make(SyncRecordSnapshot(
+            records: records.sorted { $0.id < $1.id }.map { try ReadingProgressWebDAVRecord(record: $0) },
+            deletions: deletions))
     }
 }
 
@@ -118,11 +118,9 @@ struct ReadingProgressWebDAVMerger: Sendable {
         remote: ReadingProgressWebDAVPayload?,
         updatedAt: Date
     ) -> ReadingProgressWebDAVPayload {
-        guard let remote else {
-            return ReadingProgressWebDAVPayload(version: ReadingProgressWebDAVPayload.currentVersion, updatedAt: updatedAt, records: local.records)
-        }
-        var byID = Dictionary(uniqueKeysWithValues: local.records.map { ($0.id, $0) })
-        for record in remote.records {
+        let deletions = local.deletions.merging(remote?.deletions ?? .init())
+        var byID = Dictionary(local.records.map { ($0.id, $0) }, uniquingKeysWith: { $0.updatedAt >= $1.updatedAt ? $0 : $1 })
+        for record in remote?.records ?? [] {
             if let existing = byID[record.id], existing.updatedAt >= record.updatedAt {
                 continue
             }
@@ -131,10 +129,11 @@ struct ReadingProgressWebDAVMerger: Sendable {
         return ReadingProgressWebDAVPayload(
             version: ReadingProgressWebDAVPayload.currentVersion,
             updatedAt: updatedAt,
-            records: byID.values.sorted {
+            records: byID.values.filter { !deletions.containsDeletion(of: $0.id, updatedAt: $0.updatedAt) }.sorted {
                 if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
                 return $0.id < $1.id
-            }
+            },
+            deletions: deletions
         )
     }
 }

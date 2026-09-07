@@ -1,4 +1,24 @@
 import Foundation
+import CryptoKit
+
+struct WebDAVExportSnapshot: Sendable {
+    let data: Data
+    let fingerprint: String?
+}
+
+struct WebDAVApplySnapshot: Sendable {
+    let fingerprint: String?
+    let requiresUpload: Bool
+}
+
+enum WebDAVSyncFingerprint {
+    static func make(_ value: some Encodable) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .secondsSince1970
+        return SHA256.hash(data: try encoder.encode(value)).map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 /// Coordination metadata the sync flow needs from a remote payload without
 /// understanding the payload's domain content.
@@ -64,25 +84,34 @@ protocol WebDAVSyncParticipant: Sendable {
     var uploadsOnlyWhenMarkedDirty: Bool { get }
 
     /// Decodes remote payload data just far enough to expose coordination metadata.
-    /// Throw a non-`underlying` `WebDAVSyncError` (e.g. `unsupportedPayloadVersion`)
-    /// to abort the sync; any other error makes the sync treat the remote payload
-    /// as absent.
+    /// Any decoding failure aborts synchronization; only HTTP 404 means absent.
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo
 
     /// Merges local state with the optional remote payload, persists the merge
     /// result locally, and returns the encoded payload to upload.
-    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> Data
+    func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> WebDAVExportSnapshot
 
-    /// Replaces local state with the downloaded remote payload.
-    func applyRemote(_ data: Data) async throws
+    /// Applies the remote snapshot, retaining local deletion decisions. The
+    /// receipt belongs to exactly the transaction that applied this payload.
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot
 
     /// Stable fingerprint of the locally stored dataset, or nil when the dataset
     /// does not use fingerprint-based change detection.
-    func localFingerprint() async -> String?
+    func readLocalFingerprint() async throws -> String?
 }
 
 extension WebDAVSyncParticipant {
     var uploadsOnlyWhenMarkedDirty: Bool { false }
 
-    func localFingerprint() async -> String? { nil }
+    func readLocalFingerprint() async throws -> String? { nil }
+
+    func localFingerprint() async -> String? { try? await readLocalFingerprint() }
+
+    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> Data {
+        try await mergeAndExportSnapshot(remoteData: remoteData, updatedAt: updatedAt, accountUID: accountUID).data
+    }
+
+    func applyRemote(_ data: Data) async throws {
+        _ = try await applyRemoteSnapshot(data)
+    }
 }

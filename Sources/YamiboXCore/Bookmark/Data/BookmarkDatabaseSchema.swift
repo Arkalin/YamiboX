@@ -26,9 +26,13 @@ enum BookmarkDatabaseSchema: DatabaseSchemaModule {
             }
             try db.create(index: "bookmarks_work_idx", on: "bookmarks", columns: ["work_kind", "work_id"])
         }
+        migrator.registerMigration("bookmark.v2.sync-deletions") { db in
+            try SyncDeletionState.migrateSoftDeletions(from: "bookmarks", to: "bookmark_sync_state", in: db)
+        }
     }
 
     static func erase(in db: Database) throws {
         try db.execute(sql: "DELETE FROM bookmarks")
+        try db.execute(sql: "DELETE FROM bookmark_sync_state")
     }
 }

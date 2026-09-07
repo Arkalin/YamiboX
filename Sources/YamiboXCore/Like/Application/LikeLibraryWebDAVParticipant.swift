@@ -28,30 +28,27 @@ struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
     }
 
-    func mergeAndExport(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> Data {
-        let localSnapshot = await store.allIncludingDeleted()
+    func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID _: String) async throws -> WebDAVExportSnapshot {
         let remote = try remoteData.map { try decoder.decode(LikeLibraryWebDAVPayload.self, from: $0) }
-        let outcome = LikeLibraryWebDAVMerger().merge(localSnapshot: localSnapshot, remote: remote, updatedAt: updatedAt)
-        try await store.replaceAll(outcome.storageSnapshot)
-        return try encoder.encode(outcome.payload)
+        let payload = try await merge(remote: remote, at: updatedAt)
+        return WebDAVExportSnapshot(data: try encoder.encode(payload), fingerprint: try payload.contentFingerprint())
     }
 
-    func applyRemote(_ data: Data) async throws {
+    func applyRemoteSnapshot(_ data: Data) async throws -> WebDAVApplySnapshot {
         let payload = try decoder.decode(LikeLibraryWebDAVPayload.self, from: data)
-        // A straight overwrite has nothing local left to protect against
-        // revival, so bare tombstones (no known item data) don't need to be
-        // materialized as placeholder rows here.
-        //
-        // It DOES need to protect the fields a client too old to know about
-        // them silently drops on re-export. This path never went through the
-        // merger's timestamp guard, so an old device re-exporting the payload
-        // for an unrelated reason (it deletes one like, say) would come back
-        // here and wipe every colour and note the user had — permanently, since
-        // the flattened state then becomes the recorded fingerprint.
-        let localByID = Dictionary(
-            uniqueKeysWithValues: await store.allIncludingDeleted().map { ($0.id, $0) }
-        )
-        try await store.replaceAll(payload.items.map { Self.restoringDroppedFields($0, from: localByID) })
+        let merged = try await merge(remote: payload, at: payload.updatedAt)
+        let fingerprint = try merged.contentFingerprint()
+        return WebDAVApplySnapshot(fingerprint: fingerprint, requiresUpload: fingerprint != (try payload.contentFingerprint()))
+    }
+
+    private func merge(remote: LikeLibraryWebDAVPayload?, at date: Date) async throws -> LikeLibraryWebDAVPayload {
+        try await store.updateSyncSnapshot { snapshot in
+            let outcome = LikeLibraryWebDAVMerger().merge(localSnapshot: snapshot.records,
+                remote: remote, updatedAt: date, localTombstones: snapshot.deletions.tombstones)
+            snapshot.records = outcome.storageSnapshot
+            snapshot.deletions.tombstones = outcome.payload.tombstones
+            return outcome.payload
+        }
     }
 
     /// Restores fields an older client would have dropped, but only when the
@@ -72,27 +69,16 @@ struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
         return restored
     }
 
-    // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
-    // this dataset can grow large, and the fingerprint is persisted inside the
-    // (already UserDefaults-backed) WebDAVSyncSettings blob. Includes deleted rows
-    // (matching mergeAndExport's synced subset) so a delete alone still marks dirty.
-    func localFingerprint() async -> String? {
-        let snapshot = await store.allIncludingDeleted()
-        let fingerprintEncoder = JSONEncoder()
-        fingerprintEncoder.outputFormatting = [.sortedKeys]
-        let data: Data
-        do {
-            data = try fingerprintEncoder.encode(snapshot)
-        } catch {
-            YamiboLog.sync.warning("Failed to encode like library fingerprint for WebDAV sync: \(error)")
-            return nil
-        }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    func readLocalFingerprint() async throws -> String? {
+        let snapshot = try await store.syncSnapshot()
+        return try LikeLibraryWebDAVPayload(updatedAt: .distantPast,
+            items: snapshot.records.filter { $0.deletedAt == nil },
+            tombstones: snapshot.deletions.tombstones).contentFingerprint()
     }
 }
 
 struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
     var updatedAt: Date
@@ -139,14 +125,16 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         guard let version = try container.decodeIfPresent(Int.self, forKey: .version) else {
             throw WebDAVSyncError.unsupportedPayloadVersion(0)
         }
-        guard version == Self.currentVersion else {
+        guard version == 1 || version == Self.currentVersion else {
             throw WebDAVSyncError.unsupportedPayloadVersion(version)
         }
         self.version = version
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
         self.items = try container.decode([LikeItem].self, forKey: .items)
-        self.tombstones = try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
+        self.tombstones = version == 1
+            ? try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
+            : try container.decode([String: Date].self, forKey: .tombstones)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -157,24 +145,24 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         try container.encode(items, forKey: .items)
         try container.encode(tombstones, forKey: .tombstones)
     }
+
+    func contentFingerprint() throws -> String {
+        try WebDAVSyncFingerprint.make(SyncRecordSnapshot(records: items.sorted { $0.id < $1.id },
+            deletions: SyncDeletionState(tombstones: tombstones)))
+    }
 }
 
 struct LikeLibraryWebDAVMerger: Sendable {
-    struct MergeOutcome {
+    struct MergeOutcome: Sendable {
         var storageSnapshot: [LikeItem]
         var payload: LikeLibraryWebDAVPayload
     }
 
     init() {}
 
-    func merge(localSnapshot: [LikeItem], remote: LikeLibraryWebDAVPayload?, updatedAt: Date) -> MergeOutcome {
-        guard let remote else {
-            let payload = LikeLibraryWebDAVPayload(updatedAt: updatedAt, localSnapshot: localSnapshot)
-            return MergeOutcome(storageSnapshot: localSnapshot, payload: payload)
-        }
-
-        var byID = Dictionary(uniqueKeysWithValues: localSnapshot.map { ($0.id, $0) })
-        for remoteItem in remote.items {
+    func merge(localSnapshot: [LikeItem], remote: LikeLibraryWebDAVPayload?, updatedAt: Date, localTombstones: [String: Date] = [:]) -> MergeOutcome {
+        var byID = Dictionary(localSnapshot.map { ($0.id, $0) }, uniquingKeysWith: { $0.updatedAt >= $1.updatedAt ? $0 : $1 })
+        for remoteItem in remote?.items ?? [] {
             // `>=`, not `>`, is what protects fields a client too old to know
             // about them would flatten (style, note): re-exporting an item does
             // not touch its `updatedAt`, so a payload rewritten by an old client
@@ -192,15 +180,12 @@ struct LikeLibraryWebDAVMerger: Sendable {
             byID[remoteItem.id] = remoteItem
         }
 
-        let localTombstones = Dictionary(uniqueKeysWithValues: localSnapshot.compactMap { item in
+        let rowTombstones = Dictionary(localSnapshot.compactMap { item in
             item.deletedAt.map { (item.id, $0) }
-        })
-        let mergedTombstones = maxDateDictionary(localTombstones, remote.tombstones)
+        }, uniquingKeysWith: max)
+        let mergedTombstones = maxDateDictionary(maxDateDictionary(localTombstones, rowTombstones), remote?.tombstones ?? [:])
 
-        // Tombstones only cover ids we still have some data for (from either
-        // side's live snapshot); a bare tombstone with no known item data has
-        // nothing to write a row for, but still rides along in `mergedTombstones`
-        // below so this device keeps forwarding it on its next export.
+        // Bare tombstones are persisted separately from the optional content.
         let storageSnapshot: [LikeItem] = byID.values.map { item in
             var resolved = item
             if let deletedAt = mergedTombstones[item.id], deletedAt >= item.updatedAt {

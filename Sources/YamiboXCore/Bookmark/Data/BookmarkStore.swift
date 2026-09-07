@@ -164,13 +164,14 @@ public actor BookmarkStore {
         }
     }
 
-    public func deleteAll(workKey: LikeWorkKey) async throws {
+    public func deleteAll(workKey: LikeWorkKey, date: Date = .now) async throws {
         do {
             try await database.write { db in
-                try db.execute(
-                    sql: "DELETE FROM bookmarks WHERE work_kind = ? AND work_id = ?",
+                let ids = try String.fetchAll(db,
+                    sql: "SELECT id FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
                     arguments: [workKey.kind.rawValue, workKey.id]
                 )
+                for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
             }
             postChangeNotification()
         } catch let error as YamiboError {
@@ -184,7 +185,10 @@ public actor BookmarkStore {
 
     public func clearAll() async throws {
         do {
-            try await database.write { db in try db.execute(sql: "DELETE FROM bookmarks") }
+            try await database.write { db in
+                try db.execute(sql: "DELETE FROM bookmarks")
+                try db.execute(sql: "DELETE FROM bookmark_sync_state")
+            }
             postChangeNotification()
         } catch let error as YamiboError {
             throw error
@@ -197,12 +201,41 @@ public actor BookmarkStore {
 
     /// Renames manga-title bookmarks alongside `LikeStore.renameMangaTitleLikes`,
     /// so a directory rename does not orphan a work's bookmarks.
-    static func renameMangaTitleBookmarks(from oldName: String, to newName: String, in db: Database) throws {
+    static func renameMangaTitleBookmarks(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
         guard oldName != newName else { return }
         try db.execute(
-            sql: "UPDATE bookmarks SET work_id = ? WHERE work_kind = ? AND work_id = ?",
-            arguments: [newName, LikeWorkKind.manga.rawValue, oldName]
+            sql: "UPDATE bookmarks SET work_id = ?, updated_at = MAX(updated_at, ?) WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
+            arguments: [newName, date.timeIntervalSince1970, LikeWorkKind.manga.rawValue, oldName]
         )
+    }
+
+    func syncSnapshot() async throws -> SyncRecordSnapshot<BookmarkItem> {
+        try await database.read { db in try Self.syncSnapshot(in: db) }
+    }
+
+    private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<BookmarkItem> {
+        let records = try Self.fetchAllIncludingDeleted(in: db)
+        var deletions = try SyncDeletionState.load(from: "bookmark_sync_state", in: db)
+        for record in records {
+            if let date = record.deletedAt { deletions.recordDeletion(of: record.id, at: date) }
+        }
+        return SyncRecordSnapshot(records: records, deletions: deletions)
+    }
+
+    @discardableResult
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<BookmarkItem>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = try Self.syncSnapshot(in: db)
+            let result = try transform(&snapshot)
+            try db.execute(sql: "DELETE FROM bookmarks")
+            for record in snapshot.records { try Self.upsertRow(record, in: db) }
+            try snapshot.deletions.save(to: "bookmark_sync_state", in: db)
+            return result
+        }
+        postChangeNotification()
+        return result
     }
 
     private nonisolated func postChangeNotification() {
@@ -227,7 +260,12 @@ public actor BookmarkStore {
         try Row.fetchAll(
             db,
             sql: selectColumns + " ORDER BY created_at ASC, id ASC"
-        ).compactMap { try Self.item(from: $0) }
+        ).map {
+            guard let item = try Self.item(from: $0) else {
+                throw YamiboPersistenceError(context: "Invalid bookmark row")
+            }
+            return item
+        }
     }
 
     private static func upsertRow(_ item: BookmarkItem, in db: Database) throws {
@@ -256,6 +294,9 @@ public actor BookmarkStore {
     }
 
     private static func softDeleteRow(id: String, date: Date, in db: Database) throws {
+        var deletions = try SyncDeletionState.load(from: "bookmark_sync_state", in: db)
+        deletions.recordDeletion(of: id, at: date)
+        try deletions.save(to: "bookmark_sync_state", in: db)
         try db.execute(
             sql: "UPDATE bookmarks SET deleted_at = ?, updated_at = ? WHERE id = ?",
             arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]

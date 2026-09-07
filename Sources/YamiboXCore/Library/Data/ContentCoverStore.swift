@@ -17,6 +17,8 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
     public var targetType: ContentCoverTargetType
     public var targetID: String
 
+    var syncID: String { "\(targetType.rawValue):\(targetID)" }
+
     public init(targetType: ContentCoverTargetType, targetID: String) {
         self.targetType = targetType
         self.targetID = targetID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,7 +184,10 @@ public actor ContentCoverStore {
     /// degrading to `[]` like the read paths above: a sync round that mistook
     /// a read failure for "no local covers" would upload an empty dataset.
     public func allCovers() async throws -> [ContentCover] {
-        try await database.read { db in
+        try await database.read { db in try Self.allCovers(in: db) }
+    }
+
+    private static func allCovers(in db: Database) throws -> [ContentCover] {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
@@ -191,8 +196,10 @@ public actor ContentCoverStore {
                 ORDER BY target_type, target_id
                 """
             )
-            return rows.compactMap { row -> ContentCover? in
-                guard let targetType = ContentCoverTargetType(rawValue: row["target_type"] as String) else { return nil }
+            return try rows.map { row -> ContentCover in
+                guard let targetType = ContentCoverTargetType(rawValue: row["target_type"] as String) else {
+                    throw YamiboPersistenceError(context: "Invalid content cover row")
+                }
                 return ContentCover(
                     key: ContentCoverKey(targetType: targetType, targetID: row["target_id"]),
                     automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
@@ -202,7 +209,6 @@ public actor ContentCoverStore {
                     updatedAt: Date(timeIntervalSince1970: row["updated_at"])
                 )
             }
-        }
     }
 
     /// Replaces the whole table with `covers` in one transaction, for the
@@ -305,8 +311,43 @@ public actor ContentCoverStore {
     public func clearAll() async throws {
         try await database.write { db in
             try db.execute(sql: "DELETE FROM content_cover")
+            try db.execute(sql: "DELETE FROM content_cover_sync_state")
         }
         postChangeNotification()
+    }
+
+    public func clearAllForSync(at date: Date = .now) async throws {
+        try await database.write { db in
+            var deletions = try SyncDeletionState.load(from: "content_cover_sync_state", in: db)
+            deletions.clear(at: date)
+            try deletions.save(to: "content_cover_sync_state", in: db)
+            try db.execute(sql: "DELETE FROM content_cover")
+        }
+        postChangeNotification()
+    }
+
+    func syncSnapshot() async throws -> SyncRecordSnapshot<ContentCover> {
+        try await database.read { db in
+            SyncRecordSnapshot(records: try Self.allCovers(in: db),
+                deletions: try SyncDeletionState.load(from: "content_cover_sync_state", in: db))
+        }
+    }
+
+    @discardableResult
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ContentCover>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = SyncRecordSnapshot(records: try Self.allCovers(in: db),
+                deletions: try SyncDeletionState.load(from: "content_cover_sync_state", in: db))
+            let result = try transform(&snapshot)
+            try db.execute(sql: "DELETE FROM content_cover")
+            for cover in snapshot.records { try Self.upsert(cover, in: db) }
+            try snapshot.deletions.save(to: "content_cover_sync_state", in: db)
+            return result
+        }
+        postChangeNotification()
+        return result
     }
 
     public func totalDiskUsageBytes() async -> Int {
@@ -356,7 +397,7 @@ public actor ContentCoverStore {
 
     /// Moves a smart-manga cover row to a renamed directory inside the
     /// caller's transaction, so directory renames keep their cover atomically.
-    static func renameSmartMangaCover(from oldName: String, to newName: String, in db: Database) throws {
+    static func renameSmartMangaCover(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
         let oldKey = ContentCoverKey.smartManga(cleanBookName: oldName)
         let newKey = ContentCoverKey.smartManga(cleanBookName: newName)
         guard !oldKey.targetID.isEmpty, !newKey.targetID.isEmpty, oldKey != newKey else { return }
@@ -365,8 +406,12 @@ public actor ContentCoverStore {
         // if the destination is empty.
         if try fetchCover(for: newKey, in: db) == nil {
             cover.key = newKey
+            cover.updatedAt = max(cover.updatedAt, date)
             try upsert(cover, in: db)
         }
+        var deletions = try SyncDeletionState.load(from: "content_cover_sync_state", in: db)
+        deletions.recordDeletion(of: oldKey.syncID, at: max(cover.updatedAt, date))
+        try deletions.save(to: "content_cover_sync_state", in: db)
         try db.execute(
             sql: "DELETE FROM content_cover WHERE target_type = ? AND target_id = ?",
             arguments: [oldKey.targetType.rawValue, oldKey.targetID]

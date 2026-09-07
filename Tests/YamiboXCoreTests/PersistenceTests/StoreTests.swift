@@ -239,7 +239,7 @@ import YamiboXTestSupport
 
     let loaded = await store.load()
     #expect(loaded == AppSettings())
-    #expect(loaded.system.homePage == .forum)
+    #expect(loaded.system.homePage == SystemSettings().homePage)
 }
 
 @Test func settingsStoreLoadSyncMatchesAsyncLoad() async throws {
