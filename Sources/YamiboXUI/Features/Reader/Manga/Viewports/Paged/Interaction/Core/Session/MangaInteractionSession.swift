@@ -17,11 +17,6 @@ struct MangaInteractionSession {
     private var translation: CGSize = .zero
     private var magnification: CGFloat = 1
 
-    init(generation: UInt64, snapshot: MangaSurfaceTransform) {
-        self.generation = generation
-        self.snapshot = snapshot
-    }
-
     mutating func begin(_ input: MangaContinuousInput) -> Bool {
         guard !joined.contains(input) else { return false }
         joined.insert(input)
