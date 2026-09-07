@@ -23,6 +23,10 @@ public final class ForumBrowserModel: ObservableObject {
         webView?.load(URLRequest(url: url))
     }
 
+    public func reload() {
+        webView?.reload()
+    }
+
     public func sync(with webView: WKWebView) {
         currentURL = webView.url ?? currentURL
         pageTitle = webView.title ?? pageTitle
@@ -70,6 +74,14 @@ public struct ForumBrowserView: View {
                     title: model.pageTitle,
                     urlText: model.currentURL?.absoluteString
                 )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: model.reload) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel(L10n.string("common.refresh"))
+                .help(L10n.string("common.refresh"))
+                .accessibilityIdentifier("forum-browser-refresh")
             }
         }
         .yamiboInlineNavigationTitleDisplayMode()
