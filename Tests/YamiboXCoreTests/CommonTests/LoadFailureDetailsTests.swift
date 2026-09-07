@@ -4,6 +4,18 @@ import Testing
 
 @Suite("Load failure diagnostics")
 struct LoadFailureDetailsTests {
+    @Test func forbiddenResponsePreservesDiagnosticsWithoutRequestingLogin() {
+        let url = "https://bbs.yamibo.com/data/attachment/forum/202508/11/003523dz9krfcc73rjld62.png"
+        let error = LoadDiagnosticError.attaching(to: YamiboError.invalidResponse(statusCode: 403), requestContext: url)
+        let details = LoadFailureDetails(error: error)
+        #expect(details.summary == L10n.string("error.access_restricted"))
+        #expect(details.causes.first?.message == details.summary)
+        #expect(details.httpStatus == 403)
+        #expect(details.requestContext == url)
+        #expect(details.copyText.contains("HTTP: 403"))
+        #expect(!details.copyText.contains(YamiboError.notAuthenticated.localizedDescription))
+    }
+
     @Test func recordsTransportCodeAndNestedCausesWithoutDumpingUserInfo() {
         let underlying = NSError(domain: NSPOSIXErrorDomain, code: 54, userInfo: [
             NSLocalizedDescriptionKey: "Connection reset"

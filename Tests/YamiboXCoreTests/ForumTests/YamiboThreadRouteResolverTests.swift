@@ -751,7 +751,7 @@ struct YamiboThreadRouteResolverTests {
     let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=500&mobile=2"))
 
     YamiboThreadRouteResolverTestURLProtocol.handler = { request in
-        yamiboThreadRouteHTTPResponse(url: request.url!, body: "forbidden", statusCode: 403)
+        yamiboThreadRouteHTTPResponse(url: request.url!, body: "unauthorized", statusCode: 401)
     }
 
     let target = try await resolver.resolve(YamiboThreadRouteRequest(threadURL: url))
@@ -761,6 +761,28 @@ struct YamiboThreadRouteResolverTests {
         return
     }
     #expect(fallbackURL == url)
+}
+
+@Test func yamiboThreadRouteResolverPropagatesForbiddenMetadataFailure() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=500&mobile=2"))
+    YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+        yamiboThreadRouteHTTPResponse(url: request.url!, body: "forbidden", statusCode: 403)
+    }
+
+    do {
+        _ = try await resolver.resolve(YamiboThreadRouteRequest(threadURL: url))
+        Issue.record("Expected forbidden response to propagate")
+    } catch {
+        #expect(LoadDiagnosticError.classificationError(error) as? YamiboError == .invalidResponse(statusCode: 403))
+        let details = LoadFailureDetails(error: error)
+        #expect(details.httpStatus == 403)
+        #expect(details.requestContext?.contains("tid=500") == true)
+        #expect(details.summary == L10n.string("error.access_restricted"))
+        #expect(details.causes.first?.message == details.summary)
+        #expect(!details.copyText.contains(YamiboError.notAuthenticated.localizedDescription))
+    }
 }
 
 @Test func yamiboThreadRouteResolverPropagatesNonFallbackMetadataFailure() async throws {

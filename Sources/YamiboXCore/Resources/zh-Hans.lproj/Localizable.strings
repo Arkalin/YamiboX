@@ -128,6 +128,7 @@
 "error.favorite_add_failed" = "添加收藏失败，请稍后重试";
 "error.flood_control" = "论坛触发了防灌水限制，请稍后再试";
 "error.invalid_response" = "未拿到有效的论坛响应";
+"error.access_restricted" = "服务器拒绝访问（HTTP 403），可能是当前 IP 访问受限或请求过于频繁，请稍后重试";
 "error.security_verification_required" = "论坛安全验证未完成，请重试或使用网页浏览";
 "error.invalid_response_with_status" = "论坛响应异常（HTTP %d）";
 "error.account_uid_unavailable" = "无法确认当前百合会账号，请重新登录后再同步。";

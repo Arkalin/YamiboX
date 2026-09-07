@@ -35,6 +35,9 @@ public enum YamiboError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case let .invalidResponse(statusCode):
+            if statusCode == 403 {
+                return L10n.string("error.access_restricted")
+            }
             if let statusCode {
                 return L10n.string("error.invalid_response_with_status", statusCode)
             }

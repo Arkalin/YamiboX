@@ -30,18 +30,24 @@ struct YamiboURLSessionImageDataLoaderTests {
         #expect(outcome.responses.allSatisfy { ($0 as? HTTPURLResponse)?.statusCode == 200 })
     }
 
-    @Test func authFailureCompletesWithoutDeliveringData() async throws {
+    @Test(arguments: [401, 403])
+    func accessFailureCompletesWithoutDeliveringData(statusCode: Int) async throws {
         let url = makeStreamingStubURL()
         defer { ImageLoaderStreamingStubURLProtocol.reset(url) }
         ImageLoaderStreamingStubURLProtocol.setScript([
-            .respond(statusCode: 403),
+            .respond(statusCode: statusCode),
             .deliver(Data([1, 2, 3])),
             .finish
         ], for: url)
 
         let outcome = await performStreamingLoad(url: url)
 
-        #expect(LoadDiagnosticError.classificationError(try #require(outcome.error)) as? YamiboError == .notAuthenticated)
+        let error = try #require(outcome.error)
+        let expected: YamiboError = statusCode == 401 ? .notAuthenticated : .invalidResponse(statusCode: statusCode)
+        #expect(LoadDiagnosticError.classificationError(error) as? YamiboError == expected)
+        let details = LoadFailureDetails(error: error)
+        #expect(details.httpStatus == statusCode)
+        #expect(details.requestContext == url.absoluteString)
         #expect(outcome.chunks.isEmpty)
     }
 

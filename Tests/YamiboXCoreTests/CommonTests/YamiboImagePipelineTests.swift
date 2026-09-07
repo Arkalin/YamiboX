@@ -160,19 +160,23 @@ struct YamiboImagePipelineTests {
         #expect(harness.requests.count == 1)
     }
 
-    @Test func mapsAuthAndEmptyBodyFailures() async throws {
+    @Test(arguments: [401, 403, 500])
+    func mapsHTTPFailures(statusCode: Int) async throws {
         let authHarness = MangaReaderDataTestHarness()
         defer { authHarness.reset() }
         authHarness.setHandler { _ in
-            MangaReaderDataTestResponse(statusCode: 403, data: Data([1]))
+            MangaReaderDataTestResponse(statusCode: statusCode, data: Data([1]))
         }
         let authPipeline = authHarness.makeImagePipeline()
         await #expect {
             _ = try await authPipeline.data(for: imageSource())
         } throws: { error in
-            (LoadDiagnosticError.classificationError(error) as? YamiboError) == YamiboError.notAuthenticated
+            (LoadDiagnosticError.classificationError(error) as? YamiboError)
+                == (statusCode == 401 ? .notAuthenticated : .invalidResponse(statusCode: statusCode))
         }
+    }
 
+    @Test func mapsEmptyBodyFailure() async throws {
         let emptyHarness = MangaReaderDataTestHarness()
         defer { emptyHarness.reset() }
         emptyHarness.setHandler { _ in

@@ -194,7 +194,7 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             return YamiboError.invalidResponse(statusCode: nil)
         }
         guard 200 ..< 300 ~= httpResponse.statusCode else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            if httpResponse.statusCode == 401 {
                 return YamiboError.notAuthenticated
             }
             return YamiboError.invalidResponse(statusCode: httpResponse.statusCode)

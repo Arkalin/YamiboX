@@ -212,7 +212,7 @@ struct YamiboClient: Sendable {
                 throw YamiboError.invalidResponse(statusCode: nil)
             }
             guard 200 ..< 300 ~= httpResponse.statusCode else {
-                if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                if httpResponse.statusCode == 401 {
                     throw YamiboError.notAuthenticated
                 }
                 throw YamiboError.invalidResponse(statusCode: httpResponse.statusCode)
