@@ -58,7 +58,8 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
 @MainActor
 public final class YamiboUIImagePipeline {
     public static let shared = YamiboUIImagePipeline()
-    static let defaultMemoryLimitBytes = 128 * 1024 * 1024
+    static let defaultMemoryLimitBytes = 512 * 1024 * 1024
+    static let defaultEntryCostLimit = 0.25
 
     private let core: YamiboImagePipeline
     private let pipeline: ImagePipeline
@@ -66,11 +67,15 @@ public final class YamiboUIImagePipeline {
 
     init(
         core: YamiboImagePipeline = .shared,
-        memoryLimitBytes: Int = YamiboUIImagePipeline.defaultMemoryLimitBytes
+        memoryLimitBytes: Int = YamiboUIImagePipeline.defaultMemoryLimitBytes,
+        entryCostLimit: Double = YamiboUIImagePipeline.defaultEntryCostLimit
     ) {
         self.core = core
         self.pipeline = ImagePipeline {
-            $0.imageCache = ImageCache(costLimit: memoryLimitBytes)
+            let cache = ImageCache(costLimit: memoryLimitBytes)
+            // Full-resolution manga pages can cost far more than their compressed bytes.
+            cache.entryCostLimit = entryCostLimit
+            $0.imageCache = cache
             $0.dataCache = nil
             $0.isResumableDataEnabled = true
             $0.makeImageDecoder = { context in

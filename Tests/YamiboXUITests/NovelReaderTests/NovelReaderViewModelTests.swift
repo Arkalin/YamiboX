@@ -15,7 +15,7 @@ final class NovelReaderViewModelTests: XCTestCase {
     @MainActor
     func testImagePrefetchFollowsReadingPositionSettingsAndMemoryPressure() async throws {
         var requested: [String] = []
-        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
+        let prefetch = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
             requested.append($0.url.lastPathComponent)
         })
         let images = makeImageDocument(view: 1, maxView: 1, surfaceCount: 12)
@@ -65,7 +65,7 @@ final class NovelReaderViewModelTests: XCTestCase {
     @MainActor
     func testImagePrefetchFollowsChapterJumpPrefetchedDocumentAndSpreadLayout() async throws {
         var requested: [YamiboImageSource] = []
-        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
+        let prefetch = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: {
             requested.append($0)
         })
         let model = try await makeModel(
@@ -108,7 +108,7 @@ final class NovelReaderViewModelTests: XCTestCase {
     func testClosingReaderCancelsImagePrefetchWithoutStartingQueuedImages() async throws {
         var started = 0
         var cancelled = 0
-        let prefetch = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { _ in
+        let prefetch = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { _ in
             started += 1
             do {
                 try await Task.sleep(for: .seconds(30))
@@ -3492,7 +3492,7 @@ private func makeModel(
     forumCacheStore: ForumCacheStore? = nil,
     offlineCacheStore: (any TestOfflineCacheStoring)? = nil,
     seedSourceCaches: Bool = true,
-    imagePrefetchCoordinator: NovelReaderImagePrefetchCoordinator? = nil,
+    imagePrefetchCoordinator: ReaderImagePrefetchCoordinator? = nil,
     pagination: @escaping NovelTextLayoutFixture = novelReaderViewModelSegmentPagination
 ) async throws -> NovelReaderViewModel {
     let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
@@ -4195,7 +4195,7 @@ private extension NovelReaderViewModel {
             runtimeAdapter: NovelReaderViewModelFixtureRuntimeAdapter(fixture: pagination),
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
-        imagePrefetchCoordinator = NovelReaderImagePrefetchCoordinator(isCached: { _ in true }, load: { _ in })
+        imagePrefetchCoordinator = ReaderImagePrefetchCoordinator(isCached: { _ in true }, load: { _ in })
     }
 }
 

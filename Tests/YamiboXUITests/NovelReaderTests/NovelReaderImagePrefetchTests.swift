@@ -97,7 +97,7 @@ final class NovelReaderImagePrefetchCoordinatorTests: XCTestCase {
     func testConcurrencyPriorityCachingAndDeduplication() async throws {
         let gate = PrefetchLoadGate()
         defer { gate.finishAll() }
-        let coordinator = NovelReaderImagePrefetchCoordinator(
+        let coordinator = ReaderImagePrefetchCoordinator(
             isCached: { $0 == prefetchSource(0) }, load: { try await gate.load($0) }
         )
         defer { coordinator.cancel() }
@@ -112,7 +112,7 @@ final class NovelReaderImagePrefetchCoordinatorTests: XCTestCase {
     func testWindowUpdatesRetainIntersectionAndCancelRemovedRequests() async throws {
         let gate = PrefetchLoadGate()
         defer { gate.finishAll() }
-        let coordinator = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { try await gate.load($0) })
+        let coordinator = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { try await gate.load($0) })
         defer { coordinator.cancel() }
         coordinator.update(sources: [1, 2, 3].map(prefetchSource))
         try await waitForPrefetch { gate.started.count == 2 }
@@ -126,7 +126,7 @@ final class NovelReaderImagePrefetchCoordinatorTests: XCTestCase {
     func testStaleCompletionCannotRemoveNewRequestForSameURL() async throws {
         let gate = PrefetchLoadGate()
         defer { gate.finishAll() }
-        let coordinator = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { try await gate.load($0) })
+        let coordinator = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { try await gate.load($0) })
         defer { coordinator.cancel() }
         coordinator.update(sources: [1, 2].map(prefetchSource))
         try await waitForPrefetch { gate.started.count == 2 }
@@ -144,7 +144,7 @@ final class NovelReaderImagePrefetchCoordinatorTests: XCTestCase {
 
     func testFailureDoesNotRetryUntilURLLeavesWindow() async throws {
         var calls = 0
-        let coordinator = NovelReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { _ in
+        let coordinator = ReaderImagePrefetchCoordinator(isCached: { _ in false }, load: { _ in
             calls += 1
             throw YamiboError.invalidImageData
         })
@@ -161,7 +161,7 @@ final class NovelReaderImagePrefetchCoordinatorTests: XCTestCase {
     func testDeinitCancelsRequests() async throws {
         let gate = PrefetchLoadGate()
         defer { gate.finishAll() }
-        var coordinator: NovelReaderImagePrefetchCoordinator? = NovelReaderImagePrefetchCoordinator(
+        var coordinator: ReaderImagePrefetchCoordinator? = ReaderImagePrefetchCoordinator(
             isCached: { _ in false }, load: { try await gate.load($0) }
         )
         coordinator?.update(sources: [prefetchSource(1)])

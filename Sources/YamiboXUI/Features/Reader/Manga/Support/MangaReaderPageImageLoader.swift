@@ -24,7 +24,19 @@ final class MangaReaderPageImageLoader {
     }
 
     func prefetchImages(for pages: [MangaReaderPageProjection]) {
-        uiImagePipeline.prefetchImages(for: pages.map(imageSource))
+        uiImagePipeline.prefetchImages(for: imageSources(for: pages))
+    }
+
+    func imageSources(for pages: [MangaReaderPageProjection]) -> [YamiboImageSource] {
+        pages.map(imageSource)
+    }
+
+    func makePrefetchCoordinator() -> ReaderImagePrefetchCoordinator {
+        let pipeline = uiImagePipeline
+        return ReaderImagePrefetchCoordinator(
+            isCached: { pipeline.cachedImage(for: $0) != nil },
+            load: { _ = try await pipeline.image(for: $0, priority: .low) }
+        )
     }
 
     func image(for page: MangaReaderPageProjection) async throws -> UIImage {

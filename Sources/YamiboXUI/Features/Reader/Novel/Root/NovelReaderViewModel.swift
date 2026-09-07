@@ -40,7 +40,7 @@ public final class NovelReaderViewModel {
     private let dependencies: NovelReaderDependencies
     @ObservationIgnored private var repository: NovelReaderRepository?
     @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
-    @ObservationIgnored var imagePrefetchCoordinator = NovelReaderImagePrefetchCoordinator()
+    @ObservationIgnored var imagePrefetchCoordinator = ReaderImagePrefetchCoordinator()
     @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
     @ObservationIgnored private var layout: NovelReaderLayout = .zero

@@ -2,7 +2,7 @@ import Foundation
 import YamiboXCore
 
 @MainActor
-final class NovelReaderImagePrefetchCoordinator {
+final class ReaderImagePrefetchCoordinator {
     private struct Request {
         let id: UUID
         let task: Task<Void, Never>

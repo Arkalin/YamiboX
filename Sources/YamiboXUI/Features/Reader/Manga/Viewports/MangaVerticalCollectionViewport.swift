@@ -24,7 +24,10 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UICollectionView {
-        let coordinator = context.coordinator
+        makeCollectionView(coordinator: context.coordinator)
+    }
+
+    func makeCollectionView(coordinator: Coordinator) -> UICollectionView {
         let collectionView = MangaVerticalCollectionView(
             frame: .zero,
             collectionViewLayout: Self.makeLayout(
@@ -38,9 +41,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         collectionView.backgroundColor = .black
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.showsVerticalScrollIndicator = false
-        collectionView.dataSource = context.coordinator
-        collectionView.delegate = context.coordinator
-        collectionView.panGestureRecognizer.addTarget(context.coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
+        collectionView.dataSource = coordinator
+        collectionView.delegate = coordinator
+        collectionView.panGestureRecognizer.addTarget(coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
         collectionView.register(
             MangaVerticalCollectionPageCell.self,
             forCellWithReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier
@@ -49,17 +52,18 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             guard let collectionView else { return }
             coordinator?.applyInitialPlacementIfNeeded(in: collectionView)
             coordinator?.applyViewportPlacementIfNeeded(in: collectionView)
+            coordinator?.updateImagePrefetch(in: collectionView)
         }
-        context.coordinator.tapGesture.cancelsTouchesInView = false
-        context.coordinator.tapGesture.delegate = context.coordinator
-        context.coordinator.tapGesture.require(toFail: context.coordinator.doubleTapGesture)
-        collectionView.addGestureRecognizer(context.coordinator.tapGesture)
-        context.coordinator.doubleTapGesture.cancelsTouchesInView = false
-        context.coordinator.doubleTapGesture.delegate = context.coordinator
-        collectionView.addGestureRecognizer(context.coordinator.doubleTapGesture)
-        context.coordinator.pinchGesture.cancelsTouchesInView = false
-        context.coordinator.pinchGesture.delegate = context.coordinator
-        collectionView.addGestureRecognizer(context.coordinator.pinchGesture)
+        coordinator.tapGesture.cancelsTouchesInView = false
+        coordinator.tapGesture.delegate = coordinator
+        coordinator.tapGesture.require(toFail: coordinator.doubleTapGesture)
+        collectionView.addGestureRecognizer(coordinator.tapGesture)
+        coordinator.doubleTapGesture.cancelsTouchesInView = false
+        coordinator.doubleTapGesture.delegate = coordinator
+        collectionView.addGestureRecognizer(coordinator.doubleTapGesture)
+        coordinator.pinchGesture.cancelsTouchesInView = false
+        coordinator.pinchGesture.delegate = coordinator
+        collectionView.addGestureRecognizer(coordinator.pinchGesture)
         return collectionView
     }
 
@@ -71,7 +75,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ collectionView: UICollectionView, coordinator: Coordinator) {
+        coordinator.dismantle()
         collectionView.panGestureRecognizer.removeTarget(coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
+        (collectionView as? MangaVerticalCollectionView)?.onLayoutSubviews = nil
     }
 
     private static func makeLayout(
@@ -104,6 +110,10 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
         private var pendingBoundaryPull: ReaderPageBoundary?
         private var contentIdentity: [String] = []
+        private var prefetchImageLoader: MangaReaderPageImageLoader
+        private var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
+        private var lastPrefetchSources: [YamiboImageSource] = []
+        private var isDismantled = false
         private var heightToWidthRatios: [String: CGFloat] = [:]
         private var lastAppliedLikedPageIDs: Set<String> = []
         private var pendingInitialPageIndex: Int?
@@ -135,6 +145,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
 
         init(parent: MangaVerticalCollectionViewport) {
             self.parent = parent
+            self.prefetchImageLoader = parent.imageLoader
+            self.imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
         }
 
         func updateContentIfNeeded(in collectionView: UICollectionView) {
@@ -150,9 +162,12 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 applyInitialPlacementIfNeeded(in: collectionView)
                 applyViewportPlacementIfNeeded(in: collectionView)
                 applyControlScrollStepIfNeeded(in: collectionView)
+                updateImagePrefetch(in: collectionView)
                 return
             }
 
+            imagePrefetchCoordinator.cancel()
+            lastPrefetchSources = []
             contentIdentity = nextIdentity
             let validIDs = Set(nextIdentity)
             heightToWidthRatios = heightToWidthRatios.filter { validIDs.contains($0.key) }
@@ -171,6 +186,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 collectionView.alpha = 0
             }
 
+            updateImagePrefetch(in: collectionView)
             collectionView.collectionViewLayout.invalidateLayout()
             collectionView.reloadData()
             collectionView.setNeedsLayout()
@@ -629,6 +645,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         private func publishCurrentPageIfNeeded(from collectionView: UICollectionView) {
+            updateImagePrefetch(in: collectionView)
             guard let globalIndex = currentGlobalIndex(in: collectionView),
                   globalIndex != lastReportedGlobalIndex else {
                 return
@@ -662,6 +679,43 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private func cancelPendingCurrentPagePublish() {
             currentPagePublishDisplayLink?.invalidate()
             currentPagePublishDisplayLink = nil
+        }
+
+        func dismantle() {
+            isDismantled = true
+            imagePrefetchCoordinator.cancel()
+            lastPrefetchSources = []
+            cancelPendingCurrentPagePublish()
+        }
+
+        func updateImagePrefetch(in collectionView: UICollectionView) {
+            guard !isDismantled else { return }
+            if prefetchImageLoader !== parent.imageLoader {
+                imagePrefetchCoordinator.cancel()
+                prefetchImageLoader = parent.imageLoader
+                imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
+                lastPrefetchSources = []
+            }
+
+            // UIKit's prepared cells aren't necessarily on screen. Use actual intersections.
+            let rect = CGRect(origin: collectionView.contentOffset, size: collectionView.bounds.size)
+            let visibleIndexes = pendingInitialPageIndex == nil
+                ? collectionView.indexPathsForVisibleItems.compactMap { indexPath -> Int? in
+                    guard let attributes = collectionView.layoutAttributesForItem(at: indexPath) else { return nil }
+                    let intersection = rect.intersection(attributes.frame)
+                    return !intersection.isNull && intersection.width > 0 && intersection.height > 0
+                        ? indexPath.item : nil
+                }
+                : []
+            let pages = MangaVerticalImagePrefetchPlan.pagesToPrefetch(
+                pages: parent.pages,
+                visiblePageIndexes: visibleIndexes,
+                fallbackPageIndex: pendingInitialPageIndex ?? parent.viewportPlacement?.targetPageIndex ?? parent.currentPageIndex ?? 0
+            )
+            let sources = parent.imageLoader.imageSources(for: pages)
+            guard sources != lastPrefetchSources else { return }
+            lastPrefetchSources = sources
+            imagePrefetchCoordinator.update(sources: sources)
         }
 
         private func currentGlobalIndex(in collectionView: UICollectionView) -> Int? {
