@@ -16,6 +16,14 @@
       "parallelizable" : false,
       "target" : {
         "containerPath" : "container:YamiboX.xcodeproj",
+        "identifier" : "91A000000000000000000050",
+        "name" : "YamiboXInteractionUITests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:YamiboX.xcodeproj",
         "identifier" : "91A00000000000000000002A",
         "name" : "YamiboXCoreTests"
       }

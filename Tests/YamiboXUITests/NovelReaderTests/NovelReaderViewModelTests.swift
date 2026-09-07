@@ -127,6 +127,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(started, 2)
     }
 
+    @MainActor
     func testTerminalPageTurnsPublishFeedbackWithoutChangingPositionOrHistory() async throws {
         let model = try await makeModel(documents: [makeDocument(view: 1, maxView: 1, chapterTitles: ["Chapter"])])
         let before = model.currentSurfaceNumber
