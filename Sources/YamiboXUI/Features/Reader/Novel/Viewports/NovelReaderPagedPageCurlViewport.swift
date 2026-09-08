@@ -4,6 +4,7 @@ import YamiboXCore
 struct NovelReaderPagedPageCurlLeaf: Hashable {
     enum Kind: Hashable {
         case surface(Int)
+        case back(Int)
         case blank
     }
 
@@ -15,6 +16,13 @@ struct NovelReaderPagedPageCurlLeaf: Hashable {
         guard case let .surface(surfaceIndex) = kind else { return nil }
         return surfaceIndex
     }
+
+    var backSurfaceIndex: Int? {
+        guard case let .back(surfaceIndex) = kind else { return nil }
+        return surfaceIndex
+    }
+
+    var isBack: Bool { backSurfaceIndex != nil }
 }
 
 struct NovelReaderPagedPageCurlSequence: Equatable {
@@ -56,18 +64,22 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
                         kind: .surface(index),
                         selectionIndex: index
                     ),
+                    NovelReaderPagedPageCurlLeaf(index: 0, kind: .back(index), selectionIndex: index),
                 ]
             }
             let orderedLeaves = Self.physicalBookOrder(
                 leafGroups: leafGroups,
                 pageTurnDirection: pageTurnDirection
             )
-            leaves = orderedLeaves.isEmpty ? [Self.emptySingleLeaf] : Self.indexedLeaves(from: orderedLeaves)
+            leaves = orderedLeaves.isEmpty ? Self.emptySingleLeaves : Self.indexedLeaves(from: orderedLeaves)
         }
     }
 
-    private static var emptySingleLeaf: NovelReaderPagedPageCurlLeaf {
-        NovelReaderPagedPageCurlLeaf(index: 0, kind: .blank, selectionIndex: 0)
+    private static var emptySingleLeaves: [NovelReaderPagedPageCurlLeaf] {
+        [
+            NovelReaderPagedPageCurlLeaf(index: 0, kind: .blank, selectionIndex: 0),
+            NovelReaderPagedPageCurlLeaf(index: 1, kind: .back(0), selectionIndex: 0)
+        ]
     }
 
     private static var emptySpreadLeaves: [NovelReaderPagedPageCurlLeaf] {
@@ -78,7 +90,7 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
     }
 
     var pageCount: Int {
-        usesTwoPageSpread ? leaves.count / 2 : leaves.count
+        leaves.count / 2
     }
 
     func leafIndexes(forSelectionIndex selectionIndex: Int) -> [Int] {
@@ -88,14 +100,17 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
             .filter { $0.selectionIndex == clampedSelection }
             .map(\.index)
         if indexes.isEmpty {
-            return usesTwoPageSpread ? [0, 1].filter { leaves.indices.contains($0) } : [0]
+            return [0, 1].filter { leaves.indices.contains($0) }
         }
         return indexes
     }
 
     func selectionIndex(forLeafIndexes leafIndexes: [Int]) -> Int? {
         leafIndexes
-            .compactMap { leaves.indices.contains($0) ? leaves[$0].selectionIndex : nil }
+            .compactMap { index -> Int? in
+                guard leaves.indices.contains(index), !leaves[index].isBack else { return nil }
+                return leaves[index].selectionIndex
+            }
             .min()
     }
 
@@ -238,11 +253,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         context.coordinator.parent = self
         selectionController?.configure(mode: .paged)
         context.coordinator.callbackScheduler.performViewUpdate {
-            context.coordinator.update(
-                pageViewController,
-                contentIdentity: contentIdentity
-            )
-            context.coordinator.applyPageBackground(to: pageViewController)
+            context.coordinator.update(pageViewController)
         }
     }
 
@@ -252,25 +263,36 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
         private var consumedScrollAnimationRequestID: UUID?
         private var currentSelectionIndex: Int?
-        private weak var pageCurlBackColorPageViewController: UIPageViewController?
         weak var boundaryPageTurnPanRecognizer: UIPanGestureRecognizer?
-        private var pageCurlBackColorDisplayLink: CADisplayLink?
-        private let pageCurlBackColorFilterCache = NovelReaderPageCurlBackColorFilterCache()
+        private var transitionParent: NovelReaderPagedPageCurlViewport?
+        private var needsDeferredUpdate = false
+        private var renderedColorScheme: ColorScheme
+        private let controllers = NSHashTable<NovelReaderPagedPageCurlHostingController>.weakObjects()
+        private var lightingDisplayLink: CADisplayLink?
+
+        private var renderingParent: NovelReaderPagedPageCurlViewport { transitionParent ?? parent }
 
         init(parent: NovelReaderPagedPageCurlViewport) {
             self.parent = parent
+            renderedColorScheme = parent.colorScheme
+            contentIdentity = parent.contentIdentity
         }
 
         deinit {
             MainActor.assumeIsolated {
-                stopPageCurlBackColorRefresh()
+                lightingDisplayLink?.invalidate()
             }
         }
 
         func update(
             _ pageViewController: UIPageViewController,
-            contentIdentity nextContentIdentity: NovelReaderPagedSpreadViewportContentIdentity
+            selectionIndex: Int? = nil
         ) {
+            guard transitionParent == nil else {
+                needsDeferredUpdate = true
+                return
+            }
+            let nextContentIdentity = parent.contentIdentity
             let didChangeContentIdentity = contentIdentity != nextContentIdentity
             contentIdentity = nextContentIdentity
             configureGestures(in: pageViewController)
@@ -284,8 +306,9 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 return
             }
 
-            if didChangeContentIdentity || currentSelectionIndex != parent.selectionIndex {
-                setCurrentSelection(in: pageViewController, animated: false)
+            let targetSelectionIndex = selectionIndex ?? parent.selectionIndex
+            if didChangeContentIdentity || currentSelectionIndex != targetSelectionIndex {
+                setCurrentSelection(in: pageViewController, animated: false, selectionIndex: targetSelectionIndex)
             }
         }
 
@@ -313,7 +336,8 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             _ pageViewController: UIPageViewController,
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
-            startPageCurlBackColorRefresh(in: pageViewController)
+            transitionParent = parent
+            startLightingRefresh(in: pageViewController)
         }
 
         func pageViewController(
@@ -331,9 +355,10 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            stopPageCurlBackColorRefresh()
-            guard completed else { return }
-            publishSelection(from: pageViewController)
+            if completed {
+                publishSelection(from: pageViewController)
+            }
+            finishTransition(in: pageViewController)
         }
 
         @objc
@@ -444,7 +469,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         }
 
         func configureSpine(in pageViewController: UIPageViewController) {
-            pageViewController.isDoubleSided = parent.sequence.usesTwoPageSpread
+            pageViewController.isDoubleSided = true
         }
 
         func configureGestures(in pageViewController: UIPageViewController) {
@@ -461,56 +486,82 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         func setCurrentSelection(
             in pageViewController: UIPageViewController,
             animated: Bool,
+            selectionIndex: Int? = nil,
             completion: (() -> Void)? = nil
         ) {
-            let leafIndexes = parent.sequence.leafIndexes(forSelectionIndex: parent.selectionIndex)
-            let controllers = leafIndexes.compactMap(controller(forLeafIndex:))
+            let targetSelectionIndex = selectionIndex ?? parent.selectionIndex
+            let leafIndexes = parent.sequence.leafIndexes(forSelectionIndex: targetSelectionIndex)
+            let direction: UIPageViewController.NavigationDirection = {
+                guard let currentSelectionIndex,
+                      let currentLeafIndex = parent.sequence.firstLeafIndex(forSelectionIndex: currentSelectionIndex),
+                      let targetLeafIndex = parent.sequence.firstLeafIndex(forSelectionIndex: targetSelectionIndex) else {
+                    return .forward
+                }
+                return targetLeafIndex >= currentLeafIndex ? .forward : .reverse
+            }()
+
+            // Nonanimated single-page placement accepts only the visible front.
+            // Forward curls expose the departing sheet's back; reverse curls expose the arriving sheet's back.
+            var displayedLeafIndexes = parent.sequence.usesTwoPageSpread || animated
+                ? leafIndexes : Array(leafIndexes.prefix(1))
+            if animated, !parent.sequence.usesTwoPageSpread, direction == .forward,
+               let currentSelectionIndex,
+               let backIndex = parent.sequence.leafIndexes(forSelectionIndex: currentSelectionIndex).last,
+               displayedLeafIndexes.count == 2 {
+                displayedLeafIndexes[1] = backIndex
+            }
+            let controllers = displayedLeafIndexes.compactMap(controller(forLeafIndex:))
             guard !controllers.isEmpty else {
                 currentSelectionIndex = nil
                 completion?()
                 return
             }
 
-            let direction: UIPageViewController.NavigationDirection = {
-                guard let currentSelectionIndex,
-                      let currentLeafIndex = parent.sequence.firstLeafIndex(forSelectionIndex: currentSelectionIndex),
-                      let targetLeafIndex = parent.sequence.firstLeafIndex(forSelectionIndex: parent.selectionIndex) else {
-                    return .forward
-                }
-                return targetLeafIndex >= currentLeafIndex ? .forward : .reverse
-            }()
-
+            if animated {
+                transitionParent = parent
+                startLightingRefresh(in: pageViewController)
+            }
             pageViewController.setViewControllers(
                 controllers,
                 direction: direction,
                 animated: animated
             ) { [weak self] completed in
                 guard let self else { return }
-                if animated {
-                    self.stopPageCurlBackColorRefresh()
-                }
                 if !animated || completed {
-                    self.currentSelectionIndex = self.parent.selectionIndex
+                    self.currentSelectionIndex = targetSelectionIndex
                 }
                 completion?()
-            }
-            if animated {
-                startPageCurlBackColorRefresh(in: pageViewController)
+                if animated {
+                    self.finishTransition(in: pageViewController)
+                }
             }
             if !animated {
-                currentSelectionIndex = parent.selectionIndex
+                currentSelectionIndex = targetSelectionIndex
+            } else {
+                NovelReaderPageCurlLighting.apply(to: pageViewController.view.layer)
             }
         }
 
+        private func startLightingRefresh(in pageViewController: UIPageViewController) {
+            NovelReaderPageCurlLighting.apply(to: pageViewController.view.layer)
+            guard lightingDisplayLink == nil else { return }
+            let target = NovelReaderPageCurlLighting(view: pageViewController.view)
+            let displayLink = CADisplayLink(target: target, selector: #selector(NovelReaderPageCurlLighting.refresh(_:)))
+            displayLink.add(to: .main, forMode: .common)
+            lightingDisplayLink = displayLink
+        }
+
         private func controller(forLeafIndex leafIndex: Int) -> UIViewController? {
+            let parent = renderingParent
             guard parent.sequence.leaves.indices.contains(leafIndex) else { return nil }
             let leaf = parent.sequence.leaves[leafIndex]
-            return NovelReaderPagedPageCurlHostingController(
+            let controller = NovelReaderPagedPageCurlHostingController(
                 leaf: leaf,
                 rootView: NovelReaderPagedPageCurlLeafView(
                     leaf: leaf,
                     surfaces: parent.surfaces,
                     settings: parent.settings,
+                    colorScheme: renderedColorScheme,
                     refererURL: parent.refererURL,
                     offlineScope: parent.offlineScope,
                     topInset: parent.topInset,
@@ -521,68 +572,46 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                     searchHighlightController: parent.searchHighlightController,
                     likedImageAnchors: parent.likedImageAnchors,
                     onImageTap: parent.onImageTap
-                ),
-                pageBackgroundColor: parent.pageBackgroundColor
+                )
             )
+            controllers.add(controller)
+            return controller
         }
 
         func applyPageBackground(to pageViewController: UIPageViewController) {
+            guard transitionParent == nil else { return }
+            renderedColorScheme = parent.colorScheme
             let pageBackgroundColor = parent.pageBackgroundColor
             pageViewController.view.backgroundColor = pageBackgroundColor
             pageViewController.view.isOpaque = true
-            for case let controller as NovelReaderPagedPageCurlHostingController in pageViewController.viewControllers ?? [] {
-                controller.applyPageBackground(pageBackgroundColor)
-            }
-            if !parent.sequence.usesTwoPageSpread {
-                NovelReaderPageCurlPrivateBackColor.apply(
-                    to: pageViewController.view,
-                    backColor: pageBackgroundColor,
-                    cache: pageCurlBackColorFilterCache
+            for controller in controllers.allObjects {
+                controller.applyAppearance(
+                    backgroundStyle: parent.settings.backgroundStyle,
+                    colorScheme: renderedColorScheme
                 )
             }
         }
 
-        private func startPageCurlBackColorRefresh(in pageViewController: UIPageViewController) {
-            guard !parent.sequence.usesTwoPageSpread else {
+        private func finishTransition(in pageViewController: UIPageViewController) {
+            lightingDisplayLink?.invalidate()
+            lightingDisplayLink = nil
+            let previousRequestedSelection = transitionParent?.selectionIndex
+            transitionParent = nil
+            if needsDeferredUpdate {
+                needsDeferredUpdate = false
+                // A theme-only update must not restore the pre-gesture reading position.
+                let selection = parent.selectionIndex == previousRequestedSelection
+                    ? currentSelectionIndex : parent.selectionIndex
+                update(pageViewController, selectionIndex: selection)
+            } else {
                 applyPageBackground(to: pageViewController)
-                return
             }
-
-            pageCurlBackColorFilterCache.reset()
-            pageCurlBackColorPageViewController = pageViewController
-            applyPageBackground(to: pageViewController)
-            guard pageCurlBackColorDisplayLink == nil else { return }
-
-            let displayLink = CADisplayLink(
-                target: self,
-                selector: #selector(refreshPageCurlBackColor)
-            )
-            displayLink.add(to: .main, forMode: .common)
-            pageCurlBackColorDisplayLink = displayLink
-        }
-
-        private func stopPageCurlBackColorRefresh() {
-            pageCurlBackColorDisplayLink?.invalidate()
-            pageCurlBackColorDisplayLink = nil
-            if let pageCurlBackColorPageViewController {
-                applyPageBackground(to: pageCurlBackColorPageViewController)
-            }
-            pageCurlBackColorPageViewController = nil
-        }
-
-        @objc
-        private func refreshPageCurlBackColor() {
-            guard let pageViewController = pageCurlBackColorPageViewController else {
-                stopPageCurlBackColorRefresh()
-                return
-            }
-            applyPageBackground(to: pageViewController)
         }
 
         private func publishSelection(from pageViewController: UIPageViewController) {
             let leafIndexes = pageViewController.viewControllers?
                 .compactMap { ($0 as? NovelReaderPagedPageCurlHostingController)?.leaf.index } ?? []
-            guard let selectionIndex = parent.sequence.selectionIndex(forLeafIndexes: leafIndexes) else { return }
+            guard let selectionIndex = renderingParent.sequence.selectionIndex(forLeafIndexes: leafIndexes) else { return }
             currentSelectionIndex = selectionIndex
             guard selectionIndex != parent.selectionIndex else { return }
             let onSelectionChange = parent.onSelectionChange
@@ -627,17 +656,50 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     }
 }
 
+// UIKit has no public control for the curl's additive back lighting. Keep this
+// compatibility adjustment separate from page content, geometry, and shadow colors.
+@MainActor
+private final class NovelReaderPageCurlLighting: NSObject {
+    private weak var view: UIView?
+
+    init(view: UIView) {
+        self.view = view
+    }
+
+    @objc func refresh(_ displayLink: CADisplayLink) {
+        guard let view else {
+            displayLink.invalidate()
+            return
+        }
+        Self.apply(to: view.layer)
+    }
+
+    static func apply(to layer: CALayer) {
+        for key in ["filters", "backgroundFilters"] {
+            for filter in layer.value(forKey: key) as? [NSObject] ?? []
+                where String(describing: filter) == "pageCurl" {
+                filter.setValue(UIColor.clear.cgColor, forKey: "inputBackColor0")
+                filter.setValue(UIColor.clear.cgColor, forKey: "inputBackColor1")
+            }
+        }
+        // UIKit can add new filters after a gesture starts, including when reversing.
+        for sublayer in layer.sublayers ?? [] {
+            apply(to: sublayer)
+        }
+    }
+}
+
 private final class NovelReaderPagedPageCurlHostingController: UIHostingController<NovelReaderPagedPageCurlLeafView> {
     let leaf: NovelReaderPagedPageCurlLeaf
 
     init(
         leaf: NovelReaderPagedPageCurlLeaf,
-        rootView: NovelReaderPagedPageCurlLeafView,
-        pageBackgroundColor: UIColor
+        rootView: NovelReaderPagedPageCurlLeafView
     ) {
         self.leaf = leaf
         super.init(rootView: rootView)
-        applyPageBackground(pageBackgroundColor)
+        view.backgroundColor = readerThemeUIColor(for: rootView.settings.backgroundStyle, colorScheme: rootView.colorScheme)
+        view.isOpaque = true
     }
 
     @MainActor @preconcurrency
@@ -645,96 +707,23 @@ private final class NovelReaderPagedPageCurlHostingController: UIHostingControll
         fatalError("init(coder:) has not been implemented")
     }
 
-    func applyPageBackground(_ pageBackgroundColor: UIColor) {
-        view.backgroundColor = pageBackgroundColor
+    func applyAppearance(backgroundStyle: ReaderBackgroundStyle, colorScheme: ColorScheme) {
+        if rootView.settings.backgroundStyle != backgroundStyle || rootView.colorScheme != colorScheme {
+            var updatedRoot = rootView
+            updatedRoot.settings.backgroundStyle = backgroundStyle
+            updatedRoot.colorScheme = colorScheme
+            rootView = updatedRoot
+        }
+        view.backgroundColor = readerThemeUIColor(for: backgroundStyle, colorScheme: colorScheme)
         view.isOpaque = true
-    }
-}
-
-/// Holds a weak reference to the private `pageCurl` filter(s) discovered by
-/// `NovelReaderPageCurlPrivateBackColor`, so repeated per-frame refreshes during a single
-/// transition can skip re-walking the layer tree. The owning coordinator resets this
-/// at the start of each new transition.
-@MainActor
-private final class NovelReaderPageCurlBackColorFilterCache {
-    fileprivate var filters = NSHashTable<NSObject>.weakObjects()
-
-    func reset() {
-        filters.removeAllObjects()
-    }
-}
-
-@MainActor
-private enum NovelReaderPageCurlPrivateBackColor {
-    private static let filtersKey = "filters"
-    private static let backgroundFiltersKey = "backgroundFilters"
-    private static let typeKey = "type"
-    private static let pageCurlType = "pageCurl"
-    private static let inputBackEnabledKey = "inputBackEnabled"
-    private static let inputBackColor0Key = "inputBackColor0"
-    private static let inputBackColor1Key = "inputBackColor1"
-
-    /// The filter's identity is stable for the rest of a transition once found; only its
-    /// back-color inputs need refreshing each frame. An empty cache (first frame of a
-    /// transition, or the cached filter was deallocated) triggers a fresh tree walk.
-    static func apply(to rootView: UIView, backColor: UIColor, cache: NovelReaderPageCurlBackColorFilterCache) {
-        let colorComponents = backColor.readerPageCurlPrivateColorComponents
-        let cachedFilters = cache.filters.allObjects
-        guard cachedFilters.isEmpty else {
-            for filter in cachedFilters {
-                applyColorComponents(colorComponents, to: filter)
-            }
-            return
-        }
-
-        discoverAndApply(to: rootView.layer, colorComponents: colorComponents, cache: cache)
-    }
-
-    private static func discoverAndApply(
-        to layer: CALayer,
-        colorComponents: [NSNumber],
-        cache: NovelReaderPageCurlBackColorFilterCache
-    ) {
-        for filterKey in [filtersKey, backgroundFiltersKey] {
-            guard let filters = layer.value(forKey: filterKey) as? [NSObject] else { continue }
-            for filter in filters where isPageCurlFilter(filter) {
-                applyColorComponents(colorComponents, to: filter)
-                cache.filters.add(filter)
-            }
-        }
-
-        layer.sublayers?.forEach { discoverAndApply(to: $0, colorComponents: colorComponents, cache: cache) }
-    }
-
-    private static func applyColorComponents(_ colorComponents: [NSNumber], to filter: NSObject) {
-        filter.setValue(NSNumber(value: true), forKey: inputBackEnabledKey)
-        filter.setValue(colorComponents, forKey: inputBackColor0Key)
-        filter.setValue(colorComponents, forKey: inputBackColor1Key)
-    }
-
-    private static func isPageCurlFilter(_ filter: NSObject) -> Bool {
-        if String(describing: filter) == pageCurlType {
-            return true
-        }
-        return (filter.value(forKey: typeKey) as? String) == pageCurlType
-    }
-}
-
-private extension UIColor {
-    var readerPageCurlPrivateColorComponents: [NSNumber] {
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return [red, green, blue, alpha].map { NSNumber(value: Double($0)) }
     }
 }
 
 private struct NovelReaderPagedPageCurlLeafView: View {
     let leaf: NovelReaderPagedPageCurlLeaf
     let surfaces: [NovelReaderSurface]
-    let settings: NovelReaderAppearanceSettings
+    var settings: NovelReaderAppearanceSettings
+    var colorScheme: ColorScheme
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
     let topInset: CGFloat
@@ -748,15 +737,16 @@ private struct NovelReaderPagedPageCurlLeafView: View {
 
     var body: some View {
         NovelReaderPagedPageSurfaceContainer(settings: settings) {
-            if let surfaceIndex = leaf.surfaceIndex {
+            if let surfaceIndex = leaf.surfaceIndex ?? leaf.backSurfaceIndex,
+               !leaf.isBack || surfaces.indices.contains(surfaceIndex) {
                 let surface = surfaces.indices.contains(surfaceIndex) ? surfaces[surfaceIndex] : nil
                 NovelReaderViewportSurfaceContent(
                     surface: surface,
                     displayReference: surface.flatMap { displayReferenceProvider($0.identity) },
-                    selectionController: selectionController,
-                    likeHighlightController: likeHighlightController,
-                    searchHighlightController: searchHighlightController,
-                    likedImageAnchors: likedImageAnchors,
+                    selectionController: leaf.isBack ? nil : selectionController,
+                    likeHighlightController: leaf.isBack ? nil : likeHighlightController,
+                    searchHighlightController: leaf.isBack ? nil : searchHighlightController,
+                    likedImageAnchors: leaf.isBack ? [] : likedImageAnchors,
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: surfaceIndex,
                     settings: settings,
@@ -768,12 +758,18 @@ private struct NovelReaderPagedPageCurlLeafView: View {
                 .padding(.top, topInset)
                 .padding(.bottom, bottomInset)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Show the ink through the paper without making the themed sheet translucent.
+                .scaleEffect(x: leaf.isBack ? -1 : 1, y: 1)
+                .opacity(leaf.isBack ? 0.18 : 1)
+                .allowsHitTesting(!leaf.isBack)
+                .accessibilityHidden(leaf.isBack)
             } else {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
+        .environment(\.colorScheme, colorScheme)
     }
 }
 #endif

@@ -176,9 +176,10 @@ final class NovelTextDisplayAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(sequence.pageCount, 3)
-        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 1), [1])
-        XCTAssertEqual(sequence.selectionIndex(forLeafIndexes: [2]), 2)
-        XCTAssertEqual(sequence.leaves.map(\.surfaceIndex), [0, 1, 2])
+        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 1), [2, 3])
+        XCTAssertEqual(sequence.selectionIndex(forLeafIndexes: [4, 5]), 2)
+        XCTAssertNil(sequence.selectionIndex(forLeafIndexes: [3]))
+        XCTAssertEqual(sequence.leaves.map(\.surfaceIndex), [0, nil, 1, nil, 2, nil])
     }
 
     func testPageCurlSequenceReversesPhysicalBookOrderForRightToLeftDirection() {
@@ -191,10 +192,11 @@ final class NovelTextDisplayAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(sequence.pageCount, 3)
-        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 0), [2])
-        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 2), [0])
+        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 0), [4, 5])
+        XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 2), [0, 1])
         XCTAssertEqual(sequence.selectionIndex(forLeafIndexes: [0]), 2)
-        XCTAssertEqual(sequence.leaves.map(\.surfaceIndex), [2, 1, 0])
+        XCTAssertNil(sequence.selectionIndex(forLeafIndexes: [1]))
+        XCTAssertEqual(sequence.leaves.map(\.surfaceIndex), [2, nil, 1, nil, 0, nil])
     }
 
     func testPageCurlSequenceMapsTwoPageSpreadsAndBlankTail() {
@@ -276,12 +278,38 @@ final class NovelTextDisplayAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(singlePageSequence.pageCount, 1)
-        XCTAssertEqual(singlePageSequence.leafIndexes(forSelectionIndex: 0), [0])
-        XCTAssertEqual(singlePageSequence.leaves.map(\.surfaceIndex), [nil])
+        XCTAssertEqual(singlePageSequence.leafIndexes(forSelectionIndex: 0), [0, 1])
+        XCTAssertEqual(singlePageSequence.leaves.map(\.surfaceIndex), [nil, nil])
+        XCTAssertEqual(singlePageSequence.leaves.map(\.kind), [.blank, .back(0)])
+        XCTAssertNil(singlePageSequence.selectionIndex(forLeafIndexes: [1]))
 
         XCTAssertEqual(spreadSequence.pageCount, 1)
         XCTAssertEqual(spreadSequence.leafIndexes(forSelectionIndex: 0), [0, 1])
         XCTAssertEqual(spreadSequence.leaves.map(\.surfaceIndex), [nil, nil])
+    }
+
+    func testPageCurlBacksDoNotChangeLogicalPageCountOrSelectionBounds() {
+        for direction in [ReaderPageTurnDirection.leftToRight, .rightToLeft] {
+            let sequence = NovelReaderPagedPageCurlSequence(
+                surfaces: makePageCurlSurfaces(count: 3), spreads: [],
+                usesTwoPageSpread: false, pageTurnDirection: direction
+            )
+            XCTAssertEqual(sequence.pageCount, 3)
+            XCTAssertEqual(sequence.leaves.map(\.index), Array(0..<6))
+            for selection in 0..<3 {
+                let pair = sequence.leafIndexes(forSelectionIndex: selection)
+                XCTAssertEqual(pair.count, 2)
+                XCTAssertEqual(pair.last, pair.first.map { $0 + 1 })
+                XCTAssertEqual(sequence.leaves[pair[0]].kind, .surface(selection))
+                XCTAssertEqual(sequence.leaves[pair[1]].kind, .back(selection))
+                XCTAssertEqual(sequence.leaves[pair[1]].backSurfaceIndex, selection)
+                XCTAssertEqual(sequence.selectionIndex(forLeafIndexes: pair), selection)
+                XCTAssertNil(sequence.selectionIndex(forLeafIndexes: [pair.last!]))
+            }
+            XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: -1), sequence.leafIndexes(forSelectionIndex: 0))
+            XCTAssertEqual(sequence.leafIndexes(forSelectionIndex: 3), sequence.leafIndexes(forSelectionIndex: 2))
+            XCTAssertNil(sequence.selectionIndex(forLeafIndexes: [-1, 6]))
+        }
     }
 
     func testPagedPageTurnVisualMetricsFadeOverlayAsPageApproachesRest() {
