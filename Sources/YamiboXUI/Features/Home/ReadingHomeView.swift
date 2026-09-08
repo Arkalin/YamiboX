@@ -53,6 +53,7 @@ struct ReadingHomeView: View {
                     }
                 }
             }
+            .modifier(ReadingHomeScrollEdgeEffect())
             .scrollPosition($scrollPosition)
             .onScrollGeometryChange(for: CGFloat.self) {
                 max(0, $0.contentOffset.y + $0.contentInsets.top)
@@ -60,15 +61,6 @@ struct ReadingHomeView: View {
                 if isHomeVisible { scrollOffset = offset }
             }
             .background(Color(uiColor: .systemBackground))
-            .overlay(alignment: .top) {
-                GeometryReader { geometry in
-                    Color(uiColor: .systemBackground)
-                        .frame(height: geometry.safeAreaInsets.top)
-                        .offset(y: -geometry.safeAreaInsets.top)
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showsHistory) {
                 BrowsingHistoryView(
@@ -145,6 +137,16 @@ struct ReadingHomeView: View {
         // the shelf; a user-driven ScrollPosition alone has no stored offset.
         scrollPosition.scrollTo(y: scrollOffset)
         Task { await model.open(book.entry, using: appModel, bookOpeningTransition: transition) }
+    }
+}
+
+private struct ReadingHomeScrollEdgeEffect: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
+        }
     }
 }
 
