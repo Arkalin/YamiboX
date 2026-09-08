@@ -355,6 +355,17 @@ final class ReaderPagedPagingDriver {
     private var consumedScrollAnimationRequestID: UUID?
     private var pageTurnRestingIndex: Int?
     private var isPerformingQuickFadeTransition = false
+    private(set) var slideAnimation: ReaderPagedSlideAnimation?
+    private var slideTransition: (id: UUID, sourceSelectionIndex: Int, targetSelectionIndex: Int, viewportSize: CGSize)?
+
+    var isPerformingSlideTransition: Bool { slideTransition != nil }
+
+    func cancelSlideTransition(in collectionView: UICollectionView, inputs: ReaderPagedPagingInputs) {
+        slideAnimation?.cancel()
+        slideAnimation = nil
+        slideTransition = nil
+        endPageTurnVisuals(in: collectionView, inputs: inputs)
+    }
 
     func updateContentAndRequestSelectionScroll(
         in collectionView: UICollectionView,
@@ -363,6 +374,13 @@ final class ReaderPagedPagingDriver {
     ) {
         let animationRequest = matchingScrollAnimationRequest(inputs: inputs)
         guard didChangeContentIdentity else {
+            // SwiftUI can echo the departing selection or acknowledge the target mid-turn.
+            if animationRequest == nil, let slideTransition,
+               collectionView.bounds.size == slideTransition.viewportSize,
+               inputs.selectionIndex == slideTransition.sourceSelectionIndex ||
+                inputs.selectionIndex == slideTransition.targetSelectionIndex {
+                return
+            }
             if let animationRequest {
                 _ = requestSelectionScroll(
                     in: collectionView,
@@ -388,6 +406,7 @@ final class ReaderPagedPagingDriver {
         animated: Bool,
         inputs: ReaderPagedPagingInputs
     ) {
+        cancelSlideTransition(in: collectionView, inputs: inputs)
         pendingSelectionIndex = inputs.selectionIndex
         isReloadingDataForSelectionScroll = true
         collectionView.reloadData()
@@ -469,6 +488,9 @@ final class ReaderPagedPagingDriver {
             return false
         }
 
+        // Consume repeated taps without restarting the animation or falling through to a boundary turn.
+        guard !isPerformingSlideTransition else { return true }
+
         guard inputs.itemCount > 0,
               collectionView.bounds.width > 0,
               collectionView.window != nil else {
@@ -524,6 +546,7 @@ final class ReaderPagedPagingDriver {
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView, inputs: ReaderPagedPagingInputs) {
         guard let collectionView = scrollView as? UICollectionView else { return }
+        cancelSlideTransition(in: collectionView, inputs: inputs)
         guard inputs.pagedTurnStyle != .quickFade else {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
             return
@@ -557,6 +580,7 @@ final class ReaderPagedPagingDriver {
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView, inputs: ReaderPagedPagingInputs) {
+        guard !isPerformingSlideTransition else { return }
         updateSelection(from: scrollView, inputs: inputs)
         guard let collectionView = scrollView as? UICollectionView else { return }
         endPageTurnVisuals(in: collectionView, inputs: inputs)
@@ -585,6 +609,7 @@ final class ReaderPagedPagingDriver {
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView, inputs: ReaderPagedPagingInputs) {
+        guard !isPerformingSlideTransition else { return }
         updateSelection(from: scrollView, inputs: inputs)
         guard let collectionView = scrollView as? UICollectionView else { return }
         endPageTurnVisuals(in: collectionView, inputs: inputs)
@@ -630,6 +655,13 @@ final class ReaderPagedPagingDriver {
         inputs: ReaderPagedPagingInputs,
         onTransitionCompletion: (() -> Void)? = nil
     ) -> Bool {
+        if animated, let slideTransition, slideTransition.targetSelectionIndex == selectionIndex,
+           collectionView.bounds.size == slideTransition.viewportSize {
+            pendingSelectionIndex = nil
+            onTransitionCompletion?()
+            return true
+        }
+        cancelSlideTransition(in: collectionView, inputs: inputs)
         if animated, inputs.pagedTurnStyle == .quickFade, isPerformingQuickFadeTransition {
             // A rapid second turn mid-fade must not be swallowed: perform it
             // as an immediate cut underneath the in-flight snapshot, which
@@ -657,10 +689,28 @@ final class ReaderPagedPagingDriver {
 
         switch inputs.pagedTurnStyle {
         case .slide, .pageCurl:
-            beginPageTurnVisuals(in: collectionView, inputs: inputs)
-            collectionView.setContentOffset(targetOffset, animated: true)
-            applyPageTurnVisuals(in: collectionView, inputs: inputs)
             pendingSelectionIndex = nil
+            guard abs(collectionView.contentOffset.x - targetOffset.x) > 0.5 else {
+                collectionView.setContentOffset(targetOffset, animated: false)
+                publishSelectionIfNeeded(selectionIndex, inputs: inputs)
+                onTransitionCompletion?()
+                return true
+            }
+            let transitionID = UUID()
+            slideTransition = (transitionID, inputs.selectionIndex, selectionIndex, collectionView.bounds.size)
+            collectionView.setContentOffset(collectionView.contentOffset, animated: false)
+            beginPageTurnVisuals(in: collectionView, inputs: inputs)
+            slideAnimation = ReaderPagedSlideAnimation(in: collectionView, targetOffset: targetOffset) {
+                [weak self, weak collectionView] completed in
+                guard let self, let collectionView, self.slideTransition?.id == transitionID else { return }
+                self.cancelSlideTransition(in: collectionView, inputs: inputs)
+                if completed {
+                    self.publishSelectionIfNeeded(selectionIndex, inputs: inputs)
+                } else if collectionView.window != nil, !collectionView.isDragging {
+                    self.requestSelectionScroll(in: collectionView, animated: false, inputs: inputs)
+                }
+            }
+            applyPageTurnVisuals(in: collectionView, inputs: inputs)
             onTransitionCompletion?()
         case .quickFade:
             isPerformingQuickFadeTransition = true

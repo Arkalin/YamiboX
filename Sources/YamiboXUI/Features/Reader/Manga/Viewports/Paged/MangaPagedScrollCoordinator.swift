@@ -91,6 +91,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
 
         contentIdentity = nextIdentity
+        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
         interactionRuntime.reset()
         surfaceInteractionIdentity = nil
         pageSurfaceInteractions = [:]
@@ -134,6 +135,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             return
         }
 
+        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
         collectionView.collectionViewLayout.invalidateLayout()
         collectionView.setContentOffset(
             CGPoint(x: targetOffsetX, y: collectionView.contentOffset.y),
@@ -214,6 +216,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
         let targetViewportIndex = viewportIndex(forSpreadIndex: targetIndex)
 
+        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
         collectionView.scrollToItem(
             at: IndexPath(item: targetViewportIndex, section: 0),
             at: .centeredHorizontally,
@@ -257,6 +260,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
                 )
             }
         } else {
+            pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
             collectionView.scrollToItem(
                 at: IndexPath(item: targetViewportIndex, section: 0),
                 at: .centeredHorizontally,

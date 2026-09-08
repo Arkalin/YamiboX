@@ -83,6 +83,7 @@ final class MangaPagedScrollNavigationAdapter {
         }
         switch decision {
         case let .navigate(edge):
+            guard !coordinator.pagingDriver.isPerformingSlideTransition else { return }
             let step = configuration.direction.step(toward: edge)
             let inputs = coordinator.pagingInputs
             let target = inputs.selectionIndex + step.rawValue

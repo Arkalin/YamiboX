@@ -15,6 +15,11 @@ enum NovelReaderPagedItemSource: Equatable {
 }
 
 struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
+    static func dismantleUIView(_ view: UICollectionView, coordinator: Coordinator) {
+        (view as? ReaderPagedCollectionView)?.onLayoutSubviews = nil
+        coordinator.cancelSlideTransition(in: view)
+    }
+
     let itemSource: NovelReaderPagedItemSource
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
@@ -402,6 +407,10 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         func updateGestureState(in collectionView: UICollectionView) {
             pagingDriver.updateGestureState(in: collectionView, inputs: pagingInputs)
+        }
+
+        func cancelSlideTransition(in collectionView: UICollectionView) {
+            pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
         }
     }
 }
