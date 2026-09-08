@@ -23,10 +23,17 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     private(set) var pageCurlBackColorDisplayLink: CADisplayLink?
     private var pageCurlBackColorRefreshID: UUID?
     private var selectionTransitionID = UUID()
+    private var animatedSelectionTransitionID: UUID?
     private var interactivePageCurlTransition: (id: UUID, generation: UInt64)?
     private let pageCurlBackColorFilterCache = MangaPageCurlBackColorFilterCache()
     private(set) lazy var gestures = MangaPagedPageCurlNavigationAdapter(coordinator: self)
     private(set) lazy var zoom = MangaPagedPageCurlZoomController(coordinator: self)
+
+    var selectionIndex: Int { currentSelectionIndex ?? parent.selectionIndex }
+
+    var isPageTurnInProgress: Bool {
+        animatedSelectionTransitionID != nil || interactivePageCurlTransition != nil
+    }
 
     init(parent: MangaPagedPageCurlReaderViewport) {
         self.parent = parent
@@ -181,8 +188,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     }
 
     func animateAdjacentSelection(delta: Int, in pageViewController: UIPageViewController) {
-        let currentSelectionIndex = currentSelectionIndex ?? parent.selectionIndex
-        let targetSelectionIndex = currentSelectionIndex + delta
+        // Replacing an unfinished curl invalidates its only page-selection commit.
+        guard !isPageTurnInProgress else { return }
+        let targetSelectionIndex = selectionIndex + delta
         guard targetSelectionIndex >= 0,
               targetSelectionIndex < parent.sequence.pageCount else {
             return
@@ -224,6 +232,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         let generation = interactionRuntime.navigationGeneration
         let changesSelection = clampedSelectionIndex != currentSelectionIndex
         if animated {
+            animatedSelectionTransitionID = transitionID
             startPageCurlBackColorRefresh(in: pageViewController, transitionID: transitionID)
         }
         pageViewController.setViewControllers(
@@ -235,8 +244,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             if animated {
                 self.stopPageCurlBackColorRefresh(for: transitionID)
             }
-            guard self.selectionTransitionID == transitionID,
-                  self.interactionRuntime.navigationGeneration == generation else { return }
+            guard self.selectionTransitionID == transitionID else { return }
+            self.animatedSelectionTransitionID = nil
+            guard self.interactionRuntime.navigationGeneration == generation else { return }
             guard !animated || completed else { return }
             if animated, changesSelection, self.parent.sequence.usesTwoPageSpread,
                let container = self.activeContainerViewController {
@@ -372,6 +382,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
 
     func invalidatePageCurlTransitions() {
         selectionTransitionID = UUID()
+        animatedSelectionTransitionID = nil
         interactivePageCurlTransition = nil
         stopPageCurlBackColorRefresh()
     }

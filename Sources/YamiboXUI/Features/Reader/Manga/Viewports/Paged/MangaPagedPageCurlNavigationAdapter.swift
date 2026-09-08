@@ -17,7 +17,7 @@ final class MangaPagedPageCurlNavigationAdapter {
         self.input = input
         input.navigationContext = { [weak self] in
             guard let self, let coordinator = self.coordinator else { return nil }
-            return coordinator.interactionRuntime.navigationContext(selectionIndex: coordinator.parent.selectionIndex,
+            return coordinator.interactionRuntime.navigationContext(selectionIndex: coordinator.selectionIndex,
                 surface: self.currentSurface, configuration: self.configuration)
         }
         input.permits = { [weak self] recognizer in self?.permits(recognizer) ?? false }
@@ -98,10 +98,10 @@ final class MangaPagedPageCurlNavigationAdapter {
         if recognizer === input.surfacePan {
             return coordinator.parent.sequence.usesTwoPageSpread && decision == .panImage
         }
-        guard case let .navigate(edge) = decision else { return false }
+        guard case let .navigate(edge) = decision, !coordinator.isPageTurnInProgress else { return false }
         let step = configuration.direction.step(toward: edge)
         if recognizer === input.navigationPan {
-            let target = coordinator.parent.selectionIndex + step.rawValue
+            let target = coordinator.selectionIndex + step.rawValue
             return coordinator.parent.sequence.pageCount > 0 && (target < 0 || target >= coordinator.parent.sequence.pageCount)
         }
         guard let pageController = coordinator.activePageViewController,
@@ -115,10 +115,11 @@ final class MangaPagedPageCurlNavigationAdapter {
     }
 
     private func finishBoundaryPan(_ recognizer: UIPanGestureRecognizer) {
-        guard recognizer.state == .ended, let coordinator, let view = recognizer.view else { return }
+        guard recognizer.state == .ended, let coordinator, !coordinator.isPageTurnInProgress,
+              let view = recognizer.view else { return }
         let parent = coordinator.parent
         // Admission was decided at began. Completion retains the native distance/velocity thresholds.
-        guard let delta = ReaderPagedBoundaryPageTurn.boundaryDelta(selectionIndex: parent.selectionIndex,
+        guard let delta = ReaderPagedBoundaryPageTurn.boundaryDelta(selectionIndex: coordinator.selectionIndex,
             itemCount: parent.sequence.pageCount, translation: recognizer.translation(in: view), velocity: recognizer.velocity(in: view),
             viewportWidth: view.bounds.width, horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection) else { return }
         publishBoundary(delta)
@@ -131,8 +132,9 @@ final class MangaPagedPageCurlNavigationAdapter {
         }
         switch decision {
         case let .navigate(edge):
+            guard !coordinator.isPageTurnInProgress else { return }
             let step = configuration.direction.step(toward: edge)
-            let target = coordinator.parent.selectionIndex + step.rawValue
+            let target = coordinator.selectionIndex + step.rawValue
             if target < 0 || target >= coordinator.parent.sequence.pageCount {
                 if coordinator.parent.sequence.pageCount > 0 { publishBoundary(step.rawValue) }
             } else {

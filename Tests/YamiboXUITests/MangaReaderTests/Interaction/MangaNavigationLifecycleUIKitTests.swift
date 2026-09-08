@@ -91,6 +91,7 @@ struct MangaNavigationLifecycleUIKitTests {
         owner.interactionRuntime.reset()
         controller.complete(0)
         #expect(owner.pageCurlBackColorDisplayLink == nil)
+        #expect(!owner.isPageTurnInProgress)
     }
 
     @Test func curlReplacementAndDismantleReleaseResourcesWithoutStoppingNewAnimation() throws {
@@ -107,8 +108,10 @@ struct MangaNavigationLifecycleUIKitTests {
         controller.complete(0)
         controller.complete(1)
         #expect(owner.pageCurlBackColorDisplayLink === currentLink)
+        #expect(owner.isPageTurnInProgress)
         MangaPagedPageCurlReaderViewport.dismantleUIViewController(container, coordinator: owner)
         #expect(owner.pageCurlBackColorDisplayLink == nil)
+        #expect(!owner.isPageTurnInProgress)
         controller.complete(2)
         #expect(owner.pageCurlBackColorDisplayLink == nil)
     }
@@ -120,14 +123,123 @@ struct MangaNavigationLifecycleUIKitTests {
         defer { owner.invalidatePageCurlTransitions() }
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: true)
         #expect(owner.pageCurlBackColorDisplayLink == nil)
+        #expect(!owner.isPageTurnInProgress)
+    }
+
+    @Test(arguments: [false, true], [MangaPageTurnDirection.leftToRight, .rightToLeft])
+    func rapidCurlNavigationCompletesBeforeAcceptingAnotherTurn(twoPages: Bool, direction: MangaPageTurnDirection) throws {
+        let plan = MangaPagedReadingPlan(pages: try curlPages(), currentPageIndex: 0,
+            pageTurnDirection: direction, usesTwoPageSpread: twoPages)
+        var reportedPages: [Int] = []
+        var boundaries: [Int] = []
+        let owner = curlViewport(plan: plan, onPageChange: { reportedPages.append($0) },
+            onBoundary: { boundaries.append($0) }).makeCoordinator()
+        let controller = DeferredPageController()
+        let container = MangaPagedPageCurlContainerViewController(pageViewController: controller)
+        defer { owner.invalidatePageCurlTransitions() }
+        owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
+
+        owner.gestures.routeControl(.forward, in: container)
+        for _ in 0..<10 {
+            owner.gestures.routeControl(.forward, in: container)
+            owner.gestures.routeControl(.backward, in: container)
+            owner.animateAdjacentSelection(delta: 1, in: controller)
+        }
+        #expect(controller.selectionCount == 2)
+        #expect(boundaries.isEmpty)
+        #expect(reportedPages.isEmpty)
+        controller.complete(1)
+        #expect(reportedPages == [twoPages ? 3 : 1])
+
+        // The parent still describes page zero until SwiftUI delivers the next update.
+        owner.gestures.routeControl(.forward, in: container)
+        #expect(controller.selectionCount == 3)
+        controller.complete(2)
+        #expect(reportedPages == (twoPages ? [3, 5] : [1, 2]))
+        owner.gestures.routeControl(.backward, in: container)
+        #expect(controller.selectionCount == 4)
+        #expect(boundaries.isEmpty)
+        controller.complete(3)
+        #expect(reportedPages == (twoPages ? [3, 5, 3] : [1, 2, 1]))
+    }
+
+    @Test func curlBoundaryUsesCompletedSelectionBeforeParentUpdate() throws {
+        let plan = MangaPagedReadingPlan(pages: Array(try curlPages().prefix(2)), currentPageIndex: 0)
+        var boundaries: [Int] = []
+        let owner = curlViewport(plan: plan, onBoundary: { boundaries.append($0) }).makeCoordinator()
+        let controller = DeferredPageController()
+        let container = MangaPagedPageCurlContainerViewController(pageViewController: controller)
+        defer { owner.invalidatePageCurlTransitions() }
+        owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
+        owner.gestures.routeControl(.forward, in: container)
+        controller.complete(1)
+        owner.gestures.routeControl(.forward, in: container)
+        #expect(boundaries == [1])
+        #expect(controller.selectionCount == 2)
+    }
+
+    @Test(arguments: [false, true])
+    func unsuccessfulCurlCompletionAllowsRetry(invalidateGeneration: Bool) throws {
+        let plan = MangaPagedReadingPlan(pages: try curlPages(), currentPageIndex: 0)
+        var reportedPages: [Int] = []
+        let owner = curlViewport(plan: plan, onPageChange: { reportedPages.append($0) }).makeCoordinator()
+        let controller = DeferredPageController()
+        defer { owner.invalidatePageCurlTransitions() }
+        owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
+        owner.animateAdjacentSelection(delta: 1, in: controller)
+        if invalidateGeneration { owner.interactionRuntime.reset() }
+        controller.complete(1, finished: invalidateGeneration)
+        #expect(!owner.isPageTurnInProgress)
+        #expect(reportedPages.isEmpty)
+        owner.animateAdjacentSelection(delta: 1, in: controller)
+        #expect(controller.selectionCount == 3)
+        controller.complete(2)
+        #expect(reportedPages == [1])
+    }
+
+    @Test(arguments: [false, true])
+    func interactiveCurlCannotBeReplacedByTap(completed: Bool) throws {
+        let plan = MangaPagedReadingPlan(pages: try curlPages(), currentPageIndex: 0)
+        var reportedPages: [Int] = []
+        let owner = curlViewport(plan: plan, onPageChange: { reportedPages.append($0) }).makeCoordinator()
+        let controller = DeferredPageController()
+        defer { owner.invalidatePageCurlTransitions() }
+        owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
+        let previous = try #require(controller.viewControllers)
+        let next = try #require(owner.pageViewController(controller, viewControllerAfter: previous[0]))
+        owner.pageViewController(controller, willTransitionTo: [next])
+        owner.animateAdjacentSelection(delta: 1, in: controller)
+        #expect(controller.selectionCount == 1)
+        #expect(owner.isPageTurnInProgress)
+        if completed { controller.setViewControllers([next], direction: .forward, animated: false) }
+        owner.pageViewController(controller, didFinishAnimating: true,
+            previousViewControllers: previous, transitionCompleted: completed)
+        #expect(!owner.isPageTurnInProgress)
+        #expect(reportedPages == (completed ? [1] : []))
+        owner.animateAdjacentSelection(delta: 1, in: controller)
+        #expect(owner.isPageTurnInProgress)
+        controller.complete(controller.selectionCount - 1)
+        #expect(reportedPages == (completed ? [1, 2] : [1]))
+    }
+
+    private func curlPages() throws -> [MangaReaderPageProjection] {
+        let page = try makePipelinePage()
+        return (0..<6).map { index in
+            var page = page
+            page.globalIndex = index
+            page.localIndex = index
+            page.chapterPageCount = 6
+            return page
+        }
     }
 
     private func curlViewport(plan: MangaPagedReadingPlan, chrome: Bool = false,
+        onPageChange: @escaping (Int) -> Void = { _ in },
         onBoundary: @escaping (Int) -> Void = { _ in }) -> MangaPagedPageCurlReaderViewport {
         MangaPagedPageCurlReaderViewport(plan: plan, viewportPlacement: nil,
-            settings: MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .pageCurl, pageTurnDirection: .leftToRight),
+            settings: MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .pageCurl, pageTurnDirection: plan.pageTurnDirection),
             imageLoader: loader(), isChromeVisible: chrome, zoomEnabled: true, likedPageIDs: [],
-            controlPageTurnBridge: MangaPagedControlPageTurnBridge(), onCurrentPageChange: { _ in },
+            controlPageTurnBridge: MangaPagedControlPageTurnBridge(), onCurrentPageChange: onPageChange,
             canBoundaryPageTurn: { _ in true }, onBoundaryPageTurn: onBoundary, onPageLongPress: { _ in }, onTap: {})
     }
 
@@ -164,6 +276,7 @@ struct MangaNavigationLifecycleUIKitTests {
     private final class DeferredPageController: UIPageViewController {
         private var installedControllers: [UIViewController]?
         private var completions: [((Bool) -> Void)?] = []
+        var selectionCount: Int { completions.count }
         var completesSynchronously = false
         override var viewControllers: [UIViewController]? { installedControllers }
         override func setViewControllers(_ viewControllers: [UIViewController]?, direction: UIPageViewController.NavigationDirection,
@@ -172,7 +285,7 @@ struct MangaNavigationLifecycleUIKitTests {
             completions.append(completion)
             if completesSynchronously { completion?(true) }
         }
-        func complete(_ index: Int) { completions[index]?(true) }
+        func complete(_ index: Int, finished: Bool = true) { completions[index]?(finished) }
     }
 }
 #endif
