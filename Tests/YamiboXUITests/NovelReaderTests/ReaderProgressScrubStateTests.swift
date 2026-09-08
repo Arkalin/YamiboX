@@ -206,12 +206,14 @@ final class ReaderProgressScrubStateTests: XCTestCase {
         let presentation = ReaderBottomChromeLayoutPresentation()
 
         XCTAssertTrue(presentation.usesIndependentControls)
-        XCTAssertEqual(presentation.panelSpacing, 10)
+        XCTAssertEqual(presentation.panelSpacing, 4)
         XCTAssertEqual(presentation.maxChromeWidth, 260)
         XCTAssertEqual(presentation.progressPanelHeight, 44)
         XCTAssertEqual(presentation.actionButtonIconFrame, 34)
-        XCTAssertEqual(presentation.actionButtonRowHeight, presentation.progressPanelHeight)
-        XCTAssertEqual(presentation.actionButtonSpacing, 8)
+        XCTAssertEqual(presentation.actionButtonRowHeight, 48)
+        XCTAssertEqual(presentation.actionButtonSpacing, 4)
+        XCTAssertEqual(presentation.verticalScrubberHeight, 192)
+        XCTAssertEqual(presentation.verticalScrubberHeight(capsuleCount: 4), 240)
         XCTAssertEqual(presentation.bottomControlsAdditionalBottomOffset, 8)
         XCTAssertEqual(presentation.horizontalAlignment, .trailing)
         XCTAssertTrue(presentation.progressTextLeadsIcon)
@@ -226,17 +228,88 @@ final class ReaderProgressScrubStateTests: XCTestCase {
 
     func testReaderChromeVisibilityAnimationContracts() {
         let fade = ReaderChromeVisibilityAnimationPresentation.fade
-        let popup = ReaderChromeVisibilityAnimationPresentation.anchoredPopup
+        let reveal = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
 
         XCTAssertEqual(fade.kind, .fade)
         XCTAssertEqual(fade.duration, 0.2)
         XCTAssertEqual(fade.hiddenScale, 1)
         XCTAssertNil(fade.anchor)
 
-        XCTAssertEqual(popup.kind, .anchoredPopup)
-        XCTAssertEqual(popup.duration, 0.2)
-        XCTAssertEqual(popup.hiddenScale, 0.88)
-        XCTAssertEqual(popup.anchor, .bottomTrailing)
+        XCTAssertEqual(reveal.kind, .staggeredReveal)
+        XCTAssertEqual(reveal.duration, 0.46)
+        XCTAssertEqual(reveal.dismissalDuration, 0.32)
+        XCTAssertEqual(reveal.hiddenScale, 0.72)
+        XCTAssertEqual(reveal.anchor, .bottomTrailing)
+    }
+
+    func testChromeRowsRevealDirectoryFirstAndDismissItLast() {
+        let reveal = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
+        for count in [4, 5] {
+            // The same intermediate frame is used on entry and on reversal.
+            let directory = reveal.rowFrame(progress: 0.2, index: 0, count: count, reduceMotion: false)
+            let actions = reveal.rowFrame(progress: 0.2, index: count - 1, count: count, reduceMotion: false)
+            XCTAssertGreaterThan(directory.opacity, 0)
+            XCTAssertEqual(actions.opacity, 0)
+            XCTAssertGreaterThan(directory.scale, actions.scale)
+
+            for index in 0..<count {
+                let hidden = reveal.rowFrame(progress: 0, index: index, count: count, reduceMotion: false)
+                let visible = reveal.rowFrame(progress: 1, index: index, count: count, reduceMotion: false)
+                XCTAssertEqual(hidden.opacity, 0)
+                XCTAssertEqual(hidden.scale, reveal.hiddenScale)
+                XCTAssertGreaterThan(hidden.offsetY, 0)
+                if index == 0 { XCTAssertEqual(hidden.offsetY, 128) }
+                if index == count - 1 { XCTAssertEqual(hidden.offsetY, 24) }
+                XCTAssertEqual(visible.opacity, 1)
+                XCTAssertEqual(visible.scale, 1)
+                XCTAssertEqual(visible.offsetY, 0)
+            }
+        }
+    }
+
+    func testChromeRowMotionIsBoundedAndMonotonicWithOptionalAnnotationRow() {
+        let reveal = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
+        for count in [1, 4, 5] {
+            for index in 0..<count {
+                var previous = reveal.rowFrame(progress: 0, index: index, count: count, reduceMotion: false)
+                for step in 1...100 {
+                    let frame = reveal.rowFrame(progress: CGFloat(step) / 100, index: index, count: count, reduceMotion: false)
+                    XCTAssertGreaterThanOrEqual(frame.opacity, previous.opacity)
+                    XCTAssertLessThanOrEqual(frame.opacity, 1)
+                    XCTAssertGreaterThanOrEqual(frame.scale, previous.scale)
+                    XCTAssertLessThanOrEqual(frame.scale, 1)
+                    XCTAssertLessThanOrEqual(frame.offsetY, previous.offsetY)
+                    XCTAssertGreaterThanOrEqual(frame.offsetY, 0)
+                    previous = frame
+                }
+            }
+        }
+    }
+
+    func testChromeReduceMotionUsesUnstaggeredFadeWithoutTranslationOrScaling() {
+        let reveal = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
+        for index in 0..<5 {
+            let frame = reveal.rowFrame(progress: 0.35, index: index, count: 5, reduceMotion: true)
+            XCTAssertEqual(frame.opacity, 0.35, accuracy: 0.0001)
+            XCTAssertEqual(frame.scale, 1)
+            XCTAssertEqual(frame.offsetY, 0)
+        }
+    }
+
+    func testChromeRowTimelineClampsProgressAndInvalidRowIndices() {
+        let reveal = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
+        XCTAssertEqual(
+            reveal.rowFrame(progress: -1, index: -1, count: 4, reduceMotion: false),
+            reveal.rowFrame(progress: 0, index: 0, count: 4, reduceMotion: false)
+        )
+        XCTAssertEqual(
+            reveal.rowFrame(progress: 2, index: 20, count: 4, reduceMotion: false),
+            reveal.rowFrame(progress: 1, index: 3, count: 4, reduceMotion: false)
+        )
+        XCTAssertEqual(
+            reveal.rowFrame(progress: 0.5, index: 0, count: 0, reduceMotion: false),
+            reveal.rowFrame(progress: 0.5, index: 0, count: 1, reduceMotion: false)
+        )
     }
 
     func testReaderChromeSummarySeparatesChapterAndProgressLines() {
@@ -312,7 +385,7 @@ final class ReaderProgressScrubStateTests: XCTestCase {
                 length: presentation.verticalScrubberHeight,
                 edgeInset: presentation.capsuleChapterTickRoundedEdgeInset
             ),
-            200
+            186
         )
     }
 

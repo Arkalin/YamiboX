@@ -181,12 +181,13 @@ public enum ReaderBottomChromeHorizontalAlignment: Equatable, Sendable {
 
 public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var usesIndependentControls: Bool { true }
-    public var panelSpacing: CGFloat { 10 }
+    public var panelSpacing: CGFloat { 4 }
     public var maxChromeWidth: CGFloat { 260 }
     public var progressPanelHeight: CGFloat { 44 }
     public var actionButtonIconFrame: CGFloat { 34 }
-    public var actionButtonRowHeight: CGFloat { progressPanelHeight }
-    public var actionButtonSpacing: CGFloat { 8 }
+    // Includes the glass button style's padding around the 34pt icon frame.
+    public var actionButtonRowHeight: CGFloat { 48 }
+    public var actionButtonSpacing: CGFloat { panelSpacing }
     public var bottomControlsAdditionalBottomOffset: CGFloat { 8 }
     public var bottomChromeTopPadding: CGFloat { 8 }
 
@@ -296,7 +297,7 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
 
 public enum ReaderChromeVisibilityAnimationKind: Equatable, Sendable {
     case fade
-    case anchoredPopup
+    case staggeredReveal
 }
 
 public enum ReaderChromePopupAnchor: Equatable, Sendable {
@@ -304,35 +305,54 @@ public enum ReaderChromePopupAnchor: Equatable, Sendable {
 }
 
 public struct ReaderChromeVisibilityAnimationPresentation: Equatable, Sendable {
-    /// Spring parameters for presentations whose show/hide should feel
-    /// physical (the scale-pop popup). `nil` means a plain ease over
-    /// `duration`; Reduce Motion always falls back to that ease.
-    public struct SpringPresentation: Equatable, Sendable {
-        public var response: Double
-        public var dampingFraction: Double
-    }
-
     public var kind: ReaderChromeVisibilityAnimationKind
     public var duration: Double
+    public var dismissalDuration: Double
     public var hiddenScale: CGFloat
     public var anchor: ReaderChromePopupAnchor?
-    public var spring: SpringPresentation?
 
     public static let fade = ReaderChromeVisibilityAnimationPresentation(
         kind: .fade,
         duration: 0.2,
+        dismissalDuration: 0.2,
         hiddenScale: 1,
-        anchor: nil,
-        spring: nil
+        anchor: nil
     )
 
-    public static let anchoredPopup = ReaderChromeVisibilityAnimationPresentation(
-        kind: .anchoredPopup,
-        duration: 0.2,
-        hiddenScale: 0.88,
-        anchor: .bottomTrailing,
-        spring: SpringPresentation(response: 0.34, dampingFraction: 0.82)
+    public static let staggeredReveal = ReaderChromeVisibilityAnimationPresentation(
+        kind: .staggeredReveal,
+        duration: 0.46,
+        dismissalDuration: 0.32,
+        hiddenScale: 0.72,
+        anchor: .bottomTrailing
     )
+
+    public struct RowFrame: Equatable, Sendable {
+        public var opacity: Double
+        public var scale: CGFloat
+        public var offsetY: CGFloat
+    }
+
+    public func rowFrame(progress: CGFloat, index: Int, count: Int, reduceMotion: Bool) -> RowFrame {
+        let progress = min(max(progress, 0), 1)
+        guard !reduceMotion else {
+            return RowFrame(opacity: Double(progress), scale: 1, offsetY: 0)
+        }
+
+        let lastIndex = max(count - 1, 0)
+        let rank = lastIndex > 0 ? CGFloat(min(max(index, 0), lastIndex)) / CGFloat(lastIndex) : 0
+        // One reversible timeline: directory first on entry, last on exit.
+        // No delayed tasks that can replay stale visibility after a quick tap.
+        let stagger: CGFloat = lastIndex > 0 ? 0.42 : 0
+        let phase = min(max((progress - rank * stagger) / (1 - stagger), 0), 1)
+        let movement = 1 - pow(1 - phase, 3)
+        let fade = min(phase / 0.55, 1)
+        return RowFrame(
+            opacity: Double(fade * fade * (3 - 2 * fade)),
+            scale: hiddenScale + (1 - hiddenScale) * movement,
+            offsetY: (128 - 104 * rank) * (1 - movement)
+        )
+    }
 }
 
 public struct ReaderChromeProgressSummary: Equatable, Sendable {

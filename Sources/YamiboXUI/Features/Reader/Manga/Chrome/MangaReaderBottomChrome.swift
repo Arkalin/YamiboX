@@ -29,6 +29,8 @@ struct MangaReaderBottomChrome: View {
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
+        let capsuleCount = layout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0)
+        let rowCount = capsuleCount + 1
         let progressChromePresentation = ReaderProgressChromePresentation(
             readingMode: readingMode.readerChromeReadingMode,
             isChromeVisible: true
@@ -54,6 +56,7 @@ struct MangaReaderBottomChrome: View {
                             onShowDirectory: onShowDirectory,
                             onJumpToLocalPage: onJumpToLocalPage
                         )
+                        .readerChromeRowVisibility(isVisible, index: 0, count: rowCount)
                     }
 
                     // Only exists once the work has something to show — an
@@ -69,9 +72,12 @@ struct MangaReaderBottomChrome: View {
                         .opacity(staticControlVisibility.opacity)
                         .allowsHitTesting(staticControlVisibility.allowsHitTesting)
                         .accessibilityHidden(staticControlVisibility.isAccessibilityHidden)
+                        .readerChromeRowVisibility(isVisible, index: 1, count: rowCount)
                     }
 
                     MangaReaderStaticActionControls(
+                        isVisible: isVisible,
+                        capsuleCount: capsuleCount,
                         colorScheme: colorScheme,
                         originalPostTitle: L10n.string("reader.open_original_post"),
                         commentsTitle: L10n.string("reader.comments"),
@@ -98,13 +104,15 @@ struct MangaReaderBottomChrome: View {
                    let progress = summary?.progress {
                     MangaReaderVerticalProgressControl(
                         progress: progress,
-                        stackedCapsuleCount: layout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0),
+                        stackedCapsuleCount: capsuleCount,
                         onPreviewChange: { activeVerticalProgressPreview = $0 },
                         onJumpToLocalPage: onJumpToLocalPage
                     )
+                    .readerChromeRowVisibility(isVisible, index: 0, count: rowCount)
                 }
             }
-            .readerChromeAnchoredPopupVisibility(isVisible)
+            .allowsHitTesting(isVisible)
+            .accessibilityHidden(!isVisible)
 
             if let pageSummary = summary?.pageSummary {
                 MangaReaderBottomPageSummary(text: pageSummary)
@@ -385,6 +393,8 @@ private struct MangaReaderProgressPreviewPageLabel: View {
 }
 
 private struct MangaReaderStaticActionControls: View {
+    let isVisible: Bool
+    let capsuleCount: Int
     let colorScheme: ColorScheme
     let originalPostTitle: String
     let commentsTitle: String
@@ -407,26 +417,26 @@ private struct MangaReaderStaticActionControls: View {
             systemName: "text.bubble",
             action: onShowComments
         )
+        .readerChromeRowVisibility(isVisible, index: capsuleCount - 2, count: capsuleCount + 1)
 
         ReaderChromeCapsuleButton(
             title: settingsTitle,
             systemName: "gearshape",
             action: onShowSettings
         )
+        .readerChromeRowVisibility(isVisible, index: capsuleCount - 1, count: capsuleCount + 1)
 
-        HStack(spacing: 0) {
+        HStack(spacing: layout.actionButtonSpacing) {
             bottomActionButton(
                 title: originalPostTitle,
                 systemName: "arrow.left.arrow.right",
                 handler: onOpenOriginalPost
             )
-            Spacer(minLength: layout.actionButtonSpacing)
             bottomActionButton(
                 title: bookmarkTitle,
                 systemName: bookmarkSystemName,
                 handler: onToggleBookmark
             )
-            Spacer(minLength: layout.actionButtonSpacing)
             bottomActionButton(
                 title: cacheTitle,
                 systemName: "square.and.arrow.down",
@@ -435,6 +445,7 @@ private struct MangaReaderStaticActionControls: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: layout.actionButtonRowHeight)
+        .readerChromeRowVisibility(isVisible, index: capsuleCount, count: capsuleCount + 1)
     }
 
     private func bottomActionButton(
@@ -449,7 +460,9 @@ private struct MangaReaderStaticActionControls: View {
             Image(systemName: systemName)
                 .font(.headline)
                 .frame(width: layout.actionButtonIconFrame, height: layout.actionButtonIconFrame)
+                .frame(maxWidth: .infinity)
         }
+        .buttonBorderShape(.capsule)
         .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)

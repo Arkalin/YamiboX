@@ -68,8 +68,8 @@ extension View {
         modifier(ReaderChromeFadeVisibilityModifier(isVisible: isVisible))
     }
 
-    func readerChromeAnchoredPopupVisibility(_ isVisible: Bool) -> some View {
-        modifier(ReaderChromeAnchoredPopupVisibilityModifier(isVisible: isVisible))
+    func readerChromeRowVisibility(_ isVisible: Bool, index: Int, count: Int) -> some View {
+        modifier(ReaderChromeRowVisibilityModifier(isVisible: isVisible, index: index, count: count))
     }
 }
 
@@ -86,43 +86,53 @@ private struct ReaderChromeFadeVisibilityModifier: ViewModifier {
     }
 }
 
-private struct ReaderChromeAnchoredPopupVisibilityModifier: ViewModifier {
+private struct ReaderChromeRowVisibilityModifier: ViewModifier {
     let isVisible: Bool
-    private let presentation = ReaderChromeVisibilityAnimationPresentation.anchoredPopup
+    let index: Int
+    let count: Int
+    private let presentation = ReaderChromeVisibilityAnimationPresentation.staggeredReveal
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(
-                // Reduce Motion collapses the scale-pop to a pure cross-fade.
-                isVisible || reduceMotion ? 1 : presentation.hiddenScale,
-                anchor: presentation.anchor?.unitPoint ?? .bottomTrailing
-            )
-            .opacity(isVisible ? 1 : 0)
+            .modifier(ReaderChromeRowRevealModifier(
+                progress: isVisible ? 1 : 0,
+                index: index,
+                count: count,
+                reduceMotion: reduceMotion
+            ))
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
-            // A popup the user summons reads livelier as a gentle spring
-            // than as a fixed-duration ease; the parameters live in the
-            // presentation so chrome animation values stay centralized.
             .animation(
-                {
-                    if let spring = presentation.spring, !reduceMotion {
-                        return .spring(response: spring.response, dampingFraction: spring.dampingFraction)
-                    }
-                    return .easeInOut(duration: presentation.duration)
-                }(),
+                reduceMotion
+                    ? .easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)
+                    : .linear(duration: isVisible ? presentation.duration : presentation.dismissalDuration),
                 value: isVisible
             )
     }
 }
 
-private extension ReaderChromePopupAnchor {
-    var unitPoint: UnitPoint {
-        switch self {
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
+private struct ReaderChromeRowRevealModifier: ViewModifier, Animatable {
+    nonisolated var progress: CGFloat
+    let index: Int
+    let count: Int
+    let reduceMotion: Bool
+
+    // Interpolate the shared timeline, not the independently eased row values.
+    nonisolated var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let frame = ReaderChromeVisibilityAnimationPresentation.staggeredReveal.rowFrame(
+            progress: progress, index: index, count: count, reduceMotion: reduceMotion
+        )
+        content
+            .scaleEffect(frame.scale, anchor: .bottomTrailing)
+            .offset(y: frame.offsetY)
+            .opacity(frame.opacity)
     }
 }
 

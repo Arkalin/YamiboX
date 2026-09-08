@@ -37,7 +37,8 @@ struct NovelReaderBottomChrome: View {
     var body: some View {
         VStack(spacing: 12) {
             bottomControls
-                .readerChromeAnchoredPopupVisibility(isVisible)
+                .allowsHitTesting(isVisible)
+                .accessibilityHidden(!isVisible)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 12)
                 .padding(.trailing, 12)
@@ -65,12 +66,14 @@ struct NovelReaderBottomChrome: View {
             VStack(spacing: chromeLayout.panelSpacing) {
                 progressControl
                 actionRow
+                    .readerChromeRowVisibility(isVisible, index: stackedCapsuleCount, count: stackedCapsuleCount + 1)
             }
             .frame(width: chromeLayout.maxChromeWidth)
 
             if progressChromePresentation.showsVerticalScrubber {
                 verticalProgressControl
                     .frame(width: chromeLayout.verticalScrubberWidth, alignment: .trailing)
+                    .readerChromeRowVisibility(isVisible, index: 0, count: stackedCapsuleCount + 1)
             }
         }
         .frame(
@@ -106,21 +109,19 @@ struct NovelReaderBottomChrome: View {
 
     private var actionRow: some View {
         let presentation = actionRowPresentation
-        return HStack(spacing: 0) {
+        return HStack(spacing: chromeLayout.actionButtonSpacing) {
             bottomActionButton(
                 action: ReaderBottomAction(kind: .browser),
                 title: L10n.string("reader.open_original_post"),
                 systemName: "arrow.left.arrow.right",
                 handler: onOpenForum
             )
-            Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(
                 action: ReaderBottomAction(kind: .search),
                 title: L10n.string("common.search"),
                 systemName: "magnifyingglass",
                 handler: onShowSearch
             )
-            Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(
                 action: ReaderBottomAction(kind: .bookmark),
                 title: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
@@ -130,7 +131,6 @@ struct NovelReaderBottomChrome: View {
                 systemName: isBookmarked ? "bookmark.fill" : "bookmark",
                 handler: onToggleBookmark
             )
-            Spacer(minLength: chromeLayout.actionButtonSpacing)
             bottomActionButton(
                 action: ReaderBottomAction(kind: .cache),
                 title: L10n.string("reader.cache"),
@@ -197,7 +197,9 @@ struct NovelReaderBottomChrome: View {
             Image(systemName: systemName)
                 .font(.headline)
                 .frame(width: chromeLayout.actionButtonIconFrame, height: chromeLayout.actionButtonIconFrame)
+                .frame(maxWidth: .infinity)
         }
+        .buttonBorderShape(.capsule)
         .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(action.isDisabled ? 0.34 : 1)
         .disabled(action.isDisabled)
@@ -210,6 +212,7 @@ struct NovelReaderBottomChrome: View {
                 ReaderVerticalProgressPreviewCapsule(preview: preview)
                     .frame(maxWidth: .infinity)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .readerChromeFadeVisibility(isVisible)
             }
 
             ReaderDirectoryProgressCapsule(
@@ -231,6 +234,7 @@ struct NovelReaderBottomChrome: View {
             .opacity(shouldHideDirectoryCapsule ? 0 : 1)
             .allowsHitTesting(!shouldHideDirectoryCapsule)
             .accessibilityHidden(shouldHideDirectoryCapsule)
+            .readerChromeRowVisibility(isVisible, index: 0, count: stackedCapsuleCount + 1)
 
             // Only exists once the work has something to show — an entry point
             // that always leads to an empty list is just permanent chrome.
@@ -241,6 +245,7 @@ struct NovelReaderBottomChrome: View {
                     trailingText: annotationCapsule.countText,
                     action: onShowAnnotations
                 )
+                .readerChromeRowVisibility(isVisible, index: 1, count: stackedCapsuleCount + 1)
             }
 
             secondaryCapsuleButton(
@@ -248,12 +253,14 @@ struct NovelReaderBottomChrome: View {
                 systemName: "text.bubble",
                 action: onShowComments
             )
+            .readerChromeRowVisibility(isVisible, index: stackedCapsuleCount - 2, count: stackedCapsuleCount + 1)
 
             secondaryCapsuleButton(
                 title: L10n.string("settings.title"),
                 systemName: "gearshape",
                 action: onShowSettings
             )
+            .readerChromeRowVisibility(isVisible, index: stackedCapsuleCount - 1, count: stackedCapsuleCount + 1)
         }
     }
 
