@@ -200,6 +200,7 @@ private struct ReadingHomeContinueSection: View {
     let books: [ReadingHomeBook]
     let open: (ReadingHomeBook, BookOpeningTransition) -> Void
     let openFavorites: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -225,6 +226,7 @@ private struct ReadingHomeContinueSection: View {
                         }
                     }
                     .scrollTargetLayout()
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: books.map(\.id))
                 }
                 .contentMargins(.horizontal, 24, for: .scrollContent)
                 .contentMargins(.bottom, 26, for: .scrollContent)
@@ -287,6 +289,7 @@ private struct ReadingHomePreviousSection: View {
     let open: (ReadingHomeBook, BookOpeningTransition) -> Void
     let showHistory: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
@@ -315,6 +318,7 @@ private struct ReadingHomePreviousSection: View {
                         .accessibilityIdentifier("home.previous.\(book.id)")
                     }
                 }
+                .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: books.map(\.id))
             }
         }
         .padding(.horizontal, 24)
