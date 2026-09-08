@@ -256,7 +256,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
                 collectionView.scrollToItem(
                     at: IndexPath(item: targetViewportIndex, section: 0),
                     at: .centeredHorizontally,
-                    animated: true
+                    animated: parent.settings.pagedTurnStyle != .none
                 )
             }
         } else {
@@ -275,7 +275,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         if parent.isChromeVisible {
             collectionView.panGestureRecognizer.isEnabled = false
         }
-        gestures.quickFadePanGesture.isEnabled = !parent.isChromeVisible && parent.settings.pagedTurnStyle == .quickFade
+        gestures.discretePagePanGesture.isEnabled = !parent.isChromeVisible && parent.settings.pagedTurnStyle.usesDiscretePageTurns
     }
 
     private func updateVisiblePageSurfacesIfNeeded(in collectionView: UICollectionView) {

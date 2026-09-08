@@ -7,18 +7,35 @@ import YamiboXCore
 
 @MainActor @Suite("Paged navigation completion integration")
 struct MangaNavigationLifecycleUIKitTests {
-    @Test(arguments: [false, true], ["none", "generation", "chrome", "cancel", "detach"])
-    func installedPanKeepsAdmissionUntilCompletion(curl: Bool, invalidation: String) throws {
+    @Test func noAnimationPlacementFallbackDoesNotStartNativeScrolling() throws {
+        let plan = MangaPagedReadingPlan(pages: [try makePipelinePage()], currentPageIndex: 0)
+        let parent = MangaPagedReaderViewport(plan: plan,
+            viewportPlacement: MangaNovelReaderViewportPlacement(targetPageIndex: 0, animated: true, revision: 1),
+            settings: MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .none),
+            imageLoader: loader(), isChromeVisible: false, zoomEnabled: true, likedPageIDs: [],
+            controlPageTurnBridge: MangaPagedControlPageTurnBridge(), onCurrentPageChange: { _ in },
+            canBoundaryPageTurn: { _ in false }, onBoundaryPageTurn: { _ in },
+            onPageLongPress: { _ in }, onTap: {})
+        let owner = parent.makeCoordinator()
+        let collection = PlacementCollection(frame: CGRect(x: 0, y: 0, width: 400, height: 800),
+            collectionViewLayout: UICollectionViewFlowLayout())
+        // A detached collection cannot yet accept the driver's placement.
+        owner.applyViewportPlacementIfNeeded(in: collection)
+        #expect(collection.animatedPlacements == [false])
+    }
+
+    @Test(arguments: [ReaderPagedTurnStyle.none, .quickFade, .pageCurl], ["none", "generation", "chrome", "cancel", "detach"])
+    func installedPanKeepsAdmissionUntilCompletion(style: ReaderPagedTurnStyle, invalidation: String) throws {
         var boundaries: [Int] = []
         let plan = MangaPagedReadingPlan(pages: [try makePipelinePage()], currentPageIndex: 0)
         let pan = EventPan()
         let input = MangaNavigationInput(navigationPan: pan)
-        let settings = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .quickFade, pageTurnDirection: .leftToRight)
+        let settings = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: style, pageTurnDirection: .leftToRight)
         let adapter: AnyObject
         let coordinator: AnyObject
         let view: UIView
         let invalidate: () -> Void
-        if curl {
+        if style == .pageCurl {
             let parent = curlViewport(plan: plan, onBoundary: { boundaries.append($0) })
             let owner = parent.makeCoordinator()
             let container = MangaPagedPageCurlContainerViewController(pageViewController: UIPageViewController(
@@ -247,6 +264,13 @@ struct MangaNavigationLifecycleUIKitTests {
         MangaReaderPageImageLoader(imageSource: { _ in
             YamiboImageSource(url: URL(fileURLWithPath: "/nonexistent/manga-interaction-test.png"))
         })
+    }
+
+    private final class PlacementCollection: UICollectionView {
+        var animatedPlacements: [Bool] = []
+        override func scrollToItem(at indexPath: IndexPath, at scrollPosition: UICollectionView.ScrollPosition, animated: Bool) {
+            animatedPlacements.append(animated)
+        }
     }
 
     private final class EventPan: UIPanGestureRecognizer {

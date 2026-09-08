@@ -757,6 +757,7 @@
 "manga.settings" = "漫画设置";
 "manga.settings.section.display" = "显示";
 "manga.settings.section.paging" = "页面";
+"manga.settings.paged_display" = "翻页画面";
 "manga.zoom_enabled" = "启用缩放";
 "manga_directory.chapter_count" = "%d 个章节";
 "manga_directory.search_prompt" = "搜索漫画名称";
@@ -905,6 +906,9 @@
 "reader.web_view_chapters" = "%@ 的章节";
 "reader.web_view_progress" = "网页 %d / %d";
 "reading_mode.paged" = "横向分页";
+"reading_mode.page_turn" = "翻页";
+"reading_mode.animation" = "翻页动画";
+"reading_mode.none" = "无";
 "reading_mode.page_curl" = "卷页";
 "reading_mode.quick_fade" = "快速淡入淡出";
 "reading_mode.scroll" = "滚动";

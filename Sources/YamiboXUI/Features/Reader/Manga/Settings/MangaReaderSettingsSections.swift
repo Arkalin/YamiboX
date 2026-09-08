@@ -62,7 +62,7 @@ private struct MangaReaderSettingsDisplaySection: View {
     }
 }
 
-private struct MangaReaderSettingsPagingSection: View {
+struct MangaReaderSettingsPagingSection: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let isPadDevice: Bool
@@ -75,9 +75,12 @@ private struct MangaReaderSettingsPagingSection: View {
         ) {
             ReaderSettingsModePicker(
                 selection: ReaderSettingsReadingModeOption(settings),
+                pagedTurnStyle: settings.pagedTurnStyle,
                 palette: palette
             ) { option in
                 settings.selectMode(option)
+            } onSelectAnimation: { style in
+                settings.pagedTurnStyle = style
             }
 
             if settings.usesPagedMode {
@@ -98,24 +101,10 @@ private struct MangaReaderSettingsPagingSection: View {
                     settings.pageTurnDirection = direction
                 }
                 ReaderSettingsDivider(palette: palette)
-                if !usesTwoPageSpread {
-                    MangaReaderSettingsMenuRow(
-                        title: L10n.string("manga.page_scale_mode"),
-                        selection: $settings.pageScaleMode,
-                        palette: palette
-                    )
-                    ReaderSettingsDivider(palette: palette)
-                }
-                MangaReaderSettingsMenuRow(
-                    title: L10n.string("manga.page_edge_fill"),
-                    selection: $settings.pageEdgeFillStyle,
-                    palette: palette
-                )
-                ReaderSettingsDivider(palette: palette)
-                ReaderSettingsToggleRow(
-                    title: L10n.string("manga.ignores_top_safe_area"),
+                MangaReaderPagedDisplaySettings(
+                    settings: $settings,
                     palette: palette,
-                    isOn: $settings.ignoresTopSafeArea
+                    usesTwoPageSpread: usesTwoPageSpread
                 )
             }
         }

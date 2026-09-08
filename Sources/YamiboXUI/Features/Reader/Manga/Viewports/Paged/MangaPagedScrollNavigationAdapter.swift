@@ -8,7 +8,7 @@ import UIKit
 final class MangaPagedScrollNavigationAdapter {
     private weak var coordinator: MangaPagedScrollCoordinator?
     let input: MangaNavigationInput
-    var quickFadePanGesture: UIPanGestureRecognizer { input.navigationPan }
+    var discretePagePanGesture: UIPanGestureRecognizer { input.navigationPan }
 
     init(coordinator: MangaPagedScrollCoordinator, input: MangaNavigationInput = MangaNavigationInput()) {
         self.coordinator = coordinator
@@ -22,7 +22,7 @@ final class MangaPagedScrollNavigationAdapter {
         input.permits = { [weak self] recognizer in
             guard let self, let coordinator = self.coordinator, let collection = recognizer.view as? UICollectionView else { return false }
             if recognizer === self.input.navigationPan, let pan = recognizer as? UIPanGestureRecognizer {
-                guard coordinator.parent.settings.pagedTurnStyle == .quickFade else { return false }
+                guard coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns else { return false }
                 return self.navigationStep(for: pan, in: collection) != nil
             }
             return true
@@ -44,7 +44,7 @@ final class MangaPagedScrollNavigationAdapter {
                 self.route(request, in: collection)
             case .navigationPan:
                 guard let pan = recognizer as? UIPanGestureRecognizer, let coordinator = self.coordinator else { return }
-                coordinator.pagingDriver.handleQuickFadePan(pan, inputs: coordinator.pagingInputs)
+                coordinator.pagingDriver.handleDiscretePagePan(pan, inputs: coordinator.pagingInputs)
             case .surfacePan, .surfacePinch: break
             }
         }
@@ -56,7 +56,7 @@ final class MangaPagedScrollNavigationAdapter {
         input.install(input.navigationPan, in: collection)
         collection.shouldBeginPanGesture = { [weak self, weak collection] pan in
             guard let self, let collection, let coordinator = self.coordinator,
-                  coordinator.parent.settings.pagedTurnStyle != .quickFade else { return false }
+                  !coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns else { return false }
             return self.navigationStep(for: pan, in: collection) != nil
         }
     }

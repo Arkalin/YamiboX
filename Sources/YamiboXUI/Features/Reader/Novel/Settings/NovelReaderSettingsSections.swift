@@ -145,11 +145,12 @@ struct NovelReaderDisplaySection: View {
             ReaderSettingsDivider(palette: palette)
             ReaderSettingsModePicker(
                 selection: ReaderSettingsReadingModeOption(settings),
+                pagedTurnStyle: settings.pagedTurnStyle,
                 palette: palette
             ) { option in
-                // Scroll mode has no turn style; keep the current one so it
-                // is restored when the user returns to a paged mode.
-                onReadingModeChange(option.readingMode, option.pagedTurnStyle ?? settings.pagedTurnStyle)
+                onReadingModeChange(option.readingMode, settings.pagedTurnStyle)
+            } onSelectAnimation: { style in
+                onReadingModeChange(settings.readingMode, style)
             }
             if settings.readingMode == .paged {
                 ReaderSettingsDivider(palette: palette)

@@ -3,79 +3,34 @@ import YamiboXCore
 
 #if os(iOS)
 
-/// Reading-mode choice shared by both reader settings sheets.
-///
-/// The Manga and Novel pickers offered the same four options with the same
-/// titles, icons, and mapping onto the core reading-mode/turn-style pair —
-/// only each reader's settings type differed. This enum replaces
-/// `MangaReaderSettingsModeOption` and the private
-/// `NovelReaderReadingModeOption`; each reader keeps a thin
-/// `init(_ settings:)` next to its own code.
-enum ReaderSettingsReadingModeOption: CaseIterable, Hashable {
-    case slide
-    case pageCurl
-    case quickFade
+enum ReaderSettingsReadingModeOption: String, CaseIterable, Hashable {
+    case paged
     case scroll
 
-    init(isPaged: Bool, pagedTurnStyle: ReaderPagedTurnStyle) {
-        guard isPaged else {
-            self = .scroll
-            return
-        }
-        switch pagedTurnStyle {
-        case .slide: self = .slide
-        case .pageCurl: self = .pageCurl
-        case .quickFade: self = .quickFade
-        }
+    init(isPaged: Bool) {
+        self = isPaged ? .paged : .scroll
     }
 
     var title: String {
         switch self {
-        case .slide: L10n.string("reading_mode.slide")
-        case .pageCurl: L10n.string("reading_mode.page_curl")
-        case .quickFade: L10n.string("reading_mode.quick_fade")
+        case .paged: L10n.string("reading_mode.page_turn")
         case .scroll: L10n.string("reading_mode.scroll")
         }
     }
 
-    var systemImageName: String {
-        switch self {
-        case .slide: "arrow.left.to.line.square"
-        case .pageCurl: "doc"
-        case .quickFade: "bolt.square"
-        case .scroll: "text.page"
-        }
-    }
-
     var readingMode: ReaderReadingMode {
-        switch self {
-        case .slide, .pageCurl, .quickFade: .paged
-        case .scroll: .vertical
-        }
-    }
-
-    /// nil for vertical scrolling, which has no paged turn style.
-    var pagedTurnStyle: ReaderPagedTurnStyle? {
-        switch self {
-        case .slide: .slide
-        case .pageCurl: .pageCurl
-        case .quickFade: .quickFade
-        case .scroll: nil
-        }
+        self == .paged ? .paged : .vertical
     }
 }
 
-/// Two-column reading-mode grid; replaces `MangaReaderModePicker` and
-/// `NovelReaderReadingModePicker` (identical layout, columns, and title key).
 struct ReaderSettingsModePicker<Palette: ReaderSettingsPalette>: View {
     let selection: ReaderSettingsReadingModeOption
+    let pagedTurnStyle: ReaderPagedTurnStyle
     let palette: Palette
     let onSelect: (ReaderSettingsReadingModeOption) -> Void
+    let onSelectAnimation: (ReaderPagedTurnStyle) -> Void
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
+    @ScaledMetric(relativeTo: .body) private var animationIconWidth: CGFloat = 24
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -83,52 +38,96 @@ struct ReaderSettingsModePicker<Palette: ReaderSettingsPalette>: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
 
-            LazyVGrid(columns: columns, spacing: 10) {
+            ReaderSettingsSegmentedControl(palette: palette) {
                 ForEach(ReaderSettingsReadingModeOption.allCases, id: \.self) { option in
-                    ReaderSettingsModeButton(
-                        option: option,
+                    ReaderSettingsSegmentButton(
+                        title: option.title,
                         isSelected: selection == option,
                         palette: palette
                     ) {
                         onSelect(option)
                     }
+                    .accessibilityIdentifier("reader.settings.mode.\(option.rawValue)")
                 }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L10n.string("reading_mode.title"))
+
+            if selection == .paged {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.string("reading_mode.animation"))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(palette.secondaryText)
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
+
+                    ForEach(ReaderPagedTurnStyle.allCases, id: \.self) { style in
+                        ReaderSettingsAnimationRow(
+                            style: style,
+                            isSelected: pagedTurnStyle == style,
+                            iconWidth: min(animationIconWidth, 34),
+                            palette: palette
+                        ) {
+                            onSelectAnimation(style)
+                        }
+                        if style != ReaderPagedTurnStyle.allCases.last {
+                            ReaderSettingsDivider(palette: palette)
+                                .padding(.leading, min(animationIconWidth, 34) + 16)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(L10n.string("reading_mode.animation"))
             }
         }
     }
 }
 
-private struct ReaderSettingsModeButton<Palette: ReaderSettingsPalette>: View {
-    let option: ReaderSettingsReadingModeOption
+private struct ReaderSettingsAnimationRow<Palette: ReaderSettingsPalette>: View {
+    let style: ReaderPagedTurnStyle
     let isSelected: Bool
+    let iconWidth: CGFloat
     let palette: Palette
     let action: () -> Void
 
+    private var systemImage: String {
+        switch style {
+        case .none: "rectangle"
+        case .slide: "arrow.left.and.right"
+        case .pageCurl: "doc"
+        case .quickFade: "square.on.square"
+        }
+    }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: option.systemImageName)
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 24)
-
-                Text(option.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .frame(width: iconWidth)
+                    .foregroundStyle(isSelected ? palette.selectedControlBackground : palette.secondaryText)
+                Text(style.title)
+                    .font(.body)
+                    .foregroundStyle(palette.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .foregroundStyle(palette.selectedControlBackground)
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: iconWidth)
             }
-            .foregroundStyle(isSelected ? palette.selectedControlText : palette.primaryText)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 10)
-            .background(
-                isSelected ? palette.selectedControlBackground : palette.segmentedBackground,
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Novel's original button declared this; it is invisible and equally
-        // valid for Manga, so the shared button keeps it for both.
-        .accessibilityLabel(option.title)
+        .accessibilityLabel(style.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("reader.settings.animation.\(style.rawValue)")
     }
 }
 

@@ -1623,6 +1623,14 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(updatedPresentation.revision, initialPresentation.revision + 1)
         XCTAssertEqual(updatedPresentation.committedSettings, updatedSettings)
 
+        for style in ReaderPagedTurnStyle.allCases {
+            updatedSettings.pagedTurnStyle = style
+            await model.commitNovelTextAppearance(updatedSettings)
+            let presentation = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
+            XCTAssertEqual(presentation.generation, initialPresentation.generation)
+            XCTAssertEqual(presentation.committedSettings.pagedTurnStyle, style)
+        }
+
         try await waitFor {
             await settingsStore.load().novelReader == updatedSettings
         }

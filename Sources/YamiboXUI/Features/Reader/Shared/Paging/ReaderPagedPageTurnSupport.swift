@@ -344,6 +344,12 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
     var selectionIndexForItemIndex: (Int) -> Int = { $0 }
 }
 
+extension ReaderPagedTurnStyle {
+    var usesDiscretePageTurns: Bool {
+        self == .none || self == .quickFade
+    }
+}
+
 @MainActor
 final class ReaderPagedPagingDriver {
     private static let quickFadeDuration: TimeInterval = ReaderPagedQuickFadeTransition.duration
@@ -474,7 +480,8 @@ final class ReaderPagedPagingDriver {
             return false
         }
 
-        let consumesBeforeLayout = commitsQuickFadeSelectionImmediately && inputs.pagedTurnStyle == .quickFade
+        let consumesBeforeLayout = inputs.pagedTurnStyle == .none ||
+            (commitsQuickFadeSelectionImmediately && inputs.pagedTurnStyle == .quickFade)
         if consumesBeforeLayout {
             // Novel layout callbacks must not replay the placement being applied here.
             self.pendingSelectionIndex = nil
@@ -529,14 +536,14 @@ final class ReaderPagedPagingDriver {
     }
 
     func updateGestureState(in collectionView: UICollectionView, inputs: ReaderPagedPagingInputs) {
-        collectionView.panGestureRecognizer.isEnabled = inputs.pagedTurnStyle != .quickFade
-        if inputs.pagedTurnStyle == .quickFade {
+        collectionView.panGestureRecognizer.isEnabled = !inputs.pagedTurnStyle.usesDiscretePageTurns
+        if inputs.pagedTurnStyle.usesDiscretePageTurns {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
         }
     }
 
-    func quickFadePanShouldBegin(_ recognizer: UIPanGestureRecognizer, inputs: ReaderPagedPagingInputs) -> Bool {
-        guard inputs.pagedTurnStyle == .quickFade,
+    func discretePagePanShouldBegin(_ recognizer: UIPanGestureRecognizer, inputs: ReaderPagedPagingInputs) -> Bool {
+        guard inputs.pagedTurnStyle.usesDiscretePageTurns,
               inputs.itemCount > 0,
               let view = recognizer.view else {
             return false
@@ -545,8 +552,8 @@ final class ReaderPagedPagingDriver {
         return abs(velocity.x) > abs(velocity.y)
     }
 
-    func handleQuickFadePan(_ recognizer: UIPanGestureRecognizer, inputs: ReaderPagedPagingInputs) {
-        guard inputs.pagedTurnStyle == .quickFade,
+    func handleDiscretePagePan(_ recognizer: UIPanGestureRecognizer, inputs: ReaderPagedPagingInputs) {
+        guard inputs.pagedTurnStyle.usesDiscretePageTurns,
               let collectionView = recognizer.view as? UICollectionView else {
             return
         }
@@ -571,7 +578,7 @@ final class ReaderPagedPagingDriver {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView, inputs: ReaderPagedPagingInputs) {
         guard let collectionView = scrollView as? UICollectionView else { return }
         cancelSlideTransition(in: collectionView, inputs: inputs)
-        guard inputs.pagedTurnStyle != .quickFade else {
+        guard !inputs.pagedTurnStyle.usesDiscretePageTurns else {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
             return
         }
@@ -580,7 +587,7 @@ final class ReaderPagedPagingDriver {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView, inputs: ReaderPagedPagingInputs) {
         guard let collectionView = scrollView as? UICollectionView else { return }
-        guard inputs.pagedTurnStyle != .quickFade else {
+        guard !inputs.pagedTurnStyle.usesDiscretePageTurns else {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
             return
         }
@@ -701,8 +708,10 @@ final class ReaderPagedPagingDriver {
         }
 
         let targetOffset = CGPoint(x: targetContentOffsetX, y: collectionView.contentOffset.y)
-        guard animated else {
+        guard animated, inputs.pagedTurnStyle != .none else {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
+            // Layout callbacks must not replay an immediate placement in progress.
+            pendingSelectionIndex = nil
             collectionView.setContentOffset(targetOffset, animated: false)
             collectionView.layoutIfNeeded()
             pendingSelectionIndex = nil
@@ -712,6 +721,8 @@ final class ReaderPagedPagingDriver {
         }
 
         switch inputs.pagedTurnStyle {
+        case .none:
+            break // Handled by the immediate-placement path above.
         case .slide, .pageCurl:
             pendingSelectionIndex = nil
             guard abs(collectionView.contentOffset.x - targetOffset.x) > 0.5 else {

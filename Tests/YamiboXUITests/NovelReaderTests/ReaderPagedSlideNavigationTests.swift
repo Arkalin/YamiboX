@@ -7,6 +7,84 @@ import UIKit
 @MainActor @Suite("Shared slide paging", .serialized)
 struct ReaderPagedSlideNavigationTests {
     @Test(arguments: [false, true])
+    func noAnimationTurnsImmediatelyWithoutMovingDuringDrag(reversed: Bool) {
+        let fixture = SlideFixture(reversed: reversed, style: .none)
+        defer { fixture.close() }
+        fixture.driver.updateGestureState(in: fixture.collection, inputs: fixture.inputs)
+        #expect(!fixture.collection.panGestureRecognizer.isEnabled)
+        let pan = TestPan()
+        fixture.collection.addGestureRecognizer(pan)
+        pan.offset = CGPoint(x: reversed ? 120 : -120, y: 0)
+        pan.speed = CGPoint(x: reversed ? 100 : -100, y: 0)
+        #expect(fixture.driver.discretePagePanShouldBegin(pan, inputs: fixture.inputs))
+        let start = fixture.collection.contentOffset
+        for state in [UIGestureRecognizer.State.began, .changed] {
+            pan.state = state
+            fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+            #expect(fixture.collection.contentOffset == start)
+            #expect(fixture.selectionChanges.isEmpty)
+        }
+        pan.state = .ended
+        fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+        #expect(fixture.inputs.selectionIndex == 1)
+        #expect(abs(fixture.collection.contentOffset.x - start.x) == 400)
+        #expect(fixture.driver.slideAnimation == nil)
+        #expect(fixture.fadeCount == 0)
+        #expect(fixture.turn(.next))
+        #expect(fixture.turn(.next))
+        #expect(fixture.turn(.previous))
+        #expect(fixture.selectionChanges == [1, 2, 3, 2])
+        #expect(fixture.fadeCount == 0)
+    }
+
+    @Test func noAnimationIgnoresShortAndCancelledSwipesAndPublishesBoundaries() {
+        let fixture = SlideFixture(style: .none)
+        defer { fixture.close() }
+        let pan = TestPan()
+        fixture.collection.addGestureRecognizer(pan)
+        pan.state = .ended
+        pan.offset = CGPoint(x: -2, y: 0)
+        fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+        pan.offset = CGPoint(x: -120, y: 0)
+        for state in [UIGestureRecognizer.State.cancelled, .failed] {
+            pan.state = state
+            fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+        }
+        #expect(fixture.inputs.selectionIndex == 0)
+        #expect(fixture.selectionChanges.isEmpty)
+        var boundaries: [Int] = []
+        fixture.inputs.canBoundaryPageTurn = { _ in true }
+        fixture.inputs.onBoundaryPageTurn = { boundaries.append($0) }
+        pan.state = .ended
+        pan.offset = CGPoint(x: 120, y: 0)
+        fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+        #expect(boundaries == [-1])
+        for _ in 0..<5 { #expect(fixture.turn(.next)) }
+        pan.offset = CGPoint(x: -120, y: 0)
+        fixture.driver.handleDiscretePagePan(pan, inputs: fixture.inputs)
+        #expect(boundaries == [-1, 1])
+        #expect(fixture.inputs.selectionIndex == 5)
+        #expect(fixture.fadeCount == 0)
+    }
+
+    @Test func noAnimationExternalPlacementCompletesOnceAndRestoresSlideGesture() {
+        let fixture = SlideFixture(style: .none)
+        defer { fixture.close() }
+        var target = fixture.inputs
+        target.selectionIndex = 4
+        var completions = 0
+        #expect(fixture.driver.requestSelectionScroll(in: fixture.collection, animated: true,
+            inputs: target, onTransitionCompletion: { completions += 1 }))
+        #expect(fixture.collection.contentOffset.x == 1600)
+        #expect(completions == 1)
+        #expect(fixture.fadeCount == 0)
+        #expect(fixture.driver.slideAnimation == nil)
+        fixture.inputs.pagedTurnStyle = .slide
+        fixture.driver.updateGestureState(in: fixture.collection, inputs: fixture.inputs)
+        #expect(fixture.collection.panGestureRecognizer.isEnabled)
+    }
+
+    @Test(arguments: [false, true])
     func rapidTapsSettleOnAWholePage(reversed: Bool) throws {
         let fixture = SlideFixture(reversed: reversed)
         defer { fixture.close() }
@@ -127,14 +205,30 @@ struct ReaderPagedSlideNavigationTests {
         #expect(fixture.selectionChanges.isEmpty)
     }
 
+    private final class TestPan: UIPanGestureRecognizer {
+        var offset: CGPoint = .zero
+        var speed: CGPoint = .zero
+        private var eventState: UIGestureRecognizer.State = .possible
+        override var state: UIGestureRecognizer.State {
+            get { eventState }
+            set { eventState = newValue }
+        }
+        override func translation(in view: UIView?) -> CGPoint { offset }
+        override func velocity(in view: UIView?) -> CGPoint { speed }
+    }
+
     private final class SlideFixture: NSObject, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
-        let driver = ReaderPagedPagingDriver()
+        lazy var driver = ReaderPagedPagingDriver(animateQuickFade: { [weak self] _, completion in
+            self?.fadeCount += 1
+            completion()
+        })
+        var fadeCount = 0
         let collection: UICollectionView
         let window: UIWindow
         var inputs: ReaderPagedPagingInputs
         var selectionChanges: [Int] = []
 
-        init(reversed: Bool = false) {
+        init(reversed: Bool = false, style: ReaderPagedTurnStyle = .slide) {
             let layout = UICollectionViewFlowLayout()
             layout.scrollDirection = .horizontal
             layout.minimumLineSpacing = 0
@@ -142,7 +236,7 @@ struct ReaderPagedSlideNavigationTests {
             collection = UICollectionView(frame: CGRect(x: 0, y: 0, width: 400, height: 800),
                 collectionViewLayout: layout)
             window = UIWindow(frame: collection.frame)
-            inputs = ReaderPagedPagingInputs(itemCount: 6, selectionIndex: 0, pagedTurnStyle: .slide,
+            inputs = ReaderPagedPagingInputs(itemCount: 6, selectionIndex: 0, pagedTurnStyle: style,
                 horizontalNavigationDirection: reversed ? .rightSwipeAdvances : .leftSwipeAdvances,
                 pagerIdentity: ReaderPagedPagerIdentity(visibleView: 1, surfaceCount: 6, spreadCount: 6,
                     usesTwoPageSpread: false, layout: .zero),

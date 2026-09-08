@@ -171,10 +171,7 @@ extension ReaderSettingsReadingModeOption {
     /// Maps Novel settings onto the shared option; Manga keeps the same
     /// shape of initializer next to its own settings type.
     init(_ settings: NovelReaderAppearanceSettings) {
-        self.init(
-            isPaged: settings.readingMode == .paged,
-            pagedTurnStyle: settings.pagedTurnStyle
-        )
+        self.init(isPaged: settings.readingMode == .paged)
     }
 }
 

@@ -102,12 +102,12 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         longPressRecognizer.cancelsTouchesInView = false
         longPressRecognizer.delegate = context.coordinator
         collectionView.addGestureRecognizer(longPressRecognizer)
-        let quickFadePanRecognizer = UIPanGestureRecognizer(
+        let discretePagePanRecognizer = UIPanGestureRecognizer(
             target: context.coordinator,
-            action: #selector(Coordinator.handleQuickFadePan(_:))
+            action: #selector(Coordinator.handleDiscretePagePan(_:))
         )
-        quickFadePanRecognizer.delegate = context.coordinator
-        collectionView.addGestureRecognizer(quickFadePanRecognizer)
+        discretePagePanRecognizer.delegate = context.coordinator
+        collectionView.addGestureRecognizer(discretePagePanRecognizer)
         let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
@@ -321,8 +321,8 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         }
 
         @objc
-        func handleQuickFadePan(_ recognizer: UIPanGestureRecognizer) {
-            pagingDriver.handleQuickFadePan(recognizer, inputs: pagingInputs)
+        func handleDiscretePagePan(_ recognizer: UIPanGestureRecognizer) {
+            pagingDriver.handleDiscretePagePan(recognizer, inputs: pagingInputs)
         }
 
         func gestureRecognizer(
@@ -334,7 +334,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let panRecognizer = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            return pagingDriver.quickFadePanShouldBegin(panRecognizer, inputs: pagingInputs)
+            return pagingDriver.discretePagePanShouldBegin(panRecognizer, inputs: pagingInputs)
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
