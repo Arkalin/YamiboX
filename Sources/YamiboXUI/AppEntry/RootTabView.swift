@@ -75,6 +75,22 @@ public struct RootTabView: View {
             }
         }
         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !appModel.hasActiveReaderPresentation))
+        .readerTransitionOverlay(
+            isPresented: appModel.isOpeningMangaReader,
+            title: L10n.string("reader.switching_to_manga"),
+            onCancel: appModel.cancelMangaReaderOpen
+        )
+        .failureAlert(
+            L10n.string("manga.open.failed"),
+            message: appModel.mangaOpenFailure?.summary,
+            details: appModel.mangaOpenFailure,
+            isPresented: Binding(
+                get: { appModel.mangaOpenFailure != nil },
+                set: { if !$0 { appModel.mangaOpenFailure = nil } }
+            )
+        ) {
+            Button(L10n.string("common.ok")) { appModel.mangaOpenFailure = nil }
+        }
         // Deferred rather than dropped while the placeholder or a restored
         // reader covers the tab content: the prompt state persists and the
         // alert presents once this surface is visible again.
@@ -213,7 +229,7 @@ public struct RootTabView: View {
     }
 }
 
-private struct ClipboardForumLinkPromptAlert: ViewModifier {
+struct ClipboardForumLinkPromptAlert: ViewModifier {
     let appModel: YamiboAppModel
     let isActive: Bool
 
@@ -288,32 +304,13 @@ private struct ReaderPresentationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .fullScreenCover(item: binding(for: \.activeNovelContext)) { context in
-                NovelReaderView(
-                    context: context,
-                    dependencies: appModel.appContext.novelReaderDependencies,
-                    appModel: appModel
-                )
-                    .ignoresSafeArea()
+            .fullScreenCover(item: Binding(
+                get: { appModel.presentedReaderSession },
+                set: { if $0 == nil { appModel.dismissPresentedReaderSession() } }
+            )) { session in
+                ReaderSessionScreen(session: session, appModel: appModel)
                     .appTheme(AppTheme.theme(for: appModel.appThemePreset))
                     .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
             }
-            .fullScreenCover(item: binding(for: \.activeMangaContext)) { context in
-                MangaReaderView(
-                    context: context,
-                    dependencies: appModel.appContext.mangaReaderDependencies,
-                    appModel: appModel
-                )
-                    .ignoresSafeArea()
-                    .appTheme(AppTheme.theme(for: appModel.appThemePreset))
-                    .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
-            }
-    }
-
-    private func binding<Value>(for keyPath: ReferenceWritableKeyPath<YamiboAppModel, Value>) -> Binding<Value> {
-        Binding(
-            get: { appModel[keyPath: keyPath] },
-            set: { appModel[keyPath: keyPath] = $0 }
-        )
     }
 }

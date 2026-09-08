@@ -164,7 +164,7 @@ struct LocalFavoritesRootView: View {
         case let .novelReader(context):
             appModel.presentNovelReader(context)
         case let .mangaReader(context):
-            appModel.presentMangaReader(context)
+            appModel.requestMangaReader(context)
         case let .nativeThread(url, title):
             // Plain-post favorites open in a full-screen overlay so the
             // favorites tab stays put underneath, mirroring the reader's
@@ -181,7 +181,7 @@ struct LocalFavoritesRootView: View {
         ) { action in
             switch action {
             case let .readNovel(context): appModel.presentNovelReader(context)
-            case let .readManga(context): appModel.presentMangaReader(context)
+            case let .readManga(context): appModel.requestMangaReader(context)
             case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
             case let .discussion(context): navigator.push(.threadReader(context))
             }

@@ -73,7 +73,7 @@ struct MangaReaderBottomChrome: View {
 
                     MangaReaderStaticActionControls(
                         colorScheme: colorScheme,
-                        originalPostTitle: L10n.string("common.original_post"),
+                        originalPostTitle: L10n.string("reader.open_original_post"),
                         commentsTitle: L10n.string("reader.comments"),
                         settingsTitle: L10n.string("settings.title"),
                         bookmarkTitle: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
@@ -417,7 +417,7 @@ private struct MangaReaderStaticActionControls: View {
         HStack(spacing: 0) {
             bottomActionButton(
                 title: originalPostTitle,
-                systemName: "safari",
+                systemName: "arrow.left.arrow.right",
                 handler: onOpenOriginalPost
             )
             Spacer(minLength: layout.actionButtonSpacing)

@@ -302,7 +302,7 @@ final class ForumDestinationNavigator {
                 isSmartModeEnabled: false,
                 forumID: payload.thread.fid
             )
-            appModel.presentMangaReader(context)
+            appModel.requestMangaReader(context)
         case let .thread(payload):
             let context = ThreadNovelLaunchContext(
                 thread: payload.thread,

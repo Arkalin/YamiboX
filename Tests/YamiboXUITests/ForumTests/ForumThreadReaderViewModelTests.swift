@@ -4,6 +4,54 @@ import Testing
 @testable import YamiboXUI
 
 @MainActor
+@Test func forumThreadModeSwitchRetainsPageAndAnchorDuringTeardown() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 3)
+    await model.load()
+    model.updateVisibleAnchor(postID: "anchor-3")
+    model.suspendForModeSwitch()
+    model.updateVisibleAnchor(postID: nil)
+    #expect(model.currentPage == 3)
+    #expect(model.restoredAnchorPostID == "anchor-3")
+    await model.load()
+    #expect(model.currentPage == 3)
+    #expect(model.restoredAnchorPostID == "anchor-3")
+    model.consumeRestoredAnchor()
+    model.updateVisibleAnchor(postID: "anchor-4")
+    model.suspendForModeSwitch()
+    #expect(model.restoredAnchorPostID == "anchor-4")
+}
+
+@MainActor
+@Test func forumThreadModeSwitchConsumesInitialPostTargetOnlyOnce() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = ForumThreadReaderViewModel(
+        context: ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "704"), title: "Thread", targetPostID: "target"),
+        repository: fixture.repository
+    )
+    await model.load()
+    #expect(model.targetPostID == "target")
+    model.suspendForModeSwitch()
+    #expect(model.targetPostID == nil)
+    #expect(model.restoredAnchorPostID == "target")
+}
+
+@MainActor
+@Test func forumThreadModeSwitchDiscardsLatePageResponse() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel()
+    await model.load()
+    fixture.repository.gatedPages = [2]
+    let load = Task { await model.goToPage(2) }
+    await fixture.repository.gate.waitUntilBlocked()
+    model.suspendForModeSwitch()
+    await fixture.repository.gate.release()
+    await load.value
+    #expect(model.currentPage == 1)
+    #expect(!model.isLoading)
+}
+
+@MainActor
 @Test func forumThreadReaderLoadsExistingLocalFavoriteState() async throws {
     let fixture = try ForumThreadReaderViewModelFixture()
     var document = FavoriteLibraryDocument()

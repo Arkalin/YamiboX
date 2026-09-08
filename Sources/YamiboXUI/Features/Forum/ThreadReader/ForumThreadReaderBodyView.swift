@@ -38,6 +38,8 @@ struct ForumThreadReaderBodyView: View {
     let commentPost: (String, String) async throws -> String
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
+    var onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil
+    var isSwitchingReaderMode = false
 
     var body: some View {
         contentWithSheets
@@ -149,6 +151,7 @@ struct ForumThreadReaderBodyView: View {
                     // positions and lands off-target. The 150ms settle delay is an
                     // empirical workaround, not a synchronization mechanism.
                     try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled else { return }
                     withAnimation(.snappy) {
                         proxy.scrollTo(targetPostID, anchor: .center)
                     }
@@ -157,6 +160,7 @@ struct ForumThreadReaderBodyView: View {
                 guard let restoredAnchorPostID else { return }
                 if page?.posts.contains(where: { $0.postID == restoredAnchorPostID }) == true {
                     try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled else { return }
                     withAnimation(.snappy) {
                         proxy.scrollTo(restoredAnchorPostID, anchor: .center)
                     }
@@ -179,13 +183,14 @@ struct ForumThreadReaderBodyView: View {
         .safeAreaInset(edge: .bottom) {
             if let page {
                 ForumThreadReaderActionBar(
-                    thread: page.thread,
                     isFavorited: isFavorited,
                     onReply: {
                         onURLTap(YamiboRoute.threadReply(tid: page.thread.tid, page: currentPage).url)
                     },
                     onFavorite: toggleFavorite,
-                    onFavoriteLongPress: presentFavoriteLocationPicker
+                    onFavoriteLongPress: presentFavoriteLocationPicker,
+                    onReaderModeSwitch: onReaderModeSwitch,
+                    isSwitchingReaderMode: isSwitchingReaderMode || isLoading
                 )
             }
         }

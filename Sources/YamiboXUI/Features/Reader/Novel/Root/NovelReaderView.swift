@@ -68,8 +68,17 @@ public struct NovelReaderView: View {
     @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
     private let appModel: YamiboAppModel
     private let dependencies: NovelReaderDependencies
+    private let onClose: () -> Void
+    private let onOpenOriginalPost: (URL, NovelLaunchContext) async -> Bool
 
-    public init(context: NovelLaunchContext, dependencies: NovelReaderDependencies, appModel: YamiboAppModel) {
+    public init(
+        context: NovelLaunchContext,
+        dependencies: NovelReaderDependencies,
+        appModel: YamiboAppModel,
+        onClose: (() -> Void)? = nil,
+        onOpenOriginalPost: ((URL, NovelLaunchContext) async -> Bool)? = nil,
+        onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil
+    ) {
         let initialSettings = appModel.bootstrapState?.settings.novelReader
         // `State(initialValue:)` evaluates its argument on every init (unlike
         // `StateObject(wrappedValue:)`'s autoclosure), so a view model is now
@@ -81,7 +90,11 @@ public struct NovelReaderView: View {
             dependencies: dependencies,
             initialSettings: initialSettings,
             onReaderResumeRouteChange: { route in
-                appModel.updateReaderResumeRoute(route)
+                if let onResumeRouteChange {
+                    await onResumeRouteChange(route)
+                } else {
+                    appModel.updateReaderResumeRoute(route)
+                }
             }
         ))
         _chromeState = State(initialValue: NovelReaderChromeState(
@@ -89,6 +102,10 @@ public struct NovelReaderView: View {
         ))
         self.appModel = appModel
         self.dependencies = dependencies
+        self.onClose = onClose ?? { appModel.dismissNovelReader() }
+        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
+            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .novel(context))
+        }
     }
 
     private var isPadDevice: Bool {
@@ -353,10 +370,14 @@ public struct NovelReaderView: View {
                 controlHandlerToken = nil
                 verticalRestore.cancelPendingRestoreWork()
                 searchHighlightController.clear()
-                syncVerticalViewportBeforeSave()
-                Task {
-                    await model.saveProgress()
+                if isDismissing {
                     model.close()
+                } else {
+                    syncVerticalViewportBeforeSave()
+                    Task {
+                        await model.saveProgress()
+                        model.close()
+                    }
                 }
             }
         )
@@ -821,13 +842,20 @@ public struct NovelReaderView: View {
         Task { await model.loadCurrent(forceRefresh: true) }
     }
 
-    /// 打开原帖 layers the thread over the reader instead of dismissing it —
-    /// closing the overlay drops straight back into the passage being read.
     private func openInForum() {
-        forumThreadOverlayItem = ForumThreadOverlayItem(
-            url: model.currentForumTargetURL,
-            title: model.title
-        )
+        guard !isDismissing else { return }
+        isDismissing = true
+        searchHighlightController.clear()
+        syncVerticalViewportBeforeSave()
+        let url = model.currentForumTargetURL
+        Task {
+            let context = await model.saveProgress()
+            if await onOpenOriginalPost(url, context) {
+                model.close()
+            } else {
+                isDismissing = false
+            }
+        }
     }
 
     private func openSearch() {
@@ -895,7 +923,7 @@ public struct NovelReaderView: View {
         syncVerticalViewportBeforeSave()
         Task {
             await model.saveProgress()
-            appModel.dismissNovelReader()
+            onClose()
         }
     }
 

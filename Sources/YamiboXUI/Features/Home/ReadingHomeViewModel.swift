@@ -65,7 +65,7 @@ final class ReadingHomeViewModel {
         guard !Task.isCancelled else { return }
         switch target {
         case let .novelReader(context): appModel.presentNovelReader(context)
-        case let .mangaReader(context): appModel.presentMangaReader(context)
+        case let .mangaReader(context): appModel.requestMangaReader(context)
         case let .nativeThread(url, title): appModel.openNativeForumThread(url: url, title: title)
         }
     }

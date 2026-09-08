@@ -209,7 +209,7 @@ struct BrowsingHistoryView: View {
         case let .novelReader(context):
             appModel.presentNovelReader(context)
         case let .mangaReader(context):
-            appModel.presentMangaReader(context)
+            appModel.requestMangaReader(context)
         case let .nativeThread(url, title):
             appModel.openNativeForumThread(url: url, title: title)
         }

@@ -92,11 +92,7 @@ struct ForumDestinationScreen: View {
         case let .mangaDetail(context):
             detailScreen(.manga(context))
         case let .threadReader(context):
-            ForumThreadReaderView(
-                model: ForumThreadReaderViewModel(context: context, dependencies: dependencies),
-                onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
-                onURLTap: { navigator.route($0, source: .external) }
-            )
+            ForumThreadDestinationView(context: context, navigator: navigator)
             .forumNavigationBarStyle()
         case let .threadLink(url, title, containingFid, authorID, isDiscussionView):
             ForumThreadLinkScreen(
@@ -127,7 +123,7 @@ struct ForumDestinationScreen: View {
         ) { action in
             switch action {
             case let .readNovel(context): navigator.appModel.presentNovelReader(context)
-            case let .readManga(context): navigator.appModel.presentMangaReader(context)
+            case let .readManga(context): navigator.appModel.requestMangaReader(context)
             case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
             case let .discussion(context): navigator.push(.threadReader(context))
             }
@@ -174,11 +170,7 @@ struct ForumThreadLinkScreen: View {
             .navigationTitle(title ?? L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
         case let .thread(context):
-            ForumThreadReaderView(
-                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies),
-                onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
-                onURLTap: { navigator.route($0, source: .external) }
-            )
+            ForumThreadDestinationView(context: context, navigator: navigator)
         case let .web(webURL):
             ForumBrowserView(
                 url: webURL,
@@ -226,6 +218,23 @@ struct ForumThreadLinkScreen: View {
         } catch {
             guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             resolution = .failed(LoadFailureDetails(error: error, requestContext: url.absoluteString))
+        }
+    }
+}
+
+private struct ForumThreadDestinationView: View {
+    let context: ThreadNovelLaunchContext
+    let navigator: ForumDestinationNavigator
+
+    var body: some View {
+        if navigator.mode == .readerOverlay {
+            ForumThreadReaderView(
+                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies),
+                onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
+                onURLTap: { navigator.route($0, source: .external) }
+            )
+        } else {
+            ReaderSessionDestinationView(context: context, navigator: navigator)
         }
     }
 }

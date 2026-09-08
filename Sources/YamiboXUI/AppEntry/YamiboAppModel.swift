@@ -40,6 +40,12 @@ public final class YamiboAppModel {
     public private(set) var selectedTab: AppTab
     public var activeNovelContext: NovelLaunchContext?
     public var activeMangaContext: MangaLaunchContext?
+    private(set) var presentedReaderSession: ReaderSession?
+    private(set) var isOpeningMangaReader = false
+    var mangaOpenFailure: LoadFailureDetails?
+    @ObservationIgnored let mangaReaderOpenValidator: MangaReaderOpenValidator
+    @ObservationIgnored private var mangaOpenTask: Task<Void, Never>?
+    @ObservationIgnored private var mangaOpenRequestID: UUID?
     public private(set) var suspendedNovelContext: NovelLaunchContext?
     public private(set) var suspendedMangaContext: MangaLaunchContext?
     public private(set) var forumNavigationRequest: ForumNavigationRequest?
@@ -53,13 +59,19 @@ public final class YamiboAppModel {
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
     @ObservationIgnored private var settingsObservationTask: Task<Void, Never>?
+    @ObservationIgnored private weak var currentReaderSession: ReaderSession?
 
     public init(
         appContext: YamiboAppContext,
         initialTab: AppTab = .forum,
-        webSessionCoordinator: ForumWebSessionCoordinator? = nil
+        webSessionCoordinator: ForumWebSessionCoordinator? = nil,
+        mangaReaderOpenValidator: MangaReaderOpenValidator? = nil
     ) {
         self.appContext = appContext
+        self.mangaReaderOpenValidator = mangaReaderOpenValidator ?? MangaReaderOpenValidator { request in
+            let loader = await appContext.mangaReaderDependencies.makeProjectionLoader()
+            return try await loader.loadReaderProjection(request)
+        }
         selectedTab = initialTab
         appContinuity = AppContinuityWorkflow(appContext: appContext)
         peripheralInput = ReaderPeripheralInputManager(settingsStore: appContext.settingsStore)
@@ -71,6 +83,7 @@ public final class YamiboAppModel {
 
     deinit {
         settingsObservationTask?.cancel()
+        mangaOpenTask?.cancel()
     }
 
     public func bootstrapIfNeeded() async {
@@ -102,7 +115,7 @@ public final class YamiboAppModel {
     }
 
     public var hasActiveReaderPresentation: Bool {
-        activeNovelContext != nil || activeMangaContext != nil
+        presentedReaderSession != nil || activeNovelContext != nil || activeMangaContext != nil
     }
 
     public func scheduleWebDAVUploadForLocalChange(touchesAppSettings: Bool = false) {
@@ -135,23 +148,116 @@ public final class YamiboAppModel {
     }
 
     public func presentNovelReader(_ context: NovelLaunchContext) {
+        cancelMangaReaderOpen()
         suspendedNovelContext = nil
-        activeNovelContext = context
-        guard !context.isPreview else { return }
-        appContinuity.readerRoutePresented(.novel(context))
+        presentReaderContent(.novel(context))
     }
 
     public func selectTab(_ tab: AppTab) {
+        if tab != selectedTab { cancelMangaReaderOpen() }
         selectedTab = tab
         restoreSuspendedNovelIfNeeded(for: tab)
         restoreSuspendedMangaIfNeeded(for: tab)
     }
 
-    public func presentMangaReader(_ context: MangaLaunchContext) {
+    /// Low-level presentation for validated launches and existing resume routes.
+    public func presentMangaReader(_ context: MangaLaunchContext, initialProjection: MangaReaderProjection? = nil) {
+        cancelMangaReaderOpen()
         suspendedMangaContext = nil
-        activeMangaContext = context
-        guard !context.isPreview else { return }
-        appContinuity.readerRoutePresented(.manga(context))
+        presentReaderContent(.manga(context), mangaProjection: initialProjection)
+    }
+
+    /// User-initiated opens validate on the source page before creating a reader.
+    @discardableResult
+    public func requestMangaReader(_ context: MangaLaunchContext) -> Task<Void, Never> {
+        if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
+            return Task { await session.openMangaReader(context) }
+        }
+        if let mangaOpenTask { return mangaOpenTask }
+        let requestID = UUID()
+        mangaOpenRequestID = requestID
+        isOpeningMangaReader = true
+        mangaOpenFailure = nil
+        let validator = mangaReaderOpenValidator
+        let task = Task { [weak self] in
+            do {
+                let projection = try await validator.validate(context)
+                guard let self, !Task.isCancelled, self.mangaOpenRequestID == requestID else { return }
+                self.presentMangaReader(context, initialProjection: projection)
+            } catch {
+                guard let self, !Task.isCancelled, self.mangaOpenRequestID == requestID else { return }
+                if !LoadDiagnosticError.isCancellation(error) {
+                    self.mangaOpenFailure = LoadFailureDetails(error: error)
+                }
+                self.cancelMangaReaderOpen()
+            }
+        }
+        mangaOpenTask = task
+        return task
+    }
+
+    func cancelMangaReaderOpen() {
+        mangaOpenRequestID = nil
+        mangaOpenTask?.cancel()
+        mangaOpenTask = nil
+        isOpeningMangaReader = false
+    }
+
+    private func presentReaderContent(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
+        if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
+            session.present(content, mangaProjection: mangaProjection)
+        } else {
+            let session = ReaderSession(content: content, appModel: self)
+            presentedReaderSession = session
+            session.present(content, mangaProjection: mangaProjection)
+        }
+    }
+
+    func activateReaderSession(_ session: ReaderSession, route: ReaderResumeRoute?) {
+        currentReaderSession = session
+        switch route {
+        case let .novel(context):
+            activeNovelContext = context
+            activeMangaContext = nil
+            guard !context.isPreview else { return }
+            appContinuity.readerRoutePresented(.novel(context))
+        case let .manga(context):
+            activeNovelContext = nil
+            activeMangaContext = context
+            guard !context.isPreview else { return }
+            appContinuity.readerRoutePresented(.manga(context))
+        case nil:
+            let hadReader = activeNovelContext != nil || activeMangaContext != nil
+            activeNovelContext = nil
+            activeMangaContext = nil
+            if hadReader { appContinuity.readerRouteDismissed() }
+        }
+    }
+
+    func updateReaderSessionResumeRoute(_ route: ReaderResumeRoute, session: ReaderSession) {
+        guard currentReaderSession === session else { return }
+        updateReaderResumeRoute(route)
+    }
+
+    func deactivateReaderSession(_ session: ReaderSession) {
+        guard currentReaderSession === session else { return }
+        currentReaderSession = nil
+        activeNovelContext = nil
+        activeMangaContext = nil
+        appContinuity.readerRouteDismissed()
+    }
+
+    func finishReaderSession(_ session: ReaderSession) {
+        deactivateReaderSession(session)
+        if presentedReaderSession === session { presentedReaderSession = nil }
+    }
+
+    func dismissPresentedReaderSession() {
+        presentedReaderSession?.close()
+    }
+
+    func switchReaderToOriginalPost(url: URL, resumeRoute: ReaderResumeRoute) async -> Bool {
+        await (currentReaderSession ?? presentedReaderSession)?.openOriginalPost(url: url, resumeRoute: resumeRoute) ?? false
     }
 
     public func dismissNovelReader(
@@ -165,6 +271,7 @@ public final class YamiboAppModel {
             self.suspendedNovelContext = nil
         }
         activeNovelContext = nil
+        (currentReaderSession ?? presentedReaderSession)?.close()
         appContinuity.readerRouteDismissed()
         if let url {
             selectedTab = .forum
@@ -183,6 +290,7 @@ public final class YamiboAppModel {
             self.suspendedMangaContext = nil
         }
         activeMangaContext = nil
+        (currentReaderSession ?? presentedReaderSession)?.close()
         appContinuity.readerRouteDismissed()
         if let url {
             selectedTab = .forum
@@ -191,6 +299,7 @@ public final class YamiboAppModel {
     }
 
     public func openForumURL(_ url: URL) {
+        cancelMangaReaderOpen()
         if activeNovelContext != nil {
             dismissNovelReader(openThreadInForum: url, forumNavigationSource: .external)
             return
@@ -201,6 +310,7 @@ public final class YamiboAppModel {
             return
         }
 
+        dismissPresentedReaderSession()
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url)
     }
@@ -211,11 +321,13 @@ public final class YamiboAppModel {
     }
 
     public func openForumSearch() {
+        cancelMangaReaderOpen()
         if activeNovelContext != nil {
             dismissNovelReader()
         } else if activeMangaContext != nil {
             dismissMangaReader()
         }
+        dismissPresentedReaderSession()
         selectedTab = .forum
         forumSearchRequest = ForumSearchRequest()
     }
@@ -246,7 +358,7 @@ public final class YamiboAppModel {
     }
 
     private var canRestoreReaderRoute: Bool {
-        activeNovelContext == nil && activeMangaContext == nil
+        !hasActiveReaderPresentation
     }
 
     private func applyRestoredRoute(_ route: ReaderResumeRoute?) {
@@ -257,25 +369,21 @@ public final class YamiboAppModel {
         guard let route, canRestoreReaderRoute else { return }
         switch route {
         case let .novel(context):
-            activeNovelContext = context
+            presentNovelReader(context)
         case let .manga(context):
-            activeMangaContext = context
+            presentMangaReader(context)
         }
     }
 
     private func restoreSuspendedNovelIfNeeded(for tab: AppTab) {
         guard tab == .favorites, let context = suspendedNovelContext else { return }
         suspendedNovelContext = nil
-        activeNovelContext = context
-        guard !context.isPreview else { return }
-        appContinuity.readerRoutePresented(.novel(context))
+        presentNovelReader(context)
     }
 
     private func restoreSuspendedMangaIfNeeded(for tab: AppTab) {
         guard tab == .favorites, let context = suspendedMangaContext else { return }
         suspendedMangaContext = nil
-        activeMangaContext = context
-        guard !context.isPreview else { return }
-        appContinuity.readerRoutePresented(.manga(context))
+        presentMangaReader(context)
     }
 }

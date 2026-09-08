@@ -847,6 +847,16 @@
 "reader.chapter_comments_load_next" = "加载更多...";
 "reader.chapter_comments_unsupported" = "该章节暂不支持评论";
 "reader.open_original_post" = "打开原帖";
+"reader.switch_mode" = "切换阅读模式";
+"reader.open_as_novel" = "用小说阅读器打开";
+"reader.open_as_manga" = "用漫画阅读器打开";
+"reader.switch_failed" = "切换阅读模式失败";
+"reader.switching" = "正在切换阅读模式…";
+"reader.switching_to_thread" = "正在切换到原帖…";
+"reader.switching_to_novel" = "正在切换到小说阅读器…";
+"reader.switching_to_manga" = "正在打开漫画阅读器…";
+"manga.open.failed" = "无法打开漫画阅读器";
+"manga.open.no_readable_images" = "此帖没有可阅读的漫画图片，请使用原帖或小说阅读器。";
 "reader.character_spacing" = "字符间距";
 "reader.character_spacing_sample" = "甲乙丙";
 "reader.current_web_page" = "当前网页";

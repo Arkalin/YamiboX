@@ -3,11 +3,12 @@ import YamiboXCore
 
 struct ForumThreadReaderActionBar: View {
     @Environment(\.forumTheme) private var theme
-    let thread: ThreadIdentity
     let isFavorited: Bool
     let onReply: () -> Void
     let onFavorite: () -> Void
     let onFavoriteLongPress: () -> Void
+    var onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil
+    var isSwitchingReaderMode = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -36,25 +37,35 @@ struct ForumThreadReaderActionBar: View {
                 isFavorited ? L10n.string("forum.thread.favorited") : L10n.string("forum.thread.favorite")
             )
 
-            ShareLink(item: Self.threadURL(for: thread)) {
-                Label(L10n.string("forum.thread.share"), systemImage: "square.and.arrow.up")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(theme.accentText)
-                    .frame(width: 42, height: 34)
-                    .expandedHitTarget()
+            if let onReaderModeSwitch {
+                Menu {
+                    Button {
+                        onReaderModeSwitch(.novel)
+                    } label: {
+                        Label(L10n.string("reader.open_as_novel"), systemImage: "book")
+                    }
+                    Button {
+                        onReaderModeSwitch(.manga)
+                    } label: {
+                        Label(L10n.string("reader.open_as_manga"), systemImage: "photo.on.rectangle")
+                    }
+                } label: {
+                    Label(L10n.string("reader.switch_mode"), systemImage: "arrow.left.arrow.right")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(theme.accentText)
+                        .frame(width: 42, height: 34)
+                        .expandedHitTarget()
+                }
+                .buttonStyle(.bordered)
+                .tint(theme.accentText)
+                .disabled(isSwitchingReaderMode)
+                .accessibilityLabel(L10n.string("reader.switch_mode"))
             }
-            .buttonStyle(.bordered)
-            .tint(theme.accentText)
-            .accessibilityLabel(L10n.string("forum.thread.share"))
         }
         .font(.callout.weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 8)
         .background(.regularMaterial)
-    }
-
-    private static func threadURL(for thread: ThreadIdentity) -> URL {
-        YamiboRoute.threadByID(tid: thread.tid, page: 1, authorID: nil, reverse: false).url
     }
 }

@@ -6,15 +6,21 @@ struct ForumThreadReaderView: View {
 
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
+    let onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)?
+    let isSwitchingReaderMode: Bool
 
     init(
         model: ForumThreadReaderViewModel,
         onUserTap: @escaping (String, String?) -> Void,
-        onURLTap: @escaping (URL) -> Void
+        onURLTap: @escaping (URL) -> Void,
+        onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil,
+        isSwitchingReaderMode: Bool = false
     ) {
         _model = State(wrappedValue: model)
         self.onUserTap = onUserTap
         self.onURLTap = onURLTap
+        self.onReaderModeSwitch = onReaderModeSwitch
+        self.isSwitchingReaderMode = isSwitchingReaderMode
     }
 
     var body: some View {
@@ -49,7 +55,9 @@ struct ForumThreadReaderView: View {
             ratePost: model.ratePost,
             commentPost: model.commentPost,
             onUserTap: onUserTap,
-            onURLTap: onURLTap
+            onURLTap: onURLTap,
+            onReaderModeSwitch: onReaderModeSwitch,
+            isSwitchingReaderMode: isSwitchingReaderMode
         )
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
@@ -78,6 +86,13 @@ struct ForumThreadReaderView: View {
                         Label(L10n.string("forum.thread.reverse_order"), systemImage: "arrow.up.arrow.down")
                     }
                     .disabled(model.isLoading)
+
+                    Divider()
+                    ShareLink(item: YamiboRoute.threadByID(
+                        tid: model.context.thread.tid, page: 1, authorID: nil, reverse: false
+                    ).url) {
+                        Label(L10n.string("forum.thread.share"), systemImage: "square.and.arrow.up")
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

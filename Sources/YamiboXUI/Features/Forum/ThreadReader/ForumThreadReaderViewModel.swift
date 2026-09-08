@@ -67,6 +67,10 @@ final class ForumThreadReaderViewModel {
     var isAuthorOnly = false
     /// 倒序浏览 — pages are requested newest-first (Discuz `ordertype=1`).
     var isReverseOrder = false
+    var persistsReadingActivity = true
+    @ObservationIgnored private var isSuspendedForModeSwitch = false
+    @ObservationIgnored private var hasConsumedLaunchTarget = false
+    private(set) var becameReaderCompanion = false
 
     let context: ThreadNovelLaunchContext
 
@@ -199,10 +203,27 @@ final class ForumThreadReaderViewModel {
     }
 
     var targetPostID: String? {
-        context.targetPostID
+        hasConsumedLaunchTarget ? nil : context.targetPostID
+    }
+
+    var readerSwitchThread: ThreadIdentity {
+        ThreadIdentity(tid: context.thread.tid, fid: resolvedForumID)
+    }
+
+    var readerSwitchAuthorID: String? { threadAuthorID ?? context.authorID }
+
+    func suspendForModeSwitch() {
+        flushReadingProgress()
+        becameReaderCompanion = true
+        isSuspendedForModeSwitch = true
+        restoredAnchorPostID = latestVisibleAnchorPostID ?? targetPostID ?? restoredAnchorPostID
+        hasConsumedLaunchTarget = true
+        generation += 1
+        isLoading = false
     }
 
     func load() async {
+        isSuspendedForModeSwitch = false
         guard page == nil else { return }
         await refreshFavoriteState()
         var initialPage = context.initialPage
@@ -801,6 +822,7 @@ final class ForumThreadReaderViewModel {
     /// still pending its scroll, so the initial top-of-page render can't
     /// clobber the saved position before the restore happens.
     func updateVisibleAnchor(postID: String?) {
+        guard !isSuspendedForModeSwitch else { return }
         guard restoredAnchorPostID == nil else { return }
         guard latestVisibleAnchorPostID != postID else { return }
         latestVisibleAnchorPostID = postID
@@ -821,7 +843,7 @@ final class ForumThreadReaderViewModel {
     /// in a fresh unstructured Task so view teardown can't cancel the GRDB
     /// write mid-flight (the cancelled-Task write trap).
     func flushReadingProgress() {
-        guard let progressSync, page != nil, !isFilteredView else { return }
+        guard persistsReadingActivity, let progressSync, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             do {
@@ -844,7 +866,7 @@ final class ForumThreadReaderViewModel {
     }
 
     private func queueReadingProgressSave() {
-        guard let progressSync, page != nil, !isFilteredView else { return }
+        guard persistsReadingActivity, let progressSync, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             await progressSync.queue(.thread(position))
@@ -867,7 +889,8 @@ final class ForumThreadReaderViewModel {
     /// don't either: their `pageIndex` doesn't address the same posts the
     /// normal view would reopen.
     private func recordBrowsingHistoryVisit() {
-        guard !context.isDiscussionView, page != nil, !isFilteredView else { return }
+        guard persistsReadingActivity, !context.isDiscussionView, !becameReaderCompanion,
+              page != nil, !isFilteredView else { return }
         let entry = BrowsingHistoryEntry(
             target: .normalThread(threadID: context.thread.tid),
             title: favoriteTitle,

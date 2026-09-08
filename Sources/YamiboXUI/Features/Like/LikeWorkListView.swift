@@ -300,7 +300,7 @@ struct LikeWorkListView: View {
             // the pre-R13 smart-on assumption. See LikeMangaOpenTargetPolicy.
             Task {
                 let boardReader = await settingsStore.load().boardReader
-                appModel.presentMangaReader(
+                appModel.requestMangaReader(
                     LikeMangaOpenTargetPolicy.launchContext(
                         anchor: mangaAnchor,
                         workID: work.id,

@@ -5,6 +5,20 @@ import Testing
 @MainActor
 @Suite("MangaReaderTests: Workflow")
 struct MangaReaderTestsWorkflow {
+    @Test func validatedInitialProjectionDoesNotReloadTheChapter() async throws {
+        let document = try makeWorkflowDocument(tid: "700", pageCount: 2)
+        let loader = RecordingMangaReaderProjectionLoader(output: .document(document))
+        let workflow = MangaReaderWorkflow(
+            context: try makeWorkflowContext(tid: "700", initialPage: 1, isSmartModeEnabled: false),
+            projectionLoader: loader,
+            directoryRepository: RecordingMangaDirectoryRepository(output: .seed(makeWorkflowSeed(currentTID: "700", tagIDs: []))),
+            directoryStore: RecordingMangaDirectoryStore()
+        )
+        let presentation = await workflow.prepare(initialProjection: document)
+        guard case .loaded = presentation.state else { Issue.record("Expected prepared reader"); return }
+        #expect(await loader.loadedThreadIDs.isEmpty)
+    }
+
     @Test func workflowStartsLoadingAndPublishesLoadedPresentation() async throws {
         let document = try makeWorkflowDocument(tid: "700", pageCount: 2)
         let seed = makeWorkflowSeed(currentTID: "700", tagIDs: ["12"])

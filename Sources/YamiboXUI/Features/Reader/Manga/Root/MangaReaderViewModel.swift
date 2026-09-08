@@ -306,11 +306,13 @@ public final class MangaReaderViewModel {
     public convenience init(
         context: MangaLaunchContext,
         dependencies: MangaReaderDependencies,
+        initialProjection: MangaReaderProjection? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
         self.init(
             context: context,
             viewModelDependencies: MangaReaderViewModelDependencies(dependencies: dependencies),
+            initialProjection: initialProjection,
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
     }
@@ -318,9 +320,11 @@ public final class MangaReaderViewModel {
     init(
         context: MangaLaunchContext,
         viewModelDependencies: MangaReaderViewModelDependencies,
+        initialProjection: MangaReaderProjection? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
         self.context = context
+        self.initialProjection = initialProjection
         self.dependencies = viewModelDependencies
         self.onReaderResumeRouteChange = onReaderResumeRouteChange
         self.imageLoader = nil
@@ -331,8 +335,16 @@ public final class MangaReaderViewModel {
 
     // MARK: - Loading
 
+    @ObservationIgnored private var isClosed = false
+    @ObservationIgnored private var initialProjection: MangaReaderProjection?
+
+    func close() {
+        isClosed = true
+        cancelReaderTasks()
+    }
+
     public func prepare() async {
-        guard !hasPrepared else { return }
+        guard !hasPrepared, !isClosed else { return }
         hasPrepared = true
         invalidateReaderContent()
         lastQueuedProgressSnapshot = nil
@@ -365,10 +377,15 @@ public final class MangaReaderViewModel {
             directoryWorkflowConfiguration: directoryWorkflowConfiguration,
             directorySearchCooldownState: dependencies.makeDirectorySearchCooldownState()
         )
+        guard !isClosed, !Task.isCancelled else { return }
         self.workflow = workflow
         self.imageLoader = imageLoader
         presentation = workflow.presentation
-        presentation = await workflow.prepare()
+        let initialProjection = self.initialProjection
+        self.initialProjection = nil
+        let preparedPresentation = await workflow.prepare(initialProjection: initialProjection)
+        guard !isClosed, !Task.isCancelled else { return }
+        presentation = preparedPresentation
         currentStableReadingPosition = stableReadingPosition(from: presentation)
         updateOfflineCacheOwnerName(from: presentation)
         directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
@@ -1013,6 +1030,7 @@ public final class MangaReaderViewModel {
         _ nextPresentation: MangaReaderPresentation,
         previousProgressSnapshot: MangaReaderProgressSnapshot?
     ) {
+        guard !isClosed else { return }
         if nextPresentation != presentation {
             presentation = nextPresentation
         }

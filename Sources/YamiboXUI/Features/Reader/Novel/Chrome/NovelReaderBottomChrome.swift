@@ -109,8 +109,8 @@ struct NovelReaderBottomChrome: View {
         return HStack(spacing: 0) {
             bottomActionButton(
                 action: ReaderBottomAction(kind: .browser),
-                title: L10n.string("common.original_post"),
-                systemName: "safari",
+                title: L10n.string("reader.open_original_post"),
+                systemName: "arrow.left.arrow.right",
                 handler: onOpenForum
             )
             Spacer(minLength: chromeLayout.actionButtonSpacing)

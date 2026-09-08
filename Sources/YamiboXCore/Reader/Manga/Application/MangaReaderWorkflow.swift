@@ -74,7 +74,7 @@ public final class MangaReaderWorkflow {
     }
 
     @discardableResult
-    public nonisolated(nonsending) func prepare() async -> MangaReaderPresentation {
+    public nonisolated(nonsending) func prepare(initialProjection: MangaReaderProjection? = nil) async -> MangaReaderPresentation {
         window = nil
         shouldAutoUpdateDirectoryAfterPrepare = false
         directoryPanelCommandState = MangaDirectoryPanelCommandState()
@@ -84,13 +84,19 @@ public final class MangaReaderWorkflow {
         )
 
         do {
-            let document = try await projectionLoader.loadReaderProjection(
-                MangaReaderProjectionRequest(
+            let document: MangaReaderProjection
+            if let initialProjection,
+               initialProjection.tid == context.chapterTID,
+               initialProjection.sourceIdentity.view == context.chapterView,
+               !initialProjection.imageURLs.isEmpty {
+                document = initialProjection
+            } else {
+                document = try await projectionLoader.loadReaderProjection(MangaReaderProjectionRequest(
                     threadID: context.chapterTID,
                     view: context.chapterView,
                     offlineOwnerName: context.directoryName
-                )
-            )
+                ))
+            }
             let resolution: MangaDirectoryResolutionResult
             if context.isSmartModeEnabled {
                 do {

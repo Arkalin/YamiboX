@@ -51,10 +51,25 @@ public struct MangaReaderView: View {
     /// backstop for the frames before the reader attaches to its window.
     @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
 
-    public init(context: MangaLaunchContext, dependencies: MangaReaderDependencies, appModel: YamiboAppModel) {
+    private let onClose: () -> Void
+    private let onOpenOriginalPost: (URL, MangaLaunchContext) async -> Bool
+
+    public init(
+        context: MangaLaunchContext,
+        dependencies: MangaReaderDependencies,
+        appModel: YamiboAppModel,
+        initialProjection: MangaReaderProjection? = nil,
+        onClose: (() -> Void)? = nil,
+        onOpenOriginalPost: ((URL, MangaLaunchContext) async -> Bool)? = nil,
+        onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil
+    ) {
         self.context = context
         self.dependencies = dependencies
         self.appModel = appModel
+        self.onClose = onClose ?? { appModel.dismissMangaReader() }
+        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
+            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .manga(context))
+        }
         // `State(initialValue:)` evaluates its argument on every init (unlike
         // `StateObject(wrappedValue:)`'s autoclosure), so a view model is now
         // built — and, past the first init, discarded — on each parent
@@ -64,8 +79,13 @@ public struct MangaReaderView: View {
             initialValue: MangaReaderViewModel(
                 context: context,
                 dependencies: dependencies,
+                initialProjection: initialProjection,
                 onReaderResumeRouteChange: { route in
-                    appModel.updateReaderResumeRoute(route)
+                    if let onResumeRouteChange {
+                        await onResumeRouteChange(route)
+                    } else {
+                        appModel.updateReaderResumeRoute(route)
+                    }
                 }
             )
         )
@@ -236,8 +256,10 @@ public struct MangaReaderView: View {
             .onDisappear {
                 appModel.peripheralInput.removeHandler(controlHandlerToken)
                 controlHandlerToken = nil
-                Task {
-                    await model.saveProgress()
+                if isDismissing {
+                    model.close()
+                } else {
+                    Task { await model.saveProgress() }
                 }
             }
         }
@@ -647,19 +669,23 @@ public struct MangaReaderView: View {
         isDismissing = true
         Task {
             await model.saveProgress()
-            appModel.dismissMangaReader()
+            model.close()
+            onClose()
         }
     }
 
-    /// 打开原帖 layers the thread over the reader instead of dismissing it —
-    /// closing the overlay drops straight back into the page being read. The
-    /// target follows the chapter currently on screen, not the launch chapter.
     private func openOriginalPost() {
         guard !isDismissing else { return }
-        forumThreadOverlayItem = ForumThreadOverlayItem(
-            url: model.currentForumTargetURL,
-            title: context.displayTitle
-        )
+        isDismissing = true
+        let url = model.currentForumTargetURL
+        Task {
+            let context = await model.saveProgress()
+            if await onOpenOriginalPost(url, context) {
+                model.close()
+            } else {
+                isDismissing = false
+            }
+        }
     }
 
     @MainActor
@@ -780,7 +806,7 @@ public struct MangaReaderView: View {
         if await model.jumpToLikedMangaPage(tid: anchor.chapterTID, localIndex: anchor.pageLocalIndex) {
             return
         }
-        appModel.presentMangaReader(
+        appModel.requestMangaReader(
             MangaLaunchContext(
                 originalThreadID: context.originalThreadID,
                 chapterTID: anchor.chapterTID,
@@ -800,7 +826,7 @@ public struct MangaReaderView: View {
         if await model.jumpToLikedMangaPage(tid: mangaAnchor.chapterTID, localIndex: mangaAnchor.pageLocalIndex) {
             return
         }
-        appModel.presentMangaReader(
+        appModel.requestMangaReader(
             MangaLaunchContext(
                 originalThreadID: context.originalThreadID,
                 chapterTID: mangaAnchor.chapterTID,
