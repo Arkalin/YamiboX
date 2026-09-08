@@ -139,8 +139,10 @@ public struct WebDAVSyncSettingsView: View {
                         Text(L10n.string("webdav.password"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        SecureField("", text: $viewModel.password)
+                        SecureField(L10n.string("webdav.password"), text: $viewModel.password)
                             .textContentType(.password)
+                            .accessibilityLabel(L10n.string("webdav.password"))
+                            .frame(minHeight: 32)
                             .disabled(viewModel.isBusy)
                     }
                     .padding(.vertical, 4)
@@ -151,6 +153,7 @@ public struct WebDAVSyncSettingsView: View {
                         Label(L10n.string("webdav.auto_sync"), systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(viewModel.isBusy)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
 
                     Picker(L10n.string("webdav.operation"), selection: $viewModel.direction) {
                         Text(title(for: .upload)).tag(WebDAVSyncDirection.upload)
@@ -159,6 +162,7 @@ public struct WebDAVSyncSettingsView: View {
                     .pickerStyle(.segmented)
                     .disabled(viewModel.isBusy)
                     .padding(.vertical, 4)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 }
 
                 Section {
@@ -181,18 +185,19 @@ public struct WebDAVSyncSettingsView: View {
                             }
                         }
                     } label: {
-                        HStack {
-                            Spacer()
+                        ZStack {
+                            Text(L10n.string("webdav.continue"))
+                                .opacity(viewModel.activeAction == .syncing ? 0 : 1)
                             if viewModel.activeAction == .syncing {
                                 ProgressView()
-                            } else {
-                                Text(L10n.string("webdav.continue"))
                             }
-                            Spacer()
                         }
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .contentShape(Rectangle())
                     }
                     .disabled(!viewModel.canContinue)
-
+                    .accessibilityLabel(L10n.string("webdav.continue"))
+                } footer: {
                     if let lastSyncedAt = viewModel.lastSyncedAt {
                         Text(L10n.string("webdav.last_synced", lastSyncedAt.formatted(date: .abbreviated, time: .standard)))
                             .font(.footnote)
@@ -254,7 +259,9 @@ public struct WebDAVSyncSettingsView: View {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("", text: text)
+            TextField(title, text: text)
+                .accessibilityLabel(title)
+                .frame(minHeight: 32)
                 .autocorrectionDisabled()
                 .disabled(viewModel.isBusy)
         }
