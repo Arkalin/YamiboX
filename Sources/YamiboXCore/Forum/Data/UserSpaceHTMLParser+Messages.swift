@@ -303,15 +303,7 @@ extension UserSpaceHTMLParser {
     // MARK: Unread counts
 
     private static func unreadCount(in document: Document) -> Int? {
-        if let badge = document.firstText(".dhnv a.mon strong, .dhnv strong"),
-           let value = HTMLTextExtractor.firstMatch(pattern: #"(\d+)"#, in: badge)?.first.flatMap(Int.init) {
-            return value
-        }
-        let text = document.body()?.normalizedText() ?? ""
-        return HTMLTextExtractor.firstMatch(pattern: #"(?:未读|未讀)\s*[:：]?\s*(\d+)"#, in: text)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
+        try? MessageUnreadHTMLParser.count(for: "pm", in: document)
     }
 
     private static func firstUnreadCount(in element: Element?) -> Int? {

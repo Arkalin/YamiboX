@@ -63,6 +63,7 @@ struct MineCheckInSection: View {
 
 struct MineLibraryEntriesSection: View {
     let offlineCacheQueueCount: Int
+    var unreadMessageCount: Int = 0
     let showMessages: () -> Void
     let showOfflineCacheQueue: () -> Void
     let showMyLikes: () -> Void
@@ -73,8 +74,13 @@ struct MineLibraryEntriesSection: View {
             MineEntryButtonRow(
                 title: L10n.string("message_center.private_messages"),
                 systemImage: "envelope.fill",
+                badgeText: MessageUnreadBadge.text(for: unreadMessageCount),
+                isUnreadBadge: true,
                 action: showMessages
             )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L10n.string("message_center.private_messages"))
+            .accessibilityValue(MessageUnreadBadge.accessibilityValue(for: unreadMessageCount))
             MineEntryButtonRow(
                 title: L10n.string("forum.history"),
                 systemImage: "clock.arrow.circlepath",
@@ -99,6 +105,7 @@ private struct MineEntryButtonRow: View {
     let title: String
     let systemImage: String
     var badgeText: String? = nil
+    var isUnreadBadge = false
     var showsProgress = false
     var showsDisclosureIndicator = true
     let action: () -> Void
@@ -109,6 +116,7 @@ private struct MineEntryButtonRow: View {
                 title: title,
                 systemImage: systemImage,
                 badgeText: badgeText,
+                isUnreadBadge: isUnreadBadge,
                 showsProgress: showsProgress,
                 showsDisclosureIndicator: showsDisclosureIndicator
             )
@@ -121,6 +129,7 @@ private struct MineEntryRowContent: View {
     let title: String
     let systemImage: String
     var badgeText: String? = nil
+    var isUnreadBadge = false
     var showsProgress = false
     var showsDisclosureIndicator = true
     @Environment(\.appTheme) private var appTheme
@@ -128,23 +137,25 @@ private struct MineEntryRowContent: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(appTheme.controlAccent)
                 .frame(width: 28, height: 28)
 
             Text(title)
                 .foregroundStyle(appTheme.controlAccent)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 8)
 
             if let badgeText {
                 Text(badgeText)
                     .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isUnreadBadge ? Color.white : Color.secondary)
                     .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.secondary.opacity(0.12), in: Capsule())
+                    .background(isUnreadBadge ? Color.red : Color.secondary.opacity(0.12), in: Capsule())
             }
 
             if showsProgress {

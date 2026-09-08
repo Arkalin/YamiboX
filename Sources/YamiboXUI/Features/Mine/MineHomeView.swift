@@ -14,6 +14,7 @@ public struct MineHomeView: View {
     private let sessionStore: SessionStore
     private let appModel: YamiboAppModel
     private let likeDependencies: LikeDependencies
+    private let messageUnreadWorkflow: MessageUnreadWorkflow?
 
     public init(
         dependencies: AccountDependencies,
@@ -31,6 +32,7 @@ public struct MineHomeView: View {
         self.sessionStore = dependencies.sessionStore
         self.appModel = appModel
         self.likeDependencies = likeDependencies
+        self.messageUnreadWorkflow = dependencies.messageUnreadWorkflow
     }
 
     public var body: some View {
@@ -70,6 +72,7 @@ public struct MineHomeView: View {
                 )
                 MineLibraryEntriesSection(
                     offlineCacheQueueCount: viewModel.offlineQueue.entryCount,
+                    unreadMessageCount: messageUnreadWorkflow?.totalCount ?? 0,
                     showMessages: {
                         if viewModel.isLoggedIn {
                             navigator.openMessageCenter(tab: .privateMessages)
@@ -98,6 +101,7 @@ public struct MineHomeView: View {
             .yamiboInlineNavigationTitleDisplayMode()
             .refreshable {
                 await viewModel.refreshProfile()
+                await messageUnreadWorkflow?.refresh(force: true)
             }
             .task {
                 await viewModel.load()

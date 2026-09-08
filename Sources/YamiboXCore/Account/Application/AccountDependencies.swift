@@ -6,6 +6,7 @@ import Foundation
 public struct AccountDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
+    public let messageUnreadWorkflow: MessageUnreadWorkflow?
     public let checkInStore: YamiboCheckInStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let offlineCacheStore: any OfflineCacheStoring
@@ -16,6 +17,7 @@ public struct AccountDependencies: Sendable {
     public init(
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
+        messageUnreadWorkflow: MessageUnreadWorkflow? = nil,
         checkInStore: YamiboCheckInStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
         offlineCacheStore: any OfflineCacheStoring,
@@ -25,6 +27,7 @@ public struct AccountDependencies: Sendable {
     ) {
         self.sessionStore = sessionStore
         self.profileStore = profileStore
+        self.messageUnreadWorkflow = messageUnreadWorkflow
         self.checkInStore = checkInStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.offlineCacheStore = offlineCacheStore

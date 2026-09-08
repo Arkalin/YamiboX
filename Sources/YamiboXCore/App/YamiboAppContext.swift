@@ -24,6 +24,7 @@ public final class YamiboAppContext: Sendable {
     public let readingProgressStore: ReadingProgressStore
     let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
+    public let messageUnreadWorkflow: MessageUnreadWorkflow
     /// Public for change-ID observation in the app-entry layer.
     public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
@@ -95,6 +96,9 @@ public final class YamiboAppContext: Sendable {
         self.clearsWebDataOnReset = clearsWebDataOnReset
         self.websiteDataClearer = websiteDataClearer
         self.sessionStore = sessionStore
+        self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { state in
+            UserSpaceRepository(client: YamiboClient(session: session, credentials: state.credentials))
+        }
         self.profileStore = profileStore
         self.checkInStore = checkInStore
         self.settingsStore = settingsStore
@@ -195,6 +199,7 @@ public final class YamiboAppContext: Sendable {
         ForumDependencies(
             sessionStore: sessionStore,
             profileStore: profileStore,
+            messageUnreadWorkflow: messageUnreadWorkflow,
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
@@ -275,6 +280,7 @@ public final class YamiboAppContext: Sendable {
         AccountDependencies(
             sessionStore: sessionStore,
             profileStore: profileStore,
+            messageUnreadWorkflow: messageUnreadWorkflow,
             checkInStore: checkInStore,
             mangaDirectoryStore: mangaDirectoryStore,
             offlineCacheStore: offlineCacheStore,

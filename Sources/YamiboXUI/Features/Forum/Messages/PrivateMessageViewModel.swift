@@ -29,10 +29,12 @@ final class PrivateMessageViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any PrivateMessagePageLoading
     @ObservationIgnored private let currentProfileProvider: @Sendable () async -> YamiboProfile?
+    @ObservationIgnored private let messageUnreadWorkflow: MessageUnreadWorkflow?
 
     init(uid: String, titleHint: String?, dependencies: ForumDependencies) {
         self.uid = uid.trimmingCharacters(in: .whitespacesAndNewlines)
         self.titleHint = titleHint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        messageUnreadWorkflow = dependencies.messageUnreadWorkflow
         repositoryProvider = {
             await dependencies.makeUserSpaceRepository()
         }
@@ -45,11 +47,13 @@ final class PrivateMessageViewModel {
         uid: String,
         titleHint: String?,
         currentProfile: YamiboProfile? = nil,
-        repository: any PrivateMessagePageLoading
+        repository: any PrivateMessagePageLoading,
+        messageUnreadWorkflow: MessageUnreadWorkflow? = nil
     ) {
         self.uid = uid.trimmingCharacters(in: .whitespacesAndNewlines)
         self.titleHint = titleHint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.currentProfile = currentProfile
+        self.messageUnreadWorkflow = messageUnreadWorkflow
         repositoryProvider = {
             repository
         }
@@ -134,6 +138,7 @@ final class PrivateMessageViewModel {
                 page: requestedPage,
                 titleHint: titleHint
             )
+            messageUnreadWorkflow?.refreshAfterReading()
             page = loadedPage
             currentPage = loadedPage.pageNavigation?.currentPage ?? requestedPage ?? 1
         } catch {

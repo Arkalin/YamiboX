@@ -28,16 +28,23 @@ final class MessageCenterViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any MessageCenterPageLoading
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private let messageUnreadWorkflow: MessageUnreadWorkflow?
 
     init(initialTab: MessageCenterTab = .privateMessages, dependencies: ForumDependencies) {
         selectedTab = initialTab
+        messageUnreadWorkflow = dependencies.messageUnreadWorkflow
         repositoryProvider = {
             await dependencies.makeUserSpaceRepository()
         }
     }
 
-    init(initialTab: MessageCenterTab = .privateMessages, repository: any MessageCenterPageLoading) {
+    init(
+        initialTab: MessageCenterTab = .privateMessages,
+        repository: any MessageCenterPageLoading,
+        messageUnreadWorkflow: MessageUnreadWorkflow? = nil
+    ) {
         selectedTab = initialTab
+        self.messageUnreadWorkflow = messageUnreadWorkflow
         repositoryProvider = {
             repository
         }
@@ -111,6 +118,7 @@ final class MessageCenterViewModel {
             case .notices:
                 loadedContent = .notices(try await repository.fetchNotices(page: page))
             }
+            messageUnreadWorkflow?.refreshAfterReading()
             guard requestGeneration == generation else { return }
             content = loadedContent
             currentPage = pageNavigation?.currentPage ?? page

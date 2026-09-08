@@ -589,6 +589,8 @@
 "message_center.notices" = "我的提醒";
 "message_center.private_messages" = "我的消息";
 "message_center.title" = "消息中心";
+"message_center.unread_count" = "未读消息数量";
+"message_center.unread_accessibility" = "%ld 条未读消息";
 "user_space.add_friend" = "加为好友";
 "user_space.add_friend_form_unavailable" = "好友申请表单不可用";
 "user_space.add_friend_group" = "分组";

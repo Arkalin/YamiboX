@@ -6,6 +6,7 @@ import Foundation
 public struct ForumDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
+    public let messageUnreadWorkflow: MessageUnreadWorkflow?
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore
     /// Optional so test/preview compositions without a history database keep
@@ -27,6 +28,7 @@ public struct ForumDependencies: Sendable {
     public init(
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
+        messageUnreadWorkflow: MessageUnreadWorkflow? = nil,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore? = nil,
@@ -45,6 +47,7 @@ public struct ForumDependencies: Sendable {
     ) {
         self.sessionStore = sessionStore
         self.profileStore = profileStore
+        self.messageUnreadWorkflow = messageUnreadWorkflow
         self.localFavoriteLibraryStore = localFavoriteLibraryStore
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore

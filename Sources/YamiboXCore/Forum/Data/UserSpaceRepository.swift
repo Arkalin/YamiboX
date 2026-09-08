@@ -1,6 +1,6 @@
 import Foundation
 
-public actor UserSpaceRepository {
+public actor UserSpaceRepository: MessageUnreadLoading {
     private let client: YamiboClient
 
     init(client: YamiboClient) {
@@ -107,6 +107,21 @@ public actor UserSpaceRepository {
         )
         return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parsePrivateMessageList") {
             try UserSpaceHTMLParser.parsePrivateMessageList(from: html)
+        }
+    }
+
+    public func fetchUnreadSummary() async throws -> MessageUnreadSummary {
+        // A silent probe must never open WAF verification UI. The PM list's
+        // first page exposes both counters without reading any conversation
+        // or visiting the notice list (which marks notices as read).
+        var probeClient = client
+        probeClient.wafRecoverer = nil
+        let html = try await probeClient.fetchHTML(
+            for: .userSpacePrivateMessages(page: 1),
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        return try LoadDiagnosticError.parsing(html: html, context: "MessageUnreadHTMLParser.parse") {
+            try MessageUnreadHTMLParser.parse(html)
         }
     }
 

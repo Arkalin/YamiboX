@@ -57,6 +57,9 @@ public struct RootTabView: View {
             await appModel.appContext.browsingHistoryWorkflow.observeChanges()
         }
         .task {
+            await appModel.appContext.messageUnreadWorkflow.observeSessionChanges()
+        }
+        .task {
             await observeReadingProgressChanges()
         }
         .task {
@@ -66,10 +69,15 @@ public struct RootTabView: View {
             switch newPhase {
             case .active:
                 appModel.webSessionCoordinator.setAppIsActive(true)
+                Task {
+                    guard scenePhase == .active else { return }
+                    await appModel.appContext.messageUnreadWorkflow.appDidBecomeActive()
+                }
                 appModel.synchronizeWebDAVIfNeeded()
                 presentClipboardForumLinkPromptIfNeeded()
             case .background:
                 appModel.webSessionCoordinator.setAppIsActive(false)
+                appModel.appContext.messageUnreadWorkflow.appDidEnterBackground()
                 appModel.flushWebDAVSyncBeforeBackground()
 #if os(iOS) && canImport(BackgroundTasks)
                 FavoriteUpdateBackgroundScheduler.scheduleNextIfNeeded(appContext: appModel.appContext)
@@ -110,6 +118,9 @@ public struct RootTabView: View {
         }
         .task {
             appModel.webSessionCoordinator.setAppIsActive(scenePhase == .active)
+            if scenePhase == .active {
+                await appModel.appContext.messageUnreadWorkflow.appDidBecomeActive()
+            }
         }
     }
 
@@ -147,10 +158,15 @@ public struct RootTabView: View {
                 appModel: appModel,
                 likeDependencies: appModel.appContext.likeLibraryDependencies
             )
+                .messageUnreadTabAccessibility(count: appModel.appContext.messageUnreadWorkflow.totalCount)
                 .tag(AppTab.mine)
                 .tabItem {
                     Label(L10n.string("tab.mine"), systemImage: "person.crop.circle")
+                        .accessibilityValue(MessageUnreadBadge.accessibilityValue(
+                            for: appModel.appContext.messageUnreadWorkflow.totalCount
+                        ))
                 }
+                .badge(MessageUnreadBadge.tabValue(for: appModel.appContext.messageUnreadWorkflow.totalCount))
         }
         .modifier(ReaderPresentationModifier(appModel: appModel))
     }
