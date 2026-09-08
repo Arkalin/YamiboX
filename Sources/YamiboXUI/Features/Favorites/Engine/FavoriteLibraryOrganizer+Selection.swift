@@ -347,11 +347,14 @@ extension FavoriteLibraryOrganizer {
         }
     }
 
-    /// Completes a pending `removeRemotePrompt`: optionally persists the
+    /// Completes the captured prompt after sheet dismissal: optionally persists the
     /// remembered choice (through the shared quick-actions write path), then
     /// runs the delete that raised the prompt.
-    func confirmRemoveRemotePrompt(removeRemote: Bool, remember: Bool) async {
-        guard let prompt = removeRemotePrompt else { return }
+    func confirmRemoveRemotePrompt(
+        _ prompt: LocalFavoriteRemoveRemotePrompt,
+        removeRemote: Bool,
+        remember: Bool
+    ) async {
         removeRemotePrompt = nil
         if remember {
             await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)

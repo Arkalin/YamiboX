@@ -104,8 +104,8 @@ struct LocalFavoritesOrganizationView: View {
                 actions: dialogActions,
                 message: dialogMessage
             )
-            .favoriteRemovePromptDialog(prompt: $organizer.removeRemotePrompt) { _, removeRemote, remember in
-                Task { await organizer.confirmRemoveRemotePrompt(removeRemote: removeRemote, remember: remember) }
+            .favoriteRemovePromptDialog(prompt: $organizer.removeRemotePrompt) { prompt, removeRemote, remember in
+                Task { await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: removeRemote, remember: remember) }
             }
             .sheet(item: $routes.sheet) { sheet in
                 LocalFavoritesSheetContent(

@@ -2,8 +2,8 @@ import SwiftUI
 import YamiboXCore
 
 /// Confirmation presentations for the favorite quick actions: "sync to Yamibo?" on
-/// add and "also delete from Yamibo?" on remove, each with remember-choice
-/// variants. Shared by the thread reader and the detail pages.
+/// add and "also delete from Yamibo?" on remove, each with a remember-choice
+/// toggle. Shared by the thread reader and the detail pages.
 struct FavoriteQuickActionDialogs: ViewModifier {
     @Binding var addPromptPresented: Bool
     @Binding var removePrompt: FavoriteRemovePrompt?
@@ -19,7 +19,7 @@ struct FavoriteQuickActionDialogs: ViewModifier {
                 pendingAddChoice = nil
                 onConfirmAdd(choice.syncToRemote, choice.remember)
             }) {
-                FavoriteAddPromptSheet { syncToRemote, remember in
+                FavoriteActionPromptSheet(action: .add) { syncToRemote, remember in
                     pendingAddChoice = (syncToRemote, remember)
                     addPromptPresented = false
                 } onCancel: {
@@ -32,7 +32,28 @@ struct FavoriteQuickActionDialogs: ViewModifier {
     }
 }
 
-struct FavoriteAddPromptSheet: View {
+private struct FavoriteActionPromptSheet: View {
+    enum Action {
+        case add
+        case remove
+
+        var titleKey: String {
+            self == .add ? "favorites.quick.add_prompt.title" : "favorites.quick.remove_prompt.title"
+        }
+
+        var remoteTitleKey: String {
+            self == .add ? "favorites.quick.add_prompt.sync" : "favorites.quick.remove_prompt.both"
+        }
+
+        var localTitleKey: String {
+            self == .add ? "favorites.quick.add_prompt.local_only" : "favorites.quick.remove_prompt.local_only"
+        }
+
+        var identifierPrefix: String { self == .add ? "favorite-add" : "favorite-remove" }
+        var buttonRole: ButtonRole? { self == .remove ? .destructive : nil }
+    }
+
+    let action: Action
     let onConfirm: (_ syncToRemote: Bool, _ remember: Bool) -> Void
     let onCancel: () -> Void
     @State private var rememberChoice = false
@@ -42,7 +63,7 @@ struct FavoriteAddPromptSheet: View {
         ScrollView {
             VStack(spacing: 20) {
                 HStack(spacing: 12) {
-                    Text(L10n.string("favorites.quick.add_prompt.title"))
+                    Text(L10n.string(action.titleKey))
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityAddTraits(.isHeader)
@@ -55,31 +76,31 @@ struct FavoriteAddPromptSheet: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L10n.string("common.cancel"))
-                    .accessibilityIdentifier("favorite-add-cancel")
+                    .accessibilityIdentifier("\(action.identifierPrefix)-cancel")
                 }
 
                 Toggle(L10n.string("favorites.quick.add_prompt.remember"), isOn: $rememberChoice)
                     .font(.subheadline)
-                    .accessibilityIdentifier("favorite-add-remember")
+                    .accessibilityIdentifier("\(action.identifierPrefix)-remember")
 
                 VStack(spacing: 12) {
-                    Button {
+                    Button(role: action.buttonRole) {
                         onConfirm(true, rememberChoice)
                     } label: {
-                        Text(L10n.string("favorites.quick.add_prompt.sync"))
+                        Text(L10n.string(action.remoteTitleKey))
                             .frame(maxWidth: .infinity, minHeight: 24)
                     }
                     .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("favorite-add-sync")
+                    .accessibilityIdentifier("\(action.identifierPrefix)-sync")
 
-                    Button {
+                    Button(role: action.buttonRole) {
                         onConfirm(false, rememberChoice)
                     } label: {
-                        Text(L10n.string("favorites.quick.add_prompt.local_only"))
+                        Text(L10n.string(action.localTitleKey))
                             .frame(maxWidth: .infinity, minHeight: 24)
                     }
                     .buttonStyle(.bordered)
-                    .accessibilityIdentifier("favorite-add-local")
+                    .accessibilityIdentifier("\(action.identifierPrefix)-local")
                 }
                 .controlSize(.large)
             }
@@ -98,47 +119,37 @@ struct FavoriteAddPromptSheet: View {
     }
 }
 
-extension View {
-    /// The four-way "also remove from Yamibo?" prompt (both/local-only, each
-    /// with a remember variant). Generic over the pending-prompt type so
-    /// flows that resolve the favorite elsewhere can reuse it.
-    func favoriteRemovePromptDialog<Prompt>(
-        prompt: Binding<Prompt?>,
-        onConfirm: @escaping (_ prompt: Prompt, _ removeRemote: Bool, _ remember: Bool) -> Void
-    ) -> some View {
-        confirmationDialog(
-            L10n.string("favorites.quick.remove_prompt.title"),
-            isPresented: Binding(
-                get: { prompt.wrappedValue != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        prompt.wrappedValue = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible,
-            presenting: prompt.wrappedValue
-        ) { value in
-            Button(L10n.string("favorites.quick.remove_prompt.both"), role: .destructive) {
-                onConfirm(value, true, false)
+private struct FavoriteRemovePromptDialog<Prompt: Identifiable>: ViewModifier {
+    @Binding var prompt: Prompt?
+    let onConfirm: (_ prompt: Prompt, _ removeRemote: Bool, _ remember: Bool) -> Void
+    @State private var pendingChoice: (prompt: Prompt, removeRemote: Bool, remember: Bool)?
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $prompt, onDismiss: {
+            // Keep the confirmed subject after dismissal clears the binding.
+            guard let choice = pendingChoice else { return }
+            pendingChoice = nil
+            onConfirm(choice.prompt, choice.removeRemote, choice.remember)
+        }) { value in
+            FavoriteActionPromptSheet(action: .remove) { removeRemote, remember in
+                pendingChoice = (value, removeRemote, remember)
+                prompt = nil
+            } onCancel: {
+                prompt = nil
             }
-            Button(L10n.string("favorites.quick.remove_prompt.local_only"), role: .destructive) {
-                onConfirm(value, false, false)
-            }
-            Button(L10n.string("favorites.quick.remove_prompt.both_remember"), role: .destructive) {
-                onConfirm(value, true, true)
-            }
-            Button(L10n.string("favorites.quick.remove_prompt.local_remember"), role: .destructive) {
-                onConfirm(value, false, true)
-            }
-            Button(L10n.string("common.cancel"), role: .cancel) {}
-        } message: { _ in
-            Text(L10n.string("favorites.quick.remove_prompt.message"))
         }
     }
 }
 
 extension View {
+    /// Shared removal sheet with remote/local actions and a remember-choice toggle.
+    func favoriteRemovePromptDialog<Prompt: Identifiable>(
+        prompt: Binding<Prompt?>,
+        onConfirm: @escaping (_ prompt: Prompt, _ removeRemote: Bool, _ remember: Bool) -> Void
+    ) -> some View {
+        modifier(FavoriteRemovePromptDialog(prompt: prompt, onConfirm: onConfirm))
+    }
+
     func favoriteQuickActionDialogs(
         addPromptPresented: Binding<Bool>,
         removePrompt: Binding<FavoriteRemovePrompt?>,

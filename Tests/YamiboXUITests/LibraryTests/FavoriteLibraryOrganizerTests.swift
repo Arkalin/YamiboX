@@ -1033,7 +1033,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         XCTAssertNotNil(itemBeforeConfirm)
         XCTAssertTrue(recordedBeforeConfirm.isEmpty)
 
-        await organizer.confirmRemoveRemotePrompt(removeRemote: true, remember: true)
+        let prompt = try XCTUnwrap(organizer.removeRemotePrompt)
+        organizer.removeRemotePrompt = nil // The sheet dismisses before confirming.
+        await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: true, remember: true)
 
         XCTAssertNil(organizer.removeRemotePrompt)
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
@@ -1128,7 +1130,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
         XCTAssertNotNil(organizer.removeRemotePrompt)
 
-        await organizer.confirmRemoveRemotePrompt(removeRemote: false, remember: false)
+        let prompt = try XCTUnwrap(organizer.removeRemotePrompt)
+        organizer.removeRemotePrompt = nil
+        await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: false, remember: false)
 
         let loadedDocument = try await localFavoriteLibraryStore.load()
         let recordedTargetIDs = await recorder.recordedTargetIDs()
@@ -1217,7 +1221,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         // about, even though the representative alone has none.
         XCTAssertNotNil(organizer.removeRemotePrompt)
 
-        await organizer.confirmRemoveRemotePrompt(removeRemote: true, remember: false)
+        let prompt = try XCTUnwrap(organizer.removeRemotePrompt)
+        organizer.removeRemotePrompt = nil
+        await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: true, remember: false)
 
         let loadedDocument = try await localFavoriteLibraryStore.load()
         let recordedTargetIDs = await recorder.recordedTargetIDs()
