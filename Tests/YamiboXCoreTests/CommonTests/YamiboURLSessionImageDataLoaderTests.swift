@@ -162,7 +162,7 @@ private final class StreamingChunkRecorder: @unchecked Sendable {
     }
 }
 
-private final class ImageLoaderStreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
+private final class ImageLoaderStreamingStubURLProtocol: URLProtocol {
     enum Step: Sendable {
         case respond(statusCode: Int)
         case deliver(Data)

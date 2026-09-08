@@ -597,11 +597,8 @@ final class NovelReaderViewModelTests: XCTestCase {
             try XCTUnwrap(model.novelReaderPresentation)
         }
         let initialSurface = try XCTUnwrap(initialPresentation.selectedSurfaceIdentity)
-        let initialReference = await MainActor.run {
-            model.novelTextViewportDisplayReference(for: initialSurface)
-        }
         let initialReferenceGeneration = await MainActor.run {
-            initialReference?.generation
+            model.novelTextViewportDisplayReference(for: initialSurface)?.generation
         }
         let modelPageIdentities = await MainActor.run {
             viewportSurfaces(in: model).map(\.surfaceOrdinal)
@@ -3574,7 +3571,7 @@ private func makeModel(
     if let offlineCacheStore {
         resolvedOfflineCacheStore = offlineCacheStore
     } else {
-        resolvedOfflineCacheStore = try OfflineCacheStore(
+        resolvedOfflineCacheStore = OfflineCacheStore(
             databasePool: try YamiboDatabase.openPool(rootDirectory: grdbRootDirectory),
             baseDirectory: cacheDirectory.appendingPathComponent("offline", isDirectory: true)
         )
@@ -3780,7 +3777,7 @@ private func makeReadingProgressStore(
     )
 }
 
-private func novelReaderViewModelSegmentPagination(
+@Sendable private func novelReaderViewModelSegmentPagination(
     document: NovelReaderProjection,
     settings: NovelReaderAppearanceSettings,
     layout: NovelReaderLayout
@@ -4105,7 +4102,7 @@ private func viewportTestPage(
     )
 }
 
-private func novelReaderViewModelPreviewSourcePagination(
+@Sendable private func novelReaderViewModelPreviewSourcePagination(
     document: NovelReaderProjection,
     settings: NovelReaderAppearanceSettings,
     layout: NovelReaderLayout
@@ -4158,7 +4155,7 @@ private func novelReaderViewModelPreviewSourcePagination(
     )
 }
 
-private func novelReaderViewModelMergedTextPagination(
+@Sendable private func novelReaderViewModelMergedTextPagination(
     document: NovelReaderProjection,
     settings: NovelReaderAppearanceSettings,
     layout: NovelReaderLayout

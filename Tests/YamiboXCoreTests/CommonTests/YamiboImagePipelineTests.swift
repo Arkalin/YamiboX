@@ -257,7 +257,7 @@ struct OfflineImageScopeLookupTests {
     @Test func novelScopeReturnsThreadScopedBytes() async throws {
         let store = try makeTestOfflineCacheStore(rootDirectory: makeScopeLookupDirectory())
         let imageURL = try #require(URL(string: "https://img.example.com/novel-inline.jpg"))
-        let request = try NovelOfflineCacheWorkRequest(
+        let request = NovelOfflineCacheWorkRequest(
             ownerTitle: "小说7013",
             title: "第1页",
             threadID: "7013",

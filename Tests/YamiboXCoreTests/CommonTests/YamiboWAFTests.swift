@@ -182,7 +182,7 @@ private actor YamiboWAFTestRecoverer: YamiboWAFChallengeRecovering {
     }
 }
 
-private final class YamiboWAFTestURLProtocol: URLProtocol, @unchecked Sendable {
+private final class YamiboWAFTestURLProtocol: URLProtocol {
     struct Response {
         let statusCode: Int
         let headers: [String: String]

@@ -3670,7 +3670,7 @@ private func makeFavoriteBackgroundImageStore(suiteName: String) -> FavoriteBack
 @MainActor
 private func waitForOrganizerCondition(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
-    condition: @escaping @MainActor () -> Bool
+    condition: @escaping @MainActor @Sendable () -> Bool
 ) async throws {
     try await waitForMainActorCondition(
         timeout: .nanoseconds(Int64(timeoutNanoseconds)),

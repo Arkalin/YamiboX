@@ -394,7 +394,7 @@ private func cacheWorkRequest(favorite: Favorite, tid: String) throws -> MangaOf
 
 private func waitForMangaReaderCacheCondition(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
-    condition: @escaping @MainActor () -> Bool
+    condition: @escaping @MainActor @Sendable () -> Bool
 ) async throws {
     try await waitForMainActorCondition(
         timeout: .nanoseconds(Int64(timeoutNanoseconds)),

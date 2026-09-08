@@ -351,7 +351,7 @@ final class ContentDetailLayoutTests: XCTestCase {
             picker.sendAction(action)
         } else {
             for target in picker.allTargets {
-                guard let object = target as? NSObject else { continue }
+                let object = target as NSObject
                 for name in picker.actions(forTarget: object, forControlEvent: .valueChanged) ?? [] {
                     object.perform(NSSelectorFromString(name), with: picker)
                 }

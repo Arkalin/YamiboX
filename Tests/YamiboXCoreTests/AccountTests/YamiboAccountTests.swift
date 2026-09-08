@@ -170,7 +170,6 @@ private enum YamiboAccountTestError: Error {
         locations: [.category(favoriteLibrary.defaultCategory.id)]
     )
     favoriteLibrary.upsertItem(favoriteItem)
-    let favoriteURL = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=970&mobile=2"))
     let imageURL = try #require(URL(string: "https://img.example.com/signout-offline.jpg"))
 
     try await sessionStore.save(SessionState(cookie: "sid=1; EeqY_2132_auth=token", isLoggedIn: true, accountUID: "535977"))

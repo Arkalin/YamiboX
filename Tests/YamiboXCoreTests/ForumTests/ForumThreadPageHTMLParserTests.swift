@@ -3,7 +3,6 @@ import Testing
 @testable import YamiboXCore
 
 @Test func forumThreadPageParserExtractsRegularThreadPosts() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=700&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -81,7 +80,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserExtractsMobileDiscuzFloorAndCoverCandidate() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=544422&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -202,7 +200,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserCoverImagesMatchAndroidSrcOnlyExtraction() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=544422&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -238,7 +235,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserExtractsFlatCoverImagesFromNestedMessageAndImgOne() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=545000&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -280,7 +276,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserStripsDiscuzSiteTitleSuffix() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=701&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -302,7 +297,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserExtractsKMPStyleHtmlBlocks() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=702&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -424,7 +418,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserKeepsLinkRangesAlignedAfterWhitespaceNormalization() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=703&mobile=2"))
     let sourceURL = "https://kakuyomu.jp/works/16817139558239041302"
     let supportURL = "https://bbs.yamibo.com/thread-546219-1-1.html"
     let page = try ForumThreadPageHTMLParser.parsePage(
@@ -451,7 +444,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserFlattensDiscuzQuoteBlockquoteWrapper() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=702&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -485,7 +477,6 @@ import Testing
 }
 
 @Test func forumThreadPageParserPreservesTextAlignmentBoundaries() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=703&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -552,7 +543,6 @@ private extension ForumThreadTextBlock {
 }
 
 @Test func forumThreadPageParserExtractsPostFooterBlocks() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=704&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -833,7 +823,6 @@ private extension ForumThreadTextBlock {
 }
 
 @Test func forumThreadPageParserExtractsPinnedStateAndManageActions() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=705&mobile=2"))
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: #"""
         <html>
@@ -891,8 +880,6 @@ private extension ForumThreadTextBlock {
 }
 
 @Test func forumThreadPageParserThrowsWhenNoPostsAreReadable() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=701&mobile=2"))
-
     #expect(throws: YamiboError.parsingFailed(context: L10n.string("context.thread_page"))) {
         _ = try ForumThreadPageHTMLParser.parsePage(
             from: "<html><body><div>empty</div></body></html>",
@@ -903,7 +890,6 @@ private extension ForumThreadTextBlock {
 }
 
 @Test func forumThreadPageParserSplitsLongTextBlocksForLazyRendering() throws {
-    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=703&mobile=2"))
     let longText = String(repeating: "长文本", count: 180)
     let page = try ForumThreadPageHTMLParser.parsePage(
         from: """

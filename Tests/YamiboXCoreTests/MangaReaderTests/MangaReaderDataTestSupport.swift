@@ -21,7 +21,7 @@ struct MangaReaderDataTestResponse: Sendable {
     }
 }
 
-final class MangaReaderDataTestURLProtocol: URLProtocol, @unchecked Sendable {
+final class MangaReaderDataTestURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var handlersByTestID: [String: @Sendable (URLRequest) throws -> MangaReaderDataTestResponse] = [:]
     nonisolated(unsafe) private static var recordedRequestsByTestID: [String: [URLRequest]] = [:]
     private static let lock = NSLock()

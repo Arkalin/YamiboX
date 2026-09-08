@@ -76,7 +76,6 @@ import YamiboXTestSupport
 @Test func appContinuityDoesNotRestoreOrphanMangaContextWithoutReadingProgress() async throws {
     let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "app-continuity-orphan-manga")
     let resumeRouteStore = try ReaderResumeRouteStore(testSuiteName: defaultsSuiteName, key: "resume")
-    let originalURL = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=700&mobile=2"))
     let context = MangaLaunchContext(
         originalThreadID: "700",
         chapterTID: "700",

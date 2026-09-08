@@ -238,12 +238,12 @@ import Testing
     #expect(loadedItem.remoteMapping?.yamiboFavoriteID == "remote-321")
     #expect(await store.hasStoredDocument())
 
-    let documentRow = try await database.read { db in
-        try Row.fetchOne(db, sql: "SELECT id, document_json FROM favorite_library_document")
+    let documentJSON = try await database.read { db in
+        let documentRow = try Row.fetchOne(db, sql: "SELECT id, document_json FROM favorite_library_document")
+        let row = try #require(documentRow)
+        #expect(row["id"] as Int == 1)
+        return row["document_json"] as String
     }
-    let row = try #require(documentRow)
-    #expect(row["id"] as Int == 1)
-    let documentJSON = row["document_json"] as String
     #expect(documentJSON.contains("canonicalURL") == false)
     let storedDocument = try JSONDecoder().decode(FavoriteLibraryDocument.self, from: Data(documentJSON.utf8))
     let storedItem = try #require(storedDocument.items.first)

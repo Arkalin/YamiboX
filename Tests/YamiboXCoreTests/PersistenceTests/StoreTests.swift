@@ -749,7 +749,7 @@ private func persistedResumeRoute(_ route: ReaderResumeRoute) throws -> ReaderRe
     try await likeStore.upsertImageLike(
         workKey: likeWorkKey,
         anchor: .mangaImage(MangaImageLikeAnchor(chapterTID: "700", pageLocalIndex: 0)),
-        sourceImageURL: try #require(URL(string: "https://img.example.com/like-reset.jpg"))
+        sourceImageURL: URL(string: "https://img.example.com/like-reset.jpg")
     )
     try await likeImageStore.save(Data(repeating: 9, count: 32), id: "like-reset-image", sourceURL: nil)
 

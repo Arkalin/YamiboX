@@ -24,7 +24,7 @@ private enum YamiboCheckInStubOutput {
     case error(Error)
 }
 
-private final class YamiboCheckInURLProtocol: URLProtocol, @unchecked Sendable {
+private final class YamiboCheckInURLProtocol: URLProtocol {
     private nonisolated(unsafe) static var handlers: [String: (URLRequest) -> YamiboCheckInStubOutput] = [:]
     private static let lock = NSLock()
 

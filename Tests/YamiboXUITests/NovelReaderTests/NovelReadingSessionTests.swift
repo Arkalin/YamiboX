@@ -1101,7 +1101,7 @@ private extension NovelReadingSession {
         resumePoint: NovelResumePoint? = nil,
         usesPadPresentation: Bool = false,
         currentAuthorID: String? = nil,
-        pagination: @escaping NovelTextLayoutFixture = NovelTextLayout.layout
+        pagination: @escaping NovelTextLayoutFixture = { try NovelTextLayout.layout(document: $0, settings: $1, layout: $2) }
     ) {
         let layoutResult = try! committedLayoutResult(
             document: document,
@@ -1132,7 +1132,7 @@ private extension NovelReadingSession {
         resumePoint: NovelResumePoint? = nil,
         usesPadPresentation: Bool = false,
         currentAuthorID: String? = nil,
-        pagination: @escaping NovelTextLayoutFixture = NovelTextLayout.layout
+        pagination: @escaping NovelTextLayoutFixture = { try NovelTextLayout.layout(document: $0, settings: $1, layout: $2) }
     ) throws {
         let layoutResult = try committedLayoutResult(
             document: document,
@@ -1161,7 +1161,7 @@ private func committedLayoutResult(
     settings: NovelReaderAppearanceSettings,
     layout: NovelReaderLayout,
     usesPadPresentation: Bool = false,
-    pagination: NovelTextLayoutFixture = NovelTextLayout.layout
+    pagination: NovelTextLayoutFixture = { try NovelTextLayout.layout(document: $0, settings: $1, layout: $2) }
 ) throws -> NovelTextLayoutResult {
     try pagination(
         document,

@@ -255,7 +255,7 @@ private struct SharedThreadPageProjectionResponse: Sendable {
     var html: String
 }
 
-private final class SharedThreadPageProjectionURLProtocol: URLProtocol, @unchecked Sendable {
+private final class SharedThreadPageProjectionURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var handlersByTestID: [String: @Sendable (URLRequest) throws -> SharedThreadPageProjectionResponse] = [:]
     nonisolated(unsafe) private static var recordedRequestsByTestID: [String: [URLRequest]] = [:]
     private static let lock = NSLock()

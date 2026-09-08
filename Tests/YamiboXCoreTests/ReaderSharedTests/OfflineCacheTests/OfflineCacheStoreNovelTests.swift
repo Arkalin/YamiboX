@@ -379,7 +379,7 @@ struct MangaReaderTestsNovelOfflineCacheStore {
     @Test func novelOfflineImageDataMatchesCanonicalRefererAndReferencedImage() async throws {
         let store = try makeTestOfflineCacheStore(rootDirectory: try makeTemporaryNovelOfflineCacheDirectory())
         let sharedImageURL = try #require(URL(string: "https://img.example.com/shared-inline.jpg"))
-        let matchingRequest = try NovelOfflineCacheWorkRequest(
+        let matchingRequest = NovelOfflineCacheWorkRequest(
             ownerTitle: "小说7013",
             title: "第1页",
             threadID: "7013",

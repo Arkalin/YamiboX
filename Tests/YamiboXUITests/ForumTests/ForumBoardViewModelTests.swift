@@ -335,9 +335,9 @@ private final class SettingsStoreSaveCounter: @unchecked Sendable {
                 // "count only this exact store instance" contract.
                 guard incoming == changeID else { continue }
                 guard let self else { return }
-                self.lock.lock()
-                self.observedCount += 1
-                self.lock.unlock()
+                self.lock.withLock {
+                    self.observedCount += 1
+                }
             }
         }
     }
