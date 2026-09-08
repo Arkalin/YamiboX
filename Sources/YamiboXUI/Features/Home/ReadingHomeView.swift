@@ -30,11 +30,13 @@ struct ReadingHomeView: View {
                         profile: account.isLoggedIn ? account.profile : nil,
                         avatarLoader: account.profileAvatarLoader,
                         avatarReloadDate: account.session.lastUpdatedAt,
+                        scrollOffset: scrollOffset,
                         openProfile: openProfile
                     )
                     .padding(.horizontal, 24)
                     .padding(.top, 12)
                     .padding(.bottom, 32)
+                    .zIndex(1)
 
                     if model.hasLoaded {
                         ReadingHomeContinueSection(books: model.continuing, open: openBook) {
@@ -150,13 +152,18 @@ private struct ReadingHomeHeader: View {
     let profile: YamiboProfile?
     let avatarLoader: YamiboProfileAvatarLoader
     let avatarReloadDate: Date?
+    let scrollOffset: CGFloat
     let openProfile: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let motion = ReadingHomeHeaderMotion(scrollOffset: scrollOffset)
         HStack(alignment: .center) {
             Text(L10n.string("tab.home"))
                 .font(.largeTitle.bold())
                 .accessibilityAddTraits(.isHeader)
+                .opacity(motion.titleOpacity)
+                .accessibilityHidden(motion.titleOpacity == 0)
             Spacer(minLength: 16)
             Button(action: openProfile) {
                 Group {
@@ -176,7 +183,14 @@ private struct ReadingHomeHeader: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.string(profile == nil ? "mine.tap_to_login" : "home.profile"))
             .accessibilityIdentifier("home.profile")
+            .blur(radius: reduceMotion ? 0 : motion.avatarBlurRadius)
+            .opacity(motion.avatarOpacity)
+            .allowsHitTesting(motion.avatarOpacity > 0.5)
+            .accessibilityHidden(motion.avatarOpacity <= 0.5)
         }
+        // Keep the chrome in place while the shelf passes beneath it. The
+        // transition follows scroll distance, so reversing never queues an animation.
+        .offset(y: scrollOffset)
     }
 }
 
