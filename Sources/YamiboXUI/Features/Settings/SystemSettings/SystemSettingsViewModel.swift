@@ -15,6 +15,7 @@ final class SystemSettingsViewModel {
     let dependencies: SettingsDependencies
 
     let general: SettingsGeneralViewModel
+    let home: SettingsHomePageViewModel
     let forum: SettingsForumViewModel
     let favorites: SettingsFavoritesViewModel
     let reading: SettingsReadingViewModel
@@ -32,6 +33,7 @@ final class SystemSettingsViewModel {
         let activity = SystemSettingsActivity()
         let storageUsage = SettingsStorageUsage(dependencies: dependencies)
         let general = SettingsGeneralViewModel(dependencies: dependencies, activity: activity)
+        let home = SettingsHomePageViewModel(dependencies: dependencies, activity: activity)
         let forum = SettingsForumViewModel(dependencies: dependencies, activity: activity)
         let favorites = SettingsFavoritesViewModel(dependencies: dependencies, activity: activity)
         let reading = SettingsReadingViewModel(dependencies: dependencies, activity: activity)
@@ -59,6 +61,7 @@ final class SystemSettingsViewModel {
         // through this root.
         storage.onApplicationDataReset = {
             general.restoreDefaultsAfterApplicationReset()
+            home.restoreDefaultsAfterApplicationReset()
             forum.restoreDefaultsAfterApplicationReset()
             favorites.restoreDefaultsAfterApplicationReset()
             reading.restoreDefaultsAfterApplicationReset()
@@ -71,6 +74,7 @@ final class SystemSettingsViewModel {
         self.activity = activity
         self.storageUsage = storageUsage
         self.general = general
+        self.home = home
         self.forum = forum
         self.favorites = favorites
         self.reading = reading
@@ -108,6 +112,7 @@ final class SystemSettingsViewModel {
 
         let settings = await dependencies.settingsStore.load()
         general.applyLoadedSettings(settings)
+        home.applyLoadedSettings(settings)
         forum.applyLoadedSettings(settings)
         favorites.applyLoadedSettings(settings)
         reading.applyLoadedSettings(settings)

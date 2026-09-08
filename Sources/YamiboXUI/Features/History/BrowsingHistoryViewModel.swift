@@ -95,7 +95,12 @@ final class BrowsingHistoryViewModel {
         let generation = reloadGeneration
         let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let snapshot: BrowsingHistorySnapshot
+        var homeFavoritedThreadIDs: Set<String>?
         do {
+            if showsPreviousReading, await settingsStore.load().system.homeShowsOnlyFavorites {
+                let document = try await favoriteLibraryStore.load()
+                homeFavoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
+            }
             if let browsingHistoryWorkflow {
                 snapshot = try await browsingHistoryWorkflow.snapshot()
             } else {
@@ -112,7 +117,7 @@ final class BrowsingHistoryViewModel {
         guard generation == reloadGeneration else { return }
         boardReaderSettings = boardReader
         let scopedEntries = showsPreviousReading
-            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader).previous
+            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader, favoritedThreadIDs: homeFavoritedThreadIDs).previous
             : loadedEntries
         entries = scopedEntries.filter { entry in
             if !searchQuery.isEmpty,
@@ -157,6 +162,9 @@ final class BrowsingHistoryViewModel {
     func observeFavoriteChanges() async {
         for await _ in favoriteLibraryStore.changes() {
             guard !Task.isCancelled else { return }
+            if showsPreviousReading {
+                scheduleReload()
+            }
             await refreshFavoritedThreadIDs()
         }
     }

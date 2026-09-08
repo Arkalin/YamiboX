@@ -29,7 +29,12 @@ final class ReadingHomeViewModel {
         generation += 1
         let currentGeneration = generation
         let snapshot: BrowsingHistorySnapshot
+        var favoritedThreadIDs: Set<String>?
         do {
+            if await dependencies.settingsStore.load().system.homeShowsOnlyFavorites {
+                let document = try await dependencies.localFavoriteLibraryStore.load()
+                favoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
+            }
             if let workflow = dependencies.browsingHistoryWorkflow {
                 snapshot = try await workflow.snapshot()
             } else {
@@ -41,7 +46,7 @@ final class ReadingHomeViewModel {
         }
         let settings = snapshot.boardReader
         let entries = snapshot.entries
-        let shelf = ReadingHomeShelf(entries: entries, boardReader: settings)
+        let shelf = ReadingHomeShelf(entries: entries, boardReader: settings, favoritedThreadIDs: favoritedThreadIDs)
         let keys = (shelf.continuing + shelf.previous).compactMap { ContentCoverKey(target: $0.target) }
         let covers = await dependencies.contentCoverStore.covers(for: keys)
         guard !Task.isCancelled, currentGeneration == generation else { return }

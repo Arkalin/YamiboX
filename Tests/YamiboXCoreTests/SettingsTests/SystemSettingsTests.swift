@@ -4,6 +4,21 @@ import Testing
 
 @Suite("SettingsTests: System Settings")
 struct SystemSettingsTests {
+    @Test func homeFavoritesFilterDefaultsOffAndRoundTrips() throws {
+        #expect(SystemSettings().homeShowsOnlyFavorites == false)
+        let legacy = Data(#"{"homePage":"favorites","usesDataSaverMode":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(SystemSettings.self, from: legacy)
+        #expect(decoded.homeShowsOnlyFavorites == false)
+        #expect(decoded.homePage == .favorites)
+        #expect(decoded.usesDataSaverMode)
+
+        for enabled in [false, true] {
+            let original = AppSettings(system: .init(homeShowsOnlyFavorites: enabled))
+            let encoded = try JSONEncoder().encode(original)
+            #expect(try JSONDecoder().decode(AppSettings.self, from: encoded) == original)
+        }
+    }
+
     @Test func appearanceDefaultsToClassic() {
         #expect(AppAppearanceSettings().themePreset == .classic)
         #expect(AppSettings().appearance.themePreset == .classic)

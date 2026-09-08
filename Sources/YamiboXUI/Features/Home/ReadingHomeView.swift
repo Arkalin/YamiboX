@@ -103,6 +103,10 @@ struct ReadingHomeView: View {
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
+                await model.observe(appModel.appContext.libraryDependencies.localFavoriteLibraryStore.changes())
+            }
+            .task(id: isHomeVisible) {
+                guard isHomeVisible else { return }
                 for await _ in appModel.appContext.accountDependencies.sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     await account.load()

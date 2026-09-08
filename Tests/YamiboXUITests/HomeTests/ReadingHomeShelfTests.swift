@@ -3,6 +3,31 @@ import XCTest
 @testable import YamiboXUI
 
 final class ReadingHomeShelfTests: XCTestCase {
+    func testFavoritesFilterRunsBeforeContinueSelectionAndUsesCurrentMangaChapter() {
+        let newest = entry(.novelThread(threadID: "1"), time: 10)
+        let novel = entry(.novelThread(threadID: "2"), time: 8)
+        let older = entry(.novelThread(threadID: "3"), time: 6)
+        var smart = entry(.mangaTitle(mangaID: "book", cleanBookName: "Book"), time: 7)
+        smart.chapterThreadID = "4"
+        let missingChapter = entry(.mangaTitle(mangaID: "unknown", cleanBookName: "Unknown"), time: 9)
+        let normal = entry(.normalThread(threadID: "5"), time: 11)
+        let entries = [newest, novel, older, smart, missingChapter, normal]
+        let shelf = ReadingHomeShelf(entries: entries, boardReader: .init(entries: [:]), favoritedThreadIDs: ["2", "3", "4", "5"])
+
+        XCTAssertEqual(shelf.continuing, [novel, smart])
+        XCTAssertEqual(shelf.previous, [older])
+        let empty = ReadingHomeShelf(entries: entries, boardReader: .init(entries: [:]), favoritedThreadIDs: [])
+        XCTAssertTrue(empty.continuing.isEmpty)
+        XCTAssertTrue(empty.previous.isEmpty)
+    }
+
+    func testFavoritesFilterMatchesThreadRegardlessOfRecordedReaderKind() {
+        let novel = entry(.normalThread(threadID: "1"), time: 1, forumID: "20")
+        let settings = BoardReaderSettings(entries: ["20": .init(mode: .novel)])
+        let shelf = ReadingHomeShelf(entries: [novel], boardReader: settings, favoritedThreadIDs: ["1"])
+        XCTAssertEqual(shelf.continuing, [novel])
+    }
+
     func testSelectsOneNovelAndOneMangaAcrossBothMangaIdentities() {
         let novel = entry(.novelThread(threadID: "1"), time: 10)
         let oldNovel = entry(.novelThread(threadID: "2"), time: 8)
@@ -73,6 +98,67 @@ final class ReadingHomeShelfTests: XCTestCase {
 
 @MainActor
 final class ReadingHomeViewModelTests: XCTestCase {
+    func testHomeSettingPersistsReloadsAndRestoresDefault() async throws {
+        let context = try makeContext()
+        let settings = SystemSettingsViewModel(dependencies: context.settingsDependencies)
+        await settings.load()
+        XCTAssertFalse(settings.home.showsOnlyFavorites)
+        settings.home.updateShowsOnlyFavorites(true)
+        XCTAssertTrue(settings.home.showsOnlyFavorites)
+        try await waitForSettings { await context.settingsStore.load().system.homeShowsOnlyFavorites }
+
+        let reopened = SystemSettingsViewModel(dependencies: context.settingsDependencies)
+        await reopened.load()
+        XCTAssertTrue(reopened.home.showsOnlyFavorites)
+        try await context.settingsStore.reset()
+        reopened.home.restoreDefaultsAfterApplicationReset()
+        XCTAssertFalse(reopened.home.showsOnlyFavorites)
+        let stored = await context.settingsStore.load()
+        XCTAssertFalse(stored.system.homeShowsOnlyFavorites)
+    }
+
+    func testFavoritesFilterUpdatesHomeAndPreviousListWithoutChangingAllHistory() async throws {
+        let context = try makeContext()
+        let latest = BrowsingHistoryEntry(target: .novelThread(threadID: "1"), title: "Latest", lastVisitTime: Date(timeIntervalSince1970: 3))
+        let favorite = BrowsingHistoryEntry(target: .novelThread(threadID: "2"), title: "Favorite", lastVisitTime: Date(timeIntervalSince1970: 2))
+        let older = BrowsingHistoryEntry(target: .novelThread(threadID: "3"), title: "Older", lastVisitTime: Date(timeIntervalSince1970: 1))
+        for entry in [latest, favorite, older] { try await context.browsingHistoryStore.record(entry) }
+        var document = FavoriteLibraryDocument()
+        for tid in ["2", "3"] {
+            document.upsertItem(try FavoriteItem(target: .normalThread(threadID: tid), title: tid, locations: [.category(document.defaultCategory.id)]))
+        }
+        let store = context.libraryDependencies.localFavoriteLibraryStore
+        try await store.save(document)
+        let home = ReadingHomeViewModel(dependencies: context.libraryDependencies)
+        await home.reload()
+        XCTAssertEqual(home.continuing.map(\.id), [latest.id])
+        XCTAssertEqual(home.previous.map(\.id), [favorite.id, older.id])
+
+        try await context.settingsStore.update { $0.system.homeShowsOnlyFavorites = true }
+        await home.reload()
+        XCTAssertEqual(home.continuing.map(\.id), [favorite.id])
+        XCTAssertEqual(home.previous.map(\.id), [older.id])
+        let previous = BrowsingHistoryViewModel(dependencies: context.libraryDependencies, showsPreviousReading: true)
+        await previous.load()
+        XCTAssertEqual(previous.entries.map(\.id), [older.id])
+        let allHistory = BrowsingHistoryViewModel(dependencies: context.libraryDependencies)
+        await allHistory.load()
+        XCTAssertEqual(allHistory.entries.count, 3)
+
+        let changes = store.changes()
+        let observer = Task { await home.observe(changes) }
+        defer { observer.cancel() }
+        try await store.save(FavoriteLibraryDocument())
+        try await waitForSettings { home.continuing.isEmpty && home.previous.isEmpty }
+
+        try await context.settingsStore.update { $0.system.homeShowsOnlyFavorites = false }
+        await home.reload()
+        XCTAssertEqual(home.continuing.map(\.id), [latest.id])
+        XCTAssertEqual(home.previous.map(\.id), [favorite.id, older.id])
+        let savedHistory = await context.browsingHistoryStore.entries()
+        XCTAssertEqual(savedHistory.count, 3)
+    }
+
     func testCanonicalSnapshotUpdatesHomeHistoryAndOpenTargetTogether() async throws {
         let context = try makeContext()
         try await context.settingsStore.update { $0.boardReader.setEntry(.init(mode: .novel), forumID: "40") }

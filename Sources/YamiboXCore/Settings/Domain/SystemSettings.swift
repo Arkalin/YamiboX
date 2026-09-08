@@ -73,6 +73,7 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
 
 public struct SystemSettings: Codable, Hashable, Sendable {
     public var homePage: AppHomePage
+    public var homeShowsOnlyFavorites: Bool
     public var usesDataSaverMode: Bool
     public var enhancedCheckInEnabled: Bool
     public var applePencilPageTurn: ApplePencilPageTurnSettings
@@ -81,6 +82,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
 
     public init(
         homePage: AppHomePage = .home,
+        homeShowsOnlyFavorites: Bool = false,
         usesDataSaverMode: Bool = false,
         enhancedCheckInEnabled: Bool = false,
         applePencilPageTurn: ApplePencilPageTurnSettings = .init(),
@@ -88,6 +90,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         keyboard: KeyboardSettings = .init()
     ) {
         self.homePage = homePage
+        self.homeShowsOnlyFavorites = homeShowsOnlyFavorites
         self.usesDataSaverMode = usesDataSaverMode
         self.enhancedCheckInEnabled = enhancedCheckInEnabled
         self.applePencilPageTurn = applePencilPageTurn
@@ -97,6 +100,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case homePage
+        case homeShowsOnlyFavorites
         case usesDataSaverMode
         case enhancedCheckInEnabled
         case applePencilPageTurn
@@ -104,12 +108,12 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         case keyboard
     }
 
-    /// `SystemSettings` predates enhanced check-in. Decode the new flag
-    /// optionally so existing persisted settings retain every other value.
+    /// Decode newer preferences optionally so existing settings retain every other value.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             homePage: try container.decodeIfPresent(AppHomePage.self, forKey: .homePage) ?? .forum,
+            homeShowsOnlyFavorites: try container.decodeIfPresent(Bool.self, forKey: .homeShowsOnlyFavorites) ?? false,
             usesDataSaverMode: try container.decodeIfPresent(Bool.self, forKey: .usesDataSaverMode) ?? false,
             enhancedCheckInEnabled: try container.decodeIfPresent(Bool.self, forKey: .enhancedCheckInEnabled) ?? false,
             applePencilPageTurn: try container.decodeIfPresent(ApplePencilPageTurnSettings.self, forKey: .applePencilPageTurn) ?? .init(),
