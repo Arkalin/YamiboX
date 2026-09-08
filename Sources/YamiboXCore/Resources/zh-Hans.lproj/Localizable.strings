@@ -37,7 +37,12 @@
 "app_update.up_to_date_title" = "无需更新";
 "app.home.favorites" = "收藏";
 "app.home.forum" = "论坛";
-"app.initializing" = "初始化中…";
+"app.startup.loading_session" = "正在读取登录状态…";
+"app.startup.loading_profile" = "正在读取账号资料…";
+"app.startup.loading_settings" = "正在读取应用设置…";
+"app.startup.loading_favorites" = "正在加载本地收藏…";
+"app.startup.synchronizing_webdav" = "正在检查并同步 WebDAV 数据…";
+"app.startup.loading_reading_position" = "正在读取上次阅读位置…";
 "app.name" = "Yamibo X";
 "clipboard_forum_link.open" = "打开";
 "clipboard_forum_link.title" = "打开剪贴板链接？";

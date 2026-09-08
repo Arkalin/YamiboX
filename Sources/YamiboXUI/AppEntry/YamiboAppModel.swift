@@ -36,6 +36,7 @@ public struct ForumSearchRequest: Identifiable, Hashable, Sendable {
 public final class YamiboAppModel {
     public private(set) var bootstrapState: YamiboBootstrapState?
     public private(set) var isBootstrapping = false
+    public private(set) var bootstrapPhase: AppBootstrapPhase?
     public var bootstrapErrorMessage: String?
     public private(set) var selectedTab: AppTab
     public var activeNovelContext: NovelLaunchContext?
@@ -89,9 +90,15 @@ public final class YamiboAppModel {
     public func bootstrapIfNeeded() async {
         guard bootstrapState == nil, !isBootstrapping else { return }
         isBootstrapping = true
-        defer { isBootstrapping = false }
+        defer {
+            isBootstrapping = false
+            bootstrapPhase = nil
+        }
 
-        let result = await appContinuity.launchIfNeeded(canRestoreReaderRoute: canRestoreReaderRoute)
+        let result = await appContinuity.launchIfNeeded(
+            canRestoreReaderRoute: canRestoreReaderRoute,
+            onProgress: updateBootstrapPhase
+        )
         appThemePreset = result.bootstrapState.settings.appearance.themePreset
         bootstrapState = result.bootstrapState
         bootstrapErrorMessage = nil
@@ -100,14 +107,24 @@ public final class YamiboAppModel {
 
     public func bootstrap() async {
         isBootstrapping = true
-        defer { isBootstrapping = false }
+        defer {
+            isBootstrapping = false
+            bootstrapPhase = nil
+        }
 
-        let state = await appContext.bootstrap()
+        let state = await appContext.bootstrap(onProgress: updateBootstrapPhase)
         appThemePreset = state.settings.appearance.themePreset
         bootstrapState = state
         bootstrapErrorMessage = nil
-        let restoredRoute = await appContinuity.restoreExplicitly(canRestoreReaderRoute: canRestoreReaderRoute)
+        let restoredRoute = await appContinuity.restoreExplicitly(
+            canRestoreReaderRoute: canRestoreReaderRoute,
+            onProgress: updateBootstrapPhase
+        )
         applyRestoredRoute(restoredRoute)
+    }
+
+    private func updateBootstrapPhase(_ phase: AppBootstrapPhase) async {
+        bootstrapPhase = phase
     }
 
     public func synchronizeWebDAVIfNeeded() {

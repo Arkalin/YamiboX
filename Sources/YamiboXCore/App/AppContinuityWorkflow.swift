@@ -30,19 +30,25 @@ public final class AppContinuityWorkflow: Sendable {
         self.appContext = appContext
     }
 
-    public func launchIfNeeded(canRestoreReaderRoute: Bool) async -> AppContinuityLaunchResult {
-        let bootstrapState = await appContext.bootstrap()
+    public func launchIfNeeded(
+        canRestoreReaderRoute: Bool,
+        onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
+    ) async -> AppContinuityLaunchResult {
+        let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
+        await onProgress(.synchronizingWebDAV)
         let didDownloadRemoteProgress = await synchronizeWebDAVForStartup()
         let restoredRoute = await restoreExplicitly(
             canRestoreReaderRoute: canRestoreReaderRoute,
-            reconcilesWithReadingProgress: didDownloadRemoteProgress
+            reconcilesWithReadingProgress: didDownloadRemoteProgress,
+            onProgress: onProgress
         )
         return AppContinuityLaunchResult(bootstrapState: bootstrapState, restoredRoute: restoredRoute)
     }
 
     public func restoreExplicitly(
         canRestoreReaderRoute: Bool,
-        reconcilesWithReadingProgress: Bool = false
+        reconcilesWithReadingProgress: Bool = false,
+        onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> ReaderResumeRoute? {
         let isFirstRestore = state.withLock { mutableState in
             if mutableState.hasRestoredReaderResumeRoute { return false }
@@ -51,6 +57,7 @@ public final class AppContinuityWorkflow: Sendable {
         }
         guard isFirstRestore else { return nil }
         guard canRestoreReaderRoute else { return nil }
+        await onProgress(.loadingReadingPosition)
         guard let route = await appContext.readerResumeRouteStore.load() else { return nil }
 
         guard var restoredRoute = await restorableRoute(

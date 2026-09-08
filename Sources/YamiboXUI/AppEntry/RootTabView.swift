@@ -25,8 +25,12 @@ public struct RootTabView: View {
 
             Group {
                 if isShowingBootstrapPlaceholder {
-                    ProgressView(L10n.string("app.initializing"))
-                        .transition(.opacity)
+                    ProgressView {
+                        Text((appModel.bootstrapPhase ?? .loadingSession).startupMessage)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 24)
+                    .transition(.opacity)
                 } else {
                     content
                         .transition(.opacity)
@@ -228,6 +232,19 @@ public struct RootTabView: View {
         Task { @MainActor in
             guard let url = await clipboardForumLinkPasteboardReader.promptURL(from: UIPasteboard.general) else { return }
             appModel.presentClipboardForumLinkPrompt(url: url)
+        }
+    }
+}
+
+extension AppBootstrapPhase {
+    var startupMessage: LocalizedStringResource {
+        switch self {
+        case .loadingSession: L10n.resource("app.startup.loading_session")
+        case .loadingProfile: L10n.resource("app.startup.loading_profile")
+        case .loadingSettings: L10n.resource("app.startup.loading_settings")
+        case .loadingFavorites: L10n.resource("app.startup.loading_favorites")
+        case .synchronizingWebDAV: L10n.resource("app.startup.synchronizing_webdav")
+        case .loadingReadingPosition: L10n.resource("app.startup.loading_reading_position")
         }
     }
 }

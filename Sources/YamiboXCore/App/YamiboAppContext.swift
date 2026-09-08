@@ -449,14 +449,24 @@ public final class YamiboAppContext: Sendable {
         await ordinaryImageCache.removeAllCachedData()
     }
 
-    public func bootstrap() async -> YamiboBootstrapState {
+    public func bootstrap(
+        onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
+    ) async -> YamiboBootstrapState {
+        await onProgress(.loadingSession)
+        let session = await sessionStore.load()
+        await onProgress(.loadingProfile)
+        let profile = await profileStore.load()
+        await onProgress(.loadingSettings)
+        let settings = await settingsStore.load()
+        await onProgress(.loadingFavorites)
+        // Startup snapshot for first paint only — every writer re-reads
+        // the store, so this fallback can never leak into a save.
+        let localFavoriteLibrary = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
         return YamiboBootstrapState(
-            session: await sessionStore.load(),
-            profile: await profileStore.load(),
-            settings: await settingsStore.load(),
-            // Startup snapshot for first paint only — every writer re-reads
-            // the store, so this fallback can never leak into a save.
-            localFavoriteLibrary: (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
+            session: session,
+            profile: profile,
+            settings: settings,
+            localFavoriteLibrary: localFavoriteLibrary
         )
     }
 
