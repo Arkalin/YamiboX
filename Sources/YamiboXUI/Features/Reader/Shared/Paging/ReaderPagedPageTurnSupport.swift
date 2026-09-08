@@ -191,6 +191,10 @@ enum ReaderPagedQuickFadeTransition {
     static let duration: TimeInterval = 0.18
 }
 
+enum ReaderPagedPageCurlTransition {
+    static let animationSpeed: Float = 1.5
+}
+
 #if os(iOS)
 import UIKit
 

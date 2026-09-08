@@ -215,6 +215,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         pageViewController.delegate = context.coordinator
         pageViewController.view.backgroundColor = pageBackgroundColor
         pageViewController.view.isOpaque = true
+        pageViewController.view.layer.speed = ReaderPagedPageCurlTransition.animationSpeed
 
         let tapRecognizer = UITapGestureRecognizer(
             target: context.coordinator,

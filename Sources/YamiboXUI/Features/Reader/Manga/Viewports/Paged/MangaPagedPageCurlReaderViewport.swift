@@ -72,6 +72,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         pageViewController.delegate = context.coordinator
         pageViewController.view.backgroundColor = pageEdgeFillColor
         pageViewController.view.isOpaque = true
+        pageViewController.view.layer.speed = ReaderPagedPageCurlTransition.animationSpeed
 
         let containerViewController = MangaPagedPageCurlContainerViewController(pageViewController: pageViewController)
         let coordinator = context.coordinator
