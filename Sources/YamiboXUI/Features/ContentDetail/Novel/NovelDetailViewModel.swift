@@ -334,7 +334,8 @@ final class NovelDetailViewModel {
             source: .forum,
             initialView: chapter?.view ?? 1,
             authorID: chapter?.resumePoint?.authorID ?? resolvedAuthorID ?? context.authorID,
-            initialResumePoint: chapter?.resumePoint
+            initialResumePoint: chapter?.resumePoint,
+            forumID: threadPage?.forumID ?? threadPage?.thread.fid ?? context.thread.fid
         )
     }
 
@@ -348,7 +349,8 @@ final class NovelDetailViewModel {
             source: hasProgress ? .resume : .forum,
             initialView: resumePoint?.view ?? novelProgress?.lastView ?? 1,
             authorID: resumePoint?.authorID ?? novelProgress?.authorID ?? resolvedAuthorID ?? context.authorID,
-            initialResumePoint: resumePoint
+            initialResumePoint: resumePoint,
+            forumID: threadPage?.forumID ?? threadPage?.thread.fid ?? context.thread.fid
         )
     }
 

@@ -4,8 +4,8 @@ import Testing
 
 // Effective display/open category (pluggable-reader-config R13): a configured
 // board entry dictates the category regardless of the recorded identity; a
-// board with no entry (never configured, or the row carries no fid) falls
-// back to the stored identity-derived category.
+// known board with no entry defaults to normal; missing ownership alone
+// falls back to the stored identity-derived category.
 @Suite("HistoryTests: Browsing History Entry Effective Category")
 struct BrowsingHistoryEntryCategoryTests {
     @Test func configuredEntryOverridesRecordedIdentity() {
@@ -34,7 +34,7 @@ struct BrowsingHistoryEntryCategoryTests {
         #expect(novelRecorded.category(boardReader: boardReader) == .normal)
     }
 
-    @Test func missingEntryOrForumIDFallsBackToRecordedIdentity() {
+    @Test func onlyMissingForumIDFallsBackToRecordedIdentity() {
         let boardReader = BoardReaderSettings(entries: [:])
 
         let novelRow = BrowsingHistoryEntry(
@@ -42,7 +42,7 @@ struct BrowsingHistoryEntryCategoryTests {
             title: "未配置板块的小说行",
             forumID: "88"
         )
-        #expect(novelRow.category(boardReader: boardReader) == .novel)
+        #expect(novelRow.category(boardReader: boardReader) == .normal)
 
         let mangaRowWithoutFid = BrowsingHistoryEntry(
             target: .mangaTitle(mangaID: "m1", cleanBookName: "无fid漫画"),

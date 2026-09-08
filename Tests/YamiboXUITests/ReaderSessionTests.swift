@@ -16,7 +16,7 @@ final class ReaderSessionTests {
     @Test(arguments: [ReaderReadingMode.paged, .vertical])
     func novelRoundTripKeepsPresentationAndResumePoint(mode: ReaderReadingMode) async throws {
         let app = try makeApp()
-        let initial = NovelLaunchContext(threadID: "701", threadTitle: "Novel", source: .favorites)
+        let initial = NovelLaunchContext(threadID: "701", threadTitle: "Novel", source: .favorites, forumID: "49")
         app.presentNovelReader(initial)
         let session = try #require(app.presentedReaderSession)
         let sessionID = session.id
@@ -90,6 +90,7 @@ final class ReaderSessionTests {
         await session.openReader(.novel, from: model)
         #expect(model.becameReaderCompanion)
         #expect(app.activeNovelContext?.threadID == "720")
+        #expect(app.activeNovelContext?.forumID == "40")
         #expect(app.presentedReaderSession == nil)
         #expect(navigator.path == path)
         #expect(app.selectedTab == .favorites)
@@ -119,6 +120,7 @@ final class ReaderSessionTests {
         let novel = await resolver.novelContext(thread: thread, title: "Thread", authorID: nil, isPreview: false)
         let manga = try await resolver.mangaContext(thread: thread, title: "Thread", isPreview: false)
         #expect(novel.initialResumePoint == point)
+        #expect(novel.forumID == "40")
         #expect(manga.chapterView == 2)
         #expect(manga.initialPage == 12)
         #expect(!manga.isSmartModeEnabled)

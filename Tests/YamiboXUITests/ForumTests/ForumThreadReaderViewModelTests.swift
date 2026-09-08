@@ -1,7 +1,49 @@
 import Foundation
 import Testing
+import YamiboXTestSupport
 @testable import YamiboXCore
 @testable import YamiboXUI
+
+private enum ForumHistorySurface: CaseIterable {
+    case session, comment, filtered, preview
+}
+
+@MainActor
+@Test(arguments: ForumHistorySurface.allCases)
+private func forumThreadHistoryRecordsSessionOriginalButNotCompanions(surface: ForumHistorySurface) async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = try YamiboDatabase.openPool(rootDirectory: root)
+    let history = BrowsingHistoryStore(databasePool: pool)
+    let workflow = BrowsingHistoryWorkflow(
+        store: history, settingsStore: fixture.settingsStore,
+        progressStore: ReadingProgressStore(databasePool: pool),
+        directoryStore: MangaDirectoryStore(databasePool: pool)
+    )
+    try await fixture.settingsStore.update { $0.boardReader.setEntry(.init(mode: .novel), forumID: "40") }
+    let model = ForumThreadReaderViewModel(
+        context: ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "704", fid: "40"), title: "Thread", isDiscussionView: true),
+        repository: fixture.repository,
+        browsingHistoryWorkflow: workflow
+    )
+    model.recordsReaderSessionHistory = surface != .comment
+    model.persistsReadingActivity = surface != .preview
+    model.isReverseOrder = surface == .filtered
+    await model.load()
+    if surface == .session {
+        try await waitForCondition(timeout: .seconds(2), pollInterval: .milliseconds(10)) {
+            await history.entries().count == 1
+        }
+        let entries = try await workflow.snapshot().entries
+        #expect(entries[0].target == .novelThread(threadID: "704"))
+        try await history.delete(id: entries[0].id)
+        await model.goToPage(2)
+        #expect(try await workflow.snapshot().entries.isEmpty)
+    } else {
+        #expect(try await workflow.snapshot().entries.isEmpty)
+    }
+}
 
 @MainActor
 @Test func forumThreadModeSwitchRetainsPageAndAnchorDuringTeardown() async throws {

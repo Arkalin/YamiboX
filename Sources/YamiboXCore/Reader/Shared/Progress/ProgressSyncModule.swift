@@ -82,14 +82,16 @@ public struct ThreadReadingPosition: Hashable, Sendable {
     public var page: Int
     public var pageCount: Int?
     public var anchorPostID: String?
+    public var recordsBrowsingHistory: Bool
 
-    public init(threadID: String, page: Int, pageCount: Int? = nil, anchorPostID: String? = nil) {
+    public init(threadID: String, page: Int, pageCount: Int? = nil, anchorPostID: String? = nil, recordsBrowsingHistory: Bool = true) {
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         precondition(!normalizedThreadID.isEmpty, "ThreadReadingPosition requires a Yamibo thread tid")
         self.threadID = normalizedThreadID
         self.page = max(1, page)
         self.pageCount = pageCount.map { max(1, $0) }
         self.anchorPostID = anchorPostID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.recordsBrowsingHistory = recordsBrowsingHistory
     }
 }
 
@@ -103,6 +105,17 @@ public protocol ProgressSyncAdapter: Sendable {
     func saveNovelReadingPosition(_ position: NovelReadingPosition) async throws
     func saveMangaReadingPosition(_ position: MangaProgressReadingPosition) async throws
     func saveThreadReadingPosition(_ position: ThreadReadingPosition) async throws
+    func saveReadingPosition(_ position: ProgressSyncPosition, activityDate: Date) async throws
+}
+
+public extension ProgressSyncAdapter {
+    func saveReadingPosition(_ position: ProgressSyncPosition, activityDate: Date) async throws {
+        switch position {
+        case let .novel(position): try await saveNovelReadingPosition(position)
+        case let .manga(position): try await saveMangaReadingPosition(position)
+        case let .thread(position): try await saveThreadReadingPosition(position)
+        }
+    }
 }
 
 public actor ProgressSyncModule {
@@ -110,7 +123,9 @@ public actor ProgressSyncModule {
     private let debounceNanoseconds: UInt64
     private var pendingTask: Task<Void, Never>?
     private var lastQueuedPosition: ProgressSyncPosition?
+    private var lastQueuedActivityDate = Date.distantPast
     private var lastSyncedPosition: ProgressSyncPosition?
+    private var lastSyncedActivityDate = Date.distantPast
     private var needsRetry = false
 
     public init(adapter: any ProgressSyncAdapter, debounceNanoseconds: UInt64 = 350_000_000) {
@@ -122,6 +137,7 @@ public actor ProgressSyncModule {
         guard position != lastQueuedPosition || needsRetry else { return }
 
         lastQueuedPosition = position
+        lastQueuedActivityDate = .now
         pendingTask?.cancel()
         pendingTask = Task { [weak self, debounceNanoseconds] in
             try? await Task.sleep(nanoseconds: debounceNanoseconds)
@@ -135,11 +151,12 @@ public actor ProgressSyncModule {
         pendingTask = nil
 
         if let latestPosition {
+            if latestPosition != lastQueuedPosition { lastQueuedActivityDate = .now }
             lastQueuedPosition = latestPosition
         }
 
         guard let position = lastQueuedPosition else { return }
-        try await saveIfNeeded(position)
+        try await saveIfNeeded(position, activityDate: lastQueuedActivityDate)
     }
 
     public func cancelPending() {
@@ -152,103 +169,71 @@ public actor ProgressSyncModule {
     private func flushQueuedPosition() async throws {
         pendingTask = nil
         guard let position = lastQueuedPosition else { return }
-        try await saveIfNeeded(position)
+        try await saveIfNeeded(position, activityDate: lastQueuedActivityDate)
     }
 
-    private func saveIfNeeded(_ position: ProgressSyncPosition) async throws {
+    private func saveIfNeeded(_ position: ProgressSyncPosition, activityDate: Date) async throws {
+        guard activityDate >= lastSyncedActivityDate else { return }
         guard position != lastSyncedPosition || needsRetry else { return }
 
         do {
-            switch position {
-            case let .novel(position):
-                try await adapter.saveNovelReadingPosition(position)
-            case let .manga(position):
-                try await adapter.saveMangaReadingPosition(position)
-            case let .thread(position):
-                try await adapter.saveThreadReadingPosition(position)
+            try await adapter.saveReadingPosition(position, activityDate: activityDate)
+            if activityDate >= lastSyncedActivityDate {
+                lastSyncedPosition = position
+                lastSyncedActivityDate = activityDate
+                needsRetry = false
             }
-            lastSyncedPosition = position
-            lastQueuedPosition = position
-            needsRetry = false
         } catch {
-            needsRetry = true
+            if activityDate >= lastSyncedActivityDate { needsRetry = true }
             YamiboLog.sync.error("ProgressSyncModule failed to persist queued reading position; will retry on next queued update: \(error)")
             throw error
         }
     }
 }
 
-/// Persists debounced reading positions and, when a `BrowsingHistoryStore`
-/// is attached, piggybacks a position refresh onto the matching history row
-/// (browsing-history decision #5's "翻页更新" cadence — the same debounce
-/// that paces progress writes paces history updates, no extra scheduling).
-///
-/// The history refresh is UPDATE-only and runs after the progress write; if
-/// the surrounding Task is cancelled between the two, the history row just
-/// keeps a slightly stale position until the next save — display metadata
-/// only, never resume state (decision #4). Preview sessions never reach this
-/// adapter at all: both readers gate their queue/flush calls on
-/// `context.isPreview` before anything is enqueued.
+/// Resume positions remain mode-specific; timeline activity is routed through
+/// the board-configured canonical identity. Preview sessions never enqueue.
 public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
     private let readingProgressStore: ReadingProgressStore
-    private let browsingHistoryStore: BrowsingHistoryStore?
+    private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
 
     public init(
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryStore: BrowsingHistoryStore? = nil
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil
     ) {
         self.readingProgressStore = readingProgressStore
-        self.browsingHistoryStore = browsingHistoryStore
+        self.browsingHistoryWorkflow = browsingHistoryWorkflow
     }
 
     public func saveNovelReadingPosition(_ position: NovelReadingPosition) async throws {
-        _ = try await readingProgressStore.saveNovel(position)
-        await browsingHistoryStore?.updatePosition(
-            targetID: FavoriteContentTarget.novelThread(threadID: position.threadID).id,
-            chapterTitle: position.chapterTitle
-        )
+        try await saveReadingPosition(.novel(position), activityDate: .now)
     }
 
     public func saveMangaReadingPosition(_ position: MangaProgressReadingPosition) async throws {
-        _ = try await readingProgressStore.saveManga(position)
-        guard let browsingHistoryStore else { return }
-        if position.isSmartModeEnabled {
-            // Mirrors `ReadingProgressStore.saveManga`'s mode-on identity
-            // derivation so the history row id lines up with the row the
-            // manga reader recorded at open (browsing-history decision #2).
-            let cleanBookName = position.directoryName ?? position.chapterTitle
-            let target = FavoriteContentTarget(
-                mangaID: position.mangaID ?? cleanBookName,
-                mangaCleanBookName: cleanBookName
-            )
-            await browsingHistoryStore.updatePosition(
-                targetID: target.id,
-                pageIndex: position.pageIndex,
-                pageCount: position.pageCount,
-                chapterTitle: position.chapterTitle,
-                chapterThreadID: position.chapterThreadID
-            )
-        } else {
-            await browsingHistoryStore.updatePosition(
-                targetID: FavoriteContentTarget.mangaThread(threadID: position.chapterThreadID).id,
-                pageIndex: position.pageIndex,
-                pageCount: position.pageCount,
-                chapterTitle: position.chapterTitle
-            )
-        }
+        try await saveReadingPosition(.manga(position), activityDate: .now)
     }
 
     public func saveThreadReadingPosition(_ position: ThreadReadingPosition) async throws {
-        _ = try await readingProgressStore.saveNormalThread(
-            threadID: position.threadID,
-            page: position.page,
-            pageCount: position.pageCount,
-            anchorPostID: position.anchorPostID
-        )
-        await browsingHistoryStore?.updatePosition(
-            targetID: FavoriteContentTarget.normalThread(threadID: position.threadID).id,
-            pageIndex: position.page,
-            pageCount: position.pageCount
-        )
+        try await saveReadingPosition(.thread(position), activityDate: .now)
+    }
+
+    public func saveReadingPosition(_ position: ProgressSyncPosition, activityDate: Date) async throws {
+        switch position {
+        case let .novel(position):
+            _ = try await readingProgressStore.saveNovel(position, date: activityDate, discardingOlderUpdate: true)
+            await browsingHistoryWorkflow?.refreshPosition(threadID: position.threadID, reader: .novel, date: activityDate)
+        case let .manga(position):
+            _ = try await readingProgressStore.saveManga(position, date: activityDate, discardingOlderUpdate: true)
+            await browsingHistoryWorkflow?.refreshPosition(threadID: position.chapterThreadID, reader: .manga, date: activityDate)
+        case let .thread(position):
+            _ = try await readingProgressStore.saveNormalThread(
+                threadID: position.threadID, page: position.page,
+                pageCount: position.pageCount, anchorPostID: position.anchorPostID,
+                date: activityDate, discardingOlderUpdate: true
+            )
+            if position.recordsBrowsingHistory {
+                await browsingHistoryWorkflow?.refreshPosition(threadID: position.threadID, reader: .normal, date: activityDate)
+            }
+        }
     }
 }

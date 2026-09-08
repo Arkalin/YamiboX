@@ -38,8 +38,9 @@ enum ReadingOpenOrigin: Sendable {
 /// history page displays (`BrowsingHistoryEntry.category(boardReader:)`): a
 /// configured entry dictates the reader — 普通 opens the plain thread page,
 /// 小说 the novel reader, 漫画 the manga path with the smart bit queried live
-/// — while rows on boards with no entry (never configured, or no fid
-/// recorded) keep their stored identity's reader:
+/// — known boards with no entry default to the plain reader, while unknown
+/// ownership keeps the stored identity's reader. The shared workflow first
+/// refreshes the row's identity and position to that same configuration:
 ///
 /// - Normal threads open at page 1 with no explicit target — the thread
 ///   reader itself restores the saved page + floor anchor on every entrance
@@ -54,6 +55,7 @@ struct ReadingOpenTargetResolver {
     let readingProgressStore: ReadingProgressStore
     let mangaDirectoryStore: any MangaDirectoryPersisting
     let settingsStore: SettingsStore
+    var historyWorkflow: BrowsingHistoryWorkflow? = nil
 
     func openTarget(
         for entry: BrowsingHistoryEntry,
@@ -64,7 +66,27 @@ struct ReadingOpenTargetResolver {
         // One settings snapshot backs both the category dispatch and the
         // manga smart bit, so a concurrent configuration change can't make
         // them disagree within a single resolve.
-        let boardReader = await settingsStore.load().boardReader
+        let boardReader: BoardReaderSettings
+        var entry = entry
+        if let historyWorkflow {
+            guard let snapshot = try? await historyWorkflow.snapshot() else { return nil }
+            boardReader = snapshot.boardReader
+            if let current = snapshot.entries.first(where: {
+                $0.id == entry.id || (entry.lastVisitedThreadID != nil && $0.lastVisitedThreadID == entry.lastVisitedThreadID)
+            }) {
+                entry = current
+            } else if let tid = entry.lastVisitedThreadID,
+                      let directory = try? await mangaDirectoryStore.directory(containingTID: tid),
+                      let current = snapshot.entries.first(where: {
+                          $0.target == FavoriteContentTarget(mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName)
+                      }) {
+                entry = current
+            } else {
+                return nil
+            }
+        } else {
+            boardReader = await settingsStore.load().boardReader
+        }
 
         switch entry.category(boardReader: boardReader) {
         case .normal:
@@ -83,7 +105,8 @@ struct ReadingOpenTargetResolver {
                     source: origin.novelLaunchSource,
                     initialView: resumePoint?.view ?? novel?.lastView ?? fallbackNovelView,
                     authorID: resumePoint?.authorID ?? novel?.authorID ?? entry.authorID,
-                    initialResumePoint: resumePoint
+                    initialResumePoint: resumePoint,
+                    forumID: entry.forumID
                 )
             )
 

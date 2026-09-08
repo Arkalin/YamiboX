@@ -26,6 +26,7 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
             return XCTFail("Expected a novel reader open target")
         }
         XCTAssertEqual(context.threadID, "6001")
+        XCTAssertEqual(context.forumID, "40")
         XCTAssertEqual(context.threadTitle, "配置前读过的帖子")
     }
 
@@ -110,7 +111,7 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
         XCTAssertEqual(context.forumID, "40")
     }
 
-    func testUnconfiguredBoardKeepsRecordedNovelIdentity() async throws {
+    func testKnownUnconfiguredBoardUsesPlainReader() async throws {
         let fixture = try makeFixture(prefix: "history-open-unconfigured")
         try await fixture.settingsStore.save(AppSettings(boardReader: BoardReaderSettings(entries: [:])))
 
@@ -121,10 +122,10 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
         )
         let opened = await fixture.resolver.openTarget(for: entry)
 
-        guard case let .novelReader(context)? = opened else {
-            return XCTFail("Expected a novel reader open target")
+        guard case let .nativeThread(url, _)? = opened else {
+            return XCTFail("Expected a plain thread open target")
         }
-        XCTAssertEqual(context.threadID, "6006")
+        XCTAssertEqual(url, YamiboRoute.threadByID(tid: "6006", page: 1, authorID: nil, reverse: false).url)
     }
 
     func testHomeOriginUsesCachedMangaChapterWhenNoProgressExists() async throws {

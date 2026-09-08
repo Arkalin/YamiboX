@@ -13,6 +13,46 @@ private typealias NovelTextLayoutFixture = @Sendable (
 
 final class NovelReaderViewModelTests: XCTestCase {
     @MainActor
+    func testHistoryAndResumeRetainForumIDWithoutRecordingPreviews() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = BrowsingHistoryStore(databasePool: try YamiboDatabase.openPool(rootDirectory: root))
+        for forumID in ["49", nil] as [String?] {
+            for isPreview in [false, true] {
+                try await store.clearAll()
+                let context = NovelLaunchContext(
+                    threadID: "556677", threadTitle: "Novel", source: .forum,
+                    isPreview: isPreview, forumID: forumID
+                )
+                let model = try await makeModel(
+                    documents: [makeDocument(view: 1, maxView: 1, chapterTitles: ["Chapter"])],
+                    launchContext: context,
+                    browsingHistoryStore: store
+                )
+                defer { model.close() }
+                let resumed = await model.saveProgress()
+                XCTAssertEqual(resumed.forumID, forumID)
+                XCTAssertEqual(resumed.isPreview, isPreview)
+                if isPreview {
+                    let entries = await store.entries()
+                    XCTAssertTrue(entries.isEmpty)
+                } else {
+                    try await waitFor { await store.entries().count == 1 }
+                    let entries = await store.entries()
+                    let entry = try XCTUnwrap(entries.first)
+                    XCTAssertEqual(entry.forumID, forumID)
+                    XCTAssertEqual(entry.target, .novelThread(threadID: context.threadID))
+                    var boardReader = BoardReaderSettings()
+                    boardReader.setEntry(.init(mode: .normal), forumID: "49")
+                    XCTAssertEqual(entry.category(boardReader: boardReader), forumID == nil ? .novel : .normal)
+                    boardReader.setEntry(.init(mode: .manga(smartEnabled: false)), forumID: "49")
+                    XCTAssertEqual(entry.category(boardReader: boardReader), forumID == nil ? .novel : .manga)
+                }
+            }
+        }
+    }
+
+    @MainActor
     func testVerticalImageSamplesSaveRestoreAndRejectStaleGeneration() async throws {
         let model = try await makeModel(
             documents: [makeImageProgressDocument()],
@@ -3553,6 +3593,7 @@ private func makeModel(
     documents: [NovelReaderProjection],
     settings: NovelReaderAppearanceSettings = NovelReaderAppearanceSettings(readingMode: .paged),
     launchContext: NovelLaunchContext? = nil,
+    browsingHistoryStore: BrowsingHistoryStore? = nil,
     session: URLSession = .shared,
     cacheStore: NovelReaderProjectionStore? = nil,
     forumCacheStore: ForumCacheStore? = nil,
@@ -3598,6 +3639,7 @@ private func makeModel(
         sessionStore: sessionStore,
         settingsStore: settingsStore,
         readingProgressStore: readingProgressStore,
+        browsingHistoryStore: browsingHistoryStore,
         novelReaderCacheStore: resolvedCacheStore,
         offlineCacheStore: resolvedOfflineCacheStore,
         forumCacheStore: resolvedForumCacheStore,

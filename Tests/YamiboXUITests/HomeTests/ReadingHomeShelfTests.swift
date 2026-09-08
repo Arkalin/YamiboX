@@ -73,6 +73,50 @@ final class ReadingHomeShelfTests: XCTestCase {
 
 @MainActor
 final class ReadingHomeViewModelTests: XCTestCase {
+    func testCanonicalSnapshotUpdatesHomeHistoryAndOpenTargetTogether() async throws {
+        let context = try makeContext()
+        try await context.settingsStore.update { $0.boardReader.setEntry(.init(mode: .novel), forumID: "40") }
+        try await context.readingProgressStore.saveNormalThread(threadID: "900", page: 4)
+        try await context.readingProgressStore.saveNovel(NovelReadingPosition(threadID: "900", view: 2, chapterTitle: "Novel chapter"))
+        let visit = BrowsingHistoryVisit(threadID: "900", title: "Book", forumID: "40", reader: .normal)
+        try await context.browsingHistoryWorkflow.recordVisit(visit)
+        let home = ReadingHomeViewModel(dependencies: context.libraryDependencies)
+        let history = BrowsingHistoryViewModel(dependencies: context.libraryDependencies)
+        await home.reload()
+        await history.reload()
+        let original = try XCTUnwrap(history.entries.first)
+        XCTAssertEqual(home.continuing.first?.entry, original)
+        XCTAssertEqual(home.continuing.first?.positionText, "Novel chapter")
+        let resolver = ReadingOpenTargetResolver(
+            readingProgressStore: context.readingProgressStore,
+            mangaDirectoryStore: context.libraryDependencies.mangaDirectoryStore,
+            settingsStore: context.settingsStore,
+            historyWorkflow: context.browsingHistoryWorkflow
+        )
+        try await context.settingsStore.update { $0.boardReader.setEntry(.init(mode: .manga(smartEnabled: false)), forumID: "40") }
+        await home.reload()
+        await history.reload()
+        XCTAssertEqual(history.entries.count, 1)
+        XCTAssertEqual(home.continuing.first?.entry, history.entries.first)
+        XCTAssertNil(home.continuing.first?.positionText)
+        XCTAssertEqual(history.entries.first?.lastVisitTime, visit.date)
+        guard case let .mangaReader(manga)? = await resolver.openTarget(for: original) else {
+            return XCTFail("Expected the current board's manga reader")
+        }
+        XCTAssertEqual(manga.chapterTID, "900")
+        try await context.settingsStore.update { $0.boardReader.setEntry(.init(mode: .normal), forumID: "40") }
+        await home.reload()
+        await history.reload()
+        XCTAssertTrue(home.continuing.isEmpty)
+        XCTAssertEqual(history.entries.first?.pageIndex, 4)
+        XCTAssertEqual(history.entries.first?.category, .normal)
+        XCTAssertNil(history.entries.first?.chapterTitle)
+        XCTAssertEqual(history.entries.first?.lastVisitTime, visit.date)
+        guard case .nativeThread? = await resolver.openTarget(for: original) else {
+            return XCTFail("Expected the current board's plain reader")
+        }
+    }
+
     func testReloadUsesSharedCoversAndUpdatesAfterDeletionAndClear() async throws {
         let context = try makeContext()
         let novel = BrowsingHistoryEntry(target: .novelThread(threadID: "1"), title: "Novel", lastVisitTime: Date(timeIntervalSince1970: 3))

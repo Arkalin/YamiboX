@@ -4,7 +4,8 @@ import Testing
 import YamiboXTestSupport
 
 @MainActor
-@Test func appContinuityRestoreReconcilesNovelRouteWithReadingProgress() async throws {
+@Test(arguments: [nil, "55"] as [String?], [true, false])
+func appContinuityRestoreReconcilesNovelRouteWithReadingProgress(forumID: String?, reconciles: Bool) async throws {
     let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "app-continuity-restore-novel")
     let readingProgressStore = try ReadingProgressStore(testSuiteName: defaultsSuiteName, key: "reading-progress")
     let localFavoriteLibraryStore = FavoriteLibraryStore(
@@ -18,7 +19,8 @@ import YamiboXTestSupport
             threadID: threadID,
             threadTitle: "旧标题",
             source: .resume,
-            initialView: 1
+            initialView: 2,
+            forumID: forumID
         )
     )
     let resumePoint = NovelResumePoint(
@@ -43,7 +45,8 @@ import YamiboXTestSupport
     try document.importThreadFavorite(
         probeResult: FavoriteThreadProbeResult(
             target: FavoriteItemTarget(kind: .novelThread, threadID: threadID),
-            title: "远端小说"
+            title: "远端小说",
+            forumID: "49"
         )
     )
     try await localFavoriteLibraryStore.save(document)
@@ -57,16 +60,17 @@ import YamiboXTestSupport
 
     let restoredRoute = await workflow.restoreExplicitly(
         canRestoreReaderRoute: true,
-        reconcilesWithReadingProgress: true
+        reconcilesWithReadingProgress: reconciles
     )
 
     let expectedContext = NovelLaunchContext(
         threadID: threadID,
-        threadTitle: "远端小说",
+        threadTitle: reconciles ? "远端小说" : "旧标题",
         source: .resume,
-        initialView: 5,
-        authorID: "42",
-        initialResumePoint: resumePoint
+        initialView: reconciles ? 5 : 2,
+        authorID: reconciles ? "42" : nil,
+        initialResumePoint: reconciles ? resumePoint : nil,
+        forumID: forumID ?? "49"
     )
     #expect(restoredRoute == .novel(expectedContext))
     #expect(await resumeRouteStore.load() == .novel(expectedContext))

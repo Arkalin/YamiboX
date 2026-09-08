@@ -14,6 +14,22 @@ import YamiboXTestSupport
     #expect(context.initialView == 1)
     #expect(context.initialResumePoint == nil)
     #expect(context.authorID == "42")
+    #expect(context.forumID == "49")
+    #expect(model.launchContext(for: nil).forumID == "49")
+}
+
+@MainActor
+@Test func novelDetailLaunchUsesLoadedForumIDBeforeContext() throws {
+    let model = try makeNovelDetailViewModel()
+    model.threadPage = ForumThreadPage(
+        thread: ThreadIdentity(tid: "900", fid: "55"),
+        title: "Novel", posts: [], forumID: "60"
+    )
+    #expect(model.launchContext(for: nil).forumID == "60")
+    #expect(model.continueLaunchContext().forumID == "60")
+    model.threadPage?.forumID = nil
+    #expect(model.launchContext(for: nil).forumID == "55")
+    #expect(model.continueLaunchContext().forumID == "55")
 }
 
 @MainActor

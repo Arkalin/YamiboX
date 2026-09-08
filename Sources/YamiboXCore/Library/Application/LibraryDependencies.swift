@@ -15,6 +15,7 @@ public struct LibraryDependencies: Sendable {
     /// working; the app composition root always supplies one. Feeds the
     /// browsing-history page reached from the Mine tab.
     public let browsingHistoryStore: BrowsingHistoryStore?
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: MangaDirectoryStore
@@ -36,6 +37,7 @@ public struct LibraryDependencies: Sendable {
         favoriteSyncRunStore: FavoriteSyncRunStore,
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore? = nil,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: MangaDirectoryStore,
@@ -51,6 +53,7 @@ public struct LibraryDependencies: Sendable {
         self.favoriteSyncRunStore = favoriteSyncRunStore
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore
+        self.browsingHistoryWorkflow = browsingHistoryWorkflow
         self.settingsStore = settingsStore
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore

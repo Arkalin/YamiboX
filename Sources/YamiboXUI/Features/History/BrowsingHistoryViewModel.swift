@@ -17,11 +17,7 @@ final class BrowsingHistoryViewModel {
     let showsPreviousReading: Bool
     var entries: [BrowsingHistoryEntry] = []
     var selectedCategory: BrowsingHistoryCategory?
-    /// Snapshot of the per-board reader configuration taken at reload time —
-    /// rows display and filter by their *effective* category (the board's
-    /// current 阅读方式, falling back to the recorded identity;
-    /// pluggable-reader-config R13), so the chip a row appears under always
-    /// matches the reader it would open with.
+    /// The configuration snapshot used to canonicalize the displayed rows.
     private(set) var boardReaderSettings = BoardReaderSettings()
     var searchText = ""
     var isLoading = false
@@ -43,6 +39,7 @@ final class BrowsingHistoryViewModel {
     var clearAllConfirmationPresented = false
 
     @ObservationIgnored private let browsingHistoryStore: BrowsingHistoryStore?
+    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
     @ObservationIgnored private let favoriteLibraryStore: FavoriteLibraryStore
     @ObservationIgnored private let contentCoverStore: ContentCoverStore
     @ObservationIgnored private let settingsStore: SettingsStore
@@ -67,6 +64,7 @@ final class BrowsingHistoryViewModel {
     init(dependencies: LibraryDependencies, showsPreviousReading: Bool = false) {
         self.showsPreviousReading = showsPreviousReading
         browsingHistoryStore = dependencies.browsingHistoryStore
+        browsingHistoryWorkflow = dependencies.browsingHistoryWorkflow
         favoriteLibraryStore = dependencies.localFavoriteLibraryStore
         contentCoverStore = dependencies.contentCoverStore
         settingsStore = dependencies.settingsStore
@@ -74,7 +72,8 @@ final class BrowsingHistoryViewModel {
         openTargetResolver = BrowsingHistoryOpenTargetResolver(
             readingProgressStore: dependencies.readingProgressStore,
             mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            settingsStore: dependencies.settingsStore
+            settingsStore: dependencies.settingsStore,
+            historyWorkflow: dependencies.browsingHistoryWorkflow
         )
     }
 
@@ -95,22 +94,28 @@ final class BrowsingHistoryViewModel {
         reloadGeneration += 1
         let generation = reloadGeneration
         let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        // The persisted `category` column holds the recorded identity; the
-        // chip filter must match by *effective* category instead (board
-        // configuration can remap rows after the fact), so category
-        // filtering happens here rather than in SQL.
-        let boardReader = await settingsStore.load().boardReader
-        let loadedEntries = await browsingHistoryStore.entries(
-            category: nil,
-            searchText: showsPreviousReading || searchQuery.isEmpty ? nil : searchQuery
-        )
+        let snapshot: BrowsingHistorySnapshot
+        do {
+            if let browsingHistoryWorkflow {
+                snapshot = try await browsingHistoryWorkflow.snapshot()
+            } else {
+                snapshot = await BrowsingHistorySnapshot(entries: browsingHistoryStore.entries(), boardReader: settingsStore.load().boardReader)
+            }
+        } catch {
+            guard generation == reloadGeneration else { return }
+            errorMessage = error.localizedDescription
+            errorDetails = LoadFailureDetails(error: error)
+            return
+        }
+        let boardReader = snapshot.boardReader
+        let loadedEntries = snapshot.entries
         guard generation == reloadGeneration else { return }
         boardReaderSettings = boardReader
         let scopedEntries = showsPreviousReading
             ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader).previous
             : loadedEntries
         entries = scopedEntries.filter { entry in
-            if showsPreviousReading, !searchQuery.isEmpty,
+            if !searchQuery.isEmpty,
                !entry.title.localizedStandardContains(searchQuery) { return false }
             guard let selectedCategory else { return true }
             return entry.category(boardReader: boardReader) == selectedCategory
@@ -156,10 +161,8 @@ final class BrowsingHistoryViewModel {
         }
     }
 
-    /// A board's 阅读方式 change remaps rows' effective categories live —
-    /// without this, a page kept alive in the navigation stack would keep
-    /// showing (and filtering by) the stale mapping until some history
-    /// change happened to trigger a reload.
+    /// Reload through the workflow so configuration, identity and position
+    /// change together, including when the page stays in the navigation stack.
     func observeSettingsChanges() async {
         for await _ in settingsStore.changes() {
             guard !Task.isCancelled else { return }
@@ -171,7 +174,8 @@ final class BrowsingHistoryViewModel {
         guard let browsingHistoryStore else { return }
         entries.removeAll { $0.id == entry.id }
         do {
-            try await browsingHistoryStore.delete(id: entry.id)
+            if let browsingHistoryWorkflow { try await browsingHistoryWorkflow.delete(entry) }
+            else { try await browsingHistoryStore.delete(id: entry.id) }
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription

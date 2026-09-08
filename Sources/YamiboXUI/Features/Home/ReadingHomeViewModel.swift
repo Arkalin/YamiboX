@@ -20,15 +20,27 @@ final class ReadingHomeViewModel {
         resolver = ReadingOpenTargetResolver(
             readingProgressStore: dependencies.readingProgressStore,
             mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            settingsStore: dependencies.settingsStore
+            settingsStore: dependencies.settingsStore,
+            historyWorkflow: dependencies.browsingHistoryWorkflow
         )
     }
 
     func reload() async {
         generation += 1
         let currentGeneration = generation
-        let settings = await dependencies.settingsStore.load().boardReader
-        let entries = await dependencies.browsingHistoryStore?.entries() ?? []
+        let snapshot: BrowsingHistorySnapshot
+        do {
+            if let workflow = dependencies.browsingHistoryWorkflow {
+                snapshot = try await workflow.snapshot()
+            } else {
+                snapshot = await BrowsingHistorySnapshot(entries: dependencies.browsingHistoryStore?.entries() ?? [], boardReader: dependencies.settingsStore.load().boardReader)
+            }
+        } catch {
+            YamiboLog.persistence.warning("Failed to load canonical reading history: \(error)")
+            return
+        }
+        let settings = snapshot.boardReader
+        let entries = snapshot.entries
         let shelf = ReadingHomeShelf(entries: entries, boardReader: settings)
         let keys = (shelf.continuing + shelf.previous).compactMap { ContentCoverKey(target: $0.target) }
         let covers = await dependencies.contentCoverStore.covers(for: keys)

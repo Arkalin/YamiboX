@@ -53,12 +53,17 @@ public final class AppContinuityWorkflow: Sendable {
         guard canRestoreReaderRoute else { return nil }
         guard let route = await appContext.readerResumeRouteStore.load() else { return nil }
 
-        guard let restoredRoute = await restorableRoute(
+        guard var restoredRoute = await restorableRoute(
             from: route,
             reconcilesWithReadingProgress: reconcilesWithReadingProgress
         ) else {
             await appContext.readerResumeRouteStore.clear()
             return nil
+        }
+
+        if case var .novel(context) = restoredRoute, context.forumID == nil {
+            context.forumID = await favoriteItem(forThreadID: context.threadID)?.forumID
+            restoredRoute = .novel(context)
         }
 
         if restoredRoute != route {
@@ -341,7 +346,8 @@ private extension NovelLaunchContext {
             initialView: resumePoint?.view ?? novel?.lastView ?? initialView,
             authorID: resumePoint?.authorID ?? novel?.authorID ?? authorID,
             initialResumePoint: resumePoint,
-            isPreview: isPreview
+            isPreview: isPreview,
+            forumID: forumID
         )
     }
 }

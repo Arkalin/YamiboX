@@ -68,6 +68,8 @@ final class ForumThreadReaderViewModel {
     /// 倒序浏览 — pages are requested newest-first (Discuz `ordertype=1`).
     var isReverseOrder = false
     var persistsReadingActivity = true
+    var recordsReaderSessionHistory = false
+    @ObservationIgnored private var hasRecordedBrowsingHistoryVisit = false
     @ObservationIgnored private var isSuspendedForModeSwitch = false
     @ObservationIgnored private var hasConsumedLaunchTarget = false
     private(set) var becameReaderCompanion = false
@@ -77,7 +79,7 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumThreadPageLoading
     @ObservationIgnored private let localFavoriteLibraryStoreProvider: @Sendable () async -> FavoriteLibraryStore?
     @ObservationIgnored private let readingProgressStoreProvider: @Sendable () async -> ReadingProgressStore?
-    @ObservationIgnored private let browsingHistoryStoreProvider: @Sendable () async -> BrowsingHistoryStore?
+    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
     @ObservationIgnored private let favoriteRepositoryProvider: @Sendable () async -> (any ForumThreadFavoriteRemoteOperating)?
     @ObservationIgnored private let contentCoverStoreProvider: @Sendable () async -> ContentCoverStore?
     @ObservationIgnored private let mangaDirectoryStoreProvider: @Sendable () async -> (any MangaDirectoryPersisting)?
@@ -103,9 +105,7 @@ final class ForumThreadReaderViewModel {
         readingProgressStoreProvider = {
             dependencies.readingProgressStore
         }
-        browsingHistoryStoreProvider = {
-            dependencies.browsingHistoryStore
-        }
+        browsingHistoryWorkflow = dependencies.browsingHistoryWorkflow
         favoriteRepositoryProvider = {
             await dependencies.makeFavoriteRepository()
         }
@@ -121,7 +121,7 @@ final class ForumThreadReaderViewModel {
         progressSync = ProgressSyncModule(
             adapter: FavoriteLibraryProgressSyncAdapter(
                 readingProgressStore: dependencies.readingProgressStore,
-                browsingHistoryStore: dependencies.browsingHistoryStore
+                browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
             )
         )
     }
@@ -131,7 +131,7 @@ final class ForumThreadReaderViewModel {
         repository: any ForumThreadPageLoading,
         localFavoriteLibraryStore: FavoriteLibraryStore? = nil,
         readingProgressStore: ReadingProgressStore? = nil,
-        browsingHistoryStore: BrowsingHistoryStore? = nil,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
         favoriteRepository: (any ForumThreadFavoriteRemoteOperating)? = nil,
         contentCoverStore: ContentCoverStore? = nil,
         mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
@@ -148,9 +148,7 @@ final class ForumThreadReaderViewModel {
         readingProgressStoreProvider = {
             readingProgressStore
         }
-        browsingHistoryStoreProvider = {
-            browsingHistoryStore
-        }
+        self.browsingHistoryWorkflow = browsingHistoryWorkflow
         favoriteRepositoryProvider = {
             favoriteRepository
         }
@@ -167,7 +165,7 @@ final class ForumThreadReaderViewModel {
             ProgressSyncModule(
                 adapter: FavoriteLibraryProgressSyncAdapter(
                     readingProgressStore: progressStore,
-                    browsingHistoryStore: browsingHistoryStore
+                    browsingHistoryWorkflow: browsingHistoryWorkflow
                 )
             )
         }
@@ -878,33 +876,33 @@ final class ForumThreadReaderViewModel {
             threadID: context.thread.tid,
             page: currentPage,
             pageCount: pageNavigation?.totalPages,
-            anchorPostID: latestVisibleAnchorPostID ?? restoredAnchorPostID
+            anchorPostID: latestVisibleAnchorPostID ?? restoredAnchorPostID,
+            recordsBrowsingHistory: shouldRecordBrowsingHistory
         )
     }
 
-    /// Upserts this visit's history row on every successful page load
-    /// (browsing-history decision #5: open records, page turns refresh).
-    /// Discussion companion views never record (decision #14) — their tid
-    /// belongs to the novel/manga main-form row. 只看楼主 / 倒序浏览 pages
-    /// don't either: their `pageIndex` doesn't address the same posts the
-    /// normal view would reopen.
+    private var shouldRecordBrowsingHistory: Bool {
+        persistsReadingActivity && (!context.isDiscussionView || recordsReaderSessionHistory) && !isFilteredView
+    }
+
+    /// Main reader-session originals count as activity, unlike comment
+    /// companions. Page turns cannot resurrect a deleted history row.
     private func recordBrowsingHistoryVisit() {
-        guard persistsReadingActivity, !context.isDiscussionView, !becameReaderCompanion,
-              page != nil, !isFilteredView else { return }
-        let entry = BrowsingHistoryEntry(
-            target: .normalThread(threadID: context.thread.tid),
+        guard shouldRecordBrowsingHistory, page != nil, let history = browsingHistoryWorkflow else { return }
+        let visit = BrowsingHistoryVisit(
+            threadID: context.thread.tid,
             title: favoriteTitle,
             forumID: resolvedForumID,
-            pageIndex: currentPage,
-            pageCount: pageNavigation?.totalPages,
-            lastVisitTime: .now
+            reader: .normal
         )
-        Task { [browsingHistoryStoreProvider] in
-            guard let store = await browsingHistoryStoreProvider() else { return }
+        let isFirstVisit = !hasRecordedBrowsingHistoryVisit
+        hasRecordedBrowsingHistoryVisit = true
+        Task {
             do {
-                try await store.record(entry)
+                if isFirstVisit { try await history.recordVisit(visit) }
+                else { try await history.updateActivity(visit) }
             } catch {
-                YamiboLog.forum.warning("Failed to record browsing-history visit for \(entry.id, privacy: .public): \(error)")
+                YamiboLog.forum.warning("Failed to record browsing-history visit for \(visit.threadID, privacy: .public): \(error)")
             }
         }
     }

@@ -575,6 +575,10 @@ public final class MangaReaderWorkflow {
         window?.directory.favoriteIdentity
     }
 
+    public func currentHistoryDirectory() -> MangaDirectory? {
+        context.isSmartModeEnabled ? window?.directory : nil
+    }
+
     public func currentDirectoryCleanBookName() -> String? {
         window?.directory.cleanBookName
     }

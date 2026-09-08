@@ -91,6 +91,7 @@ final class ReaderSession: Identifiable {
         if let model = threadModels[context.thread.tid] { return model }
         let model = ForumThreadReaderViewModel(context: context, dependencies: dependencies)
         model.persistsReadingActivity = !isPreview
+        model.recordsReaderSessionHistory = true
         threadModels[context.thread.tid] = model
         return model
     }
@@ -108,7 +109,7 @@ final class ReaderSession: Identifiable {
         case let .novel(context):
             title = context.threadTitle
             authorID = context.authorID
-            forumID = threadModels[context.threadID]?.readerSwitchThread.fid
+            forumID = threadModels[context.threadID]?.readerSwitchThread.fid ?? context.forumID
         case let .manga(context):
             title = context.displayTitle
             authorID = nil

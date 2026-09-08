@@ -32,6 +32,12 @@ enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
             try db.create(index: "browsing_history_thread_idx", on: "browsing_history", columns: ["thread_id"])
             try db.create(index: "browsing_history_category_visit_idx", on: "browsing_history", columns: ["category", "last_visit_time"])
         }
+        migrator.registerMigration("history.v2.source") { db in
+            try db.alter(table: "browsing_history") { table in
+                table.add(column: "last_visited_thread_id", .text)
+                table.add(column: "last_visited_thread_title", .text)
+            }
+        }
     }
 
     static func erase(in db: Database) throws {

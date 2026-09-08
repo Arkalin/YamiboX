@@ -17,11 +17,9 @@ public enum BrowsingHistoryCategory: String, Codable, CaseIterable, Sendable {
 /// text, timestamps), but resume positions live in `reading_progress` —
 /// deleting a history row never touches resume state.
 ///
-/// Identity reuses `FavoriteContentTarget` (decision #4's implementation
-/// note): normal/novel threads and mode-off manga threads are keyed per
-/// thread; mode-on manga is keyed by the directory-level `.mangaTitle`
-/// identity so one manga occupies exactly one row no matter how many
-/// chapters were read (decision #2).
+/// Identity follows the board's configured reader, not the reader used for
+/// the visit. Smart manga uses its confirmed directory identity; other
+/// modes use one identity per thread.
 public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
     public var target: FavoriteContentTarget
     public var title: String
@@ -38,6 +36,9 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
     /// and mode-off click routing opens it (PRD implementation notes).
     public var chapterThreadID: String?
     public var lastVisitTime: Date
+    /// Actual browsing source, independent of the canonical reader's resume position.
+    public var lastVisitedThreadID: String?
+    public var lastVisitedThreadTitle: String?
 
     public var id: String { target.id }
 
@@ -52,12 +53,8 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    /// Category the row should *display and open* as right now, following
-    /// the board's current 阅读方式 configuration (pluggable-reader-config
-    /// R11/R13): a configured entry dictates the category; a board with no
-    /// entry (never configured, or the row carries no fid) falls back to the
-    /// stored identity-derived `category`. The persisted `category` column
-    /// keeps the recorded value — this is pure read-time presentation.
+    /// Known but unconfigured boards use the plain reader. Only unknown
+    /// board ownership falls back to the stored identity.
     public func category(boardReader: BoardReaderSettings) -> BrowsingHistoryCategory {
         switch boardReader.entry(forumID: forumID)?.mode {
         case .normal:
@@ -67,7 +64,7 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
         case .manga:
             .manga
         case nil:
-            category
+            forumID == nil ? category : .normal
         }
     }
 
@@ -80,7 +77,9 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
         pageCount: Int? = nil,
         chapterTitle: String? = nil,
         chapterThreadID: String? = nil,
-        lastVisitTime: Date = .now
+        lastVisitTime: Date = .now,
+        lastVisitedThreadID: String? = nil,
+        lastVisitedThreadTitle: String? = nil
     ) {
         self.target = target
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,6 +91,8 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
         self.chapterTitle = chapterTitle?.browsingHistoryTrimmedNonEmpty
         self.chapterThreadID = chapterThreadID?.browsingHistoryTrimmedNonEmpty
         self.lastVisitTime = lastVisitTime
+        self.lastVisitedThreadID = lastVisitedThreadID?.browsingHistoryTrimmedNonEmpty ?? target.threadID ?? self.chapterThreadID
+        self.lastVisitedThreadTitle = lastVisitedThreadTitle?.browsingHistoryTrimmedNonEmpty ?? self.title
     }
 }
 

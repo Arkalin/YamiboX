@@ -216,7 +216,8 @@ public actor ReadingProgressStore {
         page: Int,
         pageCount: Int? = nil,
         anchorPostID: String? = nil,
-        date: Date = .now
+        date: Date = .now,
+        discardingOlderUpdate: Bool = false
     ) async throws -> ReadingProgressRecord {
         guard let threadID = Self.trimmedNonEmpty(threadID) else {
             throw YamiboPersistenceError(context: "Normal thread reading progress requires a thread tid")
@@ -235,12 +236,12 @@ public actor ReadingProgressStore {
                 anchorPostID: anchorPostID
             )
         )
-        try await save(record)
+        try await save(record, discardingOlderUpdate: discardingOlderUpdate)
         return record
     }
 
     @discardableResult
-    public func saveNovel(_ position: NovelReadingPosition, date: Date = .now) async throws -> ReadingProgressRecord {
+    public func saveNovel(_ position: NovelReadingPosition, date: Date = .now, discardingOlderUpdate: Bool = false) async throws -> ReadingProgressRecord {
         let target = FavoriteContentTarget.novelThread(threadID: position.threadID)
         let record = ReadingProgressRecord(
             contentTarget: target,
@@ -258,7 +259,7 @@ public actor ReadingProgressStore {
             ),
             manga: nil
         )
-        try await save(record)
+        try await save(record, discardingOlderUpdate: discardingOlderUpdate)
         return record
     }
 
@@ -289,9 +290,9 @@ public actor ReadingProgressStore {
     /// `.mangaTitle` record (if one exists from a prior mode-on session) is
     /// left completely untouched/stale, per decision #15.
     @discardableResult
-    public func saveManga(_ position: MangaProgressReadingPosition, date: Date = .now) async throws -> ReadingProgressRecord {
+    public func saveManga(_ position: MangaProgressReadingPosition, date: Date = .now, discardingOlderUpdate: Bool = false) async throws -> ReadingProgressRecord {
         guard position.isSmartModeEnabled else {
-            return try await saveMangaThread(position, date: date)
+            return try await saveMangaThread(position, date: date, discardingOlderUpdate: discardingOlderUpdate)
         }
 
         let cleanBookName = position.directoryName ?? position.chapterTitle
@@ -304,7 +305,8 @@ public actor ReadingProgressStore {
             pageIndex: position.pageIndex,
             pageCount: position.pageCount,
             mangaID: position.mangaID,
-            date: date
+            date: date,
+            discardingOlderUpdate: discardingOlderUpdate
         )
     }
 
@@ -318,7 +320,7 @@ public actor ReadingProgressStore {
     /// from the current chapter after in-session chapter jumps) — so each
     /// chapter thread the user reads gets its own independent row.
     @discardableResult
-    public func saveMangaThread(_ position: MangaProgressReadingPosition, date: Date = .now) async throws -> ReadingProgressRecord {
+    public func saveMangaThread(_ position: MangaProgressReadingPosition, date: Date = .now, discardingOlderUpdate: Bool = false) async throws -> ReadingProgressRecord {
         let target = FavoriteContentTarget.mangaThread(threadID: position.chapterThreadID)
         let record = ReadingProgressRecord(
             contentTarget: target,
@@ -335,7 +337,7 @@ public actor ReadingProgressStore {
                 mangaPageCount: position.pageCount
             )
         )
-        try await save(record)
+        try await save(record, discardingOlderUpdate: discardingOlderUpdate)
         return record
     }
 
@@ -349,7 +351,8 @@ public actor ReadingProgressStore {
         pageIndex: Int,
         pageCount: Int? = nil,
         mangaID: String? = nil,
-        date: Date = .now
+        date: Date = .now,
+        discardingOlderUpdate: Bool = false
     ) async throws -> ReadingProgressRecord {
         let target = FavoriteContentTarget(mangaID: mangaID ?? cleanBookName, mangaCleanBookName: cleanBookName)
         let chapterTID = Self.trimmedNonEmpty(chapterThreadID)
@@ -372,27 +375,39 @@ public actor ReadingProgressStore {
                 mangaPageCount: pageCount
             )
         )
-        try await database.write { db in
-            for candidateID in Self.mangaProgressRetargetCandidateIDs(
+        let changed = try await database.write { db in
+            let candidateIDs = Self.mangaProgressRetargetCandidateIDs(
                 target: target,
                 cleanBookName: cleanBookName,
                 chapterTID: chapterTID
-            ) {
+            )
+            if discardingOlderUpdate {
+                for id in [target.id] + Array(candidateIDs) {
+                    if let updatedAt = try Double.fetchOne(db, sql: "SELECT updated_at FROM reading_progress WHERE id = ?", arguments: [id]),
+                       updatedAt > date.timeIntervalSince1970 { return false }
+                }
+            }
+            for candidateID in candidateIDs {
                 try Self.recordSyncDeletion(id: candidateID, at: date, in: db)
                 try db.execute(sql: "DELETE FROM reading_progress WHERE id = ?", arguments: [candidateID])
             }
             try Self.upsert(Self.normalizedRecord(record), in: db)
+            return true
         }
-        postChangeNotification()
+        if changed { postChangeNotification() }
         return record
     }
 
-    private func save(_ record: ReadingProgressRecord) async throws {
+    private func save(_ record: ReadingProgressRecord, discardingOlderUpdate: Bool = false) async throws {
         do {
-            try await database.write { db in
+            let changed = try await database.write { db in
+                if discardingOlderUpdate,
+                   let updatedAt = try Double.fetchOne(db, sql: "SELECT updated_at FROM reading_progress WHERE id = ?", arguments: [record.id]),
+                   updatedAt > record.updatedAt.timeIntervalSince1970 { return false }
                 try Self.upsert(Self.normalizedRecord(record), in: db)
+                return true
             }
-            postChangeNotification()
+            if changed { postChangeNotification() }
         } catch {
             throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }

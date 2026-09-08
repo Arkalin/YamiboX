@@ -23,6 +23,7 @@ public final class YamiboAppContext: Sendable {
     /// Public for change-ID observation in the app-entry layer.
     public let readingProgressStore: ReadingProgressStore
     let browsingHistoryStore: BrowsingHistoryStore
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     /// Public for change-ID observation in the app-entry layer.
     public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
@@ -131,6 +132,27 @@ public final class YamiboAppContext: Sendable {
         self.forumCacheStore = forumCacheStore ?? ForumCacheStore(
             diskCacheStore: diskCacheStore
         )
+        let historyLibraryStore = self.localFavoriteLibraryStore
+        let historyForumCache = self.forumCacheStore
+        self.browsingHistoryWorkflow = BrowsingHistoryWorkflow(
+            store: self.browsingHistoryStore,
+            settingsStore: settingsStore,
+            progressStore: self.readingProgressStore,
+            directoryStore: self.mangaDirectoryStore,
+            resolveForumIDs: { tids in
+                guard !tids.isEmpty else { return [:] }
+                let items = (try? await historyLibraryStore.load())?.items ?? []
+                var result: [String: String] = [:]
+                for tid in tids {
+                    if let fid = items.first(where: { $0.target.threadID == tid && $0.forumID != nil })?.forumID {
+                        result[tid] = fid
+                    } else if let page = await historyForumCache.loadThreadPage(thread: ThreadIdentity(tid: tid), allowExpired: true) {
+                        result[tid] = page.forumID ?? page.thread.fid
+                    }
+                }
+                return result
+            }
+        )
         self.ordinaryImageCache = ordinaryImageCache ?? YamiboImageDataPipeline.shared
         self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
         self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
@@ -176,6 +198,7 @@ public final class YamiboAppContext: Sendable {
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
@@ -197,6 +220,7 @@ public final class YamiboAppContext: Sendable {
             favoriteSyncRunStore: favoriteSyncRunStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
@@ -214,6 +238,7 @@ public final class YamiboAppContext: Sendable {
             settingsStore: settingsStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             mangaDirectoryStore: mangaDirectoryStore,
             mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
@@ -235,6 +260,7 @@ public final class YamiboAppContext: Sendable {
             settingsStore: settingsStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
             offlineCacheStore: offlineCacheStore,
             contentCoverStore: contentCoverStore,
             makeNovelReaderRepository: { [self] in await makeNovelReaderRepository() },

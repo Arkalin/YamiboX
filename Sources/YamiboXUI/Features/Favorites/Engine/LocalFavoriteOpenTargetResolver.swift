@@ -84,7 +84,8 @@ struct LocalFavoriteOpenTargetResolver {
                     source: .favorites,
                     initialView: mode == .start ? 1 : (resumePoint?.view ?? novel?.lastView),
                     authorID: resumePoint?.authorID ?? novel?.authorID,
-                    initialResumePoint: resumePoint
+                    initialResumePoint: resumePoint,
+                    forumID: latestItem.forumID
                 )
             )
         case .normalThread:

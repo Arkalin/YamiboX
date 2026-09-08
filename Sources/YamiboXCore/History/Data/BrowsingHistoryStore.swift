@@ -3,10 +3,9 @@ import Foundation
 
 /// Local browsing-history timeline (`browsing_history` table).
 ///
-/// Write cadence (browsing-history decision #5): readers `record(_:)` a full
-/// entry once their content loads, then `updatePosition(...)` as the user
-/// pages through — the update path is UPDATE-only, so a row the user deleted
-/// mid-session stays deleted until the content is opened again.
+/// The shared workflow commits canonical rows atomically. Low-level record
+/// and position helpers also support isolated store fixtures; application
+/// readers use `BrowsingHistoryWorkflow` instead.
 ///
 /// Retention (decision #9): capped at `maxEntryCount` rows, trimmed by
 /// `last_visit_time` after every insert. Purely local — never synced
@@ -21,6 +20,9 @@ public actor BrowsingHistoryStore {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    private var deletedTargets: [String: Date] = [:]
+    private var deletedThreads: [String: Date] = [:]
+    private var lastClearTime = Date.distantPast
 
     public init(databasePool: DatabasePool? = nil) {
         self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "BrowsingHistoryStore")
@@ -179,6 +181,11 @@ public actor BrowsingHistoryStore {
     }
 
     public func delete(id: String) async throws {
+        let entry = await entry(forID: id)
+        let date = Date.now
+        deletedTargets[id] = date
+        if let tid = entry?.lastVisitedThreadID { deletedThreads[tid] = date }
+        if let tid = entry?.chapterThreadID { deletedThreads[tid] = date }
         do {
             try await database.write { db in
                 try db.execute(sql: "DELETE FROM browsing_history WHERE id = ?", arguments: [id])
@@ -190,6 +197,9 @@ public actor BrowsingHistoryStore {
     }
 
     public func clearAll() async throws {
+        lastClearTime = .now
+        deletedTargets = [:]
+        deletedThreads = [:]
         do {
             try await database.write { db in
                 try db.execute(sql: "DELETE FROM browsing_history")
@@ -202,6 +212,50 @@ public actor BrowsingHistoryStore {
 
     // MARK: - Row mapping
 
+    func snapshotEntries() async throws -> [BrowsingHistoryEntry] {
+        try await database.read { db in
+            try Self.snapshotEntries(in: db)
+        }
+    }
+
+    /// Compare-and-swap protects asynchronous normalization from concurrent
+    /// deletes or writes. Only changed rows are touched; observers see one commit.
+    func canRecord(_ visit: BrowsingHistoryVisit, targetID: String) -> Bool {
+        visit.date > lastClearTime && visit.date > (deletedTargets[targetID] ?? .distantPast)
+            && visit.date > (deletedThreads[visit.threadID] ?? .distantPast)
+    }
+
+    func applyCanonicalEntries(
+        _ entries: [BrowsingHistoryEntry], replacing expected: [BrowsingHistoryEntry],
+        visit: BrowsingHistoryVisit? = nil, visitTargetID: String? = nil
+    ) async throws -> Bool {
+        if let visit, let visitTargetID, !canRecord(visit, targetID: visitTargetID) { return false }
+        let applied = try await database.write { db in
+            guard try Self.snapshotEntries(in: db) == expected else { return false }
+            let retained = Array(entries.sorted(by: Self.newestFirst).prefix(Self.maxEntryCount))
+            let byID = Dictionary(uniqueKeysWithValues: retained.map { ($0.id, $0) })
+            let oldByID = Dictionary(uniqueKeysWithValues: expected.map { ($0.id, $0) })
+            for entry in expected where byID[entry.id] == nil {
+                try db.execute(sql: "DELETE FROM browsing_history WHERE id = ?", arguments: [entry.id])
+            }
+            for entry in retained where oldByID[entry.id] != entry {
+                try Self.upsert(entry, in: db)
+            }
+            return true
+        }
+        if applied, entries.sorted(by: Self.newestFirst) != expected { postChangeNotification() }
+        return applied
+    }
+
+    private static func snapshotEntries(in db: Database) throws -> [BrowsingHistoryEntry] {
+        try Row.fetchAll(db, sql: "SELECT * FROM browsing_history ORDER BY last_visit_time DESC, id ASC")
+            .compactMap(Self.entry(from:))
+    }
+
+    static func newestFirst(_ lhs: BrowsingHistoryEntry, _ rhs: BrowsingHistoryEntry) -> Bool {
+        lhs.lastVisitTime == rhs.lastVisitTime ? lhs.id < rhs.id : lhs.lastVisitTime > rhs.lastVisitTime
+    }
+
     private static func upsert(_ entry: BrowsingHistoryEntry, in db: Database) throws {
         let target = entry.target
         try db.execute(
@@ -209,9 +263,10 @@ public actor BrowsingHistoryStore {
             INSERT INTO browsing_history
             (
                 id, target_kind, thread_id, manga_id, clean_book_name, category, title,
-                forum_id, author_id, page_index, page_count, chapter_title, chapter_thread_id, last_visit_time
+                forum_id, author_id, page_index, page_count, chapter_title, chapter_thread_id, last_visit_time,
+                last_visited_thread_id, last_visited_thread_title
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 entry.id,
@@ -228,6 +283,8 @@ public actor BrowsingHistoryStore {
                 entry.chapterTitle,
                 entry.chapterThreadID,
                 entry.lastVisitTime.timeIntervalSince1970,
+                entry.lastVisitedThreadID,
+                entry.lastVisitedThreadTitle,
             ]
         )
     }
@@ -252,7 +309,9 @@ public actor BrowsingHistoryStore {
             pageCount: row["page_count"] as Int?,
             chapterTitle: row["chapter_title"] as String?,
             chapterThreadID: row["chapter_thread_id"] as String?,
-            lastVisitTime: Date(timeIntervalSince1970: row["last_visit_time"])
+            lastVisitTime: Date(timeIntervalSince1970: row["last_visit_time"]),
+            lastVisitedThreadID: row["last_visited_thread_id"],
+            lastVisitedThreadTitle: row["last_visited_thread_title"]
         )
     }
 

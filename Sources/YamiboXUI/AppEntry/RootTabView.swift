@@ -50,6 +50,9 @@ public struct RootTabView: View {
             await observeSettingsStoreChanges()
         }
         .task {
+            await appModel.appContext.browsingHistoryWorkflow.observeChanges()
+        }
+        .task {
             await observeReadingProgressChanges()
         }
         .task {

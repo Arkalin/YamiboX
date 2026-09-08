@@ -11,7 +11,7 @@ struct MangaReaderViewModelDependencies {
     var makeDirectorySearchCooldownState: @Sendable () -> MangaDirectorySearchCooldownState
     var makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)?
     var makeContentCoverStore: @Sendable () -> ContentCoverStore?
-    var makeBrowsingHistoryStore: @Sendable () -> BrowsingHistoryStore?
+    var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow?
     var makeLikeDependencies: @Sendable () -> LikeDependencies?
     /// Smart Comic Mode off (design decision #16): drives the reader's
     /// auto-resolved `.thread(tid:)` cover for the chapter being read, via
@@ -37,7 +37,7 @@ struct MangaReaderViewModelDependencies {
         },
         makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)? = nil,
         makeContentCoverStore: @escaping @Sendable () -> ContentCoverStore? = { nil },
-        makeBrowsingHistoryStore: @escaping @Sendable () -> BrowsingHistoryStore? = { nil },
+        makeBrowsingHistoryWorkflow: @escaping @Sendable () -> BrowsingHistoryWorkflow? = { nil },
         makeLikeDependencies: @escaping @Sendable () -> LikeDependencies? = { nil },
         makeThreadCoverPageRepository: @escaping @Sendable () async -> (any ThreadCoverPageResolving)? = { nil },
         directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
@@ -52,7 +52,7 @@ struct MangaReaderViewModelDependencies {
         self.makeDirectorySearchCooldownState = makeDirectorySearchCooldownState
         self.makeChapterCommentsRepository = makeChapterCommentsRepository
         self.makeContentCoverStore = makeContentCoverStore
-        self.makeBrowsingHistoryStore = makeBrowsingHistoryStore
+        self.makeBrowsingHistoryWorkflow = makeBrowsingHistoryWorkflow
         self.makeLikeDependencies = makeLikeDependencies
         self.makeThreadCoverPageRepository = makeThreadCoverPageRepository
         self.directoryWorkflowConfiguration = directoryWorkflowConfiguration
@@ -70,13 +70,13 @@ struct MangaReaderViewModelDependencies {
             makeDirectorySearchCooldownState: { dependencies.mangaDirectorySearchCooldownState },
             makeChapterCommentsRepository: { await dependencies.makeChapterCommentsRepository() },
             makeContentCoverStore: { dependencies.contentCoverStore },
-            makeBrowsingHistoryStore: { dependencies.browsingHistoryStore },
+            makeBrowsingHistoryWorkflow: { dependencies.browsingHistoryWorkflow },
             makeLikeDependencies: { dependencies.like },
             makeThreadCoverPageRepository: { await dependencies.makeForumThreadReaderRepository() },
             progressSync: ProgressSyncModule(
                 adapter: FavoriteLibraryProgressSyncAdapter(
                     readingProgressStore: dependencies.readingProgressStore,
-                    browsingHistoryStore: dependencies.browsingHistoryStore
+                    browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
                 )
             ),
             migrateMangaTitleReferences: { oldName, newName in
@@ -256,13 +256,12 @@ public final class MangaReaderViewModel {
         )
     )
 
-    /// Session browsing-history row bookkeeping ("打开即记" plus mid-session
-    /// identity re-records).
+    /// Reports successful visits; canonical identity is owned by History.
     @ObservationIgnored private lazy var browsingHistoryRecorder = MangaReaderBrowsingHistoryRecorder(
         context: context,
         reading: MangaReaderBrowsingHistoryRecorder.Reading(
-            currentDirectoryFavoriteIdentity: { [weak self] in self?.workflow?.currentDirectoryFavoriteIdentity() },
-            makeBrowsingHistoryStore: dependencies.makeBrowsingHistoryStore
+            makeBrowsingHistoryWorkflow: dependencies.makeBrowsingHistoryWorkflow,
+            currentDirectory: { [weak self] in self?.workflow?.currentHistoryDirectory() }
         )
     )
 

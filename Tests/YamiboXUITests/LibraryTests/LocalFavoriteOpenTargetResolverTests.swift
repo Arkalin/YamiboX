@@ -644,6 +644,7 @@ final class LocalFavoriteOpenTargetResolverTests: XCTestCase {
             return XCTFail("Expected a novel reader open target")
         }
         XCTAssertEqual(context.threadID, "5001")
+        XCTAssertEqual(context.forumID, "40")
         XCTAssertEqual(context.threadTitle, "配置前收藏的小说")
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.id == item.id }
         XCTAssertEqual(storedItem?.target.kind, .normalThread)

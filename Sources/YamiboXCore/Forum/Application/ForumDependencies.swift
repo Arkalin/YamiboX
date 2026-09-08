@@ -11,6 +11,7 @@ public struct ForumDependencies: Sendable {
     /// Optional so test/preview compositions without a history database keep
     /// working; the app composition root always supplies one.
     public let browsingHistoryStore: BrowsingHistoryStore?
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -29,6 +30,7 @@ public struct ForumDependencies: Sendable {
         localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore? = nil,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
@@ -46,6 +48,7 @@ public struct ForumDependencies: Sendable {
         self.localFavoriteLibraryStore = localFavoriteLibraryStore
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore
+        self.browsingHistoryWorkflow = browsingHistoryWorkflow
         self.settingsStore = settingsStore
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore

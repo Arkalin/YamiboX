@@ -12,6 +12,7 @@ public enum NovelLaunchSource: String, Codable, Hashable, Sendable {
 public struct NovelLaunchContext: Codable, Hashable, Identifiable, Sendable {
     public var threadID: String
     public var threadTitle: String
+    public var forumID: String?
     public var source: NovelLaunchSource
     public var initialView: Int?
     public var authorID: String?
@@ -30,10 +31,13 @@ public struct NovelLaunchContext: Codable, Hashable, Identifiable, Sendable {
         initialView: Int? = nil,
         authorID: String? = nil,
         initialResumePoint: NovelResumePoint? = nil,
-        isPreview: Bool = false
+        isPreview: Bool = false,
+        forumID: String? = nil
     ) {
         self.threadID = Self.normalizedThreadID(threadID)
         self.threadTitle = threadTitle
+        let normalizedForumID = forumID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.forumID = normalizedForumID?.isEmpty == false ? normalizedForumID : nil
         self.source = source
         self.initialView = initialView
         self.authorID = authorID

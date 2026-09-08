@@ -185,7 +185,7 @@ public final class NovelReaderViewModel {
         progressSync = ProgressSyncModule(
             adapter: FavoriteLibraryProgressSyncAdapter(
                 readingProgressStore: dependencies.readingProgressStore,
-                browsingHistoryStore: dependencies.browsingHistoryStore
+                browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
             )
         )
         if let initialSettings {
@@ -1009,17 +1009,17 @@ public final class NovelReaderViewModel {
     private func recordBrowsingHistoryVisitIfNeeded() {
         guard !hasRecordedBrowsingHistoryVisit, !context.isPreview else { return }
         hasRecordedBrowsingHistoryVisit = true
-        guard let browsingHistoryStore = dependencies.browsingHistoryStore else { return }
-        let entry = BrowsingHistoryEntry(
-            target: .novelThread(threadID: context.threadID),
+        guard let history = dependencies.browsingHistoryWorkflow else { return }
+        let visit = BrowsingHistoryVisit(
+            threadID: context.threadID,
             title: title,
-            authorID: context.authorID,
-            chapterTitle: context.initialResumePoint?.chapterTitle,
-            lastVisitTime: .now
+            forumID: context.forumID,
+            reader: .novel,
+            authorID: context.authorID
         )
         Task {
             do {
-                try await browsingHistoryStore.record(entry)
+                try await history.recordVisit(visit)
             } catch {
                 YamiboLog.reader.warning("Failed to record novel browsing-history visit for thread \(self.context.threadID, privacy: .public): \(error)")
             }
@@ -1316,7 +1316,8 @@ public final class NovelReaderViewModel {
             initialView: snapshot.view,
             authorID: snapshot.authorID ?? context.authorID,
             initialResumePoint: snapshot.resumePoint,
-            isPreview: context.isPreview
+            isPreview: context.isPreview,
+            forumID: context.forumID
         )
     }
 

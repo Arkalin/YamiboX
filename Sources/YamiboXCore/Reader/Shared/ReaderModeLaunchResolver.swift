@@ -26,7 +26,8 @@ public struct ReaderModeLaunchResolver: Sendable {
             initialView: progress?.novelResumePoint?.view ?? progress?.lastView ?? 1,
             authorID: progress?.novelResumePoint?.authorID ?? progress?.authorID ?? authorID,
             initialResumePoint: progress?.novelResumePoint,
-            isPreview: isPreview
+            isPreview: isPreview,
+            forumID: thread.fid
         )
     }
 
