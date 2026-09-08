@@ -288,7 +288,7 @@ struct ContentDetailReadButton: View {
             .foregroundStyle(.white)
             .background(theme.accent, in: RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BookOpeningButtonStyle())
         .accessibilityLabel(L10n.string(hasProgress ? "forum.thread_route.continue_novel" : "forum.thread_route.read_novel"))
         .accessibilityValue(progressSummary ?? "")
         .disabled(!isEnabled)

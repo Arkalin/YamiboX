@@ -17,7 +17,7 @@ struct LocalFavoriteListContent: View {
     /// `FavoriteLibraryOrganizer.rootDerived`.
     let derived: LocalFavoriteDerivedState
     let isCollectionDetail: Bool
-    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
+    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
 
     var body: some View {
         List {

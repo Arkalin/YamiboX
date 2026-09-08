@@ -98,6 +98,22 @@ final class ReadingHomeShelfTests: XCTestCase {
 
 @MainActor
 final class ReadingHomeViewModelTests: XCTestCase {
+    func testHomeOpenPassesCoverThroughResumeResolution() async throws {
+        let context = try makeContext()
+        let app = YamiboAppModel(appContext: context, initialTab: .home)
+        let model = ReadingHomeViewModel(dependencies: context.libraryDependencies)
+        let source = try makeBookOpeningTransitionForTest()
+        let entry = BrowsingHistoryEntry(target: .novelThread(threadID: "905"), title: "Book")
+        try await context.browsingHistoryStore.record(entry)
+        await model.open(entry, using: app, bookOpeningTransition: source)
+        XCTAssertEqual(app.presentedReaderSession?.bookOpeningTransition, source)
+        XCTAssertEqual(app.activeNovelContext?.threadID, "905")
+        XCTAssertFalse(model.isOpening)
+        XCTAssertFalse(model.openFailed)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+    }
+
     func testHomeSettingPersistsReloadsAndRestoresDefault() async throws {
         let context = try makeContext()
         let settings = SystemSettingsViewModel(dependencies: context.settingsDependencies)
@@ -164,7 +180,10 @@ final class ReadingHomeViewModelTests: XCTestCase {
         try await context.settingsStore.update { $0.boardReader.setEntry(.init(mode: .novel), forumID: "40") }
         try await context.readingProgressStore.saveNormalThread(threadID: "900", page: 4)
         try await context.readingProgressStore.saveNovel(NovelReadingPosition(threadID: "900", view: 2, chapterTitle: "Novel chapter"))
-        let visit = BrowsingHistoryVisit(threadID: "900", title: "Book", forumID: "40", reader: .normal)
+        let visit = BrowsingHistoryVisit(
+            threadID: "900", title: "Book", forumID: "40", reader: .normal,
+            date: Date(timeIntervalSince1970: 1_700_000_000)
+        )
         try await context.browsingHistoryWorkflow.recordVisit(visit)
         let home = ReadingHomeViewModel(dependencies: context.libraryDependencies)
         let history = BrowsingHistoryViewModel(dependencies: context.libraryDependencies)

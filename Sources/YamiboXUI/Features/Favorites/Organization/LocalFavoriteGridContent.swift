@@ -22,7 +22,7 @@ struct LocalFavoriteGridContent: View {
     /// `FavoriteLibraryOrganizer.rootDerived`.
     let derived: LocalFavoriteDerivedState
     let isCollectionDetail: Bool
-    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
+    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
 
     /// Base card widths at scale 1.0 — the historical fixed constants.
     private static let fixedGridBaseMinimumCardWidth: Double = 130

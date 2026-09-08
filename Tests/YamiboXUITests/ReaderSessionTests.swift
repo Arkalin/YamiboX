@@ -13,6 +13,64 @@ final class ReaderSessionTests {
         try? FileManager.default.removeItem(at: rootDirectory)
     }
 
+    @Test func bookReturnSourceSurvivesModeSwitchAndClosingAnimation() async throws {
+        let app = try makeApp()
+        let source = try makeBookOpeningTransitionForTest()
+        let novel = NovelLaunchContext(threadID: "690", threadTitle: "Book", source: .favorites)
+        app.presentNovelReader(novel, bookOpeningTransition: source)
+        let session = try #require(app.presentedReaderSession)
+        #expect(session.bookOpeningTransition == source)
+        #expect(app.isReaderCoverVisible)
+
+        #expect(await session.openOriginalPost(url: threadURL("690"), resumeRoute: .novel(novel)))
+        #expect(session.bookOpeningTransition == source)
+        app.presentNovelReader(novel)
+        #expect(app.presentedReaderSession === session)
+        #expect(session.bookOpeningTransition == source)
+
+        // Explicit close retains the source until the closing animation ends.
+        app.dismissPresentedReaderSession()
+        #expect(session.isClosed)
+        #expect(app.presentedReaderSession == nil)
+        #expect(app.isReaderCoverVisible)
+        #expect(session.bookOpeningTransition == source)
+        app.readerCoverDidDismiss()
+        #expect(!app.isReaderCoverVisible)
+
+        app.presentNovelReader(novel)
+        #expect(app.presentedReaderSession?.bookOpeningTransition == nil)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+    }
+
+    @Test func validatedMangaRetainsItsTappedCoverSource() async throws {
+        let app = try makeApp()
+        let source = try makeBookOpeningTransitionForTest()
+        let manga = MangaLaunchContext(originalThreadID: "691", chapterTID: "691", displayTitle: "Manga", source: .favorites)
+        await app.requestMangaReader(manga, bookOpeningTransition: source).value
+        #expect(app.presentedReaderSession?.bookOpeningTransition == source)
+        #expect(app.isReaderCoverVisible)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+    }
+
+    @Test func failedBookOpenDoesNotLeakSourceToNextPresentation() async throws {
+        let app = try makeApp(validator: MangaReaderOpenValidator { _ in throw MangaReaderOpenError.noReadableImages })
+        let source = try makeBookOpeningTransitionForTest()
+        let manga = MangaLaunchContext(originalThreadID: "692", chapterTID: "692", displayTitle: "Manga", source: .favorites)
+        await app.requestMangaReader(manga, bookOpeningTransition: source).value
+        #expect(app.presentedReaderSession == nil)
+        #expect(!app.isReaderCoverVisible)
+
+        app.presentNovelReader(NovelLaunchContext(threadID: "693", threadTitle: "Unrelated", source: .forum))
+        #expect(app.presentedReaderSession?.bookOpeningTransition == nil)
+        // A stale onDismiss from an older cover cannot unfreeze a new one.
+        app.readerCoverDidDismiss()
+        #expect(app.isReaderCoverVisible)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+    }
+
     @Test(arguments: [ReaderReadingMode.paged, .vertical])
     func novelRoundTripKeepsPresentationAndResumePoint(mode: ReaderReadingMode) async throws {
         let app = try makeApp()
@@ -309,7 +367,8 @@ final class ReaderSessionTests {
             throw MangaReaderOpenError.noReadableImages
         })
         let context = MangaLaunchContext(originalThreadID: "803", chapterTID: "803", displayTitle: "Manga", source: .forum)
-        let opening = app.requestMangaReader(context)
+        let source = try makeBookOpeningTransitionForTest()
+        let opening = app.requestMangaReader(context, bookOpeningTransition: source)
         await gate.waitUntilStarted()
         app.cancelMangaReaderOpen()
         gate.release()
@@ -318,6 +377,11 @@ final class ReaderSessionTests {
         #expect(app.mangaOpenFailure == nil)
         #expect(app.activeMangaContext == nil)
         #expect(app.presentedReaderSession == nil)
+        #expect(!app.isReaderCoverVisible)
+        app.presentNovelReader(NovelLaunchContext(threadID: "804", threadTitle: "New book", source: .forum))
+        #expect(app.presentedReaderSession?.bookOpeningTransition == nil)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
     }
 
     private func makeApp(validator: MangaReaderOpenValidator? = nil) throws -> YamiboAppModel {

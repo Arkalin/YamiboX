@@ -90,7 +90,7 @@ import YamiboXTestSupport
         remoteSync: remoteSync,
         updateMonitor: updateMonitor,
         makeFavoriteRepository: { FavoriteRepository(client: await makeClient()) },
-        onOpen: { _, _, _ in },
+        onOpen: { _, _, _, _ in },
         onOpenMangaDirectory: { _ in },
         onOpenBoard: { _ in }
     )

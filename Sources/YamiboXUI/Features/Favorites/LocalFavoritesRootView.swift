@@ -10,6 +10,9 @@ struct LocalFavoritesRootView: View {
     @StateObject private var remoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
     @State private var threadOverlayItem: ForumThreadOverlayItem?
+    @State private var threadOpeningTransition: BookOpeningTransition?
+    @State private var isThreadCoverVisible = false
+    @State private var isOpeningFavorite = false
     @State private var navigator: ForumDestinationNavigator
     @StateObject private var routes = LocalFavoritesRoutes()
 
@@ -86,8 +89,8 @@ struct LocalFavoritesRootView: View {
             remoteSync: remoteSync,
             updateMonitor: updateMonitor,
             makeFavoriteRepository: makeFavoriteRepository,
-            onOpen: { item, mode, mangaScope in
-                await open(item, mode: mode, mangaScope: mangaScope)
+            onOpen: { item, mode, mangaScope, transition in
+                await open(item, mode: mode, mangaScope: mangaScope, transition: transition)
             },
             onOpenMangaDirectory: { cleanBookName in
                 await openMangaDirectoryEvent(cleanBookName: cleanBookName)
@@ -98,16 +101,20 @@ struct LocalFavoritesRootView: View {
                 )
             }
         )
-        .fullScreenCover(item: $threadOverlayItem) { item in
-            ForumThreadOverlayScreen(
-                item: item,
-                dependencies: appModel.appContext.forumDependencies,
-                appModel: appModel,
-                // Opening a favorite is a real visit, not a discussion
-                // companion of a running reader — it must write its
-                // browsing-history row like the old forum-tab route did.
-                rootIsDiscussionView: false
-            )
+        .fullScreenCover(item: $threadOverlayItem, onDismiss: { isThreadCoverVisible = false }) { item in
+            BookOpeningDestination(source: threadOpeningTransition) {
+                ForumThreadOverlayScreen(
+                    item: item,
+                    dependencies: appModel.appContext.forumDependencies,
+                    appModel: appModel,
+                    // Opening a favorite is a real visit, not a discussion
+                    // companion of a running reader; it records history.
+                    rootIsDiscussionView: false
+                )
+            }
+        }
+        .onChange(of: appModel.isReaderCoverVisible || isThreadCoverVisible || routes.detail != nil, initial: true) { _, visible in
+            organizer.setBookPresentationActive(visible)
         }
         .task {
             async let organizerLoad: Void = organizer.load()
@@ -123,10 +130,19 @@ struct LocalFavoritesRootView: View {
         }
     }
 
-    private func open(_ item: FavoriteItem, mode: FavoriteLaunchMode, mangaScope: FavoriteMangaReadingScope) async {
+    private func open(
+        _ item: FavoriteItem,
+        mode: FavoriteLaunchMode,
+        mangaScope: FavoriteMangaReadingScope,
+        transition: BookOpeningTransition?
+    ) async {
+        guard !isOpeningFavorite, !appModel.isReaderCoverVisible else { return }
+        isOpeningFavorite = true
+        defer { isOpeningFavorite = false }
         do {
             guard let target = try await openTargetResolver.openTarget(for: item, mode: mode, mangaScope: mangaScope) else { return }
-            present(target)
+            guard !Task.isCancelled else { return }
+            await present(target, transition: transition)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for favorite \(item.id): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
@@ -145,7 +161,7 @@ struct LocalFavoritesRootView: View {
                 organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                 return
             }
-            present(target)
+            await present(target)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for manga directory update \(cleanBookName): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
@@ -155,20 +171,22 @@ struct LocalFavoritesRootView: View {
         }
     }
 
-    private func present(_ target: LocalFavoriteOpenTarget) {
+    private func present(_ target: LocalFavoriteOpenTarget, transition: BookOpeningTransition? = nil) async {
         switch target {
         case let .novelDetail(context):
             routes.detail = .novel(context)
         case let .mangaDetail(context):
             routes.detail = .manga(context)
         case let .novelReader(context):
-            appModel.presentNovelReader(context)
+            appModel.presentNovelReader(context, bookOpeningTransition: transition)
         case let .mangaReader(context):
-            appModel.requestMangaReader(context)
+            await appModel.requestMangaReader(context, bookOpeningTransition: transition).value
         case let .nativeThread(url, title):
             // Plain-post favorites open in a full-screen overlay so the
             // favorites tab stays put underneath, mirroring the reader's
             // 打开原帖 behavior.
+            threadOpeningTransition = transition
+            isThreadCoverVisible = true
             threadOverlayItem = ForumThreadOverlayItem(url: url, title: title)
         }
     }
@@ -180,8 +198,8 @@ struct LocalFavoritesRootView: View {
             mangaDependencies: appModel.appContext.mangaDetailDependencies
         ) { action in
             switch action {
-            case let .readNovel(context): appModel.presentNovelReader(context)
-            case let .readManga(context): appModel.requestMangaReader(context)
+            case let .readNovel(context, transition): appModel.presentNovelReader(context, bookOpeningTransition: transition)
+            case let .readManga(context, transition): appModel.requestMangaReader(context, bookOpeningTransition: transition)
             case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
             case let .discussion(context): navigator.push(.threadReader(context))
             }

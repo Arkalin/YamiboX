@@ -8,6 +8,8 @@ struct ReadingHomeView: View {
     @State private var navigator: ForumDestinationNavigator
     @State private var showsLogin = false
     @State private var showsHistory = false
+    @State private var scrollPosition = ScrollPosition(y: 0)
+    @State private var scrollOffset: CGFloat = 0
 
     init(appModel: YamiboAppModel) {
         self.appModel = appModel
@@ -48,6 +50,12 @@ struct ReadingHomeView: View {
                         ProgressView().frame(maxWidth: .infinity).padding(48)
                     }
                 }
+            }
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) {
+                max(0, $0.contentOffset.y + $0.contentInsets.top)
+            } action: { _, offset in
+                if isHomeVisible { scrollOffset = offset }
             }
             .background(Color(uiColor: .systemBackground))
             .overlay(alignment: .top) {
@@ -118,7 +126,7 @@ struct ReadingHomeView: View {
     // Readers save frequently; refresh once on return rather than rebuilding
     // a hidden shelf for every page turn.
     private var isHomeVisible: Bool {
-        appModel.selectedTab == .home && !appModel.hasActiveReaderPresentation
+        appModel.selectedTab == .home && !appModel.isReaderCoverVisible && !appModel.hasActiveReaderPresentation
             && navigator.path.isEmpty && !showsHistory && !showsLogin
     }
 
@@ -130,8 +138,11 @@ struct ReadingHomeView: View {
         }
     }
 
-    private func openBook(_ book: ReadingHomeBook) {
-        Task { await model.open(book.entry, using: appModel) }
+    private func openBook(_ book: ReadingHomeBook, transition: BookOpeningTransition) {
+        // Preserve an explicit position while the full-screen reader hides
+        // the shelf; a user-driven ScrollPosition alone has no stored offset.
+        scrollPosition.scrollTo(y: scrollOffset)
+        Task { await model.open(book.entry, using: appModel, bookOpeningTransition: transition) }
     }
 }
 
@@ -171,7 +182,7 @@ private struct ReadingHomeHeader: View {
 
 private struct ReadingHomeContinueSection: View {
     let books: [ReadingHomeBook]
-    let open: (ReadingHomeBook) -> Void
+    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
     let openFavorites: () -> Void
 
     var body: some View {
@@ -192,10 +203,7 @@ private struct ReadingHomeContinueSection: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 16) {
                         ForEach(books) { book in
-                            Button { open(book) } label: {
-                                ReadingHomeContinueCard(book: book)
-                            }
-                            .buttonStyle(.plain)
+                            ReadingHomeBookButton(book: book, isContinuing: true, open: open)
                             .containerRelativeFrame(.horizontal) { width, _ in min(440, max(240, width - 56)) }
                             .accessibilityIdentifier("home.continue.\(book.id)")
                         }
@@ -213,6 +221,7 @@ private struct ReadingHomeContinueSection: View {
 
 private struct ReadingHomeContinueCard: View {
     let book: ReadingHomeBook
+    let transition: BookOpeningTransition
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var coverWidth = 54.0
     @ScaledMetric(relativeTo: .body) private var cardHeight = 124.0
@@ -224,6 +233,7 @@ private struct ReadingHomeContinueCard: View {
         layout {
             ReadingHomeCover(url: book.coverURL, title: book.entry.title)
                 .frame(width: min(coverWidth, 80), height: min(coverWidth, 80) * 1.43)
+                .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
             VStack(alignment: .leading, spacing: 5) {
                 Text(book.entry.title)
                     .font(.headline)
@@ -258,7 +268,7 @@ private struct ReadingHomeContinueCard: View {
 
 private struct ReadingHomePreviousSection: View {
     let books: [ReadingHomeBook]
-    let open: (ReadingHomeBook) -> Void
+    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
     let showHistory: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -285,10 +295,7 @@ private struct ReadingHomePreviousSection: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 240 : 144), spacing: 24)], alignment: .leading, spacing: 30) {
                     ForEach(books) { book in
-                        Button { open(book) } label: {
-                            ReadingHomeShelfBook(book: book)
-                        }
-                        .buttonStyle(.plain)
+                        ReadingHomeBookButton(book: book, isContinuing: false, open: open)
                         .accessibilityIdentifier("home.previous.\(book.id)")
                     }
                 }
@@ -300,11 +307,14 @@ private struct ReadingHomePreviousSection: View {
 
 private struct ReadingHomeShelfBook: View {
     let book: ReadingHomeBook
+    let transition: BookOpeningTransition
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ReadingHomeCover(url: book.coverURL, title: book.entry.title)
                 .aspectRatio(0.7, contentMode: .fit)
+                .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
+                .modifier(BookOpeningCoverPressEffect())
             VStack(alignment: .leading, spacing: 4) {
                 Text(book.entry.title)
                     .font(.subheadline.weight(.medium))
@@ -318,6 +328,25 @@ private struct ReadingHomeShelfBook: View {
         }
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ReadingHomeBookButton: View {
+    let book: ReadingHomeBook
+    let isContinuing: Bool
+    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
+    @Namespace private var bookNamespace
+
+    var body: some View {
+        let transition = BookOpeningTransition(namespace: bookNamespace)
+        Button { open(book, transition) } label: {
+            if isContinuing {
+                ReadingHomeContinueCard(book: book, transition: transition)
+            } else {
+                ReadingHomeShelfBook(book: book, transition: transition)
+            }
+        }
+        .buttonStyle(BookOpeningButtonStyle(pressTarget: isContinuing ? .label : .cover))
     }
 }
 

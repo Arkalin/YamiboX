@@ -71,7 +71,7 @@ final class ReadingHomeViewModel {
         }
     }
 
-    func open(_ entry: BrowsingHistoryEntry, using appModel: YamiboAppModel) async {
+    func open(_ entry: BrowsingHistoryEntry, using appModel: YamiboAppModel, bookOpeningTransition: BookOpeningTransition? = nil) async {
         guard !isOpening else { return }
         isOpening = true
         defer { isOpening = false }
@@ -81,8 +81,8 @@ final class ReadingHomeViewModel {
         }
         guard !Task.isCancelled else { return }
         switch target {
-        case let .novelReader(context): appModel.presentNovelReader(context)
-        case let .mangaReader(context): appModel.requestMangaReader(context)
+        case let .novelReader(context): appModel.presentNovelReader(context, bookOpeningTransition: bookOpeningTransition)
+        case let .mangaReader(context): await appModel.requestMangaReader(context, bookOpeningTransition: bookOpeningTransition).value
         case let .nativeThread(url, title): appModel.openNativeForumThread(url: url, title: title)
         }
     }

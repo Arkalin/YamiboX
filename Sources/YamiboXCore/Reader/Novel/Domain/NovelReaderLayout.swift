@@ -56,6 +56,14 @@ public struct NovelReaderLayout: Hashable, Sendable {
 
     public static let zero = NovelReaderLayout(containerSize: .zero)
 
+    package static let minimumTextLayoutWidth: CGFloat = 120
+
+    package var isReadyForTextLayout: Bool {
+        let frame = readableFrame
+        return frame.width.isFinite && frame.height.isFinite &&
+            frame.width >= Self.minimumTextLayoutWidth && frame.height > 0
+    }
+
     public func novelTextBoxLayout(
         settings: NovelReaderAppearanceSettings,
         usesPadPresentation: Bool

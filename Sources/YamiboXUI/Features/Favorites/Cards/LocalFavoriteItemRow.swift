@@ -14,6 +14,7 @@ struct LocalFavoriteItemRow: View {
     let isSelected: Bool
     let onToggleSelection: () -> Void
     let actions: LocalFavoriteCardActions
+    @Namespace private var bookNamespace
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
@@ -29,15 +30,15 @@ struct LocalFavoriteItemRow: View {
                 // "查看归档收藏" archive page.
                 onToggleSelection()
             } else {
-                actions.open(card, .preferred)
+                actions.open(card, .preferred, bookOpeningTransition)
             }
         } label: {
             rowContent
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BookOpeningButtonStyle())
         .contextMenu {
             if !isSelectionMode {
-                LocalFavoriteCardContextMenu(card: card, actions: actions)
+                LocalFavoriteCardContextMenu(card: card, actions: actions, bookOpeningTransition: bookOpeningTransition)
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -79,6 +80,7 @@ struct LocalFavoriteItemRow: View {
                 // Android row cards use a 92dp-wide 0.72-ratio cover.
                 LocalFavoriteCoverThumbnail(url: card.coverURL, title: card.resolvedTitle)
                     .frame(width: 92, height: 128)
+                    .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.resolvedTitle)
@@ -91,6 +93,9 @@ struct LocalFavoriteItemRow: View {
                 LocalFavoriteCardTimeLines(card: card)
                 LocalFavoriteTagChipRow(tags: card.tags)
             }
+            // Text-only rows expand from their text block rather than a
+            // nonexistent thumbnail. The inactive ID never matches a destination.
+            .matchedTransitionSource(id: showsCover ? "book-metadata" : BookOpeningTransition.sourceID, in: bookNamespace)
             Spacer(minLength: 0)
         }
         // Matches `LocalFavoriteGridCard`'s own padding so the selection
@@ -108,5 +113,9 @@ struct LocalFavoriteItemRow: View {
                 LocalFavoriteSmartCardBadge()
             }
         }
+    }
+
+    private var bookOpeningTransition: BookOpeningTransition {
+        BookOpeningTransition(namespace: bookNamespace)
     }
 }

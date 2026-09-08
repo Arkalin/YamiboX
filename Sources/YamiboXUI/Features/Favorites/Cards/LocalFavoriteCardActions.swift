@@ -12,7 +12,7 @@ struct LocalFavoriteCardActions {
     /// member cards — deliberately built non-smart by the projection — open
     /// the tapped chapter itself instead of bouncing back into the merged
     /// directory every member shares.
-    let open: (FavoriteCardProjection, FavoriteLaunchMode) -> Void
+    let open: (FavoriteCardProjection, FavoriteLaunchMode, BookOpeningTransition?) -> Void
     let select: (FavoriteItem) -> Void
     let move: (FavoriteItem) -> Void
     let editTags: (FavoriteItem) -> Void
@@ -54,7 +54,7 @@ struct LocalFavoriteCardActions {
         organizer: FavoriteLibraryOrganizer,
         selection: LocalFavoriteBrowseSession,
         routes: LocalFavoritesRoutes,
-        onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
+        onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
     ) -> LocalFavoriteCardActions {
         let deleteArchivedFavorites: ((FavoriteItem) -> Void)? = organizer.smartMangaBulkDeleteEnabled
             ? { item in
@@ -63,7 +63,7 @@ struct LocalFavoriteCardActions {
             }
             : nil
         return LocalFavoriteCardActions(
-            open: { card, mode in
+            open: { card, mode, transition in
                 // A card opens with the scope its rendering promises: the
                 // smart-card treatment (merged title, sparkles badge) follows
                 // the board's Smart Comic Mode; a plain card — every
@@ -73,7 +73,7 @@ struct LocalFavoriteCardActions {
                 // gate) rather than re-reading settings keeps display and
                 // open behavior permanently in agreement.
                 let mangaScope: FavoriteMangaReadingScope = card.isModeOnMangaThread ? .boardDefault : .singleThread
-                Task { await onOpen(card.item, mode, mangaScope) }
+                Task { await onOpen(card.item, mode, mangaScope, transition) }
             },
             select: { item in
                 selection.toggleFavoriteSelection(id: item.id)
@@ -112,15 +112,16 @@ struct LocalFavoriteCardActions {
 struct LocalFavoriteCardContextMenu: View {
     let card: FavoriteCardProjection
     let actions: LocalFavoriteCardActions
+    let bookOpeningTransition: BookOpeningTransition
 
     var body: some View {
         Button {
-            actions.open(card, .resume)
+            actions.open(card, .resume, bookOpeningTransition)
         } label: {
             Label(L10n.string("favorites.open_resume"), systemImage: "book")
         }
         Button {
-            actions.open(card, .start)
+            actions.open(card, .start, bookOpeningTransition)
         } label: {
             Label(L10n.string("favorites.open_from_start"), systemImage: "text.page")
         }

@@ -42,6 +42,8 @@ public final class YamiboAppModel {
     public var activeNovelContext: NovelLaunchContext?
     public var activeMangaContext: MangaLaunchContext?
     private(set) var presentedReaderSession: ReaderSession?
+    // Remains true until the closing animation finishes, not just until close().
+    private(set) var isReaderCoverVisible = false
     private(set) var isOpeningMangaReader = false
     var mangaOpenFailure: LoadFailureDetails?
     @ObservationIgnored let mangaReaderOpenValidator: MangaReaderOpenValidator
@@ -165,9 +167,13 @@ public final class YamiboAppModel {
     }
 
     public func presentNovelReader(_ context: NovelLaunchContext) {
+        presentNovelReader(context, bookOpeningTransition: nil)
+    }
+
+    func presentNovelReader(_ context: NovelLaunchContext, bookOpeningTransition: BookOpeningTransition?) {
         cancelMangaReaderOpen()
         suspendedNovelContext = nil
-        presentReaderContent(.novel(context))
+        presentReaderContent(.novel(context), bookOpeningTransition: bookOpeningTransition)
     }
 
     public func selectTab(_ tab: AppTab) {
@@ -179,14 +185,27 @@ public final class YamiboAppModel {
 
     /// Low-level presentation for validated launches and existing resume routes.
     public func presentMangaReader(_ context: MangaLaunchContext, initialProjection: MangaReaderProjection? = nil) {
+        presentMangaReader(context, initialProjection: initialProjection, bookOpeningTransition: nil)
+    }
+
+    private func presentMangaReader(
+        _ context: MangaLaunchContext,
+        initialProjection: MangaReaderProjection?,
+        bookOpeningTransition: BookOpeningTransition?
+    ) {
         cancelMangaReaderOpen()
         suspendedMangaContext = nil
-        presentReaderContent(.manga(context), mangaProjection: initialProjection)
+        presentReaderContent(.manga(context), mangaProjection: initialProjection, bookOpeningTransition: bookOpeningTransition)
     }
 
     /// User-initiated opens validate on the source page before creating a reader.
     @discardableResult
     public func requestMangaReader(_ context: MangaLaunchContext) -> Task<Void, Never> {
+        requestMangaReader(context, bookOpeningTransition: nil)
+    }
+
+    @discardableResult
+    func requestMangaReader(_ context: MangaLaunchContext, bookOpeningTransition: BookOpeningTransition?) -> Task<Void, Never> {
         if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
             return Task { await session.openMangaReader(context) }
         }
@@ -200,7 +219,7 @@ public final class YamiboAppModel {
             do {
                 let projection = try await validator.validate(context)
                 guard let self, !Task.isCancelled, self.mangaOpenRequestID == requestID else { return }
-                self.presentMangaReader(context, initialProjection: projection)
+                self.presentMangaReader(context, initialProjection: projection, bookOpeningTransition: bookOpeningTransition)
             } catch {
                 guard let self, !Task.isCancelled, self.mangaOpenRequestID == requestID else { return }
                 if !LoadDiagnosticError.isCancellation(error) {
@@ -220,11 +239,16 @@ public final class YamiboAppModel {
         isOpeningMangaReader = false
     }
 
-    private func presentReaderContent(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
+    private func presentReaderContent(
+        _ content: ReaderSessionContent,
+        mangaProjection: MangaReaderProjection? = nil,
+        bookOpeningTransition: BookOpeningTransition? = nil
+    ) {
         if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
             session.present(content, mangaProjection: mangaProjection)
         } else {
-            let session = ReaderSession(content: content, appModel: self)
+            let session = ReaderSession(content: content, appModel: self, bookOpeningTransition: bookOpeningTransition)
+            isReaderCoverVisible = true
             presentedReaderSession = session
             session.present(content, mangaProjection: mangaProjection)
         }
@@ -271,6 +295,11 @@ public final class YamiboAppModel {
 
     func dismissPresentedReaderSession() {
         presentedReaderSession?.close()
+    }
+
+    func readerCoverDidDismiss() {
+        guard presentedReaderSession == nil else { return }
+        isReaderCoverVisible = false
     }
 
     func switchReaderToOriginalPost(url: URL, resumeRoute: ReaderResumeRoute) async -> Bool {

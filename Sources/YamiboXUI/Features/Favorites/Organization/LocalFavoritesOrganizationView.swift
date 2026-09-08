@@ -15,7 +15,7 @@ struct LocalFavoritesOrganizationView: View {
     @ObservedObject private var routes: LocalFavoritesRoutes
     let detailScreen: (ContentDetailDestination) -> ContentDetailScreen
 
-    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void
+    let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
     /// Opens a smart-manga update event by its `cleanBookName` alone — a
     /// directory-mode event carries no pointer to one specific favorite, so
     /// the open target must be re-derived fresh rather than looked up in
@@ -36,7 +36,7 @@ struct LocalFavoritesOrganizationView: View {
         remoteSync: FavoriteRemoteSyncSession,
         updateMonitor: FavoriteUpdateMonitor,
         makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope) async -> Void,
+        onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void,
         onOpenMangaDirectory: @escaping (String) async -> Void,
         onOpenBoard: @escaping (BoardFavorite) -> Void
     ) {
@@ -179,7 +179,7 @@ struct LocalFavoritesOrganizationView: View {
                             organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                             return
                         }
-                        await onOpen(item, .resume, .boardDefault)
+                        await onOpen(item, .resume, .boardDefault, nil)
                     case let .mangaDirectory(cleanBookName):
                         await onOpenMangaDirectory(cleanBookName)
                     }

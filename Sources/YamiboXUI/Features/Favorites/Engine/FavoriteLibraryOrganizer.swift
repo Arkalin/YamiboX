@@ -870,6 +870,16 @@ final class FavoriteLibraryOrganizer {
     /// one visible outcome.
     @ObservationIgnored private var isCoalescingDerivedRefresh = false
     @ObservationIgnored private var needsCoalescedDerivedRefresh = false
+    @ObservationIgnored private var isBookPresentationActive = false
+    @ObservationIgnored private var needsBookPresentationRefresh = false
+
+    func setBookPresentationActive(_ active: Bool) {
+        isBookPresentationActive = active
+        if !active, needsBookPresentationRefresh {
+            needsBookPresentationRefresh = false
+            refreshDerivedState()
+        }
+    }
 
     private func withCoalescedDerivedRefresh(_ mutations: () -> Void) {
         // A nested batch folds into the outer one.
@@ -887,6 +897,12 @@ final class FavoriteLibraryOrganizer {
     }
 
     func refreshDerivedState() {
+        // Reading progress can reorder/remove the source card. Keep the
+        // displayed shelf intact until the reverse zoom has landed.
+        guard !isBookPresentationActive else {
+            needsBookPresentationRefresh = true
+            return
+        }
         guard !isCoalescingDerivedRefresh else {
             needsCoalescedDerivedRefresh = true
             return

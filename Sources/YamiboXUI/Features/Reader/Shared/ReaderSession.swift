@@ -21,6 +21,7 @@ enum ReaderSessionContent {
 @Observable
 final class ReaderSession: Identifiable {
     let id = UUID()
+    let bookOpeningTransition: BookOpeningTransition?
     private(set) var content: ReaderSessionContent
     private(set) var contentID = UUID()
     private(set) var isSwitching = false
@@ -36,9 +37,10 @@ final class ReaderSession: Identifiable {
     @ObservationIgnored private var threadModels: [String: ForumThreadReaderViewModel] = [:]
     @ObservationIgnored private var switchTask: Task<Void, Never>?
 
-    init(content: ReaderSessionContent, appModel: YamiboAppModel) {
+    init(content: ReaderSessionContent, appModel: YamiboAppModel, bookOpeningTransition: BookOpeningTransition? = nil) {
         self.content = content
         self.appModel = appModel
+        self.bookOpeningTransition = bookOpeningTransition
         switch content {
         case let .novel(context): isPreview = context.isPreview
         case let .manga(context): isPreview = context.isPreview

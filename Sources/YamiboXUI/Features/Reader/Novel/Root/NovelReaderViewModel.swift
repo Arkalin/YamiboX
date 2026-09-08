@@ -40,6 +40,7 @@ public final class NovelReaderViewModel {
     private let dependencies: NovelReaderDependencies
     @ObservationIgnored private var repository: NovelReaderRepository?
     @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
+    @ObservationIgnored private var preparedInitialLoad: NovelReadingPreparedInitialLoad?
     @ObservationIgnored var imagePrefetchCoordinator = ReaderImagePrefetchCoordinator()
     @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
@@ -425,6 +426,8 @@ public final class NovelReaderViewModel {
         isApplyingAppearanceSettings = false
         readingWorkflow?.close()
         readingWorkflow = nil
+        preparedInitialLoad = nil
+        isLoading = false
         navigation.resetHistory()
         currentStableResumePoint = nil
         chromeProgressSnapshot = .empty
@@ -482,9 +485,11 @@ public final class NovelReaderViewModel {
     }
 
     public func prepare(layout: NovelReaderLayout) async {
-        self.layout = layout
-        latestRequestedLayout = layout
-        layoutRequestSequence &+= 1
+        if isReadyForTextLayout(layout) {
+            self.layout = layout
+            latestRequestedLayout = layout
+            layoutRequestSequence &+= 1
+        }
         if repository == nil {
             repository = await dependencies.makeNovelReaderRepository()
             let appSettings = await dependencies.settingsStore.load()
@@ -497,10 +502,11 @@ public final class NovelReaderViewModel {
         if novelReaderSurfaces.isEmpty {
             await performInitialLoadIfNeeded()
         } else {
+            guard isReadyForTextLayout(self.layout) else { return }
             do {
                 if let state = try await requestRuntimeUpdate(
                     settings: settings,
-                    layout: layout,
+                    layout: self.layout,
                     usesPadPresentation: usesPadPresentation
                 ) {
                     syncFromWorkflowState(state)
@@ -513,41 +519,76 @@ public final class NovelReaderViewModel {
         }
     }
 
-    /// Runs the initial page load when `novelReaderSurfaces` has never been
-    /// populated yet. Shared by `prepare(layout:)`'s first call and by
-    /// `commitNovelTextLayout`'s recovery path below, so that a first layout
-    /// pass too small to build a TextKit index (e.g. right after the reader
-    /// is presented while another sheet is still dismissing, as with a My
-    /// Likes jump-to-original) doesn't strand the reader on a permanent
-    /// error once a valid layout follows.
     // MARK: - Loading
 
     private func performInitialLoadIfNeeded() async {
         guard novelReaderSurfaces.isEmpty, !isLoading else { return }
-        if readingWorkflow?.state == nil {
-            // `makeReadingWorkflow` bakes `layout` in at construction time
-            // and nothing updates it while `state` is nil, so a workflow
-            // that never got past its first `start()` would otherwise retry
-            // with the same failing geometry. Rebuild it to pick up the
-            // corrected `self.layout`.
-            readingWorkflow = nil
+        // Geometry changes can reenter while content is loading. They update
+        // `layout`; this request uses the latest usable bounds after fetching.
+        isLoading = true
+        guard let workflow = await ensureReadingWorkflow() else {
+            isLoading = false
+            return
         }
-        let progress = await dependencies.readingProgressStore.load(threadID: context.threadID)
-        let novelProgress = progress?.novel
-        await startReadingWorkflow(
-            resumePoint: context.initialResumePoint ?? novelProgress?.novelResumePoint,
-            favoriteAuthorID: novelProgress?.authorID
-        )
+        defer {
+            if readingWorkflow === workflow { isLoading = false }
+        }
+        errorMessage = nil
+        do {
+            if preparedInitialLoad == nil {
+                let progress = await dependencies.readingProgressStore.load(threadID: context.threadID)
+                try Task.checkCancellation()
+                guard readingWorkflow === workflow else { return }
+                let prepared = try await workflow.prepareInitialLoad(initial: NovelReadingInitialPosition(
+                    resumePoint: context.initialResumePoint ?? progress?.novel?.novelResumePoint,
+                    favoriteAuthorID: progress?.novel?.authorID
+                ))
+                guard readingWorkflow === workflow else { return }
+                preparedInitialLoad = prepared
+            }
+            guard let preparedInitialLoad, isReadyForTextLayout(layout) else { return }
+            let initialLayout = layout
+            let state = try await workflow.start(prepared: preparedInitialLoad, layout: initialLayout)
+            try Task.checkCancellation()
+            guard readingWorkflow === workflow else { return }
+            self.preparedInitialLoad = nil
+            if layout != initialLayout {
+                _ = try await requestRuntimeUpdate(
+                    settings: settings,
+                    layout: layout,
+                    usesPadPresentation: usesPadPresentation
+                )
+                try Task.checkCancellation()
+                guard readingWorkflow === workflow else { return }
+            }
+            syncFromWorkflowState(workflow.state ?? state)
+            isLoading = false
+            recordBrowsingHistoryVisitIfNeeded()
+            await cache.refresh()
+            Task {
+                await prefetchIfNeeded(for: selectedSurfaceIndex)
+            }
+        } catch {
+            if readingWorkflow === workflow, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+        }
     }
 
     public func commitNovelTextLayout(_ layout: NovelReaderLayout) async {
+        guard isReadyForTextLayout(layout) else { return }
         guard latestRequestedLayout != layout else { return }
         latestRequestedLayout = layout
         layoutRequestSequence &+= 1
         let requestSequence = layoutRequestSequence
         guard readingWorkflow?.state != nil else {
             self.layout = layout
-            await performInitialLoadIfNeeded()
+            // The initial view task owns settings/repository bootstrap.
+            // Geometry may arrive while that task is still suspended.
+            if readingWorkflow != nil {
+                await performInitialLoadIfNeeded()
+            }
             return
         }
         do {
@@ -576,6 +617,11 @@ public final class NovelReaderViewModel {
                 errorDetails = LoadFailureDetails(error: error)
             }
         }
+    }
+
+    private func isReadyForTextLayout(_ layout: NovelReaderLayout) -> Bool {
+        layout.novelTextBoxLayout(settings: settings, usesPadPresentation: usesPadPresentation)
+            .isReadyForTextLayout
     }
 
     public func loadCurrent(forceRefresh: Bool) async {
@@ -970,34 +1016,6 @@ public final class NovelReaderViewModel {
             }
             isLoading = false
             return false
-        }
-    }
-
-    private func startReadingWorkflow(resumePoint: NovelResumePoint?, favoriteAuthorID: String?) async {
-        guard let workflow = await ensureReadingWorkflow() else { return }
-        isLoading = true
-        errorMessage = nil
-        do {
-            let state = try await workflow.start(
-                initial: NovelReadingInitialPosition(
-                    resumePoint: resumePoint,
-                    favoriteAuthorID: favoriteAuthorID
-                )
-            )
-            syncFromWorkflowState(state)
-            isLoading = false
-            recordBrowsingHistoryVisitIfNeeded()
-            await cache.refresh()
-
-            Task {
-                await prefetchIfNeeded(for: selectedSurfaceIndex)
-            }
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-            isLoading = false
         }
     }
 

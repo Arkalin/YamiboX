@@ -11,11 +11,13 @@ struct LocalFavoriteGridCard: View {
     let showsSmartCardBadge: Bool
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let actions: LocalFavoriteCardActions
+    @Namespace private var bookNamespace
 
     var body: some View {
         Button(action: handleTap) {
             VStack(alignment: .leading, spacing: 8) {
                 LocalFavoriteGridCover(url: card.coverURL, title: card.resolvedTitle)
+                    .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace)
                 Text(card.resolvedTitle)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2, reservesSpace: true)
@@ -47,10 +49,10 @@ struct LocalFavoriteGridCard: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(PressableCardStyle())
+        .buttonStyle(BookOpeningButtonStyle())
         .contextMenu {
             if !selection.isSelectionMode {
-                LocalFavoriteCardContextMenu(card: card, actions: actions)
+                LocalFavoriteCardContextMenu(card: card, actions: actions, bookOpeningTransition: bookOpeningTransition)
             }
         }
     }
@@ -67,12 +69,16 @@ struct LocalFavoriteGridCard: View {
             // "查看归档收藏" archive page.
             selection.toggleFavoriteSelection(id: card.id)
         } else {
-                actions.open(card, .preferred)
+            actions.open(card, .preferred, bookOpeningTransition)
         }
     }
 
     private var isSelected: Bool {
         selection.selectedFavoriteIDs.contains(card.id)
+    }
+
+    private var bookOpeningTransition: BookOpeningTransition {
+        BookOpeningTransition(namespace: bookNamespace)
     }
 }
 

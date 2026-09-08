@@ -5,6 +5,39 @@ import YamiboXTestSupport
 
 @MainActor
 final class FavoriteLibraryOrganizerTests: XCTestCase {
+    func testBookPresentationDefersShelfChangesUntilReverseTransitionCompletes() async throws {
+        let suiteName = YamiboTestDefaults.suiteName(prefix: "favorite-book-transition")
+        let store = FavoriteLibraryStore(defaults: try YamiboTestDefaults.defaults(suiteName: suiteName), key: "library")
+        var document = try await store.load()
+        let target = FavoriteItemTarget(kind: .normalThread, threadID: "99001")
+        document.upsertItem(try FavoriteItem(
+            target: target, title: "Original cover",
+            locations: [.category(document.defaultCategory.id)]
+        ))
+        try await store.save(document)
+        let organizer = try makeOrganizer(libraryStore: store)
+        await organizer.load()
+        let initial = organizer.derived
+        let initialRoot = organizer.rootDerived
+        XCTAssertEqual(initial.cards.count, 1)
+
+        organizer.setBookPresentationActive(true)
+        document.upsertItem(try FavoriteItem(
+            target: target, title: "Updated cover",
+            locations: [.category(document.defaultCategory.id)]
+        ))
+        try await store.save(document)
+        await organizer.reload()
+        XCTAssertEqual(organizer.derived, initial)
+        XCTAssertEqual(organizer.rootDerived, initialRoot)
+
+        organizer.setBookPresentationActive(false)
+        XCTAssertEqual(organizer.derived.cards.first?.resolvedTitle, "Updated cover")
+        XCTAssertEqual(organizer.rootDerived.cards.first?.resolvedTitle, "Updated cover")
+        organizer.setBookPresentationActive(false)
+        XCTAssertEqual(organizer.derived.cards.count, 1)
+    }
+
     /// `moveItems`/`replaceTags` must only bump their field's merge clock
     /// when the edit is a genuine change — a no-op (the move sheet's
     /// tri-state "include" toggle re-applied to an item that's already a

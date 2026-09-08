@@ -7,8 +7,8 @@ enum ContentDetailDestination: Hashable {
 }
 
 enum ContentDetailAction {
-    case readNovel(NovelLaunchContext)
-    case readManga(MangaLaunchContext)
+    case readNovel(NovelLaunchContext, BookOpeningTransition)
+    case readManga(MangaLaunchContext, BookOpeningTransition)
     case author(uid: String, name: String?)
     case discussion(ThreadNovelLaunchContext)
 }
@@ -16,6 +16,7 @@ enum ContentDetailAction {
 /// Entry-point-independent page assembly. The host owns the navigation stack
 /// and decides how to present readers, authors and the original discussion.
 struct ContentDetailScreen: View {
+    @Namespace private var bookNamespace
     let destination: ContentDetailDestination
     let novelDependencies: NovelDetailDependencies
     let mangaDependencies: MangaDetailDependencies
@@ -27,7 +28,7 @@ struct ContentDetailScreen: View {
             case let .novel(context):
                 NovelDetailView(
                     model: NovelDetailViewModel(context: context, dependencies: novelDependencies),
-                    onChapterTap: { onAction(.readNovel($0)) },
+                    onChapterTap: { onAction(.readNovel($0, BookOpeningTransition(namespace: bookNamespace))) },
                     onUserTap: { onAction(.author(uid: $0, name: $1)) },
                     onViewThread: {
                         onAction(.discussion(ThreadNovelLaunchContext(
@@ -39,7 +40,7 @@ struct ContentDetailScreen: View {
             case let .manga(context):
                 MangaDetailView(
                     model: MangaDetailViewModel(context: context, dependencies: mangaDependencies),
-                    onChapterTap: { onAction(.readManga($0)) },
+                    onChapterTap: { onAction(.readManga($0, BookOpeningTransition(namespace: bookNamespace))) },
                     onViewThread: {
                         onAction(.discussion(ThreadNovelLaunchContext(
                             thread: context.thread, title: context.title, isDiscussionView: true
@@ -48,6 +49,18 @@ struct ContentDetailScreen: View {
                 )
             }
         }
+        .environment(\.contentDetailBookNamespace, bookNamespace)
         .forumNavigationBarStyle()
+    }
+}
+
+private struct ContentDetailBookNamespaceKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+extension EnvironmentValues {
+    var contentDetailBookNamespace: Namespace.ID? {
+        get { self[ContentDetailBookNamespaceKey.self] }
+        set { self[ContentDetailBookNamespaceKey.self] = newValue }
     }
 }

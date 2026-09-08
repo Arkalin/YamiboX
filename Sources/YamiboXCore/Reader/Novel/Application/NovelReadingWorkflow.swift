@@ -38,6 +38,12 @@ public struct NovelReadingInitialPosition: Equatable, Sendable {
     }
 }
 
+package struct NovelReadingPreparedInitialLoad: Sendable {
+    fileprivate let initial: NovelReadingInitialPosition
+    fileprivate let request: NovelPageRequest
+    fileprivate let pageLoad: NovelReaderProjectionLoad
+}
+
 public struct NovelReadingCacheContext: Equatable, Sendable {
     public var authorID: String?
 
@@ -181,14 +187,40 @@ public final class NovelReadingWorkflow {
 
     @discardableResult
     public nonisolated(nonsending) func start(initial: NovelReadingInitialPosition) async throws -> NovelReadingWorkflowState {
+        let prepared = try await prepareInitialLoad(initial: initial)
+        return try await start(prepared: prepared, layout: layout)
+    }
+
+    /// Fetch content independently of the transient bounds during presentation.
+    package nonisolated(nonsending) func prepareInitialLoad(
+        initial: NovelReadingInitialPosition
+    ) async throws -> NovelReadingPreparedInitialLoad {
         let resumePoint = initial.resumePoint
         let initialView = resumePoint?.view ?? context.initialView ?? 1
-        currentAuthorID = resumePoint?.authorID ?? initial.favoriteAuthorID ?? context.authorID
+        let authorID = resumePoint?.authorID ?? initial.favoriteAuthorID ?? context.authorID
+        let request = NovelPageRequest(
+            threadID: context.threadID,
+            view: max(1, initialView),
+            authorID: Self.normalizedAuthorID(authorID) ?? Self.normalizedAuthorID(context.authorID)
+        )
+        let pageLoad = try await repository.loadPageResult(request)
+        try Task.checkCancellation()
+        return NovelReadingPreparedInitialLoad(initial: initial, request: request, pageLoad: pageLoad)
+    }
+
+    package nonisolated(nonsending) func start(
+        prepared: NovelReadingPreparedInitialLoad,
+        layout: NovelReaderLayout
+    ) async throws -> NovelReadingWorkflowState {
+        try Task.checkCancellation()
+        self.layout = layout
+        currentAuthorID = prepared.request.authorID
         return try await load(
-            view: initialView,
+            view: prepared.request.view,
             preferredSurfaceOrdinal: 0,
-            preferredResumePoint: resumePoint,
-            forceRefresh: false
+            preferredResumePoint: prepared.initial.resumePoint,
+            forceRefresh: false,
+            preparedPageLoad: prepared.pageLoad
         )
     }
 
@@ -853,7 +885,8 @@ public final class NovelReadingWorkflow {
         view: Int,
         preferredSurfaceOrdinal: Int,
         preferredResumePoint: NovelResumePoint?,
-        forceRefresh: Bool
+        forceRefresh: Bool,
+        preparedPageLoad: NovelReaderProjectionLoad? = nil
     ) async throws -> NovelReadingWorkflowState {
         supersedePendingRuntimeUpdate()
         let targetView = max(1, view)
@@ -876,9 +909,14 @@ public final class NovelReadingWorkflow {
             view: targetView,
             authorID: requestedAuthorID
         )
-        let pageLoad = forceRefresh
-            ? try await repository.loadPageIgnoringCacheResult(request)
-            : try await repository.loadPageResult(request)
+        let pageLoad: NovelReaderProjectionLoad
+        if let preparedPageLoad {
+            pageLoad = preparedPageLoad
+        } else {
+            pageLoad = forceRefresh
+                ? try await repository.loadPageIgnoringCacheResult(request)
+                : try await repository.loadPageResult(request)
+        }
         let projection = pageLoad.projection
         let preservedResumePoint = preferredResumePoint ?? captureNovelReadingPosition()
         let nextAuthorID = Self.normalizedAuthorID(projection.resolvedAuthorID) ?? requestedAuthorID

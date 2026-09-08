@@ -327,10 +327,14 @@ private struct ReaderPresentationModifier: ViewModifier {
             .fullScreenCover(item: Binding(
                 get: { appModel.presentedReaderSession },
                 set: { if $0 == nil { appModel.dismissPresentedReaderSession() } }
-            )) { session in
-                ReaderSessionScreen(session: session, appModel: appModel)
-                    .appTheme(AppTheme.theme(for: appModel.appThemePreset))
-                    .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
+            ), onDismiss: appModel.readerCoverDidDismiss) { session in
+                BookOpeningDestination(source: session.bookOpeningTransition) {
+                    ReaderSessionScreen(session: session, appModel: appModel)
+                        .appTheme(AppTheme.theme(for: appModel.appThemePreset))
+                        .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
+                }
+                // Reader edge pans belong to reading, not modal dismissal.
+                .interactiveDismissDisabled()
             }
     }
 }

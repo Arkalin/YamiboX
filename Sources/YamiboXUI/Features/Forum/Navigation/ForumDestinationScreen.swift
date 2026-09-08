@@ -122,8 +122,8 @@ struct ForumDestinationScreen: View {
             mangaDependencies: dependencies.mangaDetailDependencies
         ) { action in
             switch action {
-            case let .readNovel(context): navigator.appModel.presentNovelReader(context)
-            case let .readManga(context): navigator.appModel.requestMangaReader(context)
+            case let .readNovel(context, transition): navigator.appModel.presentNovelReader(context, bookOpeningTransition: transition)
+            case let .readManga(context, transition): navigator.appModel.requestMangaReader(context, bookOpeningTransition: transition)
             case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
             case let .discussion(context): navigator.push(.threadReader(context))
             }

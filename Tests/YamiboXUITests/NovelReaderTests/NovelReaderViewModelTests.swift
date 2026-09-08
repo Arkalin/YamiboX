@@ -1464,15 +1464,20 @@ final class NovelReaderViewModelTests: XCTestCase {
         }
     }
 
-    // Reproduces the "My Likes" jump-to-original bug: the reader's very first
-    // layout pass (before the presenting view's real geometry has settled)
-    // can be implausibly narrow, so the initial load fails with
-    // `.textKitIndexing` before `readingWorkflow.state` is ever set. Without
-    // a retry, `commitNovelTextLayout`'s `readingWorkflow?.state != nil`
-    // guard treats that as "nothing to refresh" forever, so the corrected
-    // layout that follows moments later is silently dropped and the reader
-    // is stuck on the error permanently.
-    func testInitialLoadFailureRecoversWhenValidLayoutFollows() async throws {
+    // A zoom presentation can report cover-sized bounds before full-screen
+    // geometry. No error should be published before that geometry arrives.
+    func testInitialLoadFetchesContentBeforeValidLayoutWithoutFlashingAnError() async throws {
+        defer { NovelReaderTestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NovelReaderTestURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        NovelReaderTestURLProtocol.handler = { request in
+            XCTFail("Prepared initial content must not be fetched again when geometry becomes ready")
+            return (
+                Data(),
+                HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!
+            )
+        }
         let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
         let settingsStore = try SettingsStore(testSuiteName: defaultsSuiteName, key: "settings")
         let cacheStore = NovelReaderProjectionStore(
@@ -1496,7 +1501,8 @@ final class NovelReaderViewModelTests: XCTestCase {
             sessionStore: try SessionStore(testSuiteName: defaultsSuiteName, key: "session"),
             settingsStore: settingsStore,
             novelReaderCacheStore: cacheStore,
-            forumCacheStore: forumCacheStore
+            forumCacheStore: forumCacheStore,
+            session: session
         )
         let model = await MainActor.run {
             NovelReaderViewModel(
@@ -1517,16 +1523,66 @@ final class NovelReaderViewModelTests: XCTestCase {
             )
         }
 
-        await model.prepare(layout: NovelReaderLayout(width: 80, height: 568))
-        await MainActor.run {
-            XCTAssertNil(model.novelReaderPresentation)
-            XCTAssertEqual(model.errorMessage, NovelTextLayoutFailure.textKitIndexing.localizedDescription)
+        for layout in [
+            NovelReaderLayout.zero,
+            NovelReaderLayout(width: 80, height: 568),
+            NovelReaderLayout(width: 320, height: 0),
+            NovelReaderLayout(width: 160, height: 568, contentInsets: .init(leading: 24, trailing: 24)),
+        ] {
+            await model.prepare(layout: layout)
+            await model.commitNovelTextLayout(layout)
+            await MainActor.run {
+                XCTAssertNil(model.novelReaderPresentation)
+                XCTAssertNil(model.errorMessage)
+                XCTAssertNil(model.errorDetails)
+                XCTAssertEqual(model.novelReaderDebugState?.transactions.candidateIndexingPassCount, 0)
+                XCTAssertEqual(model.novelReaderDebugState?.transactions.failedTransactionCount, 0)
+            }
         }
 
+        // Content must already be retained in memory, not merely fetched for
+        // the first time when the opening animation supplies usable bounds.
+        try await cacheStore.clearAll()
+        try await forumCacheStore.clearAll()
         await model.commitNovelTextLayout(NovelReaderLayout(width: 320, height: 568))
         await MainActor.run {
             XCTAssertNotNil(model.novelReaderPresentation)
             XCTAssertNil(model.errorMessage)
+        }
+    }
+
+    func testGeometryBeforeBootstrapDoesNotStartACompetingWorkflow() async throws {
+        let model = try await makeModel(
+            documents: [makeDocument(view: 1, maxView: 1, chapterTitles: ["Chapter"])],
+            preparesReader: false
+        )
+        await model.commitNovelTextLayout(NovelReaderLayout(width: 320, height: 568))
+        await MainActor.run {
+            XCTAssertNil(model.novelReaderDebugState)
+            XCTAssertNil(model.novelReaderPresentation)
+            XCTAssertFalse(model.isLoading)
+        }
+        await model.prepare(layout: .zero)
+        await MainActor.run {
+            XCTAssertNotNil(model.novelReaderPresentation)
+            XCTAssertNil(model.errorMessage)
+            XCTAssertFalse(model.isLoading)
+        }
+    }
+
+    func testTransientInvalidLayoutKeepsTheCommittedPresentation() async throws {
+        let model = try await makeModel(documents: [
+            makeDocument(view: 1, maxView: 1, chapterTitles: ["第一章", "第二章"])
+        ])
+        let initial = await MainActor.run { model.novelReaderPresentation }
+
+        await model.commitNovelTextLayout(NovelReaderLayout(width: 80, height: 568))
+        await model.commitNovelTextLayout(.zero)
+
+        await MainActor.run {
+            XCTAssertEqual(model.novelReaderPresentation, initial)
+            XCTAssertNil(model.errorMessage)
+            XCTAssertNil(model.errorDetails)
         }
     }
 
@@ -3600,6 +3656,7 @@ private func makeModel(
     offlineCacheStore: (any TestOfflineCacheStoring)? = nil,
     seedSourceCaches: Bool = true,
     imagePrefetchCoordinator: ReaderImagePrefetchCoordinator? = nil,
+    preparesReader: Bool = true,
     pagination: @escaping NovelTextLayoutFixture = novelReaderViewModelSegmentPagination
 ) async throws -> NovelReaderViewModel {
     let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
@@ -3663,8 +3720,10 @@ private func makeModel(
         return model
     }
 
-    await model.prepare(layout: NovelReaderLayout(width: 320, height: 568))
-    await model.cache.refresh()
+    if preparesReader {
+        await model.prepare(layout: NovelReaderLayout(width: 320, height: 568))
+        await model.cache.refresh()
+    }
     return model
 }
 

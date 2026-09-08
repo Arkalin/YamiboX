@@ -139,7 +139,11 @@ final class ContentDetailLayoutTests: XCTestCase {
                     id: "1", number: "123#", numberAccessibilityLabel: "123#",
                     title: "A long chapter title", isCurrentRead: current, isFocused: focused
                 )
-                let host = UIHostingController(rootView: ChapterDirectoryItemView(item: item, layout: .grid, action: {}))
+                let host = UIHostingController(rootView:
+                    ChapterDirectoryItemView(item: item, layout: .grid, action: {})
+                        .environment(\.dynamicTypeSize, .large)
+                )
+                host.traitOverrides.preferredContentSizeCategory = .large
                 let size = host.sizeThatFits(in: CGSize(width: 56, height: 1000))
                 XCTAssertEqual(size.width, 56, accuracy: 0.5)
                 XCTAssertEqual(size.height, 48, accuracy: 0.5)

@@ -92,6 +92,65 @@ private extension NovelTextViewportRuntimeOwner {
 
 @MainActor
 final class NovelReadingWorkflowTests: XCTestCase {
+    func testInitialContentLoadsBeforeLayoutAndIsReusedForPresentation() async throws {
+        let threadID = "9178"
+        let repository = RecordingNovelReadingRepository(documents: [
+            2: makeNovelDocument(threadID: threadID, view: 2, maxView: 2, authorID: "favorite-author")
+        ], loadSources: [2: .offlineFallback(updatedAt: Date(timeIntervalSince1970: 100))])
+        let workflow = NovelReadingWorkflow(
+            context: NovelLaunchContext(
+                threadID: threadID, threadTitle: "Thread", source: .favorites,
+                initialView: 2, authorID: "launch-author"
+            ),
+            settings: NovelReaderAppearanceSettings(readingMode: .paged),
+            layout: .zero,
+            repository: repository
+        )
+
+        let prepared = try await workflow.prepareInitialLoad(
+            initial: NovelReadingInitialPosition(favoriteAuthorID: "favorite-author")
+        )
+        XCTAssertNil(workflow.state)
+        XCTAssertEqual(workflow.runtimeTransactionDiagnostics.candidateIndexingPassCount, 0)
+        XCTAssertEqual(repository.loadRequests, [
+            NovelPageRequest(threadID: threadID, view: 2, authorID: "favorite-author")
+        ])
+
+        let state = try await workflow.start(
+            prepared: prepared, layout: NovelReaderLayout(width: 320, height: 568)
+        )
+        XCTAssertFalse(try XCTUnwrap(state.presentation).surfaces.isEmpty)
+        XCTAssertEqual(state.presentation?.pageLoadSource, .offlineFallback(updatedAt: Date(timeIntervalSince1970: 100)))
+        XCTAssertEqual(repository.loadRequests.count, 1)
+        XCTAssertEqual(workflow.runtimeTransactionDiagnostics.candidateIndexingPassCount, 1)
+    }
+
+    func testCancelledInitialContentPreparationDoesNotIndexOrPublish() async throws {
+        let gate = RuntimeUpdatePreparationGate()
+        let repository = RecordingNovelReadingRepository(
+            documents: [1: makeNovelDocument(threadID: "9178", view: 1, maxView: 1, authorID: nil)],
+            gatedView: 1,
+            gate: gate
+        )
+        let workflow = NovelReadingWorkflow(
+            context: NovelLaunchContext(threadID: "9178", threadTitle: "Thread", source: .forum),
+            settings: NovelReaderAppearanceSettings(readingMode: .paged),
+            layout: .zero,
+            repository: repository
+        )
+        let task = Task { try await workflow.prepareInitialLoad(initial: NovelReadingInitialPosition()) }
+        await gate.waitUntilSuspended()
+        task.cancel()
+        await gate.resume()
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled startup should not return prepared content")
+        } catch is CancellationError {
+        }
+        XCTAssertNil(workflow.state)
+        XCTAssertEqual(workflow.runtimeTransactionDiagnostics.candidateIndexingPassCount, 0)
+    }
+
     func testStartCreatesOneWorkflowOwnedViewportRuntimeAndPublishesPagedDisplayReference() async throws {
         let threadID = "9178"
         let repository = RecordingNovelReadingRepository(documents: [

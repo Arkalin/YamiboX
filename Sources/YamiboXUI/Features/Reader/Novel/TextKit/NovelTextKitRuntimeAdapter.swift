@@ -174,7 +174,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         surfaceSize: CGSize,
         semanticBreakOffsets: Set<Int> = []
     ) throws -> [NovelTextViewportDocumentSurfaceRange] {
-        guard surfaceSize.width >= 120, surfaceSize.height > 0 else {
+        guard surfaceSize.width >= NovelReaderLayout.minimumTextLayoutWidth, surfaceSize.height > 0 else {
             throw NovelTextLayoutFailure.textKitIndexing
         }
         let documentRange = contentStorage.documentRange

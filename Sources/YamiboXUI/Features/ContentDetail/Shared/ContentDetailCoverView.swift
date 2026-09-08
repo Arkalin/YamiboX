@@ -4,6 +4,8 @@ import YamiboXCore
 /// Remote book artwork with a shared text fallback and a stable aspect ratio.
 struct ContentDetailCoverView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.contentDetailBookNamespace) private var bookNamespace
+    @Namespace private var standaloneBookNamespace
     @Namespace private var imageBrowserZoomNamespace
     @State private var imageBrowserItem: ImageBrowserItem?
     let source: YamiboImageSource?
@@ -44,6 +46,7 @@ struct ContentDetailCoverView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(theme.border.opacity(0.7), lineWidth: 1)
         }
+        .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace ?? standaloneBookNamespace)
         .fullScreenCover(item: $imageBrowserItem) { item in
             ImageBrowserView(
                 items: [item],
