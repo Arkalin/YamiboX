@@ -347,6 +347,8 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
 @MainActor
 final class ReaderPagedPagingDriver {
     private static let quickFadeDuration: TimeInterval = ReaderPagedQuickFadeTransition.duration
+    private let commitsQuickFadeSelectionImmediately: Bool
+    private let animateQuickFade: (UIView, @escaping () -> Void) -> Void
 
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
     private var pendingSelectionIndex: Int?
@@ -357,6 +359,22 @@ final class ReaderPagedPagingDriver {
     private var isPerformingQuickFadeTransition = false
     private(set) var slideAnimation: ReaderPagedSlideAnimation?
     private var slideTransition: (id: UUID, sourceSelectionIndex: Int, targetSelectionIndex: Int, viewportSize: CGSize)?
+
+    init(
+        commitsQuickFadeSelectionImmediately: Bool = false,
+        animateQuickFade: ((UIView, @escaping () -> Void) -> Void)? = nil
+    ) {
+        self.commitsQuickFadeSelectionImmediately = commitsQuickFadeSelectionImmediately
+        self.animateQuickFade = animateQuickFade ?? { snapshot, completion in
+            UIView.animate(
+                withDuration: Self.quickFadeDuration,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                snapshot.alpha = 0
+            } completion: { _ in completion() }
+        }
+    }
 
     var isPerformingSlideTransition: Bool { slideTransition != nil }
 
@@ -456,9 +474,15 @@ final class ReaderPagedPagingDriver {
             return false
         }
 
+        let consumesBeforeLayout = commitsQuickFadeSelectionImmediately && inputs.pagedTurnStyle == .quickFade
+        if consumesBeforeLayout {
+            // Novel layout callbacks must not replay the placement being applied here.
+            self.pendingSelectionIndex = nil
+        }
         collectionView.layoutIfNeeded()
         let targetContentOffsetX = CGFloat(item) * collectionView.bounds.width
         guard collectionView.contentSize.width >= targetContentOffsetX + collectionView.bounds.width else {
+            if consumesBeforeLayout { self.pendingSelectionIndex = selectionIndex }
             schedulePendingSelectionScrollRetry(in: collectionView, animated: animated, inputs: inputs)
             return false
         }
@@ -735,19 +759,19 @@ final class ReaderPagedPagingDriver {
             }
             collectionView.setContentOffset(targetOffset, animated: false)
             collectionView.layoutIfNeeded()
-            UIView.animate(
-                withDuration: Self.quickFadeDuration,
-                delay: 0,
-                options: [.beginFromCurrentState, .allowUserInteraction]
-            ) {
-                quickFadeSnapshot.alpha = 0
-            } completion: { [weak self] _ in
+            if commitsQuickFadeSelectionImmediately {
+                publishSelectionIfNeeded(selectionIndex, inputs: inputs)
+                onTransitionCompletion?()
+            }
+            animateQuickFade(quickFadeSnapshot) { [weak self] in
                 quickFadeSnapshot.removeFromSuperview()
                 guard let self else { return }
                 self.isPerformingQuickFadeTransition = false
-                self.pendingSelectionIndex = nil
-                self.publishSelectionIfNeeded(selectionIndex, inputs: inputs)
-                onTransitionCompletion?()
+                if !self.commitsQuickFadeSelectionImmediately {
+                    self.pendingSelectionIndex = nil
+                    self.publishSelectionIfNeeded(selectionIndex, inputs: inputs)
+                    onTransitionCompletion?()
+                }
             }
         }
         return true

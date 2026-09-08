@@ -138,7 +138,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         static let reuseIdentifier = "NovelReaderPagedCollectionViewportCell"
 
         var parent: NovelReaderPagedCollectionViewport
-        private let pagingDriver = ReaderPagedPagingDriver()
+        private let pagingDriver = ReaderPagedPagingDriver(commitsQuickFadeSelectionImmediately: true)
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
 
         var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
