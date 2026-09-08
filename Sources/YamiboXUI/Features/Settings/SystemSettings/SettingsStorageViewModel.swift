@@ -36,11 +36,24 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var contentCoverCacheBytes: Int { storageUsage.contentCoverCacheBytes }
     var mangaDirectoryCacheBytes: Int { storageUsage.mangaDirectoryCacheBytes }
     var offlineCacheBytes: Int { storageUsage.offlineCacheBytes }
+    var imageCacheBytes: Int? { storageUsage.imageCacheBytes }
+    var otherCacheBytes: Int? { storageUsage.otherCacheBytes }
+    var readingProgressBytes: Int? { storageUsage.readingProgressBytes }
+    var browsingHistoryBytes: Int? { storageUsage.browsingHistoryBytes }
 
     var webReaderCacheLabel: String { storageUsage.webReaderCacheLabel }
     var contentCoverCacheLabel: String { storageUsage.contentCoverCacheLabel }
     var mangaDirectoryCacheLabel: String { storageUsage.mangaDirectoryCacheLabel }
     var offlineCacheLabel: String { storageUsage.offlineCacheLabel }
+    var imageCacheLabel: String { storageUsage.imageCacheLabel }
+    var otherCacheLabel: String { storageUsage.otherCacheLabel }
+    var readingProgressLabel: String { storageUsage.readingProgressLabel }
+    var browsingHistoryLabel: String { storageUsage.browsingHistoryLabel }
+    var summary: SettingsStorageSummary { storageUsage.summary }
+
+    func refreshStorageUsage() async {
+        await storageUsage.refresh()
+    }
 
     // MARK: - Cache clearing
 
@@ -59,6 +72,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             await storageUsage.refresh()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -76,6 +90,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             await storageUsage.refresh()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -105,8 +120,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         await dependencies.checkInStore.clearAll()
         do {
             try await dependencies.favoriteUpdateStore.clearAll()
+            await storageUsage.refresh()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -121,8 +138,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
 
         do {
             try await dependencies.library.readingProgressStore.clearAllForSync()
+            await storageUsage.refresh()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -138,8 +157,10 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
 
         do {
             try await store.clearAll()
+            await storageUsage.refresh()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -163,6 +184,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
             storageUsage.resetToZero()
             return true
         } catch {
+            await storageUsage.refresh()
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)

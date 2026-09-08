@@ -61,7 +61,7 @@ extension SystemSettingsActivityReporting {
 
 // MARK: - Cross-page storage usage
 
-/// Disk-usage counters for the four cache categories the Storage page lists.
+/// File sizes and logical data-size estimates for the Storage page.
 ///
 /// A shared model rather than Storage-page-private state because the offline
 /// cache and manga directory management pages delete data those counters
@@ -74,8 +74,14 @@ final class SettingsStorageUsage {
     private(set) var contentCoverCacheBytes = 0
     private(set) var mangaDirectoryCacheBytes = 0
     private(set) var offlineCacheBytes = 0
+    private(set) var imageCacheBytes: Int?
+    private(set) var otherCacheBytes: Int?
+    private(set) var readingProgressBytes: Int?
+    private(set) var browsingHistoryBytes: Int?
 
     private let dependencies: SettingsDependencies
+    private var refreshGeneration = 0
+    private var hasLoadedAdditionalUsage = false
 
     init(dependencies: SettingsDependencies) {
         self.dependencies = dependencies
@@ -97,28 +103,94 @@ final class SettingsStorageUsage {
         Self.cacheLabel(for: offlineCacheBytes)
     }
 
-    func refresh() async {
+    var imageCacheLabel: String { additionalUsageLabel(for: imageCacheBytes) }
+    var otherCacheLabel: String { additionalUsageLabel(for: otherCacheBytes) }
+    var readingProgressLabel: String { additionalUsageLabel(for: readingProgressBytes) }
+    var browsingHistoryLabel: String { additionalUsageLabel(for: browsingHistoryBytes) }
+
+    var summary: SettingsStorageSummary {
+        var categories: [SettingsStorageCategoryUsage] = [
+            .init(category: .webReader, bytes: webReaderCacheBytes),
+            .init(category: .images, bytes: imageCacheBytes),
+            .init(category: .other, bytes: otherCacheBytes),
+            .init(category: .covers, bytes: contentCoverCacheBytes),
+            .init(category: .progress, bytes: readingProgressBytes)
+        ]
+        if dependencies.library.browsingHistoryStore != nil {
+            categories.append(.init(category: .history, bytes: browsingHistoryBytes))
+        }
+        categories.append(.init(category: .directories, bytes: mangaDirectoryCacheBytes))
+        categories.append(.init(category: .offline, bytes: offlineCacheBytes))
+        return SettingsStorageSummary(categories: categories, hasLoaded: hasLoadedAdditionalUsage)
+    }
+
+    func refresh(includeAdditionalUsage: Bool = true) async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         let novelBytes = await dependencies.novelReaderCacheStore.totalDiskUsageBytes()
         let mangaProjectionBytes = await dependencies.mangaReaderProjectionStore.totalDiskUsageBytes()
         let forumBytes = await dependencies.forumCacheStore.totalDiskUsageBytes()
+        let coverBytes = await dependencies.contentCoverStore.totalDiskUsageBytes()
+        let directoryBytes = await dependencies.mangaDirectoryStore.totalDiskUsageBytes()
+        let offlineBytes = await dependencies.offlineCacheStore.totalDiskUsageBytes()
+        var imageBytes: Int?
+        var otherBytes: Int?
+        var progressBytes: Int?
+        var historyBytes: Int?
+        if includeAdditionalUsage {
+            imageBytes = await dependencies.ordinaryImageCacheUsageBytes()
+            let checkInBytes = await dependencies.checkInStore.estimatedDataUsageBytes()
+            if let updateBytes = try? await dependencies.favoriteUpdateStore.estimatedDataUsageBytes() {
+                otherBytes = URLCache.shared.currentDiskUsage + checkInBytes + updateBytes
+            }
+            progressBytes = try? await dependencies.library.readingProgressStore.estimatedDataUsageBytes()
+            historyBytes = try? await dependencies.library.browsingHistoryStore?.estimatedDataUsageBytes()
+        }
+        // A clear/reset or newer refresh must win over an older suspended read.
+        guard generation == refreshGeneration, !Task.isCancelled else { return }
         webReaderCacheBytes = novelBytes + mangaProjectionBytes + forumBytes
-        contentCoverCacheBytes = await dependencies.contentCoverStore.totalDiskUsageBytes()
-        mangaDirectoryCacheBytes = await dependencies.mangaDirectoryStore.totalDiskUsageBytes()
-        offlineCacheBytes = await dependencies.offlineCacheStore.totalDiskUsageBytes()
+        contentCoverCacheBytes = coverBytes
+        mangaDirectoryCacheBytes = directoryBytes
+        offlineCacheBytes = offlineBytes
+        if includeAdditionalUsage {
+            imageCacheBytes = imageBytes
+            otherCacheBytes = otherBytes
+            readingProgressBytes = progressBytes
+            browsingHistoryBytes = historyBytes
+            hasLoadedAdditionalUsage = true
+        }
     }
 
     /// Application reset zeroes the counters directly instead of re-reading
     /// the stores: the wipe just succeeded, so a re-read would only race
     /// against it for the same answer.
     func resetToZero() {
+        refreshGeneration += 1
         webReaderCacheBytes = 0
         contentCoverCacheBytes = 0
         mangaDirectoryCacheBytes = 0
         offlineCacheBytes = 0
+        imageCacheBytes = 0
+        otherCacheBytes = 0
+        readingProgressBytes = 0
+        browsingHistoryBytes = dependencies.library.browsingHistoryStore == nil ? nil : 0
+        hasLoadedAdditionalUsage = true
     }
 
-    private static func cacheLabel(for bytes: Int) -> String {
-        let megabytes = Double(max(0, bytes)) / 1_048_576
-        return String(format: "%.2f MB", megabytes)
+    private func additionalUsageLabel(for bytes: Int?) -> String {
+        guard let bytes else {
+            return L10n.string(hasLoadedAdditionalUsage
+                ? "settings.storage_usage_unavailable"
+                : "settings.storage_usage_calculating")
+        }
+        return Self.cacheLabel(for: bytes)
+    }
+
+    nonisolated static func cacheLabel(for bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
+        formatter.allowsNonnumericFormatting = false
+        return formatter.string(fromByteCount: Int64(max(0, bytes)))
     }
 }

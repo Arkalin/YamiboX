@@ -121,6 +121,7 @@ struct YamiboImagePipelineTests {
 
         #expect(data == Data([7]))
         #expect(harness.requests.isEmpty)
+        #expect(await pipeline.totalDiskUsageBytes() == 0)
         let lookups = await offline.lookups
         #expect(lookups.count == 1)
         #expect(lookups.first?.scope == scope)
@@ -225,9 +226,11 @@ struct YamiboImagePipelineTests {
 
         _ = try await pipeline.data(for: source)
         try await waitForCachedData(in: pipeline, source: source)
+        #expect(await pipeline.totalDiskUsageBytes() == 1)
         await pipeline.clearCache()
 
         #expect(pipeline.cachedData(for: source) == nil)
+        #expect(await pipeline.totalDiskUsageBytes() == 0)
     }
 }
 

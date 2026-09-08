@@ -304,6 +304,7 @@ public final class YamiboAppContext: Sendable {
             favoriteUpdateStore: favoriteUpdateStore,
             offlineCacheStore: offlineCacheStore,
             clearOrdinaryImageCache: { [self] in await clearOrdinaryImageCache() },
+            ordinaryImageCacheUsageBytes: { [ordinaryImageCache] in await ordinaryImageCache.totalDiskUsageBytes() },
             resetApplicationData: { [self] in try await resetApplicationData() },
             library: libraryDependencies,
             webDAVSync: webDAVSyncDependencies

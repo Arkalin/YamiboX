@@ -107,6 +107,16 @@ func novelOfflineEntryID(
 final class RecordingOrdinaryImageCache: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
+    private var bytes = 0
+
+    var diskUsageBytes: Int {
+        get { lock.withLock { bytes } }
+        set { lock.withLock { bytes = newValue } }
+    }
+
+    func totalDiskUsageBytes() async -> Int {
+        diskUsageBytes
+    }
 
     var removeAllCallCount: Int {
         lock.lock()
@@ -117,6 +127,7 @@ final class RecordingOrdinaryImageCache: YamiboOrdinaryImageCacheClearing, @unch
     func removeAllCachedData() {
         lock.lock()
         count += 1
+        bytes = 0
         lock.unlock()
     }
 }

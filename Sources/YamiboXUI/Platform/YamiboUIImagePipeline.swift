@@ -176,6 +176,10 @@ extension YamiboUIImagePipeline: YamiboOrdinaryImageCacheClearing {
     public func removeAllCachedData() async {
         await clearCache()
     }
+
+    public func totalDiskUsageBytes() async -> Int {
+        await core.totalDiskUsageBytes()
+    }
 }
 
 struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View {

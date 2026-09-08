@@ -314,6 +314,31 @@ public actor FavoriteUpdateStore {
         }
     }
 
+    /// Matches all five tables cleared by `clearAll`, excluding shared SQLite overhead.
+    public func estimatedDataUsageBytes() async throws -> Int {
+        try await database.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COALESCE(SUM(bytes), 0) FROM (
+                    SELECT length(CAST(target_id AS BLOB)) + length(CAST(target_json AS BLOB)) AS bytes
+                    FROM favorite_update_tracked_targets
+                    UNION ALL
+                    SELECT length(CAST(id AS BLOB)) + length(CAST(target_id AS BLOB)) +
+                        length(CAST(event_json AS BLOB)) + 8 * (1 + (dismissed_at IS NOT NULL))
+                    FROM favorite_update_events
+                    UNION ALL
+                    SELECT length(CAST(run_id AS BLOB)) + length(CAST(run_json AS BLOB)) + 8
+                    FROM favorite_update_runs
+                    UNION ALL
+                    SELECT length(CAST(fid AS BLOB)) + length(CAST(filter_json AS BLOB)) + 8
+                    FROM favorite_update_fid_filters
+                    UNION ALL
+                    SELECT length(CAST(category_id AS BLOB)) + length(CAST(filter_json AS BLOB)) + 8
+                    FROM favorite_update_category_filters
+                )
+                """) ?? 0
+        }
+    }
+
     public func dismissAllEvents(date: Date = .now) async throws {
         try await write { db in
             for var event in try Self.activeEvents(in: db) {

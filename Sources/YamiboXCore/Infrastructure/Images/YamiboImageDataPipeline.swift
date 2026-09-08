@@ -3,6 +3,7 @@ import Nuke
 
 public protocol YamiboOrdinaryImageCacheClearing: Sendable {
     func removeAllCachedData() async
+    func totalDiskUsageBytes() async -> Int
 }
 
 /// `@unchecked Sendable`: holds no mutable state of its own — both stored
@@ -81,6 +82,15 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     func removeAllCachedData() {
         pipeline.cache.removeAll()
+    }
+
+    func totalDiskUsageBytes() async -> Int {
+        // Nuke stages writes and deletions. Flush off-main before measuring so
+        // a refresh immediately after clearing cannot report the old files.
+        await Task.detached(priority: .utility) { [dataCache] in
+            dataCache.flush()
+            return dataCache.totalSize
+        }.value
     }
 
     private func nukeRequest(

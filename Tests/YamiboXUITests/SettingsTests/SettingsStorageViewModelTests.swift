@@ -30,6 +30,8 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertEqual(remainingBytes, cacheBytes)
         XCTAssertFalse(settings.storage.isBusy)
         XCTAssertNil(settings.storage.errorMessage)
+        XCTAssertEqual(settings.storage.readingProgressBytes, 0)
+        XCTAssertGreaterThan(try XCTUnwrap(settings.storage.browsingHistoryBytes), 0)
     }
 
     func testClearBrowsingHistoryPreservesReadingProgress() async throws {
@@ -49,6 +51,8 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertTrue(didClear)
         XCTAssertTrue(entries.isEmpty)
         XCTAssertEqual(records, savedProgress)
+        XCTAssertEqual(settings.storage.browsingHistoryBytes, 0)
+        XCTAssertGreaterThan(try XCTUnwrap(settings.storage.readingProgressBytes), 0)
         XCTAssertFalse(settings.storage.isBusy)
         XCTAssertNil(settings.storage.errorMessage)
     }
@@ -60,10 +64,27 @@ final class SettingsStorageViewModelTests: XCTestCase {
         try await seedForumCache(fixture)
         try await seedContentCover(fixture)
         try await seedMangaOfflineCache(fixture)
+        fixture.ordinaryImageCache.diskUsageBytes = 2048
+        await fixture.appContext.checkInStore.markCheckedIn(session: makeAuthenticatedSession())
+        try await seedFavoriteUpdateStoreState(fixture)
+        try await fixture.appContext.readingProgressStore.saveNormalThread(threadID: "100", page: 3)
+        try await fixture.appContext.browsingHistoryStore.record(
+            BrowsingHistoryEntry(target: .normalThread(threadID: "100"), title: "Thread")
+        )
 
         let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
         let viewModel = settings.storage
         await settings.load()
+
+        XCTAssertNil(viewModel.imageCacheBytes, "The root must defer the image scan until the storage page opens")
+        XCTAssertEqual(viewModel.imageCacheLabel, L10n.string("settings.storage_usage_calculating"))
+        await viewModel.refreshStorageUsage()
+        let checkInBytes = await fixture.appContext.checkInStore.estimatedDataUsageBytes()
+        let updateBytes = try await fixture.appContext.favoriteUpdateStore.estimatedDataUsageBytes()
+        XCTAssertEqual(viewModel.imageCacheBytes, 2048)
+        XCTAssertEqual(viewModel.otherCacheBytes, checkInBytes + updateBytes + URLCache.shared.currentDiskUsage)
+        XCTAssertGreaterThan(try XCTUnwrap(viewModel.readingProgressBytes), 0)
+        XCTAssertGreaterThan(try XCTUnwrap(viewModel.browsingHistoryBytes), 0)
 
         XCTAssertGreaterThan(viewModel.webReaderCacheBytes, 0)
         XCTAssertGreaterThan(viewModel.contentCoverCacheBytes, 0)
@@ -73,6 +94,10 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.contentCoverCacheLabel, cacheLabel(for: viewModel.contentCoverCacheBytes))
         XCTAssertEqual(viewModel.mangaDirectoryCacheLabel, cacheLabel(for: viewModel.mangaDirectoryCacheBytes))
         XCTAssertEqual(viewModel.offlineCacheLabel, cacheLabel(for: viewModel.offlineCacheBytes))
+        XCTAssertEqual(viewModel.imageCacheLabel, cacheLabel(for: 2048))
+        XCTAssertEqual(viewModel.otherCacheLabel, cacheLabel(for: try XCTUnwrap(viewModel.otherCacheBytes)))
+        XCTAssertEqual(viewModel.readingProgressLabel, cacheLabel(for: try XCTUnwrap(viewModel.readingProgressBytes)))
+        XCTAssertEqual(viewModel.browsingHistoryLabel, cacheLabel(for: try XCTUnwrap(viewModel.browsingHistoryBytes)))
     }
 
     func testClearWebReaderCacheClearsNovelMangaProjectionAndForumCacheOnly() async throws {
@@ -164,10 +189,12 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertTrue(stateAfterClear.fidFilters.isEmpty)
         XCTAssertTrue(stateAfterClear.categoryFilters.isEmpty)
         XCTAssertEqual(novelBytesAfterClear, novelBytesBeforeClear)
+        XCTAssertEqual(viewModel.otherCacheBytes, URLCache.shared.currentDiskUsage)
     }
 
     func testClearImageCachePreservesReaderAndUserOwnedCaches() async throws {
         let fixture = try makeSystemSettingsFixture()
+        fixture.ordinaryImageCache.diskUsageBytes = 4096
         try await seedNovelCache(fixture)
         try await seedMangaIndexCache(fixture)
         let offlineImageURL = try XCTUnwrap(URL(string: "https://img.example.com/offline-settings.jpg"))
@@ -221,6 +248,7 @@ final class SettingsStorageViewModelTests: XCTestCase {
 
         XCTAssertTrue(didClear)
         XCTAssertEqual(fixture.ordinaryImageCache.removeAllCallCount, 1)
+        XCTAssertEqual(viewModel.imageCacheBytes, 0)
         XCTAssertEqual(webReaderBytesAfterClear, webReaderBytesBeforeClear)
         XCTAssertEqual(mangaDirectoryBytesAfterClear, mangaDirectoryBytesBeforeClear)
         XCTAssertEqual(offlineBytesAfterClear, offlineBytesBeforeClear)
@@ -302,6 +330,10 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.webReaderCacheBytes, 0)
         XCTAssertEqual(viewModel.mangaDirectoryCacheBytes, 0)
         XCTAssertEqual(viewModel.offlineCacheBytes, 0)
+        XCTAssertEqual(viewModel.imageCacheBytes, 0)
+        XCTAssertEqual(viewModel.otherCacheBytes, 0)
+        XCTAssertEqual(viewModel.readingProgressBytes, 0)
+        XCTAssertEqual(viewModel.browsingHistoryBytes, 0)
         XCTAssertEqual(offlineBytesAfterReset, 0)
         XCTAssertNil(offlineMembershipAfterReset)
     }
@@ -338,9 +370,78 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertTrue(stateAfterReset.fidFilters.isEmpty)
         XCTAssertTrue(stateAfterReset.categoryFilters.isEmpty)
     }
+
+    func testStorageRefreshDoesNotBlockActionsAndPicksUpNewData() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        await settings.storage.refreshStorageUsage()
+        XCTAssertFalse(settings.isBusy)
+        XCTAssertEqual(settings.storage.imageCacheBytes, 0)
+        XCTAssertEqual(settings.storage.readingProgressBytes, 0)
+        XCTAssertEqual(settings.storage.browsingHistoryBytes, 0)
+
+        fixture.ordinaryImageCache.diskUsageBytes = 512
+        try await fixture.appContext.readingProgressStore.saveNormalThread(threadID: "200", page: 1)
+        await settings.storage.refreshStorageUsage()
+        XCTAssertEqual(settings.storage.imageCacheBytes, 512)
+        XCTAssertGreaterThan(try XCTUnwrap(settings.storage.readingProgressBytes), 0)
+    }
+
+    func testFailedStatisticsAreUnavailableRatherThanZero() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        try await fixture.appContext.databasePool.write { db in
+            try db.execute(sql: "DROP TABLE browsing_history")
+            try db.execute(sql: "DROP TABLE favorite_update_runs")
+        }
+        await settings.storage.refreshStorageUsage()
+        XCTAssertNil(settings.storage.browsingHistoryBytes)
+        XCTAssertNil(settings.storage.otherCacheBytes)
+        XCTAssertEqual(settings.storage.browsingHistoryLabel, L10n.string("settings.storage_usage_unavailable"))
+        XCTAssertEqual(settings.storage.otherCacheLabel, L10n.string("settings.storage_usage_unavailable"))
+        XCTAssertEqual(settings.storage.readingProgressBytes, 0)
+    }
+
+    func testPartialClearRefreshesStatisticsEvenWhenLaterStoreFails() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        try await seedNovelCache(fixture)
+        try await seedForumCache(fixture)
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+        await settings.storage.refreshStorageUsage()
+        XCTAssertGreaterThan(settings.storage.webReaderCacheBytes, 0)
+        try await fixture.appContext.databasePool.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER fail_cache_delete BEFORE DELETE ON cache_entries
+                WHEN OLD.namespace = 'forum-thread-pages'
+                BEGIN SELECT RAISE(ABORT, 'test failure'); END
+                """)
+        }
+        // A failed clear keeps the displayed count consistent with what remains.
+        let didClear = await settings.storage.clearWebReaderCache()
+        XCTAssertFalse(didClear)
+        let novelBytes = await fixture.novelReaderCacheStore.totalDiskUsageBytes()
+        let forumBytes = await fixture.forumCacheStore.totalDiskUsageBytes()
+        XCTAssertEqual(novelBytes, 0)
+        XCTAssertEqual(settings.storage.webReaderCacheBytes, forumBytes)
+        XCTAssertNotNil(settings.storage.errorMessage)
+    }
+
+    func testStorageSizeFormattingAdaptsUnitsAndNeverRoundsSmallDataToZero() {
+        for bytes in [0, 1, 512, 1000, 1_000_000, 1_000_000_000] {
+            XCTAssertEqual(SettingsStorageUsage.cacheLabel(for: bytes), cacheLabel(for: bytes))
+        }
+        XCTAssertEqual(SettingsStorageUsage.cacheLabel(for: -1), cacheLabel(for: 0))
+        XCTAssertNotEqual(SettingsStorageUsage.cacheLabel(for: 1), SettingsStorageUsage.cacheLabel(for: 0))
+        XCTAssertTrue(SettingsStorageUsage.cacheLabel(for: 1000).contains("KB"))
+        XCTAssertTrue(SettingsStorageUsage.cacheLabel(for: 1_000_000).contains("MB"))
+        XCTAssertTrue(SettingsStorageUsage.cacheLabel(for: 1_000_000_000).contains("GB"))
+    }
 }
 
 private func cacheLabel(for bytes: Int) -> String {
-    let megabytes = Double(max(0, bytes)) / 1_048_576
-    return String(format: "%.2f MB", megabytes)
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
+    formatter.allowsNonnumericFormatting = false
+    return formatter.string(fromByteCount: Int64(max(0, bytes)))
 }

@@ -210,6 +210,30 @@ public actor BrowsingHistoryStore {
         }
     }
 
+    /// Logical row payload; excludes shared database indexes, WAL and free pages.
+    public func estimatedDataUsageBytes() async throws -> Int {
+        try await database.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COALESCE(SUM(
+                    length(CAST(id AS BLOB)) +
+                    length(CAST(target_kind AS BLOB)) +
+                    length(CAST(category AS BLOB)) +
+                    length(CAST(title AS BLOB)) +
+                    COALESCE(length(CAST(thread_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(manga_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(clean_book_name AS BLOB)), 0) +
+                    COALESCE(length(CAST(forum_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(author_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(chapter_title AS BLOB)), 0) +
+                    COALESCE(length(CAST(chapter_thread_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(last_visited_thread_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(last_visited_thread_title AS BLOB)), 0) +
+                    8 * (1 + (page_index IS NOT NULL) + (page_count IS NOT NULL))
+                ), 0) FROM browsing_history
+                """) ?? 0
+        }
+    }
+
     // MARK: - Row mapping
 
     func snapshotEntries() async throws -> [BrowsingHistoryEntry] {

@@ -64,6 +64,16 @@ public actor YamiboCheckInStore {
         postChangeNotification()
     }
 
+    /// Logical UTF-8 payload only; the shared preferences file has no
+    /// independently attributable on-disk size for these keys.
+    public func estimatedDataUsageBytes() async -> Int {
+        let prefix = "\(keyPrefix)."
+        return defaults.dictionaryRepresentation().reduce(into: 0) { bytes, item in
+            guard item.key.hasPrefix(prefix), let date = item.value as? String else { return }
+            bytes += item.key.utf8.count + date.utf8.count
+        }
+    }
+
     public func exportSnapshot() async -> YamiboCheckInSnapshot {
         let prefix = "\(keyPrefix)."
         let values = defaults.dictionaryRepresentation().reduce(into: [String: String]()) { partial, item in

@@ -14,6 +14,7 @@ struct SettingsStorageView: View {
     /// whatever this stack is showing.
     let onReset: () async -> Void
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showingWebDAVSettings = false
     @State private var showingOfflineCacheManagement = false
@@ -22,6 +23,11 @@ struct SettingsStorageView: View {
 
     var body: some View {
         Form {
+            Section {
+                SettingsStorageSummaryView(summary: viewModel.summary)
+                    .listRowBackground(Color.clear)
+            }
+
             Section(L10n.string("settings.section.backup_sync")) {
                 Button {
                     openWebDAVSettings()
@@ -50,6 +56,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.clear_image_cache"),
+                        value: viewModel.imageCacheLabel,
                         showsChevron: false
                     )
                 }
@@ -60,6 +67,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.clear_other_caches"),
+                        value: viewModel.otherCacheLabel,
                         showsChevron: false
                     )
                 }
@@ -80,6 +88,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.clear_reading_progress"),
+                        value: viewModel.readingProgressLabel,
                         showsChevron: false
                     )
                 }
@@ -90,6 +99,7 @@ struct SettingsStorageView: View {
                 } label: {
                     SystemSettingsRow(
                         title: L10n.string("settings.clear_browsing_history"),
+                        value: viewModel.browsingHistoryLabel,
                         showsChevron: false
                     )
                 }
@@ -129,6 +139,10 @@ struct SettingsStorageView: View {
         }
         .navigationTitle(L10n.string("settings.section.data_storage"))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await viewModel.refreshStorageUsage()
+        }
         .overlay(content: loadingOverlay)
         .navigationDestination(isPresented: $showingWebDAVSettings) {
             WebDAVSyncSettingsView(dependencies: dependencies.webDAVSync)

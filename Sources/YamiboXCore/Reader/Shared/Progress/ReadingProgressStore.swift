@@ -159,6 +159,34 @@ public actor ReadingProgressStore {
         postChangeNotification()
     }
 
+    /// Estimates live row payload, not SQLite pages or retained sync deletion
+    /// markers. Clearing progress does not promise to shrink the shared file.
+    public func estimatedDataUsageBytes() async throws -> Int {
+        try await database.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COALESCE(SUM(
+                    length(CAST(id AS BLOB)) +
+                    length(CAST(target_kind AS BLOB)) +
+                    length(CAST(kind AS BLOB)) +
+                    COALESCE(length(CAST(thread_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(manga_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(clean_book_name AS BLOB)), 0) +
+                    COALESCE(length(CAST(novel_last_chapter AS BLOB)), 0) +
+                    COALESCE(length(CAST(novel_author_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(novel_resume_point_json AS BLOB)), 0) +
+                    COALESCE(length(CAST(manga_chapter_thread_id AS BLOB)), 0) +
+                    COALESCE(length(CAST(manga_last_chapter AS BLOB)), 0) +
+                    COALESCE(length(CAST(thread_anchor_post_id AS BLOB)), 0) +
+                    8 * (1 + (last_read_at IS NOT NULL) + (novel_last_view IS NOT NULL) +
+                        (novel_max_view IS NOT NULL) + (novel_document_surface_progress_percent IS NOT NULL) +
+                        (manga_chapter_view IS NOT NULL) + (manga_page_index IS NOT NULL) +
+                        (manga_page_count IS NOT NULL) + (thread_last_page IS NOT NULL) +
+                        (thread_page_count IS NOT NULL))
+                ), 0) FROM reading_progress
+                """) ?? 0
+        }
+    }
+
     public func clearAllForSync(at date: Date = .now) async throws {
         try await database.write { db in
             var deletions = try SyncDeletionState.load(from: "reading_progress_sync_state", in: db)

@@ -119,6 +119,8 @@ final class SystemSettingsViewModel {
         peripherals.applyLoadedSettings(settings)
         let session = await dependencies.sessionStore.load()
         isLoggedIn = session.isLoggedIn && SessionState.hasAuthenticationCookie(session.cookie)
-        await storageUsage.refresh()
+        // Defer the image directory scan to the Storage page, without blocking
+        // navigation into unrelated settings categories.
+        await storageUsage.refresh(includeAdditionalUsage: false)
     }
 }

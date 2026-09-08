@@ -70,6 +70,10 @@ public final class YamiboImagePipeline: @unchecked Sendable {
         engine.removeAllCachedData()
     }
 
+    public func totalDiskUsageBytes() async -> Int {
+        await engine.totalDiskUsageBytes()
+    }
+
     private var offlineImages: (any YamiboOfflineImageDataProviding)? {
         offlineImagesLock.withLock {
             offlineImagesStorage
