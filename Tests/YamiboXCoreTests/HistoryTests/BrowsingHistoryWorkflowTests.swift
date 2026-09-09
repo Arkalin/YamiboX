@@ -108,7 +108,7 @@ struct BrowsingHistoryWorkflowTests {
         entries = try await fixture.workflow.snapshot().entries
         #expect(entries[0].forumID == "88")
         #expect(entries[0].category == .normal)
-        #expect(entries[0].lastVisitTime == visit.date)
+        #expect(entries[0].lastVisitTime.timeIntervalSince1970 == visit.date.timeIntervalSince1970)
     }
 
     @Test func offlineDirectoryEvidenceMergesWithoutGuessingFromTitles() async throws {
@@ -136,7 +136,7 @@ struct BrowsingHistoryWorkflowTests {
         try await fixture.workflow.recordVisit(latest)
         let stale = fixture.visit(reader: .manga, date: latest.date.addingTimeInterval(-10))
         try await fixture.workflow.updateActivity(stale)
-        #expect(try await fixture.workflow.snapshot().entries[0].lastVisitTime == latest.date)
+        #expect(try await fixture.workflow.snapshot().entries[0].lastVisitTime.timeIntervalSince1970 == latest.date.timeIntervalSince1970)
         let beforeDelete = try await fixture.history.snapshotEntries()
         try await fixture.history.delete(id: beforeDelete[0].id)
         #expect(try await fixture.history.applyCanonicalEntries(beforeDelete, replacing: beforeDelete) == false)
@@ -158,7 +158,8 @@ struct BrowsingHistoryWorkflowTests {
         let adapter = FavoriteLibraryProgressSyncAdapter(readingProgressStore: fixture.progress, browsingHistoryWorkflow: fixture.workflow)
         try await adapter.saveThreadReadingPosition(ThreadReadingPosition(threadID: "101", page: 9, recordsBrowsingHistory: false))
         let entry = try #require(try await fixture.workflow.snapshot().entries.first)
-        #expect(entry.lastVisitTime == visit.date)
+        // Persistence stores Unix seconds; converting Date's reference epoch can round.
+        #expect(entry.lastVisitTime.timeIntervalSince1970 == visit.date.timeIntervalSince1970)
         #expect(entry.pageIndex == nil)
         #expect(await fixture.progress.load(for: .normalThread(threadID: "101"))?.thread?.lastPage == 9)
     }
@@ -187,7 +188,7 @@ struct BrowsingHistoryWorkflowTests {
         let newerVisit = fixture.visit(reader: .novel)
         try await fixture.workflow.recordVisit(newerVisit)
         try await sync.flush()
-        #expect(try await fixture.workflow.snapshot().entries[0].lastVisitTime == newerVisit.date)
+        #expect(try await fixture.workflow.snapshot().entries[0].lastVisitTime.timeIntervalSince1970 == newerVisit.date.timeIntervalSince1970)
     }
 
     @Test func completedOldFlushCannotReplaceANewerQueuedPosition() async throws {
@@ -231,7 +232,7 @@ struct BrowsingHistoryWorkflowTests {
         try await adapter.saveReadingPosition(position(7), activityDate: latestDate)
         try await adapter.saveReadingPosition(position(2), activityDate: latestDate.addingTimeInterval(-10))
         let entry = try #require(try await fixture.workflow.snapshot().entries.first)
-        #expect(entry.lastVisitTime == latestDate)
+        #expect(entry.lastVisitTime.timeIntervalSince1970 == latestDate.timeIntervalSince1970)
         if reader == .novel { #expect(entry.chapterTitle == "Chapter 7") }
         else { #expect(entry.pageIndex == 7) }
     }
@@ -278,7 +279,7 @@ struct BrowsingHistoryWorkflowTests {
         } else {
             #expect(result.entries.count == 1)
             #expect(result.entries[0].category == .normal)
-            #expect(result.entries[0].lastVisitTime == visit.date)
+            #expect(result.entries[0].lastVisitTime.timeIntervalSince1970 == visit.date.timeIntervalSince1970)
         }
     }
 
@@ -300,7 +301,7 @@ struct BrowsingHistoryWorkflowTests {
         }
         observation.cancel()
         await observation.value
-        #expect(await fixture.history.entries().first?.lastVisitTime == visit.date)
+        #expect(await fixture.history.entries().first?.lastVisitTime.timeIntervalSince1970 == visit.date.timeIntervalSince1970)
     }
 }
 
