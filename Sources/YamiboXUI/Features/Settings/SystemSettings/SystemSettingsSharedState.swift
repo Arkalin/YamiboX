@@ -141,7 +141,7 @@ final class SettingsStorageUsage {
             imageBytes = await dependencies.ordinaryImageCacheUsageBytes()
             let checkInBytes = await dependencies.checkInStore.estimatedDataUsageBytes()
             if let updateBytes = try? await dependencies.favoriteUpdateStore.estimatedDataUsageBytes() {
-                otherBytes = URLCache.shared.currentDiskUsage + checkInBytes + updateBytes
+                otherBytes = dependencies.httpCache.currentDiskUsage + checkInBytes + updateBytes
             }
             progressBytes = try? await dependencies.library.readingProgressStore.estimatedDataUsageBytes()
             historyBytes = try? await dependencies.library.browsingHistoryStore?.estimatedDataUsageBytes()

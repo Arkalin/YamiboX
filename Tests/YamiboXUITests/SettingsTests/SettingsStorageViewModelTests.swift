@@ -65,6 +65,7 @@ final class SettingsStorageViewModelTests: XCTestCase {
         try await seedContentCover(fixture)
         try await seedMangaOfflineCache(fixture)
         fixture.ordinaryImageCache.diskUsageBytes = 2048
+        fixture.httpCache.diskUsageBytes = 4096
         await fixture.appContext.checkInStore.markCheckedIn(session: makeAuthenticatedSession())
         try await seedFavoriteUpdateStoreState(fixture)
         try await fixture.appContext.readingProgressStore.saveNormalThread(threadID: "100", page: 3)
@@ -82,7 +83,7 @@ final class SettingsStorageViewModelTests: XCTestCase {
         let checkInBytes = await fixture.appContext.checkInStore.estimatedDataUsageBytes()
         let updateBytes = try await fixture.appContext.favoriteUpdateStore.estimatedDataUsageBytes()
         XCTAssertEqual(viewModel.imageCacheBytes, 2048)
-        XCTAssertEqual(viewModel.otherCacheBytes, checkInBytes + updateBytes + URLCache.shared.currentDiskUsage)
+        XCTAssertEqual(viewModel.otherCacheBytes, checkInBytes + updateBytes + 4096)
         XCTAssertGreaterThan(try XCTUnwrap(viewModel.readingProgressBytes), 0)
         XCTAssertGreaterThan(try XCTUnwrap(viewModel.browsingHistoryBytes), 0)
 
@@ -164,8 +165,26 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.contentCoverCacheBytes, 0)
     }
 
-    func testClearOtherCachesClearsCheckInAndFavoriteUpdateStoreOnly() async throws {
+    func testOtherCacheUsageRemainsASnapshotUntilRefreshed() async throws {
         let fixture = try makeSystemSettingsFixture()
+        fixture.httpCache.diskUsageBytes = 4096
+        let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
+
+        await settings.storage.refreshStorageUsage()
+        XCTAssertEqual(settings.storage.otherCacheBytes, 4096)
+
+        fixture.httpCache.diskUsageBytes = 8192
+        XCTAssertEqual(settings.storage.otherCacheBytes, 4096)
+
+        await settings.storage.refreshStorageUsage()
+        XCTAssertEqual(settings.storage.otherCacheBytes, 8192)
+    }
+
+    func testClearOtherCachesClearsHTTPCheckInAndFavoriteUpdateStoreOnly() async throws {
+        let fixture = try makeSystemSettingsFixture()
+        fixture.httpCache.diskUsageBytes = 8192
+        // URLCache can still report disk overhead after cached responses are removed.
+        fixture.httpCache.diskUsageBytesAfterClear = 1024
         let session = makeAuthenticatedSession()
         await fixture.appContext.checkInStore.markCheckedIn(session: session)
         try await seedFavoriteUpdateStoreState(fixture)
@@ -189,7 +208,8 @@ final class SettingsStorageViewModelTests: XCTestCase {
         XCTAssertTrue(stateAfterClear.fidFilters.isEmpty)
         XCTAssertTrue(stateAfterClear.categoryFilters.isEmpty)
         XCTAssertEqual(novelBytesAfterClear, novelBytesBeforeClear)
-        XCTAssertEqual(viewModel.otherCacheBytes, URLCache.shared.currentDiskUsage)
+        XCTAssertEqual(fixture.httpCache.removeAllCallCount, 1)
+        XCTAssertEqual(viewModel.otherCacheBytes, 1024)
     }
 
     func testClearImageCachePreservesReaderAndUserOwnedCaches() async throws {
@@ -307,6 +327,7 @@ final class SettingsStorageViewModelTests: XCTestCase {
 
     func testResetApplicationClearsStorageUsageCounters() async throws {
         let fixture = try makeSystemSettingsFixture()
+        fixture.httpCache.diskUsageBytes = 4096
         try await seedNovelCache(fixture)
         try await seedMangaIndexCache(fixture)
         try await seedMangaOfflineCache(fixture)
@@ -327,6 +348,8 @@ final class SettingsStorageViewModelTests: XCTestCase {
 
         XCTAssertTrue(didReset)
         XCTAssertEqual(fixture.ordinaryImageCache.removeAllCallCount, 1)
+        XCTAssertEqual(fixture.httpCache.removeAllCallCount, 1)
+        XCTAssertEqual(fixture.httpCache.currentDiskUsage, 0)
         XCTAssertEqual(viewModel.webReaderCacheBytes, 0)
         XCTAssertEqual(viewModel.mangaDirectoryCacheBytes, 0)
         XCTAssertEqual(viewModel.offlineCacheBytes, 0)

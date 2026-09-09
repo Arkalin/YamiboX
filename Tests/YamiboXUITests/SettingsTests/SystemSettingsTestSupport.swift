@@ -18,6 +18,7 @@ struct SystemSettingsFixture {
     let forumCacheStore: ForumCacheStore
     let offlineCacheStore: any TestOfflineCacheStoring
     let ordinaryImageCache: RecordingOrdinaryImageCache
+    let httpCache: RecordingHTTPURLCache
 }
 
 func makeSystemSettingsFixture() throws -> SystemSettingsFixture {
@@ -46,6 +47,7 @@ func makeSystemSettingsFixture() throws -> SystemSettingsFixture {
         baseDirectory: root.appendingPathComponent("manga-offline-cache", isDirectory: true)
     )
     let ordinaryImageCache = RecordingOrdinaryImageCache()
+    let httpCache = RecordingHTTPURLCache()
     let appContext = YamiboAppContext(
         sessionStore: SessionStore(defaults: try makeDefaults(suiteName: suiteName), key: "session"),
         checkInStore: YamiboCheckInStore(defaults: try makeDefaults(suiteName: suiteName), keyPrefix: "check-in"),
@@ -60,7 +62,8 @@ func makeSystemSettingsFixture() throws -> SystemSettingsFixture {
         forumCacheStore: forumCacheStore,
         ordinaryImageCache: ordinaryImageCache,
         databasePool: database,
-        grdbRootDirectory: root
+        grdbRootDirectory: root,
+        httpCache: httpCache
     )
 
     return SystemSettingsFixture(
@@ -72,7 +75,8 @@ func makeSystemSettingsFixture() throws -> SystemSettingsFixture {
         mangaReaderProjectionStore: mangaReaderProjectionStore,
         forumCacheStore: forumCacheStore,
         offlineCacheStore: offlineCacheStore,
-        ordinaryImageCache: ordinaryImageCache
+        ordinaryImageCache: ordinaryImageCache,
+        httpCache: httpCache
     )
 }
 
@@ -102,6 +106,42 @@ func novelOfflineEntryID(
             authorID: authorID
         )
     )
+}
+
+final class RecordingHTTPURLCache: URLCache, @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = 0
+    private var bytesAfterClear = 0
+    private var clearCount = 0
+
+    override init() {
+        super.init(memoryCapacity: 0, diskCapacity: 0, diskPath: nil)
+    }
+
+    var diskUsageBytes: Int {
+        get { lock.withLock { bytes } }
+        set { lock.withLock { bytes = newValue } }
+    }
+
+    var diskUsageBytesAfterClear: Int {
+        get { lock.withLock { bytesAfterClear } }
+        set { lock.withLock { bytesAfterClear = newValue } }
+    }
+
+    override var currentDiskUsage: Int {
+        diskUsageBytes
+    }
+
+    var removeAllCallCount: Int {
+        lock.withLock { clearCount }
+    }
+
+    override func removeAllCachedResponses() {
+        lock.withLock {
+            clearCount += 1
+            bytes = bytesAfterClear
+        }
+    }
 }
 
 final class RecordingOrdinaryImageCache: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {

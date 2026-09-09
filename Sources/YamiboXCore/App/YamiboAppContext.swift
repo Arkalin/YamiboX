@@ -38,6 +38,7 @@ public final class YamiboAppContext: Sendable {
     let offlineCacheStore: any OfflineCacheStoring
     let forumCacheStore: ForumCacheStore
     let ordinaryImageCache: any YamiboOrdinaryImageCacheClearing
+    let httpCache: URLCache
     public let offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport
     public let offlineCacheContinuedProcessingCoordinator: OfflineCacheContinuedProcessingCoordinator
     /// The single pool for `yamibox.sqlite`; every GRDB-backed store receives this instance.
@@ -82,7 +83,8 @@ public final class YamiboAppContext: Sendable {
         clearsWebDataOnReset: Bool = true,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        httpCache: URLCache = .shared
     ) {
         let resolvedGRDBRootDirectory = grdbRootDirectory ?? YamiboDatabase.defaultRootDirectory()
         let resolvedCachesRootDirectory = cachesRootDirectory ?? YamiboDatabase.defaultCacheRootDirectory()
@@ -158,6 +160,7 @@ public final class YamiboAppContext: Sendable {
             }
         )
         self.ordinaryImageCache = ordinaryImageCache ?? YamiboImageDataPipeline.shared
+        self.httpCache = httpCache
         self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
         self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
         self.session = session
@@ -307,7 +310,8 @@ public final class YamiboAppContext: Sendable {
             ordinaryImageCacheUsageBytes: { [ordinaryImageCache] in await ordinaryImageCache.totalDiskUsageBytes() },
             resetApplicationData: { [self] in try await resetApplicationData() },
             library: libraryDependencies,
-            webDAVSync: webDAVSyncDependencies
+            webDAVSync: webDAVSyncDependencies,
+            httpCache: httpCache
         )
     }
 
@@ -559,7 +563,7 @@ public final class YamiboAppContext: Sendable {
     @MainActor
     private func clearWebData() async {
         HTTPCookieStorage.shared.removeCookies(since: .distantPast)
-        URLCache.shared.removeAllCachedResponses()
+        httpCache.removeAllCachedResponses()
         await websiteDataClearer?.clearAllWebsiteData()
     }
 }

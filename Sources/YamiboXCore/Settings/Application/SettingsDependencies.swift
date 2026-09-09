@@ -17,6 +17,7 @@ public struct SettingsDependencies: Sendable {
     public let offlineCacheStore: any OfflineCacheStoring
     public let clearOrdinaryImageCache: @Sendable () async -> Void
     public let ordinaryImageCacheUsageBytes: @Sendable () async -> Int
+    public let httpCache: URLCache
     public let resetApplicationData: @Sendable () async throws -> Void
     /// The favorite sync section drives the library feature's view model.
     public let library: LibraryDependencies
@@ -38,7 +39,8 @@ public struct SettingsDependencies: Sendable {
         ordinaryImageCacheUsageBytes: @escaping @Sendable () async -> Int,
         resetApplicationData: @escaping @Sendable () async throws -> Void,
         library: LibraryDependencies,
-        webDAVSync: WebDAVSyncDependencies
+        webDAVSync: WebDAVSyncDependencies,
+        httpCache: URLCache = .shared
     ) {
         self.sessionStore = sessionStore
         self.settingsStore = settingsStore
@@ -53,6 +55,7 @@ public struct SettingsDependencies: Sendable {
         self.offlineCacheStore = offlineCacheStore
         self.clearOrdinaryImageCache = clearOrdinaryImageCache
         self.ordinaryImageCacheUsageBytes = ordinaryImageCacheUsageBytes
+        self.httpCache = httpCache
         self.resetApplicationData = resetApplicationData
         self.library = library
         self.webDAVSync = webDAVSync

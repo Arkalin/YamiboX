@@ -116,7 +116,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         activeAction = .clearingOtherCaches
         defer { activeAction = nil }
 
-        URLCache.shared.removeAllCachedResponses()
+        dependencies.httpCache.removeAllCachedResponses()
         await dependencies.checkInStore.clearAll()
         do {
             try await dependencies.favoriteUpdateStore.clearAll()
