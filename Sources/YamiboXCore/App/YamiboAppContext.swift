@@ -512,32 +512,40 @@ public final class YamiboAppContext: Sendable {
     }
 
     private func resetLocalApplicationData() async throws {
-        try await sessionStore.reset()
-        await profileStore.clear()
-        await checkInStore.clearAll()
-        try await settingsStore.reset()
-        try await webDAVSyncSettingsStore.reset()
-        await readerResumeRouteStore.clear()
-        try await localFavoriteLibraryStore.clearAll()
-        try await favoriteUpdateStore.clearAll()
-        try await readingProgressStore.clearAll()
-        try await browsingHistoryStore.clearAll()
-        try await contentCoverStore.clearAll()
-        try await novelReaderCacheStore.clearAll()
-        try await mangaDirectoryStore.clearAll()
-        await mangaDirectorySearchCooldownState.clear()
-        try await mangaReaderProjectionStore.clearAll()
-        try await offlineCacheStore.clearAll()
-        try await forumCacheStore.clearAll()
-        try await favoriteBackgroundImageStore.deleteAll()
-        await clearOrdinaryImageCache()
-        clearLocalUIState()
-        if clearsWebDataOnReset {
-            await clearWebData()
+        for participant in AppDataResetParticipant.allCases {
+            try await reset(participant)
         }
-        try await likeStore.clearAll()
-        try await likeImageStore.deleteAll()
-        try await bookmarkStore.clearAll()
+    }
+
+    private func reset(_ participant: AppDataResetParticipant) async throws {
+        switch participant {
+        case .sessionStore: try await sessionStore.reset()
+        case .profileStore: await profileStore.clear()
+        case .checkInStore: await checkInStore.clearAll()
+        case .settingsStore: try await settingsStore.reset()
+        case .webDAVSyncSettingsStore: try await webDAVSyncSettingsStore.reset()
+        case .readerResumeRouteStore: await readerResumeRouteStore.clear()
+        case .localFavoriteLibraryStore: try await localFavoriteLibraryStore.clearAll()
+        case .favoriteUpdateStore: try await favoriteUpdateStore.clearAll()
+        case .favoriteSyncRunStore: try await favoriteSyncRunStore.clearAll()
+        case .readingProgressStore: try await readingProgressStore.clearAll()
+        case .browsingHistoryStore: try await browsingHistoryStore.clearAll()
+        case .contentCoverStore: try await contentCoverStore.clearAll()
+        case .novelReaderCacheStore: try await novelReaderCacheStore.clearAll()
+        case .mangaDirectoryStore: try await mangaDirectoryStore.clearAll()
+        case .mangaDirectorySearchCooldownState: await mangaDirectorySearchCooldownState.clear()
+        case .mangaReaderProjectionStore: try await mangaReaderProjectionStore.clearAll()
+        case .offlineCacheStore: try await offlineCacheStore.clearAll()
+        case .forumCacheStore: try await forumCacheStore.clearAll()
+        case .favoriteBackgroundImageStore: try await favoriteBackgroundImageStore.deleteAll()
+        case .ordinaryImageCache: await clearOrdinaryImageCache()
+        case .localUIState: clearLocalUIState()
+        case .webData:
+            if clearsWebDataOnReset { await clearWebData() }
+        case .likeStore: try await likeStore.clearAll()
+        case .likeImageStore: try await likeImageStore.deleteAll()
+        case .bookmarkStore: try await bookmarkStore.clearAll()
+        }
     }
 
     private func clearLocalUIState() {
