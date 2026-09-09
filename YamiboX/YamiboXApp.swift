@@ -40,6 +40,7 @@ struct YamiboXApp: App {
             initialTab: initialTab,
             webSessionCoordinator: webSessionCoordinator
         )
+        appModel.startRuntime()
         #if os(iOS)
         YamiboAppDelegate.appModel = appModel
         #endif

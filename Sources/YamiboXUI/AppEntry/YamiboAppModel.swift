@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import YamiboXCore
 
 public struct ForumNavigationRequest: Identifiable, Hashable, Sendable {
@@ -61,6 +62,7 @@ public final class YamiboAppModel {
     public let webSessionCoordinator: ForumWebSessionCoordinator
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
+    @ObservationIgnored private let runtime: AppRuntimeCoordinator
     @ObservationIgnored private var settingsObservationTask: Task<Void, Never>?
     @ObservationIgnored private weak var currentReaderSession: ReaderSession?
 
@@ -76,7 +78,9 @@ public final class YamiboAppModel {
             return try await loader.loadReaderProjection(request)
         }
         selectedTab = initialTab
-        appContinuity = AppContinuityWorkflow(appContext: appContext)
+        let continuity = AppContinuityWorkflow(appContext: appContext)
+        appContinuity = continuity
+        runtime = appContext.makeRuntimeCoordinator(continuity: continuity)
         peripheralInput = ReaderPeripheralInputManager(settingsStore: appContext.settingsStore)
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
             sessionStore: appContext.forumDependencies.sessionStore
@@ -87,6 +91,34 @@ public final class YamiboAppModel {
     deinit {
         settingsObservationTask?.cancel()
         mangaOpenTask?.cancel()
+    }
+
+    /// Called once by the app entry point, not by a view's task or appearance.
+    public func startRuntime() {
+        runtime.start()
+    }
+
+    func stopRuntime() {
+        runtime.stop()
+    }
+
+    @discardableResult
+    func scenePhaseDidChange(_ phase: ScenePhase) -> Bool {
+        let runtimePhase: AppRuntimePhase
+        switch phase {
+        case .active: runtimePhase = .active
+        case .inactive: runtimePhase = .inactive
+        case .background: runtimePhase = .background
+        @unknown default: return false
+        }
+        guard runtime.transition(to: runtimePhase) else { return false }
+        webSessionCoordinator.setAppIsActive(phase == .active)
+#if os(iOS) && canImport(BackgroundTasks)
+        if phase == .background {
+            FavoriteUpdateBackgroundScheduler.scheduleNextIfNeeded(appContext: appContext)
+        }
+#endif
+        return true
     }
 
     public func bootstrapIfNeeded() async {

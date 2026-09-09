@@ -5,6 +5,26 @@ import YamiboXTestSupport
 
 final class YamiboAppModelWebDAVTests: XCTestCase {
     @MainActor
+    func testSceneLifecycleRequiresExplicitStartAndDeduplicatesEvents() throws {
+        let fixture = try makeSystemSettingsFixture()
+        let appModel = YamiboAppModel(appContext: fixture.appContext)
+        XCTAssertFalse(appModel.scenePhaseDidChange(.active))
+
+        appModel.startRuntime()
+        defer { appModel.stopRuntime() }
+        XCTAssertTrue(appModel.scenePhaseDidChange(.active))
+        XCTAssertFalse(appModel.scenePhaseDidChange(.active))
+        XCTAssertTrue(appModel.scenePhaseDidChange(.inactive))
+        XCTAssertFalse(appModel.scenePhaseDidChange(.inactive))
+        XCTAssertTrue(appModel.scenePhaseDidChange(.active))
+
+        appModel.stopRuntime()
+        XCTAssertFalse(appModel.scenePhaseDidChange(.active))
+        appModel.startRuntime()
+        XCTAssertTrue(appModel.scenePhaseDidChange(.active))
+    }
+
+    @MainActor
     func testReadingProgressChangeSchedulesWebDAVLocalUpdate() async throws {
         let fixture = try makeSystemSettingsFixture()
         let appContext = fixture.appContext
@@ -33,13 +53,8 @@ final class YamiboAppModelWebDAVTests: XCTestCase {
         let readingProgressStore = appContext.readingProgressStore
         try await webDAVSettingsStore.save(WebDAVSyncSettings(isAutoSyncEnabled: true))
         let appModel = YamiboAppModel(appContext: appContext)
-        let observerTask = Task {
-            await RootTabView.observeReadingProgressChanges(appContext: appContext) {
-                appModel.scheduleWebDAVUploadForReadingProgressChange()
-            }
-        }
-        defer { observerTask.cancel() }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        appModel.startRuntime()
+        defer { appModel.stopRuntime() }
 
         try await readingProgressStore.saveNovel(NovelReadingPosition(threadID: "2701", view: 2))
 

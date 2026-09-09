@@ -71,7 +71,7 @@ public actor BrowsingHistoryWorkflow {
         }
     }
 
-    /// Owned by the root view's task lifetime, including while readers cover it.
+    /// Owned by the application runtime, independently of the visible reader.
     public func observeChanges() async {
         let settingsChanges = settingsStore.changes()
         let directoryChanges = directoryStore.changes()

@@ -47,46 +47,9 @@ public struct RootTabView: View {
         .task {
             await appUpdateLaunchPrompter.checkForUpdateIfNeeded()
         }
-        .task {
-            await observeFavoriteLibraryChanges()
-        }
-        .task {
-            await observeSettingsStoreChanges()
-        }
-        .task {
-            await appModel.appContext.browsingHistoryWorkflow.observeChanges()
-        }
-        .task {
-            await appModel.appContext.messageUnreadWorkflow.observeSessionChanges()
-        }
-        .task {
-            await observeReadingProgressChanges()
-        }
-        .task {
-            await observeContentCoverChanges()
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            switch newPhase {
-            case .active:
-                appModel.webSessionCoordinator.setAppIsActive(true)
-                Task {
-                    guard scenePhase == .active else { return }
-                    await appModel.appContext.messageUnreadWorkflow.appDidBecomeActive()
-                }
-                appModel.synchronizeWebDAVIfNeeded()
+        .onChange(of: scenePhase, initial: true) { oldPhase, newPhase in
+            if appModel.scenePhaseDidChange(newPhase), newPhase == .active, oldPhase != newPhase {
                 presentClipboardForumLinkPromptIfNeeded()
-            case .background:
-                appModel.webSessionCoordinator.setAppIsActive(false)
-                appModel.appContext.messageUnreadWorkflow.appDidEnterBackground()
-                appModel.flushWebDAVSyncBeforeBackground()
-#if os(iOS) && canImport(BackgroundTasks)
-                FavoriteUpdateBackgroundScheduler.scheduleNextIfNeeded(appContext: appModel.appContext)
-#endif
-            case .inactive:
-                appModel.webSessionCoordinator.setAppIsActive(false)
-                break
-            @unknown default:
-                break
             }
         }
         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !appModel.hasActiveReaderPresentation))
@@ -115,12 +78,6 @@ public struct RootTabView: View {
         ))
         .fullScreenCover(item: webVerificationBinding) { _ in
             ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
-        }
-        .task {
-            appModel.webSessionCoordinator.setAppIsActive(scenePhase == .active)
-            if scenePhase == .active {
-                await appModel.appContext.messageUnreadWorkflow.appDidBecomeActive()
-            }
         }
     }
 
@@ -187,61 +144,6 @@ public struct RootTabView: View {
                 }
             }
         )
-    }
-
-    // The changeID guards below survive the stream migration: each stream is
-    // already per-instance, but the comparison stays as the explicit "only
-    // the app context's own store instance schedules an upload" contract.
-    private func observeFavoriteLibraryChanges() async {
-        for await changeID in appModel.appContext.localFavoriteLibraryStore.changes() {
-            guard !Task.isCancelled else { return }
-            guard changeID == appModel.appContext.localFavoriteLibraryStore.changeID else {
-                continue
-            }
-            appModel.scheduleWebDAVUploadForLocalChange()
-        }
-    }
-
-    private func observeSettingsStoreChanges() async {
-        for await changeID in appModel.appContext.settingsStore.changes() {
-            guard !Task.isCancelled else { return }
-            guard changeID == appModel.appContext.settingsStore.changeID else {
-                continue
-            }
-            appModel.scheduleWebDAVUploadForLocalChange(touchesAppSettings: true)
-        }
-    }
-
-    private func observeReadingProgressChanges() async {
-        await Self.observeReadingProgressChanges(appContext: appModel.appContext) {
-            appModel.scheduleWebDAVUploadForReadingProgressChange()
-        }
-    }
-
-    /// Covers changed alone (manual cover set, text-cover toggle) touch no
-    /// other synced store, so without this stream those edits would sit
-    /// unmarked until some unrelated change or backgrounding flushed them.
-    private func observeContentCoverChanges() async {
-        for await changeID in appModel.appContext.contentCoverStore.changes() {
-            guard !Task.isCancelled else { return }
-            guard changeID == appModel.appContext.contentCoverStore.changeID else {
-                continue
-            }
-            appModel.scheduleWebDAVUploadForLocalChange()
-        }
-    }
-
-    static func observeReadingProgressChanges(
-        appContext: YamiboAppContext,
-        onChange: @escaping @MainActor () -> Void
-    ) async {
-        for await changeID in appContext.readingProgressStore.changes() {
-            guard !Task.isCancelled else { return }
-            guard changeID == appContext.readingProgressStore.changeID else {
-                continue
-            }
-            await MainActor.run(body: onChange)
-        }
     }
 
     private func presentClipboardForumLinkPromptIfNeeded() {
