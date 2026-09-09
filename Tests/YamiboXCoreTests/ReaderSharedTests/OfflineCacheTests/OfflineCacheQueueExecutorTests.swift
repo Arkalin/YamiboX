@@ -102,7 +102,9 @@ struct ReaderSharedTestsOfflineCacheQueueExecutor {
         await executor.waitForIdle()
 
         #expect(await projectionLoader.requestedThreadIDs == ["310"])
-        #expect(await acquirer.requestedURLs == projectionImages)
+        let requestedURLs = await acquirer.requestedURLs
+        // Transfers run concurrently; only persisted page order is stable.
+        #expect(requestedURLs.map(\.absoluteString).sorted() == projectionImages.map(\.absoluteString).sorted())
         let membership = try #require(await store.mangaOfflineCacheMembership(ownerName: "favorite-a", tid: "310"))
         #expect(membership.imageURLs == projectionImages)
         #expect(membership.sourcePage.thread == ThreadIdentity(tid: "310"))
