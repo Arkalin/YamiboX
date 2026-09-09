@@ -70,15 +70,17 @@ private func runEngine(
     client: FavoriteYamiboSyncClient,
     snapshot: FavoriteRemoteSyncSnapshot,
     mangaDirectoryStore: MangaDirectoryStore? = nil,
-    settingsStore: SettingsStore? = nil
+    settingsStore: SettingsStore? = nil,
+    onFailure: @escaping @Sendable (LoadFailureDetails) async -> Void = { _ in }
 ) async -> FavoriteRemoteSyncSnapshot {
     let engine = FavoriteYamiboSyncEngine(
         libraryStore: store,
         client: client,
         mangaDirectoryStore: mangaDirectoryStore,
-        settingsStore: settingsStore
+        settingsStore: settingsStore,
+        retryPolicy: FavoriteRemoteSyncRetryPolicy(wait: { _ in })
     )
-    return await engine.run(snapshot: snapshot, persist: { _ in })
+    return await engine.run(snapshot: snapshot, onFailure: onFailure, persist: { _ in })
 }
 
 private func makeSettingsStore(_ boardReader: BoardReaderSettings) async throws -> SettingsStore {
@@ -586,6 +588,88 @@ private func makeSettingsStore(_ boardReader: BoardReaderSettings) async throws 
     })
     let saved = try await store.load()
     #expect(saved.items.isEmpty)
+}
+
+@Test func enginePreservesProbeAuthenticationFailureAndStopsImporting() async throws {
+    let store = makeLibraryStore()
+    let categoryID = try await store.load().defaultCategory.id
+    let recorder = SyncCallRecorder()
+    let failures = SyncFailureRecorder()
+    let error = LoadDiagnosticError.attaching(
+        to: YamiboError.notAuthenticated,
+        requestContext: "https://bbs.yamibo.com/forum.php?tid=111",
+        httpStatus: 401
+    )
+    let client = singlePageClient(
+        entries: [
+            YamiboRemoteFavoriteEntry(remoteFavoriteID: "first", threadID: "111"),
+            YamiboRemoteFavoriteEntry(remoteFavoriteID: "second", threadID: "222"),
+        ],
+        recorder: recorder,
+        probe: { _ in throw error }
+    )
+
+    let final = await runEngine(
+        store: store, client: client, snapshot: makeSnapshot(categoryID: categoryID),
+        onFailure: { await failures.record($0) }
+    )
+
+    #expect(final.status == .failed)
+    #expect(final.importedCount == 0)
+    #expect(await recorder.probedThreadIDs == ["111"])
+    #expect(await recorder.addedThreadIDs.isEmpty)
+    #expect(try await store.load().items.isEmpty)
+    let details = try #require(await failures.details)
+    #expect(details.httpStatus == 401)
+    #expect(details.requestContext?.contains("tid=111") == true)
+}
+
+@Test func engineInterruptsWhenLastProbeReportsURLCancellation() async throws {
+    let store = makeLibraryStore()
+    let categoryID = try await store.load().defaultCategory.id
+    let recorder = SyncCallRecorder()
+    let client = singlePageClient(
+        entries: [YamiboRemoteFavoriteEntry(remoteFavoriteID: "first", threadID: "111")],
+        recorder: recorder,
+        probe: { _ in throw URLError(.cancelled) }
+    )
+
+    let final = await runEngine(store: store, client: client, snapshot: makeSnapshot(categoryID: categoryID))
+
+    #expect(final.status == .interrupted)
+    #expect(final.failedCount == 0)
+    #expect(final.importedCount == 0)
+    #expect(await recorder.probedThreadIDs == ["111"])
+    #expect(try await store.load().items.isEmpty)
+}
+
+@Test func engineStopsImportingWhenProbeGoesOffline() async throws {
+    let store = makeLibraryStore()
+    let categoryID = try await store.load().defaultCategory.id
+    let recorder = SyncCallRecorder()
+    let client = singlePageClient(
+        entries: [
+            YamiboRemoteFavoriteEntry(remoteFavoriteID: "first", threadID: "111"),
+            YamiboRemoteFavoriteEntry(remoteFavoriteID: "second", threadID: "222"),
+        ],
+        recorder: recorder,
+        probe: { _ in throw URLError(.notConnectedToInternet) }
+    )
+
+    let final = await runEngine(store: store, client: client, snapshot: makeSnapshot(categoryID: categoryID))
+
+    #expect(final.status == .failed)
+    #expect(final.importedCount == 0)
+    #expect(await recorder.probedThreadIDs == ["111"])
+    #expect(try await store.load().items.isEmpty)
+}
+
+private actor SyncFailureRecorder {
+    private(set) var details: LoadFailureDetails?
+
+    func record(_ details: LoadFailureDetails) {
+        self.details = details
+    }
 }
 
 // MARK: - Uploading & reconciling

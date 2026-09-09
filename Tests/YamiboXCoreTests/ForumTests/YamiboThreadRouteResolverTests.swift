@@ -785,6 +785,25 @@ struct YamiboThreadRouteResolverTests {
     }
 }
 
+@Test func yamiboThreadRouteResolverPreservesAuthenticationFailureForFavoriteSync() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=500&mobile=2"))
+    YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+        yamiboThreadRouteHTTPResponse(url: request.url!, body: "unauthorized", statusCode: 401)
+    }
+
+    do {
+        _ = try await resolver.resolveForFavoriteSync(YamiboThreadRouteRequest(threadURL: url))
+        Issue.record("Expected the original authentication failure, not a web fallback")
+    } catch {
+        #expect(LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated)
+        let details = LoadFailureDetails(error: error)
+        #expect(details.httpStatus == 401)
+        #expect(details.requestContext?.contains("tid=500") == true)
+    }
+}
+
 @Test func yamiboThreadRouteResolverPropagatesNonFallbackMetadataFailure() async throws {
     defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
 

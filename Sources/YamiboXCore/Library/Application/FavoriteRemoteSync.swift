@@ -37,6 +37,7 @@ public struct FavoriteYamiboSyncClient: Sendable {
     /// Implementations are expected to record covers as a side effect.
     public var probe: @Sendable (_ entry: YamiboRemoteFavoriteEntry) async throws -> FavoriteThreadProbeResult
     /// Adds one thread to the Yamibo remote favorites.
+    /// The engine does not retry writes whose server-side outcome is unknown.
     public var addFavorite: @Sendable (_ threadID: String) async throws -> Void
 
     public init(
@@ -69,6 +70,7 @@ public struct FavoriteYamiboSyncClient: Sendable {
 public struct FavoriteYamiboSyncEngine: Sendable {
     private let libraryStore: FavoriteLibraryStore
     private let client: FavoriteYamiboSyncClient
+    private let retryPolicy: FavoriteRemoteSyncRetryPolicy
     /// Backs the batched tid → directory lookup phase 3 uses for the
     /// "imported into an already-favorited manga directory" warning
     /// (smart-comic-mode Phase G, design decision #8's remote-sync half).
@@ -90,8 +92,23 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         mangaDirectoryStore: MangaDirectoryStore? = nil,
         settingsStore: SettingsStore? = nil
     ) {
+        self.init(
+            libraryStore: libraryStore, client: client,
+            mangaDirectoryStore: mangaDirectoryStore, settingsStore: settingsStore,
+            retryPolicy: FavoriteRemoteSyncRetryPolicy()
+        )
+    }
+
+    init(
+        libraryStore: FavoriteLibraryStore,
+        client: FavoriteYamiboSyncClient,
+        mangaDirectoryStore: MangaDirectoryStore? = nil,
+        settingsStore: SettingsStore? = nil,
+        retryPolicy: FavoriteRemoteSyncRetryPolicy
+    ) {
         self.libraryStore = libraryStore
         self.client = client
+        self.retryPolicy = retryPolicy
         self.mangaDirectoryStore = mangaDirectoryStore
         self.settingsStore = settingsStore
     }
@@ -178,7 +195,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             var totalPages: Int?
             while true {
                 try Task.checkCancellation()
-                let result = try await Self.fetchPageWithRetry(page, client: client)
+                let result = try await retryPolicy.run { try await client.fetchPage(page) }
                 if let known = totalPages, known != result.totalPages, !reportedPageCountChange {
                     reportedPageCountChange = true
                     await commit { $0.warnings.append(.remotePageCountChanged) }
@@ -248,10 +265,10 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             if let mangaDirectoryStore, !candidateThreadIDs.isEmpty {
                 do {
                     candidateDirectoriesByTID = try await mangaDirectoryStore.directories(containingTIDs: candidateThreadIDs)
-                } catch is CancellationError {
+                } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
                     // Don't swallow cancellation into a mere warning — let it
                     // propagate to the run's own cancellation handling below.
-                    throw CancellationError()
+                    throw error
                 } catch {
                     YamiboLog.sync.warning("Failed to batch-resolve manga directories for sync attribution detection; this run will skip attribution warnings: \(error.localizedDescription)")
                 }
@@ -291,16 +308,12 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 }
 
                 do {
-                    let probeResult = try await Self.probeWithRetry(entry, client: client)
+                    let probeResult = try await retryPolicy.run { try await client.probe(entry) }
                     guard !probeResult.sourceMetadataFetchFailed else {
-                        // The thread's own detail page never resolved even
-                        // after `threadMetadata()`'s retries, so forum/cover/
-                        // content-updated metadata is unknown. This used to
-                        // still import the item as a permanent "未知来源"
-                        // placeholder with a warning; treat it the same as
-                        // any other probe failure instead, so the item isn't
-                        // kept in favorites and the next sync run retries it
-                        // from scratch.
+                        // Compatibility for injected/legacy clients. The
+                        // production probe throws its original error, but a
+                        // degraded result must still never become a saved
+                        // placeholder that later syncs mistake for success.
                         throw YamiboError.parsingFailed(context: entry.threadID)
                     }
                     let mapping = FavoriteRemoteMapping(
@@ -363,9 +376,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                             }
                         }
                     }
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch let error where Self.isRunFatal(error) {
+                } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
+                    throw error
+                } catch let error where FavoriteRemoteSyncRetryPolicy.isRunFatal(error) {
                     throw error
                 } catch {
                     let reason = Self.truncatedReason(from: error)
@@ -407,9 +420,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         snapshot.uploadedCount += 1
                         snapshot.logEntries.append(.uploadedItem(index: offset + 1, total: uploadCandidates.count, title: label))
                     }
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch let error where Self.isRunFatal(error) {
+                } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
+                    throw error
+                } catch let error where FavoriteRemoteSyncRetryPolicy.isRunFatal(error) {
                     throw error
                 } catch {
                     let reason = Self.truncatedReason(from: error)
@@ -427,7 +440,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     snapshot.logEntries.append(.reconciling)
                 }
                 do {
-                    let allEntries = try await Self.fetchAllPages(client: client)
+                    let allEntries = try await fetchAllPages()
                     for entry in allEntries {
                         guard let target = workingDocument.items.first(where: { $0.target.threadID == entry.threadID })?.target else {
                             continue
@@ -443,14 +456,17 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     if let merged = try await saveDocumentIfDirty() {
                         workingDocument = merged
                     }
-                } catch is CancellationError {
-                    throw CancellationError()
+                } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
+                    throw error
+                } catch let error where FavoriteRemoteSyncRetryPolicy.isRunFatal(error) {
+                    throw error
                 } catch {
                     let reason = Self.truncatedReason(from: error)
                     await commit { $0.warnings.append(.reconcileFailed(reason: reason)) }
                 }
             }
 
+            try Task.checkCancellation()
             let importedCount = snapshot.importedCount
             let uploadedCount = snapshot.uploadedCount
             await commit { snapshot in
@@ -459,7 +475,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 snapshot.finishedAt = .now
                 snapshot.logEntries.append(.completed(importedCount: importedCount, uploadedCount: uploadedCount))
             }
-        } catch let error where error.isTaskCancellation {
+        } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
             do {
                 _ = try await saveDocumentIfDirty()
             } catch let saveError {
@@ -494,65 +510,13 @@ public struct FavoriteYamiboSyncEngine: Sendable {
 
     // MARK: - Helpers
 
-    /// Shared retry loop for per-item network calls: cancellation always
-    /// propagates immediately, run-fatal errors (auth loss, offline) abort
-    /// the whole run, anything else retries and surfaces the last error.
-    private static func withRetry<Value>(
-        attempts: Int = 3,
-        fallbackError: @autoclosure () -> any Error,
-        _ operation: () async throws -> Value
-    ) async throws -> Value {
-        var lastError: (any Error)?
-        for attempt in 1 ... max(1, attempts) {
-            do {
-                return try await operation()
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch let error where isRunFatal(error) {
-                throw error
-            } catch {
-                lastError = error
-                if attempt < attempts {
-                    try Task.checkCancellation()
-                }
-            }
-        }
-        throw lastError ?? fallbackError()
-    }
-
-    private static func probeWithRetry(
-        _ entry: YamiboRemoteFavoriteEntry,
-        client: FavoriteYamiboSyncClient,
-        attempts: Int = 3
-    ) async throws -> FavoriteThreadProbeResult {
-        try await withRetry(
-            attempts: attempts,
-            fallbackError: YamiboError.parsingFailed(context: entry.threadID)
-        ) {
-            try await client.probe(entry)
-        }
-    }
-
-    private static func fetchPageWithRetry(
-        _ page: Int,
-        client: FavoriteYamiboSyncClient,
-        attempts: Int = 3
-    ) async throws -> FavoriteYamiboRemotePage {
-        try await withRetry(
-            attempts: attempts,
-            fallbackError: YamiboError.parsingFailed(context: "\(page)")
-        ) {
-            try await client.fetchPage(page)
-        }
-    }
-
-    private static func fetchAllPages(client: FavoriteYamiboSyncClient) async throws -> [YamiboRemoteFavoriteEntry] {
+    private func fetchAllPages() async throws -> [YamiboRemoteFavoriteEntry] {
         var entries: [YamiboRemoteFavoriteEntry] = []
         var seenThreadIDs: Set<String> = []
         var page = 1
         while true {
             try Task.checkCancellation()
-            let result = try await Self.fetchPageWithRetry(page, client: client)
+            let result = try await retryPolicy.run { try await client.fetchPage(page) }
             for entry in result.entries where seenThreadIDs.insert(entry.threadID).inserted {
                 var ordered = entry
                 ordered.remoteOrder = entries.count
@@ -562,29 +526,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 return entries
             }
             page += 1
-        }
-    }
-
-    /// Errors that abort the whole run instead of failing one item, matching
-    /// the Android reference (not logged in / site maintenance).
-    private static func isRunFatal(_ error: any Error) -> Bool {
-        // A missing add token was run-fatal before the favorites-domain split
-        // moved it from `YamiboError` to `FavoriteActionError`: without a
-        // formHash no subsequent add in this run can succeed either.
-        if let favoriteError = error as? FavoriteActionError {
-            switch favoriteError {
-            case .missingFavoriteAddToken:
-                return true
-            default:
-                return false
-            }
-        }
-        guard let yamiboError = LoadDiagnosticError.classificationError(error) as? YamiboError else { return false }
-        switch yamiboError {
-        case .notAuthenticated, .floodControl:
-            return true
-        default:
-            return false
         }
     }
 

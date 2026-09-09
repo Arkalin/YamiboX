@@ -28,10 +28,9 @@ public struct FavoriteThreadProbeResult: Hashable, Sendable {
     public var coverURL: URL?
     public var contentUpdatedAt: Date?
     public var authorID: String?
-    /// Set when the thread-page fetch backing `sourceGroup`/`coverURL`/
-    /// `contentUpdatedAt` failed even after retries, so the caller can still
-    /// import the item while surfacing that its metadata is degraded rather
-    /// than silently treating it as a clean success.
+    /// Legacy signal retained for callers constructing degraded results.
+    /// Remote sync rejects these instead of importing a placeholder; the
+    /// production sync probe throws the original metadata error directly.
     public var sourceMetadataFetchFailed: Bool
 
     public init(

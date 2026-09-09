@@ -11,6 +11,19 @@ public actor YamiboThreadRouteResolver {
     }
 
     public func resolve(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget {
+        try await resolve(request, allowsAuthenticationFallback: true)
+    }
+
+    func resolveForFavoriteSync(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget {
+        // Background imports cannot hand an authentication failure to a web
+        // view; keep the error so the sync engine can stop the run.
+        try await resolve(request, allowsAuthenticationFallback: false)
+    }
+
+    private func resolve(
+        _ request: YamiboThreadRouteRequest,
+        allowsAuthenticationFallback: Bool
+    ) async throws -> YamiboThreadRouteTarget {
         let requestURL = URL(string: request.threadURL.absoluteString, relativeTo: YamiboDomain.baseURL)?.absoluteURL
             ?? request.threadURL.absoluteURL
         let canonicalURL = canonicalThreadURL(from: requestURL) ?? requestURL
@@ -64,7 +77,10 @@ public actor YamiboThreadRouteResolver {
         if request.readerOverride == nil,
            shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
             do {
-                metadata = try await loadMetadata(for: canonicalURL, fallbackURL: requestURL)
+                metadata = try await loadMetadata(
+                    for: canonicalURL, fallbackURL: requestURL,
+                    allowsAuthenticationFallback: allowsAuthenticationFallback
+                )
             } catch let fallback as YamiboThreadRouteResolverWebFallback {
                 return .webFallback(fallback.url)
             }
@@ -165,15 +181,17 @@ public actor YamiboThreadRouteResolver {
         return fid == nil
     }
 
-    private func loadMetadata(for url: URL, fallbackURL: URL) async throws -> YamiboThreadMetadata {
+    private func loadMetadata(
+        for url: URL, fallbackURL: URL, allowsAuthenticationFallback: Bool
+    ) async throws -> YamiboThreadMetadata {
         do {
             let html = try await client.fetchHTML(for: .thread(url: url, page: 1, authorID: nil))
             return try LoadDiagnosticError.parsing(html: html, context: url.absoluteString) {
                 try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
             }
-        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
+        } catch where allowsAuthenticationFallback && (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
             throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
-        } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .floodControl {
+        } catch where allowsAuthenticationFallback && (LoadDiagnosticError.classificationError(error) as? YamiboError) == .floodControl {
             throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
         }
     }
