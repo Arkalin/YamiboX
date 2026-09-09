@@ -177,9 +177,11 @@ import Testing
         let staleProgress = try await progressSync.mergeAndExport(remoteData: nil, updatedAt: old, accountUID: "1")
         let staleCover = try await coverSync.mergeAndExport(remoteData: nil, updatedAt: old, accountUID: "1")
         let date = cleared
-        try await db.pool.write { db in
-            try MangaDirectoryStore.renameRelatedStructuredMetadata(from: "old", to: "new", date: date, in: db)
-        }
+        try await GRDBMangaDirectoryIdentityMigration(databasePool: db.pool).renameDirectory(
+            from: "old",
+            to: MangaDirectory(cleanBookName: "new", strategy: .links, sourceKey: "source"),
+            date: date
+        )
         try await progressSync.applyRemote(staleProgress)
         try await coverSync.applyRemote(staleCover)
         #expect(await progress.loadAll().map(\.contentTarget?.mangaCleanBookName) == ["new"])

@@ -383,6 +383,11 @@ private actor AdjacentPrefetchDirectoryStore: MangaDirectoryPersisting {
     func deleteDirectory(named name: String) async throws {
         directories.removeValue(forKey: name.trimmingCharacters(in: .whitespacesAndNewlines))
     }
+
+    func renameDirectory(from oldName: String, to newDirectory: MangaDirectory) async throws {
+        directories.removeValue(forKey: oldName.trimmingCharacters(in: .whitespacesAndNewlines))
+        directories[newDirectory.cleanBookName] = newDirectory
+    }
 }
 
 #if os(iOS)

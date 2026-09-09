@@ -242,6 +242,11 @@ private actor CoverTestMangaDirectoryStore: MangaDirectoryPersisting {
     func deleteDirectory(named name: String) async throws {
         directories.removeValue(forKey: name)
     }
+
+    func renameDirectory(from oldName: String, to newDirectory: MangaDirectory) async throws {
+        directories.removeValue(forKey: oldName)
+        directories[newDirectory.cleanBookName] = newDirectory
+    }
 }
 
 @MainActor

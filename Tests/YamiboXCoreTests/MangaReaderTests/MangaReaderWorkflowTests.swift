@@ -1414,6 +1414,11 @@ private actor RecordingMangaDirectoryStore: MangaDirectoryPersisting {
         directories.removeValue(forKey: normalized)
     }
 
+    func renameDirectory(from oldName: String, to newDirectory: MangaDirectory) async throws {
+        directories.removeValue(forKey: Self.normalizedName(oldName))
+        directories[Self.normalizedName(newDirectory.cleanBookName)] = newDirectory
+    }
+
     private static func normalizedName(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }

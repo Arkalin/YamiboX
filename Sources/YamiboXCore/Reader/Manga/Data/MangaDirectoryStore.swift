@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 
-public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenaming {
+public actor MangaDirectoryStore: MangaDirectoryPersisting {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
     /// Multicast change feed; each element is the `changeID` of the store
@@ -9,17 +9,22 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
-    /// The rename cascade writes `FavoriteUpdateStore`'s tables directly
-    /// inside this store's transaction (static `renameMangaDirectoryTracking`);
-    /// the instance is kept only so `renameDirectory` can post that store's
-    /// change notification after the transaction commits. `nil` (the default)
-    /// skips the notification, matching every other store's `nil`-safe
-    /// construction pattern in this file's callers/tests.
+    private let identityMigration: GRDBMangaDirectoryIdentityMigration
+    /// These instances receive notifications only; the migration uses this
+    /// store's pool. Custom compositions must supply owners of the same data.
     private let favoriteUpdateStore: FavoriteUpdateStore?
+    private let readingProgressStore: ReadingProgressStore?
 
-    public init(databasePool: DatabasePool? = nil, favoriteUpdateStore: FavoriteUpdateStore? = nil) {
-        self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "MangaDirectoryStore")
+    public init(
+        databasePool: DatabasePool? = nil,
+        favoriteUpdateStore: FavoriteUpdateStore? = nil,
+        readingProgressStore: ReadingProgressStore? = nil
+    ) {
+        let database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "MangaDirectoryStore")
+        self.database = database
+        self.identityMigration = GRDBMangaDirectoryIdentityMigration(databasePool: database)
         self.favoriteUpdateStore = favoriteUpdateStore
+        self.readingProgressStore = readingProgressStore
     }
 
     public func directory(named name: String) async throws -> MangaDirectory? {
@@ -118,7 +123,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
     public func deleteDirectory(named name: String) async throws {
         guard let name = name.mangaReaderTrimmedNonEmpty else { return }
         try await database.write { db in
-            try db.execute(sql: "DELETE FROM manga_directories WHERE clean_book_name = ?", arguments: [name])
+            try Self.delete(named: name, in: db)
         }
         postChangeNotification()
     }
@@ -133,15 +138,12 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
             try await saveDirectory(newDirectory)
             return
         }
-        try await database.write { db in
-            try Self.save(newDirectory, in: db)
-            try Self.renameRelatedStructuredMetadata(from: oldName, to: newDirectory.cleanBookName, in: db)
-            if oldName != newDirectory.cleanBookName {
-                try db.execute(sql: "DELETE FROM manga_directories WHERE clean_book_name = ?", arguments: [oldName])
-            }
-        }
+        try await identityMigration.renameDirectory(from: oldName, to: newDirectory)
         favoriteUpdateStore?.notifyExternalMutation()
         postChangeNotification()
+        if oldName != newDirectory.cleanBookName {
+            readingProgressStore?.notifyIdentityMigrationCommitted()
+        }
     }
 
     public func clearAll() async throws {
@@ -217,6 +219,10 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
             YamiboLog.persistence.warning("Failed to read manga directory disk usage: \(error)")
             return 0
         }
+    }
+
+    static func delete(named name: String, in db: Database) throws {
+        try db.execute(sql: "DELETE FROM manga_directories WHERE clean_book_name = ?", arguments: [name])
     }
 
     static func save(_ directory: MangaDirectory, in db: Database) throws {
@@ -310,67 +316,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting, MangaDirectoryRenami
             lastUpdatedAt: optionalDate(from: directoryRow["last_updated_at"] as Double?),
             searchKeyword: directoryRow["search_keyword"] as String?
         )
-    }
-
-    /// The full rename cascade, every step inside the caller's GRDB
-    /// transaction — including `FavoriteUpdateStore`'s tracked-target and
-    /// event keys now that that store is GRDB-backed. Favorites need no step
-    /// at all: since the smart-comic-mode Phase A type refactor they can only
-    /// carry thread-based identities (normalThread/novelThread/mangaThread),
-    /// never the title-merged `.mangaTitle` identity a rename would touch.
-    static func renameRelatedStructuredMetadata(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
-        guard oldName != newName else { return }
-        try renameReadingProgressMangaTargets(from: oldName, to: newName, date: date, in: db)
-        try ContentCoverStore.renameSmartMangaCover(from: oldName, to: newName, date: date, in: db)
-        try LikeStore.renameMangaTitleLikes(from: oldName, to: newName, date: date, in: db)
-        try BookmarkStore.renameMangaTitleBookmarks(from: oldName, to: newName, date: date, in: db)
-        try FavoriteUpdateStore.renameMangaDirectoryTracking(from: oldName, to: newName, in: db)
-    }
-
-    private static func renameReadingProgressMangaTargets(from oldName: String, to newName: String, date: Date, in db: Database) throws {
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT id, manga_id, updated_at
-            FROM reading_progress
-            WHERE target_kind = ? AND clean_book_name = ?
-            """,
-            arguments: [FavoriteContentTargetKind.mangaTitle.rawValue, oldName]
-        )
-        for row in rows {
-            let oldID = row["id"] as String
-            let existingMangaID = row["manga_id"] as String?
-            let mangaID = existingMangaID?.mangaReaderTrimmedNonEmpty == oldName
-                ? newName
-                : (existingMangaID?.mangaReaderTrimmedNonEmpty ?? newName)
-            let newID = FavoriteContentTarget(mangaID: mangaID, mangaCleanBookName: newName).id
-            if newID != oldID {
-                try ReadingProgressStore.recordSyncDeletion(id: oldID,
-                    at: max(date, Date(timeIntervalSince1970: row["updated_at"])), in: db)
-            }
-            if newID != oldID,
-               let existing = try Row.fetchOne(
-                   db,
-                   sql: "SELECT updated_at FROM reading_progress WHERE id = ?",
-                   arguments: [newID]
-               ) {
-                let existingUpdatedAt = existing["updated_at"] as Double
-                let oldUpdatedAt = row["updated_at"] as Double
-                if existingUpdatedAt >= oldUpdatedAt {
-                    try db.execute(sql: "DELETE FROM reading_progress WHERE id = ?", arguments: [oldID])
-                    continue
-                }
-                try db.execute(sql: "DELETE FROM reading_progress WHERE id = ?", arguments: [newID])
-            }
-            try db.execute(
-                sql: """
-                UPDATE reading_progress
-                SET id = ?, manga_id = ?, clean_book_name = ?, updated_at = MAX(updated_at, ?)
-                WHERE id = ?
-                """,
-                arguments: [newID, mangaID, newName, date.timeIntervalSince1970, oldID]
-            )
-        }
     }
 
     /// Conservative ceiling for one `WHERE tid IN (...)` query's bound

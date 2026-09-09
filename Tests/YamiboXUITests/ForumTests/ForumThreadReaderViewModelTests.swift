@@ -1045,4 +1045,8 @@ private actor ForumThreadReaderTestMangaDirectoryStore: MangaDirectoryPersisting
     func saveDirectory(_ directory: MangaDirectory) async throws {}
 
     func deleteDirectory(named name: String) async throws {}
+
+    func renameDirectory(from oldName: String, to newDirectory: MangaDirectory) async throws {
+        throw YamiboPersistenceError(context: "Read-only forum test store cannot rename directories")
+    }
 }

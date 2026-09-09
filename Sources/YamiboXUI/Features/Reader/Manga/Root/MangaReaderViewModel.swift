@@ -22,10 +22,6 @@ struct MangaReaderViewModelDependencies {
     var makeThreadCoverPageRepository: @Sendable () async -> (any ThreadCoverPageResolving)?
     var directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration
     var progressSync: ProgressSyncModule
-    /// Migrates the favorite item's target and reading-progress records to a
-    /// renamed manga title. No-op by default so callers that don't care
-    /// (tests, previews) don't need to supply one.
-    var migrateMangaTitleReferences: @Sendable (_ oldCleanBookName: String, _ newCleanBookName: String) async -> Void
 
     init(
         settingsStore: SettingsStore,
@@ -43,8 +39,7 @@ struct MangaReaderViewModelDependencies {
         makeLikeDependencies: @escaping @Sendable () -> LikeDependencies? = { nil },
         makeThreadCoverPageRepository: @escaping @Sendable () async -> (any ThreadCoverPageResolving)? = { nil },
         directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
-        progressSync: ProgressSyncModule,
-        migrateMangaTitleReferences: @escaping @Sendable (_ oldCleanBookName: String, _ newCleanBookName: String) async -> Void = { _, _ in }
+        progressSync: ProgressSyncModule
     ) {
         self.settingsStore = settingsStore
         self.imagePipeline = imagePipeline
@@ -60,7 +55,6 @@ struct MangaReaderViewModelDependencies {
         self.makeThreadCoverPageRepository = makeThreadCoverPageRepository
         self.directoryWorkflowConfiguration = directoryWorkflowConfiguration
         self.progressSync = progressSync
-        self.migrateMangaTitleReferences = migrateMangaTitleReferences
     }
 
     init(dependencies: MangaReaderDependencies) {
@@ -82,25 +76,7 @@ struct MangaReaderViewModelDependencies {
                     readingProgressStore: dependencies.readingProgressStore,
                     browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
                 )
-            ),
-            migrateMangaTitleReferences: { oldName, newName in
-                // Favorites no longer need a rename cascade here: a
-                // `.mangaThread` favorite is keyed by the chapter's own
-                // thread id, not by the directory's cleanBookName, so
-                // renaming the directory can never change a favorite's
-                // identity (smart-comic-mode Phase A decision #3/#9 —
-                // `FavoriteLibraryDocument.renameMangaTitle` was removed
-                // along with the merged-directory favorite mechanism it
-                // served). Only the reading-progress side still has a
-                // cleanBookName-keyed identity (the directory-level
-                // `.mangaTitle` record, untouched by this refactor) and
-                // needs migrating.
-                do {
-                    try await dependencies.readingProgressStore.migrateMangaTitleKey(from: oldName, to: newName)
-                } catch {
-                    YamiboLog.persistence.error("Failed to migrate reading progress key after manga title rename: \(error.localizedDescription)")
-                }
-            }
+            )
         )
     }
 }

@@ -265,9 +265,6 @@ final class MangaReaderDirectoryLane {
         do {
             let oldOwnerName = reader.offlineCacheOwnerName()
             let updated = try await workflow.renameDirectory(cleanBookName: cleanBookName, searchKeyword: searchKeyword)
-            if let oldOwnerName, oldOwnerName != updated.cleanBookName {
-                await dependencies.migrateMangaTitleReferences(oldOwnerName, updated.cleanBookName)
-            }
             let cacheRenameError: Error?
             if let oldOwnerName,
                oldOwnerName != updated.cleanBookName,

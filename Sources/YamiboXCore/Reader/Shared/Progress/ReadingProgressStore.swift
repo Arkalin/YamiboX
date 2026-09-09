@@ -656,6 +656,10 @@ public actor ReadingProgressStore {
         return FavoriteContentTarget(mangaID: "thread:\(threadID)", mangaCleanBookName: name)
     }
 
+    nonisolated func notifyIdentityMigrationCommitted() {
+        postChangeNotification()
+    }
+
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()
     }

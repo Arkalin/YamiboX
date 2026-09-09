@@ -132,7 +132,8 @@ public final class YamiboAppContext: Sendable {
         self.bookmarkStore = bookmarkStore ?? BookmarkStore(databasePool: resolvedGRDBDatabasePool)
         self.mangaDirectoryStore = mangaDirectoryStore ?? MangaDirectoryStore(
             databasePool: resolvedGRDBDatabasePool,
-            favoriteUpdateStore: resolvedFavoriteUpdateStore
+            favoriteUpdateStore: resolvedFavoriteUpdateStore,
+            readingProgressStore: self.readingProgressStore
         )
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.mangaReaderProjectionStore = mangaReaderProjectionStore ?? MangaReaderProjectionStore(diskCacheStore: diskCacheStore)

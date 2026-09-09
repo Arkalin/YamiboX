@@ -534,8 +534,8 @@ final class FavoriteLibraryOrganizer {
     /// favorite/progress/cover/settings change happened to trigger a
     /// full reload.
     ///
-    /// Also reloads `readingProgress` -- `MangaDirectoryStore
-    /// .renameRelatedStructuredMetadata` cascades a rename into the
+    /// Also reloads `readingProgress` -- the directory identity transaction
+    /// cascades a rename into the
     /// `reading_progress` table too (directory-level progress rows get
     /// migrated to the new clean book name), so without this an
     /// already-loaded `readingProgress` array would keep referencing the old

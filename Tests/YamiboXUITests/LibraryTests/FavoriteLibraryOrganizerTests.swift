@@ -381,8 +381,8 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
     /// explicit `organizer.reload()` in between — mirroring the sibling
     /// settings-store live-refresh test above.
     ///
-    /// Also proves the sibling fix: `MangaDirectoryStore
-    /// .renameRelatedStructuredMetadata` cascades the rename into the
+    /// Also proves the sibling fix: the directory identity transaction
+    /// cascades the rename into the
     /// `reading_progress` table too (the directory-level progress record
     /// gets migrated to the new clean book name), so `reloadMangaDirectories()`
     /// must reload `readingProgress` in the same pass, not just

@@ -275,12 +275,7 @@ public struct MangaDirectoryWorkflow: Sendable {
             searchKeyword: resolvedKeyword
         )
 
-        if let renamingStore = store as? any MangaDirectoryRenaming {
-            try await renamingStore.renameDirectory(from: latest.cleanBookName, to: merged)
-        } else {
-            try await store.saveDirectory(merged)
-            try await store.deleteDirectory(named: latest.cleanBookName)
-        }
+        try await store.renameDirectory(from: latest.cleanBookName, to: merged)
         return merged
     }
 

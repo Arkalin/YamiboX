@@ -132,9 +132,8 @@ extension FavoriteLibraryDocument {
     // now import through the same `importThreadFavorite` path as any other
     // thread (see the comment above it), and a manga directory rename no
     // longer needs to touch favorites at all since `.mangaThread` favorites
-    // are keyed by thread id, not by the directory's cleanBookName — see
-    // `MangaReaderViewModel.migrateMangaTitleReferences` for the remaining
-    // (reading-progress-only) half of that migration.
+    // are keyed by thread id, not by the directory's cleanBookName. Other
+    // directory-keyed identities migrate in the shared transaction service.
 
     public mutating func removeItem(target: FavoriteItemTarget, date: Date = .now) {
         guard items.contains(where: { $0.target.id == target.id }) else { return }

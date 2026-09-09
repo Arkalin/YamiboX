@@ -481,16 +481,8 @@ final class MangaDetailViewModel {
             )
             var cacheRenameError: Error?
             if oldName != updated.cleanBookName {
-                // Mirrors the reader's rename cascade: the directory-level
-                // `.mangaTitle` reading-progress row is keyed by
-                // cleanBookName, and cached chapters live under an owner
-                // directory named after it. (The `.smartManga` cover row is
-                // migrated inside `MangaDirectoryStore.renameDirectory`.)
-                do {
-                    try await dependencies.readingProgressStore.migrateMangaTitleKey(from: oldName, to: updated.cleanBookName)
-                } catch {
-                    YamiboLog.persistence.error("Failed to migrate reading progress key after manga title rename: \(error.localizedDescription)")
-                }
+                // Database identities have committed together; the separate
+                // offline filesystem migration remains best effort.
                 if let offlineCacheStore = dependencies.mangaOfflineCacheStore {
                     do {
                         try await offlineCacheStore.renameMangaOfflineCacheOwner(from: oldName, to: updated.cleanBookName)

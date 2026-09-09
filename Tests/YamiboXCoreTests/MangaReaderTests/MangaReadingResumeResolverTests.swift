@@ -166,6 +166,11 @@ private actor ResumeDirectoryStore: MangaDirectoryPersisting {
     func deleteDirectory(named name: String) async throws {
         Issue.record("Resume resolution must not delete directories")
     }
+
+    func renameDirectory(from oldName: String, to newDirectory: MangaDirectory) async throws {
+        Issue.record("Resume resolution must not rename directories")
+        throw YamiboPersistenceError(context: "Read-only resume test store cannot rename directories")
+    }
 }
 
 private enum ResumeDirectoryError: Error {

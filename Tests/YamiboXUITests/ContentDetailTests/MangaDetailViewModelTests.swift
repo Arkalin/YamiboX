@@ -250,12 +250,15 @@ func mangaDetailCancelledReloadPreservesLoadedContent(cancellationKind: Int) asy
 /// correction sheet performs.
 @MainActor
 @Test func mangaDetailSaveCorrectionRenamesDirectoryAndMigratesReferences() async throws {
-    let suiteName = YamiboTestDefaults.suiteName(prefix: "manga-detail-correction")
-    _ = try YamiboTestDefaults.make(suiteName: suiteName)
-    let mangaDirectoryStore = try makeMangaDetailTestDirectoryStore(suiteName: suiteName)
-    let readingProgressStore = ReadingProgressStore(
-        defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
-        key: "reading-progress"
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("manga-detail-correction-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    // Transaction participants share the app's database, not per-store test databases.
+    let database = try YamiboDatabase.openPool(rootDirectory: root)
+    let readingProgressStore = ReadingProgressStore(databasePool: database)
+    let mangaDirectoryStore = MangaDirectoryStore(
+        databasePool: database,
+        readingProgressStore: readingProgressStore
     )
 
     let directory = MangaDirectory(

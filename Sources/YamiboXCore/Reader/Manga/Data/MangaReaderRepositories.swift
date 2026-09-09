@@ -83,7 +83,7 @@ public protocol MangaDirectoryRepository: Sendable {
     func searchDirectory(keyword: String, forumID: String) async throws -> [MangaChapter]
 }
 
-public protocol MangaDirectoryPersisting: Sendable {
+public protocol MangaDirectoryPersisting: MangaDirectoryRenaming {
     func directory(named name: String) async throws -> MangaDirectory?
     func directory(containingTID tid: String) async throws -> MangaDirectory?
     /// Bulk tid → owning-directory lookup (smart-comic-mode Phase E): tids
@@ -141,10 +141,11 @@ public extension MangaDirectoryPersisting {
     }
 }
 
-protocol MangaDirectoryRenaming: Sendable {
+/// Replaces a directory identity and its persisted references atomically.
+/// A failed rename must leave both identities unchanged.
+public protocol MangaDirectoryRenaming: Sendable {
     func renameDirectory(
         from oldName: String,
         to newDirectory: MangaDirectory
     ) async throws
 }
-
