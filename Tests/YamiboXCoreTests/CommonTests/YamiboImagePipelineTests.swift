@@ -232,6 +232,47 @@ struct YamiboImagePipelineTests {
         #expect(pipeline.cachedData(for: source) == nil)
         #expect(await pipeline.totalDiskUsageBytes() == 0)
     }
+
+    @Test(arguments: [false, true])
+    func unavailableDiskCacheStillLoadsAuthenticatedImages(blocksAncestor: Bool) async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "Cookie") == "auth=1")
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == "UnitAgent")
+            #expect(request.value(forHTTPHeaderField: "Referer") == "https://bbs.yamibo.com/thread-1.html")
+            return MangaReaderDataTestResponse(data: Data([4, 2]))
+        }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("unavailable-image-cache-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let blocker = root.appendingPathComponent("blocked")
+        let existingData = Data("preserve this file".utf8)
+        try existingData.write(to: blocker)
+        let directory = blocksAncestor ? blocker.appendingPathComponent("cache", isDirectory: true) : blocker
+        let engine = YamiboImageDataPipeline(dataCacheDirectory: directory)
+        let pipeline = YamiboImagePipeline(
+            engine: engine,
+            sessionStore: FixedSessionStateStore(state: SessionState(cookie: "auth=1", userAgent: "UnitAgent")),
+            imageSession: harness.session
+        )
+
+        #expect(engine.dataCacheLimitBytes == 0)
+        #expect(!engine.usesURLCacheDiskStorage)
+        for filename in ["first", "after-clear"] {
+            let source = imageSource(
+                url: "https://bbs.yamibo.com/data/attachment/forum/\(filename).jpg",
+                refererPageURL: URL(string: "https://bbs.yamibo.com/thread-1.html")
+            )
+            #expect(try await pipeline.data(for: source) == Data([4, 2]))
+            #expect(pipeline.cachedData(for: source) == nil)
+            #expect(await pipeline.totalDiskUsageBytes() == 0)
+            await pipeline.clearCache()
+        }
+        #expect(harness.requests.count == 2)
+        #expect(try Data(contentsOf: blocker) == existingData)
+    }
 }
 
 @Suite("Offline Image Scope Lookup", .serialized)

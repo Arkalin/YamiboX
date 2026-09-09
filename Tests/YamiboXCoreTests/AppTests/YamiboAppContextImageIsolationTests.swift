@@ -60,6 +60,32 @@ struct YamiboAppContextImageIsolationTests {
         #expect(harness.requests.count == 2)
         await second.context.settingsDependencies.clearOrdinaryImageCache()
     }
+
+    @Test func unavailableImageCacheDoesNotPreventBootstrapOrOfflineImageLoading() async throws {
+        let harness = MangaReaderDataTestHarness()
+        defer { harness.reset() }
+        harness.setHandler { request in
+            #expect(request.value(forHTTPHeaderField: "Cookie") == "auth=degraded")
+            return MangaReaderDataTestResponse(data: Data([9]))
+        }
+        let fixture = try ImageContextFixture(imageSession: harness.session, blocksImageCacheDirectory: true)
+        defer { fixture.cleanup() }
+        try await fixture.context.sessionStore.save(SessionState(cookie: "auth=degraded", userAgent: "UnitAgent"))
+
+        let bootstrap = await fixture.context.bootstrap()
+        #expect(bootstrap.session.cookie == "auth=degraded")
+        let onlineSource = try makeSource(offline: false)
+        #expect(try await fixture.context.imagePipeline.data(for: onlineSource) == Data([9]))
+        #expect(fixture.context.imagePipeline.cachedData(for: onlineSource) == nil)
+
+        let offlineSource = try makeSource(offline: true)
+        try await fixture.retainOfflineImage(Data([7]), source: offlineSource)
+        #expect(try await fixture.context.imagePipeline.data(for: offlineSource) == Data([7]))
+        await fixture.context.settingsDependencies.clearOrdinaryImageCache()
+        #expect(await fixture.context.settingsDependencies.ordinaryImageCacheUsageBytes() == 0)
+        #expect(try await fixture.context.imagePipeline.data(for: offlineSource) == Data([7]))
+        #expect(harness.requests.count == 1)
+    }
 }
 
 private struct ImageContextFixture {
@@ -67,10 +93,15 @@ private struct ImageContextFixture {
     let root: URL
     let suiteName: String
 
-    init(imageSession: URLSession) throws {
+    init(imageSession: URLSession, blocksImageCacheDirectory: Bool = false) throws {
         suiteName = "image-context-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         root = FileManager.default.temporaryDirectory.appendingPathComponent(suiteName, isDirectory: true)
+        if blocksImageCacheDirectory {
+            let caches = root.appendingPathComponent("caches", isDirectory: true)
+            try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+            try Data([1]).write(to: caches.appendingPathComponent("ordinary-image-cache"))
+        }
         context = YamiboAppContext(
             sessionStore: SessionStore(defaults: defaults),
             grdbRootDirectory: root.appendingPathComponent("data", isDirectory: true),

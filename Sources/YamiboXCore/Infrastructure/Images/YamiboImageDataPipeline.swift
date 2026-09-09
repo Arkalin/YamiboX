@@ -15,10 +15,10 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     static let defaultDataCacheName = "com.arkalin.YamiboX.OrdinaryImageDataCache"
 
     private let pipeline: ImagePipeline
-    private let dataCache: DataCache
+    private let dataCache: DataCache?
 
     var dataCacheLimitBytes: Int {
-        dataCache.sizeLimit
+        dataCache?.sizeLimit ?? 0
     }
 
     var usesURLCacheDiskStorage: Bool {
@@ -29,27 +29,30 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         dataCacheName: String = YamiboImageDataPipeline.defaultDataCacheName,
         dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
     ) {
-        let dataCache: DataCache
-        do {
-            dataCache = try DataCache(name: dataCacheName)
-        } catch {
-            fatalError("Failed to create Yamibo Nuke image DataCache: \(error)")
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
+            try DataCache(name: dataCacheName)
         }
-        self.init(dataCache: dataCache, dataCacheLimitBytes: dataCacheLimitBytes)
     }
 
     convenience init(
         dataCacheDirectory: URL,
         dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
-    ) throws {
-        try self.init(
-            dataCache: DataCache(path: dataCacheDirectory),
-            dataCacheLimitBytes: dataCacheLimitBytes
-        )
+    ) {
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
+            try DataCache(path: dataCacheDirectory)
+        }
     }
 
-    private init(dataCache: DataCache, dataCacheLimitBytes: Int) {
-        dataCache.sizeLimit = dataCacheLimitBytes
+    private init(dataCacheLimitBytes: Int, makeDataCache: () throws -> DataCache) {
+        let dataCache: DataCache?
+        do {
+            dataCache = try makeDataCache()
+        } catch {
+            // Regenerable image bytes must not prevent the app from launching.
+            YamiboLog.persistence.error("Image disk cache unavailable; continuing without disk caching: \(error)")
+            dataCache = nil
+        }
+        dataCache?.sizeLimit = dataCacheLimitBytes
         self.dataCache = dataCache
 
         let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
@@ -84,9 +87,10 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     }
 
     func totalDiskUsageBytes() async -> Int {
+        guard let dataCache else { return 0 }
         // Nuke stages writes and deletions. Flush off-main before measuring so
         // a refresh immediately after clearing cannot report the old files.
-        await Task.detached(priority: .utility) { [dataCache] in
+        return await Task.detached(priority: .utility) { [dataCache] in
             dataCache.flush()
             return dataCache.totalSize
         }.value

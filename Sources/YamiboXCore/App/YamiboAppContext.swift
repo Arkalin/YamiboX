@@ -479,13 +479,9 @@ public final class YamiboAppContext: Sendable {
 
     private static func makeImageDataPipeline(cachesRootDirectory: URL?) -> YamiboImageDataPipeline {
         guard let cachesRootDirectory else { return YamiboImageDataPipeline() }
-        do {
-            return try YamiboImageDataPipeline(
-                dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true)
-            )
-        } catch {
-            fatalError("Failed to create Yamibo image data cache: \(error)")
-        }
+        return YamiboImageDataPipeline(
+            dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true)
+        )
     }
 
     public func bootstrap(

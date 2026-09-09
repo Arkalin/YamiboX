@@ -109,7 +109,7 @@ final class MangaReaderDataTestHarness: @unchecked Sendable {
             at: dataCacheDirectory,
             withIntermediateDirectories: true
         )
-        engine = try! YamiboImageDataPipeline(
+        engine = YamiboImageDataPipeline(
             dataCacheDirectory: dataCacheDirectory,
             dataCacheLimitBytes: 16 * 1024 * 1024
         )
