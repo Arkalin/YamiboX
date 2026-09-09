@@ -1,4 +1,6 @@
 import Foundation
+import Observation
+import os
 import Testing
 @testable import YamiboXCore
 import YamiboXTestSupport
@@ -139,7 +141,7 @@ final class ReaderSessionTests {
     @Test func embeddedThreadSwitchNeverCreatesCoverOrChangesNavigation() async throws {
         let app = try makeApp()
         let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "720", fid: "40"), title: "Thread")
-        let session = ReaderSession(content: .thread(context), appModel: app)
+        let session = app.makeReaderSession(content: .thread(context))
         let navigator = ForumDestinationNavigator(dependencies: app.appContext.forumDependencies, appModel: app, mode: .forumTab)
         navigator.push(.threadReader(context))
         let path = navigator.path
@@ -320,7 +322,7 @@ final class ReaderSessionTests {
             throw MangaReaderDataSupport.currentMangaChapterParsingFailure()
         })
         let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "800", fid: "40"), title: "Text only")
-        let session = ReaderSession(content: .thread(context), appModel: app)
+        let session = app.makeReaderSession(content: .thread(context))
         session.activate()
         let model = session.threadModel(for: context, dependencies: app.appContext.forumDependencies)
         let contentID = session.contentID
@@ -382,6 +384,107 @@ final class ReaderSessionTests {
         #expect(app.presentedReaderSession?.bookOpeningTransition == nil)
         app.dismissPresentedReaderSession()
         app.readerCoverDidDismiss()
+    }
+
+    @Test func activeContextProjectionsObserveSessionActivationProgressAndModeChanges() throws {
+        let app = try makeApp()
+        let novel = NovelLaunchContext(threadID: "810", threadTitle: "Novel", source: .forum)
+        let session = app.makeReaderSession(content: .novel(novel))
+        let changes = OSAllocatedUnfairLock(initialState: 0)
+        func observeContext() {
+            withObservationTracking {
+                _ = app.activeNovelContext
+                _ = app.activeMangaContext
+            } onChange: {
+                changes.withLock { $0 += 1 }
+            }
+        }
+
+        observeContext()
+        session.activate()
+        #expect(changes.withLock { $0 } == 1)
+        #expect(app.activeNovelContext == novel)
+
+        observeContext()
+        var updated = novel
+        updated.initialView = 4
+        app.updateReaderResumeRoute(.novel(updated))
+        #expect(changes.withLock { $0 } == 2)
+        #expect(session.resumeRoute == .novel(updated))
+        #expect(app.activeNovelContext == updated)
+
+        observeContext()
+        let manga = MangaLaunchContext(originalThreadID: "810", chapterTID: "810", displayTitle: "Manga", source: .forum)
+        session.present(.manga(manga))
+        #expect(changes.withLock { $0 } == 3)
+        #expect(app.activeNovelContext == nil)
+        #expect(app.activeMangaContext == manga)
+
+        observeContext()
+        session.deactivate()
+        #expect(changes.withLock { $0 } == 4)
+        #expect(app.activeMangaContext == nil)
+        #expect(session.resumeRoute == .manga(manga))
+    }
+
+    @Test func oldSessionProgressAndCloseCannotReplaceNewActiveSession() throws {
+        let app = try makeApp()
+        let novel = NovelLaunchContext(threadID: "811", threadTitle: "Old", source: .forum)
+        app.presentNovelReader(novel)
+        let oldSession = try #require(app.presentedReaderSession)
+        let manga = MangaLaunchContext(originalThreadID: "812", chapterTID: "812", displayTitle: "New", source: .forum)
+        let newSession = app.makeReaderSession(content: .manga(manga))
+        newSession.activate()
+
+        var updated = novel
+        updated.initialView = 6
+        oldSession.updateResumeRoute(.novel(updated), contentID: oldSession.contentID)
+        oldSession.deactivate()
+        oldSession.close()
+        #expect(app.activeNovelContext == nil)
+        #expect(app.activeMangaContext == manga)
+        #expect(!newSession.isClosed)
+
+        newSession.close()
+        #expect(app.activeMangaContext == nil)
+        app.readerCoverDidDismiss()
+        #expect(!app.hasActiveReaderPresentation)
+    }
+
+    @Test func publicResumeUpdateCannotChangeTheCurrentReadingMode() throws {
+        let app = try makeApp()
+        let novel = NovelLaunchContext(threadID: "813", threadTitle: "Novel", source: .forum)
+        app.presentNovelReader(novel)
+        let manga = MangaLaunchContext(originalThreadID: "813", chapterTID: "813", displayTitle: "Manga", source: .forum)
+        app.updateReaderResumeRoute(.manga(manga))
+        #expect(app.activeNovelContext == novel)
+        #expect(app.activeMangaContext == nil)
+        #expect(app.presentedReaderSession?.resumeRoute == .novel(novel))
+        app.dismissPresentedReaderSession()
+    }
+
+    @Test func reusedPreviewSessionPersistsTheNewRegularReadingPosition() async throws {
+        let app = try makeApp()
+        let preview = NovelLaunchContext(threadID: "814", threadTitle: "Preview", source: .forum, isPreview: true)
+        app.presentNovelReader(preview)
+        let session = try #require(app.presentedReaderSession)
+        let regular = NovelLaunchContext(threadID: "815", threadTitle: "Regular", source: .forum)
+        app.presentNovelReader(regular)
+        #expect(app.presentedReaderSession === session)
+        let store = app.appContext.readerResumeRouteStore
+        for _ in 0..<100 where store.loadSync() != .novel(regular) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(store.loadSync() == .novel(regular))
+
+        var updated = regular
+        updated.initialView = 9
+        app.updateReaderResumeRoute(.novel(updated))
+        for _ in 0..<100 where store.loadSync() != .novel(updated) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(store.loadSync() == .novel(updated))
+        app.dismissPresentedReaderSession()
     }
 
     private func makeApp(validator: MangaReaderOpenValidator? = nil) throws -> YamiboAppModel {

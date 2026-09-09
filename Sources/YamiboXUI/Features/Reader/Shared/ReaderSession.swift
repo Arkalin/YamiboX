@@ -16,6 +16,19 @@ enum ReaderSessionContent {
     }
 }
 
+struct ReaderSessionDependencies: Sendable {
+    let forum: ForumDependencies
+    let mangaReaderOpenValidator: MangaReaderOpenValidator
+}
+
+@MainActor
+struct ReaderSessionLifecycle {
+    var didActivate: @MainActor (ReaderSession, ReaderResumeRoute?) -> Void = { _, _ in }
+    var didUpdateResumeRoute: @MainActor (ReaderSession, ReaderResumeRoute) -> Void = { _, _ in }
+    var didDeactivate: @MainActor (ReaderSession) -> Void = { _ in }
+    var didClose: @MainActor (ReaderSession) -> Void = { _ in }
+}
+
 /// One navigation entry, with independently resumable reading modes.
 @MainActor
 @Observable
@@ -23,6 +36,7 @@ final class ReaderSession: Identifiable {
     let id = UUID()
     let bookOpeningTransition: BookOpeningTransition?
     private(set) var content: ReaderSessionContent
+    private(set) var resumeRoute: ReaderResumeRoute?
     private(set) var contentID = UUID()
     private(set) var isSwitching = false
     private(set) var switchingTitle = L10n.string("reader.switching")
@@ -31,15 +45,23 @@ final class ReaderSession: Identifiable {
     var switchFailure: LoadFailureDetails?
     let isPreview: Bool
 
-    @ObservationIgnored private weak var appModel: YamiboAppModel?
+    @ObservationIgnored private let dependencies: ReaderSessionDependencies
+    @ObservationIgnored private let lifecycle: ReaderSessionLifecycle
     @ObservationIgnored private var novelContexts: [String: NovelLaunchContext] = [:]
     @ObservationIgnored private var mangaContexts: [String: MangaLaunchContext] = [:]
     @ObservationIgnored private var threadModels: [String: ForumThreadReaderViewModel] = [:]
     @ObservationIgnored private var switchTask: Task<Void, Never>?
 
-    init(content: ReaderSessionContent, appModel: YamiboAppModel, bookOpeningTransition: BookOpeningTransition? = nil) {
+    init(
+        content: ReaderSessionContent,
+        dependencies: ReaderSessionDependencies,
+        lifecycle: ReaderSessionLifecycle,
+        bookOpeningTransition: BookOpeningTransition? = nil
+    ) {
         self.content = content
-        self.appModel = appModel
+        resumeRoute = content.resumeRoute
+        self.dependencies = dependencies
+        self.lifecycle = lifecycle
         self.bookOpeningTransition = bookOpeningTransition
         switch content {
         case let .novel(context): isPreview = context.isPreview
@@ -55,38 +77,42 @@ final class ReaderSession: Identifiable {
 
     func activate() {
         guard !isClosed else { return }
-        appModel?.activateReaderSession(self, route: latestResumeRoute)
+        lifecycle.didActivate(self, resumeRoute)
     }
 
     func deactivate() {
         cancelSwitch()
-        appModel?.deactivateReaderSession(self)
+        lifecycle.didDeactivate(self)
     }
 
     func close() {
+        guard !isClosed else { return }
         cancelSwitch()
         isClosed = true
-        appModel?.finishReaderSession(self)
+        lifecycle.didClose(self)
     }
 
     func present(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
         guard !isClosed else { return }
+        let previousRoute = resumeRoute
         cancelSwitch()
         if case let .thread(context) = self.content {
             threadModels[context.thread.tid]?.suspendForModeSwitch()
         }
         self.content = content
+        resumeRoute = content.resumeRoute
         preparedMangaProjection = mangaProjection
         contentID = UUID()
         if let route = content.resumeRoute { remember(route) }
-        activate()
+        lifecycle.didActivate(self, previousRoute)
     }
 
     func updateResumeRoute(_ route: ReaderResumeRoute, contentID: UUID) {
         // Teardown saves from the previous mode must not replace the new route.
-        guard !isClosed, self.contentID == contentID, content.resumeRoute != nil else { return }
+        guard !isClosed, self.contentID == contentID, acceptsResumeRoute(route) else { return }
         remember(route)
-        appModel?.updateReaderSessionResumeRoute(route, session: self)
+        resumeRoute = route
+        lifecycle.didUpdateResumeRoute(self, route)
     }
 
     func threadModel(for context: ThreadNovelLaunchContext, dependencies: ForumDependencies) -> ForumThreadReaderViewModel {
@@ -100,10 +126,10 @@ final class ReaderSession: Identifiable {
 
     @discardableResult
     func openOriginalPost(url: URL, resumeRoute: ReaderResumeRoute) async -> Bool {
-        guard let appModel, !isSwitching, !isClosed else { return false }
+        guard !isSwitching, !isClosed, acceptsResumeRoute(resumeRoute) else { return false }
         let previousID = contentID
-        remember(resumeRoute)
-        let dependencies = appModel.appContext.forumDependencies
+        updateResumeRoute(resumeRoute, contentID: previousID)
+        let dependencies = self.dependencies.forum
         let title: String
         let authorID: String?
         let forumID: String?
@@ -145,10 +171,10 @@ final class ReaderSession: Identifiable {
     }
 
     func openReader(_ mode: YamiboThreadReaderOverride, from model: ForumThreadReaderViewModel) async {
-        guard let appModel, mode != .plainThread,
+        guard mode != .plainThread,
               case let .thread(context) = content,
               context.thread.tid == model.context.thread.tid else { return }
-        let resolver = ReaderModeLaunchResolver(dependencies: appModel.appContext.forumDependencies)
+        let resolver = ReaderModeLaunchResolver(dependencies: dependencies.forum)
         let thread = model.readerSwitchThread
         let title = model.navigationTitle
         let authorID = model.readerSwitchAuthorID
@@ -180,11 +206,10 @@ final class ReaderSession: Identifiable {
         await transition(title: L10n.string("reader.switching_to_manga")) { .manga(context) }
     }
 
-    private var latestResumeRoute: ReaderResumeRoute? {
-        switch content {
-        case let .novel(context): .novel(novelContexts[context.threadID] ?? context)
-        case let .manga(context): .manga(mangaContexts[context.originalThreadID] ?? context)
-        case .thread: nil
+    private func acceptsResumeRoute(_ route: ReaderResumeRoute) -> Bool {
+        switch (content, route) {
+        case (.novel, .novel), (.manga, .manga): true
+        default: false
         }
     }
 
@@ -204,12 +229,14 @@ final class ReaderSession: Identifiable {
         switchingTitle = title
         switchFailure = nil
         let expectedID = contentID
+        let validator = dependencies.mangaReaderOpenValidator
         let task = Task { [weak self] in
             do {
                 let next = try await resolve()
+                guard !Task.isCancelled, self?.isClosed == false, self?.contentID == expectedID else { return }
                 let mangaProjection: MangaReaderProjection?
-                if case let .manga(context) = next, let appModel = self?.appModel {
-                    mangaProjection = try await appModel.mangaReaderOpenValidator.validate(context)
+                if case let .manga(context) = next {
+                    mangaProjection = try await validator.validate(context)
                 } else {
                     mangaProjection = nil
                 }

@@ -34,7 +34,7 @@ struct ReaderSessionDestinationView: View {
 
     init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator) {
         self.navigator = navigator
-        _session = State(initialValue: ReaderSession(content: .thread(context), appModel: navigator.appModel))
+        _session = State(initialValue: navigator.appModel.makeReaderSession(content: .thread(context)))
     }
 
     var body: some View {

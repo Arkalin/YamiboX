@@ -40,8 +40,14 @@ public final class YamiboAppModel {
     public private(set) var bootstrapPhase: AppBootstrapPhase?
     public var bootstrapErrorMessage: String?
     public private(set) var selectedTab: AppTab
-    public var activeNovelContext: NovelLaunchContext?
-    public var activeMangaContext: MangaLaunchContext?
+    public var activeNovelContext: NovelLaunchContext? {
+        guard case let .novel(context) = currentReaderSession?.resumeRoute else { return nil }
+        return context
+    }
+    public var activeMangaContext: MangaLaunchContext? {
+        guard case let .manga(context) = currentReaderSession?.resumeRoute else { return nil }
+        return context
+    }
     private(set) var presentedReaderSession: ReaderSession?
     // Remains true until the closing animation finishes, not just until close().
     private(set) var isReaderCoverVisible = false
@@ -65,7 +71,7 @@ public final class YamiboAppModel {
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
     @ObservationIgnored private let runtime: AppRuntimeCoordinator
     @ObservationIgnored private var settingsObservationTask: Task<Void, Never>?
-    @ObservationIgnored private weak var currentReaderSession: ReaderSession?
+    private weak var currentReaderSession: ReaderSession?
 
     public init(
         appContext: YamiboAppContext,
@@ -282,48 +288,65 @@ public final class YamiboAppModel {
         if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
             session.present(content, mangaProjection: mangaProjection)
         } else {
-            let session = ReaderSession(content: content, appModel: self, bookOpeningTransition: bookOpeningTransition)
+            let session = makeReaderSession(content: content, bookOpeningTransition: bookOpeningTransition)
             isReaderCoverVisible = true
             presentedReaderSession = session
             session.present(content, mangaProjection: mangaProjection)
         }
     }
 
-    func activateReaderSession(_ session: ReaderSession, route: ReaderResumeRoute?) {
+    func makeReaderSession(
+        content: ReaderSessionContent,
+        bookOpeningTransition: BookOpeningTransition? = nil
+    ) -> ReaderSession {
+        ReaderSession(
+            content: content,
+            dependencies: ReaderSessionDependencies(
+                forum: appContext.forumDependencies,
+                mangaReaderOpenValidator: mangaReaderOpenValidator
+            ),
+            lifecycle: ReaderSessionLifecycle(
+                didActivate: { [weak self] session, previousRoute in
+                    self?.activateReaderSession(session, previousRoute: previousRoute)
+                },
+                didUpdateResumeRoute: { [weak self] session, route in
+                    self?.updateReaderSessionResumeRoute(route, session: session)
+                },
+                didDeactivate: { [weak self] session in self?.deactivateReaderSession(session) },
+                didClose: { [weak self] session in self?.finishReaderSession(session) }
+            ),
+            bookOpeningTransition: bookOpeningTransition
+        )
+    }
+
+    private func activateReaderSession(_ session: ReaderSession, previousRoute: ReaderResumeRoute?) {
+        let hadReader = currentReaderSession?.resumeRoute != nil ||
+            (currentReaderSession === session && previousRoute != nil)
         currentReaderSession = session
-        switch route {
+        switch session.resumeRoute {
         case let .novel(context):
-            activeNovelContext = context
-            activeMangaContext = nil
             guard !context.isPreview else { return }
             appContinuity.readerRoutePresented(.novel(context))
         case let .manga(context):
-            activeNovelContext = nil
-            activeMangaContext = context
             guard !context.isPreview else { return }
             appContinuity.readerRoutePresented(.manga(context))
         case nil:
-            let hadReader = activeNovelContext != nil || activeMangaContext != nil
-            activeNovelContext = nil
-            activeMangaContext = nil
             if hadReader { appContinuity.readerRouteDismissed() }
         }
     }
 
-    func updateReaderSessionResumeRoute(_ route: ReaderResumeRoute, session: ReaderSession) {
+    private func updateReaderSessionResumeRoute(_ route: ReaderResumeRoute, session: ReaderSession) {
         guard currentReaderSession === session else { return }
-        updateReaderResumeRoute(route)
+        appContinuity.readerReadingPositionChanged(route)
     }
 
-    func deactivateReaderSession(_ session: ReaderSession) {
+    private func deactivateReaderSession(_ session: ReaderSession) {
         guard currentReaderSession === session else { return }
         currentReaderSession = nil
-        activeNovelContext = nil
-        activeMangaContext = nil
         appContinuity.readerRouteDismissed()
     }
 
-    func finishReaderSession(_ session: ReaderSession) {
+    private func finishReaderSession(_ session: ReaderSession) {
         deactivateReaderSession(session)
         if presentedReaderSession === session { presentedReaderSession = nil }
     }
@@ -351,7 +374,6 @@ public final class YamiboAppModel {
         } else {
             self.suspendedNovelContext = nil
         }
-        activeNovelContext = nil
         (currentReaderSession ?? presentedReaderSession)?.close()
         appContinuity.readerRouteDismissed()
         if let url {
@@ -370,7 +392,6 @@ public final class YamiboAppModel {
         } else if activeMangaContext != nil {
             self.suspendedMangaContext = nil
         }
-        activeMangaContext = nil
         (currentReaderSession ?? presentedReaderSession)?.close()
         appContinuity.readerRouteDismissed()
         if let url {
@@ -427,15 +448,8 @@ public final class YamiboAppModel {
     }
 
     public func updateReaderResumeRoute(_ route: ReaderResumeRoute) {
-        switch route {
-        case let .novel(context):
-            guard activeNovelContext != nil else { return }
-            activeNovelContext = context
-        case let .manga(context):
-            guard activeMangaContext != nil else { return }
-            activeMangaContext = context
-        }
-        appContinuity.readerReadingPositionChanged(route)
+        guard let session = currentReaderSession else { return }
+        session.updateResumeRoute(route, contentID: session.contentID)
     }
 
     private var canRestoreReaderRoute: Bool {
