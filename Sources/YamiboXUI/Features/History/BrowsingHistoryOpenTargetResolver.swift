@@ -145,53 +145,25 @@ struct ReadingOpenTargetResolver {
         source: MangaLaunchSource,
         fallbackMangaView: Int
     ) async -> BrowsingHistoryOpenTarget {
-        let ownThreadProgress = await readingProgressStore.load(for: .mangaThread(threadID: threadID))?.manga
-        guard smartModeEnabled else {
-            return .mangaReader(
-                MangaLaunchContext(
-                    originalThreadID: threadID,
-                    chapterTID: ownThreadProgress?.chapterThreadID ?? threadID,
-                    displayTitle: entry.title,
-                    source: source,
-                    chapterView: ownThreadProgress?.chapterView ?? fallbackMangaView,
-                    initialPage: ownThreadProgress?.mangaPageIndex ?? 0,
-                    directoryName: nil,
-                    isSmartModeEnabled: false,
-                    forumID: entry.forumID
-                )
-            )
-        }
-        guard let directory = try? await mangaDirectoryStore.directory(containingTID: threadID),
-              let firstChapter = directory.chapters.first else {
-            return .mangaReader(
-                MangaLaunchContext(
-                    originalThreadID: threadID,
-                    chapterTID: ownThreadProgress?.chapterThreadID ?? threadID,
-                    displayTitle: entry.title,
-                    source: source,
-                    chapterView: ownThreadProgress?.chapterView ?? fallbackMangaView,
-                    initialPage: ownThreadProgress?.mangaPageIndex ?? 0,
-                    directoryName: nil,
-                    isSmartModeEnabled: true,
-                    forumID: entry.forumID
-                )
-            )
-        }
-        let directoryTarget = FavoriteContentTarget(
-            mangaID: directory.favoriteIdentity,
-            mangaCleanBookName: directory.cleanBookName
+        let resume = await MangaReadingResumeResolver(
+            readingProgressStore: readingProgressStore,
+            mangaDirectoryStore: mangaDirectoryStore
+        ).resolve(
+            threadID: threadID,
+            title: entry.title,
+            isSmartModeEnabled: smartModeEnabled,
+            fallbackChapterView: fallbackMangaView
         )
-        let directoryProgress = await readingProgressStore.load(for: directoryTarget)?.manga
         return .mangaReader(
             MangaLaunchContext(
                 originalThreadID: threadID,
-                chapterTID: directoryProgress?.chapterThreadID ?? firstChapter.tid,
-                displayTitle: directory.cleanBookName,
+                chapterTID: resume.chapterTID,
+                displayTitle: resume.displayTitle,
                 source: source,
-                chapterView: directoryProgress?.chapterView ?? firstChapter.view,
-                initialPage: directoryProgress?.mangaPageIndex ?? 0,
-                directoryName: directory.cleanBookName,
-                isSmartModeEnabled: true,
+                chapterView: resume.chapterView,
+                initialPage: resume.initialPage,
+                directoryName: resume.directoryName,
+                isSmartModeEnabled: smartModeEnabled,
                 forumID: entry.forumID
             )
         )

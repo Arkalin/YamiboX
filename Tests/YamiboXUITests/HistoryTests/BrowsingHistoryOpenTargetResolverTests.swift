@@ -155,6 +155,91 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
         XCTAssertEqual(context.chapterView, 4)
     }
 
+    func testSmartThreadWithoutDirectoryProgressStartsAtFirstChapterRealView() async throws {
+        let fixture = try makeFixture(prefix: "history-smart-first-view")
+        var boardReader = BoardReaderSettings(entries: [:])
+        boardReader.setEntry(.init(mode: .manga(smartEnabled: true)), forumID: "46")
+        try await fixture.settingsStore.save(AppSettings(boardReader: boardReader))
+        let directory = MangaDirectory(
+            cleanBookName: "Directory",
+            strategy: .links,
+            sourceKey: "chapter:6102",
+            chapters: [
+                MangaChapter(tid: "6101", rawTitle: "First", chapterNumber: 1, view: 3),
+                MangaChapter(tid: "6102", rawTitle: "Second", chapterNumber: 2, view: 1)
+            ]
+        )
+        try await fixture.mangaDirectoryStore.saveDirectory(directory)
+        let entry = BrowsingHistoryEntry(
+            target: .mangaThread(threadID: "6102"), title: "Second", forumID: "46"
+        )
+
+        guard case let .mangaReader(context)? = await fixture.resolver.openTarget(
+            for: entry, origin: .home, fallbackMangaView: 9
+        ) else {
+            return XCTFail("Expected a manga reader open target")
+        }
+        XCTAssertEqual(context.originalThreadID, "6102")
+        XCTAssertEqual(context.chapterTID, "6101")
+        XCTAssertEqual(context.chapterView, 3)
+        XCTAssertEqual(context.initialPage, 0)
+        XCTAssertEqual(context.displayTitle, "Directory")
+        XCTAssertEqual(context.source, .home)
+        XCTAssertEqual(context.forumID, "46")
+    }
+
+    func testPlainThreadIgnoresDirectoryProgressWithSameChapter() async throws {
+        let fixture = try makeFixture(prefix: "history-plain-exact-progress")
+        var boardReader = BoardReaderSettings(entries: [:])
+        boardReader.setEntry(.init(mode: .manga(smartEnabled: false)), forumID: "46")
+        try await fixture.settingsStore.save(AppSettings(boardReader: boardReader))
+        _ = try await fixture.resolver.readingProgressStore.saveMangaTitle(
+            cleanBookName: "Directory", chapterThreadID: "6201",
+            chapterTitle: "First", pageIndex: 7, mangaID: "directory-id"
+        )
+        let entry = BrowsingHistoryEntry(
+            target: .mangaThread(threadID: "6201"), title: "First", forumID: "46"
+        )
+
+        guard case let .mangaReader(context)? = await fixture.resolver.openTarget(
+            for: entry, fallbackMangaView: 4
+        ) else {
+            return XCTFail("Expected a manga reader open target")
+        }
+        XCTAssertEqual(context.chapterTID, "6201")
+        XCTAssertEqual(context.chapterView, 4)
+        XCTAssertEqual(context.initialPage, 0)
+        XCTAssertNil(context.directoryName)
+        XCTAssertFalse(context.isSmartModeEnabled)
+    }
+
+    func testDirectoryRowWithoutProgressRetainsRecordedChapterInsteadOfFirst() async throws {
+        let fixture = try makeFixture(prefix: "history-directory-recorded-chapter")
+        var boardReader = BoardReaderSettings(entries: [:])
+        boardReader.setEntry(.init(mode: .manga(smartEnabled: true)), forumID: "46")
+        try await fixture.settingsStore.save(AppSettings(boardReader: boardReader))
+        let directory = MangaDirectory(
+            cleanBookName: "Directory", strategy: .links, sourceKey: "chapter:6301",
+            chapters: [
+                MangaChapter(tid: "6301", rawTitle: "First", chapterNumber: 1, view: 1),
+                MangaChapter(tid: "6302", rawTitle: "Second", chapterNumber: 2, view: 5)
+            ]
+        )
+        try await fixture.mangaDirectoryStore.saveDirectory(directory)
+        let entry = BrowsingHistoryEntry(
+            target: .mangaTitle(mangaID: directory.favoriteIdentity, cleanBookName: "Directory"),
+            title: "Directory", forumID: "46", chapterTitle: "Second", chapterThreadID: "6302"
+        )
+
+        guard case let .mangaReader(context)? = await fixture.resolver.openTarget(for: entry) else {
+            return XCTFail("Expected a manga reader open target")
+        }
+        XCTAssertEqual(context.chapterTID, "6302")
+        XCTAssertEqual(context.chapterView, 5)
+        XCTAssertEqual(context.initialPage, 0)
+        XCTAssertEqual(context.directoryName, "Directory")
+    }
+
     // The heart stamps the row's effective category (R13): the mapping from
     // effective category to favorite target kind is what keeps "what the row
     // shows/opens as" and "what gets favorited" in lockstep.
@@ -186,6 +271,7 @@ final class BrowsingHistoryOpenTargetResolverTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("browsing-history-open-target-resolver-tests", isDirectory: true)
             .appendingPathComponent(suiteName, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let mangaDirectoryStore = MangaDirectoryStore(databasePool: try YamiboDatabase.openPool(rootDirectory: root))
         return Fixture(
             settingsStore: settingsStore,
