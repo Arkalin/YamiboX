@@ -173,6 +173,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
 
     private var pageBackgroundColor: UIColor {
         readerThemeUIColor(for: settings.backgroundStyle, colorScheme: colorScheme)
@@ -262,6 +263,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         var parent: NovelReaderPagedPageCurlViewport
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
+        private var imagePipeline: YamiboUIImagePipeline?
         private var consumedScrollAnimationRequestID: UUID?
         private var currentSelectionIndex: Int?
         weak var boundaryPageTurnPanRecognizer: UIPanGestureRecognizer?
@@ -277,6 +279,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             self.parent = parent
             renderedColorScheme = parent.colorScheme
             contentIdentity = parent.contentIdentity
+            imagePipeline = parent.imagePipeline
         }
 
         deinit {
@@ -294,8 +297,9 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 return
             }
             let nextContentIdentity = parent.contentIdentity
-            let didChangeContentIdentity = contentIdentity != nextContentIdentity
+            let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
+            imagePipeline = parent.imagePipeline
             configureGestures(in: pageViewController)
             configureSpine(in: pageViewController)
             applyPageBackground(to: pageViewController)
@@ -565,6 +569,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                     colorScheme: renderedColorScheme,
                     refererURL: parent.refererURL,
                     offlineScope: parent.offlineScope,
+                    imagePipeline: parent.imagePipeline,
                     topInset: parent.topInset,
                     bottomInset: parent.bottomInset,
                     displayReferenceProvider: parent.displayReferenceProvider,
@@ -727,6 +732,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
     var colorScheme: ColorScheme
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
+    let imagePipeline: YamiboUIImagePipeline?
     let topInset: CGFloat
     let bottomInset: CGFloat
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
@@ -771,6 +777,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
         }
         .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
         .environment(\.colorScheme, colorScheme)
+        .environment(\.yamiboImagePipeline, imagePipeline)
     }
 }
 #endif

@@ -12,6 +12,7 @@ public struct NovelReaderDependencies: Sendable {
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
     public let offlineCacheStore: any OfflineCacheStoring
     public let contentCoverStore: ContentCoverStore
+    public let imagePipeline: any YamiboImageDataLoading
     public let makeNovelReaderRepository: @Sendable () async -> NovelReaderRepository
     public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
     /// The cache panel embeds the account feature's offline queue view model.
@@ -30,7 +31,8 @@ public struct NovelReaderDependencies: Sendable {
         makeChapterCommentsRepository: @escaping @Sendable () async -> ReaderChapterCommentsRepository,
         makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
         account: AccountDependencies,
-        like: LikeDependencies
+        like: LikeDependencies,
+        imagePipeline: (any YamiboImageDataLoading)? = nil
     ) {
         self.sessionStore = sessionStore
         self.settingsStore = settingsStore
@@ -39,6 +41,7 @@ public struct NovelReaderDependencies: Sendable {
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
         self.offlineCacheStore = offlineCacheStore
         self.contentCoverStore = contentCoverStore
+        self.imagePipeline = imagePipeline ?? account.imagePipeline
         self.makeNovelReaderRepository = makeNovelReaderRepository
         self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor
         self.account = account

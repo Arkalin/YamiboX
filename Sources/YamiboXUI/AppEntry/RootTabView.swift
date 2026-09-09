@@ -79,6 +79,7 @@ public struct RootTabView: View {
         .fullScreenCover(item: webVerificationBinding) { _ in
             ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
         }
+        .environment(\.yamiboImagePipeline, appModel.imagePipeline)
     }
 
     private var isShowingBootstrapPlaceholder: Bool {

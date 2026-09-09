@@ -80,6 +80,7 @@ public struct MangaReaderView: View {
                 context: context,
                 dependencies: dependencies,
                 initialProjection: initialProjection,
+                imagePipeline: appModel.imagePipeline,
                 onReaderResumeRouteChange: { route in
                     if let onResumeRouteChange {
                         await onResumeRouteChange(route)
@@ -699,7 +700,7 @@ public struct MangaReaderView: View {
         }
 
         do {
-            let data = try await YamiboImagePipeline.shared.data(for: model.imageSource(for: page))
+            let data = try await dependencies.imagePipeline.data(for: model.imageSource(for: page))
             let photoSaver = MangaImagePhotoSaver()
             try await photoSaver.saveImageData(data)
             imageSavePresentation.finishSave(with: .success)

@@ -15,6 +15,8 @@ enum NovelReaderPagedItemSource: Equatable {
 }
 
 struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
+
     static func dismantleUIView(_ view: UICollectionView, coordinator: Coordinator) {
         (view as? ReaderPagedCollectionView)?.onLayoutSubviews = nil
         coordinator.cancelSlideTransition(in: view)
@@ -140,6 +142,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         var parent: NovelReaderPagedCollectionViewport
         private let pagingDriver = ReaderPagedPagingDriver(commitsQuickFadeSelectionImmediately: true)
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
+        private var imagePipeline: YamiboUIImagePipeline?
 
         var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
             pagingDriver.callbackScheduler
@@ -209,6 +212,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                     pageContent(at: itemIndex)
                 }
                 .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
+                .environment(\.yamiboImagePipeline, parent.imagePipeline)
             }
             .margins(.all, 0)
             cell.resetPageTurnVisuals()
@@ -382,8 +386,9 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             in collectionView: UICollectionView,
             contentIdentity nextContentIdentity: NovelReaderPagedSpreadViewportContentIdentity
         ) {
-            let didChangeContentIdentity = contentIdentity != nextContentIdentity
+            let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
+            imagePipeline = parent.imagePipeline
             pagingDriver.updateContentAndRequestSelectionScroll(
                 in: collectionView,
                 didChangeContentIdentity: didChangeContentIdentity,

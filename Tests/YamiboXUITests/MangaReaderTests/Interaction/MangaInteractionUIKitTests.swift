@@ -16,7 +16,7 @@ struct MangaInteractionUIKitTests {
         var rejections: [Int] = []
         let loader = MangaReaderPageImageLoader(imageSource: { _ in
             YamiboImageSource(url: URL(fileURLWithPath: "/nonexistent/manga-interaction-test.png"))
-        })
+        }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline()))
         let settings = MangaReaderSettings(readingMode: .paged)
         let root: AnyView
         if curl {

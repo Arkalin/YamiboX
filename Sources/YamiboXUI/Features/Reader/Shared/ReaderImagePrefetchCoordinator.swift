@@ -15,13 +15,16 @@ final class ReaderImagePrefetchCoordinator {
     private var requests: [String: Request] = [:]
     private static let maximumConcurrentRequests = 2
 
+    convenience init(pipeline: YamiboUIImagePipeline) {
+        self.init(
+            isCached: { pipeline.cachedImage(for: $0) != nil },
+            load: { _ = try await pipeline.image(for: $0, priority: .low) }
+        )
+    }
+
     init(
-        isCached: @escaping @MainActor (YamiboImageSource) -> Bool = {
-            YamiboUIImagePipeline.shared.cachedImage(for: $0) != nil
-        },
-        load: @escaping @MainActor (YamiboImageSource) async throws -> Void = {
-            _ = try await YamiboUIImagePipeline.shared.image(for: $0, priority: .low)
-        }
+        isCached: @escaping @MainActor (YamiboImageSource) -> Bool,
+        load: @escaping @MainActor (YamiboImageSource) async throws -> Void
     ) {
         self.isCached = isCached
         self.load = load

@@ -1,10 +1,97 @@
 #if os(iOS)
+import SwiftUI
 import UIKit
 import XCTest
-import YamiboXCore
+@testable import YamiboXCore
 @testable import YamiboXUI
 
 final class ReaderInlineImageCacheTests: XCTestCase {
+    @MainActor
+    func testPagedUIKitHostsForwardInjectedPipelineAndRefreshContext() async throws {
+        for curl in [false, true] {
+            for spread in [false, true] {
+                let source = YamiboImageSource(
+                    url: URL(string: "https://img.example.com/paged-\(curl)-\(spread).png")!,
+                    offlineScope: YamiboImageOfflineScope(tid: "42")
+                )
+                let firstBytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .red)])
+                let first = makeUIPipeline(bytes: firstBytes)
+                let host = UIHostingController(rootView: pagedViewport(curl: curl, spread: spread, source: source, pipeline: first))
+                let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+                window.rootViewController = host
+                window.isHidden = false
+                defer { window.isHidden = true; window.rootViewController = nil }
+                host.view.layoutIfNeeded()
+
+                try await waitUntil {
+                    guard let expected = first.cachedImage(for: source) else { return false }
+                    return self.visibleInlineImage(in: host.view) === expected
+                }
+                XCTAssertNotNil(visibleInlineImage(in: host.view), "curl=\(curl), spread=\(spread)")
+
+                let secondBytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .blue)])
+                let second = makeUIPipeline(bytes: secondBytes)
+                host.rootView = pagedViewport(curl: curl, spread: spread, source: source, pipeline: second)
+                host.view.layoutIfNeeded()
+                try await waitUntil {
+                    guard let expected = second.cachedImage(for: source) else { return false }
+                    return self.visibleInlineImage(in: host.view) === expected
+                }
+                let firstCalls = await firstBytes.loadCallCount()
+                let secondCalls = await secondBytes.loadCallCount()
+                XCTAssertEqual(firstCalls, 1)
+                XCTAssertEqual(secondCalls, 1)
+            }
+        }
+    }
+
+    @MainActor
+    func testMissingPipelineLeavesPlaceholderAndInjectedPipelineLoads() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/injected.png")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let view = NovelReaderVerticalViewportImageView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 480), pipeline: nil
+        )
+        view.configure(source: source, title: nil, isLiked: false, onTap: { _, _ in })
+        let indicator = try XCTUnwrap(view.subviews.compactMap { $0 as? UIActivityIndicatorView }.first)
+        XCTAssertFalse(indicator.isAnimating)
+        XCTAssertNil(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)))
+
+        let bytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .red)])
+        view.updatePipeline(makeUIPipeline(bytes: bytes))
+        try await waitUntil { view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)) != nil }
+        let calls = await bytes.loadCallCount()
+        XCTAssertEqual(calls, 1)
+
+        view.updatePipeline(nil)
+        XCTAssertNil(view.imageTapPayloadIfHit(at: CGPoint(x: 160, y: 240)))
+        XCTAssertFalse(indicator.isAnimating)
+    }
+
+    @MainActor
+    func testReplacingPipelineReloadsSameSourceFromNewContext() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/context.png")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let firstBytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .red)])
+        let secondBytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .blue)])
+        let first = makeUIPipeline(bytes: firstBytes)
+        let second = makeUIPipeline(bytes: secondBytes)
+        let firstImage = try await first.image(for: source)
+        let secondImage = try await second.image(for: source)
+        let view = NovelReaderVerticalViewportImageView(pipeline: first)
+        view.configure(source: source, title: nil, isLiked: false, onTap: { _, _ in })
+        let imageView = try XCTUnwrap(view.subviews.compactMap { $0 as? UIImageView }.first)
+        XCTAssertTrue(imageView.image === firstImage)
+
+        view.updatePipeline(second)
+        XCTAssertTrue(imageView.image === secondImage)
+        XCTAssertFalse(imageView.image === firstImage)
+    }
+
     @MainActor
     func testInlineImageFailureShowsRetryAndRecoversAfterRepeatedFailure() async throws {
         let source = YamiboImageSource(
@@ -119,6 +206,25 @@ final class ReaderInlineImageCacheTests: XCTestCase {
     }
 
     @MainActor
+    func testPrefetchCoordinatorUsesInjectedDisplayPipeline() async throws {
+        let source = YamiboImageSource(
+            url: URL(string: "https://img.example.com/coordinator.png")!,
+            offlineScope: YamiboImageOfflineScope(tid: "42")
+        )
+        let bytes = SequencedOfflineImageBytes(outputs: [testImageData(color: .red)])
+        let pipeline = makeUIPipeline(bytes: bytes)
+        let coordinator = ReaderImagePrefetchCoordinator(pipeline: pipeline)
+        coordinator.update(sources: [source])
+        try await waitUntil { pipeline.cachedImage(for: source) != nil }
+        let prefetched = try XCTUnwrap(pipeline.cachedImage(for: source))
+        let displayed = try await pipeline.image(for: source)
+        XCTAssertTrue(prefetched === displayed)
+        let calls = await bytes.loadCallCount()
+        XCTAssertEqual(calls, 1)
+        coordinator.cancel()
+    }
+
+    @MainActor
     func testCancellingPrefetchDoesNotCancelConcurrentDisplayLoad() async throws {
         let source = YamiboImageSource(
             url: URL(string: "https://img.example.com/shared-prefetch.png")!,
@@ -224,6 +330,62 @@ final class ReaderInlineImageCacheTests: XCTestCase {
         YamiboUIImagePipeline(
             core: YamiboImagePipeline(offlineImages: bytes)
         )
+    }
+
+    @MainActor
+    private func pagedViewport(curl: Bool, spread: Bool, source: YamiboImageSource, pipeline: YamiboUIImagePipeline) -> AnyView {
+        let surface = NovelReaderSurface(
+            identity: NovelReaderSurfaceIdentity(generation: 1, ordinal: 0),
+            presentationIndex: 0,
+            kind: .externalBlock,
+            documentView: 1,
+            chapterTitle: nil,
+            presentationSize: CGSize(width: 320, height: 568),
+            externalBlocks: [NovelReaderExternalBlock(url: source.url, frame: nil)]
+        )
+        let spreads = [NovelReaderPresentationSpread(
+            index: 0, leftSurfaceIndex: 0, leftSurfaceIdentity: surface.identity,
+            rightSurfaceIndex: nil, rightSurfaceIdentity: nil, chapterTitle: nil
+        )]
+        let settings = NovelReaderAppearanceSettings(readingMode: .paged)
+        let identity = ReaderPagedPagerIdentity(
+            visibleView: 1, surfaceCount: 1, spreadCount: 1, usesTwoPageSpread: spread,
+            layout: NovelReaderLayout(width: 390, height: 844)
+        )
+        let referer = YamiboRoute.threadByID(tid: "42", page: 1, authorID: nil, reverse: false).url
+        if curl {
+            return AnyView(NovelReaderPagedPageCurlViewport(
+                spreads: spreads, surfaces: [surface], settings: settings,
+                refererURL: referer, offlineScope: source.offlineScope, topInset: 0, bottomInset: 0,
+                selectionIndex: 0, usesTwoPageSpread: spread, pagerIdentity: identity, scrollAnimationRequest: nil,
+                displayReferenceProvider: { _ in nil }, selectionController: nil, likeHighlightController: nil,
+                searchHighlightController: nil, likedImageAnchors: [], isChromeVisible: false,
+                canBoundaryPageTurn: { _ in false }, onSelectionChange: { _ in }, onBoundaryPageTurn: { _ in },
+                onPageTapZone: { _ in }, onScrollAnimationRequestConsumed: { _ in },
+                onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _ in }
+            ).environment(\.yamiboImagePipeline, pipeline))
+        }
+        return AnyView(NovelReaderPagedCollectionViewport(
+            itemSource: spread ? .spreads(spreads) : .surfaces, surfaces: [surface], settings: settings,
+            refererURL: referer, offlineScope: source.offlineScope, topInset: 0, bottomInset: 0,
+            selectionIndex: 0, pagerIdentity: identity, scrollAnimationRequest: nil,
+            displayReferenceProvider: { _ in nil }, selectionController: nil, likeHighlightController: nil,
+            searchHighlightController: nil, likedImageAnchors: [], isChromeVisible: false,
+            canBoundaryPageTurn: { _ in false }, onSelectionChange: { _ in }, onBoundaryPageTurn: { _ in },
+            onPageTapZone: { _ in }, onScrollAnimationRequestConsumed: { _ in },
+            onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _ in }
+        ).environment(\.yamiboImagePipeline, pipeline))
+    }
+
+    @MainActor
+    private func visibleInlineImage(in view: UIView) -> UIImage? {
+        if let inline = view as? NovelReaderVerticalViewportImageView, !inline.isHidden {
+            return inline.subviews.compactMap { $0 as? UIImageView }.first?.image
+        }
+        for child in view.subviews where !child.isHidden {
+            if let image = visibleInlineImage(in: child) { return image }
+        }
+        return nil
     }
 }
 

@@ -11,8 +11,11 @@ public actor YamiboProfileAvatarLoader {
         imageData: (@Sendable (YamiboImageSource) async throws -> Data)? = nil
     ) {
         self.sessionStore = sessionStore
-        self.imageData = imageData ?? { source in
-            try await YamiboImagePipeline.shared.data(for: source)
+        if let imageData {
+            self.imageData = imageData
+        } else {
+            let pipeline = YamiboImagePipeline(sessionStore: sessionStore)
+            self.imageData = { source in try await pipeline.data(for: source) }
         }
     }
 

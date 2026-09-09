@@ -17,6 +17,7 @@ final class MangaReaderLikeModule {
         var forumID: String?
         var currentDirectoryCleanBookName: @MainActor () -> String?
         var makeLikeDependencies: @Sendable () -> LikeDependencies?
+        var imageData: @Sendable (YamiboImageSource) async throws -> Data
         var imageSource: @MainActor (MangaReaderPageProjection) -> YamiboImageSource
         var setLikedPageIDs: @MainActor (Set<String>) -> Void
     }
@@ -72,7 +73,7 @@ final class MangaReaderLikeModule {
             workKey: workKey,
             anchor: anchor,
             sourceImageURL: source.url,
-            imageData: { try await YamiboImagePipeline.shared.data(for: source) }
+            imageData: { [imageData = reading.imageData] in try await imageData(source) }
             )
         } catch {
             actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)

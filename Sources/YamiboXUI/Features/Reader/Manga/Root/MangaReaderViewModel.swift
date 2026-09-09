@@ -4,6 +4,7 @@ import YamiboXCore
 
 struct MangaReaderViewModelDependencies {
     var settingsStore: SettingsStore
+    var imagePipeline: any YamiboImageDataLoading
     var makeProjectionLoader: @Sendable () async -> any MangaReaderProjectionLoading
     var makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
     var makeDirectoryStore: @Sendable () -> any MangaDirectoryPersisting
@@ -28,6 +29,7 @@ struct MangaReaderViewModelDependencies {
 
     init(
         settingsStore: SettingsStore,
+        imagePipeline: any YamiboImageDataLoading = YamiboImagePipeline(),
         makeProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionLoading,
         makeDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository,
         makeDirectoryStore: @escaping @Sendable () -> any MangaDirectoryPersisting,
@@ -45,6 +47,7 @@ struct MangaReaderViewModelDependencies {
         migrateMangaTitleReferences: @escaping @Sendable (_ oldCleanBookName: String, _ newCleanBookName: String) async -> Void = { _, _ in }
     ) {
         self.settingsStore = settingsStore
+        self.imagePipeline = imagePipeline
         self.makeProjectionLoader = makeProjectionLoader
         self.makeDirectoryRepository = makeDirectoryRepository
         self.makeDirectoryStore = makeDirectoryStore
@@ -63,6 +66,7 @@ struct MangaReaderViewModelDependencies {
     init(dependencies: MangaReaderDependencies) {
         self.init(
             settingsStore: dependencies.settingsStore,
+            imagePipeline: dependencies.imagePipeline,
             makeProjectionLoader: { await dependencies.makeProjectionLoader() },
             makeDirectoryRepository: { await dependencies.makeDirectoryRepository() },
             makeDirectoryStore: { dependencies.mangaDirectoryStore },
@@ -155,6 +159,7 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private(set) var imageLoader: MangaReaderPageImageLoader?
 
     let dependencies: MangaReaderViewModelDependencies
+    @ObservationIgnored private let uiImagePipeline: YamiboUIImagePipeline
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
     @ObservationIgnored private var chapterCommentsRepository: ReaderChapterCommentsRepository?
     @ObservationIgnored private var workflow: MangaReaderWorkflow?
@@ -223,6 +228,7 @@ public final class MangaReaderViewModel {
             forumID: context.forumID,
             currentDirectoryCleanBookName: { [weak self] in self?.workflow?.currentDirectoryCleanBookName() },
             makeLikeDependencies: dependencies.makeLikeDependencies,
+            imageData: { [imagePipeline = dependencies.imagePipeline] in try await imagePipeline.data(for: $0) },
             imageSource: { [weak self] page in
                 self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
             },
@@ -306,12 +312,14 @@ public final class MangaReaderViewModel {
         context: MangaLaunchContext,
         dependencies: MangaReaderDependencies,
         initialProjection: MangaReaderProjection? = nil,
+        imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
         self.init(
             context: context,
             viewModelDependencies: MangaReaderViewModelDependencies(dependencies: dependencies),
             initialProjection: initialProjection,
+            imagePipeline: imagePipeline,
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
     }
@@ -320,11 +328,13 @@ public final class MangaReaderViewModel {
         context: MangaLaunchContext,
         viewModelDependencies: MangaReaderViewModelDependencies,
         initialProjection: MangaReaderProjection? = nil,
+        imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
         self.context = context
         self.initialProjection = initialProjection
         self.dependencies = viewModelDependencies
+        self.uiImagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: viewModelDependencies.imagePipeline)
         self.onReaderResumeRouteChange = onReaderResumeRouteChange
         self.imageLoader = nil
         self.presentation = MangaReaderPresentation(
@@ -355,7 +365,8 @@ public final class MangaReaderViewModel {
         let imageLoader = MangaReaderPageImageLoader(
             imageSource: { [weak self] page in
                 self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
-            }
+            },
+            uiImagePipeline: uiImagePipeline
         )
         // Directory search/tag filtering is scoped to the launching thread's
         // own board (pluggable-reader-config decision #6). The launch context

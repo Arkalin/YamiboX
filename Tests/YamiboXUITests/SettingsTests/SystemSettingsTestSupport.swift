@@ -63,6 +63,7 @@ func makeSystemSettingsFixture() throws -> SystemSettingsFixture {
         ordinaryImageCache: ordinaryImageCache,
         databasePool: database,
         grdbRootDirectory: root,
+        cachesRootDirectory: root.appendingPathComponent("caches", isDirectory: true),
         httpCache: httpCache
     )
 

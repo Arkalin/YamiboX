@@ -1,34 +1,40 @@
 import Foundation
 
+public protocol YamiboImageDataLoading: Sendable {
+    func data(for source: YamiboImageSource) async throws -> Data
+    func cachedData(for source: YamiboImageSource) -> Data?
+}
+
 /// The single entry point for loading Yamibo image bytes.
 ///
 /// Callers describe *what* image they want with `YamiboImageSource`; the
 /// pipeline owns *how* it is fetched: offline-cache lookup, current-session
 /// authentication headers, Referer, the shared bytes disk cache, and error
 /// mapping.
-/// `@unchecked Sendable`: the only mutable state is `offlineImagesStorage`,
-/// and every access goes through `offlineImagesLock` (see the `offlineImages`
-/// accessor); all other stored properties are immutable `let`s of Sendable or
-/// internally-synchronized (URLSession) types. Keep that invariant when
-/// adding state.
-public final class YamiboImagePipeline: @unchecked Sendable {
-    public static let shared = YamiboImagePipeline()
-
+public final class YamiboImagePipeline: YamiboImageDataLoading {
     private let engine: YamiboImageDataPipeline
     private let sessionStore: any SessionStoring
     private let imageSession: URLSession
-    private let offlineImagesLock = NSLock()
-    private nonisolated(unsafe) var offlineImagesStorage: (any YamiboOfflineImageDataProviding)?
+    private let offlineImages: (any YamiboOfflineImageDataProviding)?
 
     /// The narrow public entry point. The designated initializer with an
-    /// injectable engine and session store is internal; tests reach it via
+    /// injectable cache engine is internal; tests reach it via
     /// `@testable import`.
-    public convenience init(offlineImages: (any YamiboOfflineImageDataProviding)? = nil) {
-        self.init(engine: .shared, offlineImages: offlineImages)
+    public convenience init(
+        sessionStore: any SessionStoring = SessionStore(),
+        imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
+        offlineImages: (any YamiboOfflineImageDataProviding)? = nil
+    ) {
+        self.init(
+            engine: YamiboImageDataPipeline(),
+            sessionStore: sessionStore,
+            imageSession: imageSession,
+            offlineImages: offlineImages
+        )
     }
 
     init(
-        engine: YamiboImageDataPipeline = .shared,
+        engine: YamiboImageDataPipeline,
         sessionStore: any SessionStoring = SessionStore(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
         offlineImages: (any YamiboOfflineImageDataProviding)? = nil
@@ -36,15 +42,7 @@ public final class YamiboImagePipeline: @unchecked Sendable {
         self.engine = engine
         self.sessionStore = sessionStore
         self.imageSession = imageSession
-        offlineImagesStorage = offlineImages
-    }
-
-    /// Registers the offline image store once the application context exists.
-    /// Sources without an `offlineScope` never consult the provider.
-    public func setOfflineImageProvider(_ provider: any YamiboOfflineImageDataProviding) {
-        offlineImagesLock.withLock {
-            offlineImagesStorage = provider
-        }
+        self.offlineImages = offlineImages
     }
 
     public func data(for source: YamiboImageSource) async throws -> Data {
@@ -72,11 +70,5 @@ public final class YamiboImagePipeline: @unchecked Sendable {
 
     public func totalDiskUsageBytes() async -> Int {
         await engine.totalDiskUsageBytes()
-    }
-
-    private var offlineImages: (any YamiboOfflineImageDataProviding)? {
-        offlineImagesLock.withLock {
-            offlineImagesStorage
-        }
     }
 }

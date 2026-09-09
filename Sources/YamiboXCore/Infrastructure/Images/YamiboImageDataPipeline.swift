@@ -11,7 +11,6 @@ public protocol YamiboOrdinaryImageCacheClearing: Sendable {
 /// which are internally thread-safe. Keep any future state behind a lock or
 /// this annotation becomes a lie.
 final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
-    static let shared = YamiboImageDataPipeline()
     static let defaultDataCacheLimitBytes = 512 * 1024 * 1024
     static let defaultDataCacheName = "com.arkalin.YamiboX.OrdinaryImageDataCache"
 

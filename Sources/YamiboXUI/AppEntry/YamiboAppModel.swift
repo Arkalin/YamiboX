@@ -58,6 +58,7 @@ public final class YamiboAppModel {
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
 
     public let appContext: YamiboAppContext
+    public let imagePipeline: YamiboUIImagePipeline
     public let peripheralInput: ReaderPeripheralInputManager
     public let webSessionCoordinator: ForumWebSessionCoordinator
 
@@ -70,9 +71,11 @@ public final class YamiboAppModel {
         appContext: YamiboAppContext,
         initialTab: AppTab = .forum,
         webSessionCoordinator: ForumWebSessionCoordinator? = nil,
+        imagePipeline: YamiboUIImagePipeline? = nil,
         mangaReaderOpenValidator: MangaReaderOpenValidator? = nil
     ) {
         self.appContext = appContext
+        self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
         self.mangaReaderOpenValidator = mangaReaderOpenValidator ?? MangaReaderOpenValidator { request in
             let loader = await appContext.mangaReaderDependencies.makeProjectionLoader()
             return try await loader.loadReaderProjection(request)

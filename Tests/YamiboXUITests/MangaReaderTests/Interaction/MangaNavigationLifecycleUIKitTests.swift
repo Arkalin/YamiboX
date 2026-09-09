@@ -263,7 +263,7 @@ struct MangaNavigationLifecycleUIKitTests {
     private func loader() -> MangaReaderPageImageLoader {
         MangaReaderPageImageLoader(imageSource: { _ in
             YamiboImageSource(url: URL(fileURLWithPath: "/nonexistent/manga-interaction-test.png"))
-        })
+        }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline()))
     }
 
     private final class PlacementCollection: UICollectionView {

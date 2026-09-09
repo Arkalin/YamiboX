@@ -37,7 +37,8 @@ public final class YamiboAppContext: Sendable {
     let mangaReaderProjectionStore: MangaReaderProjectionStore
     let offlineCacheStore: any OfflineCacheStoring
     let forumCacheStore: ForumCacheStore
-    let ordinaryImageCache: any YamiboOrdinaryImageCacheClearing
+    public let imagePipeline: YamiboImagePipeline
+    private let ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)?
     let httpCache: URLCache
     public let offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport
     public let offlineCacheContinuedProcessingCoordinator: OfflineCacheContinuedProcessingCoordinator
@@ -83,6 +84,7 @@ public final class YamiboAppContext: Sendable {
         clearsWebDataOnReset: Bool = true,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
+        imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         httpCache: URLCache = .shared
     ) {
@@ -159,13 +161,18 @@ public final class YamiboAppContext: Sendable {
                 return result
             }
         )
-        self.ordinaryImageCache = ordinaryImageCache ?? YamiboImageDataPipeline.shared
+        self.imagePipeline = YamiboImagePipeline(
+            engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory),
+            sessionStore: sessionStore,
+            imageSession: imageSession,
+            offlineImages: resolvedOfflineCacheStore
+        )
+        self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
         self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
         self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
         self.session = session
         self.wafRecoverer = wafRecoverer
-        YamiboImagePipeline.shared.setOfflineImageProvider(resolvedOfflineCacheStore)
     }
 
     // MARK: - Feature dependency packages
@@ -258,7 +265,8 @@ public final class YamiboAppContext: Sendable {
             makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
             account: accountDependencies,
-            like: likeLibraryDependencies
+            like: likeLibraryDependencies,
+            imagePipeline: imagePipeline
         )
     }
 
@@ -275,7 +283,8 @@ public final class YamiboAppContext: Sendable {
             makeChapterCommentsRepository: { [self] in await makeReaderChapterCommentsRepository() },
             makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
             account: accountDependencies,
-            like: likeLibraryDependencies
+            like: likeLibraryDependencies,
+            imagePipeline: imagePipeline
         )
     }
 
@@ -289,7 +298,8 @@ public final class YamiboAppContext: Sendable {
             offlineCacheStore: offlineCacheStore,
             makeAccountService: { [self] in makeAccountService() },
             makeCheckInService: { [self] in makeCheckInService() },
-            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() }
+            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
+            imagePipeline: imagePipeline
         )
     }
 
@@ -307,7 +317,11 @@ public final class YamiboAppContext: Sendable {
             favoriteUpdateStore: favoriteUpdateStore,
             offlineCacheStore: offlineCacheStore,
             clearOrdinaryImageCache: { [self] in await clearOrdinaryImageCache() },
-            ordinaryImageCacheUsageBytes: { [ordinaryImageCache] in await ordinaryImageCache.totalDiskUsageBytes() },
+            ordinaryImageCacheUsageBytes: { [imagePipeline, ordinaryImageCache] in
+                let dataBytes = await imagePipeline.totalDiskUsageBytes()
+                let additionalBytes = await ordinaryImageCache?.totalDiskUsageBytes() ?? 0
+                return dataBytes + additionalBytes
+            },
             resetApplicationData: { [self] in try await resetApplicationData() },
             library: libraryDependencies,
             webDAVSync: webDAVSyncDependencies,
@@ -413,6 +427,7 @@ public final class YamiboAppContext: Sendable {
             readerProjectionLoader: await makeMangaReaderProjectionLoader(),
             novelSourcePageLoader: await makeNovelReaderRepository(),
             imageAcquirer: OfflineCacheImageAcquirer(
+                imagePipeline: imagePipeline,
                 backgroundTransport: offlineCacheBackgroundDownloadTransport
             ),
             runObserver: offlineCacheContinuedProcessingCoordinator
@@ -457,7 +472,19 @@ public final class YamiboAppContext: Sendable {
     }
 
     func clearOrdinaryImageCache() async {
-        await ordinaryImageCache.removeAllCachedData()
+        await imagePipeline.clearCache()
+        await ordinaryImageCache?.removeAllCachedData()
+    }
+
+    private static func makeImageDataPipeline(cachesRootDirectory: URL?) -> YamiboImageDataPipeline {
+        guard let cachesRootDirectory else { return YamiboImageDataPipeline() }
+        do {
+            return try YamiboImageDataPipeline(
+                dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true)
+            )
+        } catch {
+            fatalError("Failed to create Yamibo image data cache: \(error)")
+        }
     }
 
     public func bootstrap(

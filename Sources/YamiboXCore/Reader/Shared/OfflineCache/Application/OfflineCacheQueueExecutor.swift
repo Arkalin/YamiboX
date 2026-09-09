@@ -30,11 +30,11 @@ protocol OfflineCacheQueueRunObserving: Sendable {
 }
 
 actor OfflineCacheImageAcquirer: OfflineCacheImageAcquiring {
-    private let imagePipeline: YamiboImagePipeline
+    private let imagePipeline: any YamiboImageDataLoading
     private let backgroundTransport: (any OfflineCacheImageTransporting)?
 
     init(
-        imagePipeline: YamiboImagePipeline = .shared,
+        imagePipeline: any YamiboImageDataLoading = YamiboImagePipeline(),
         backgroundTransport: (any OfflineCacheImageTransporting)? = nil
     ) {
         self.imagePipeline = imagePipeline

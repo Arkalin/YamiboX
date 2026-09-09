@@ -14,6 +14,7 @@ private struct NovelReaderVerticalViewportDisplaySurface {
 }
 
 struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
     let refererURL: URL
@@ -109,6 +110,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         var parent: NovelReaderVerticalViewportScrollView
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
         private var contentIdentity: NovelReaderVerticalViewportContentIdentity?
+        private var imagePipeline: YamiboUIImagePipeline?
         private var handledScrollRequest: NovelReaderVerticalScrollRequest?
         private var lastPublishedSurfaceFrames: [Int: NovelReaderVerticalSurfaceFrameValue]?
         private var lastPublishedVisibleSurfaceIdentities: [NovelReaderSurfaceIdentity]?
@@ -138,7 +140,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             in collectionView: UICollectionView,
             contentIdentity nextContentIdentity: NovelReaderVerticalViewportContentIdentity
         ) {
-            let contentIdentityChanged = contentIdentity != nextContentIdentity
+            let contentIdentityChanged = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             let insetsChanged = updateInsets(in: collectionView)
             guard contentIdentityChanged else {
                 if insetsChanged {
@@ -147,6 +149,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 return
             }
             contentIdentity = nextContentIdentity
+            imagePipeline = parent.imagePipeline
             collectionView.collectionViewLayout.invalidateLayout()
             collectionView.reloadData()
             resetPublishedViewportCache()
@@ -210,6 +213,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 settings: parent.settings,
                 refererURL: parent.refererURL,
                 offlineScope: parent.offlineScope,
+                imagePipeline: parent.imagePipeline,
                 contentWidth: max(verticalItemWidth(in: collectionView) - parent.settings.horizontalPadding * 2, 1),
                 topPadding: displaySurface.surfaceIndex == 0 ? 16 : 0,
                 onImageTap: parent.onImageTap
@@ -675,6 +679,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
     private var currentSettings = NovelReaderAppearanceSettings()
     private var currentRefererURL: URL?
     private var currentOfflineScope: YamiboImageOfflineScope?
+    private var currentImagePipeline: YamiboUIImagePipeline?
     private var currentContentWidth: CGFloat = 0
     private var currentTopPadding: CGFloat = 0
     private var currentDisplayReference: NovelTextViewportDisplayReference?
@@ -705,6 +710,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         currentPage = nil
+        currentImagePipeline = nil
         currentDisplayReference = nil
         currentSelectionController = nil
         currentLikeHighlightController = nil
@@ -751,6 +757,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
             settings: currentSettings,
             refererURL: currentRefererURL,
             offlineScope: currentOfflineScope,
+            imagePipeline: currentImagePipeline,
             contentWidth: currentContentWidth,
             topPadding: currentTopPadding,
             onImageTap: currentOnImageTap
@@ -769,6 +776,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         settings: NovelReaderAppearanceSettings,
         refererURL: URL,
         offlineScope: YamiboImageOfflineScope?,
+        imagePipeline: YamiboUIImagePipeline?,
         contentWidth: CGFloat,
         topPadding: CGFloat,
         onImageTap: @escaping (URL, String?) -> Void
@@ -784,6 +792,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         currentSettings = settings
         currentRefererURL = refererURL
         currentOfflineScope = offlineScope
+        currentImagePipeline = imagePipeline
         currentContentWidth = contentWidth
         currentTopPadding = topPadding
         currentOnImageTap = onImageTap
@@ -798,6 +807,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                 contentWidth: contentWidth,
                 refererURL: refererURL,
                 offlineScope: offlineScope,
+                imagePipeline: imagePipeline,
                 displayReference: displayReference,
                 selectionController: selectionController,
                 likeHighlightController: likeHighlightController,
@@ -887,6 +897,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         contentWidth: CGFloat,
         refererURL: URL,
         offlineScope: YamiboImageOfflineScope?,
+        imagePipeline: YamiboUIImagePipeline?,
         displayReference: NovelTextViewportDisplayReference?,
         selectionController: NovelTextSelectionController?,
         likeHighlightController: NovelLikeHighlightController?,
@@ -910,6 +921,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                 url: url,
                 refererURL: refererURL,
                 offlineScope: offlineScope,
+                imagePipeline: imagePipeline,
                 preferredHeight: textHeight,
                 title: page.chapterTitle,
                 isLiked: isLiked,
@@ -944,13 +956,14 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         url: URL,
         refererURL: URL,
         offlineScope: YamiboImageOfflineScope?,
+        imagePipeline: YamiboUIImagePipeline?,
         preferredHeight: CGFloat?,
         title: String?,
         isLiked: Bool,
         onImageTap: @escaping (URL, String?) -> Void
     ) -> BlockView {
         let height = max(preferredHeight ?? bounds.height, 1)
-        let imageView = NovelReaderVerticalViewportImageView()
+        let imageView = NovelReaderVerticalViewportImageView(pipeline: imagePipeline)
         imageView.configure(
             source: YamiboImageSource(url: url, refererPageURL: refererURL, offlineScope: offlineScope),
             title: title,
@@ -1020,7 +1033,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
 }
 
 final class NovelReaderVerticalViewportImageView: UIView {
-    private let pipeline: YamiboUIImagePipeline
+    private var pipeline: YamiboUIImagePipeline?
     private let imageView = UIImageView()
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let failureLabel = UILabel()
@@ -1050,7 +1063,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private var title: String?
     private var sourceIdentity: YamiboImageSource?
 
-    init(frame: CGRect = .zero, pipeline: YamiboUIImagePipeline = .shared) {
+    init(frame: CGRect = .zero, pipeline: YamiboUIImagePipeline?) {
         self.pipeline = pipeline
         super.init(frame: frame)
         configureViewHierarchy()
@@ -1138,20 +1151,29 @@ final class NovelReaderVerticalViewportImageView: UIView {
         load(source: source)
     }
 
+    func updatePipeline(_ pipeline: YamiboUIImagePipeline?) {
+        guard self.pipeline !== pipeline else { return }
+        self.pipeline = pipeline
+        if let sourceIdentity { load(source: sourceIdentity) }
+    }
+
     private func load(source: YamiboImageSource) {
         task?.cancel()
         task = nil
-        if let cachedImage = pipeline.cachedImage(for: source) {
-            show(image: cachedImage)
-            return
-        }
         imageView.image = nil
         failureLabel.isHidden = true
         retryButton.isHidden = true
         detailsButton.isHidden = true
         failureDetails = nil
+        guard let pipeline else {
+            activityIndicator.stopAnimating()
+            return
+        }
+        if let cachedImage = pipeline.cachedImage(for: source) {
+            show(image: cachedImage)
+            return
+        }
         activityIndicator.startAnimating()
-        let pipeline = self.pipeline
         task = Task { [weak self] in
             do {
                 let image = try await pipeline.image(for: source)
@@ -1250,6 +1272,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
 }
 
 struct NovelReaderInlineViewportImage: UIViewRepresentable {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
     let url: URL
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
@@ -1274,10 +1297,11 @@ struct NovelReaderInlineViewportImage: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> NovelReaderVerticalViewportImageView {
-        NovelReaderVerticalViewportImageView()
+        NovelReaderVerticalViewportImageView(pipeline: imagePipeline)
     }
 
     func updateUIView(_ uiView: NovelReaderVerticalViewportImageView, context: Context) {
+        uiView.updatePipeline(imagePipeline)
         uiView.configure(
             source: YamiboImageSource(url: url, refererPageURL: refererURL, offlineScope: offlineScope),
             title: title,

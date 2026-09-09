@@ -38,7 +38,10 @@ final class MineHomeViewModel {
             dependencies: dependencies,
             controller: offlineCacheQueueController
         )
-        profileAvatarLoader = YamiboProfileAvatarLoader(sessionStore: dependencies.sessionStore)
+        profileAvatarLoader = YamiboProfileAvatarLoader(
+            sessionStore: dependencies.sessionStore,
+            imageData: { [imagePipeline = dependencies.imagePipeline] in try await imagePipeline.data(for: $0) }
+        )
     }
 
     var isLoggedIn: Bool {

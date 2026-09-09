@@ -22,9 +22,10 @@ struct YamiboXApp: App {
         let initialTab = YamiboXApp.resolveInitialTab()
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
+        let imageMemoryCache = YamiboUIImageMemoryCache()
         let appContext = YamiboAppContext(
             sessionStore: sessionStore,
-            ordinaryImageCache: YamiboUIImagePipeline.shared,
+            ordinaryImageCache: imageMemoryCache,
             websiteDataClearer: WebKitWebsiteDataClearer(),
             wafRecoverer: webSessionCoordinator
         )
@@ -38,7 +39,8 @@ struct YamiboXApp: App {
         let appModel = YamiboAppModel(
             appContext: appContext,
             initialTab: initialTab,
-            webSessionCoordinator: webSessionCoordinator
+            webSessionCoordinator: webSessionCoordinator,
+            imagePipeline: YamiboUIImagePipeline(core: appContext.imagePipeline, memoryCache: imageMemoryCache)
         )
         appModel.startRuntime()
         #if os(iOS)

@@ -41,7 +41,7 @@ public final class NovelReaderViewModel {
     @ObservationIgnored private var repository: NovelReaderRepository?
     @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
     @ObservationIgnored private var preparedInitialLoad: NovelReadingPreparedInitialLoad?
-    @ObservationIgnored var imagePrefetchCoordinator = ReaderImagePrefetchCoordinator()
+    @ObservationIgnored var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
     @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
     @ObservationIgnored private var layout: NovelReaderLayout = .zero
@@ -145,6 +145,7 @@ public final class NovelReaderViewModel {
         context: NovelLaunchContext,
         dependencies: NovelReaderDependencies,
         initialSettings: NovelReaderAppearanceSettings? = nil,
+        imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
         self.init(
@@ -152,6 +153,7 @@ public final class NovelReaderViewModel {
             dependencies: dependencies,
             initialSettings: initialSettings,
             runtimeAdapter: nil,
+            imagePipeline: imagePipeline,
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
     }
@@ -177,12 +179,16 @@ public final class NovelReaderViewModel {
         dependencies: NovelReaderDependencies,
         initialSettings: NovelReaderAppearanceSettings?,
         runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?,
+        imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler
     ) {
         self.context = context
         self.dependencies = dependencies
         self.onReaderResumeRouteChange = onReaderResumeRouteChange
         self.runtimeAdapter = runtimeAdapter
+        imagePrefetchCoordinator = ReaderImagePrefetchCoordinator(
+            pipeline: imagePipeline ?? YamiboUIImagePipeline(core: dependencies.imagePipeline)
+        )
         progressSync = ProgressSyncModule(
             adapter: FavoriteLibraryProgressSyncAdapter(
                 readingProgressStore: dependencies.readingProgressStore,

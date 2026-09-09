@@ -14,6 +14,7 @@ public struct MangaReaderDependencies: Sendable {
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     public let offlineCacheStore: any OfflineCacheStoring
     public let contentCoverStore: ContentCoverStore
+    public let imagePipeline: any YamiboImageDataLoading
     public let makeProjectionLoader: @Sendable () async -> any MangaReaderProjectionSnapshotLoading
     public let makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
     public let makeChapterCommentsRepository: @Sendable () async -> ReaderChapterCommentsRepository
@@ -44,7 +45,8 @@ public struct MangaReaderDependencies: Sendable {
         makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
         makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
         account: AccountDependencies,
-        like: LikeDependencies
+        like: LikeDependencies,
+        imagePipeline: (any YamiboImageDataLoading)? = nil
     ) {
         self.settingsStore = settingsStore
         self.readingProgressStore = readingProgressStore
@@ -55,6 +57,7 @@ public struct MangaReaderDependencies: Sendable {
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.offlineCacheStore = offlineCacheStore
         self.contentCoverStore = contentCoverStore
+        self.imagePipeline = imagePipeline ?? account.imagePipeline
         self.makeProjectionLoader = makeProjectionLoader
         self.makeDirectoryRepository = makeDirectoryRepository
         self.makeChapterCommentsRepository = makeChapterCommentsRepository

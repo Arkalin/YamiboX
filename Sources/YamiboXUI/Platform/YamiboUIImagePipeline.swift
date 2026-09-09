@@ -5,15 +5,34 @@ import Nuke
 
 typealias YamiboPlatformImage = UIImage
 
-struct YamiboRemoteImageSizeKey: EnvironmentKey {
-    static let defaultValue: CGSize? = nil
+extension EnvironmentValues {
+    @Entry var yamiboRemoteImageSize: CGSize? = nil
+    @Entry var yamiboImagePipeline: YamiboUIImagePipeline? = nil
 }
 
-extension EnvironmentValues {
-    var yamiboRemoteImageSize: CGSize? {
-        get { self[YamiboRemoteImageSizeKey.self] }
-        set { self[YamiboRemoteImageSizeKey.self] = newValue }
+/// Shared by the app's decoded pipeline and its storage-settings commands.
+public final class YamiboUIImageMemoryCache: YamiboOrdinaryImageCacheClearing {
+    fileprivate let cache: ImageCache
+
+    public init(memoryLimitBytes: Int = 512 * 1024 * 1024, entryCostLimit: Double = 0.25) {
+        cache = ImageCache(costLimit: memoryLimitBytes)
+        cache.entryCostLimit = entryCostLimit
     }
+
+    public func removeAllCachedData() async {
+        cache.removeAll()
+    }
+
+    public func totalDiskUsageBytes() async -> Int { 0 }
+}
+
+enum YamiboUIImageLoadingError: Error {
+    case missingPipeline
+}
+
+struct YamiboUIImageRequestIdentity: Hashable {
+    let cacheKey: String?
+    let pipelineID: ObjectIdentifier?
 }
 
 /// A decoded image ready to display, plus the original bytes when the payload
@@ -57,25 +76,28 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
 /// offline lookup, session headers, disk cache — lives in the Core pipeline.
 @MainActor
 public final class YamiboUIImagePipeline {
-    public static let shared = YamiboUIImagePipeline()
     static let defaultMemoryLimitBytes = 512 * 1024 * 1024
     static let defaultEntryCostLimit = 0.25
 
-    private let core: YamiboImagePipeline
+    let dataLoader: any YamiboImageDataLoading
     private let pipeline: ImagePipeline
     private var prefetchingKeys = Set<String>()
 
-    init(
-        core: YamiboImagePipeline = .shared,
+    convenience init(
+        core: any YamiboImageDataLoading,
         memoryLimitBytes: Int = YamiboUIImagePipeline.defaultMemoryLimitBytes,
         entryCostLimit: Double = YamiboUIImagePipeline.defaultEntryCostLimit
     ) {
-        self.core = core
+        self.init(core: core, memoryCache: YamiboUIImageMemoryCache(
+            memoryLimitBytes: memoryLimitBytes,
+            entryCostLimit: entryCostLimit
+        ))
+    }
+
+    public init(core: any YamiboImageDataLoading, memoryCache: YamiboUIImageMemoryCache) {
+        self.dataLoader = core
         self.pipeline = ImagePipeline {
-            let cache = ImageCache(costLimit: memoryLimitBytes)
-            // Full-resolution manga pages can cost far more than their compressed bytes.
-            cache.entryCostLimit = entryCostLimit
-            $0.imageCache = cache
+            $0.imageCache = memoryCache.cache
             $0.dataCache = nil
             $0.isResumableDataEnabled = true
             $0.makeImageDecoder = { context in
@@ -139,14 +161,13 @@ public final class YamiboUIImagePipeline {
         }
     }
 
-    /// Clears the decoded in-memory image cache and the shared bytes disk cache.
+    /// Byte-cache clearing belongs to the Core pipeline's composition root.
     public func clearCache() async {
         pipeline.cache.removeAll()
-        await core.clearCache()
     }
 
     private func nukeRequest(for source: YamiboImageSource) -> ImageRequest {
-        let core = self.core
+        let core = dataLoader
         var imageRequest = ImageRequest(
             id: source.cacheKey,
             data: { try await core.data(for: source) },
@@ -172,20 +193,11 @@ public final class YamiboUIImagePipeline {
     }
 }
 
-extension YamiboUIImagePipeline: YamiboOrdinaryImageCacheClearing {
-    public func removeAllCachedData() async {
-        await clearCache()
-    }
-
-    public func totalDiskUsageBytes() async -> Int {
-        await core.totalDiskUsageBytes()
-    }
-}
-
 struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View {
     private let source: YamiboImageSource?
     private let animates: Bool
-    private let pipeline: YamiboUIImagePipeline
+    private let injectedPipeline: YamiboUIImagePipeline?
+    @Environment(\.yamiboImagePipeline) private var environmentPipeline
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
     private let failure: () -> Failure
@@ -193,19 +205,19 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     @State private var image: YamiboPlatformImage?
     @State private var animatedData: Data?
     @State private var didFail = false
-    @State private var loadedKey: String?
+    @State private var loadedIdentity: YamiboUIImageRequestIdentity?
 
     init(
         source: YamiboImageSource?,
         animates: Bool = false,
-        pipeline: YamiboUIImagePipeline = .shared,
+        pipeline: YamiboUIImagePipeline? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder,
         @ViewBuilder failure: @escaping () -> Failure
     ) {
         self.source = source
         self.animates = animates
-        self.pipeline = pipeline
+        self.injectedPipeline = pipeline
         self.content = content
         self.placeholder = placeholder
         self.failure = failure
@@ -230,7 +242,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
                 placeholder()
             }
         }
-        .task(id: taskIdentity) {
+        .task(id: requestIdentity) {
             await load()
         }
         .environment(\.yamiboRemoteImageSize, image?.size)
@@ -240,19 +252,29 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         source?.cacheKey ?? "yamibo-image:no-source"
     }
 
+    private var requestIdentity: YamiboUIImageRequestIdentity {
+        .init(cacheKey: source?.cacheKey, pipelineID: (injectedPipeline ?? environmentPipeline).map(ObjectIdentifier.init))
+    }
+
     private func load() async {
         guard let source else {
             apply(nil)
-            loadedKey = nil
+            loadedIdentity = nil
             didFail = false
             return
         }
-        guard loadedKey != source.cacheKey || image == nil else {
+        let identity = requestIdentity
+        guard loadedIdentity != identity || image == nil else {
+            return
+        }
+        guard let pipeline = injectedPipeline ?? environmentPipeline else {
+            apply(nil)
+            didFail = true
             return
         }
         if let cached = pipeline.cachedDisplayImage(for: source) {
             apply(cached)
-            loadedKey = source.cacheKey
+            loadedIdentity = identity
             didFail = false
             return
         }
@@ -261,11 +283,13 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         didFail = false
         do {
             let loaded = try await pipeline.displayImage(for: source)
+            guard !Task.isCancelled else { return }
             apply(loaded)
-            loadedKey = source.cacheKey
+            loadedIdentity = identity
             didFail = false
         } catch {
-            loadedKey = source.cacheKey
+            guard !Task.isCancelled else { return }
+            loadedIdentity = identity
             didFail = true
         }
     }

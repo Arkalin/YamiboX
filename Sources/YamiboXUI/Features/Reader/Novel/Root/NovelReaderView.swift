@@ -89,6 +89,7 @@ public struct NovelReaderView: View {
             context: context,
             dependencies: dependencies,
             initialSettings: initialSettings,
+            imagePipeline: appModel.imagePipeline,
             onReaderResumeRouteChange: { route in
                 if let onResumeRouteChange {
                     await onResumeRouteChange(route)
@@ -1263,7 +1264,7 @@ public struct NovelReaderView: View {
                 anchor: anchor,
                 sourceImageURL: imageURL,
                 imageData: {
-                    try await YamiboImagePipeline.shared.data(for: YamiboImageSource(
+                    try await dependencies.imagePipeline.data(for: YamiboImageSource(
                         url: imageURL,
                         refererPageURL: refererURL,
                         offlineScope: offlineScope

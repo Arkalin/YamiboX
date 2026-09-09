@@ -30,6 +30,37 @@ struct ReaderImageMemoryCacheTests {
         #expect(YamiboUIImagePipeline.defaultEntryCostLimit == 0.25)
     }
 
+    @Test func injectedMemoryCacheClearsOnlyItsOwnPipeline() async throws {
+        let provider = ReaderImageCacheDataProvider(data: try ReaderImageCacheFixture.png())
+        let firstCache = YamiboUIImageMemoryCache()
+        let first = YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: provider), memoryCache: firstCache)
+        let second = YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: provider))
+        let source = ReaderImageCacheFixture.source(0)
+        _ = try await first.image(for: source)
+        _ = try await second.image(for: source)
+
+        await firstCache.removeAllCachedData()
+
+        #expect(first.cachedImage(for: source) == nil)
+        #expect(second.cachedImage(for: source) != nil)
+        #expect(await firstCache.totalDiskUsageBytes() == 0)
+        await second.clearCache()
+    }
+
+    @Test func sameSourceUsesEachPipelinesOwnImageData() async throws {
+        let firstProvider = ReaderImageCacheDataProvider(data: try ReaderImageCacheFixture.png(width: 16))
+        let secondProvider = ReaderImageCacheDataProvider(data: try ReaderImageCacheFixture.png(width: 32))
+        let first = YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: firstProvider))
+        let second = YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: secondProvider))
+        let source = ReaderImageCacheFixture.source(0)
+
+        #expect(try await first.image(for: source).cgImage?.width == 16)
+        #expect(try await second.image(for: source).cgImage?.width == 32)
+        #expect(first.cachedImage(for: source)?.cgImage?.width == 16)
+        #expect(await firstProvider.callCount == 1)
+        #expect(await secondProvider.callCount == 1)
+    }
+
     @Test func singleEntryLimitUsesDecodedCostAndRejectsTheBoundary() async throws {
         let data = try ReaderImageCacheFixture.png()
         let cost = try await decodedCost(data)

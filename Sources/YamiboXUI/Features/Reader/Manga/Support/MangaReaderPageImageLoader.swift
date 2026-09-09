@@ -13,7 +13,7 @@ final class MangaReaderPageImageLoader {
 
     init(
         imageSource: @escaping (MangaReaderPageProjection) -> YamiboImageSource,
-        uiImagePipeline: YamiboUIImagePipeline = .shared
+        uiImagePipeline: YamiboUIImagePipeline
     ) {
         self.imageSource = imageSource
         self.uiImagePipeline = uiImagePipeline
@@ -32,11 +32,7 @@ final class MangaReaderPageImageLoader {
     }
 
     func makePrefetchCoordinator() -> ReaderImagePrefetchCoordinator {
-        let pipeline = uiImagePipeline
-        return ReaderImagePrefetchCoordinator(
-            isCached: { pipeline.cachedImage(for: $0) != nil },
-            load: { _ = try await pipeline.image(for: $0, priority: .low) }
-        )
+        ReaderImagePrefetchCoordinator(pipeline: uiImagePipeline)
     }
 
     func image(for page: MangaReaderPageProjection) async throws -> UIImage {

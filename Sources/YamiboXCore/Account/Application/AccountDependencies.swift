@@ -10,6 +10,7 @@ public struct AccountDependencies: Sendable {
     public let checkInStore: YamiboCheckInStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let offlineCacheStore: any OfflineCacheStoring
+    public let imagePipeline: any YamiboImageDataLoading
     public let makeAccountService: @Sendable () -> YamiboAccountService
     public let makeCheckInService: @Sendable () -> any YamiboCheckInServicing
     public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
@@ -23,7 +24,8 @@ public struct AccountDependencies: Sendable {
         offlineCacheStore: any OfflineCacheStoring,
         makeAccountService: @escaping @Sendable () -> YamiboAccountService,
         makeCheckInService: @escaping @Sendable () -> any YamiboCheckInServicing,
-        makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor
+        makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
+        imagePipeline: (any YamiboImageDataLoading)? = nil
     ) {
         self.sessionStore = sessionStore
         self.profileStore = profileStore
@@ -31,6 +33,10 @@ public struct AccountDependencies: Sendable {
         self.checkInStore = checkInStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.offlineCacheStore = offlineCacheStore
+        self.imagePipeline = imagePipeline ?? YamiboImagePipeline(
+            sessionStore: sessionStore,
+            offlineImages: offlineCacheStore
+        )
         self.makeAccountService = makeAccountService
         self.makeCheckInService = makeCheckInService
         self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor

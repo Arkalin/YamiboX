@@ -48,6 +48,7 @@ enum ImageBrowserMode: Equatable {
 }
 
 struct ImageBrowserView: View {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
     let items: [ImageBrowserItem]
     let mode: ImageBrowserMode
     let presentation: ImageBrowserPresentationStyle
@@ -248,11 +249,12 @@ struct ImageBrowserView: View {
     }
 
     private var currentShareable: ImageBrowserShareableImage? {
-        guard let currentItem else { return nil }
+        guard let currentItem, let imagePipeline else { return nil }
         return ImageBrowserShareableImage(
             source: currentItem.source,
             fileExtension: preferredImageExtension(for: currentItem),
-            title: currentItem.title
+            title: currentItem.title,
+            imageLoader: imagePipeline.dataLoader
         )
     }
 
@@ -335,7 +337,8 @@ struct ImageBrowserView: View {
     }
 
     private func imageData(for item: ImageBrowserItem) async throws -> Data {
-        try await YamiboImagePipeline.shared.data(for: item.source)
+        guard let imagePipeline else { throw YamiboUIImageLoadingError.missingPipeline }
+        return try await imagePipeline.dataLoader.data(for: item.source)
     }
 
     private func preferredImageExtension(for item: ImageBrowserItem) -> String {
@@ -412,6 +415,7 @@ private struct ImageBrowserContentView: View {
 }
 
 private struct ImageBrowserPageView: View {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
     let item: ImageBrowserItem
     /// Pages away from the current selection (0 = the visible page); drives
     /// windowed loading, since `.page` `TabView` builds every page up front.
@@ -429,6 +433,7 @@ private struct ImageBrowserPageView: View {
     @State private var failureDetails: LoadFailureDetails?
     private var didFail: Bool { failureDetails != nil }
     @State private var attempt = 0
+    @State private var loadedIdentity: YamiboUIImageRequestIdentity?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
 
@@ -461,7 +466,7 @@ private struct ImageBrowserPageView: View {
                 }
             )
         }
-        .task(id: "\(item.source.cacheKey)#\(attempt)#\(isWithinLoadWindow)") {
+        .task(id: LoadIdentity(image: requestIdentity, attempt: attempt, isWithinLoadWindow: isWithinLoadWindow)) {
             await load()
         }
         .task(id: animationIdentity) {
@@ -498,7 +503,23 @@ private struct ImageBrowserPageView: View {
         scenePhase == .active && playsAnimatedImages
     }
 
+    private struct LoadIdentity: Hashable {
+        let image: YamiboUIImageRequestIdentity
+        let attempt: Int
+        let isWithinLoadWindow: Bool
+    }
+
+    private var requestIdentity: YamiboUIImageRequestIdentity {
+        .init(cacheKey: item.source.cacheKey, pipelineID: imagePipeline.map(ObjectIdentifier.init))
+    }
+
     private func load() async {
+        if loadedIdentity != requestIdentity {
+            image = nil
+            animatedData = nil
+            animationFrame = nil
+            loadedIdentity = requestIdentity
+        }
         guard isWithinLoadWindow, image == nil else { return }
         failureDetails = nil
         if let localDataProvider = item.localDataProvider,
@@ -510,7 +531,8 @@ private struct ImageBrowserPageView: View {
             return
         }
         do {
-            let loaded = try await YamiboUIImagePipeline.shared.displayImage(for: item.source)
+            guard let imagePipeline else { throw YamiboUIImageLoadingError.missingPipeline }
+            let loaded = try await imagePipeline.displayImage(for: item.source)
             guard !Task.isCancelled else { return }
             image = loaded.image
             animatedData = loaded.animatedData
@@ -967,10 +989,11 @@ private struct ImageBrowserShareableImage: Transferable {
     let source: YamiboImageSource
     let fileExtension: String
     let title: String
+    let imageLoader: any YamiboImageDataLoading
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .image) { shareable in
-            let data = try await YamiboImagePipeline.shared.data(for: shareable.source)
+            let data = try await shareable.imageLoader.data(for: shareable.source)
             let fileURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension(shareable.fileExtension)
