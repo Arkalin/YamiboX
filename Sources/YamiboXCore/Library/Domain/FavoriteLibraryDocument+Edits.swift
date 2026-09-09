@@ -1,9 +1,13 @@
 import Foundation
-import YamiboXCore
+
+public enum CategoryMoveDirection: Sendable {
+    case up
+    case down
+}
 
 /// Batch item edits used by the favorites organizer when applying
 /// selection-based operations to the library document.
-extension FavoriteLibraryDocument {
+public extension FavoriteLibraryDocument {
     mutating func moveItems(
         ids selectedIDs: Set<String>,
         to destination: FavoriteLocation,

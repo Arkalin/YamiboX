@@ -357,7 +357,7 @@ extension FavoriteLibraryOrganizer {
     ) async {
         removeRemotePrompt = nil
         if remember {
-            await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+            await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
         }
         switch prompt.subject {
         case let .item(item):
@@ -415,26 +415,12 @@ extension FavoriteLibraryOrganizer {
             selection.exitSelectionMode()
             return
         }
-        let source = selectionSourceLocation
-        let deleter = remoteDeleter
-        let committed: Void? = await commit { document in
-            switch scope {
-            case .currentLocation:
-                document.removeItems(ids: favoriteIDs, from: source)
-            case .everywhere:
-                let selectedItems = document.items.filter { favoriteIDs.contains($0.id) }
-                if removeRemote {
-                    try await deleter.deleteRemoteFavorites(for: selectedItems)
-                }
-                for item in selectedItems {
-                    document.removeItem(target: item.target)
-                }
-                for collectionID in collectionIDs {
-                    document.dissolveCollection(id: collectionID)
-                }
-            }
-        }
-        guard committed != nil else { return }
+        let committed = await deleteFavorites(FavoriteDeletionRequest(
+            favoriteIDs: favoriteIDs,
+            collectionIDs: collectionIDs,
+            scope: deletionScope(scope, removeRemote: removeRemote)
+        ))
+        guard committed else { return }
         selection.exitSelectionMode()
     }
 }

@@ -1,7 +1,6 @@
 import Foundation
-import YamiboXCore
 
-protocol ForumThreadFavoriteRemoteOperating: Sendable {
+public protocol ForumThreadFavoriteRemoteOperating: Sendable {
     func addThreadFavorite(threadID: String, formHash: String?, resolveRemoteFavorite: Bool) async throws -> Favorite?
     func deleteFavorite(remoteFavoriteID: String) async throws
     func remoteFavorite(forThreadID threadID: String, maxPages: Int) async throws -> Favorite?
@@ -14,8 +13,8 @@ extension FavoriteRepository: ForumThreadFavoriteRemoteOperating {}
 /// favorite entry point routes through.
 ///
 /// Adding writes the local library first and reports the optional Yamibo push
-/// separately — a remote failure never rolls the local favorite back. Deleting
-/// with `removeRemote` inverts that: the remote delete runs first, so its
+/// separately — a remote failure never rolls the local favorite back. The
+/// quick `removeFavorite` command inverts that: the remote delete runs first, so its
 /// failure throws and leaves the local item intact (no half-deleted state).
 ///
 /// ## Terminology (add/import/push/sync boundaries)
@@ -34,9 +33,9 @@ extension FavoriteRepository: ForumThreadFavoriteRemoteOperating {}
 /// - **remove/delete** — local record removal; whether the Yamibo
 ///   counterpart is deleted too is a separate decision resolved through
 ///   `FavoriteRemoveRemoteDecision` (never implied by the operation itself).
-enum FavoriteQuickActions {
+public enum FavoriteCommands {
     /// Outcome of a Yamibo push attached to an add or single-item sync.
-    enum RemotePushResult: Equatable, Sendable {
+    public enum RemotePushResult: Equatable, Sendable {
         case notAttempted
         case synced
         /// Pushed to Yamibo, but the favorite id could not be resolved yet;
@@ -45,20 +44,13 @@ enum FavoriteQuickActions {
         case failed(String)
     }
 
-    struct AddResult: Sendable {
-        var favorite: Favorite
-        var remote: RemotePushResult
-        var failureDetails: LoadFailureDetails? = nil
-
-        var feedback: TransientFeedback {
-            if case .failed = remote {
-                return .failure(remote.addFeedbackMessage, details: failureDetails)
-            }
-            return TransientFeedback(message: remote.addFeedbackMessage)
-        }
+    public struct AddResult: Sendable {
+        public var favorite: Favorite
+        public var remote: RemotePushResult
+        public var failureDetails: LoadFailureDetails? = nil
     }
 
-    static func addFavorite(
+    public static func addFavorite(
         threadID: String,
         title: String,
         type: FavoriteType,
@@ -119,7 +111,7 @@ enum FavoriteQuickActions {
 
     /// With `removeRemote`, an unmapped favorite gets one remote lookup;
     /// finding nothing just means there is nothing to delete on the website.
-    static func removeFavorite(
+    public static func removeFavorite(
         _ favorite: Favorite,
         removeRemote: Bool,
         boardReaderSettings: BoardReaderSettings,
@@ -165,7 +157,7 @@ enum FavoriteQuickActions {
     /// without writing) for an empty `locations` — callers must route an
     /// empty selection through the normal remove flow instead, since a
     /// favorite can never end up with zero locations.
-    static func relocateFavorite(
+    public static func relocateFavorite(
         threadID: String,
         locations: [FavoriteLocation],
         localFavoriteLibraryStore: FavoriteLibraryStore
@@ -186,7 +178,7 @@ enum FavoriteQuickActions {
 
     /// Pushes one existing favorite item to Yamibo (favorites item menu's
     /// "sync to Yamibo" action).
-    static func pushFavoriteItemToYamibo(
+    public static func pushFavoriteItemToYamibo(
         _ item: FavoriteItem,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         remoteRepository: any ForumThreadFavoriteRemoteOperating
@@ -218,7 +210,7 @@ enum FavoriteQuickActions {
     /// write path for every entry point offering a remember variant (detail
     /// pages, thread reader, browsing history) and for the system settings
     /// UI's re-editable switches.
-    static func rememberAddSyncChoice(_ syncToRemote: Bool, settingsStore: SettingsStore) async {
+    public static func rememberAddSyncChoice(_ syncToRemote: Bool, settingsStore: SettingsStore) async {
         do {
             _ = try await settingsStore.update { settings in
                 settings.favorites.addSyncPromptEnabled = false
@@ -232,7 +224,7 @@ enum FavoriteQuickActions {
     /// Same shared write path for the delete flow's "also remove from
     /// Yamibo?" remembered choice, including the favorites page's
     /// delete-everywhere prompt.
-    static func rememberRemoveRemoteChoice(_ removeRemote: Bool, settingsStore: SettingsStore) async {
+    public static func rememberRemoveRemoteChoice(_ removeRemote: Bool, settingsStore: SettingsStore) async {
         do {
             _ = try await settingsStore.update { settings in
                 settings.favorites.removeRemotePromptEnabled = false
@@ -318,69 +310,5 @@ enum FavoriteQuickActions {
             return nil
         }
         return trimmed
-    }
-}
-
-/// Pending "also delete from Yamibo?" question raised by a remove action.
-struct FavoriteRemovePrompt: Identifiable, Equatable, Sendable {
-    let favorite: Favorite
-    var id: String { favorite.threadID }
-}
-
-extension FavoriteQuickActions.RemotePushResult {
-    /// Snackbar copy for the three-state add feedback.
-    var addFeedbackMessage: String {
-        switch self {
-        case .notAttempted:
-            L10n.string("favorites.quick.added_local")
-        case .synced:
-            L10n.string("favorites.quick.added_synced")
-        case .syncedWithoutMapping:
-            L10n.string("favorites.quick.added_synced_pending")
-        case let .failed(reason):
-            L10n.string("favorites.quick.added_sync_failed", reason)
-        }
-    }
-}
-
-/// Whether adding this favorite should ask about (or silently perform) the
-/// Yamibo push, resolved from the user's remembered choice.
-enum FavoriteAddSyncDecision: Equatable, Sendable {
-    case prompt
-    case silent(syncToRemote: Bool)
-
-    static func resolve(settings: FavoriteLibrarySettings, canSyncRemote: Bool) -> FavoriteAddSyncDecision {
-        guard canSyncRemote else { return .silent(syncToRemote: false) }
-        return settings.addSyncPromptEnabled ? .prompt : .silent(syncToRemote: settings.addSyncDefault)
-    }
-}
-
-/// Same resolution for the delete flow's "also remove from Yamibo" question.
-enum FavoriteRemoveRemoteDecision: Equatable, Sendable {
-    case prompt
-    case silent(removeRemote: Bool)
-
-    static func resolve(settings: FavoriteLibrarySettings, canRemoveRemote: Bool) -> FavoriteRemoveRemoteDecision {
-        guard canRemoveRemote else { return .silent(removeRemote: false) }
-        return settings.removeRemotePromptEnabled ? .prompt : .silent(removeRemote: settings.removeRemoteDefault)
-    }
-}
-
-/// Thread-favorite conversion shared by every favorite entry point (detail
-/// pages, thread reader, reader cache sheets).
-extension FavoriteItem {
-    func favorite(type: FavoriteType) -> Favorite {
-        guard let threadID = target.threadID else {
-            preconditionFailure("Thread favorite conversion requires thread target")
-        }
-        return Favorite(
-            id: id,
-            title: title,
-            displayName: displayName,
-            threadID: threadID,
-            remoteFavoriteID: remoteMapping?.yamiboFavoriteID,
-            type: type,
-            tagIDs: tagIDs
-        )
     }
 }

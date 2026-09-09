@@ -38,37 +38,6 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         XCTAssertEqual(organizer.derived.cards.count, 1)
     }
 
-    /// `moveItems`/`replaceTags` must only bump their field's merge clock
-    /// when the edit is a genuine change — a no-op (the move sheet's
-    /// tri-state "include" toggle re-applied to an item that's already a
-    /// member, or the tag editor's "done" button tapped without changing the
-    /// selection) must not spuriously outrun a real, unsynced edit from
-    /// another device in the next `FavoriteLibraryWebDAVMerger` round.
-    func testMoveItemsAndReplaceTagsDoNotBumpFieldClocksOnNoOpEdits() throws {
-        var document = FavoriteLibraryDocument()
-        let category = document.createCategory(name: "分类")
-        let tag = document.createTag(name: "标签", color: .blue)
-        let target = FavoriteItemTarget(kind: .normalThread, threadID: "9201")
-        let baseDate = Date(timeIntervalSince1970: 1100)
-        let item = try FavoriteItem(target: target, title: "收藏", locations: [.category(category.id)], tagIDs: [tag.id], updatedAt: baseDate)
-        document.upsertItem(item)
-        let locationsUpdatedAtBefore = try XCTUnwrap(document.items.first).locationsUpdatedAt
-        let tagIDsUpdatedAtBefore = try XCTUnwrap(document.items.first).tagIDsUpdatedAt
-
-        // Already a member of `category` — including it again is a no-op.
-        document.moveItems(ids: [target.id], to: .category(category.id), removing: nil)
-        XCTAssertEqual(try XCTUnwrap(document.items.first).locationsUpdatedAt, locationsUpdatedAtBefore)
-
-        // Tag set unchanged — re-confirming the same selection is a no-op.
-        document.replaceTags(for: [target.id], with: [tag.id])
-        XCTAssertEqual(try XCTUnwrap(document.items.first).tagIDsUpdatedAt, tagIDsUpdatedAtBefore)
-
-        // A genuine change still bumps the clock.
-        let otherCategory = document.createCategory(name: "另一分类")
-        document.moveItems(ids: [target.id], to: .category(otherCategory.id), removing: .category(category.id))
-        XCTAssertNotEqual(try XCTUnwrap(document.items.first).locationsUpdatedAt, locationsUpdatedAtBefore)
-    }
-
     func testSourceGroupFilterCountsRespectSearchAndTags() async throws {
         let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-source-filter")
         _ = try YamiboTestDefaults.make(suiteName: suiteName)
@@ -753,9 +722,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let recorder = FavoriteDeleteTestRecorder()
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -780,10 +747,14 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
         let loadedDocument = try await localFavoriteLibraryStore.load()
         let storedItem = try XCTUnwrap(loadedDocument.items.first { $0.target == target })
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertFalse(storedItem.locations.contains(.category(sourceCategory.id)))
         XCTAssertTrue(storedItem.locations.contains(.category(destinationCategory.id)))
-        XCTAssertEqual(recordedTargetIDs, [])
+        XCTAssertEqual(recordedRemoteFavoriteIDs, [])
+        let lookupThreadIDs = await recorder.recordedLookupThreadIDs()
+        XCTAssertTrue(lookupThreadIDs.isEmpty)
+        XCTAssertFalse(organizer.selection.isSelectionMode)
+        XCTAssertTrue(organizer.selection.selectedFavoriteIDs.isEmpty)
     }
 
     func testDeleteSelectionCurrentLocationDoesNotDissolveSelectedCollections() async throws {
@@ -836,9 +807,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let recorder = FavoriteDeleteTestRecorder(error: FavoriteActionError.favoriteDeleteFailed)
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -857,10 +826,43 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.deleteSelection(scope: .everywhere, removeRemote: true)
 
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNotNil(storedItem)
-        XCTAssertEqual(recordedTargetIDs, [target.id])
+        XCTAssertEqual(recordedRemoteFavoriteIDs, ["remote-\(target.threadID ?? "")"])
         XCTAssertNotNil(organizer.errorMessage)
+        XCTAssertTrue(organizer.selection.isSelectionMode)
+        XCTAssertEqual(organizer.selection.selectedFavoriteIDs, [target.id])
+    }
+
+    func testDeleteSelectionCancellationPreservesSelectionWithoutError() async throws {
+        let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-delete-cancellation")
+        let store = FavoriteLibraryStore(
+            defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
+            key: "local-favorites"
+        )
+        let recorder = FavoriteDeleteTestRecorder(error: CancellationError())
+        let organizer = try makeOrganizer(libraryStore: store, remoteRepository: recorder)
+        var document = try await store.load()
+        let target = FavoriteItemTarget(kind: .normalThread, threadID: "953-cancel")
+        document.upsertItem(try FavoriteItem(
+            target: target,
+            title: "Cancelled remote deletion",
+            remoteMapping: FavoriteRemoteMapping(yamiboFavoriteID: "remote-953-cancel"),
+            locations: [.category(document.defaultCategory.id)]
+        ))
+        try await store.save(document)
+        await organizer.load()
+        organizer.selection.toggleFavoriteSelection(id: target.id)
+
+        await organizer.deleteSelection(scope: .everywhere, removeRemote: true)
+
+        let storedItem = try await store.load().items.first { $0.target == target }
+        let deletedIDs = await recorder.recordedRemoteFavoriteIDs()
+        XCTAssertNotNil(storedItem)
+        XCTAssertEqual(deletedIDs, ["remote-953-cancel"])
+        XCTAssertTrue(organizer.selection.isSelectionMode)
+        XCTAssertEqual(organizer.selection.selectedFavoriteIDs, [target.id])
+        XCTAssertNil(organizer.errorMessage)
     }
 
     func testEverywhereDeleteFallsBackToRemoteFavoriteLookupWhenMappingIDIsMissing() async throws {
@@ -949,9 +951,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             settingsStore: settingsStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -970,9 +970,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.requestDeleteItem(item, scope: .everywhere)
 
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(storedItem)
-        XCTAssertTrue(recordedTargetIDs.isEmpty)
+        XCTAssertTrue(recordedRemoteFavoriteIDs.isEmpty)
         XCTAssertNil(organizer.removeRemotePrompt)
         XCTAssertNil(organizer.errorMessage)
     }
@@ -996,9 +996,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             settingsStore: settingsStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -1017,9 +1015,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.requestDeleteItem(item, scope: .everywhere)
 
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(storedItem)
-        XCTAssertEqual(recordedTargetIDs, [target.id])
+        XCTAssertEqual(recordedRemoteFavoriteIDs, ["remote-\(target.threadID ?? "")"])
         XCTAssertNil(organizer.removeRemotePrompt)
     }
 
@@ -1038,9 +1036,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             settingsStore: settingsStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -1062,7 +1058,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         // been deleted anywhere until the user answers.
         XCTAssertNotNil(organizer.removeRemotePrompt)
         let itemBeforeConfirm = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedBeforeConfirm = await recorder.recordedTargetIDs()
+        let recordedBeforeConfirm = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNotNil(itemBeforeConfirm)
         XCTAssertTrue(recordedBeforeConfirm.isEmpty)
 
@@ -1072,9 +1068,9 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
 
         XCTAssertNil(organizer.removeRemotePrompt)
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(storedItem)
-        XCTAssertEqual(recordedTargetIDs, [target.id])
+        XCTAssertEqual(recordedRemoteFavoriteIDs, ["remote-\(target.threadID ?? "")"])
         let favorites = await settingsStore.load().favorites
         XCTAssertFalse(favorites.removeRemotePromptEnabled)
         XCTAssertTrue(favorites.removeRemoteDefault)
@@ -1092,9 +1088,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let recorder = FavoriteDeleteTestRecorder()
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -1112,10 +1106,10 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.requestDeleteItem(item, scope: .everywhere)
 
         let storedItem = try await localFavoriteLibraryStore.load().items.first { $0.target == target }
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(organizer.removeRemotePrompt)
         XCTAssertNil(storedItem)
-        XCTAssertTrue(recordedTargetIDs.isEmpty)
+        XCTAssertTrue(recordedRemoteFavoriteIDs.isEmpty)
     }
 
     func testRequestDeleteSelectionPromptAppliesChoiceToWholeBatch() async throws {
@@ -1133,9 +1127,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             settingsStore: settingsStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
 
@@ -1168,10 +1160,10 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: false, remember: false)
 
         let loadedDocument = try await localFavoriteLibraryStore.load()
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(loadedDocument.items.first { $0.target == firstTarget })
         XCTAssertNil(loadedDocument.items.first { $0.target == secondTarget })
-        XCTAssertTrue(recordedTargetIDs.isEmpty)
+        XCTAssertTrue(recordedRemoteFavoriteIDs.isEmpty)
         XCTAssertFalse(organizer.selection.isSelectionMode)
         // A one-off answer without "remember" must leave the ask-me switch on.
         let favorites = await settingsStore.load().favorites
@@ -1224,9 +1216,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         let organizer = try makeOrganizer(
             libraryStore: localFavoriteLibraryStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            remoteFavoriteDeleteHandler: { items in
-                try await recorder.record(items)
-            }
+            remoteRepository: recorder
         )
         await organizer.load()
         XCTAssertTrue(organizer.smartMangaBulkDeleteEnabled)
@@ -1259,10 +1249,10 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
         await organizer.confirmRemoveRemotePrompt(prompt, removeRemote: true, remember: false)
 
         let loadedDocument = try await localFavoriteLibraryStore.load()
-        let recordedTargetIDs = await recorder.recordedTargetIDs()
+        let recordedRemoteFavoriteIDs = await recorder.recordedRemoteFavoriteIDs()
         XCTAssertNil(loadedDocument.items.first { $0.target == firstTarget })
         XCTAssertNil(loadedDocument.items.first { $0.target == secondTarget })
-        XCTAssertTrue(recordedTargetIDs.contains(siblingTarget.id))
+        XCTAssertTrue(recordedRemoteFavoriteIDs.contains("remote-\(siblingTarget.threadID ?? "")"))
     }
 
     /// Phase E gap (smart-comic-mode design doc, Phase E's "两个不构成缺陷、
@@ -3205,7 +3195,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
             key: "local-favorites"
         )
 
-        _ = try await FavoriteQuickActions.addFavorite(
+        _ = try await FavoriteCommands.addFavorite(
             threadID: "902",
             title: "普通主题",
             type: .other,
@@ -3235,7 +3225,7 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
             defaults: try YamiboTestDefaults.defaults(suiteName: suiteName),
             key: "local-favorites"
         )
-        _ = try await FavoriteQuickActions.addFavorite(
+        _ = try await FavoriteCommands.addFavorite(
             threadID: "903",
             title: "小说主题",
             type: .novel,
@@ -3531,23 +3521,38 @@ final class FavoriteLibraryOrganizerTests: XCTestCase {
     }
 }
 
-private actor FavoriteDeleteTestRecorder {
-    private var targetIDs: [String] = []
+private actor FavoriteDeleteTestRecorder: ForumThreadFavoriteRemoteOperating {
+    private var remoteFavoriteIDs: [String] = []
+    private var lookupThreadIDs: [String] = []
     private let error: Error?
 
     init(error: Error? = nil) {
         self.error = error
     }
 
-    func record(_ items: [FavoriteItem]) throws {
-        targetIDs.append(contentsOf: items.map(\.id))
+    func addThreadFavorite(threadID: String, formHash: String?, resolveRemoteFavorite: Bool) async throws -> Favorite? {
+        XCTFail("Delete tests must not add a remote favorite")
+        return nil
+    }
+
+    func deleteFavorite(remoteFavoriteID: String) async throws {
+        remoteFavoriteIDs.append(remoteFavoriteID)
         if let error {
             throw error
         }
     }
 
-    func recordedTargetIDs() -> [String] {
-        targetIDs
+    func remoteFavorite(forThreadID threadID: String, maxPages: Int) async throws -> Favorite? {
+        lookupThreadIDs.append(threadID)
+        return nil
+    }
+
+    func recordedRemoteFavoriteIDs() -> [String] {
+        remoteFavoriteIDs
+    }
+
+    func recordedLookupThreadIDs() -> [String] {
+        lookupThreadIDs
     }
 }
 
@@ -3651,7 +3656,7 @@ private func makeOrganizer(
     mangaDirectoryStore: MangaDirectoryStore? = nil,
     makeForumThreadReaderRepository: (@Sendable () async -> ForumThreadReaderRepository)? = nil,
     session: URLSession? = nil,
-    remoteFavoriteDeleteHandler: (([FavoriteItem]) async throws -> Void)? = nil
+    remoteRepository: (any ForumThreadFavoriteRemoteOperating)? = nil
 ) throws -> FavoriteLibraryOrganizer {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "favorite-organizer-deps")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
@@ -3666,14 +3671,14 @@ private func makeOrganizer(
         mangaDirectoryStore: mangaDirectoryStore,
         makeForumThreadReaderRepository: makeForumThreadReaderRepository,
         makeFavoriteRepository: {
+            if let remoteRepository { return remoteRepository }
             let sessionState = await sessionStore.load()
             return FavoriteRepository(client: YamiboClient(
                 session: resolvedSession,
                 cookie: sessionState.cookie,
                 userAgent: sessionState.userAgent
             ))
-        },
-        remoteFavoriteDeleteHandler: remoteFavoriteDeleteHandler
+        }
     )
 }
 

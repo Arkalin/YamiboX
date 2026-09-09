@@ -16,7 +16,7 @@ public struct FavoriteRemotePage: Sendable {
 /// Remote-only gateway to the Yamibo website's favorite list — every method
 /// here is an HTTP operation; none touches the local `FavoriteLibraryStore`.
 /// Despite the shared `add`/`delete` word roots, do not confuse these with
-/// the UI action layer's local-first orchestration (`FavoriteQuickActions`,
+/// the application layer's local-first orchestration (`FavoriteCommands`,
 /// which owns the add/import/push/sync terminology glossary).
 public actor FavoriteRepository {
     private let client: YamiboClient

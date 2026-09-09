@@ -351,7 +351,7 @@ final class BrowsingHistoryViewModel {
         let locations = pendingFavoriteLocations
         pendingFavoriteLocations = nil
         do {
-            let result = try await FavoriteQuickActions.addFavorite(
+            let result = try await FavoriteCommands.addFavorite(
                 threadID: threadID,
                 title: favoriteTitle(for: entry),
                 type: .other,
@@ -378,7 +378,7 @@ final class BrowsingHistoryViewModel {
 
     private func performFavoriteRelocate(threadID: String, locations: [FavoriteLocation]) async {
         do {
-            try await FavoriteQuickActions.relocateFavorite(
+            try await FavoriteCommands.relocateFavorite(
                 threadID: threadID,
                 locations: locations,
                 localFavoriteLibraryStore: favoriteLibraryStore
@@ -394,7 +394,7 @@ final class BrowsingHistoryViewModel {
 
     private func performFavoriteRemoval(_ favorite: Favorite, removeRemote: Bool) async {
         do {
-            try await FavoriteQuickActions.removeFavorite(
+            try await FavoriteCommands.removeFavorite(
                 favorite,
                 removeRemote: removeRemote,
                 boardReaderSettings: await settingsStore.load().boardReader,
@@ -466,11 +466,11 @@ final class BrowsingHistoryViewModel {
     }
 
     private func rememberAddSyncChoice(_ syncToRemote: Bool) async {
-        await FavoriteQuickActions.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
+        await FavoriteCommands.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
     }
 
     private func rememberRemoveRemoteChoice(_ removeRemote: Bool) async {
-        await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+        await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
     }
 }
 

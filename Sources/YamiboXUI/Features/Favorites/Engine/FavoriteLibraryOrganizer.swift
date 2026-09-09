@@ -2,11 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-enum CategoryMoveDirection: Sendable {
-    case up
-    case down
-}
-
 enum LocalFavoriteDeleteScope: Equatable {
     case currentLocation
     case everywhere
@@ -136,8 +131,7 @@ final class FavoriteLibraryOrganizer {
     let mangaDirectoryStore: MangaDirectoryStore?
     private let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     let makeForumThreadReaderRepository: (@Sendable () async -> ForumThreadReaderRepository)?
-    private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
-    let remoteDeleter: YamiboRemoteFavoriteDeleter
+    private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
 
     @ObservationIgnored private var readingProgress: [ReadingProgressRecord] = []
     /// Resolved cover URLs and text-cover-forced flags for everything the
@@ -198,8 +192,7 @@ final class FavoriteLibraryOrganizer {
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
         mangaDirectoryStore: MangaDirectoryStore? = nil,
         makeForumThreadReaderRepository: (@Sendable () async -> ForumThreadReaderRepository)? = nil,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        remoteFavoriteDeleteHandler: (([FavoriteItem]) async throws -> Void)? = nil
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     ) {
         self.libraryStore = libraryStore
         self.readingProgressStore = readingProgressStore
@@ -209,10 +202,6 @@ final class FavoriteLibraryOrganizer {
         self.mangaDirectoryStore = mangaDirectoryStore
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeFavoriteRepository = makeFavoriteRepository
-        remoteDeleter = YamiboRemoteFavoriteDeleter(
-            makeFavoriteRepository: makeFavoriteRepository,
-            overrideHandler: remoteFavoriteDeleteHandler
-        )
         libraryUpdatesTask = StoreChangeObservation.task(
             changes: { [store = libraryStore] in store.changes() },
             changeID: { [store = libraryStore] in store.changeID }
@@ -573,7 +562,7 @@ final class FavoriteLibraryOrganizer {
     func pushItemToYamibo(_ item: FavoriteItem) async {
         do {
             let repository = await makeFavoriteRepository()
-            let result = try await FavoriteQuickActions.pushFavoriteItemToYamibo(
+            let result = try await FavoriteCommands.pushFavoriteItemToYamibo(
                 item,
                 localFavoriteLibraryStore: libraryStore,
                 remoteRepository: repository
@@ -779,23 +768,39 @@ final class FavoriteLibraryOrganizer {
     // MARK: - Items
 
     func deleteItem(_ item: FavoriteItem, scope: LocalFavoriteDeleteScope, removeRemote: Bool) async {
-        let currentLocation = selectionSourceLocation
-        let deleter = remoteDeleter
-        await commit { document in
-            guard let latestItem = document.items.first(where: { $0.id == item.id }) else {
-                throw CommitAbort()
-            }
-            switch scope {
-            case .currentLocation:
-                if latestItem.locations.count > 1 {
-                    _ = document.removeLocation(currentLocation, from: latestItem.target)
-                }
-            case .everywhere:
-                if removeRemote {
-                    try await deleter.deleteRemoteFavorites(for: [latestItem])
-                }
-                document.removeItem(target: latestItem.target)
-            }
+        do {
+            guard let updatedDocument = try await FavoriteCommands.deleteFavorite(
+                id: item.id,
+                scope: deletionScope(scope, removeRemote: removeRemote),
+                localFavoriteLibraryStore: libraryStore,
+                makeRemoteRepository: makeFavoriteRepository
+            ) else { return }
+            document = updatedDocument
+            errorMessage = nil
+        } catch {
+            presentCommitFailure(error)
+        }
+    }
+
+    func deleteFavorites(_ request: FavoriteDeletionRequest) async -> Bool {
+        do {
+            document = try await FavoriteCommands.deleteFavorites(
+                request,
+                localFavoriteLibraryStore: libraryStore,
+                makeRemoteRepository: makeFavoriteRepository
+            )
+            errorMessage = nil
+            return true
+        } catch {
+            presentCommitFailure(error)
+            return false
+        }
+    }
+
+    func deletionScope(_ scope: LocalFavoriteDeleteScope, removeRemote: Bool) -> FavoriteDeletionRequest.Scope {
+        switch scope {
+        case .currentLocation: .currentLocation(selectionSourceLocation)
+        case .everywhere: .everywhere(removeRemote: removeRemote)
         }
     }
 
@@ -954,37 +959,31 @@ final class FavoriteLibraryOrganizer {
 
     // MARK: - Commit
 
-    private struct CommitAbort: Error {}
-
-    /// Loads the latest document, applies `transform`, saves, and republishes.
-    /// Throwing aborts without saving; errors surface through `errorMessage`.
-    /// A failed load aborts the same way — the transform must never run
-    /// against a placeholder document, or the save would wipe the library.
-    /// (The transform can await remote work, so this stays load-modify-save
-    /// rather than `FavoriteLibraryStore.update`.)
+    /// Applies local edits atomically against the latest persisted document.
+    /// Network-backed commands commit separately through FavoriteCommands.
     @discardableResult
-    func commit<Result>(
-        _ transform: (inout FavoriteLibraryDocument) async throws -> Result
+    func commit<Result: Sendable>(
+        _ transform: @escaping @Sendable (inout FavoriteLibraryDocument) throws -> Result
     ) async -> Result? {
         do {
-            var updatedDocument = try await libraryStore.load()
-            let result = try await transform(&updatedDocument)
-            try await libraryStore.save(updatedDocument)
+            let (result, updatedDocument) = try await libraryStore.update { document in
+                let result = try transform(&document)
+                return (result, document)
+            }
             document = updatedDocument
             errorMessage = nil
             return result
-        } catch is CommitAbort {
-            return nil
-        } catch is CancellationError {
-            return nil
         } catch {
-            YamiboLog.persistence.error("Favorite library document commit failed: \(error.localizedDescription)")
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
+            presentCommitFailure(error)
             return nil
         }
+    }
+
+    private func presentCommitFailure(_ error: any Error) {
+        guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+        YamiboLog.persistence.error("Favorite library document commit failed: \(error.localizedDescription)")
+        errorMessage = error.localizedDescription
+        errorDetails = LoadFailureDetails(error: error)
     }
 
     var selectionSourceLocation: FavoriteLocation {

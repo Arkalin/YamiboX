@@ -5,7 +5,7 @@ import YamiboXCore
 /// The favorite-star orchestration shared by the content detail pages: routes
 /// the button through the remembered add/remove sync decisions, owns the
 /// location-picker and prompt state, performs the local-first add / remove /
-/// relocate calls via `FavoriteQuickActions`, and keeps `favorite` fresh by
+/// relocate calls via `FavoriteCommands`, and keeps `favorite` fresh by
 /// observing the favorite library store.
 ///
 /// Media differences stay with the owner: the add metadata (title, author,
@@ -131,7 +131,7 @@ final class FavoriteActionController {
     func confirmAdd(syncToRemote: Bool, remember: Bool) async {
         addPromptPresented = false
         if remember {
-            await FavoriteQuickActions.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
+            await FavoriteCommands.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
         }
         await performAdd(syncToRemote: syncToRemote)
     }
@@ -139,7 +139,7 @@ final class FavoriteActionController {
     func confirmRemoval(_ favorite: Favorite, removeRemote: Bool, remember: Bool) async {
         removePrompt = nil
         if remember {
-            await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+            await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
         }
         await performRemoval(favorite, removeRemote: removeRemote)
     }
@@ -210,7 +210,7 @@ final class FavoriteActionController {
         pendingLocations = nil
         do {
             let metadata = await makeAddMetadata?() ?? AddMetadata(title: defaultTitle)
-            let result = try await FavoriteQuickActions.addFavorite(
+            let result = try await FavoriteCommands.addFavorite(
                 threadID: threadID,
                 title: metadata.title,
                 type: type,
@@ -240,7 +240,7 @@ final class FavoriteActionController {
 
     private func performRelocate(_ locations: [FavoriteLocation]) async {
         do {
-            try await FavoriteQuickActions.relocateFavorite(
+            try await FavoriteCommands.relocateFavorite(
                 threadID: threadID,
                 locations: locations,
                 localFavoriteLibraryStore: localFavoriteLibraryStore
@@ -256,7 +256,7 @@ final class FavoriteActionController {
 
     private func performRemoval(_ favorite: Favorite, removeRemote: Bool) async {
         do {
-            try await FavoriteQuickActions.removeFavorite(
+            try await FavoriteCommands.removeFavorite(
                 favorite,
                 removeRemote: removeRemote,
                 boardReaderSettings: await settingsStore.load().boardReader,

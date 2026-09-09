@@ -408,7 +408,7 @@ final class ForumThreadReaderViewModel {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
                 throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
-            let result = try await FavoriteQuickActions.addFavorite(
+            let result = try await FavoriteCommands.addFavorite(
                 threadID: context.thread.tid,
                 title: favoriteTitle,
                 type: .other,
@@ -454,7 +454,7 @@ final class ForumThreadReaderViewModel {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
                 throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
-            try await FavoriteQuickActions.removeFavorite(
+            try await FavoriteCommands.removeFavorite(
                 favorite,
                 removeRemote: removeRemote,
                 boardReaderSettings: await boardReaderSettings(),
@@ -479,7 +479,7 @@ final class ForumThreadReaderViewModel {
             guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
                 throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
             }
-            try await FavoriteQuickActions.relocateFavorite(
+            try await FavoriteCommands.relocateFavorite(
                 threadID: context.thread.tid,
                 locations: locations,
                 localFavoriteLibraryStore: localFavoriteLibraryStore
@@ -556,12 +556,12 @@ final class ForumThreadReaderViewModel {
 
     private func rememberAddSyncChoice(_ syncToRemote: Bool) async {
         guard let settingsStore = await settingsStoreProvider() else { return }
-        await FavoriteQuickActions.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
+        await FavoriteCommands.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
     }
 
     private func rememberRemoveRemoteChoice(_ removeRemote: Bool) async {
         guard let settingsStore = await settingsStoreProvider() else { return }
-        await FavoriteQuickActions.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+        await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
     }
 
     func loadRatingResults(postID: String) async throws -> ForumThreadRatingResultsPage {

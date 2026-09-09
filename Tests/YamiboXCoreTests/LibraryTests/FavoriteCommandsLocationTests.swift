@@ -1,13 +1,12 @@
 import XCTest
 @testable import YamiboXCore
 import YamiboXTestSupport
-@testable import YamiboXUI
 
 /// Covers the long-press "choose favorite location" feature's two new
-/// `FavoriteQuickActions` surfaces: `addFavorite(locations:)` and
+/// `FavoriteCommands` surfaces: `addFavorite(locations:)` and
 /// `relocateFavorite`.
 @MainActor
-final class FavoriteQuickActionsLocationTests: XCTestCase {
+final class FavoriteCommandsLocationTests: XCTestCase {
     func testAddFavoriteWithExplicitLocationsFilesUnderThoseLocationsNotDefaultCategory() async throws {
         let store = try makeStore(prefix: "quick-actions-add-explicit-locations")
         var document = try await store.load()
@@ -15,7 +14,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
         let collection = document.createCollection(categoryID: category.id, name: "合集A")
         try await store.save(document)
 
-        _ = try await FavoriteQuickActions.addFavorite(
+        _ = try await FavoriteCommands.addFavorite(
             threadID: "8001",
             title: "指定位置收藏",
             type: .manga,
@@ -39,7 +38,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
     func testAddFavoriteWithNilLocationsFallsBackToDefaultCategory() async throws {
         let store = try makeStore(prefix: "quick-actions-add-nil-locations")
 
-        _ = try await FavoriteQuickActions.addFavorite(
+        _ = try await FavoriteCommands.addFavorite(
             threadID: "8002",
             title: "默认位置收藏",
             type: .manga,
@@ -59,7 +58,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
     func testAddFavoriteWithEmptyLocationsArrayFallsBackToDefaultCategory() async throws {
         let store = try makeStore(prefix: "quick-actions-add-empty-locations")
 
-        _ = try await FavoriteQuickActions.addFavorite(
+        _ = try await FavoriteCommands.addFavorite(
             threadID: "8003",
             title: "空选择收藏",
             type: .manga,
@@ -90,7 +89,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
         ))
         try await store.save(document)
 
-        try await FavoriteQuickActions.relocateFavorite(
+        try await FavoriteCommands.relocateFavorite(
             threadID: "8004",
             locations: [.category(categoryB.id)],
             localFavoriteLibraryStore: store
@@ -116,7 +115,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
         try await store.save(document)
 
         // Drop B, keep A, add C.
-        try await FavoriteQuickActions.relocateFavorite(
+        try await FavoriteCommands.relocateFavorite(
             threadID: "8005",
             locations: [.category(categoryA.id), .category(categoryC.id)],
             localFavoriteLibraryStore: store
@@ -139,7 +138,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
         ))
         try await store.save(document)
 
-        try await FavoriteQuickActions.relocateFavorite(
+        try await FavoriteCommands.relocateFavorite(
             threadID: "8006",
             locations: [],
             localFavoriteLibraryStore: store
@@ -154,7 +153,7 @@ final class FavoriteQuickActionsLocationTests: XCTestCase {
         let store = try makeStore(prefix: "quick-actions-relocate-unknown")
 
         // Must not throw even though nothing matches this thread id.
-        try await FavoriteQuickActions.relocateFavorite(
+        try await FavoriteCommands.relocateFavorite(
             threadID: "does-not-exist",
             locations: [.category(FavoriteCategory.defaultID)],
             localFavoriteLibraryStore: store
