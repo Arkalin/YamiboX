@@ -89,6 +89,27 @@ struct SystemSettingsTests {
         #expect(await store.load().appearance.themePreset == .classic)
     }
 
+    @Test func atomicUpdatesPreserveIndependentFieldsFromConcurrentWriters() async throws {
+        let suiteName = "settings-atomic-writers-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults, key: "settings")
+
+        async let home = store.update { $0.system.homePage = .favorites }
+        async let theme = store.update { $0.appearance.themePreset = .rose }
+        async let novel = store.update { $0.novelReader.fontScale = 1.2 }
+        async let manga = store.update { $0.manga.brightness = 0.6 }
+        async let layout = store.update { $0.favorites.layoutMode = .fixedGrid }
+        _ = try await (home, theme, novel, manga, layout)
+
+        let saved = await store.load()
+        #expect(saved.system.homePage == .favorites)
+        #expect(saved.appearance.themePreset == .rose)
+        #expect(saved.novelReader.fontScale == 1.2)
+        #expect(saved.manga.brightness == 0.6)
+        #expect(saved.favorites.layoutMode == .fixedGrid)
+    }
+
     @Test func appAppearanceStaysLocalWhenApplyingWebDAVSettings() {
         let local = AppSettings(appearance: .init(themePreset: .rose))
         let synced = WebDAVSyncedAppSettings(settings: local)

@@ -20,9 +20,9 @@ public actor SettingsStore {
         storage.load(default: AppSettings())
     }
 
+    /// Replaces the whole snapshot. Field-level edits should use `update`.
     public func save(_ settings: AppSettings) async throws {
-        try storage.save(settings)
-        postChangeNotification()
+        try persist(settings)
     }
 
     public func reset() async throws {
@@ -41,7 +41,7 @@ public actor SettingsStore {
         let original = settings
         mutate(&settings)
         if settings != original {
-            try await save(settings)
+            try persist(settings)
         }
         return settings
     }
@@ -62,6 +62,11 @@ public actor SettingsStore {
         UserDefaultsJSONStorage(defaults: defaults, key: key) { error in
             YamiboLog.persistence.error("Failed to decode persisted app settings, resetting to defaults: \(error)")
         }
+    }
+
+    private func persist(_ settings: AppSettings) throws {
+        try storage.save(settings)
+        postChangeNotification()
     }
 
     private nonisolated func postChangeNotification() {

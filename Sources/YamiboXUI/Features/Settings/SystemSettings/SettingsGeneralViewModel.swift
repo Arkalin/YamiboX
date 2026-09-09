@@ -6,10 +6,6 @@ import YamiboXCore
 @MainActor
 @Observable
 final class SettingsGeneralViewModel: AppSettingsPersisting {
-    typealias AtomicSettingsUpdater = @Sendable (
-        _ mutate: @Sendable (inout AppSettings) -> Void
-    ) async throws -> AppSettings
-
     var homePage: AppHomePage = .home
     var themePreset = AppThemePreset.classic
 
@@ -38,31 +34,13 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     }
 
     func updateHomePage(_ value: AppHomePage) {
-        persistSettings(\.homePage, to: value) { $0.system.homePage = value }
+        persistSettings(\.homePage, to: value, updateSettings: updateSettings) { $0.system.homePage = value }
     }
 
     func updateThemePreset(_ value: AppThemePreset) {
         guard themePreset != value else { return }
-        let previous = themePreset
-        themePreset = value
-
-        Task {
-            do {
-                let saved = try await updateSettings { settings in
-                    settings.appearance.themePreset = value
-                }
-                if themePreset == value {
-                    themePreset = saved.appearance.themePreset
-                }
-            } catch {
-                if themePreset == value {
-                    themePreset = previous
-                }
-                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                    errorMessage = error.localizedDescription
-                    errorDetails = LoadFailureDetails(error: error)
-                }
-            }
+        persistSettings(\.themePreset, to: value, updateSettings: updateSettings) {
+            $0.appearance.themePreset = value
         }
     }
 

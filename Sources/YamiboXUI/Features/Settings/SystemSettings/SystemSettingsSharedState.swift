@@ -17,6 +17,18 @@ import YamiboXCore
 @MainActor
 @Observable
 final class SystemSettingsActivity {
+    private struct SettingsEditKey: Hashable {
+        let ownerID: ObjectIdentifier
+        let keyPath: AnyKeyPath
+    }
+
+    private struct SettingsEdit {
+        let id: UUID
+        let rollback: @MainActor () -> Bool
+        var hasFailed = false
+    }
+
+    @ObservationIgnored private var settingsEdits: [SettingsEditKey: [SettingsEdit]] = [:]
     var activeAction: SystemSettingsAction?
     var errorMessage: String? {
         didSet { errorDetails = nil }
@@ -25,6 +37,40 @@ final class SystemSettingsActivity {
 
     var isBusy: Bool {
         activeAction != nil
+    }
+
+    func beginSettingsEdit(
+        owner: AnyObject,
+        keyPath: AnyKeyPath,
+        rollback: @escaping @MainActor () -> Bool
+    ) -> UUID {
+        let editID = UUID()
+        let key = SettingsEditKey(ownerID: ObjectIdentifier(owner), keyPath: keyPath)
+        settingsEdits[key, default: []].append(SettingsEdit(id: editID, rollback: rollback))
+        return editID
+    }
+
+    func finishSettingsEdit(owner: AnyObject, keyPath: AnyKeyPath, editID: UUID, succeeded: Bool) {
+        let key = SettingsEditKey(ownerID: ObjectIdentifier(owner), keyPath: keyPath)
+        guard var edits = settingsEdits[key],
+              let index = edits.firstIndex(where: { $0.id == editID }) else { return }
+        if succeeded {
+            // A committed edit is the new rollback floor. Older failures
+            // cannot undo it, even when newer edits repeat an earlier value.
+            edits.removeFirst(index + 1)
+        } else {
+            edits[index].hasFailed = true
+            // A previous optimistic value may itself still be uncommitted.
+            // Retain that history until every newer failure is rolled back.
+            while let latest = edits.last, latest.hasFailed {
+                edits.removeLast()
+                guard latest.rollback() else {
+                    edits.removeAll()
+                    break
+                }
+            }
+        }
+        settingsEdits[key] = edits.isEmpty ? nil : edits
     }
 }
 

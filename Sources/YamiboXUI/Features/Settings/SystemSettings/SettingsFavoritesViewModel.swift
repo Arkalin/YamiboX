@@ -79,7 +79,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         draftSettings: FavoriteBackgroundSettings
     ) async -> Bool {
         let imageID = UUID().uuidString
-        var updatedBackground = FavoriteBackgroundSettings(
+        let updatedBackground = FavoriteBackgroundSettings(
             isEnabled: true,
             imageID: imageID,
             scale: draftSettings.scale,
@@ -87,14 +87,12 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
             offsetY: draftSettings.offsetY,
             blurRadius: draftSettings.blurRadius
         )
-        updatedBackground.isEnabled = true
-
         do {
             try await dependencies.favoriteBackgroundImageStore.save(imageData, imageID: imageID)
 
-            var settings = await dependencies.settingsStore.load()
-            settings.favorites.background = updatedBackground
-            try await dependencies.settingsStore.save(settings)
+            try await dependencies.settingsStore.update {
+                $0.favorites.background = updatedBackground
+            }
 
             favoriteBackground = updatedBackground
             do {
@@ -119,9 +117,9 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
 
     func restoreDefaultFavoriteBackground() async -> Bool {
         do {
-            var settings = await dependencies.settingsStore.load()
-            settings.favorites.background = FavoriteBackgroundSettings()
-            try await dependencies.settingsStore.save(settings)
+            try await dependencies.settingsStore.update {
+                $0.favorites.background = FavoriteBackgroundSettings()
+            }
 
             favoriteBackground = FavoriteBackgroundSettings()
             do {
@@ -142,32 +140,32 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     // MARK: - Library display
 
     func updateFavoriteItemTapAction(_ value: FavoriteItemTapAction) {
-        persistSettingsAtomically(\.favoriteItemTapAction, to: value, updateSettings: updateSettings) {
+        persistSettings(\.favoriteItemTapAction, to: value, updateSettings: updateSettings) {
             $0.favorites.itemTapAction = value
         }
     }
 
     func updateFavoriteLayoutMode(_ value: FavoriteLibraryLayoutMode) {
-        persistSettings(\.favoriteLayoutMode, to: value) { [self] settings in
-            applyFavoriteLibraryDisplaySettings(to: &settings)
+        persistSettings(\.favoriteLayoutMode, to: value, updateSettings: updateSettings) {
+            $0.favorites.layoutMode = value
         }
     }
 
     func updateFavoriteSortOrder(_ value: LocalFavoriteLibrarySortOrder) {
-        persistSettings(\.favoriteSortOrder, to: value) { [self] settings in
-            applyFavoriteLibraryDisplaySettings(to: &settings)
+        persistSettings(\.favoriteSortOrder, to: value, updateSettings: updateSettings) {
+            $0.favorites.sortOrder = value
         }
     }
 
     func updateFavoriteSortDescending(_ value: Bool) {
-        persistSettings(\.favoriteSortDescending, to: value) { [self] settings in
-            applyFavoriteLibraryDisplaySettings(to: &settings)
+        persistSettings(\.favoriteSortDescending, to: value, updateSettings: updateSettings) {
+            $0.favorites.sortDescending = value
         }
     }
 
     func updateFavoriteShowsCategoryCounts(_ value: Bool) {
-        persistSettings(\.favoriteShowsCategoryCounts, to: value) { [self] settings in
-            applyFavoriteLibraryDisplaySettings(to: &settings)
+        persistSettings(\.favoriteShowsCategoryCounts, to: value, updateSettings: updateSettings) {
+            $0.favorites.showsCategoryCounts = value
         }
     }
 
@@ -183,60 +181,46 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     /// failed save keeps showing the dragged value alongside the error
     /// message rather than yanking the knob back mid-look.
     func commitFavoriteGridCardScale() {
-        persistSettings(\.favoriteGridCardScale, to: favoriteGridCardScale) { [self] settings in
-            applyFavoriteLibraryDisplaySettings(to: &settings)
+        let value = favoriteGridCardScale
+        persistSettings(\.favoriteGridCardScale, to: value, updateSettings: updateSettings) {
+            $0.favorites.gridCardScale = value
         }
-    }
-
-    /// The display fields persist as a unit (all current values, read at
-    /// persist time) so rapid edits across different display fields cannot
-    /// resurrect a stale sibling value from an earlier in-flight save.
-    private func applyFavoriteLibraryDisplaySettings(to settings: inout AppSettings) {
-        settings.favorites.layoutMode = favoriteLayoutMode
-        settings.favorites.gridCardScale = favoriteGridCardScale
-        settings.favorites.sortOrder = favoriteSortOrder
-        settings.favorites.sortDescending = favoriteSortDescending
-        settings.favorites.showsCategoryCounts = favoriteShowsCategoryCounts
     }
 
     // MARK: - Sync behavior
 
-    // These persist atomically (not load/save) because other screens' prompt
-    // "remember" actions write the same fields concurrently; see
-    // `persistSettingsAtomically`.
-
     func updateFavoriteAddSyncPromptEnabled(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteAddSyncPromptEnabled, to: value) {
+        persistSettings(\.favoriteAddSyncPromptEnabled, to: value, updateSettings: updateSettings) {
             $0.favorites.addSyncPromptEnabled = value
         }
     }
 
     func updateFavoriteAddSyncDefault(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteAddSyncDefault, to: value) {
+        persistSettings(\.favoriteAddSyncDefault, to: value, updateSettings: updateSettings) {
             $0.favorites.addSyncDefault = value
         }
     }
 
     func updateFavoriteRemoveRemotePromptEnabled(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteRemoveRemotePromptEnabled, to: value) {
+        persistSettings(\.favoriteRemoveRemotePromptEnabled, to: value, updateSettings: updateSettings) {
             $0.favorites.removeRemotePromptEnabled = value
         }
     }
 
     func updateFavoriteRemoveRemoteDefault(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteRemoveRemoteDefault, to: value) {
+        persistSettings(\.favoriteRemoveRemoteDefault, to: value, updateSettings: updateSettings) {
             $0.favorites.removeRemoteDefault = value
         }
     }
 
     func updateFavoriteSmartMangaBulkDeleteEnabled(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteSmartMangaBulkDeleteEnabled, to: value) {
+        persistSettings(\.favoriteSmartMangaBulkDeleteEnabled, to: value, updateSettings: updateSettings) {
             $0.favorites.smartMangaBulkDeleteEnabled = value
         }
     }
 
     func updateFavoriteSmartMangaBadgeEnabled(_ value: Bool) {
-        persistSettingsAtomically(\.favoriteSmartMangaBadgeEnabled, to: value) {
+        persistSettings(\.favoriteSmartMangaBadgeEnabled, to: value, updateSettings: updateSettings) {
             $0.favorites.smartMangaBadgeEnabled = value
         }
     }

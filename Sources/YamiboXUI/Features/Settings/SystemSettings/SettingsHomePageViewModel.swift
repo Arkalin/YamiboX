@@ -21,7 +21,7 @@ final class SettingsHomePageViewModel: AppSettingsPersisting {
 
     func updateShowsOnlyFavorites(_ value: Bool) {
         guard showsOnlyFavorites != value else { return }
-        persistSettingsAtomically(\.showsOnlyFavorites, to: value) {
+        persistSettings(\.showsOnlyFavorites, to: value) {
             $0.system.homeShowsOnlyFavorites = value
         }
     }

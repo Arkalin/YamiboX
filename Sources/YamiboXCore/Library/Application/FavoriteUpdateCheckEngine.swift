@@ -298,10 +298,8 @@ public final class FavoriteUpdateCheckEngine {
 
     public func setConfiguredInterval(_ interval: FavoriteUpdateCheckInterval) async {
         guard let settingsStore else { return }
-        var settings = await settingsStore.load()
-        settings.favorites.updateCheckInterval = interval
         do {
-            try await settingsStore.save(settings)
+            try await settingsStore.update { $0.favorites.updateCheckInterval = interval }
         } catch {
             YamiboLog.persistence.error("Failed to persist favorite update check interval: \(error.localizedDescription)")
         }
@@ -317,10 +315,8 @@ public final class FavoriteUpdateCheckEngine {
 
     public func setConfiguredMangaInterval(_ interval: SmartMangaUpdateCheckInterval) async {
         guard let settingsStore else { return }
-        var settings = await settingsStore.load()
-        settings.favorites.smartMangaUpdateCheckInterval = interval
         do {
-            try await settingsStore.save(settings)
+            try await settingsStore.update { $0.favorites.smartMangaUpdateCheckInterval = interval }
         } catch {
             YamiboLog.persistence.error("Failed to persist smart-manga update check interval: \(error.localizedDescription)")
         }

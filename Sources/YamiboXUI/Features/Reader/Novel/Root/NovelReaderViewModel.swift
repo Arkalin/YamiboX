@@ -1438,15 +1438,15 @@ public final class NovelReaderViewModel {
     ) {
         Task { [weak self] in
             guard let self else { return }
-            var appSettings = await dependencies.settingsStore.load()
-            if let novelReaderSettings {
-                appSettings.novelReader = novelReaderSettings
-            }
-            if let applePencilPageTurnSettings {
-                appSettings.system.applePencilPageTurn = applePencilPageTurnSettings
-            }
             do {
-                try await dependencies.settingsStore.save(appSettings)
+                try await dependencies.settingsStore.update { appSettings in
+                    if let novelReaderSettings {
+                        appSettings.novelReader = novelReaderSettings
+                    }
+                    if let applePencilPageTurnSettings {
+                        appSettings.system.applePencilPageTurn = applePencilPageTurnSettings
+                    }
+                }
             } catch {
                 await MainActor.run {
                     if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

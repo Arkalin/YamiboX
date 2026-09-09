@@ -28,19 +28,15 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
     // MARK: - Novel offline cache
 
     func updateNovelOfflineCacheRetainsInlineImages(_ retainsInlineImages: Bool) {
-        var updated = novelOfflineCache
-        updated.retainsInlineImages = retainsInlineImages
-        updateNovelOfflineCache(updated)
+        persistSettings(\.novelOfflineCache.retainsInlineImages, to: retainsInlineImages) {
+            $0.novelOfflineCache.retainsInlineImages = retainsInlineImages
+        }
     }
 
     func updateNovelOfflineCacheAutoRefreshEnabled(_ isAutoRefreshEnabled: Bool) {
-        var updated = novelOfflineCache
-        updated.isAutoRefreshEnabled = isAutoRefreshEnabled
-        updateNovelOfflineCache(updated)
-    }
-
-    private func updateNovelOfflineCache(_ updated: NovelOfflineCacheSettings) {
-        persistSettings(\.novelOfflineCache, to: updated) { $0.novelOfflineCache = updated }
+        persistSettings(\.novelOfflineCache.isAutoRefreshEnabled, to: isAutoRefreshEnabled) {
+            $0.novelOfflineCache.isAutoRefreshEnabled = isAutoRefreshEnabled
+        }
     }
 
 }

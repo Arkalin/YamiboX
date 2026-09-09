@@ -815,10 +815,8 @@ public final class MangaReaderViewModel {
         }
 
         Task { [settingsStore = dependencies.settingsStore, normalizedSettings] in
-            var appSettings = await settingsStore.load()
-            appSettings.manga = normalizedSettings
             do {
-                try await settingsStore.save(appSettings)
+                try await settingsStore.update { $0.manga = normalizedSettings }
             } catch {
                 YamiboLog.persistence.error("Failed to save manga reader settings: \(error.localizedDescription)")
             }

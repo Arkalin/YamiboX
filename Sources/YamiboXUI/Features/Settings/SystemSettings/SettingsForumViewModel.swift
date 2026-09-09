@@ -28,7 +28,7 @@ final class SettingsForumViewModel: AppSettingsPersisting {
     }
 
     func updateEnhancedCheckInEnabled(_ value: Bool) {
-        persistSettingsAtomically(\.enhancedCheckInEnabled, to: value) {
+        persistSettings(\.enhancedCheckInEnabled, to: value) {
             $0.system.enhancedCheckInEnabled = value
         }
     }

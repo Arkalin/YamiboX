@@ -810,7 +810,7 @@ final class FavoriteLibraryOrganizer {
         guard value != display.layoutMode else { return }
         let previous = display.layoutMode
         display.layoutMode = value
-        persistViewPreferences {
+        persistViewPreferences(mutate: { $0.favorites.layoutMode = value }) {
             if self.display.layoutMode == value {
                 self.display.layoutMode = previous
             }
@@ -825,7 +825,7 @@ final class FavoriteLibraryOrganizer {
         guard clamped != display.gridCardScale else { return }
         let previous = display.gridCardScale
         display.gridCardScale = clamped
-        persistViewPreferences {
+        persistViewPreferences(mutate: { $0.favorites.gridCardScale = clamped }) {
             if self.display.gridCardScale == clamped {
                 self.display.gridCardScale = previous
             }
@@ -836,7 +836,7 @@ final class FavoriteLibraryOrganizer {
         guard value != display.showsCategoryCounts else { return }
         let previous = display.showsCategoryCounts
         display.showsCategoryCounts = value
-        persistViewPreferences {
+        persistViewPreferences(mutate: { $0.favorites.showsCategoryCounts = value }) {
             if self.display.showsCategoryCounts == value {
                 self.display.showsCategoryCounts = previous
             }
@@ -847,7 +847,7 @@ final class FavoriteLibraryOrganizer {
         guard value != filter.sortOrder else { return }
         let previous = filter.sortOrder
         filter.sortOrder = value
-        persistViewPreferences {
+        persistViewPreferences(mutate: { $0.favorites.sortOrder = value }) {
             if self.filter.sortOrder == value {
                 self.filter.sortOrder = previous
             }
@@ -858,7 +858,7 @@ final class FavoriteLibraryOrganizer {
         guard value != filter.sortDescending else { return }
         let previous = filter.sortDescending
         filter.sortDescending = value
-        persistViewPreferences {
+        persistViewPreferences(mutate: { $0.favorites.sortDescending = value }) {
             if self.filter.sortDescending == value {
                 self.filter.sortDescending = previous
             }
@@ -1003,13 +1003,11 @@ final class FavoriteLibraryOrganizer {
             document.collections.contains { $0.id == id && $0.categoryID == categoryID } ? id : nil
         }
         Task {
-            var settings = await settingsStore.load()
-            guard settings.favorites.selectedCategoryID != categoryID
-                    || settings.favorites.selectedCollectionID != validCollectionID else { return }
-            settings.favorites.selectedCategoryID = categoryID
-            settings.favorites.selectedCollectionID = validCollectionID
             do {
-                try await settingsStore.save(settings)
+                try await settingsStore.update {
+                    $0.favorites.selectedCategoryID = categoryID
+                    $0.favorites.selectedCollectionID = validCollectionID
+                }
             } catch {
                 YamiboLog.persistence.error("Failed to persist favorites navigation state: \(error.localizedDescription)")
             }
@@ -1018,19 +1016,13 @@ final class FavoriteLibraryOrganizer {
 
     /// Persists the current view preferences; on failure runs `rollback` and
     /// reports the error.
-    private func persistViewPreferences(rollback: @escaping @MainActor () -> Void) {
-        let display = display
-        let sortOrder = filter.sortOrder
-        let sortDescending = filter.sortDescending
+    private func persistViewPreferences(
+        mutate: @escaping @Sendable (inout AppSettings) -> Void,
+        rollback: @escaping @MainActor () -> Void
+    ) {
         Task {
-            var settings = await settingsStore.load()
-            settings.favorites.layoutMode = display.layoutMode
-            settings.favorites.showsCategoryCounts = display.showsCategoryCounts
-            settings.favorites.gridCardScale = display.gridCardScale
-            settings.favorites.sortOrder = sortOrder
-            settings.favorites.sortDescending = sortDescending
             do {
-                try await settingsStore.save(settings)
+                try await settingsStore.update(mutate)
             } catch {
                 YamiboLog.persistence.error("Failed to persist favorites view preferences: \(error.localizedDescription)")
                 await MainActor.run {

@@ -27,10 +27,9 @@ extension FavoriteUpdateCheckEngine {
                 effective = false
             }
         }
-        var settings = await settingsStore.load()
-        settings.favorites.updateNotificationsEnabled = effective
+        let effectiveValue = effective
         do {
-            try await settingsStore.save(settings)
+            try await settingsStore.update { $0.favorites.updateNotificationsEnabled = effectiveValue }
         } catch {
             YamiboLog.persistence.error("Failed to persist favorite update notification toggle: \(error.localizedDescription)")
         }

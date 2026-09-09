@@ -44,78 +44,74 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     // MARK: - Apple Pencil
 
     func updateApplePencilPageTurnEnabled(_ isEnabled: Bool) {
-        var updated = applePencilPageTurn
-        updated.isEnabled = isEnabled
-        updateApplePencilPageTurn(updated)
+        persistSettings(\.applePencilPageTurn.isEnabled, to: isEnabled) {
+            $0.system.applePencilPageTurn.isEnabled = isEnabled
+        }
     }
 
     func updateApplePencilPageTurnBehavior(_ behavior: ApplePencilPageTurnBehavior) {
-        var updated = applePencilPageTurn
-        updated.behavior = behavior
-        updateApplePencilPageTurn(updated)
-    }
-
-    private func updateApplePencilPageTurn(_ updated: ApplePencilPageTurnSettings) {
-        persistSettings(\.applePencilPageTurn, to: updated) { $0.system.applePencilPageTurn = updated }
+        persistSettings(\.applePencilPageTurn.behavior, to: behavior) {
+            $0.system.applePencilPageTurn.behavior = behavior
+        }
     }
 
     // MARK: - Gamepad
 
     func updateGamepadEnabled(_ isEnabled: Bool) {
-        var updated = gamepad
-        updated.isEnabled = isEnabled
-        updateGamepad(updated)
+        persistSettings(\.gamepad.isEnabled, to: isEnabled) { $0.system.gamepad.isEnabled = isEnabled }
     }
 
     func bindGamepadAction(_ action: ReaderControlAction, toElementAlias alias: String) {
         var updated = gamepad
         updated.bind(action, toElementAlias: alias)
-        updateGamepad(updated)
+        persistSettings(\.gamepad.bindings, to: updated.bindings) {
+            $0.system.gamepad.bind(action, toElementAlias: alias)
+        }
     }
 
     func clearGamepadBinding(for action: ReaderControlAction) {
         var updated = gamepad
         updated.clearBinding(for: action)
-        updateGamepad(updated)
+        persistSettings(\.gamepad.bindings, to: updated.bindings) {
+            $0.system.gamepad.clearBinding(for: action)
+        }
     }
 
     func restoreGamepadDefaultBindings() {
         var updated = gamepad
         updated.restoreDefaultBindings()
-        updateGamepad(updated)
-    }
-
-    private func updateGamepad(_ updated: GamepadSettings) {
-        persistSettings(\.gamepad, to: updated) { $0.system.gamepad = updated }
+        persistSettings(\.gamepad.bindings, to: updated.bindings) {
+            $0.system.gamepad.restoreDefaultBindings()
+        }
     }
 
     // MARK: - Keyboard
 
     func updateKeyboardEnabled(_ isEnabled: Bool) {
-        var updated = keyboard
-        updated.isEnabled = isEnabled
-        updateKeyboard(updated)
+        persistSettings(\.keyboard.isEnabled, to: isEnabled) { $0.system.keyboard.isEnabled = isEnabled }
     }
 
     func bindKeyboardAction(_ action: ReaderControlAction, toKeyCode code: Int) {
         var updated = keyboard
         updated.bind(action, toKeyCode: code)
-        updateKeyboard(updated)
+        persistSettings(\.keyboard.bindings, to: updated.bindings) {
+            $0.system.keyboard.bind(action, toKeyCode: code)
+        }
     }
 
     func clearKeyboardBinding(for action: ReaderControlAction) {
         var updated = keyboard
         updated.clearBinding(for: action)
-        updateKeyboard(updated)
+        persistSettings(\.keyboard.bindings, to: updated.bindings) {
+            $0.system.keyboard.clearBinding(for: action)
+        }
     }
 
     func restoreKeyboardDefaultBindings() {
         var updated = keyboard
         updated.restoreDefaultBindings()
-        updateKeyboard(updated)
-    }
-
-    private func updateKeyboard(_ updated: KeyboardSettings) {
-        persistSettings(\.keyboard, to: updated) { $0.system.keyboard = updated }
+        persistSettings(\.keyboard.bindings, to: updated.bindings) {
+            $0.system.keyboard.restoreDefaultBindings()
+        }
     }
 }
