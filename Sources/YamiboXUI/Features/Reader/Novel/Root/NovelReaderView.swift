@@ -28,6 +28,7 @@ public struct NovelReaderView: View {
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var imageBrowserItem: ImageBrowserItem?
     @State private var chapterCommentsTarget: ReaderChapterCommentTarget?
+    @State private var chapterCommentsHasLaterChapter = false
     @State private var searchPresentation: NovelReaderSearchPresentation?
     @State private var chromeState = NovelReaderChromeState()
     @State private var isVerticalProgressScrubbing = false
@@ -391,6 +392,7 @@ public struct NovelReaderView: View {
             forumThreadOverlayItem: $forumThreadOverlayItem,
             imageBrowserItem: $imageBrowserItem,
             chapterCommentsTarget: chapterCommentsTarget,
+            chapterCommentsHasLaterChapter: chapterCommentsHasLaterChapter,
             likeDependencies: dependencies.like,
             appModel: appModel,
             onJumpToChapterDirectoryChapter: { chapter in
@@ -1065,6 +1067,7 @@ public struct NovelReaderView: View {
 
     private func openChapterComments() {
         chapterCommentsTarget = model.currentChapterCommentTarget
+        chapterCommentsHasLaterChapter = model.hasChapterAfter(model.currentChapterCommentTarget)
         presentedSheet = .chapterComments
     }
 

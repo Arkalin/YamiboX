@@ -708,13 +708,16 @@ final class ForumComposerPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testParsedComposerLocalizesAttachmentsExpandsOptionsAndPreparesWithoutSubmitting() async throws {
+    func testParsedComposerLocalizesAttachmentsRendersAndPreparesWithoutSubmitting() async throws {
         let page = try ForumPageParser.parse(html: Self.composerHTML, url: Self.postURL)
         XCTAssertEqual(page.forms.count, 1)
         let form = try XCTUnwrap(page.forms.first)
         XCTAssertEqual(page.uploads.count, 2)
         XCTAssertFalse(form.fields.contains { $0.name == "Filedata" })
         XCTAssertFalse(form.fields.contains { $0.label.contains("Filedata") })
+        let signatureField = try XCTUnwrap(form.fields.first { $0.name == "usesig" })
+        XCTAssertEqual(signatureField.label, L10n.string("forum.native.use_signature"))
+        XCTAssertEqual(signatureField.initialValues, ["1"])
         for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 1194)] {
             let repository = ComposerPageRepository(page: page)
             let model = ForumPageSession(url: Self.postURL, repository: repository)
@@ -734,33 +737,13 @@ final class ForumComposerPresentationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(150))
             fixture.host.view.layoutIfNeeded()
             try attach(fixture.host.view, name: "native-composer-options-collapsed-\(Int(size.width))")
-            if let options = findElement("native-composer-options", label: L10n.string("forum.native.more_options"), in: fixture.host.view) {
-                XCTAssertTrue(options.accessibilityActivate())
-            } else {
-                XCTAssertEqual(UIDevice.current.userInterfaceIdiom, .pad)
-                collection.delegate?.collectionView?(collection, didSelectItemAt: optionsPath)
-            }
-            try await Task.sleep(for: .milliseconds(200))
-            fixture.host.view.layoutIfNeeded()
-            try attach(fixture.host.view, name: "native-composer-options-after-action-\(Int(size.width))")
-            if let signature = findElement("native-form-field-usesig", label: L10n.string("forum.native.use_signature"), in: fixture.host.view) {
-                XCTAssertTrue(signature.accessibilityActivate())
-            } else {
-                let nativeSwitch = accessibilityNodes(fixture.host.view).compactMap { $0 as? UISwitch }.first
-                if nativeSwitch == nil && UIDevice.current.userInterfaceIdiom == .pad && fixture.window.windowScene == nil {
-                    throw XCTSkip("The iPad logic-test host renders More Options but exposes neither its accessibility action nor a working row-selection action. Phone interaction and iPad rendering are verified separately.")
-                }
-                let signature = try XCTUnwrap(nativeSwitch)
-                signature.setOn(!signature.isOn, animated: false)
-                try dispatchValueChanged(signature)
-            }
-            let signatureField = try XCTUnwrap(form.fields.first { $0.name == "usesig" })
-            await waitFor { model.drafts[form.id]?[signatureField.id] == [] }
-            try attach(fixture.host.view, name: "native-composer-options-\(Int(size.width))")
+            // Scene-less hosting can render SwiftUI controls without exposing their AX actions.
+            // Real disclosure/toggle interaction is covered by ForumComposerOptionsInteractionTests.
             let button = try XCTUnwrap(form.buttons.first)
             // The logic-test host does not expose navigation bar buttons to accessibility.
             model.prepareSubmission(form: form, button: button)
             XCTAssertNotNil(model.pendingSubmission)
+            XCTAssertEqual(model.pendingSubmission?.values[signatureField.id], ["1"])
             model.pendingSubmission = nil
             let counts = await repository.counts
             XCTAssertEqual(counts.loads, 1)

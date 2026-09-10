@@ -599,6 +599,64 @@ private struct ForumThreadReaderRepositoryTests {
     #expect(postedBody.contains("message=%E5%96%9C%E6%AC%A2"))
 }
 
+@Test func postActionContextUsesVerifiedUnfilteredPageAndFreshFormHash() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"))
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(items.value(named: "pid") == "456")
+        #expect(items.value(named: "authorid") == nil)
+        #expect(items.value(named: "page") == nil)
+        #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+        let html = forumThreadReaderRepositoryThreadHTML(title: "Target", postID: "456")
+            .replacingOccurrences(of: "</body>", with: """
+                <input type="hidden" name="formhash" value="fresh-form-hash">
+                <div class="pg"><strong>9</strong><a href="forum.php?mod=viewthread&amp;tid=123&amp;page=10">10</a></div>
+                </body>
+                """)
+        return forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: html)
+    }
+    let context = try await repository.fetchPostActionContext(threadID: "123", postID: "456")
+    #expect(context.page == 9)
+    #expect(context.post.postID == "456")
+    #expect(context.post.author.uid == "42")
+    #expect(context.formHash == "fresh-form-hash")
+    #expect(context.replyURL.queryItemValue("repquote") == "456")
+    #expect(context.replyURL.queryItemValue("page") == "9")
+}
+
+@Test func postActionContextRejectsMissingPostAndAuthentication() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"))
+    for pid in ["other", "456"] {
+        ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+            forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: forumThreadReaderRepositoryThreadHTML(title: "No verified form", postID: pid))
+        }
+        await #expect(throws: (any Error).self) { try await repository.fetchPostActionContext(threadID: "123", postID: "456") }
+    }
+}
+
+@Test func chapterCommentRefreshBypassesURLCacheForInitialAndUnfilteredRequests() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ReaderChapterCommentsRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"))
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+        return forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: forumThreadReaderRepositoryThreadHTML(title: "Fresh", postID: "456"))
+    }
+    let page = try await repository.loadChapterComments(for: .init(threadID: "123", view: 2, ownerPostID: "456", authorID: "42"))
+    #expect(page.isThreadEndConfirmed == true)
+}
+
+@Test func postActionsRequireExplicitSuccess() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"))
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: #"<html><body><div class="jump_c">请稍后重试</div></body></html>"#)
+    }
+    await #expect(throws: (any Error).self) { try await repository.ratePost(threadID: "123", postID: "456", score: 1, reason: "", formHash: "fresh", noticeAuthor: false) }
+    await #expect(throws: (any Error).self) { try await repository.commentPost(threadID: "123", postID: "456", message: "Reply", formHash: "fresh", page: 9) }
+}
+
 private func makeForumThreadReaderRepositoryTestSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ForumThreadReaderRepositoryTestURLProtocol.self]

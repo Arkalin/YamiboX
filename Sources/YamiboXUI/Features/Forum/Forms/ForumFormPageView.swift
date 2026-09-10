@@ -22,15 +22,20 @@ struct ForumFormPageView: View {
     @Environment(\.dismiss) private var dismiss
     let onURLTap: (URL) -> Void
     let onSubmissionSucceeded: ((TransientFeedback) -> Void)?
+    let isEmbedded: Bool
+    let onAttachmentActivityChanged: ((Bool) -> Void)?
 
     init(model: ForumPageSession, document: ForumPageDocument, composerForm: ForumForm?, editorRegistry: ForumEditorRegistry,
-         onSubmissionSucceeded: ((TransientFeedback) -> Void)? = nil, onURLTap: @escaping (URL) -> Void) {
+         onSubmissionSucceeded: ((TransientFeedback) -> Void)? = nil, isEmbedded: Bool = false,
+         onAttachmentActivityChanged: ((Bool) -> Void)? = nil, onURLTap: @escaping (URL) -> Void) {
         self.model = model
         self.document = document
         self.composerForm = composerForm
         self.editorRegistry = editorRegistry
         self.onURLTap = onURLTap
         self.onSubmissionSucceeded = onSubmissionSucceeded
+        self.isEmbedded = isEmbedded
+        self.onAttachmentActivityChanged = onAttachmentActivityChanged
     }
 
     var body: some View {
@@ -38,16 +43,15 @@ struct ForumFormPageView: View {
             content
         }
         .onChange(of: model.submissionSucceeded) { _, succeeded in
-            guard succeeded, composerForm != nil else { return }
+            guard succeeded, composerForm != nil, !isEmbedded else { return }
             let feedback = model.transientFeedback ?? TransientFeedback(message: L10n.string("forum.native.submitted"))
             model.transientFeedback = nil
             onSubmissionSucceeded?(feedback)
             dismiss()
         }
-        .navigationBarBackButtonHidden(model.hasEdits || model.isSubmitting || model.isUploading)
-        .interactiveDismissDisabled(model.hasEdits || model.isSubmitting || model.isUploading)
+        .modifier(ForumFormNavigationProtection(isEmbedded: isEmbedded, isProtected: model.hasEdits || model.isSubmitting || model.isUploading))
         .toolbar {
-            if model.hasEdits || model.isSubmitting || model.isUploading {
+            if !isEmbedded, model.hasEdits || model.isSubmitting || model.isUploading {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { pendingNavigation = .back } label: { Image(systemName: "chevron.left") }
                         .accessibilityLabel(L10n.string("common.back"))
@@ -55,7 +59,7 @@ struct ForumFormPageView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                if let form = composerForm, let button = primaryButton(form) {
+                if !isEmbedded, let form = composerForm, let button = primaryButton(form) {
                     Button { prepareSubmission(form: form, button: button) } label: {
                         Label(button.title, systemImage: "paperplane.fill")
                     }
@@ -64,7 +68,7 @@ struct ForumFormPageView: View {
                     .disabled(formDisabled)
                 }
             }
-            if composerForm == nil {
+            if !isEmbedded, composerForm == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button { Task { await model.refresh() } } label: {
@@ -80,7 +84,7 @@ struct ForumFormPageView: View {
         }
         .confirmationDialog(
             model.pendingSubmission?.title ?? L10n.string("common.confirm"),
-            isPresented: Binding(get: { model.pendingSubmission != nil }, set: { if !$0 { model.pendingSubmission = nil } }),
+            isPresented: Binding(get: { !isEmbedded && model.pendingSubmission != nil }, set: { if !$0 { model.pendingSubmission = nil } }),
             titleVisibility: .visible
         ) {
             if let submission = model.pendingSubmission {
@@ -109,6 +113,8 @@ struct ForumFormPageView: View {
             guard let item = photoPickerItem, let selection = photoSelection else { return }
             await importPhoto(item, selection: selection)
         }
+        .onChange(of: isPreparingPhoto) { _, value in onAttachmentActivityChanged?(value) }
+        .onDisappear { onAttachmentActivityChanged?(false) }
         .confirmationDialog(L10n.string("forum.native.upload"), isPresented: Binding(
             get: { pendingUpload != nil && !showsPhotoPicker && !isPreparingPhoto }, set: { if !$0 { pendingUpload = nil } }
         ), titleVisibility: .visible) {
@@ -142,7 +148,7 @@ struct ForumFormPageView: View {
         let page = document
         let list = List {
             ForumDocumentSections(document: page, onImageTap: showImage, onURLTap: navigate)
-            ForEach(page.forms) { form in
+            ForEach(isEmbedded ? composerForm.map { [$0] } ?? [] : page.forms) { form in
                 ForumFormSection(
                     form: form,
                     values: Binding(get: { model.drafts[form.id] ?? form.initialValues }, set: { model.drafts[form.id] = $0 }),
@@ -184,17 +190,18 @@ struct ForumFormPageView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
-        if composerForm == nil {
-            list.refreshable { if !isPreparingPhoto { await model.refresh() } }
+        if isEmbedded {
+            list.listStyle(.plain)
+        } else if composerForm == nil {
+            list.listStyle(.insetGrouped).refreshable { if !isPreparingPhoto { await model.refresh() } }
         } else {
-            list
+            list.listStyle(.insetGrouped)
         }
     }
 
-    private var formDisabled: Bool { model.isSubmitting || model.isUploading || model.submissionSucceeded || isPreparingPhoto }
+    private var formDisabled: Bool { model.isLoading || model.isSubmitting || model.isUploading || model.submissionSucceeded || isPreparingPhoto }
 
     private func primaryButton(_ form: ForumForm) -> ForumFormButton? {
         form.buttons.first { !$0.values.contains { $0.name == "save" && $0.value == "1" } } ?? form.buttons.first
@@ -224,7 +231,7 @@ struct ForumFormPageView: View {
 
     private func navigate(_ url: URL) {
         guard !model.isSubmitting, !model.isUploading else { return }
-        if model.hasEdits && !model.submissionSucceeded { pendingNavigation = .url(url) }
+        if !isEmbedded, model.hasEdits && !model.submissionSucceeded { pendingNavigation = .url(url) }
         else { onURLTap(url) }
     }
 
@@ -286,5 +293,19 @@ struct ForumFormPageView: View {
                 model.selectedFiles[selection.form.id] = files
             }
         } catch { model.reportFileError(error) }
+    }
+}
+
+private struct ForumFormNavigationProtection: ViewModifier {
+    let isEmbedded: Bool
+    let isProtected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEmbedded {
+            content
+        } else {
+            content.navigationBarBackButtonHidden(isProtected).interactiveDismissDisabled(isProtected)
+        }
     }
 }

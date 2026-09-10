@@ -10,6 +10,7 @@ final class ForumThreadRateSheetModel {
     private(set) var options: ForumThreadRateOptionsPage?
     private(set) var isLoadingOptions = false
     private(set) var isSubmitting = false
+    private(set) var successMessage: String?
     private(set) var hintMessage: String?
     private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
@@ -58,17 +59,19 @@ final class ForumThreadRateSheetModel {
 
     /// Returns true when the rating was submitted and the sheet should dismiss.
     func submitRate() async -> Bool {
+        guard !isSubmitting else { return false }
         errorEventID = UUID()
         guard let score = Int(scoreText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = L10n.string("forum.thread.rate_score_invalid")
             return false
         }
         isSubmitting = true
+        successMessage = nil
         errorMessage = nil
         defer { isSubmitting = false }
 
         do {
-            _ = try await submit(postID, score, reason, noticeAuthor)
+            successMessage = try await submit(postID, score, reason, noticeAuthor)
             return !Task.isCancelled
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

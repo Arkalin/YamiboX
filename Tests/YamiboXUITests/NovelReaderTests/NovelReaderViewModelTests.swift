@@ -3361,6 +3361,25 @@ final class NovelReaderViewModelTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testChapterReplyPlacementDistinguishesLaterChaptersAndWebPages() async throws {
+        for maxView in [1, 2] {
+            let model = try await makeModel(documents: [
+                makeDocument(view: 1, maxView: maxView, chapterTitles: ["第一章", "第二章"], ownerPostIDs: ["100", "200"])
+            ])
+            defer { model.close() }
+            let first = try XCTUnwrap(model.currentChapterCommentTarget)
+            XCTAssertEqual(first.ownerPostID, "100")
+            XCTAssertTrue(model.hasChapterAfter(first))
+            model.jumpToAdjacentChapter(1)
+            let second = try XCTUnwrap(model.currentChapterCommentTarget)
+            XCTAssertEqual(second.ownerPostID, "200")
+            XCTAssertEqual(model.hasChapterAfter(second), maxView > 1)
+            XCTAssertTrue(model.hasChapterAfter(first), "The captured chapter must not follow the current reading position")
+            XCTAssertFalse(model.hasChapterAfter(nil))
+        }
+    }
+
     func testCurrentForumTargetURLFallsBackToCurrentWebPageWithoutPostIdentity() async throws {
         let threadID = "7002"
         let model = try await makeModel(

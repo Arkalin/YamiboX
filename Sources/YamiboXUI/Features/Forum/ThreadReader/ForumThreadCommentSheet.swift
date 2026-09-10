@@ -6,6 +6,7 @@ import YamiboXCore
 final class ForumThreadCommentSheetModel {
     var message = ""
     private(set) var isSubmitting = false
+    private(set) var successMessage: String?
     private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -28,13 +29,15 @@ final class ForumThreadCommentSheetModel {
 
     /// Returns true when the comment was submitted and the sheet should dismiss.
     func submitComment() async -> Bool {
+        guard canSubmit else { return false }
         errorEventID = UUID()
         isSubmitting = true
+        successMessage = nil
         errorMessage = nil
         defer { isSubmitting = false }
 
         do {
-            _ = try await submit(postID, message)
+            successMessage = try await submit(postID, message)
             return !Task.isCancelled
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

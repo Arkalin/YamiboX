@@ -100,7 +100,8 @@ enum ForumThreadPageHTMLParser {
 
     static func parseThreadActionResult(
         from html: String,
-        context: String = L10n.string("context.thread_page")
+        context: String = L10n.string("context.thread_page"),
+        requiresExplicitSuccess: Bool = false
     ) throws -> String {
         try YamiboHTMLPageInspector.ensureReadable(html)
 
@@ -118,6 +119,13 @@ enum ForumThreadPageHTMLParser {
             || message.contains("錯誤")
             || message.localizedCaseInsensitiveContains("error") {
             throw YamiboError.underlying(message)
+        }
+        if requiresExplicitSuccess {
+            let failures = ["未成功", "不成功", "抱歉", "无法", "不能", "无权", "没有权限", "无效", "不足", "禁止", "不允许"]
+            guard !failures.contains(where: message.contains) else { throw YamiboError.underlying(message) }
+            let successes = ["评分成功", "評分成功", "点评成功", "點評成功", "评论成功", "評論成功", "操作成功", "提交成功", "等待审核", "等待審核", "进入审核"]
+            let hasSuccessCallback = html.contains("succeedhandle_") && html.contains("<script")
+            guard hasSuccessCallback || successes.contains(where: message.contains) else { throw ForumPageError.submissionUnconfirmed }
         }
         return message
     }

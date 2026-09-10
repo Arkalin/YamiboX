@@ -187,7 +187,8 @@ public final class ReaderChapterCommentsModule {
                 target: target,
                 comments: currentPage.comments + nextPage.comments,
                 isBoundaryClosed: nextPage.isBoundaryClosed,
-                nextView: nextPage.nextView
+                nextView: nextPage.nextView,
+                isThreadEndConfirmed: nextPage.isThreadEndConfirmed
             )
             cache[target] = mergedPage
             state = .loaded(target, mergedPage)
