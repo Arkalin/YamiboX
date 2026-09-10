@@ -117,10 +117,14 @@ final class SystemSettingsViewModel {
         favorites.applyLoadedSettings(settings)
         reading.applyLoadedSettings(settings)
         peripherals.applyLoadedSettings(settings)
-        let session = await dependencies.sessionStore.load()
-        isLoggedIn = session.isLoggedIn && SessionState.hasAuthenticationCookie(session.cookie)
+        await refreshSessionState()
         // Defer the image directory scan to the Storage page, without blocking
         // navigation into unrelated settings categories.
         await storageUsage.refresh(includeAdditionalUsage: false)
+    }
+
+    func refreshSessionState() async {
+        let session = await dependencies.sessionStore.load()
+        isLoggedIn = session.isLoggedIn && session.hasValidAuthenticationCookie
     }
 }

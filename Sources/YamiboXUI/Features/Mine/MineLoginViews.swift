@@ -7,71 +7,15 @@ struct MineLoginSheet: View {
     let appModel: YamiboAppModel
     let close: () -> Void
 
-    @State private var isWebLoginPresented = false
-
     var body: some View {
-        NavigationStack {
-            List {
-                MineLoginSection(
-                    viewModel: viewModel,
-                    onWebLogin: { isWebLoginPresented = true },
-                    onLoginSuccess: close
-                )
-            }
-            .listStyle(.insetGrouped)
-            .listSectionSpacing(0)
-            .navigationTitle(L10n.string("mine.login"))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.cancel"), action: close)
-                }
-            }
-            .failureAlert(
-                L10n.string("common.operation_failed"),
-                message: viewModel.errorMessage,
-                details: viewModel.errorDetails,
-                isPresented: errorIsPresented
-            ) {
-                Button(L10n.string("common.ok")) {
-                    viewModel.errorMessage = nil
-                }
-            }
-        }
-        .sheet(isPresented: $isWebLoginPresented, onDismiss: refreshAfterWebLogin) {
-            MineWebLoginSheet(
-                sessionStore: sessionStore,
-                appModel: appModel,
-                close: { isWebLoginPresented = false }
-            )
-        }
-        .task(id: isWebLoginPresented) {
-            guard isWebLoginPresented else { return }
-
-            let monitor = MineWebLoginSessionMonitor(sessionStore: sessionStore)
-            guard await monitor.waitForAuthentication(), !Task.isCancelled else { return }
-            isWebLoginPresented = false
-        }
-    }
-
-    private func refreshAfterWebLogin() {
-        Task {
-            viewModel.session = await sessionStore.load()
-            if viewModel.isLoggedIn {
+        AccountLoginSheet(switcher: appModel.appContext.accountSwitcher) {
+            Task {
+                await viewModel.reloadAccountSnapshot()
                 close()
             }
-            await viewModel.load()
+        } onCancel: {
+            close()
         }
-    }
-
-    private var errorIsPresented: Binding<Bool> {
-        Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    viewModel.errorMessage = nil
-                }
-            }
-        )
     }
 }
 
@@ -122,15 +66,16 @@ final class MineWebLoginSessionMonitor {
     }
 }
 
-private struct MineLoginSection: View {
-    let viewModel: MineHomeViewModel
+struct AccountLoginForm: View {
+    let viewModel: AccountLoginViewModel
     let onWebLogin: () -> Void
     let onLoginSuccess: () -> Void
 
-    @AppStorage("yamibox.login.username") private var username = ""
+    @State private var username = ""
     @State private var password = ""
     @State private var selectedQuestionID = YamiboLoginQuestion.none.id
     @State private var answer = ""
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Section {
@@ -144,10 +89,19 @@ private struct MineLoginSection: View {
             SecureField(L10n.string("mine.login_password"), text: $password)
                 .textContentType(.password)
 
-            Picker(L10n.string("mine.security_question"), selection: $selectedQuestionID) {
-                ForEach(viewModel.loginQuestions) { question in
-                    Text(question.title).tag(question.id)
+            if dynamicTypeSize.isAccessibilitySize {
+                Menu {
+                    questionPicker
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.string("mine.security_question")).foregroundStyle(.primary)
+                        Text(viewModel.loginQuestions.first { $0.id == selectedQuestionID }?.title ?? "")
+                            .foregroundStyle(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
+            } else {
+                questionPicker
             }
 
             if selectedQuestionID != YamiboLoginQuestion.none.id {
@@ -155,6 +109,7 @@ private struct MineLoginSection: View {
                     .autocorrectionDisabled()
             }
         }
+        .task { username = viewModel.initialUsername }
 
         MineWebLoginLinkRow(action: onWebLogin)
 
@@ -186,6 +141,14 @@ private struct MineLoginSection: View {
             || password.isEmpty
             || viewModel.isLoggingIn
     }
+
+    private var questionPicker: some View {
+        Picker(L10n.string("mine.security_question"), selection: $selectedQuestionID) {
+            ForEach(viewModel.loginQuestions) { question in
+                Text(question.title).tag(question.id)
+            }
+        }
+    }
 }
 
 private struct MineWebLoginLinkRow: View {
@@ -202,27 +165,5 @@ private struct MineWebLoginLinkRow: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(.init(top: 0, leading: 16, bottom: 0, trailing: 16))
-    }
-}
-
-private struct MineWebLoginSheet: View {
-    let sessionStore: SessionStore
-    let appModel: YamiboAppModel
-    let close: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            ForumBrowserView(
-                url: YamiboRoute.login.url,
-                sessionStore: sessionStore,
-                appModel: appModel,
-                listensToForumNavigationRequest: false
-            )
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.close"), action: close)
-                }
-            }
-        }
     }
 }

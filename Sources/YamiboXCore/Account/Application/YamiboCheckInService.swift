@@ -86,7 +86,11 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
     }
 
     func checkInWithDetails(force: Bool) async -> YamiboCheckInOutcome {
-        let sessionState = await sessionStore.load()
+        guard let snapshot = try? await sessionStore.snapshot(),
+              await sessionStore.isCurrentGeneration(snapshot.generation) else {
+            return .init(result: .notAuthenticated, isCancelled: true)
+        }
+        let sessionState = snapshot.session
         guard sessionState.isLoggedIn, !sessionState.cookie.isEmpty else {
             return .init(result: .notAuthenticated)
         }
@@ -103,7 +107,11 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         let client = YamiboClient(
             session: session,
             credentials: sessionState.credentials,
-            wafRecoverer: wafRecoverer
+            wafRecoverer: wafRecoverer,
+            handlesCookies: false,
+            validateSession: { [sessionStore] in
+                guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+            }
         )
 
         let checkInPageHTML: String

@@ -158,6 +158,54 @@ private struct YamiboWAFTests {
         #expect(await recoverer.fallbackCount == 1)
         #expect(YamiboWAFTestURLProtocol.requests().count == 2)
     }
+
+    @Test func recoveryNeverReplacesOriginalAccountAuthentication() async throws {
+        YamiboWAFTestURLProtocol.setResponses([
+            .init(statusCode: 405, headers: ["Server": "BAIDU_WAF"], body: "challenge"),
+            .init(statusCode: 200, headers: [:], body: "ok")
+        ])
+        defer { YamiboWAFTestURLProtocol.reset() }
+        let recoverer = AccountChangingWAFRecoverer()
+        let client = YamiboClient(session: makeYamiboWAFTestSession(), credentials: accountSession("1").credentials,
+                                  wafRecoverer: recoverer, handlesCookies: false)
+        _ = try await client.fetchHTML(url: YamiboDomain.baseURL)
+        let requests = YamiboWAFTestURLProtocol.requests()
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Cookie")?.contains("auth-1") == true })
+        #expect(requests[1].value(forHTTPHeaderField: "Cookie")?.contains("auth-2") == false)
+        #expect(requests[1].value(forHTTPHeaderField: "Cookie")?.contains("nox_jst_v1=fresh") == true)
+    }
+
+    @Test func identityChangeDuringWAFRecoveryCancelsBeforeRetry() async throws {
+        YamiboWAFTestURLProtocol.setResponses([
+            .init(statusCode: 405, headers: ["Server": "BAIDU_WAF"], body: "challenge")
+        ])
+        defer { YamiboWAFTestURLProtocol.reset() }
+        let store = AccountStore.temporary()
+        try await activateAccount("1", in: store)
+        let snapshot = try await store.snapshot()
+        let client = YamiboClient(
+            session: makeYamiboWAFTestSession(), credentials: snapshot.session.credentials,
+            wafRecoverer: AccountChangingWAFRecoverer(store: store), handlesCookies: false,
+            validateSession: {
+                guard await store.isCurrent(snapshot.generation) else { throw CancellationError() }
+            }
+        )
+        await #expect { try await client.fetchHTML(url: YamiboDomain.baseURL) } throws: { LoadDiagnosticError.isCancellation($0) }
+        #expect(YamiboWAFTestURLProtocol.requests().count == 1)
+        #expect(try await store.snapshot().session.accountUID == "2")
+    }
+}
+
+private struct AccountChangingWAFRecoverer: YamiboWAFChallengeRecovering {
+    var store: AccountStore?
+    func recover(from challenge: YamiboWAFChallenge) async throws -> YamiboRequestCredentials {
+        if let store { try await activateAccount("2", in: store) }
+        return YamiboRequestCredentials(cookies: accountSession("2").cookies + [
+            YamiboCookie(name: "nox_jst_v1", value: "fresh", domain: YamiboDomain.forumHost, expiresAt: .now.addingTimeInterval(600))
+        ], userAgent: challenge.userAgent)
+    }
+    func presentFallback(for challenge: YamiboWAFChallenge) async {}
 }
 
 private actor YamiboWAFTestRecoverer: YamiboWAFChallengeRecovering {

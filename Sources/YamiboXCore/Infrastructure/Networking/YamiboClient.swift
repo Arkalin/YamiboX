@@ -11,6 +11,7 @@ struct YamiboClient: Sendable {
     var userAgent: String
     var wafRecoverer: (any YamiboWAFChallengeRecovering)?
     var handlesCookies: Bool
+    var validateSession: (@Sendable () async throws -> Void)?
 
     var cookie: String? {
         let header = credentials.cookieHeader(for: YamiboDomain.baseURL)
@@ -22,7 +23,8 @@ struct YamiboClient: Sendable {
         cookie: String? = nil,
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
-        handlesCookies: Bool = true
+        handlesCookies: Bool = true,
+        validateSession: (@Sendable () async throws -> Void)? = nil
     ) {
         self.session = session
         credentials = YamiboRequestCredentials(
@@ -32,19 +34,22 @@ struct YamiboClient: Sendable {
         self.userAgent = userAgent
         self.wafRecoverer = wafRecoverer
         self.handlesCookies = handlesCookies
+        self.validateSession = validateSession
     }
 
     init(
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         credentials: YamiboRequestCredentials,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
-        handlesCookies: Bool = true
+        handlesCookies: Bool = true,
+        validateSession: (@Sendable () async throws -> Void)? = nil
     ) {
         self.session = session
         self.credentials = credentials
         userAgent = credentials.userAgent
         self.wafRecoverer = wafRecoverer
         self.handlesCookies = handlesCookies
+        self.validateSession = validateSession
     }
 
     func fetchHTML(
@@ -143,7 +148,9 @@ struct YamiboClient: Sendable {
         cancellationPolicy: YamiboRequestCancellationPolicy
     ) async throws -> String {
         do {
+            try await validateSession?()
             let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
+            try await validateSession?()
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
             }
@@ -171,7 +178,14 @@ struct YamiboClient: Sendable {
             )
             let refreshedCredentials: YamiboRequestCredentials
             do {
-                refreshedCredentials = try await wafRecoverer.recover(from: challenge)
+                let recovered = try await wafRecoverer.recover(from: challenge)
+                try await validateSession?()
+                // A WAF retry may refresh clearance, never the request's forum identity.
+                refreshedCredentials = YamiboRequestCredentials(
+                    cookies: credentials.cookies.filter { !YamiboCookie.isWAFCookie($0.name) }
+                        + recovered.cookies.filter { YamiboCookie.isWAFCookie($0.name) },
+                    userAgent: userAgent
+                )
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -182,6 +196,7 @@ struct YamiboClient: Sendable {
             retry.cachePolicy = .reloadIgnoringLocalCacheData
             applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
             let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy)
+            try await validateSession?()
             guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
             }

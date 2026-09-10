@@ -14,6 +14,8 @@ public actor ForumCacheStore {
 
     private let cacheStore: DiskCacheStore
     private let now: @Sendable () -> Date
+    private(set) var accountGeneration = UUID()
+    private var accountWrites: [UUID: Task<Void, Error>] = [:]
     private nonisolated(unsafe) let fileManager: FileManager
 
     init(
@@ -58,12 +60,14 @@ public actor ForumCacheStore {
         return entry.value
     }
 
-    public func saveHome(_ page: ForumHomePage) async throws {
-        try await cacheStore.set(
+    public func saveHome(_ page: ForumHomePage, expectedAccountGeneration: UUID? = nil) async throws {
+        try await writeAccountCache(expected: expectedAccountGeneration) { [cacheStore] in
+            try await cacheStore.set(
             ForumCacheEntry(value: page, fetchedAt: page.fetchedAt),
             namespace: Self.homeNamespace,
             key: Self.homeKey
-        )
+            )
+        }
     }
 
     public func loadBoard(
@@ -91,14 +95,35 @@ public actor ForumCacheStore {
         pageNumber: Int = 1,
         filterID: String? = nil,
         orderFilter: String? = nil,
-        orderBy: String? = nil
+        orderBy: String? = nil,
+        expectedAccountGeneration: UUID? = nil
     ) async throws {
-        try await cacheStore.set(
+        let key = boardCacheKey(fid: fid, page: pageNumber, filterID: filterID, orderFilter: orderFilter, orderBy: orderBy)
+        try await writeAccountCache(expected: expectedAccountGeneration) { [cacheStore] in
+            try await cacheStore.set(
             ForumCacheEntry(value: page, fetchedAt: page.fetchedAt),
             namespace: Self.boardNamespace,
-            key: boardCacheKey(fid: fid, page: pageNumber, filterID: filterID, orderFilter: orderFilter, orderBy: orderBy)
-        )
-        try await cacheStore.trimNamespace(Self.boardNamespace, maximumEntryCount: Self.boardMaxEntries)
+            key: key
+            )
+            try await cacheStore.trimNamespace(Self.boardNamespace, maximumEntryCount: Self.boardMaxEntries)
+        }
+    }
+
+    private func writeAccountCache(expected: UUID?, operation: @escaping @Sendable () async throws -> Void) async throws {
+        if let expected, expected != accountGeneration { throw CancellationError() }
+        let id = UUID()
+        let task = Task { try await operation() }
+        accountWrites[id] = task
+        defer { accountWrites[id] = nil }
+        try await task.value
+    }
+
+    func clearAccountCaches() async throws {
+        accountGeneration = UUID()
+        let pending = Array(accountWrites.values)
+        for task in pending { _ = try? await task.value }
+        try await cacheStore.clearNamespace(Self.homeNamespace)
+        try await cacheStore.clearNamespace(Self.boardNamespace)
     }
 
     public func loadThreadPage(

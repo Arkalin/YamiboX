@@ -42,6 +42,73 @@ struct YamiboAppContextResetTests {
         }
         #expect(remainingRows.isEmpty)
     }
+
+    @Test func accountSwitchPreservesLocalLibraryAndOfflineDataButInvalidatesExecutor() async throws {
+        let accounts = AccountStore.temporary()
+        let fixture = try AppResetFixture(accountStore: accounts)
+        defer { fixture.cleanup() }
+        try await activateAccount("2", in: accounts)
+        try await activateAccount("1", in: accounts)
+        try await fixture.seed(.localFavoriteLibraryStore)
+        try await fixture.seed(.offlineCacheStore)
+        try await fixture.seed(.forumCacheStore)
+        let oldHome = try #require(await fixture.context.forumCacheStore.loadHome(allowExpired: true))
+        let oldCacheGeneration = await fixture.context.forumCacheStore.accountGeneration
+        let library = try await fixture.context.localFavoriteLibraryStore.load()
+        let oldExecutor = await fixture.context.makeOfflineCacheQueueExecutor()
+
+        try await fixture.context.accountSwitcher.switchAccount(uid: "2") { session in
+            AuthenticatedAccount(session: session, profile: accountProfile("2"))
+        }
+
+        #expect(try await fixture.context.localFavoriteLibraryStore.load() == library)
+        #expect(await fixture.context.forumCacheStore.loadHome(allowExpired: true) == nil)
+        await #expect(throws: CancellationError.self) {
+            try await fixture.context.forumCacheStore.saveHome(oldHome, expectedAccountGeneration: oldCacheGeneration)
+        }
+        #expect(await fixture.context.forumCacheStore.loadThreadPage(thread: ThreadIdentity(tid: "100"), allowExpired: true) != nil)
+        let newExecutor = await fixture.context.makeOfflineCacheQueueExecutor()
+        #expect(oldExecutor !== newExecutor)
+        await #expect(throws: CancellationError.self) { try await oldExecutor.continueQueue() }
+        #expect(await fixture.context.offlineCacheStore.offlineImageData(for: fixture.imageURL) != nil)
+        try await fixture.context.resetApplicationData()
+        #expect(try await accounts.accounts().isEmpty)
+        #expect(await fixture.context.sessionStore.load() == SessionState())
+    }
+
+    @Test func switchingCancelsAndDrainsWebDAVBeforeChangingIdentity() async throws {
+        let accounts = AccountStore.temporary()
+        let fixture = try AppResetFixture(accountStore: accounts)
+        defer { fixture.cleanup() }
+        try await activateAccount("2", in: accounts)
+        try await activateAccount("1", in: accounts)
+        let barrier = AccountValidationBarrier()
+        let originalGeneration = try await accounts.snapshot().generation
+        let sync = Task {
+            try await fixture.context.webDAVSyncSettingsStore.syncCoordinator.run {
+                await barrier.wait()
+                try Task.checkCancellation()
+            }
+        }
+        await barrier.waitUntilStarted()
+        let validation = AccountValidationBarrier()
+        let change = Task {
+            try await fixture.context.accountSwitcher.switchAccount(uid: "2") { session in
+                await validation.release()
+                return AuthenticatedAccount(session: session, profile: accountProfile("2"))
+            }
+        }
+        await validation.wait()
+        for _ in 0..<100 where await accounts.isCurrent(originalGeneration) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!(await accounts.isCurrent(originalGeneration)))
+        #expect(await fixture.context.sessionStore.load().accountUID == "1")
+        await barrier.release()
+        _ = try? await sync.value
+        try await change.value
+        #expect(await fixture.context.sessionStore.load().accountUID == "2")
+    }
 }
 
 @MainActor
@@ -60,7 +127,7 @@ private final class AppResetFixture {
     let imageURL = URL(string: "https://example.test/reset.jpg")!
     let now = Date(timeIntervalSince1970: 1_000)
 
-    init(injectSyncRunStore: Bool = false) throws {
+    init(injectSyncRunStore: Bool = false, accountStore: AccountStore? = nil) throws {
         defaults = try #require(UserDefaults(suiteName: suiteName))
         root = FileManager.default.temporaryDirectory.appendingPathComponent(suiteName, isDirectory: true)
         let database = try YamiboDatabase.openPool(rootDirectory: root.appendingPathComponent("data"))
@@ -77,8 +144,8 @@ private final class AppResetFixture {
         likeImageStore = LikeImageStore(baseDirectory: root.appendingPathComponent("like-images"))
         bookmarkStore = BookmarkStore(databasePool: database)
         context = YamiboAppContext(
-            sessionStore: SessionStore(defaults: defaults),
-            profileStore: YamiboProfileStore(defaults: defaults),
+            sessionStore: accountStore.map { SessionStore(accountStore: $0) } ?? SessionStore(defaults: defaults),
+            profileStore: accountStore.map { YamiboProfileStore(accountStore: $0) } ?? YamiboProfileStore(defaults: defaults),
             checkInStore: YamiboCheckInStore(defaults: defaults),
             settingsStore: SettingsStore(defaults: defaults),
             webDAVSyncSettingsStore: WebDAVSyncSettingsStore(defaults: defaults),

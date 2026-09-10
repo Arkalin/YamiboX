@@ -101,7 +101,9 @@ public actor WebDAVSyncService {
 
     private func performAutomaticSync(bypassingMinimumInterval: Bool) async throws -> WebDAVAutomaticSyncResult {
         var settings = await settingsStore.load()
-        let sessionState = await sessionStore.load()
+        let snapshot = try await sessionStore.snapshot()
+        guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return .skipped }
+        let sessionState = snapshot.session
         guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
         try await refreshDirtyState(at: .now, includeUntracked: false)
         settings = await settingsStore.load()
@@ -250,7 +252,9 @@ public actor WebDAVSyncService {
     }
 
     private func currentAccountUID() async throws -> String {
-        try currentAccountUID(from: await sessionStore.load())
+        let snapshot = try await sessionStore.snapshot()
+        guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+        return try currentAccountUID(from: snapshot.session)
     }
 
     private nonisolated func currentAccountUID(from sessionState: SessionState) throws -> String {

@@ -59,6 +59,8 @@ public actor OfflineCacheQueueExecutor {
     private let novelWorkProcessor: OfflineCacheWorkProcessor<NovelOfflineCacheWorkProcessingStrategy>?
     private var runTask: Task<Void, Never>?
     private var runGeneration = 0
+    private var isInvalidated = false
+    private let isSessionCurrent: @Sendable () async -> Bool
 
     init(
         store: any OfflineCacheQueueStoring & OfflineCacheImageAssetStoring,
@@ -68,10 +70,12 @@ public actor OfflineCacheQueueExecutor {
         novelSourcePageLoader: (any NovelOfflineCacheSourcePageLoading)? = nil,
         imageAcquirer: any OfflineCacheImageAcquiring,
         runObserver: (any OfflineCacheQueueRunObserving)? = nil,
-        maxConcurrentImageTransfers: Int = 3
+        maxConcurrentImageTransfers: Int = 3,
+        isSessionCurrent: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.store = store
         self.runObserver = runObserver
+        self.isSessionCurrent = isSessionCurrent
         let transferLimit = max(1, maxConcurrentImageTransfers)
         self.mangaWorkProcessor = OfflineCacheWorkProcessor(
             store: store,
@@ -104,8 +108,14 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func continueQueue(submitsUserInitiatedRun: Bool) async throws {
+        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
         try await store.retryFailedOfflineCacheWorks()
+        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
         try await store.setOfflineCacheQueueRunState(.running)
+        guard !isInvalidated, await isSessionCurrent() else {
+            try await store.setOfflineCacheQueueRunState(.paused)
+            throw CancellationError()
+        }
         if let runTask, !runTask.isCancelled {
             return
         }
@@ -113,6 +123,7 @@ public actor OfflineCacheQueueExecutor {
         if submitsUserInitiatedRun {
             await runObserver?.submitUserInitiatedRun()
         }
+        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
         runGeneration += 1
         let generation = runGeneration
         runTask = Task { [weak self] in
@@ -126,6 +137,13 @@ public actor OfflineCacheQueueExecutor {
         runTask = nil
         try await store.setOfflineCacheQueueRunState(.paused)
         await runObserver?.queueRunDidCancel()
+    }
+
+    func invalidateForAccountChange() async throws {
+        isInvalidated = true
+        let running = runTask
+        try await pauseQueue()
+        await running?.value
     }
 
     public func cancelChapter(ownerName: String, tid: String) async throws {

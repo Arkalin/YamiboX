@@ -6,6 +6,7 @@ import Foundation
 public struct AccountDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
+    public let accountSwitcher: AccountSwitchCoordinator?
     public let messageUnreadWorkflow: MessageUnreadWorkflow?
     public let checkInStore: YamiboCheckInStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -25,10 +26,12 @@ public struct AccountDependencies: Sendable {
         makeAccountService: @escaping @Sendable () -> YamiboAccountService,
         makeCheckInService: @escaping @Sendable () -> any YamiboCheckInServicing,
         makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
-        imagePipeline: (any YamiboImageDataLoading)? = nil
+        imagePipeline: (any YamiboImageDataLoading)? = nil,
+        accountSwitcher: AccountSwitchCoordinator? = nil
     ) {
         self.sessionStore = sessionStore
         self.profileStore = profileStore
+        self.accountSwitcher = accountSwitcher
         self.messageUnreadWorkflow = messageUnreadWorkflow
         self.checkInStore = checkInStore
         self.mangaDirectoryStore = mangaDirectoryStore

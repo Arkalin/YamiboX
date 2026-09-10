@@ -10,6 +10,7 @@ public struct SettingsHomeView: View {
     private let onSignOut: @MainActor () async -> LoadFailureDetails?
     private let onApplicationReset: @MainActor () async -> Void
     private let onClose: () -> Void
+    private let accountSwitcher: AccountSwitchCoordinator?
 
     /// `@State` (not `@StateObject`) because the view model is `@Observable`.
     /// SwiftUI keeps the first instance for the view's lifetime; the
@@ -22,6 +23,7 @@ public struct SettingsHomeView: View {
     @State private var isAboutPushed = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
     @State private var isSigningOut = false
+    @State private var isAccountManagementPushed = false
     @Environment(\.appTheme) private var appTheme
 
     public init(
@@ -29,7 +31,8 @@ public struct SettingsHomeView: View {
         peripheralInput: ReaderPeripheralInputManager? = nil,
         onSignOut: @escaping @MainActor () async -> LoadFailureDetails?,
         onApplicationReset: @escaping @MainActor () async -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        accountSwitcher: AccountSwitchCoordinator? = nil
     ) {
         _viewModel = State(initialValue: SystemSettingsViewModel(dependencies: dependencies))
         self.dependencies = dependencies
@@ -37,6 +40,7 @@ public struct SettingsHomeView: View {
         self.onSignOut = onSignOut
         self.onApplicationReset = onApplicationReset
         self.onClose = onClose
+        self.accountSwitcher = accountSwitcher
     }
 
     public var body: some View {
@@ -46,7 +50,7 @@ public struct SettingsHomeView: View {
             } else {
                 categorySection
                 aboutSection
-                if viewModel.isLoggedIn {
+                if viewModel.isLoggedIn || accountSwitcher != nil {
                     signOutSection
                 }
             }
@@ -58,6 +62,15 @@ public struct SettingsHomeView: View {
         .overlay(content: loadingOverlay)
         .task {
             await viewModel.load()
+        }
+        .task {
+            for await _ in dependencies.sessionStore.changes() {
+                guard !Task.isCancelled else { return }
+                await viewModel.refreshSessionState()
+            }
+        }
+        .navigationDestination(isPresented: $isAccountManagementPushed) {
+            if let accountSwitcher { AccountManagementView(switcher: accountSwitcher) }
         }
         .navigationDestination(isPresented: $isAboutPushed) {
             AboutView()
@@ -117,12 +130,22 @@ public struct SettingsHomeView: View {
 
     private var signOutSection: some View {
         Section {
-            Button(role: .destructive) {
-                pendingConfirmation = .signOut
-            } label: {
-                Text(L10n.string("mine.sign_out"))
+            if accountSwitcher != nil {
+                Button {
+                    isAccountManagementPushed = true
+                } label: {
+                    Label(L10n.string("account.switch"), systemImage: "arrow.left.arrow.right")
+                }
+                .disabled(viewModel.isBusy || isSigningOut)
             }
-            .disabled(viewModel.isBusy || isSigningOut)
+            if viewModel.isLoggedIn {
+                Button(role: .destructive) {
+                    pendingConfirmation = .signOut
+                } label: {
+                    Text(L10n.string("mine.sign_out"))
+                }
+                .disabled(viewModel.isBusy || isSigningOut)
+            }
         }
     }
 

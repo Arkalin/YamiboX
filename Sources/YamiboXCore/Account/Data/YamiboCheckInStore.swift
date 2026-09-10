@@ -97,6 +97,15 @@ public actor YamiboCheckInStore {
     }
 
     private func storageKey(for session: SessionState) -> String? {
+        if let uid = session.accountUID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            let key = "\(keyPrefix).uid.\(uid)"
+            if defaults.string(forKey: key) == nil,
+               let hash = accountHash(from: session.cookie),
+               let legacyDate = defaults.string(forKey: "\(keyPrefix).\(hash)") {
+                defaults.set(legacyDate, forKey: key)
+            }
+            return key
+        }
         guard let hash = accountHash(from: session.cookie) else { return nil }
         return "\(keyPrefix).\(hash)"
     }

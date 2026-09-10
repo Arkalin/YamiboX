@@ -4,19 +4,23 @@ public actor ForumRepository {
     private let client: YamiboClient
     private let cacheStore: ForumCacheStore
     private let now: @Sendable () -> Date
+    private let accountGeneration: UUID?
 
     init(
         client: YamiboClient,
         cacheStore: ForumCacheStore,
+        accountGeneration: UUID? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.client = client
         self.cacheStore = cacheStore
+        self.accountGeneration = accountGeneration
         self.now = now
     }
 
     public func cachedForumHome(allowExpired: Bool = false) async -> ForumHomePage? {
-        await cacheStore.loadHome(allowExpired: allowExpired)
+        do { try await client.validateSession?() } catch { return nil }
+        return await cacheStore.loadHome(allowExpired: allowExpired)
     }
 
     public func cachedForumBoard(
@@ -27,7 +31,8 @@ public actor ForumRepository {
         orderBy: String? = nil,
         allowExpired: Bool = false
     ) async -> ForumBoardPage? {
-        await cacheStore.loadBoard(
+        do { try await client.validateSession?() } catch { return nil }
+        return await cacheStore.loadBoard(
             fid: fid,
             page: page,
             filterID: filterID,
@@ -38,6 +43,7 @@ public actor ForumRepository {
     }
 
     public func fetchForumHome(preferCache: Bool = true) async throws -> ForumHomePage {
+        try await client.validateSession?()
         if preferCache, let cached = await cacheStore.loadHome() {
             return cached
         }
@@ -63,6 +69,7 @@ public actor ForumRepository {
         orderBy: String? = nil,
         preferCache: Bool = true
     ) async throws -> ForumBoardPage {
+        try await client.validateSession?()
         if preferCache,
            let cached = await cacheStore.loadBoard(fid: fid, page: page, filterID: filterID, orderFilter: orderFilter, orderBy: orderBy) {
             return cached
@@ -140,7 +147,7 @@ public actor ForumRepository {
     private func saveHomeCompletingStartedWork(_ page: ForumHomePage) async throws {
         let cacheStore = cacheStore
         let saveTask = Task {
-            try await cacheStore.saveHome(page)
+            try await cacheStore.saveHome(page, expectedAccountGeneration: accountGeneration)
         }
         try await saveTask.value
     }
@@ -161,7 +168,8 @@ public actor ForumRepository {
                 pageNumber: pageNumber,
                 filterID: filterID,
                 orderFilter: orderFilter,
-                orderBy: orderBy
+                orderBy: orderBy,
+                expectedAccountGeneration: accountGeneration
             )
         }
         try await saveTask.value

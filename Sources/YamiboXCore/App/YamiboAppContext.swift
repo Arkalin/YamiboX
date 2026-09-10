@@ -50,10 +50,11 @@ public final class YamiboAppContext: Sendable {
     private let clearsWebDataOnReset: Bool
     private let websiteDataClearer: (any WebsiteDataClearing)?
     private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    public let accountTransitionLifecycle = AccountTransitionLifecycle()
 
     public init(
         sessionStore: SessionStore = SessionStore(),
-        profileStore: YamiboProfileStore = YamiboProfileStore(),
+        profileStore: YamiboProfileStore? = nil,
         checkInStore: YamiboCheckInStore = YamiboCheckInStore(),
         settingsStore: SettingsStore = SettingsStore(),
         webDAVSyncSettingsStore: WebDAVSyncSettingsStore = WebDAVSyncSettingsStore(),
@@ -88,6 +89,9 @@ public final class YamiboAppContext: Sendable {
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         httpCache: URLCache = .shared
     ) {
+        nonisolated(unsafe) let profileDefaults = uiDefaults
+        let profileStore = profileStore ?? sessionStore.accountStore.map { YamiboProfileStore(accountStore: $0) }
+            ?? YamiboProfileStore(defaults: profileDefaults)
         let resolvedGRDBRootDirectory = grdbRootDirectory ?? YamiboDatabase.defaultRootDirectory()
         let resolvedCachesRootDirectory = cachesRootDirectory ?? YamiboDatabase.defaultCacheRootDirectory()
         let resolvedGRDBDatabasePool = databasePool ?? Self.openGRDBDatabase(rootDirectory: resolvedGRDBRootDirectory)
@@ -101,7 +105,7 @@ public final class YamiboAppContext: Sendable {
         self.websiteDataClearer = websiteDataClearer
         self.sessionStore = sessionStore
         self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { state in
-            UserSpaceRepository(client: YamiboClient(session: session, credentials: state.credentials))
+            UserSpaceRepository(client: YamiboClient(session: session, credentials: state.credentials, handlesCookies: false))
         }
         self.profileStore = profileStore
         self.checkInStore = checkInStore
@@ -300,7 +304,8 @@ public final class YamiboAppContext: Sendable {
             makeAccountService: { [self] in makeAccountService() },
             makeCheckInService: { [self] in makeCheckInService() },
             makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
-            imagePipeline: imagePipeline
+            imagePipeline: imagePipeline,
+            accountSwitcher: accountSwitcher
         )
     }
 
@@ -352,11 +357,15 @@ public final class YamiboAppContext: Sendable {
     // MARK: - Factories
 
     private func makeClient() async -> YamiboClient {
-        let sessionState = await sessionStore.load()
+        let snapshot = try? await sessionStore.snapshot()
         return YamiboClient(
             session: session,
-            credentials: sessionState.credentials,
-            wafRecoverer: wafRecoverer
+            credentials: (snapshot?.session ?? SessionState()).credentials,
+            wafRecoverer: wafRecoverer,
+            handlesCookies: false,
+            validateSession: { [sessionStore] in
+                guard let snapshot, await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+            }
         )
     }
 
@@ -392,7 +401,8 @@ public final class YamiboAppContext: Sendable {
     }
 
     func makeForumRepository() async -> ForumRepository {
-        ForumRepository(client: await makeClient(), cacheStore: forumCacheStore)
+        ForumRepository(client: await makeClient(), cacheStore: forumCacheStore,
+                        accountGeneration: await forumCacheStore.accountGeneration)
     }
 
     func makeUserSpaceRepository() async -> UserSpaceRepository {
@@ -417,7 +427,9 @@ public final class YamiboAppContext: Sendable {
     }
 
     public func makeOfflineCacheQueueExecutor() async -> OfflineCacheQueueExecutor {
-        if let executor = await offlineCacheQueueExecutorBox.value {
+        let snapshot = try? await sessionStore.snapshot()
+        let generation = snapshot?.generation ?? UUID()
+        if let executor = await offlineCacheQueueExecutorBox.value(for: generation) {
             return executor
         }
 
@@ -431,9 +443,12 @@ public final class YamiboAppContext: Sendable {
                 imagePipeline: imagePipeline,
                 backgroundTransport: offlineCacheBackgroundDownloadTransport
             ),
-            runObserver: offlineCacheContinuedProcessingCoordinator
+            runObserver: offlineCacheContinuedProcessingCoordinator,
+            isSessionCurrent: { [sessionStore] in
+                await sessionStore.isCurrentGeneration(generation)
+            }
         )
-        return await offlineCacheQueueExecutorBox.setIfEmpty(executor)
+        return await offlineCacheQueueExecutorBox.setIfEmpty(executor, generation: generation)
     }
 
     public func makeCheckInService() -> any YamiboCheckInServicing {
@@ -452,8 +467,68 @@ public final class YamiboAppContext: Sendable {
             sessionStore: sessionStore,
             profileStore: profileStore,
             websiteDataClearer: websiteDataClearer,
-            wafRecoverer: wafRecoverer
+            wafRecoverer: wafRecoverer,
+            coordinatedSignOut: { [self] in try await accountSwitcher.signOut() },
+            coordinatedInvalidation: { [self] generation in
+                try await accountSwitcher.invalidateCurrent(expectedGeneration: generation)
+            }
         )
+    }
+
+    public var accountSwitcher: AccountSwitchCoordinator {
+        AccountSwitchCoordinator(
+            sessionStore: sessionStore,
+            profileStore: profileStore,
+            makeService: { [self] in makeAccountService() },
+            transition: { [self] commit in try await transitionAccount(commit) }
+        )
+    }
+
+    private enum AccountWebDataCleanup: Sendable { case session, all, none }
+
+    private func transitionAccount(webDataCleanup: AccountWebDataCleanup = .session, _ commit: @escaping @Sendable (UUID) async throws -> Void) async throws {
+        let token = try await sessionStore.beginIdentityTransition()
+        do {
+            try await webDAVSyncSettingsStore.syncCoordinator.reset { [self] in
+                do {
+                    await messageUnreadWorkflow.prepareForAccountChange()
+                    try await offlineCacheQueueExecutorBox.invalidate()
+                    try await accountTransitionLifecycle.willChange()
+                    try await forumCacheStore.clearAccountCaches()
+                    try Task.checkCancellation()
+                    try await commit(token)
+                } catch {
+                    await finishAccountTransition(token, webDataCleanup: webDataCleanup)
+                    throw error
+                }
+                await finishAccountTransition(token, webDataCleanup: webDataCleanup)
+            }
+        } catch {
+            await sessionStore.endIdentityTransition(token)
+            throw error
+        }
+    }
+
+    private func finishAccountTransition(_ token: UUID, webDataCleanup: AccountWebDataCleanup) async {
+        let state = await sessionStore.load()
+        switch webDataCleanup {
+        case .all:
+            await clearWebData()
+        case .session:
+            for storage in [session.configuration.httpCookieStorage, HTTPCookieStorage.shared].compactMap({ $0 }) {
+                for cookie in storage.cookies ?? [] where YamiboDomain.containsYamiboDomain(cookie.domain) {
+                    storage.deleteCookie(cookie)
+                }
+            }
+            httpCache.removeAllCachedResponses()
+            await websiteDataClearer?.clearYamiboCookies()
+        case .none:
+            break
+        }
+        await accountTransitionLifecycle.didChange(state)
+        await sessionStore.endIdentityTransition(token)
+        await messageUnreadWorkflow.finishAccountChange()
+        await accountTransitionLifecycle.didPublish()
     }
 
     func makeWebDAVSyncService() -> WebDAVSyncService {
@@ -506,13 +581,18 @@ public final class YamiboAppContext: Sendable {
     }
 
     func resetApplicationData() async throws {
-        try await webDAVSyncSettingsStore.syncCoordinator.reset { [self] in
-            try await resetLocalApplicationData()
+        try await sessionStore.accountOperations.run { [self] in
+            try await transitionAccount(webDataCleanup: clearsWebDataOnReset ? .all : .none) { [self] token in
+                try await sessionStore.resetAllAccounts(token: token)
+                if sessionStore.accountStore == nil { await profileStore.clear() }
+                try await resetLocalApplicationData()
+            }
         }
     }
 
     private func resetLocalApplicationData() async throws {
         for participant in AppDataResetParticipant.allCases {
+            if participant == .sessionStore || participant == .profileStore || participant == .webData { continue }
             try await reset(participant)
         }
     }
@@ -601,13 +681,21 @@ public final class YamiboAppContext: Sendable {
 }
 
 private actor OfflineCacheQueueExecutorBox {
-    var value: OfflineCacheQueueExecutor?
+    private var values: [UUID: OfflineCacheQueueExecutor] = [:]
 
-    func setIfEmpty(_ executor: OfflineCacheQueueExecutor) -> OfflineCacheQueueExecutor {
-        if let value {
+    func value(for generation: UUID) -> OfflineCacheQueueExecutor? { values[generation] }
+
+    func invalidate() async throws {
+        let executors = Array(values.values)
+        values.removeAll()
+        for executor in executors { try await executor.invalidateForAccountChange() }
+    }
+
+    func setIfEmpty(_ executor: OfflineCacheQueueExecutor, generation: UUID) -> OfflineCacheQueueExecutor {
+        if let value = values[generation] {
             return value
         }
-        value = executor
+        values[generation] = executor
         return executor
     }
 }

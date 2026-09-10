@@ -50,6 +50,7 @@ public struct IOSForumWebView: UIViewRepresentable {
     }
 
     public final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        private static let instances = NSHashTable<Coordinator>.weakObjects()
         private let model: ForumBrowserModel
         private let sessionStore: SessionStore
         private weak var webView: WKWebView?
@@ -57,14 +58,19 @@ public struct IOSForumWebView: UIViewRepresentable {
         private var appliedAppearance: ForumWebAppearance?
         private var sessionObservationTask: Task<Void, Never>?
         private var sessionSyncState = ForumWebSessionSyncState()
+        private var sessionSyncTask: Task<Void, Never>?
+        private var isChangingAccount = false
 
         init(model: ForumBrowserModel, sessionStore: SessionStore) {
             self.model = model
             self.sessionStore = sessionStore
+            super.init()
+            Self.instances.add(self)
         }
 
         deinit {
             sessionObservationTask?.cancel()
+            sessionSyncTask?.cancel()
         }
 
         func attach(_ webView: WKWebView) {
@@ -75,11 +81,12 @@ public struct IOSForumWebView: UIViewRepresentable {
             guard !didPrepareInitialLoad else { return }
             didPrepareInitialLoad = true
 
-            Task { @MainActor [weak self, weak webView] in
+            sessionSyncTask = Task { @MainActor [weak self, weak webView] in
                 guard let self, let webView else { return }
+                defer { sessionSyncTask = nil }
                 let sessionState = await sessionStore.load()
                 await synchronizeWebViewSession(sessionState, reloadIfNeeded: false)
-                if webView.url == nil {
+                if webView.url == nil, !Task.isCancelled, !isChangingAccount {
                     model.load(model.currentURL ?? YamiboDomain.baseURL)
                 }
             }
@@ -100,8 +107,10 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         func synchronizeCurrentSession(reloadIfNeeded: Bool) {
-            Task { @MainActor [weak self] in
+            guard !isChangingAccount, sessionSyncTask == nil else { return }
+            sessionSyncTask = Task { @MainActor [weak self] in
                 guard let self else { return }
+                defer { sessionSyncTask = nil }
                 let sessionState = await sessionStore.load()
                 await synchronizeWebViewSession(sessionState, reloadIfNeeded: reloadIfNeeded)
             }
@@ -132,6 +141,7 @@ public struct IOSForumWebView: UIViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
         ) {
+            guard !isChangingAccount else { decisionHandler(.cancel); return }
             guard let url = navigationAction.request.url else {
                 decisionHandler(.cancel)
                 return
@@ -173,7 +183,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         private func startObservingSessionChanges() {
-            guard sessionObservationTask == nil else { return }
+            guard sessionObservationTask == nil, !isChangingAccount else { return }
 
             // `sessionStore` is captured directly (not through `self`) so the
             // stream can be obtained even after the coordinator goes away —
@@ -197,7 +207,7 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         @MainActor
         private func synchronizeWebViewSession(_ sessionState: SessionState, reloadIfNeeded: Bool) async {
-            guard let webView else { return }
+            guard let webView, !isChangingAccount, !Task.isCancelled else { return }
 
             // `nilIfBlank`, not `nilIfEmpty`: this file's deleted private
             // `nilIfEmpty` copy trimmed whitespace, so the trimming variant is
@@ -212,12 +222,12 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             case let .injectCookies(reload):
                 await injectCookies(sessionState.cookies, into: webView)
-                if reload {
+                if reload, !isChangingAccount, !Task.isCancelled {
                     reloadOrLoad(webView)
                 }
             case let .clearCookies(reload):
                 await clearYamiboCookies(in: webView)
-                if reload {
+                if reload, !isChangingAccount, !Task.isCancelled {
                     reloadOrLoad(webView)
                 }
             }
@@ -243,6 +253,7 @@ public struct IOSForumWebView: UIViewRepresentable {
 
             await clearConflictingYamiboCookies(for: validCookies, in: webView)
             for cookie in validCookies {
+                guard !isChangingAccount, !Task.isCancelled else { return }
                 if let current = storedByIdentity[cookie.identity],
                    YamiboCookie.isWAFCookie(cookie.name),
                    !current.isExpired(),
@@ -273,6 +284,30 @@ public struct IOSForumWebView: UIViewRepresentable {
             let cookies = await cookieStore.allCookies()
             for cookie in cookies where YamiboDomain.containsYamiboDomain(cookie.domain) {
                 await cookieStore.deleteCookieAsync(cookie)
+            }
+        }
+
+        static func prepareForAccountChange(sessionStore: SessionStore) async {
+            for coordinator in instances.allObjects where coordinator.sessionStore === sessionStore {
+                coordinator.isChangingAccount = true
+                coordinator.webView?.stopLoading()
+                let observation = coordinator.sessionObservationTask
+                let sync = coordinator.sessionSyncTask
+                observation?.cancel()
+                sync?.cancel()
+                await observation?.value
+                await sync?.value
+                coordinator.sessionObservationTask = nil
+                coordinator.sessionSyncTask = nil
+            }
+        }
+
+        static func finishAccountChange(_ session: SessionState, sessionStore: SessionStore) async {
+            for coordinator in instances.allObjects where coordinator.sessionStore === sessionStore {
+                coordinator.isChangingAccount = false
+                coordinator.sessionSyncState = ForumWebSessionSyncState()
+                await coordinator.synchronizeWebViewSession(session, reloadIfNeeded: true)
+                coordinator.startObservingSessionChanges()
             }
         }
 

@@ -1108,7 +1108,7 @@
 "settings.search.placeholder" = "搜索设置";
 "settings.search.no_results" = "没有找到相关设置";
 "settings.confirm_sign_out" = "确认退出登录";
-"settings.sign_out_message" = "确定要退出登录吗？";
+"settings.sign_out_message" = "将退出并移除当前账号，其他账号和本地阅读数据不受影响。";
 "settings.shortcuts_open_failed" = "无法打开快捷指令，请手动打开“快捷指令 > 自动化”创建百合会签到自动化。";
 "settings.favorite_sync" = "收藏同步";
 "settings.title" = "设置";
@@ -1212,3 +1212,14 @@
 "settings.keyboard.key_code" = "键码 %@";
 "parsing_context.novel_author_scope" = "小说作者范围";
 "parsing_context.manga_author_scope" = "漫画作者范围";
+"account.switch" = "切换账号";
+"account.add" = "添加账号";
+"account.remove" = "移除账号";
+"account.current" = "当前账号";
+"account.requires_login" = "需要重新登录";
+"account.remove_confirmation" = "将移除此设备保存的账号和登录状态，本地阅读数据不受影响。";
+"account.remove_current_confirmation" = "将退出并移除当前账号，其他账号和本地阅读数据不受影响。";
+"account.error.busy" = "正在处理账号操作，请稍后再试。";
+"account.error.missing" = "此账号已被移除，请重新添加。";
+"account.error.identity_mismatch" = "登录的账号与所选账号不一致，请使用所选账号重新登录。";
+"account.error.secure_storage" = "无法访问安全账号存储，请解锁设备后重试。";

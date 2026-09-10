@@ -41,6 +41,16 @@ public final class MessageUnreadWorkflow {
         invalidateRequest()
     }
 
+    public func prepareForAccountChange() {
+        summary = nil
+        lastAttempt = nil
+        invalidateRequest()
+    }
+
+    public func finishAccountChange() {
+        if isAppActive { Task { await refresh(force: true) } }
+    }
+
     public func refresh(force: Bool = false) async {
         let session = await sessionStore.load()
         guard !Task.isCancelled else { return }
@@ -100,7 +110,9 @@ public final class MessageUnreadWorkflow {
         repeat {
             guard requestID == id, isAppActive, !Task.isCancelled else { return }
             needsFollowup = false
-            let session = await sessionStore.load()
+            guard let snapshot = try? await sessionStore.snapshot(),
+                  await sessionStore.isCurrentGeneration(snapshot.generation) else { return }
+            let session = snapshot.session
             guard requestID == id, isAppActive, !Task.isCancelled else { return }
             if updateSession(session) {
                 Task { await refresh() }
@@ -120,6 +132,7 @@ public final class MessageUnreadWorkflow {
             // Validate against the store too, even if its change observer
             // has not yet handled a concurrent logout or account switch.
             guard requestID == id, isAppActive, !Task.isCancelled else { return }
+            guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return }
             let currentSession = await sessionStore.load()
             guard requestID == id, isAppActive, !Task.isCancelled else { return }
             if updateSession(currentSession) {

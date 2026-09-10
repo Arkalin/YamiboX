@@ -89,6 +89,7 @@ public struct RootTabView: View {
     private var content: some View {
         TabView(selection: selectedTabBinding) {
             ReadingHomeView(appModel: appModel)
+                .id(appModel.accountGeneration)
                 .tag(AppTab.home)
                 .tabItem {
                     Label(L10n.string("tab.home"), systemImage: "house")
@@ -99,12 +100,14 @@ public struct RootTabView: View {
                 appModel: appModel,
                 theme: AppTheme.theme(for: appModel.appThemePreset).forumTheme
             )
+                .id(appModel.accountGeneration)
                 .tag(AppTab.forum)
                 .tabItem {
                     Label(L10n.string("tab.forum"), systemImage: "text.bubble")
                 }
 
             FavoritesNavigationHostView(dependencies: appModel.appContext.libraryDependencies, appModel: appModel)
+                .id(appModel.accountGeneration)
                 .tag(AppTab.favorites)
                 .tabItem {
                     Label(L10n.string("tab.favorites"), systemImage: "heart.text.square")

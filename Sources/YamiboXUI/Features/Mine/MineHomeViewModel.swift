@@ -57,9 +57,7 @@ final class MineHomeViewModel {
         isLoading = true
         defer { isLoading = false }
 
-        session = await dependencies.sessionStore.load()
-        profile = await dependencies.profileStore.load()
-        await refreshCheckInState()
+        await reloadAccountSnapshot()
         await offlineQueue.load()
 
         guard isLoggedIn,
@@ -85,6 +83,16 @@ final class MineHomeViewModel {
 
     func refreshProfile() async {
         await refreshProfile(presentsErrors: true)
+    }
+
+    func reloadAccountSnapshot() async {
+        guard let snapshot = try? await dependencies.sessionStore.snapshot() else { return }
+        let loadedProfile = await dependencies.profileStore.load()
+        guard await dependencies.sessionStore.isCurrentGeneration(snapshot.generation) else { return }
+        session = snapshot.session
+        profile = loadedProfile
+        checkInResultMessage = nil
+        await refreshCheckInState()
     }
 
     func login(username: String, password: String, questionID: String, answer: String) async -> Bool {
@@ -146,8 +154,10 @@ final class MineHomeViewModel {
         isCheckingIn = true
         defer { isCheckingIn = false }
 
+        let snapshot = try? await dependencies.sessionStore.snapshot()
         let outcome = await checkInService.checkInWithDetails(force: false)
         guard !Task.isCancelled, !outcome.isCancelled else { return }
+        guard let snapshot, await dependencies.sessionStore.isCurrentGeneration(snapshot.generation) else { return }
         let result = outcome.result
         checkInResultMessage = nil
         switch result {
@@ -184,15 +194,13 @@ final class MineHomeViewModel {
         defer { isRefreshingProfile = false }
 
         do {
-            profile = try await dependencies.makeAccountService().refreshProfile()
+            let snapshot = try await dependencies.sessionStore.snapshot()
+            let refreshed = try await dependencies.makeAccountService().refreshProfile()
+            guard await dependencies.sessionStore.isCurrentGeneration(snapshot.generation) else { return }
+            profile = refreshed
             session = await dependencies.sessionStore.load()
             errorMessage = nil
         } catch where (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
-            do {
-                try await dependencies.makeAccountService().clearLocalAuthentication()
-            } catch {
-                YamiboLog.account.error("Failed to clear local authentication after server reported notAuthenticated: \(error)")
-            }
             session = await dependencies.sessionStore.load()
             profile = await dependencies.profileStore.load()
             await refreshCheckInState()

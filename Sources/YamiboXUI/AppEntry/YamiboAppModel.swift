@@ -67,6 +67,7 @@ public final class YamiboAppModel {
     public let imagePipeline: YamiboUIImagePipeline
     public let peripheralInput: ReaderPeripheralInputManager
     public let webSessionCoordinator: ForumWebSessionCoordinator
+    public private(set) var accountGeneration = UUID()
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
     @ObservationIgnored private let runtime: AppRuntimeCoordinator
@@ -138,6 +139,8 @@ public final class YamiboAppModel {
             bootstrapPhase = nil
         }
 
+        await configureAccountTransitions()
+
         let result = await appContinuity.launchIfNeeded(
             canRestoreReaderRoute: canRestoreReaderRoute,
             onProgress: updateBootstrapPhase
@@ -146,6 +149,32 @@ public final class YamiboAppModel {
         bootstrapState = result.bootstrapState
         bootstrapErrorMessage = nil
         applyRestoredRoute(result.restoredRoute)
+    }
+
+    private func configureAccountTransitions() async {
+        await appContext.accountTransitionLifecycle.configure(
+            prepare: { [weak self] in
+                guard let self else { return }
+                cancelMangaReaderOpen()
+                await webSessionCoordinator.prepareForAccountChange()
+                await IOSForumWebView.Coordinator.prepareForAccountChange(sessionStore: appContext.accountDependencies.sessionStore)
+                await FavoriteRemoteSyncSession.cancelForAccountChange(libraryStore: appContext.localFavoriteLibraryStore)
+            },
+            finish: { [weak self] session in
+                guard let self else { return }
+                await webSessionCoordinator.finishAccountChange(session)
+                await IOSForumWebView.Coordinator.finishAccountChange(session, sessionStore: appContext.accountDependencies.sessionStore)
+            },
+            publish: { [weak self] in
+                guard let self else { return }
+                suspendedNovelContext = nil
+                suspendedMangaContext = nil
+                forumNavigationRequest = nil
+                forumSearchRequest = nil
+                dismissPresentedReaderSession()
+                accountGeneration = UUID()
+            }
+        )
     }
 
     public func bootstrap() async {

@@ -55,7 +55,8 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         let sessionState = await sessionStore.load()
         let client = YamiboClient(
             session: imageSession,
-            credentials: sessionState.credentials
+            credentials: sessionState.credentials,
+            handlesCookies: false
         )
         return try await engine.data(for: source, client: client)
     }

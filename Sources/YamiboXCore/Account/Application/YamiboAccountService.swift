@@ -7,6 +7,8 @@ public struct YamiboAccountService: Sendable {
     private let userAgent: String
     private let websiteDataClearer: (any WebsiteDataClearing)?
     private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    private let coordinatedSignOut: (@Sendable () async throws -> Void)?
+    private let coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)?
 
     init(
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
@@ -14,7 +16,9 @@ public struct YamiboAccountService: Sendable {
         profileStore: YamiboProfileStore,
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        coordinatedSignOut: (@Sendable () async throws -> Void)? = nil,
+        coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil
     ) {
         self.session = session
         self.sessionStore = sessionStore
@@ -22,16 +26,36 @@ public struct YamiboAccountService: Sendable {
         self.userAgent = userAgent
         self.websiteDataClearer = websiteDataClearer
         self.wafRecoverer = wafRecoverer
+        self.coordinatedSignOut = coordinatedSignOut
+        self.coordinatedInvalidation = coordinatedInvalidation
+    }
+
+    public static func isolatedLoginService(
+        sessionStore: SessionStore,
+        profileStore: YamiboProfileStore,
+        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+    ) -> YamiboAccountService {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = YamiboNetworkConfiguration.requestTimeout
+        configuration.timeoutIntervalForResource = YamiboNetworkConfiguration.resourceTimeout
+        return YamiboAccountService(
+            session: URLSession(configuration: configuration),
+            sessionStore: sessionStore, profileStore: profileStore, wafRecoverer: wafRecoverer
+        )
     }
 
     public func login(_ request: YamiboLoginRequest) async throws -> YamiboProfile {
+        let baseline = try await sessionStore.snapshot()
         let trimmedUsername = request.username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedUsername.isEmpty, !request.password.isEmpty else {
             throw YamiboError.loginFailed(L10n.string("error.login_failed"))
         }
 
         let form = try await fetchLoginForm()
-        let client = YamiboClient(session: session, userAgent: userAgent, wafRecoverer: wafRecoverer)
+        let clearance = await sessionStore.load().cookies.filter { YamiboCookie.isWAFCookie($0.name) }
+        let client = YamiboClient(
+            session: session, credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent), wafRecoverer: wafRecoverer
+        )
         let responseHTML = try await client.submitForm(
             url: form.actionURL,
             fields: loginFields(
@@ -47,13 +71,16 @@ public struct YamiboAccountService: Sendable {
             throw YamiboError.loginVerificationRequired
         }
 
-        let cookies = currentCookies()
+        let cookies = await currentCookies()
         guard cookies.contains(where: { $0.name == SessionState.authenticationCookieName && !$0.isExpired() }) else {
             throw YamiboError.loginFailed(extractLoginFailureMessage(from: responseHTML))
         }
 
         let credentials = YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
         let profile = try await fetchProfile(credentials: credentials)
+        guard !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw YamiboError.accountUIDUnavailable }
+        try Task.checkCancellation()
+        guard await sessionStore.isCurrentGeneration(baseline.generation) else { throw CancellationError() }
         try await sessionStore.save(
             SessionState(
                 cookies: cookies,
@@ -61,40 +88,60 @@ public struct YamiboAccountService: Sendable {
                 isLoggedIn: true,
                 lastUpdatedAt: .now,
                 accountUID: profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            )
+            ),
+            expectedGeneration: baseline.generation
         )
         try await profileStore.save(profile)
         return profile
     }
 
     public func refreshProfile() async throws -> YamiboProfile {
-        let sessionState = await sessionStore.load()
+        let snapshot = try await sessionStore.snapshot()
+        let sessionState = snapshot.session
         guard sessionState.isLoggedIn,
               sessionState.hasValidAuthenticationCookie else {
+            if sessionState.isLoggedIn { try await clearLocalAuthentication(expectedGeneration: snapshot.generation) }
             throw YamiboError.notAuthenticated
         }
 
-        let profile = try await fetchProfile(
-            credentials: sessionState.credentials
-        )
-        try await profileStore.save(profile)
+        let profile: YamiboProfile
+        do {
+            profile = try await fetchProfile(credentials: sessionState.credentials, handlesCookies: false) {
+                guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+            }
+        } catch {
+            guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+            if LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated {
+                try await clearLocalAuthentication(expectedGeneration: snapshot.generation)
+            }
+            throw error
+        }
+        guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+        if let uid = sessionState.accountUID, !uid.isEmpty, profile.uid != uid { throw AccountSwitchError.identityMismatch }
+        try await profileStore.save(profile, expectedGeneration: snapshot.generation)
         if !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            profile.uid != sessionState.accountUID {
-            try await sessionStore.updateAccountUID(profile.uid)
+            try await sessionStore.updateAccountUID(profile.uid, expectedGeneration: snapshot.generation)
         }
         return profile
     }
 
     public func signOut() async throws {
+        if let coordinatedSignOut { try await coordinatedSignOut(); return }
         let sessionState = await sessionStore.load()
         let profile = await profileStore.load()
+        await requestServerSignOut(session: sessionState, profile: profile)
+        try await clearLocalAuthentication()
+    }
+
+    func requestServerSignOut(session sessionState: SessionState, profile: YamiboProfile?) async {
         if let formHash = profile?.formHash?.trimmingCharacters(in: .whitespacesAndNewlines),
            !formHash.isEmpty,
            !sessionState.cookies.isEmpty {
             let client = YamiboClient(
                 session: session,
                 credentials: sessionState.credentials,
-                wafRecoverer: wafRecoverer
+                handlesCookies: false
             )
             do {
                 _ = try await client.fetchHTML(for: .logout(formHash: formHash))
@@ -102,14 +149,29 @@ public struct YamiboAccountService: Sendable {
                 YamiboLog.account.warning("Best-effort server-side logout request failed, proceeding with local sign-out: \(error)")
             }
         }
-        try await clearLocalAuthentication()
     }
 
     public func clearLocalAuthentication() async throws {
+        try await clearLocalAuthentication(expectedGeneration: nil)
+    }
+
+    private func clearLocalAuthentication(expectedGeneration: UUID?) async throws {
+        if let coordinatedInvalidation { try await coordinatedInvalidation(expectedGeneration); return }
+        if let expectedGeneration, !(await sessionStore.isCurrentGeneration(expectedGeneration)) { throw CancellationError() }
         try await sessionStore.reset()
         await profileStore.clear()
         clearHTTPCookies()
         await websiteDataClearer?.clearYamiboCookies()
+    }
+
+    public func verifySession(_ state: SessionState) async throws -> YamiboProfile {
+        guard state.isLoggedIn, state.hasValidAuthenticationCookie else { throw YamiboError.notAuthenticated }
+        // Verification must never borrow the active account's WAF recovery session.
+        let client = YamiboClient(session: session, credentials: state.credentials, handlesCookies: false)
+        let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
+        return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
+            try YamiboProfileParser.parse(html)
+        }
     }
 
     private func fetchLoginForm() async throws -> YamiboLoginForm {
@@ -120,8 +182,13 @@ public struct YamiboAccountService: Sendable {
         }
     }
 
-    private func fetchProfile(credentials: YamiboRequestCredentials) async throws -> YamiboProfile {
-        let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer)
+    private func fetchProfile(
+        credentials: YamiboRequestCredentials,
+        handlesCookies: Bool = true,
+        validateSession: (@Sendable () async throws -> Void)? = nil
+    ) async throws -> YamiboProfile {
+        let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer,
+                                  handlesCookies: handlesCookies, validateSession: validateSession)
         let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
         return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
             try YamiboProfileParser.parse(html)
@@ -146,7 +213,7 @@ public struct YamiboAccountService: Sendable {
         return fields
     }
 
-    private func currentCookies() -> [YamiboCookie] {
+    private func currentCookies() async -> [YamiboCookie] {
         let storageCookies = cookieStorages()
             .flatMap { $0.cookies ?? [] }
             .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
@@ -155,6 +222,9 @@ public struct YamiboAccountService: Sendable {
         for cookie in storageCookies {
             let stored = YamiboCookie(cookie)
             uniqueCookies[stored.identity] = stored
+        }
+        for cookie in await sessionStore.load().cookies where YamiboCookie.isWAFCookie(cookie.name) {
+            uniqueCookies[cookie.identity] = cookie
         }
 
         return uniqueCookies.values
@@ -165,9 +235,6 @@ public struct YamiboAccountService: Sendable {
         var storages: [HTTPCookieStorage] = []
         if let storage = session.configuration.httpCookieStorage {
             storages.append(storage)
-        }
-        if !storages.contains(where: { $0 === HTTPCookieStorage.shared }) {
-            storages.append(.shared)
         }
         return storages
     }

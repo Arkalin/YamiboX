@@ -106,6 +106,12 @@ public struct MineHomeView: View {
             .task {
                 await viewModel.load()
             }
+            .task {
+                for await _ in sessionStore.changes() {
+                    guard !Task.isCancelled else { return }
+                    await viewModel.reloadAccountSnapshot()
+                }
+            }
             .failureAlert(
                 L10n.string("common.operation_failed"),
                 message: viewModel.errorMessage,
@@ -145,7 +151,8 @@ public struct MineHomeView: View {
                     },
                     onClose: {
                         isSettingsPushed = false
-                    }
+                    },
+                    accountSwitcher: appModel.appContext.accountSwitcher
                 )
             }
             .navigationDestination(isPresented: $isOfflineCacheQueuePushed) {

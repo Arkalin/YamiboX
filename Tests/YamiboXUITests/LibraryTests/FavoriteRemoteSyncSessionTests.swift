@@ -5,6 +5,33 @@ import YamiboXTestSupport
 
 @MainActor
 final class FavoriteRemoteSyncSessionTests: XCTestCase {
+    func testAccountChangeWaitsForCanceledSyncToPersistTerminalState() async throws {
+        let defaults = try YamiboTestDefaults.make(suiteName: YamiboTestDefaults.suiteName(prefix: "account-sync-drain"))
+        let library = FavoriteLibraryStore(defaults: defaults, key: "library")
+        let runStore = FavoriteSyncRunStore(defaults: defaults, key: "runs")
+        let started = expectation(description: "sync started")
+        let session = try makeSyncSession(libraryStore: library, runStore: runStore, runnerOverride: { snapshot, _, persist in
+            started.fulfill()
+            var final = snapshot
+            do {
+                try await Task.sleep(for: .seconds(10))
+                final.status = .completed
+            } catch {
+                final.status = .interrupted
+                final.phase = .interrupted
+            }
+            await persist(final)
+            return final
+        })
+        let runID = await session.start(targetCategoryID: FavoriteCategory.defaultID)
+        await fulfillment(of: [started], timeout: 2)
+        await FavoriteRemoteSyncSession.cancelForAccountChange(libraryStore: library)
+        XCTAssertEqual(session.snapshot?.status, .interrupted)
+        let persisted = await runStore.latestSnapshot()
+        XCTAssertEqual(persisted?.status, .interrupted)
+        XCTAssertFalse(FavoriteRemoteSyncSession.isRunActive(try XCTUnwrap(runID)))
+    }
+
     func testSnapshotLoadsInterruptsRunningTaskAndPersistsHiddenCard() async throws {
         let suiteName = YamiboTestDefaults.suiteName(prefix: "local-favorites-sync-snapshot")
         let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
