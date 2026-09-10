@@ -393,11 +393,36 @@ private struct ReaderChapterCommentRow: View {
                     .accessibilityLabel(L10n.string("reader.open_original_post"))
                 }
             }
-            Text(comment.body)
-                .font(.body)
-                .textSelection(.enabled)
+            ReaderChapterCommentBody(
+                text: comment.body,
+                blocks: comment.bodyBlocks,
+                refererURL: originalPostURL ?? YamiboDomain.baseURL
+            )
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct ReaderChapterCommentBody: View {
+    let text: String
+    let blocks: [ForumThreadTextBlock]?
+    let refererURL: URL
+
+    var body: some View {
+        ForumThreadInlineTextView(attributedText: attributedText, refererURL: refererURL)
+            .font(.body)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    var attributedText: AttributedString {
+        guard let blocks, !blocks.isEmpty else { return AttributedString(text) }
+        return blocks.reduce(into: AttributedString()) { result, block in
+            if !result.characters.isEmpty {
+                result.append(AttributedString("\n"))
+            }
+            result.append(ForumThreadTextBlockFormatter(block: block).attributedText)
+        }
     }
 }
 

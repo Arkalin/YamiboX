@@ -6,6 +6,29 @@ import XCTest
 
 final class ForumThreadInlineRenderingTests: XCTestCase {
     @MainActor
+    func testChapterCommentBodyPreservesImageAttributesAndRendersAtPhoneAndTabletWidths() throws {
+        let target = ReaderChapterCommentTarget(threadID: "42", view: 1, ownerPostID: "100", title: "Chapter")
+        let html = """
+        <div id='comment_100'><div class='pstl'><div class='psti'>
+        前😀<img src='static/image/smiley/default/smile.gif'>后
+        </div></div></div>
+        """
+        let page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
+        let comment = try XCTUnwrap(page.comments.first)
+        let body = ReaderChapterCommentBody(text: comment.body, blocks: comment.bodyBlocks, refererURL: YamiboDomain.baseURL)
+        XCTAssertEqual(String(body.attributedText.characters), "前😀\u{FFFC}后")
+        XCTAssertEqual(body.attributedText.runs.compactMap { $0[ForumThreadInlineImageKey.self] }.count, 1)
+        let plain = ReaderChapterCommentBody(text: comment.body, blocks: nil, refererURL: YamiboDomain.baseURL)
+        XCTAssertEqual(String(plain.attributedText.characters), "前😀后")
+        for width: CGFloat in [280, 700] {
+            let renderer = ImageRenderer(content: body.frame(width: width, alignment: .leading).background(.white))
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertGreaterThanOrEqual(image.size.height, 28)
+            attach(image, name: "Chapter Comment Emoticon \(Int(width))")
+        }
+    }
+
+    @MainActor
     func testChineseItalicChangesPixelsWithoutChangingLineLayout() throws {
         let plain = ForumThreadTextBlock(text: "中文斜体 Abc")
         var italic = plain

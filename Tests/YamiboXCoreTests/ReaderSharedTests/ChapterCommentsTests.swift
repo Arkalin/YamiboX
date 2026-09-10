@@ -184,7 +184,7 @@ import Testing
     #expect(page.comments.map(\.body) == ["我很赞同这个观点"])
 }
 
-@Test func chapterCommentsParserOmitsImageOnlyEmoticonOnlyAndEmptyRows() throws {
+@Test func chapterCommentsParserOmitsImageOnlyUnresolvableEmoticonAndEmptyRows() throws {
     let html = """
     <html><body>
       <div id="post_100"><div class="t_f" id="postmessage_100">第一章<br>正文</div></div>
