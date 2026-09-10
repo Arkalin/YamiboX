@@ -49,6 +49,7 @@ struct UserSpaceBodyView: View {
                     UserSpaceSubPageContentView(
                         selectedSubPage: selectedSubPage,
                         availableSubPages: availableSubPages,
+                        isSelf: isSelf,
                         viewAllBlogFilter: viewAllBlogFilter,
                         content: content,
                         pageNavigation: pageNavigation,
@@ -117,6 +118,7 @@ private struct UserSpaceSubPageContentView: View {
     @Environment(\.forumTheme) private var theme
     let selectedSubPage: UserSpaceSubPage
     let availableSubPages: [UserSpaceSubPage]
+    let isSelf: Bool
     let viewAllBlogFilter: UserSpaceViewAllBlogFilter
     let content: UserSpaceViewModel.Content?
     let pageNavigation: ForumPageNavigation?
@@ -139,6 +141,7 @@ private struct UserSpaceSubPageContentView: View {
             UserSpaceSubPagePickerView(
                 subPages: availableSubPages,
                 selectedSubPage: selectedSubPage,
+                isSelf: isSelf,
                 selectSubPage: selectSubPage
             )
         }

@@ -150,6 +150,15 @@ final class UserSpaceViewModelTests: XCTestCase {
         XCTAssertEqual(selfModel.navigationTitle, "在线成员")
     }
 
+    func testSubPageTitlesDistinguishSelfAndOtherUser() {
+        XCTAssertEqual(UserSpaceViewModel.title(for: .threads, isSelf: true), "我的主题")
+        XCTAssertEqual(UserSpaceViewModel.title(for: .replies, isSelf: true), "我的回复")
+        XCTAssertEqual(UserSpaceViewModel.title(for: .myBlogs, isSelf: true), "我的日志")
+        XCTAssertEqual(UserSpaceViewModel.title(for: .threads, isSelf: false), "Ta的主题")
+        XCTAssertEqual(UserSpaceViewModel.title(for: .replies, isSelf: false), "Ta的回复")
+        XCTAssertEqual(UserSpaceViewModel.title(for: .myBlogs, isSelf: false), "Ta的日志")
+    }
+
     func testLoadTreatsTargetUIDMatchingCurrentAccountAsSelf() async throws {
         let repository = UserSpaceRepositoryStub()
         let model = UserSpaceViewModel(

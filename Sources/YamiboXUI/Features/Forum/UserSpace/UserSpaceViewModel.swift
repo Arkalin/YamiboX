@@ -387,7 +387,7 @@ final class UserSpaceViewModel {
         }
     }
 
-    private static func title(for subPage: UserSpaceSubPage, isSelf: Bool) -> String {
+    static func title(for subPage: UserSpaceSubPage, isSelf: Bool) -> String {
         switch subPage {
         case .profile:
             isSelf ? L10n.string("user_space.my_profile") : L10n.string("user_space.other_profile")
