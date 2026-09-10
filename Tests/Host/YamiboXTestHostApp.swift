@@ -234,6 +234,10 @@ private struct ForumSendCrashFixture: View {
         let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=\(action)&tid=123&pid=456&mobile=2")!
         let source = ProcessInfo.processInfo.environment["FORUM_SEND_INITIAL_SOURCE"] ?? ""
         let firstPost = ProcessInfo.processInfo.environment["FORUM_SEND_FIRST_POST"] == "1"
+        let options = ProcessInfo.processInfo.environment["FORUM_COMPOSER_OPTIONS_FIXTURE"] == "1" ? """
+        <input type="checkbox" name="usesig" value="1" checked>
+        <input name="tags" value="fixture-tags">
+        """ : ""
         let html = """
         <html><head><title>Offline Reply</title></head><body>
         <script>var isfirstpost = \(firstPost ? "1" : "0");</script>
@@ -241,6 +245,7 @@ private struct ForumSendCrashFixture: View {
         <input type="hidden" name="formhash" value="offline-fixture">
         <input type="text" name="subject" id="needsubject" value="Offline Subject">
         <textarea name="message" id="message">\(source)</textarea>
+        \(options)
         <button type="submit" name="replysubmit" value="yes">Send Reply</button>
         </form></body></html>
         """
@@ -270,9 +275,17 @@ private struct ForumSendCrashFixture: View {
     }
 
     private var diagnostics: some View {
-        Text(verbatim: "pending=\(model.pendingSubmission != nil);submitting=\(model.isSubmitting);success=\(model.submissionSucceeded);count=\(counts.submissions)")
+        Text(verbatim: "pending=\(model.pendingSubmission != nil);submitting=\(model.isSubmitting);success=\(model.submissionSucceeded);count=\(counts.submissions)\(optionsDiagnostics)")
             .font(.caption2)
             .accessibilityIdentifier("forum-send-diagnostics")
+    }
+
+    private var optionsDiagnostics: String {
+        guard let form = model.page?.forms.first,
+              let field = form.fields.first(where: { $0.name == "usesig" }) else { return "" }
+        let values = model.drafts[form.id]?[field.id] ?? field.initialValues
+        let prepared = model.pendingSubmission?.values[field.id].map { String(!$0.isEmpty) } ?? "none"
+        return ";signature=\(!values.isEmpty);preparedSignature=\(prepared)"
     }
 }
 
