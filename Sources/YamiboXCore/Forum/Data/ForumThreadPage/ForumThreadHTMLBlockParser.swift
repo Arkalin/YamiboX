@@ -137,7 +137,11 @@ enum ForumThreadHTMLBlockParser {
                             alignment: block.alignment,
                             links: chunkLinks,
                             styleRuns: chunkStyleRuns,
-                            rubies: chunkRubies
+                            rubies: chunkRubies,
+                            inlineImages: block.inlineImages.compactMap { inline in
+                                guard inline.start >= start, inline.start < end else { return nil }
+                                return ForumThreadInlineImage(start: inline.start - start, image: inline.image)
+                            }
                         )
                     )
                 )

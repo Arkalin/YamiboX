@@ -15,10 +15,11 @@ enum ForumThreadTextStyleParser {
         return result.merged(with: style(fromStyleAttribute: element.attr("style")))
     }
 
-    /// Style carried by a CSS `style` attribute (color, background-color, font-size).
+    /// Style carried by CSS (color, background-color, font-size, font-style).
     static func style(fromStyleAttribute styleAttribute: String) -> ForumThreadTextStyle {
         let declarations = styleDeclarations(from: styleAttribute)
         return ForumThreadTextStyle(
+            isItalic: ["italic", "oblique"].contains(declarations["font-style"]?.lowercased() ?? ""),
             foregroundHex: declarations["color"].flatMap(normalizedColorHex),
             backgroundHex: declarations["background-color"].flatMap(normalizedColorHex),
             relativeFontSize: declarations["font-size"].flatMap(relativeFontSize(fromCSSFontSize:))

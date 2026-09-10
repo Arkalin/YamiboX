@@ -2,7 +2,7 @@ import Foundation
 
 /// Stateful DOM walker that flattens a sanitized post-body fragment into content blocks.
 ///
-/// Inline markup accumulates into a pending text run (with link/style/ruby ranges);
+/// Inline markup accumulates into a pending text run (with links, styles, rubies and smileys);
 /// block-level markup commits the pending run and emits structural blocks
 /// (quote, image, code, table, collapse, locked, attachment, ...). One instance
 /// parses one fragment; nested fragments recurse through `ForumThreadHTMLBlockParser`.
@@ -31,6 +31,7 @@ final class ForumThreadBlockBuilder {
     private var links: [PendingTextLink] = []
     private var styleRuns: [PendingTextStyleRun] = []
     private var rubies: [PendingRubyText] = []
+    private var inlineImages: [ForumThreadInlineImage] = []
     private var currentLinkURL: URL?
     private var currentStyle = ForumThreadTextStyle()
     private var currentAlignment = ForumThreadTextAlignment.start
@@ -57,6 +58,9 @@ final class ForumThreadBlockBuilder {
             return
         }
 
+        let previousStyle = currentStyle
+        currentStyle = currentStyle.merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: element.attr("style")))
+        defer { currentStyle = previousStyle }
         let tagName = element.tagName().lowercased()
         switch tagName {
         case "br":
@@ -322,18 +326,19 @@ final class ForumThreadBlockBuilder {
             return
         }
 
-        commitText()
-        appendBlock(
-            .image(
-                ForumThreadImageBlock(
-                    url: url,
-                    altText: element.attr("alt"),
-                    linkURL: currentLinkURL,
-                    isEmoticon: YamiboImageReferenceExtractor.isEmoticonURL(url)
-                )
-            ),
-            seed: "image-\(url.absoluteString)"
+        let image = ForumThreadImageBlock(
+            url: url,
+            altText: element.attr("alt"),
+            linkURL: currentLinkURL,
+            isEmoticon: YamiboImageReferenceExtractor.isEmoticonURL(url)
         )
+        if image.isEmoticon {
+            inlineImages.append(ForumThreadInlineImage(start: text.count, image: image))
+            appendText("\u{FFFC}")
+        } else {
+            commitText()
+            appendBlock(.image(image), seed: "image-\(url.absoluteString)")
+        }
     }
 
     private func parseChildren(of element: Element) throws {
@@ -393,6 +398,7 @@ final class ForumThreadBlockBuilder {
             links = []
             styleRuns = []
             rubies = []
+            inlineImages = []
             return
         }
 
@@ -420,7 +426,11 @@ final class ForumThreadBlockBuilder {
                     alignment: currentAlignment,
                     links: blockLinks,
                     styleRuns: blockStyleRuns,
-                    rubies: blockRubies
+                    rubies: blockRubies,
+                    inlineImages: inlineImages.compactMap { inline in
+                        guard let range = normalizedResult.range(start: inline.start, length: 1) else { return nil }
+                        return ForumThreadInlineImage(start: range.start, image: inline.image)
+                    }
                 )
             ),
             seed: "text-\(normalized.prefix(64))"
@@ -429,6 +439,7 @@ final class ForumThreadBlockBuilder {
         links = []
         styleRuns = []
         rubies = []
+        inlineImages = []
     }
 
     private func withTextAlignment(

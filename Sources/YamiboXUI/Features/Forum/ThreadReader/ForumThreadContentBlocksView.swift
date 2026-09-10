@@ -14,6 +14,7 @@ struct ForumThreadContentBlocksView: View {
             if blocks.isEmpty {
                 ForumThreadTextBlockView(
                     block: ForumThreadTextBlock(text: fallbackText),
+                    refererURL: refererURL,
                     onURLTap: onURLTap
                 )
             } else {
@@ -41,7 +42,7 @@ private struct ForumThreadContentBlockView: View {
     var body: some View {
         switch block.kind {
         case let .text(textBlock):
-            ForumThreadTextBlockView(block: textBlock, onURLTap: onURLTap)
+            ForumThreadTextBlockView(block: textBlock, refererURL: refererURL, onURLTap: onURLTap)
         case let .image(imageBlock):
             ForumThreadImageBlockView(
                 blockID: block.id,

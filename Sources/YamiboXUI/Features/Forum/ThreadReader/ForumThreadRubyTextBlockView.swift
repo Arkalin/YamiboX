@@ -11,12 +11,13 @@ struct ForumThreadRubyTextBlockView: View {
     @Environment(\.forumTheme) private var theme
     let segments: [ForumThreadRubySegment]
     let alignment: ForumThreadTextAlignment
+    let refererURL: URL
     let onURLTap: (URL) -> Void
 
     var body: some View {
         ForumThreadRubyFlowLayout(alignment: alignment) {
             ForEach(segments) { segment in
-                ForumThreadRubySegmentView(segment: segment)
+                ForumThreadRubySegmentView(segment: segment, refererURL: refererURL)
             }
         }
         .frame(maxWidth: .infinity, alignment: alignment.swiftUIFrameAlignment)
@@ -31,6 +32,7 @@ struct ForumThreadRubyTextBlockView: View {
 private struct ForumThreadRubySegmentView: View {
     @Environment(\.forumTheme) private var theme
     let segment: ForumThreadRubySegment
+    let refererURL: URL
 
     var body: some View {
         if let rubyText = segment.rubyText {
@@ -39,13 +41,13 @@ private struct ForumThreadRubySegmentView: View {
                     .font(.caption2)
                     .foregroundStyle(theme.secondaryText)
                     .lineLimit(1)
-                Text(segment.attributedText)
+                ForumThreadInlineTextView(attributedText: segment.attributedText, refererURL: refererURL)
                     .font(.body)
                     .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
             }
         } else {
-            Text(segment.attributedText)
+            ForumThreadInlineTextView(attributedText: segment.attributedText, refererURL: refererURL)
                 .font(.body)
                 .lineSpacing(4)
                 .foregroundStyle(theme.primaryText)

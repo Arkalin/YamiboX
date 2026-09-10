@@ -4,6 +4,7 @@ import YamiboXCore
 struct ForumThreadTextBlockView: View {
     @Environment(\.forumTheme) private var theme
     let block: ForumThreadTextBlock
+    var refererURL: URL = YamiboDomain.baseURL
     let onURLTap: (URL) -> Void
 
     @State private var cache = ForumThreadTextBlockFormatterCache()
@@ -16,13 +17,14 @@ struct ForumThreadTextBlockView: View {
             ForumThreadRubyTextBlockView(
                 segments: cache.rubySegments(for: block, theme: theme),
                 alignment: block.alignment,
+                refererURL: refererURL,
                 onURLTap: onURLTap
             )
         }
     }
 
     private var plainText: some View {
-        Text(cache.attributedText(for: block, theme: theme))
+        ForumThreadInlineTextView(attributedText: cache.attributedText(for: block, theme: theme), refererURL: refererURL)
             .font(.body)
             .lineSpacing(4)
             .foregroundStyle(theme.primaryText)

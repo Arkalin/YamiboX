@@ -49,11 +49,16 @@ struct ImageReferenceExtractionTests {
             }
             return nil
         }
-        #expect(imageBlocks.count == 2)
+        let emoticons = page.posts.flatMap(\.contentBlocks).flatMap { block -> [ForumThreadInlineImage] in
+            guard case let .text(text) = block.kind else { return [] }
+            return text.inlineImages
+        }
+        #expect(imageBlocks.count == 1)
         #expect(imageBlocks.first?.url.absoluteString == "https://bbs.yamibo.com/data/attachment/forum/full.png")
         #expect(imageBlocks.first?.isEmoticon == false)
-        #expect(imageBlocks.last?.url.absoluteString == "https://bbs.yamibo.com/static/image/smiley/default/titter.gif")
-        #expect(imageBlocks.last?.isEmoticon == true)
+        #expect(emoticons.count == 1)
+        #expect(emoticons.first?.image.url.absoluteString == "https://bbs.yamibo.com/static/image/smiley/default/titter.gif")
+        #expect(emoticons.first?.image.isEmoticon == true)
     }
 
     @Test func forumPostImagesFilterForumChromeAssets() throws {
