@@ -26,9 +26,13 @@ struct ReaderGlassContainer<Content: View>: View {
 
 extension View {
     @ViewBuilder
-    func readerChromePanel(cornerRadius: CGFloat = 28, tint: Color = .clear) -> some View {
+    func readerChromePanel(
+        cornerRadius: CGFloat = 28,
+        tint: Color = .clear,
+        isInteractive: Bool = false
+    ) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            self.glassEffect(.regular.tint(tint).interactive(isInteractive), in: .rect(cornerRadius: cornerRadius))
         } else {
             self
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -249,7 +253,7 @@ private struct ReaderChromeHistoryButtonGlassModifier: ViewModifier {
         if isGlassBacked {
             content
                 .frame(width: size, height: size)
-                .readerChromePanel(cornerRadius: size / 2, tint: tint)
+                .readerChromePanel(cornerRadius: size / 2, tint: tint, isInteractive: true)
         } else {
             content
         }
@@ -297,7 +301,11 @@ struct ReaderChromeCapsuleButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .readerChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
+        .readerChromePanel(
+            cornerRadius: 24,
+            tint: readerChromePanelTint(for: colorScheme),
+            isInteractive: isEnabled
+        )
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
         .accessibilityLabel(title)

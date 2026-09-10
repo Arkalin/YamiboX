@@ -41,6 +41,7 @@ struct ReaderDirectoryProgressCapsule: View {
     let isScrubbing: Bool
     let ticks: [ReaderChromeProgressTick]
     let iconSystemName: String
+    let usesNativePressFeedback: Bool
     let onTapDirectory: () -> Void
     let onScrub: (CGFloat, CGFloat) -> Void
     let onEndScrub: () -> Void
@@ -57,6 +58,7 @@ struct ReaderDirectoryProgressCapsule: View {
         isScrubbing: Bool,
         ticks: [ReaderChromeProgressTick],
         iconSystemName: String = "list.bullet",
+        usesNativePressFeedback: Bool = false,
         onTapDirectory: @escaping () -> Void,
         onScrub: @escaping (CGFloat, CGFloat) -> Void,
         onEndScrub: @escaping () -> Void
@@ -69,6 +71,7 @@ struct ReaderDirectoryProgressCapsule: View {
         self.isScrubbing = isScrubbing
         self.ticks = ticks
         self.iconSystemName = iconSystemName
+        self.usesNativePressFeedback = usesNativePressFeedback
         self.onTapDirectory = onTapDirectory
         self.onScrub = onScrub
         self.onEndScrub = onEndScrub
@@ -118,7 +121,11 @@ struct ReaderDirectoryProgressCapsule: View {
             .frame(height: 44)
             .clipShape(Capsule())
             .contentShape(Capsule())
-            .readerChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
+            .readerChromePanel(
+                cornerRadius: 24,
+                tint: readerChromePanelTint(for: colorScheme),
+                isInteractive: usesNativePressFeedback
+            )
             .gesture(scrubGesture(width: width), including: supportsScrub ? .gesture : .subviews)
             .onTapGesture(perform: onTapDirectory)
             .accessibilityAddTraits(.isButton)

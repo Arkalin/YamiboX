@@ -176,6 +176,7 @@ private struct MangaReaderDirectoryProgressControl: View {
             isScrubbing: scrubState.phase == .scrubbing,
             ticks: progress.ticks,
             iconSystemName: progress.iconSystemName,
+            usesNativePressFeedback: progressChromePresentation.readingMode == .vertical,
             onTapDirectory: onShowDirectory,
             onScrub: { locationX, width in
                 handleHorizontalCapsuleScrub(locationX: locationX, width: width)

@@ -223,6 +223,7 @@ struct NovelReaderBottomChrome: View {
                 supportsScrub: progressChromePresentation.supportsHorizontalScrub && sliderHasAvailableRange,
                 isScrubbing: scrubState.phase == .scrubbing,
                 ticks: progress.ticks,
+                usesNativePressFeedback: readingMode == .vertical,
                 onTapDirectory: onShowChapters,
                 onScrub: { locationX, width in
                     handleHorizontalCapsuleScrub(locationX: locationX, width: width)
