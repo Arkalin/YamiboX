@@ -147,14 +147,20 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             }
 
-            if navigationAction.targetFrame == nil, isInternal(url) {
-                webView.load(URLRequest(url: url))
+            if navigationAction.targetFrame?.isMainFrame != false, ForumWebPagePolicy.requiresForumHandling(url) {
+                decisionHandler(.cancel)
+                routeNatively(url, webView: webView)
+                return
+            }
+
+            if !["http", "https", "about"].contains(url.scheme?.lowercased() ?? "") {
+                UIApplication.shared.open(url)
                 decisionHandler(.cancel)
                 return
             }
 
-            if !isInternal(url) {
-                UIApplication.shared.open(url)
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
                 decisionHandler(.cancel)
                 return
             }
@@ -169,13 +175,28 @@ public struct IOSForumWebView: UIViewRepresentable {
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
             if let url = navigationAction.request.url {
-                if isInternal(url) {
-                    webView.load(URLRequest(url: url))
+                if ForumWebPagePolicy.requiresForumHandling(url) {
+                    routeNatively(url, webView: webView)
+                } else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                    webView.load(navigationAction.request)
                 } else {
                     UIApplication.shared.open(url)
                 }
             }
             return nil
+        }
+
+        private func routeNatively(_ url: URL, webView: WKWebView) {
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
+                // Commit the login response's cookies before the native screen
+                // builds its first authenticated URLSession request.
+                let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+                    .map { YamiboCookie($0) }
+                    .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
+                try? await sessionStore.updateWebSession(cookies: cookies, userAgent: webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent)
+                model.openNative(url)
+            }
         }
 
         private func isInternal(_ url: URL) -> Bool {

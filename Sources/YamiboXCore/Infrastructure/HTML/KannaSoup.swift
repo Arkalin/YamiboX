@@ -18,7 +18,7 @@ enum KannaSoup {
 }
 
 class Node {
-    fileprivate let rawNode: any Kanna.XMLElement
+    fileprivate var rawNode: any Kanna.XMLElement
 
     fileprivate init(rawNode: any Kanna.XMLElement) {
         self.rawNode = rawNode
@@ -66,6 +66,16 @@ class Element: Node {
 
     func attr(_ name: String) -> String {
         rawNode[name] ?? ""
+    }
+
+    func hasAttribute(_ name: String) -> Bool {
+        rawNode[name] != nil
+    }
+
+    var attributes: [String: String] { rawNode.attributes }
+
+    func setAttribute(_ name: String, value: String) {
+        rawNode[name] = value
     }
 
     func html() -> String {

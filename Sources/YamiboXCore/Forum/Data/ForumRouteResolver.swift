@@ -20,12 +20,23 @@ public enum ForumResolvedRoute: Equatable, Hashable, Sendable {
     case messageCenter(tab: MessageCenterTab)
     case privateMessage(uid: String, name: String?)
     case blog(blogID: String, uid: String?, title: String?)
+    case postEditor(URL)
+    case blogEditor(URL)
+    case actionForm(URL)
+    case document(URL)
     case web(URL)
 }
 
 public enum ForumRouteResolver {
     public static func resolve(url: URL, source: ForumNavigationSource = .external) -> ForumResolvedRoute {
         let resolvedURL = URL(string: url.absoluteString, relativeTo: YamiboDomain.baseURL)?.absoluteURL ?? url.absoluteURL
+
+        guard ForumWebPagePolicy.requiresForumHandling(resolvedURL) else {
+            return .web(resolvedURL)
+        }
+        if ForumWebPagePolicy.requiresConfirmationToLoad(resolvedURL) {
+            return .actionForm(resolvedURL)
+        }
 
         if let board = boardRoute(from: resolvedURL) {
             return .board(fid: board.fid, title: nil, page: board.page)
@@ -55,7 +66,12 @@ public enum ForumRouteResolver {
             return .home
         }
 
-        return .web(resolvedURL)
+        switch ForumPagePurpose(url: resolvedURL) {
+        case .postEditor: return .postEditor(resolvedURL)
+        case .blogEditor: return .blogEditor(resolvedURL)
+        case .actionForm: return .actionForm(resolvedURL)
+        case .document: return .document(resolvedURL)
+        }
     }
 
     public static func boardURL(fid: String, page: Int? = nil) -> URL {
@@ -104,7 +120,7 @@ public enum ForumRouteResolver {
         let items = components.queryItems ?? []
         let mod = items.value(named: "mod")?.nilIfBlank
         if items.value(named: "tid")?.nilIfBlank != nil {
-            return mod == nil || mod == "viewthread"
+            return mod == nil || mod == "viewthread" || mod == "redirect"
         }
         if items.value(named: "ptid")?.nilIfBlank != nil,
            items.value(named: "pid")?.nilIfBlank != nil,
@@ -118,7 +134,7 @@ public enum ForumRouteResolver {
         if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             let items = components.queryItems ?? []
             if items.value(named: "mod") == "space",
-               items.value(named: "do") != "blog",
+               (items.value(named: "do") == nil || items.value(named: "do") == "profile"),
                let uid = items.value(named: "uid")?.nilIfBlank {
                 return uid
             }
@@ -182,7 +198,7 @@ public enum ForumRouteResolver {
     private static func isForumHomeURL(_ url: URL) -> Bool {
         guard url.host == YamiboDomain.baseURL.host else { return false }
         let path = url.path.isEmpty ? "/" : url.path
-        if path == "/" || path == "/index.php" {
+        if (path == "/" || path == "/index.php") && url.query == nil {
             return true
         }
         guard path == "/forum.php" else { return false }
@@ -192,6 +208,7 @@ public enum ForumRouteResolver {
         return (mod == nil || mod?.isEmpty == true)
             && queryItems.value(named: "fid") == nil
             && queryItems.value(named: "tid") == nil
+            && queryItems.value(named: "gid") == nil
     }
 }
 

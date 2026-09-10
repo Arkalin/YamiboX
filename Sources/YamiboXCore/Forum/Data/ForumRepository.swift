@@ -23,6 +23,10 @@ public actor ForumRepository {
         return await cacheStore.loadHome(allowExpired: allowExpired)
     }
 
+    public func pageRepository() -> ForumPageRepository {
+        ForumPageRepository(client: client)
+    }
+
     public func cachedForumBoard(
         fid: String,
         page: Int = 1,

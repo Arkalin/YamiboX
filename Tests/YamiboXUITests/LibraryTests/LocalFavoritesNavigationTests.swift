@@ -50,7 +50,7 @@ final class LocalFavoritesNavigationTests: XCTestCase {
 
         navigation.navigator.route(homeURL, source: .external)
 
-        XCTAssertEqual(navigation.path, [.detail(detail), .forum(.web(homeURL))])
+        XCTAssertEqual(navigation.path, [.detail(detail), .forum(.home)])
         navigation.path = Array(navigation.path.dropLast())
         XCTAssertEqual(navigation.routes.detail, detail)
     }

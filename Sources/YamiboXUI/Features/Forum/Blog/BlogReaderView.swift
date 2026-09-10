@@ -7,13 +7,16 @@ struct BlogReaderView: View {
 
     let onUserTap: (String, String?) -> Void
     let onWebTap: (URL) -> Void
+    let refreshRevision: UUID?
 
     init(
         model: BlogReaderViewModel,
+        refreshRevision: UUID? = nil,
         onUserTap: @escaping (String, String?) -> Void,
         onWebTap: @escaping (URL) -> Void
     ) {
         _model = State(wrappedValue: model)
+        self.refreshRevision = refreshRevision
         self.onUserTap = onUserTap
         self.onWebTap = onWebTap
     }
@@ -41,8 +44,8 @@ struct BlogReaderView: View {
         )
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
-        .task {
-            await model.load()
+        .task(id: refreshRevision) {
+            await model.load(refreshRevision: refreshRevision)
         }
         .transientMessage(model.commentResultMessage) {
             model.clearCommentResult()

@@ -62,6 +62,7 @@ public final class YamiboAppModel {
     public private(set) var forumSearchRequest: ForumSearchRequest?
     public private(set) var appThemePreset = AppThemePreset.classic
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
+    let forumContentRefresh = ForumContentRefreshState()
 
     public let appContext: YamiboAppContext
     public let imagePipeline: YamiboUIImagePipeline
@@ -171,6 +172,7 @@ public final class YamiboAppModel {
                 suspendedMangaContext = nil
                 forumNavigationRequest = nil
                 forumSearchRequest = nil
+                forumContentRefresh.reset()
                 dismissPresentedReaderSession()
                 accountGeneration = UUID()
             }

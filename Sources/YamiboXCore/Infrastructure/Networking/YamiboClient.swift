@@ -5,6 +5,13 @@ enum YamiboRequestCancellationPolicy: Sendable {
     case completeStartedRequest
 }
 
+struct YamiboHTMLResponse: Sendable {
+    let html: String
+    let url: URL
+    var file: ForumAttachmentFile? = nil
+    var continuationURL: URL? = nil
+}
+
 struct YamiboClient: Sendable {
     var session: URLSession
     var credentials: YamiboRequestCredentials
@@ -127,16 +134,42 @@ struct YamiboClient: Sendable {
         )
     }
 
+    /// Native documents use a task-scoped redirect guard. Unlike general forum
+    /// reads, their URL is supplied by page links and form actions.
+    func fetchPageDocument(url: URL, fields: [ForumFormValue]? = nil, files: [ForumFormFile] = [], referer: URL? = nil) async throws -> YamiboHTMLResponse {
+        guard ForumWebPagePolicy.requiresForumHandling(url) else { throw ForumPageError.invalidURL }
+        var request = YamiboNetworkConfiguration.makeRequest(url: ForumWebPagePolicy.secureURL(url), cachePolicy: .reloadIgnoringLocalCacheData)
+        if let fields {
+            request.httpMethod = "POST"
+            if files.isEmpty {
+                request.httpBody = formBody(fields.map { ($0.name, $0.value) })
+                request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+            } else {
+                let boundary = "YamiboX-\(UUID().uuidString)"
+                request.httpBody = ForumMultipart.body(fields: fields, files: files, boundary: boundary)
+                request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            }
+        }
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9", forHTTPHeaderField: "Accept")
+        request.setValue(referer?.absoluteString, forHTTPHeaderField: "Referer")
+        applyCredentials(credentials, to: &request, userAgent: userAgent)
+        return try await performHTMLResponseRequest(
+            request, userAgent: userAgent, cancellationPolicy: .propagateCancellation,
+            delegate: ForumPageRedirectDelegate(), allowsFiles: true
+        )
+    }
+
     private func data(
         for request: URLRequest,
-        cancellationPolicy: YamiboRequestCancellationPolicy
+        cancellationPolicy: YamiboRequestCancellationPolicy,
+        delegate: (any URLSessionTaskDelegate)? = nil
     ) async throws -> (Data, URLResponse) {
         switch cancellationPolicy {
         case .propagateCancellation:
-            return try await session.data(for: request)
+            return try await session.data(for: request, delegate: delegate)
         case .completeStartedRequest:
             let requestTask = Task {
-                try await session.data(for: request)
+                try await session.data(for: request, delegate: delegate)
             }
             return try await requestTask.value
         }
@@ -147,16 +180,26 @@ struct YamiboClient: Sendable {
         userAgent: String,
         cancellationPolicy: YamiboRequestCancellationPolicy
     ) async throws -> String {
+        try await performHTMLResponseRequest(request, userAgent: userAgent, cancellationPolicy: cancellationPolicy).html
+    }
+
+    private func performHTMLResponseRequest(
+        _ request: URLRequest,
+        userAgent: String,
+        cancellationPolicy: YamiboRequestCancellationPolicy,
+        delegate: (any URLSessionTaskDelegate)? = nil,
+        allowsFiles: Bool = false
+    ) async throws -> YamiboHTMLResponse {
         do {
             try await validateSession?()
-            let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy)
+            let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy, delegate: delegate)
             try await validateSession?()
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
             }
 
             guard YamiboWAFResponseDetector.matches(data: initialData, response: httpResponse, requestURL: request.url ?? YamiboDomain.baseURL) else {
-                return try decodeHTML(from: initialData, response: response)
+                return try decodeResponse(data: initialData, response: httpResponse, allowsFiles: allowsFiles)
             }
 
             guard let wafRecoverer, let url = request.url else {
@@ -192,10 +235,16 @@ struct YamiboClient: Sendable {
                 throw LoadDiagnosticError.mapping(error, to: YamiboError.securityVerificationRequired)
             }
 
+            if allowsFiles, request.httpMethod != "GET" || request.url.map(ForumWebPagePolicy.requiresConfirmationToLoad) == true {
+                // Do not replay native account mutations or uploads after an
+                // authentication round trip. The user must confirm a retry.
+                throw YamiboError.securityVerificationRequired
+            }
+
             var retry = request
             retry.cachePolicy = .reloadIgnoringLocalCacheData
             applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
-            let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy)
+            let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy, delegate: delegate)
             try await validateSession?()
             guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
@@ -204,10 +253,40 @@ struct YamiboClient: Sendable {
                 await wafRecoverer.presentFallback(for: challenge)
                 throw YamiboError.securityVerificationRequired
             }
-            return try decodeHTML(from: retryData, response: retryResponse)
+            return try decodeResponse(data: retryData, response: retryHTTPResponse, allowsFiles: allowsFiles)
         } catch {
             throw LoadDiagnosticError.attaching(to: error, requestContext: request.url?.absoluteString)
         }
+    }
+
+    private func decodeResponse(data: Data, response: HTTPURLResponse, allowsFiles: Bool) throws -> YamiboHTMLResponse {
+        if allowsFiles, [301, 302, 303, 307, 308].contains(response.statusCode),
+           let location = response.value(forHTTPHeaderField: "Location"),
+           let url = URL(string: location, relativeTo: response.url)?.absoluteURL,
+           ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil {
+            // Blocked redirects become explicit links, not silent requests with
+            // credentials or automatic account actions.
+            return YamiboHTMLResponse(html: "", url: response.url ?? YamiboDomain.baseURL, continuationURL: url)
+        }
+        let mime = response.mimeType?.lowercased() ?? "text/html"
+        let prefix = String(decoding: data.prefix(512), as: UTF8.self).lowercased()
+        let isHTML = mime.contains("html") || mime.contains("xml") || prefix.contains("<html") || prefix.contains("<!doctype html") || prefix.contains("<root")
+        // Text responses from upload endpoints are numeric IDs / JSON, not
+        // downloaded files. Attachments and plain-text documents carry a
+        // disposition or a file URL, while image/PDF/binary MIME types suffice.
+        let isFile = response.value(forHTTPHeaderField: "Content-Disposition")?.lowercased().contains("attachment") == true
+            || mime.hasPrefix("image/") || mime.hasPrefix("audio/") || mime.hasPrefix("video/")
+            || ["application/pdf", "application/octet-stream", "application/zip", "application/epub+zip"].contains(mime)
+            || (mime == "text/plain" && response.url?.pathExtension.lowercased() == "txt")
+        if allowsFiles, isFile, !isHTML {
+            guard 200..<300 ~= response.statusCode else { throw YamiboError.invalidResponse(statusCode: response.statusCode) }
+            guard data.count <= 50 * 1024 * 1024 else { throw ForumPageError.fileTooLarge }
+            return YamiboHTMLResponse(
+                html: "", url: response.url ?? YamiboDomain.baseURL,
+                file: ForumAttachmentFile(name: response.suggestedFilename ?? "attachment", data: data)
+            )
+        }
+        return YamiboHTMLResponse(html: try decodeHTML(from: data, response: response), url: response.url ?? YamiboDomain.baseURL)
     }
 
     private func applyCredentials(
@@ -256,6 +335,20 @@ struct YamiboClient: Sendable {
 
     private func percentEncode(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .formURLQueryAllowed) ?? value
+    }
+}
+
+final class ForumPageRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let url = request.url, ForumWebPagePolicy.isForumPage(url), url.scheme?.lowercased() == "https",
+              !ForumWebPagePolicy.requiresConfirmationToLoad(url), request.httpMethod == "GET" else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }
 

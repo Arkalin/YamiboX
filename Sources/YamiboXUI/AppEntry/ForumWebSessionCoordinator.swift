@@ -104,8 +104,10 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
         let generation = webGeneration
         await prepareWebView(userAgent: challenge.userAgent)
         guard generation == webGeneration, !isChangingAccount, !Task.isCancelled else { return }
-        presentation = .fallback(challenge.url)
-        webView.load(URLRequest(url: challenge.url, cachePolicy: .reloadIgnoringLocalCacheData))
+        // Verification is an authentication surface, never a fallback browser
+        // for the failed document (which might even be a state-changing URL).
+        presentation = .fallback(YamiboRoute.login.url)
+        webView.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     public func attachWebView(to container: UIView, placement: ForumWebSessionWebViewPlacement) {
@@ -160,6 +162,23 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
         cookieSyncTask?.cancel()
         cookieSyncTask = Task { @MainActor [weak self] in
             await self?.synchronizeCookieSnapshot()
+        }
+    }
+
+    public func webView(
+        _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.targetFrame?.isMainFrame != false,
+           let url = navigationAction.request.url,
+           ForumWebPagePolicy.requiresForumHandling(url) {
+            decisionHandler(.cancel)
+            Task { @MainActor [weak self] in
+                await self?.synchronizeCookieSnapshot()
+                self?.dismissPresentation()
+            }
+        } else {
+            decisionHandler(.allow)
         }
     }
 
@@ -235,7 +254,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
                 return
             }
             flight?.isObservingClearance = true
-            webView.load(URLRequest(url: challenge.url, cachePolicy: .reloadIgnoringLocalCacheData))
+            webView.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
             beginSilentTimeout()
         }
     }

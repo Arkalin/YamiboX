@@ -12,6 +12,7 @@ final class ForumDestinationNavigator {
         didSet { actionErrorDetails = nil }
     }
     var actionErrorDetails: LoadFailureDetails?
+    var transientFeedback: TransientFeedback?
 
     @ObservationIgnored let dependencies: ForumDependencies
     @ObservationIgnored let appModel: YamiboAppModel
@@ -51,6 +52,15 @@ final class ForumDestinationNavigator {
     }
 
     func push(_ destination: ForumDestination) {
+        if case let .web(url) = destination, ForumWebPagePolicy.requiresForumHandling(url) {
+            switch ForumPagePurpose(url: url) {
+            case .postEditor: path.append(.postEditor(url))
+            case .blogEditor: path.append(.blogEditor(url))
+            case .actionForm: path.append(.actionForm(url))
+            case .document: path.append(.document(url))
+            }
+            return
+        }
         path.append(destination)
     }
 
@@ -61,10 +71,7 @@ final class ForumDestinationNavigator {
             case .forumTab:
                 path = []
             case .readerOverlay, .contentBrowser:
-                // There is no forum home inside an overlay stack, and popping
-                // to its root would land on the original post instead — show
-                // the web home so the link still leads somewhere sensible.
-                push(.web(url))
+                push(.home)
             }
         case let .board(fid, title, page):
             push(.board(fid: fid, title: title, page: page))
@@ -84,6 +91,14 @@ final class ForumDestinationNavigator {
             push(.privateMessage(uid: uid, name: name))
         case let .blog(blogID, uid, title):
             push(.blog(blogID: blogID, uid: uid, title: title))
+        case let .postEditor(url):
+            push(.postEditor(url))
+        case let .blogEditor(url):
+            push(.blogEditor(url))
+        case let .actionForm(url):
+            push(.actionForm(url))
+        case let .document(url):
+            push(.document(url))
         case let .web(url):
             push(.web(url))
         }
@@ -245,11 +260,11 @@ final class ForumDestinationNavigator {
                 readerOverride: readerOverride
             )
         } else {
-            push(.web(item.url))
+            route(item.url, source: .external)
         }
     }
 
-    func openPostThreadFallback(fid: String) {
+    func openPostThreadComposer(fid: String) {
         var components = URLComponents(url: YamiboDomain.baseURL, resolvingAgainstBaseURL: false)!
         components.path = "/forum.php"
         components.queryItems = [
@@ -259,7 +274,7 @@ final class ForumDestinationNavigator {
             .init(name: "mobile", value: "2")
         ]
         if let url = components.url {
-            push(.web(url))
+            push(.postEditor(url))
         }
     }
 

@@ -12,9 +12,11 @@ struct UserSpaceView: View {
     let onPrivateMessageTap: (String, String?) -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
     let onWebTap: (URL) -> Void
+    let refreshRevision: UUID?
 
     init(
         model: UserSpaceViewModel,
+        refreshRevision: UUID? = nil,
         onThreadTap: @escaping (URL, String?) -> Void,
         onUserTap: @escaping (String, String?) -> Void,
         onSectionTap: @escaping (String?, String?, UserSpaceSection, UserSpaceSubPage) -> Void,
@@ -24,6 +26,7 @@ struct UserSpaceView: View {
         onWebTap: @escaping (URL) -> Void
     ) {
         _model = State(wrappedValue: model)
+        self.refreshRevision = refreshRevision
         self.onThreadTap = onThreadTap
         self.onUserTap = onUserTap
         self.onSectionTap = onSectionTap
@@ -80,7 +83,7 @@ struct UserSpaceView: View {
                 }
             }
         }
-        .task {
+        .task(id: refreshRevision) {
             await model.load()
         }
         .sheet(isPresented: Binding(

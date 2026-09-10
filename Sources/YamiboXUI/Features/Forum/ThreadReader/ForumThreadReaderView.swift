@@ -8,15 +8,18 @@ struct ForumThreadReaderView: View {
     let onURLTap: (URL) -> Void
     let onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)?
     let isSwitchingReaderMode: Bool
+    let submissionChange: ForumSubmissionChange?
 
     init(
         model: ForumThreadReaderViewModel,
+        submissionChange: ForumSubmissionChange? = nil,
         onUserTap: @escaping (String, String?) -> Void,
         onURLTap: @escaping (URL) -> Void,
         onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil,
         isSwitchingReaderMode: Bool = false
     ) {
         _model = State(wrappedValue: model)
+        self.submissionChange = submissionChange
         self.onUserTap = onUserTap
         self.onURLTap = onURLTap
         self.onReaderModeSwitch = onReaderModeSwitch
@@ -128,8 +131,8 @@ struct ForumThreadReaderView: View {
                 }
             )
         }
-        .task {
-            await model.load()
+        .task(id: submissionChange?.id) {
+            await model.load(submissionChange: submissionChange)
         }
         .onDisappear {
             model.flushReadingProgress()
