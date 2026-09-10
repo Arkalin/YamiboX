@@ -8,7 +8,9 @@ import UIKit
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["FORUM_ATTACHMENT_UPLOAD_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
+                CreditLogFixture()
+            } else if ProcessInfo.processInfo.environment["FORUM_ATTACHMENT_UPLOAD_FIXTURE"] == "1" {
                 ForumPhotoUploadFixture(attachmentFixture: true)
             } else if ProcessInfo.processInfo.environment["FORUM_PHOTO_UPLOAD_FIXTURE"] == "1" {
                 ForumPhotoUploadFixture()
@@ -18,6 +20,115 @@ struct YamiboXTestHostApp: App {
                 MangaLongPressFixture()
             }
         }
+    }
+}
+
+private struct CreditLogFixture: View {
+    private enum Destination: Hashable {
+        case credits
+        case link(URL)
+    }
+
+    @State private var path: [Destination] = []
+    @State private var account = 1
+
+    private let environment = ProcessInfo.processInfo.environment
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ScrollView {
+                UserSpaceProfileHeaderView(
+                    profile: UserSpaceProfile(uid: "1", username: "测试用户", totalPoints: 155, points: 29, partner: 377),
+                    isSelf: environment["CREDIT_LOG_OTHER_PROFILE"] != "1",
+                    onSectionTap: { _, _ in },
+                    beginAddFriend: {},
+                    onMessageCenterTap: { _ in },
+                    onCreditLogTap: { path.append(.credits) },
+                    onWebTap: { path.append(.link($0)) }
+                )
+                .padding(16)
+            }
+            .navigationTitle("我的资料")
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .credits:
+                    CreditLogView(
+                        model: CreditLogViewModel(repository: CreditLogFixtureRepository(
+                            account: account,
+                            failPageOnce: environment["CREDIT_LOG_FAIL_PAGE"] == "1",
+                            emptyExpense: environment["CREDIT_LOG_EMPTY_EXPENSE"] == "1"
+                        )),
+                        onURLTap: { path.append(.link($0)) }
+                    )
+                    .id(account)
+                    .forumNavigationBarStyle()
+                    .toolbar {
+                        Button("切换测试账号") { account += 1 }
+                            .accessibilityIdentifier("credit-fixture-switch-account")
+                    }
+                case .link(let url):
+                    Text(url.absoluteString)
+                        .accessibilityIdentifier("credit-fixture-opened-url")
+                        .navigationTitle("链接目标")
+                }
+            }
+        }
+        .forumTheme(.theme(for: AppThemePreset(rawValue: environment["CREDIT_LOG_THEME"] ?? "standard") ?? .standard))
+        .preferredColorScheme(environment["CREDIT_LOG_DARK"] == "1" ? .dark : .light)
+    }
+}
+
+private actor CreditLogFixtureRepository: CreditLogPageLoading {
+    let account: Int
+    let emptyExpense: Bool
+    var failPageOnce: Bool
+
+    init(account: Int, failPageOnce: Bool, emptyExpense: Bool) {
+        self.account = account
+        self.failPageOnce = failPageOnce
+        self.emptyExpense = emptyExpense
+    }
+
+    func fetchCreditLog(filter: CreditLogFilter, page: Int) async throws -> CreditLogPage {
+        if page == 2, failPageOnce {
+            failPageOnce = false
+            throw YamiboError.offline
+        }
+        if filter == .expense, emptyExpense { return CreditLogPage(entries: []) }
+        let threadTitle = "Yamibo X：iOS端的百合会App，提供原生阅读体验与收藏管理"
+        let description = ForumThreadTextBlock(
+            text: threadTitle,
+            links: [ForumThreadTextLink(start: 0, length: threadTitle.count, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=123&pid=456")!)]
+        )
+        let checkIn = CreditLogEntry(
+            id: "check-in-\(account)-\(page)", operation: page == 1 ? "天天打卡" : "第2页记录",
+            changes: [CreditLogChange(name: "对象", valueText: "+1", amount: 1)],
+            description: ForumThreadTextBlock(text: "账号 \(account)"), timeText: "2026-09-10 00:22"
+        )
+        let rating = CreditLogEntry(
+            id: "rating", operation: "帖子被评分",
+            changes: [CreditLogChange(name: "积分", valueText: "+10", amount: 10)],
+            description: description, timeText: "2026-09-09 12:52"
+        )
+        let expense = CreditLogEntry(
+            id: "expense", operation: "购买附件",
+            changes: [CreditLogChange(name: "积分", valueText: "-3", amount: -3)],
+            description: ForumThreadTextBlock(text: "下载附件"), timeText: "2026-09-08 09:10"
+        )
+        let older = (1...5).map { index in
+            CreditLogEntry(
+                id: "old-\(index)", operation: "天天打卡",
+                changes: [CreditLogChange(name: "对象", valueText: "+2", amount: 2)],
+                description: ForumThreadTextBlock(text: "天天打卡"), timeText: "2026-09-0\(7-index) 00:04"
+            )
+        }
+        let entries: [CreditLogEntry]
+        switch filter {
+        case .all: entries = [checkIn, rating, expense] + older
+        case .income: entries = [checkIn, rating] + older
+        case .expense: entries = [expense]
+        }
+        return CreditLogPage(entries: entries, pageNavigation: ForumPageNavigation(currentPage: page, totalPages: 2))
     }
 }
 

@@ -20,6 +20,7 @@ public enum YamiboRoute: Sendable {
     case forumBoard(fid: String, page: Int, filterID: String?, orderFilter: String?, orderBy: String?)
     case forumBoardFavorite(fid: String, formHash: String)
     case userSpaceProfile(uid: String?)
+    case creditLog(filter: CreditLogFilter, page: Int)
     case userSpaceThreads(uid: String?, page: Int)
     case userSpaceReplies(uid: String?, page: Int)
     case userSpaceBlogs(uid: String?, page: Int)
@@ -278,6 +279,20 @@ public enum YamiboRoute: Sendable {
             ])
         case let .userSpaceProfile(uid):
             return userSpaceURL(uid: uid, doValue: "profile", page: nil)
+        case let .creditLog(filter, page):
+            var items: [URLQueryItem] = [
+                .init(name: "mod", value: "spacecp"),
+                .init(name: "ac", value: "credit"),
+                .init(name: "op", value: "log"),
+                .init(name: "mobile", value: "2"),
+                .init(name: "page", value: String(max(1, page)))
+            ]
+            switch filter {
+            case .all: break
+            case .income: items.append(.init(name: "income", value: "1"))
+            case .expense: items.append(.init(name: "income", value: "-1"))
+            }
+            return Self.makeURL(path: "/home.php", queryItems: items)
         case let .userSpaceThreads(uid, page):
             // `view=me` is required: without it Discuz serves the OWN-threads
             // list empty (verified against the live site; other users' uids

@@ -29,6 +29,17 @@ public actor UserSpaceRepository: MessageUnreadLoading {
         }
     }
 
+    public func fetchCreditLog(filter: CreditLogFilter, page: Int) async throws -> CreditLogPage {
+        let html = try await client.fetchHTML(
+            for: .creditLog(filter: filter, page: page),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            cancellationPolicy: .completeStartedRequest
+        )
+        return try LoadDiagnosticError.parsing(html: html, context: "UserSpaceHTMLParser.parseCreditLog") {
+            try UserSpaceHTMLParser.parseCreditLog(from: html)
+        }
+    }
+
     public func fetchReplies(uid: String?, page: Int) async throws -> UserSpaceReplyPage {
         let html = try await client.fetchHTML(
             for: .userSpaceReplies(uid: normalized(uid), page: page),

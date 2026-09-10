@@ -637,6 +637,15 @@
 "user_space.threads" = "主题";
 "user_space.title" = "用户空间";
 "user_space.total_points" = "总积分";
+"credit_log.title" = "积分记录";
+"credit_log.all" = "全部";
+"credit_log.income" = "收入";
+"credit_log.expense" = "支出";
+"credit_log.filter" = "记录类型";
+"credit_log.empty" = "暂无积分记录";
+"credit_log.empty_income" = "暂无收入记录";
+"credit_log.empty_expense" = "暂无支出记录";
+"credit_log.open_hint" = "查看积分记录";
 "user_space.traces" = "我的足迹";
 "user_space.unknown_user" = "用户";
 "user_space.view_all_blogs" = "随便看看";

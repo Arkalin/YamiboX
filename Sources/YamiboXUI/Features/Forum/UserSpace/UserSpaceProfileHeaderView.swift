@@ -8,6 +8,7 @@ struct UserSpaceProfileHeaderView: View {
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
     let beginAddFriend: () -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
+    let onCreditLogTap: () -> Void
     let onWebTap: (URL) -> Void
 
     var body: some View {
@@ -53,7 +54,7 @@ struct UserSpaceProfileHeaderView: View {
             .frame(height: 172)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            UserSpaceStatsView(profile: profile)
+            UserSpaceStatsView(profile: profile, onCreditLogTap: isSelf ? onCreditLogTap : nil)
             UserSpaceActionGridView(
                 isSelf: isSelf,
                 onSectionTap: onSectionTap,
@@ -160,12 +161,13 @@ private struct UserSpaceProfileAction: Identifiable {
 private struct UserSpaceStatsView: View {
     @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile
+    let onCreditLogTap: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
-            UserSpaceStatView(label: L10n.string("user_space.total_points"), value: profile.totalPoints.map(String.init) ?? "-")
-            UserSpaceStatView(label: L10n.string("user_space.points"), value: profile.points.map(String.init) ?? "-")
-            UserSpaceStatView(label: L10n.string("user_space.partner"), value: profile.partner.map(String.init) ?? "-")
+            UserSpaceStatView(label: L10n.string("user_space.total_points"), value: profile.totalPoints.map(String.init) ?? "-", onTap: onCreditLogTap, identifier: "credit-log-total-points")
+            UserSpaceStatView(label: L10n.string("user_space.points"), value: profile.points.map(String.init) ?? "-", onTap: onCreditLogTap, identifier: "credit-log-points")
+            UserSpaceStatView(label: L10n.string("user_space.partner"), value: profile.partner.map(String.init) ?? "-", onTap: onCreditLogTap, identifier: "credit-log-partner")
         }
         .padding(.vertical, 12)
         .forumCardBackground()
@@ -174,6 +176,28 @@ private struct UserSpaceStatsView: View {
 }
 
 private struct UserSpaceStatView: View {
+    let label: String
+    let value: String
+    let onTap: (() -> Void)?
+    let identifier: String
+
+    var body: some View {
+        if let onTap {
+            Button(action: onTap) {
+                UserSpaceStatLabel(label: label, value: value)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+            .accessibilityHint(L10n.string("credit_log.open_hint"))
+            .accessibilityIdentifier(identifier)
+        } else {
+            UserSpaceStatLabel(label: label, value: value)
+        }
+    }
+}
+
+private struct UserSpaceStatLabel: View {
     @Environment(\.forumTheme) private var theme
     let label: String
     let value: String
@@ -187,7 +211,8 @@ private struct UserSpaceStatView: View {
                 .font(.caption)
                 .foregroundStyle(theme.secondaryText)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

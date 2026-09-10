@@ -60,10 +60,18 @@ struct ForumDestinationScreen: View {
                 onBlogTap: { navigator.openBlog($0) },
                 onPrivateMessageTap: { navigator.openPrivateMessage(uid: $0, name: $1) },
                 onMessageCenterTap: { navigator.openMessageCenter(tab: $0) },
+                onCreditLogTap: { navigator.openCreditLog() },
                 onWebTap: {
                     navigator.route($0, source: .external)
                 }
             )
+            .forumNavigationBarStyle()
+        case .creditLog:
+            CreditLogView(
+                model: CreditLogViewModel(dependencies: dependencies),
+                onURLTap: { navigator.route($0, source: .external) }
+            )
+            .id(navigator.appModel.accountGeneration)
             .forumNavigationBarStyle()
         case let .messageCenter(tab):
             MessageCenterView(

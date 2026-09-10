@@ -7,6 +7,7 @@ enum ForumDestination: Hashable {
     case search(fid: String?)
     case userSpace(uid: String?, name: String?, section: UserSpaceSection, subPage: UserSpaceSubPage)
     case messageCenter(tab: MessageCenterTab)
+    case creditLog
     case privateMessage(uid: String, name: String?)
     case blog(blogID: String, uid: String?, title: String?)
     case novelDetail(NovelDetailLaunchContext)

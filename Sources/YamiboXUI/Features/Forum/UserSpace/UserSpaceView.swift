@@ -11,6 +11,7 @@ struct UserSpaceView: View {
     let onBlogTap: (UserSpaceBlogSummary) -> Void
     let onPrivateMessageTap: (String, String?) -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
+    let onCreditLogTap: () -> Void
     let onWebTap: (URL) -> Void
     let refreshRevision: UUID?
 
@@ -23,6 +24,7 @@ struct UserSpaceView: View {
         onBlogTap: @escaping (UserSpaceBlogSummary) -> Void,
         onPrivateMessageTap: @escaping (String, String?) -> Void,
         onMessageCenterTap: @escaping (MessageCenterTab) -> Void,
+        onCreditLogTap: @escaping () -> Void,
         onWebTap: @escaping (URL) -> Void
     ) {
         _model = State(wrappedValue: model)
@@ -33,6 +35,7 @@ struct UserSpaceView: View {
         self.onBlogTap = onBlogTap
         self.onPrivateMessageTap = onPrivateMessageTap
         self.onMessageCenterTap = onMessageCenterTap
+        self.onCreditLogTap = onCreditLogTap
         self.onWebTap = onWebTap
     }
 
@@ -64,6 +67,7 @@ struct UserSpaceView: View {
             onBlogTap: onBlogTap,
             onPrivateMessageTap: onPrivateMessageTap,
             onMessageCenterTap: onMessageCenterTap,
+            onCreditLogTap: onCreditLogTap,
             onWebTap: onWebTap
         )
         .forumPageBackground()

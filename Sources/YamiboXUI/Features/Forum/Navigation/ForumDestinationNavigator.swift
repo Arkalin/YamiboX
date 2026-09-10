@@ -247,6 +247,10 @@ final class ForumDestinationNavigator {
         push(.messageCenter(tab: tab))
     }
 
+    func openCreditLog() {
+        push(.creditLog)
+    }
+
     func openPinnedItem(
         _ item: ForumPinnedItem,
         containingFid: String?,

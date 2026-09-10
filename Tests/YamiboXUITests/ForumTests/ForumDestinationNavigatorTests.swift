@@ -4,6 +4,24 @@ import Testing
 import YamiboXTestSupport
 @testable import YamiboXUI
 
+@MainActor @Suite
+struct CreditLogNavigationTests {
+    @Test func creditLogPushesNativelyAndDescriptionLinksUseExistingRoutes() throws {
+        let navigator = try makeNavigator(mode: .readerOverlay)
+        navigator.openCreditLog()
+        #expect(navigator.path == [.creditLog])
+        let user = URL(string: "https://bbs.yamibo.com/home.php?mod=space&uid=42")!
+        navigator.route(user, source: .external)
+        #expect(navigator.path.last == .userSpace(uid: "42", name: nil, section: .space, subPage: .profile))
+        let post = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=123&pid=456")!
+        navigator.route(post, source: .external)
+        #expect(navigator.path.last == .threadLink(url: post, title: nil, containingFid: nil, authorID: nil, isDiscussionView: false))
+        let external = URL(string: "https://example.com/info")!
+        navigator.route(external, source: .external)
+        #expect(navigator.path.last == .web(external))
+    }
+}
+
 @MainActor
 @Test func readerOverlayNavigatorPushesThreadRoutesAsInPlaceThreadLinks() throws {
     let navigator = try makeNavigator(mode: .readerOverlay)

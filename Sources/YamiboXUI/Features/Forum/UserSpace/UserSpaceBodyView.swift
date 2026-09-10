@@ -27,6 +27,7 @@ struct UserSpaceBodyView: View {
     let onBlogTap: (UserSpaceBlogSummary) -> Void
     let onPrivateMessageTap: (String, String?) -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
+    let onCreditLogTap: () -> Void
     let onWebTap: (URL) -> Void
 
     var body: some View {
@@ -42,6 +43,7 @@ struct UserSpaceBodyView: View {
                         onSectionTap: onSectionTap,
                         beginAddFriend: beginAddFriend,
                         onMessageCenterTap: onMessageCenterTap,
+                        onCreditLogTap: onCreditLogTap,
                         retry: retry,
                         onWebTap: onWebTap
                     )
@@ -91,6 +93,7 @@ private struct UserSpaceProfileContentView: View {
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
     let beginAddFriend: () -> Void
     let onMessageCenterTap: (MessageCenterTab) -> Void
+    let onCreditLogTap: () -> Void
     let retry: () -> Void
     let onWebTap: (URL) -> Void
 
@@ -102,6 +105,7 @@ private struct UserSpaceProfileContentView: View {
                 onSectionTap: onSectionTap,
                 beginAddFriend: beginAddFriend,
                 onMessageCenterTap: onMessageCenterTap,
+                onCreditLogTap: onCreditLogTap,
                 onWebTap: onWebTap
             )
         } else if let errorMessage {
