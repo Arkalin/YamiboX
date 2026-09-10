@@ -2,6 +2,7 @@ import Foundation
 import YamiboXCore
 
 enum ForumDestination: Hashable {
+    case home
     case board(fid: String, title: String?, page: Int?)
     case search(fid: String?)
     case userSpace(uid: String?, name: String?, section: UserSpaceSection, subPage: UserSpaceSubPage)
@@ -17,6 +18,10 @@ enum ForumDestination: Hashable {
     /// navigation. Only `.readerOverlay` stacks produce this.
     case threadLink(url: URL, title: String?, containingFid: String?, authorID: String?, isDiscussionView: Bool)
     case web(URL)
+    case postEditor(URL)
+    case blogEditor(URL)
+    case actionForm(URL)
+    case document(URL)
 }
 
 /// How a `ForumDestinationNavigator` treats thread links.

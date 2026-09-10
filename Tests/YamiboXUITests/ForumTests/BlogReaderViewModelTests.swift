@@ -4,6 +4,21 @@ import XCTest
 
 @MainActor
 final class BlogReaderViewModelTests: XCTestCase {
+    func testSubmissionRefreshKeepsPageAndCommentDraftAndRunsOnce() async throws {
+        let repository = BlogReaderRepositoryStub()
+        let model = BlogReaderViewModel(blogID: "88", uid: nil, titleHint: nil, repository: repository)
+        await model.load()
+        await model.goToPage(2)
+        model.commentText = "Draft"
+        let revision = UUID()
+        await model.load(refreshRevision: revision)
+        await model.load(refreshRevision: revision)
+        XCTAssertEqual(model.currentPage, 2)
+        XCTAssertEqual(model.commentText, "Draft")
+        let calls = await repository.calls()
+        XCTAssertEqual(calls, ["blog:88:self:1", "blog:88:self:2", "blog:88:self:2"])
+    }
+
     func testLoadFetchesFirstBlogPage() async throws {
         let repository = BlogReaderRepositoryStub()
         let model = BlogReaderViewModel(blogID: "88", uid: "705216", titleHint: "日志标题", repository: repository)

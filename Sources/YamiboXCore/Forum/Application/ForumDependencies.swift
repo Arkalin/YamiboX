@@ -19,6 +19,7 @@ public struct ForumDependencies: Sendable {
     public let novelDetailDependencies: NovelDetailDependencies
     public let mangaDetailDependencies: MangaDetailDependencies
     public let makeForumRepository: @Sendable () async -> ForumRepository
+    public let makePageRepository: @Sendable () async -> ForumPageRepository
     public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
     public let makeUserSpaceRepository: @Sendable () async -> UserSpaceRepository
     public let makeBlogReaderRepository: @Sendable () async -> BlogReaderRepository
@@ -58,6 +59,10 @@ public struct ForumDependencies: Sendable {
         self.novelDetailDependencies = novelDetailDependencies
         self.mangaDetailDependencies = mangaDetailDependencies
         self.makeForumRepository = makeForumRepository
+        self.makePageRepository = {
+            let repository = await makeForumRepository()
+            return await repository.pageRepository()
+        }
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeUserSpaceRepository = makeUserSpaceRepository
         self.makeBlogReaderRepository = makeBlogReaderRepository

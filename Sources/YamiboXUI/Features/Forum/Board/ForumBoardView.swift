@@ -14,9 +14,11 @@ struct ForumBoardView: View {
 
     @State private var model: ForumBoardViewModel
     @State private var isReaderSettingsPresented = false
+    let refreshRevision: UUID?
 
     init(
         model: ForumBoardViewModel,
+        refreshRevision: UUID? = nil,
         onSubBoardTap: @escaping (ForumBoardSummary) -> Void,
         onPinnedTap: @escaping (ForumPinnedItem) -> Void,
         onThreadTap: @escaping (ForumThreadSummary) -> Void,
@@ -27,6 +29,7 @@ struct ForumBoardView: View {
         onPostThreadTap: @escaping () -> Void
     ) {
         _model = State(wrappedValue: model)
+        self.refreshRevision = refreshRevision
         self.onSubBoardTap = onSubBoardTap
         self.onPinnedTap = onPinnedTap
         self.onThreadTap = onThreadTap
@@ -124,8 +127,8 @@ struct ForumBoardView: View {
         .transientMessage(model.transientFeedback) {
             model.clearTransientMessage()
         }
-        .task {
-            await model.load()
+        .task(id: refreshRevision) {
+            await model.load(refreshRevision: refreshRevision)
         }
     }
 

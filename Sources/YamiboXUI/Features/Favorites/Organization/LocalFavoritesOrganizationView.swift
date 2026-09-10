@@ -154,6 +154,7 @@ struct LocalFavoritesOrganizationView: View {
             }
             #endif
         }
+        .transientMessage(navigator.transientFeedback) { navigator.transientFeedback = nil }
     }
 
     @ViewBuilder

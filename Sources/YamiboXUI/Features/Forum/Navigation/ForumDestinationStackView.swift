@@ -21,6 +21,7 @@ struct ForumDestinationStackView<Root: View>: View {
                     ForumDestinationScreen(destination: destination, navigator: navigator)
                 }
         }
+        .transientMessage(navigator.transientFeedback) { navigator.transientFeedback = nil }
         .failureAlert(
             L10n.string("forum.open_native_failed"),
             message: navigator.actionErrorMessage,

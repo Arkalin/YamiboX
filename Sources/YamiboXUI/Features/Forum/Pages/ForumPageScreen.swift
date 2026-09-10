@@ -1,0 +1,71 @@
+import SwiftUI
+import YamiboXCore
+
+// Owns one request's lifetime and dispatches its parsed response to a business
+// screen. Loading and failure transitions do not replace the appearance task.
+struct ForumPageScreen: View {
+    @State private var model: ForumPageSession
+    @State private var editorRegistry: ForumEditorRegistry
+    @Environment(\.forumTheme) private var theme
+    let onURLTap: (URL) -> Void
+    let onSubmissionSucceeded: ((TransientFeedback) -> Void)?
+
+    init(model: ForumPageSession, editorRegistry: ForumEditorRegistry? = nil,
+         onSubmissionSucceeded: ((TransientFeedback) -> Void)? = nil, onURLTap: @escaping (URL) -> Void) {
+        _model = State(wrappedValue: model)
+        _editorRegistry = State(wrappedValue: editorRegistry ?? ForumEditorRegistry())
+        self.onURLTap = onURLTap
+        self.onSubmissionSucceeded = onSubmissionSucceeded
+    }
+
+    var body: some View {
+        ZStack { content }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle(model.page?.title ?? L10n.string("forum.native.title"))
+            .yamiboInlineNavigationTitleDisplayMode()
+            .forumPageBackground()
+            .tint(theme.accentText)
+            .accessibilityIdentifier("forum-native-page")
+            .transientMessage(model.transientFeedback) { model.transientFeedback = nil }
+            .task { await model.load() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let document = model.page {
+            switch document.purpose {
+            case .postEditor:
+                ForumPostEditorView(model: model, document: document, editorRegistry: editorRegistry,
+                                    onSubmissionSucceeded: onSubmissionSucceeded, onURLTap: onURLTap)
+            case .blogEditor:
+                ForumBlogEditorView(model: model, document: document, editorRegistry: editorRegistry,
+                                    onSubmissionSucceeded: onSubmissionSucceeded, onURLTap: onURLTap)
+            case .actionForm:
+                ForumActionFormView(model: model, document: document, editorRegistry: editorRegistry, onURLTap: onURLTap)
+            case .document:
+                ForumDocumentView(document: document, onRefresh: { await model.refresh() }, onURLTap: onURLTap)
+            }
+        } else if model.isLoading {
+            ContentLoadingView(layout: .fillsPage)
+        } else if model.requiresLoadConfirmation {
+            ContentUnavailableView {
+                Label(L10n.string("forum.native.confirm_action"), systemImage: "hand.raised")
+            } description: {
+                Text(L10n.string("forum.native.confirm_load"))
+            } actions: {
+                Button(L10n.string("forum.native.continue")) { Task { await model.load(confirmedAction: true) } }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if let message = model.errorMessage {
+            VStack(spacing: 16) {
+                LoadFailureView(message: message, details: model.errorDetails, prominentRetry: true) {
+                    Task { await model.load() }
+                }
+                Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+            }
+            .padding()
+        } else {
+            ContentLoadingView(layout: .fillsPage)
+        }
+    }
+}

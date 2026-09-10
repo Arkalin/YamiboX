@@ -9,6 +9,8 @@ struct ForumDestinationScreen: View {
 
     var body: some View {
         switch destination {
+        case .home:
+            ForumHomeDestination(navigator: navigator)
         case let .board(fid, title, page):
             ForumBoardView(
                 model: ForumBoardViewModel(
@@ -17,6 +19,7 @@ struct ForumDestinationScreen: View {
                     initialPage: page ?? 1,
                     dependencies: dependencies
                 ),
+                refreshRevision: navigator.appModel.forumContentRefresh.boardRevision(fid),
                 onSubBoardTap: { navigator.openBoard($0) },
                 onPinnedTap: { navigator.openPinnedItem($0, containingFid: fid) },
                 onThreadTap: { navigator.openThread($0, containingFid: fid) },
@@ -27,7 +30,7 @@ struct ForumDestinationScreen: View {
                     navigator.push(.search(fid: fid))
                 },
                 onPostThreadTap: {
-                    navigator.openPostThreadFallback(fid: fid)
+                    navigator.openPostThreadComposer(fid: fid)
                 }
             )
             .forumNavigationBarStyle()
@@ -50,6 +53,7 @@ struct ForumDestinationScreen: View {
                     initialSubPage: subPage,
                     dependencies: dependencies
                 ),
+                refreshRevision: navigator.appModel.forumContentRefresh.userSpaceRevision,
                 onThreadTap: { navigator.openThread($0, title: $1, containingFid: nil) },
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onSectionTap: { navigator.openUserSpaceSection(uid: $0, name: $1, section: $2, subPage: $3) },
@@ -57,7 +61,7 @@ struct ForumDestinationScreen: View {
                 onPrivateMessageTap: { navigator.openPrivateMessage(uid: $0, name: $1) },
                 onMessageCenterTap: { navigator.openMessageCenter(tab: $0) },
                 onWebTap: {
-                    navigator.push(.web($0))
+                    navigator.route($0, source: .external)
                 }
             )
             .forumNavigationBarStyle()
@@ -81,9 +85,10 @@ struct ForumDestinationScreen: View {
         case let .blog(blogID, uid, title):
             BlogReaderView(
                 model: BlogReaderViewModel(blogID: blogID, uid: uid, titleHint: title, dependencies: dependencies),
+                refreshRevision: navigator.appModel.forumContentRefresh.blogRevision(blogID),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onWebTap: {
-                    navigator.push(.web($0))
+                    navigator.route($0, source: .external)
                 }
             )
             .forumNavigationBarStyle()
@@ -104,13 +109,8 @@ struct ForumDestinationScreen: View {
                 navigator: navigator
             )
             .forumNavigationBarStyle()
-        case let .web(url):
-            ForumBrowserView(
-                url: url,
-                sessionStore: dependencies.sessionStore,
-                appModel: navigator.appModel,
-                listensToForumNavigationRequest: false
-            )
+        case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url), let .document(url):
+            ForumURLDestinationView(url: url, navigator: navigator)
             .forumNavigationBarStyle()
         }
     }
@@ -172,12 +172,7 @@ struct ForumThreadLinkScreen: View {
         case let .thread(context):
             ForumThreadDestinationView(context: context, navigator: navigator)
         case let .web(webURL):
-            ForumBrowserView(
-                url: webURL,
-                sessionStore: navigator.dependencies.sessionStore,
-                appModel: navigator.appModel,
-                listensToForumNavigationRequest: false
-            )
+            ForumURLDestinationView(url: webURL, navigator: navigator)
         case let .failed(details):
             LoadFailureView(message: details.summary, details: details, prominentRetry: true) {
                 resolution = .resolving
@@ -222,6 +217,53 @@ struct ForumThreadLinkScreen: View {
     }
 }
 
+private struct ForumHomeDestination: View {
+    let navigator: ForumDestinationNavigator
+    @State private var model: ForumHomeViewModel
+
+    init(navigator: ForumDestinationNavigator) {
+        self.navigator = navigator
+        _model = State(wrappedValue: ForumHomeViewModel(dependencies: navigator.dependencies))
+    }
+
+    var body: some View {
+        ForumHomeView(model: model, onBoardTap: navigator.openBoard, onCarouselTap: navigator.openCarouselItem)
+            .navigationTitle(L10n.string("forum.default_title"))
+            .yamiboInlineNavigationTitleDisplayMode()
+            .forumNavigationBarStyle()
+            .task { await model.load() }
+    }
+}
+
+/// Defense in depth for old saved destinations and failed thread resolution:
+/// neither path is allowed to turn an internal document back into a WebView.
+private struct ForumURLDestinationView: View {
+    let url: URL
+    let navigator: ForumDestinationNavigator
+
+    var body: some View {
+        if ForumWebPagePolicy.requiresForumHandling(url) {
+            let accountGeneration = navigator.appModel.accountGeneration
+            ForumPageScreen(model: ForumPageSession(
+                url: url, dependencies: navigator.dependencies,
+                onSubmissionAccepted: { change in
+                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
+                    navigator.appModel.forumContentRefresh.record(change)
+                }
+            ),
+                                onSubmissionSucceeded: { navigator.transientFeedback = $0 }) {
+                navigator.route($0, source: .external)
+            }
+        } else {
+            ForumBrowserView(
+                url: url, sessionStore: navigator.dependencies.sessionStore,
+                appModel: navigator.appModel, listensToForumNavigationRequest: false,
+                onNativeNavigation: { navigator.route($0, source: .external) }
+            )
+        }
+    }
+}
+
 private struct ForumThreadDestinationView: View {
     let context: ThreadNovelLaunchContext
     let navigator: ForumDestinationNavigator
@@ -230,6 +272,7 @@ private struct ForumThreadDestinationView: View {
         if navigator.mode == .readerOverlay {
             ForumThreadReaderView(
                 model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies),
+                submissionChange: navigator.appModel.forumContentRefresh.threadChange(context.thread.tid),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLTap: { navigator.route($0, source: .external) }
             )

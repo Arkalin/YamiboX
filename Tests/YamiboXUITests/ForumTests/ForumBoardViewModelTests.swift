@@ -5,6 +5,56 @@ import YamiboXTestSupport
 
 @MainActor
 final class ForumBoardViewModelTests: XCTestCase {
+    func testSubmissionRefreshBypassesCachePreservesPageAndRunsOnce() async throws {
+        let cached = makeBoardPage(fid: "5", title: "Cached", page: 2, threadIDs: ["old"])
+        let fresh = makeBoardPage(fid: "5", title: "Fresh", page: 2, threadIDs: ["new"])
+        let repository = ForumBoardRepositoryStub(cached: cached, fetched: fresh)
+        let model = ForumBoardViewModel(fid: "5", title: nil, initialPage: 2, repository: repository)
+        await model.load()
+        let revision = UUID()
+        await model.load(refreshRevision: revision)
+        await model.load(refreshRevision: revision)
+        XCTAssertEqual(model.threads.map(\.tid), ["new"])
+        XCTAssertEqual(model.currentPage, 2)
+        let requests = await repository.requests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.preferCache, false)
+    }
+
+    func testFailedSubmissionRefreshKeepsContentAndRetriesOnNextAppearance() async throws {
+        let cached = makeBoardPage(fid: "5", title: "Cached", page: 1, threadIDs: ["old"])
+        let fresh = makeBoardPage(fid: "5", title: "Fresh", page: 1, threadIDs: ["new"])
+        let repository = ForumBoardRepositoryStub(cached: cached, fetched: fresh)
+        let model = ForumBoardViewModel(fid: "5", title: nil, repository: repository)
+        await model.load()
+        let revision = UUID()
+        await repository.setError(URLError(.notConnectedToInternet))
+        await model.load(refreshRevision: revision)
+        XCTAssertEqual(model.threads.map(\.tid), ["old"])
+        XCTAssertNotNil(model.transientFeedback?.details)
+        await repository.setError(nil)
+        await model.load(refreshRevision: revision)
+        XCTAssertEqual(model.threads.map(\.tid), ["new"])
+        let requests = await repository.requests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func testPageTurnWinsOverSubmissionRefreshAlreadyInFlight() async throws {
+        let cached = makeBoardPage(fid: "5", title: "Cached", page: 1, threadIDs: ["old"])
+        let repository = ForumBoardRepositoryStub(cached: cached)
+        let model = ForumBoardViewModel(fid: "5", title: nil, repository: repository)
+        await model.load()
+        await repository.setGatedPages([1])
+        let pending = Task { await model.load(refreshRevision: UUID()) }
+        await repository.waitUntilBlocked()
+        await model.goToPage(3)
+        await repository.release()
+        await pending.value
+        XCTAssertEqual(model.currentPage, 3)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertFalse(model.isRefreshing)
+    }
+
     func testLoadShowsCachedBoardWithoutRefreshing() async throws {
         let cached = makeBoardPage(fid: "5", title: "Cached", page: 1, threadIDs: ["cached"])
         let fetched = makeBoardPage(fid: "5", title: "Fetched", page: 1, threadIDs: ["fresh"])

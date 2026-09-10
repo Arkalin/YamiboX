@@ -9,9 +9,11 @@ public final class ForumBrowserModel: ObservableObject {
     @Published public private(set) var isLoading = false
 
     private weak var webView: WKWebView?
+    private let onNativeNavigation: @MainActor (URL) -> Void
 
-    public init(initialURL: URL) {
+    public init(initialURL: URL, onNativeNavigation: @escaping @MainActor (URL) -> Void = { _ in }) {
         self.currentURL = initialURL
+        self.onNativeNavigation = onNativeNavigation
     }
 
     public func attach(webView: WKWebView) {
@@ -19,8 +21,17 @@ public final class ForumBrowserModel: ObservableObject {
     }
 
     public func load(_ url: URL) {
+        guard !ForumWebPagePolicy.requiresForumHandling(url) else {
+            openNative(url)
+            return
+        }
         currentURL = url
         webView?.load(URLRequest(url: url))
+    }
+
+    public func openNative(_ url: URL) {
+        isLoading = false
+        onNativeNavigation(url)
     }
 
     public func reload() {
@@ -45,9 +56,10 @@ public struct ForumBrowserView: View {
         url: URL,
         sessionStore: SessionStore,
         appModel: YamiboAppModel,
-        listensToForumNavigationRequest: Bool = true
+        listensToForumNavigationRequest: Bool = true,
+        onNativeNavigation: (@MainActor (URL) -> Void)? = nil
     ) {
-        _model = StateObject(wrappedValue: ForumBrowserModel(initialURL: url))
+        _model = StateObject(wrappedValue: ForumBrowserModel(initialURL: url, onNativeNavigation: onNativeNavigation ?? { appModel.openForumURL($0) }))
         self.sessionStore = sessionStore
         self.appModel = appModel
         self.listensToForumNavigationRequest = listensToForumNavigationRequest

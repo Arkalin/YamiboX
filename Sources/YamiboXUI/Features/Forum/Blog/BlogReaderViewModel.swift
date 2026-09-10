@@ -30,6 +30,8 @@ final class BlogReaderViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any BlogReaderPageLoading
     @ObservationIgnored private let currentProfileProvider: @Sendable () async -> YamiboProfile?
+    @ObservationIgnored private var handledRefreshRevision: UUID?
+    @ObservationIgnored private var generation = 0
 
     init(blogID: String, uid: String?, titleHint: String?, dependencies: ForumDependencies) {
         self.blogID = blogID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,9 +91,15 @@ final class BlogReaderViewModel {
         return L10n.string("blog_reader.comment_placeholder")
     }
 
-    func load() async {
+    func load(refreshRevision: UUID? = nil) async {
         if currentProfile == nil {
             currentProfile = await currentProfileProvider()
+        }
+        if let refreshRevision, refreshRevision != handledRefreshRevision {
+            if await loadPage(currentPage, preservesCurrentContentOnFailure: true), !Task.isCancelled {
+                handledRefreshRevision = refreshRevision
+            }
+            return
         }
         guard page == nil else { return }
         await loadPage(1)
@@ -149,23 +157,32 @@ final class BlogReaderViewModel {
         commentResultMessage = nil
     }
 
-    private func loadPage(_ page: Int) async {
+    @discardableResult
+    private func loadPage(_ page: Int, preservesCurrentContentOnFailure: Bool = false) async -> Bool {
+        generation += 1
+        let requestGeneration = generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if requestGeneration == generation { isLoading = false } }
 
         do {
             let repository = await repositoryProvider()
             let loaded = try await repository.fetchBlogPage(blogID: blogID, uid: uid, page: page)
+            guard requestGeneration == generation, !Task.isCancelled else { return false }
             self.page = loaded
             currentPage = loaded.pageNavigation?.currentPage ?? page
+            return true
         } catch {
-            self.page = nil
-            currentPage = page
+            guard requestGeneration == generation else { return false }
+            if !preservesCurrentContentOnFailure {
+                self.page = nil
+                currentPage = page
+            }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
             }
+            return false
         }
     }
 }

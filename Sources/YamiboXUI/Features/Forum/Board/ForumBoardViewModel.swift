@@ -62,6 +62,7 @@ final class ForumBoardViewModel {
     @ObservationIgnored private let settingsStore: SettingsStore?
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumBoardPageLoading
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var handledRefreshRevision: UUID?
     /// Serializes this view model's two unstructured settings writers (mode
     /// saves and board-name-snapshot refreshes): each new write awaits the
     /// previous one, so a slow earlier write can never land after — and
@@ -134,7 +135,17 @@ final class ForumBoardViewModel {
         orders.first(where: { $0.id == selectedOrderOptionID })
     }
 
-    func load() async {
+    func load(refreshRevision: UUID? = nil) async {
+        if let refreshRevision, refreshRevision != handledRefreshRevision {
+            generation += 1
+            let requestGeneration = generation
+            let refreshed = await refresh(requestGeneration: requestGeneration)
+            if refreshed, requestGeneration == generation, !Task.isCancelled {
+                handledRefreshRevision = refreshRevision
+            }
+            return
+        }
+        if refreshRevision != nil, page != nil { return }
         guard !isLoading else { return }
         generation += 1
         let requestGeneration = generation
@@ -317,7 +328,8 @@ final class ForumBoardViewModel {
         )
     }
 
-    private func refresh(requestGeneration: Int) async {
+    @discardableResult
+    private func refresh(requestGeneration: Int) async -> Bool {
         isRefreshing = true
         defer {
             if requestGeneration == generation {
@@ -325,9 +337,10 @@ final class ForumBoardViewModel {
                 isRefreshing = false
             }
         }
-        await fetchPage(currentPage, preferCache: false, failurePresentation: .refreshToast, requestGeneration: requestGeneration)
+        return await fetchPage(currentPage, preferCache: false, failurePresentation: .refreshToast, requestGeneration: requestGeneration)
     }
 
+    @discardableResult
     private func fetchPage(
         _ pageNumber: Int,
         preferCache: Bool,
@@ -335,7 +348,7 @@ final class ForumBoardViewModel {
         orderBy: String? = nil,
         failurePresentation: FailurePresentation,
         requestGeneration: Int
-    ) async {
+    ) async -> Bool {
         do {
             let repository = await repositoryProvider()
             let nextPage = try await repository.fetchForumBoard(
@@ -347,12 +360,13 @@ final class ForumBoardViewModel {
                 orderBy: orderBy ?? selectedOrderOption?.orderBy,
                 preferCache: preferCache
             )
-            guard requestGeneration == generation else { return }
+            guard requestGeneration == generation else { return false }
             apply(nextPage)
             errorMessage = nil
             transientMessage = nil
+            return true
         } catch {
-            guard requestGeneration == generation else { return }
+            guard requestGeneration == generation else { return false }
             if failurePresentation == .refreshToast, page != nil {
                 errorMessage = nil
                 transientFeedback = .failure(error, message: L10n.string("forum.board.refresh_failed", error.localizedDescription))
@@ -362,6 +376,7 @@ final class ForumBoardViewModel {
                     errorDetails = LoadFailureDetails(error: error)
                 }
             }
+            return false
         }
     }
 

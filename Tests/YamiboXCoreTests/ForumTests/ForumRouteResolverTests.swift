@@ -26,10 +26,10 @@ import Testing
     #expect(ForumRouteResolver.resolve(url: url) == .thread(url))
 }
 
-@Test func forumRouteResolverKeepsThreadReplyActionInWebFallback() throws {
+@Test func forumRouteResolverUsesPostEditorForThreadReplies() throws {
     let url = YamiboRoute.threadReply(tid: "570956", page: 2).url
 
-    #expect(ForumRouteResolver.resolve(url: url) == .web(url))
+    #expect(ForumRouteResolver.resolve(url: url) == .postEditor(url))
 }
 
 @Test func forumRouteResolverResolvesUserSpaceURLs() throws {
@@ -92,10 +92,10 @@ import Testing
     #expect(ForumRouteResolver.resolve(url: url) == .home)
 }
 
-@Test func forumRouteResolverKeepsUnsupportedForumURLsInWebFallback() throws {
+@Test func forumRouteResolverUsesDocumentForAnnouncements() throws {
     let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=announcement&id=17&mobile=2"))
 
-    #expect(ForumRouteResolver.resolve(url: url) == .web(url))
+    #expect(ForumRouteResolver.resolve(url: url) == .document(url))
 }
 
 @Test func forumBoardRouteIncludesFilterAndOrderQueryItems() throws {

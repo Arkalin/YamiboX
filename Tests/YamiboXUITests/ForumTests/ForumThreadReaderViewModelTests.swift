@@ -727,6 +727,145 @@ private enum ForumThreadReaderTestError: LocalizedError {
     }
 }
 
+@MainActor
+@Test func forumThreadSubmissionRefreshesCurrentPageOnceAndPreservesAnchor() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 2)
+    await model.load()
+    model.updateVisibleAnchor(postID: "4001")
+    let change = try makeThreadSubmissionChange(action: "edit")
+    await model.load(submissionChange: change)
+    #expect(model.currentPage == 2)
+    #expect(model.restoredAnchorPostID == "4001")
+    #expect(fixture.repository.fetchPageCalls() == [2, 2])
+    #expect(fixture.repository.cachedPageCalls() == [2])
+    await model.load(submissionChange: change)
+    #expect(fixture.repository.fetchPageCalls() == [2, 2])
+}
+
+@MainActor
+@Test func forumThreadReplyRefreshesAndTargetsTheResolvedPost() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let replyURL = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=704&pid=4001")!
+    let model = fixture.makeModel(resolveReplyTarget: { url in
+        #expect(url == replyURL)
+        return YamiboThreadRoutePayload(thread: ThreadIdentity(tid: "704"), title: "Thread",
+                                       canonicalURL: url, requestedURL: url, initialPage: 4, targetPostID: "4001")
+    })
+    await model.load()
+    await model.load(submissionChange: try makeThreadSubmissionChange(action: "reply", target: replyURL))
+    #expect(model.currentPage == 4)
+    #expect(model.restoredAnchorPostID == "4001")
+    #expect(fixture.repository.fetchPageCalls() == [1, 4])
+}
+
+@MainActor
+@Test func forumThreadReplyWithoutTargetKeepsCurrentPageAndFilters() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 2)
+    model.isAuthorOnly = true
+    model.isReverseOrder = true
+    await model.load()
+    await model.load(submissionChange: try makeThreadSubmissionChange(action: "reply"))
+    #expect(model.currentPage == 2)
+    #expect(model.isAuthorOnly)
+    #expect(model.isReverseOrder)
+    #expect(fixture.repository.fetchRequests().last?.reverse == true)
+}
+
+@MainActor
+@Test func forumThreadFilteredReplyDoesNotUseForwardOrderedTargetPage() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 2, resolveReplyTarget: { _ in
+        Issue.record("A filtered reader must not resolve a forward-ordered reply target")
+        return nil
+    })
+    model.isReverseOrder = true
+    await model.load()
+    let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=704&page=4&pid=4001")!
+    await model.load(submissionChange: try makeThreadSubmissionChange(action: "reply", target: target))
+    #expect(model.currentPage == 2)
+    #expect(model.isReverseOrder)
+    #expect(fixture.repository.fetchPageCalls() == [2, 2])
+}
+
+@MainActor
+@Test func forumThreadUnresolvedReplyPageRefreshesOriginalPageInsteadOfJumping() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=704&pid=missing")!
+    let model = fixture.makeModel(initialPage: 3, resolveReplyTarget: { url in
+        YamiboThreadRoutePayload(thread: ThreadIdentity(tid: "704"), title: "Thread",
+                                 canonicalURL: url, requestedURL: url, initialPage: 1, targetPostID: "missing")
+    })
+    await model.load()
+    model.updateVisibleAnchor(postID: "4001")
+    await model.load(submissionChange: try makeThreadSubmissionChange(action: "reply", target: target))
+    #expect(model.currentPage == 3)
+    #expect(model.restoredAnchorPostID == "4001")
+    #expect(fixture.repository.fetchPageCalls() == [3, 1, 3])
+}
+
+@MainActor
+@Test func forumThreadFailedSubmissionRefreshKeepsOldContentAndRemainsPending() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let model = fixture.makeModel(initialPage: 2)
+    await model.load()
+    let page = model.page
+    let change = try makeThreadSubmissionChange(action: "edit")
+    fixture.repository.fetchError = ForumThreadReaderTestError.plannedFailure
+    await model.load(submissionChange: change)
+    #expect(model.page == page)
+    #expect(model.currentPage == 2)
+    #expect(model.transientFeedback?.details != nil)
+    fixture.repository.fetchError = nil
+    await model.load(submissionChange: change)
+    #expect(fixture.repository.fetchPageCalls() == [2, 2, 2])
+    #expect(model.transientFeedback == nil)
+}
+
+@MainActor
+@Test func forumThreadNewModelBypassesOldCacheWithoutReplayingAnOldReplyJump() async throws {
+    let cached = makeThreadPage(title: "Cached", postID: "old", contentText: "Old", page: 2)
+    let fixture = try ForumThreadReaderViewModelFixture(cachedPages: [2: cached])
+    let model = fixture.makeModel(initialPage: 2)
+    await model.load(submissionChange: try makeThreadSubmissionChange(action: "reply"))
+    #expect(model.currentPage == 2)
+    #expect(model.page?.posts.first?.postID == "4001")
+    #expect(fixture.repository.cachedPageCalls().isEmpty)
+    #expect(fixture.repository.fetchPageCalls() == [2])
+}
+
+@MainActor
+@Test func forumThreadPageTurnWinsOverDelayedReplyResolution() async throws {
+    let fixture = try ForumThreadReaderViewModelFixture()
+    let gate = ForumThreadPageFetchGate()
+    let model = fixture.makeModel(resolveReplyTarget: { url in
+        await gate.waitIfNeeded()
+        return YamiboThreadRoutePayload(thread: ThreadIdentity(tid: "704"), title: "Thread",
+                                       canonicalURL: url, requestedURL: url, initialPage: 4, targetPostID: "4001")
+    })
+    await model.load()
+    let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=704&pid=4001")!
+    let change = try makeThreadSubmissionChange(action: "reply", target: target)
+    let pending = Task { await model.load(submissionChange: change) }
+    await gate.waitUntilBlocked()
+    await model.goToPage(3)
+    await gate.release()
+    await pending.value
+    #expect(model.currentPage == 3)
+    #expect(model.restoredAnchorPostID == nil)
+    #expect(!model.isLoading)
+    #expect(fixture.repository.fetchPageCalls() == [1, 3])
+}
+
+private func makeThreadSubmissionChange(action: String, target: URL? = nil) throws -> ForumSubmissionChange {
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=\(action)&tid=704&fid=40")!
+    return try #require(ForumSubmissionChange(
+        form: .init(id: "post", title: "Post", actionURL: url, kind: .thread), sourceURL: url,
+        response: .init(url: url, title: "", message: "发表成功", continuationURL: target)
+    ))
+}
+
 private func makeThreadPage(
     title: String,
     postID: String,
@@ -806,7 +945,10 @@ private struct ForumThreadReaderViewModelFixture {
     }
 
     @MainActor
-    func makeModel(initialPage: Int = 1) -> ForumThreadReaderViewModel {
+    func makeModel(
+        initialPage: Int = 1,
+        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRoutePayload? = { _ in nil }
+    ) -> ForumThreadReaderViewModel {
         ForumThreadReaderViewModel(
             context: ThreadNovelLaunchContext(
                 thread: ThreadIdentity(tid: "704", fid: fid),
@@ -817,7 +959,8 @@ private struct ForumThreadReaderViewModelFixture {
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             favoriteRepository: favoriteRepository,
             mangaDirectoryStore: mangaDirectoryStore,
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            resolveReplyTarget: resolveReplyTarget
         )
     }
 }

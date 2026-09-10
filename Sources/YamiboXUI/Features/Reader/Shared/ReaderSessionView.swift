@@ -110,6 +110,7 @@ private struct ReaderSessionContentView: View {
             let model = session.threadModel(for: context, dependencies: navigator.dependencies)
             ForumThreadReaderView(
                 model: model,
+                submissionChange: appModel.forumContentRefresh.threadChange(context.thread.tid),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLTap: { navigator.route($0, source: .external) },
                 onReaderModeSwitch: { mode in Task { await session.openReader(mode, from: model) } },
