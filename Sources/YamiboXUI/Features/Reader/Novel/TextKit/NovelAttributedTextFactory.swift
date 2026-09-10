@@ -7,29 +7,6 @@ typealias ReaderPlatformFont = UIFont
 typealias ReaderPlatformFontDescriptor = UIFontDescriptor
 typealias ReaderPlatformFontWeight = UIFont.Weight
 
-private extension ReaderPlatformColor {
-    static func readerText(settings: NovelReaderAppearanceSettings) -> ReaderPlatformColor {
-        UIColor { traits in
-            if traits.userInterfaceStyle == .dark {
-                return UIColor(white: 1, alpha: 0.86)
-            }
-
-            return lightReaderText(backgroundStyle: settings.backgroundStyle)
-        }
-    }
-
-    private static func lightReaderText(backgroundStyle: ReaderBackgroundStyle) -> ReaderPlatformColor {
-        switch backgroundStyle {
-        case .system, .paper:
-            return UIColor(red: 0.23, green: 0.19, blue: 0.15, alpha: 1)
-        case .mint:
-            return UIColor(red: 0.15, green: 0.21, blue: 0.18, alpha: 1)
-        case .sakura:
-            return UIColor(red: 0.23, green: 0.17, blue: 0.19, alpha: 1)
-        }
-    }
-}
-
 /// Owns the Novel Text Attributed Document semantics for TextKit measurement
 /// and drawing: chapter title styling, paragraph indentation, font family,
 /// kerning, line height, and justification.
@@ -101,7 +78,7 @@ enum NovelAttributedTextFactory {
         titleWeight: ReaderPlatformFontWeight = .bold
     ) -> NSAttributedString {
         let rendered = NSMutableAttributedString()
-        let textColor = textColor ?? .readerText(settings: settings)
+        let textColor = textColor ?? readerThemeTextUIColor(for: settings.backgroundStyle)
         let segments = NovelChapterTextComponents.split(text: text, chapterTitle: chapterTitle)
         let pointSize = baseFontSize * settings.fontScale
         let firstBodyParagraphStyle = makeParagraphStyle(
@@ -163,7 +140,7 @@ enum NovelAttributedTextFactory {
         titleWeight: ReaderPlatformFontWeight = .bold
     ) -> NSAttributedString {
         let rendered = NSMutableAttributedString()
-        let textColor = textColor ?? .readerText(settings: settings)
+        let textColor = textColor ?? readerThemeTextUIColor(for: settings.backgroundStyle)
         let pointSize = baseFontSize * settings.fontScale
         let firstBodyParagraphStyle = makeParagraphStyle(
             settings: settings,

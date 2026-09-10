@@ -60,13 +60,13 @@ struct NovelReaderSettingsHeader: View {
         ZStack {
             Text(L10n.string("settings.title"))
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
+                .foregroundStyle(palette.heroText)
 
             HStack {
                 ReaderChromeCircleButton(
                     systemName: "xmark",
                     title: L10n.string("common.close"),
-                    tint: palette.primaryText,
+                    tint: palette.heroText,
                     action: onClose
                 )
                 Spacer()

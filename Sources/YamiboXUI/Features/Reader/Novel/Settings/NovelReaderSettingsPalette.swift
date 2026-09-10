@@ -10,6 +10,7 @@ struct NovelReaderSheetPalette {
     let bodyBackground: Color
     let cardBackground: Color
     let primaryText: Color
+    let heroText: Color
     let secondaryText: Color
     let segmentedBackground: Color
     let divider: Color
@@ -43,6 +44,10 @@ struct NovelReaderSheetPalette {
         primaryText = isNightMode
             ? ReaderSettingsPaletteTokens.darkPrimaryText
             : Color(red: 0.09, green: 0.08, blue: 0.10)
+        heroText = settings.backgroundStyle == .quiet
+            ? Color(uiColor: readerThemeTextUIColor(for: .quiet).resolvedColor(with:
+                UITraitCollection(userInterfaceStyle: isNightMode ? .dark : .light)))
+            : primaryText
         secondaryText = isNightMode
             ? Color.white.opacity(0.68)
             : Color.black.opacity(0.56)
@@ -99,6 +104,8 @@ private func readerThemeColorComponents(
             return NovelReaderThemeColorComponents(red: 0.14, green: 0.18, blue: 0.16, alpha: 1)
         case .sakura:
             return NovelReaderThemeColorComponents(red: 0.19, green: 0.16, blue: 0.18, alpha: 1)
+        case .quiet:
+            return NovelReaderThemeColorComponents(red: 1 / 255, green: 1 / 255, blue: 1 / 255, alpha: 1)
         }
     }
 
@@ -111,6 +118,8 @@ private func readerThemeColorComponents(
         return NovelReaderThemeColorComponents(red: 0.92, green: 0.97, blue: 0.93, alpha: 1)
     case .sakura:
         return NovelReaderThemeColorComponents(red: 0.97, green: 0.92, blue: 0.93, alpha: 1)
+    case .quiet:
+        return NovelReaderThemeColorComponents(red: 74 / 255, green: 73 / 255, blue: 79 / 255, alpha: 1)
     }
 }
 
@@ -127,6 +136,27 @@ func readerThemeUIColor(for style: ReaderBackgroundStyle, traitCollection: UITra
         for: style,
         colorScheme: traitCollection.userInterfaceStyle == .dark ? .dark : .light
     )
+}
+
+func readerThemeTextUIColor(for style: ReaderBackgroundStyle) -> UIColor {
+    UIColor { traits in
+        // Opaque screenshot-matched colors keep Quiet's text independent of its backdrop.
+        if traits.userInterfaceStyle == .dark {
+            return style == .quiet
+                ? UIColor(red: 142 / 255, green: 142 / 255, blue: 144 / 255, alpha: 1)
+                : UIColor(white: 1, alpha: 0.86)
+        }
+        switch style {
+        case .system, .paper:
+            return UIColor(red: 0.23, green: 0.19, blue: 0.15, alpha: 1)
+        case .mint:
+            return UIColor(red: 0.15, green: 0.21, blue: 0.18, alpha: 1)
+        case .sakura:
+            return UIColor(red: 0.23, green: 0.17, blue: 0.19, alpha: 1)
+        case .quiet:
+            return UIColor(red: 235 / 255, green: 234 / 255, blue: 240 / 255, alpha: 1)
+        }
+    }
 }
 
 #endif

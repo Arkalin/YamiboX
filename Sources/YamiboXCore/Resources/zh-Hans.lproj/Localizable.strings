@@ -807,6 +807,7 @@
 "mine.uid_format" = "UID %@";
 "mine.unknown_user" = "未知用户";
 "reader.background.paper" = "纸张";
+"reader.background.quiet" = "安静";
 "reader.background.sakura" = "樱粉";
 "reader.background.system" = "系统";
 "reader.background_theme" = "背景主题";

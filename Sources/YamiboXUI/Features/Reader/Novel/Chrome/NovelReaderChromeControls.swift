@@ -70,6 +70,7 @@ struct NovelReaderChromeControls: View {
         NovelReaderBottomChrome(
             progress: model.chromeProgressSnapshot.chromeProgress,
             readingMode: model.settings.readingMode,
+            backgroundStyle: model.settings.backgroundStyle,
             fillDirection: model.settings.pageTurnDirection.progressFillDirection,
             bottomInset: bottomInset,
             isVisible: isChromeVisible,

@@ -7,6 +7,7 @@ import UIKit
 struct NovelReaderBottomChrome: View {
     let progress: ReaderChromeProgress
     let readingMode: ReaderReadingMode
+    let backgroundStyle: ReaderBackgroundStyle
     let fillDirection: ReaderProgressFillDirection
     let bottomInset: CGFloat
     let isVisible: Bool
@@ -166,7 +167,9 @@ struct NovelReaderBottomChrome: View {
             }
         }
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(backgroundStyle == .quiet && readingMode == .paged
+            ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
+            : Color.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         .multilineTextAlignment(.center)

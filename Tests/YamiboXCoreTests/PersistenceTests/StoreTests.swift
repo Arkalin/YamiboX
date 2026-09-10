@@ -25,9 +25,12 @@ import YamiboXTestSupport
     #expect(!SessionState.hasAuthenticationCookie("sid=1; EeqY_2132_auth=null; salt=2"))
 }
 
-@Test func settingsStorePersistsReaderFlags() async throws {
-    let defaults = try #require(UserDefaults(suiteName: "settings-store-tests"))
-    defaults.removePersistentDomain(forName: "settings-store-tests")
+@Test(arguments: ReaderBackgroundStyle.allCases)
+func settingsStorePersistsReaderFlags(backgroundStyle: ReaderBackgroundStyle) async throws {
+    let suiteName = "settings-store-tests-\(backgroundStyle.rawValue)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defaults.removePersistentDomain(forName: suiteName)
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = SettingsStore(defaults: defaults, key: "settings")
     let settings = AppSettings(
         novelReader: NovelReaderAppearanceSettings(
@@ -40,7 +43,7 @@ import YamiboXTestSupport
             loadsInlineImages: false,
             showsAuthorRepliesToOthers: false,
             showsTwoPagesInLandscapeOnPad: true,
-            backgroundStyle: .paper,
+            backgroundStyle: backgroundStyle,
             readingMode: .vertical,
             pagedTurnStyle: .quickFade,
             pageTurnDirection: .rightToLeft,

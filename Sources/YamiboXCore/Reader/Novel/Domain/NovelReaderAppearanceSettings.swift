@@ -5,6 +5,7 @@ public enum ReaderBackgroundStyle: String, Codable, Hashable, CaseIterable, Send
     case paper
     case mint
     case sakura
+    case quiet
 
     public var title: String {
         switch self {
@@ -12,6 +13,7 @@ public enum ReaderBackgroundStyle: String, Codable, Hashable, CaseIterable, Send
         case .paper: L10n.string("reader.background.paper")
         case .mint: L10n.string("color.mint")
         case .sakura: L10n.string("reader.background.sakura")
+        case .quiet: L10n.string("reader.background.quiet")
         }
     }
 }

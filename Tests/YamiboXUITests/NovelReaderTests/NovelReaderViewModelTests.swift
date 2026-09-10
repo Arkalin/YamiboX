@@ -1670,7 +1670,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         XCTAssertEqual(loaded.novelReader, initialSettings)
     }
 
-    func testSurfaceOnlyAppearanceSettingsPublishRevisionWithoutRuntimeRebuild() async throws {
+    func testAppearanceChangesRebuildTextOnlyWhenRequired() async throws {
         let defaultsSuiteName = YamiboTestDefaults.suiteName(prefix: "reader-container-model")
         let settingsStore = try SettingsStore(testSuiteName: defaultsSuiteName, key: "settings")
         let cacheStore = NovelReaderProjectionStore(
@@ -1725,6 +1725,16 @@ final class NovelReaderViewModelTests: XCTestCase {
             let presentation = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
             XCTAssertEqual(presentation.generation, initialPresentation.generation)
             XCTAssertEqual(presentation.committedSettings.pagedTurnStyle, style)
+        }
+
+        for backgroundStyle in [ReaderBackgroundStyle.quiet, .paper] {
+            let previous = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
+            updatedSettings.backgroundStyle = backgroundStyle
+            await model.commitNovelTextAppearance(updatedSettings)
+            let presentation = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
+            XCTAssertGreaterThan(presentation.generation, previous.generation)
+            XCTAssertEqual(presentation.committedSettings, updatedSettings)
+            XCTAssertEqual(presentation.surfaces.count, previous.surfaces.count)
         }
 
         try await waitFor {
