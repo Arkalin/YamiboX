@@ -33,7 +33,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
             VStack(spacing: 0) {
                 ReaderChapterCommentComposerHeader(
                     target: model.target,
-                    author: model.context?.post.author.name,
+                    author: model.authorName,
                     mode: Binding(get: { model.mode }, set: { commitEditing(); model.selectMode($0) }),
                     warning: replyPlacement.warning(isNovel: isNovel, isChapterOwner: model.target.isChapterOwner, mode: model.mode),
                     disabled: model.isBusy || model.didSubmit
@@ -114,7 +114,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
 
 private struct ReaderChapterCommentComposerHeader: View {
     let target: ReaderChapterCommentComposeTarget
-    let author: String?
+    let author: String
     @Binding var mode: ReaderChapterCommentComposeMode
     let warning: String?
     let disabled: Bool
@@ -125,7 +125,7 @@ private struct ReaderChapterCommentComposerHeader: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(L10n.string(target.isChapterOwner ? "reader.comment_composer.chapter_author" : "reader.comment_composer.target"))
                         .foregroundStyle(.secondary)
-                    Text(author ?? target.authorName ?? L10n.string("reader.comment_anonymous"))
+                    Text(author)
                         .fontWeight(.medium)
                 }
                 .font(.subheadline)

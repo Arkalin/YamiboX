@@ -8,6 +8,9 @@ final class ChapterCommentComposerInteractionTests: XCTestCase {
         app.buttons["chapter-comment-compose"].tap()
         let comment = app.textViews["chapter-comment-text"]
         XCTAssertTrue(comment.waitForExistence(timeout: 8))
+        let target = app.descendants(matching: .any).matching(identifier: "chapter-comment-target").firstMatch
+        XCTAssertTrue(target.label.contains("南枝"), target.label)
+        XCTAssertFalse(target.label.contains("匿名"), target.label)
         comment.tap()
         comment.typeText("Comment draft")
         select("评分", app: app)

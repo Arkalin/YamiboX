@@ -153,7 +153,7 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
                 throw YamiboError.parsingFailed(context: L10n.string("reader.comment_composer.locate_failed"))
             }
             guard let formHash = page.formHash?.nilIfBlank else {
-                throw YamiboError.notAuthenticated
+                throw YamiboError.parsingFailed(context: L10n.string("reader.comment_composer.form_unavailable"))
             }
             return ForumPostActionContext(
                 threadID: tid, post: post,

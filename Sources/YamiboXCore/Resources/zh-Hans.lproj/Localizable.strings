@@ -1310,6 +1310,7 @@
 "reader.comment_composer.chapter_author" = "本章作者";
 "reader.comment_composer.target" = "操作对象";
 "reader.comment_composer.locate_failed" = "无法定位目标楼层，请重试";
+"reader.comment_composer.form_unavailable" = "无法获取当前页面的操作令牌，请重试";
 "reader.comment_composer.reply_unavailable" = "暂时无法回复此楼层，请登录后重试";
 "reader.comment_composer.reply_outside_chapter" = "回复会追加到帖子末尾，不会出现在当前章节评论区。若要留在本章，请使用点评。";
 "reader.comment_composer.reply_placement_unknown" = "回复会追加到帖子末尾，可能不会出现在当前章节评论区。";
