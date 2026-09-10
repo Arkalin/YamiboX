@@ -11,7 +11,8 @@ public actor ReaderChapterCommentsRepository {
         let html = try await client.fetchThreadById(
             tid: target.threadID,
             authorID: target.authorID,
-            page: target.view
+            page: target.view,
+            cachePolicy: .reloadIgnoringLocalCacheData
         )
         var page = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseInitialPage") {
             try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
@@ -22,7 +23,7 @@ public actor ReaderChapterCommentsRepository {
         if let fullRatingsURL {
             let fullRatingsHTML: String?
             do {
-                fullRatingsHTML = try await client.fetchHTML(url: fullRatingsURL)
+                fullRatingsHTML = try await client.fetchHTML(url: fullRatingsURL, cachePolicy: .reloadIgnoringLocalCacheData)
             } catch {
                 YamiboLog.forum.warning("loadChapterComments: failed to fetch full rating-reasons page; falling back to truncated preview ratings: \(error)")
                 fullRatingsHTML = nil
@@ -57,7 +58,8 @@ public actor ReaderChapterCommentsRepository {
                 let unfilteredPage = try LoadDiagnosticError.parsing(html: unfilteredHTML, context: "ChapterCommentsHTMLParser.parseInitialPage") {
                     try ChapterCommentsHTMLParser.parseInitialPage(
                         html: unfilteredHTML,
-                        target: unfilteredTarget
+                        target: unfilteredTarget,
+                        isUnfiltered: true
                     )
                 }
                 page = Self.appendingSamePageReplies(from: unfilteredPage, to: page)
@@ -120,7 +122,8 @@ public actor ReaderChapterCommentsRepository {
             target: page.target,
             comments: page.comments + replies,
             isBoundaryClosed: unfilteredPage.isBoundaryClosed,
-            nextView: unfilteredPage.nextView
+            nextView: unfilteredPage.nextView,
+            isThreadEndConfirmed: unfilteredPage.isThreadEndConfirmed
         )
     }
 

@@ -330,6 +330,14 @@ public final class NovelReaderViewModel {
         selectedSurface?.chapterCommentTarget
     }
 
+    func hasChapterAfter(_ target: ReaderChapterCommentTarget?) -> Bool {
+        guard let target, target.threadID == context.threadID else { return false }
+        if target.view < maxView { return true }
+        let targets = novelReaderSurfaces.compactMap(\.chapterCommentTarget)
+        guard let index = targets.firstIndex(where: { $0.ownerPostID == target.ownerPostID && $0.view == target.view }) else { return false }
+        return targets.dropFirst(index + 1).contains { $0.ownerPostID != target.ownerPostID }
+    }
+
     var currentWebViewText: String {
         L10n.string("reader.web_view_progress", displayedView, max(maxView, 1))
     }

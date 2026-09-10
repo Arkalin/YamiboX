@@ -60,16 +60,20 @@ public struct ChapterCommentsPage: Codable, Hashable, Sendable {
     public var comments: [ChapterComment]
     public var isBoundaryClosed: Bool
     public var nextView: Int?
+    /// Only fresh, unfiltered pages can prove that a reply belongs to this section.
+    public var isThreadEndConfirmed: Bool?
 
     public init(
         target: ReaderChapterCommentTarget,
         comments: [ChapterComment],
         isBoundaryClosed: Bool,
-        nextView: Int? = nil
+        nextView: Int? = nil,
+        isThreadEndConfirmed: Bool? = nil
     ) {
         self.target = target
         self.comments = comments
         self.isBoundaryClosed = isBoundaryClosed
         self.nextView = nextView
+        self.isThreadEndConfirmed = isThreadEndConfirmed
     }
 }

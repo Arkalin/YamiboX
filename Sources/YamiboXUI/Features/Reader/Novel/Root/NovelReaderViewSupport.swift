@@ -113,6 +113,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
     @Binding var imageBrowserItem: ImageBrowserItem?
 
     let chapterCommentsTarget: ReaderChapterCommentTarget?
+    let chapterCommentsHasLaterChapter: Bool
     let likeDependencies: LikeDependencies
     let appModel: YamiboAppModel
     let onJumpToChapterDirectoryChapter: (NovelReaderChapter) -> Void
@@ -148,7 +149,9 @@ struct NovelReaderPresentationModifier: ViewModifier {
                         loadNext: model.loadNextChapterCommentsPage,
                         forumDependencies: appModel.appContext.forumDependencies,
                         appModel: appModel,
-                        discussionWorkTIDs: [model.context.threadID]
+                        discussionWorkTIDs: [model.context.threadID],
+                        isNovel: true,
+                        hasLaterChapter: chapterCommentsHasLaterChapter
                     )
                 case .cachePanel:
                     NovelReaderCachePanel(cache: model.cache)

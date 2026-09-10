@@ -28,6 +28,7 @@ struct ReaderChapterCommentsContent: View {
     let retry: (ReaderChapterCommentTarget) -> Void
     let loadNext: () -> Void
     let openOriginalPost: (URL) -> Void
+    var compose: ((ReaderChapterCommentComposeTarget) -> Void)? = nil
     var emptyTitle = L10n.string("reader.chapter_comments_empty")
 
     var body: some View {
@@ -93,10 +94,13 @@ struct ReaderChapterCommentsContent: View {
         page: ChapterCommentsPage
     ) -> some View {
         let isLast = comment.id == page.comments.last?.id
+        let replyTarget = ReaderChapterCommentComposeTarget.reply(comment, chapter: target)
+        let replyAction: (() -> Void)? = if let replyTarget, let compose { { compose(replyTarget) } } else { nil }
         return ReaderChapterCommentRow(
             comment: comment,
             originalPostURL: comment.originalPostURL(threadID: target.threadID),
-            openOriginalPost: openOriginalPost
+            openOriginalPost: openOriginalPost,
+            onReply: replyAction
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
@@ -149,6 +153,8 @@ struct ReaderChapterCommentsSheet: View {
     let loadNext: () async -> Void
     let peripheralInput: ReaderPeripheralInputManager?
     let emptyTitle: String
+    let isNovel: Bool
+    let hasLaterChapter: Bool
 
     private let forumDependencies: ForumDependencies
     private let appModel: YamiboAppModel
@@ -158,6 +164,10 @@ struct ReaderChapterCommentsSheet: View {
     @State private var scrollTarget: String?
     @State private var controlHandlerToken: UUID?
     @State private var actionTask: Task<Void, Never>?
+    @State private var composerTarget: ReaderChapterCommentComposeTarget?
+    @State private var feedback: TransientFeedback?
+    @State private var pendingSubmissionFeedback: TransientFeedback?
+    @State private var refreshAnchor: String?
 
     init(
         target: ReaderChapterCommentTarget?,
@@ -175,6 +185,8 @@ struct ReaderChapterCommentsSheet: View {
         forumDependencies: ForumDependencies,
         appModel: YamiboAppModel,
         discussionWorkTIDs: Set<String>,
+        isNovel: Bool = false,
+        hasLaterChapter: Bool = false,
         emptyTitle: String = L10n.string("reader.chapter_comments_empty")
     ) {
         self.target = target
@@ -194,6 +206,8 @@ struct ReaderChapterCommentsSheet: View {
         self.forumDependencies = forumDependencies
         self.appModel = appModel
         self.discussionWorkTIDs = discussionWorkTIDs
+        self.isNovel = isNovel
+        self.hasLaterChapter = hasLaterChapter
     }
 
     var body: some View {
@@ -211,8 +225,14 @@ struct ReaderChapterCommentsSheet: View {
                 retry: retry(_:),
                 loadNext: loadNextPage,
                 openOriginalPost: openOriginalPost(_:),
+                compose: { composerTarget = $0 },
                 emptyTitle: emptyTitle
             )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let target, let owner = ReaderChapterCommentComposeTarget.owner(target) {
+                    ReaderChapterCommentComposeBar { composerTarget = owner }
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -235,6 +255,25 @@ struct ReaderChapterCommentsSheet: View {
                 }
             }
         }
+        .transientMessage(feedback) { feedback = nil }
+        .sheet(item: $composerTarget, onDismiss: composerDismissed) { composeTarget in
+            let accountGeneration = appModel.accountGeneration
+            ReaderChapterCommentComposerSheet(
+                model: ReaderChapterCommentComposerModel(
+                    target: composeTarget,
+                    actions: ReaderChapterCommentComposeActions(dependencies: forumDependencies) { change in
+                        guard accountGeneration == appModel.accountGeneration else { return }
+                        appModel.forumContentRefresh.record(change)
+                    }
+                ),
+                replyPlacement: ReaderChapterReplyPlacement.resolve(target: composeTarget.chapter, hasLaterChapter: hasLaterChapter, state: state),
+                isNovel: isNovel,
+                onSubmitted: { pendingSubmissionFeedback = $0 }
+            ) { url in
+                ReaderChapterCommentComposerDestination(url: url, dependencies: forumDependencies,
+                                                        appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
+            }
+        }
         .fullScreenCover(item: $threadOverlayItem) { item in
             ForumThreadOverlayScreen(
                 item: item,
@@ -247,6 +286,11 @@ struct ReaderChapterCommentsSheet: View {
         .task(id: target) {
             actionTask?.cancel()
             await loadInitial(target)
+        }
+        .onChange(of: state) { _, state in
+            guard let refreshAnchor, case let .loaded(_, page) = state else { return }
+            scrollTarget = page.comments.contains { $0.id == refreshAnchor } ? refreshAnchor : nil
+            self.refreshAnchor = nil
         }
         .onAppear {
             guard let peripheralInput, controlHandlerToken == nil else { return }
@@ -266,7 +310,7 @@ struct ReaderChapterCommentsSheet: View {
         // While the original-post cover is up, the comment list is fully
         // hidden; the cover is a touch-first surface, and close must not
         // tear down this sheet underneath it.
-        guard threadOverlayItem == nil else { return }
+        guard threadOverlayItem == nil, composerTarget == nil else { return }
         // The next-page bound action is a dead no-op everywhere else in this
         // sheet (dpad owns scrolling); only once already at the last loaded
         // comment does it act as "load next page", mirroring the
@@ -331,8 +375,16 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func refreshCurrent() {
+        refreshAnchor = scrollTarget
         actionTask?.cancel()
         actionTask = Task { await refresh(target) }
+    }
+
+    private func composerDismissed() {
+        guard let pendingSubmissionFeedback else { return }
+        self.pendingSubmissionFeedback = nil
+        feedback = pendingSubmissionFeedback
+        refreshCurrent()
     }
 
     /// 查看原帖 opens the original post as a full-screen cover above this
@@ -368,6 +420,7 @@ private struct ReaderChapterCommentRow: View {
     let comment: ChapterComment
     let originalPostURL: URL?
     let openOriginalPost: (URL) -> Void
+    let onReply: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -375,13 +428,17 @@ private struct ReaderChapterCommentRow: View {
                 Text(comment.authorName.isEmpty ? L10n.string("reader.comment_anonymous") : comment.authorName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if let metadata = comment.metadata {
-                    Text(metadata)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
                 Spacer(minLength: 8)
                 ReaderChapterCommentSourceBadge(source: comment.source)
+                if let onReply {
+                    Button(action: onReply) {
+                        Image(systemName: "arrowshape.turn.up.left")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(L10n.string("forum.thread.reply"))
+                    .accessibilityIdentifier("chapter-comment-reply-\(comment.postID ?? comment.id)")
+                }
                 if let originalPostURL {
                     Button {
                         openOriginalPost(originalPostURL)
@@ -393,6 +450,11 @@ private struct ReaderChapterCommentRow: View {
                     .accessibilityLabel(L10n.string("reader.open_original_post"))
                 }
             }
+            if let metadata = comment.metadata {
+                Text(metadata)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ReaderChapterCommentBody(
                 text: comment.body,
                 blocks: comment.bodyBlocks,
@@ -400,6 +462,29 @@ private struct ReaderChapterCommentRow: View {
             )
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct ReaderChapterCommentComposeBar: View {
+    @Environment(\.appTheme) private var theme
+    let compose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Button(action: compose) {
+                Label(L10n.string("reader.comment_composer.write"), systemImage: "square.and.pencil")
+                    .font(.callout.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.controlAccent)
+            .padding(.vertical, 6)
+            .accessibilityIdentifier("chapter-comment-compose")
+        }
+        .background(.regularMaterial)
     }
 }
 

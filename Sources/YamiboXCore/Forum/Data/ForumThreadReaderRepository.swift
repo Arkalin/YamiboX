@@ -141,6 +141,27 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         }
     }
 
+    public func fetchPostActionContext(threadID: String, postID: String) async throws -> ForumPostActionContext {
+        guard let tid = threadID.nilIfBlank, let pid = postID.nilIfBlank,
+              let url = YamiboRoute.findPostURL(threadID: tid, postID: pid) else {
+            throw YamiboError.parsingFailed(context: L10n.string("reader.comment_composer.locate_failed"))
+        }
+        let html = try await client.fetchHTML(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumPostActionContext") {
+            let page = try ForumThreadPageHTMLParser.parsePage(from: html, thread: ThreadIdentity(tid: tid), fallbackTitle: nil)
+            guard let post = page.posts.first(where: { $0.postID == pid }) else {
+                throw YamiboError.parsingFailed(context: L10n.string("reader.comment_composer.locate_failed"))
+            }
+            guard let formHash = page.formHash?.nilIfBlank else {
+                throw YamiboError.notAuthenticated
+            }
+            return ForumPostActionContext(
+                threadID: tid, post: post,
+                page: page.pageNavigation?.currentPage ?? 1, formHash: formHash
+            )
+        }
+    }
+
     public func fetchPollVoters(
         threadID: String,
         optionID: String?,
@@ -230,7 +251,8 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
             try ForumThreadPageHTMLParser.parseThreadActionResult(
                 from: html,
-                context: L10n.string("forum.thread.ratings")
+                context: L10n.string("forum.thread.ratings"),
+                requiresExplicitSuccess: true
             )
         }
     }
@@ -264,7 +286,8 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
             try ForumThreadPageHTMLParser.parseThreadActionResult(
                 from: html,
-                context: L10n.string("forum.thread.comments")
+                context: L10n.string("forum.thread.comments"),
+                requiresExplicitSuccess: true
             )
         }
     }

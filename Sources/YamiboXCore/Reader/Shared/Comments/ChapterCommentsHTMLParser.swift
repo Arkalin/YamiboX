@@ -14,7 +14,8 @@ enum ChapterCommentsHTMLParser {
 
     static func parseInitialPage(
         html: String,
-        target: ReaderChapterCommentTarget
+        target: ReaderChapterCommentTarget,
+        isUnfiltered: Bool = false
     ) throws -> ChapterCommentsPage {
         let document = try KannaSoup.parse(html)
         var comments: [ChapterComment] = []
@@ -22,11 +23,14 @@ enum ChapterCommentsHTMLParser {
         comments.append(contentsOf: try ratingReasons(in: document, target: target))
         let replies = try samePageReplies(in: document, target: target)
         comments.append(contentsOf: replies.comments)
+        let next = nextView(in: document, target: target, currentView: target.view, isBoundaryClosed: replies.isBoundaryClosed)
+        let containsTarget = replyMessageNodes(in: document).contains { postID(from: $0) == target.ownerPostID }
         return ChapterCommentsPage(
             target: target,
             comments: comments,
             isBoundaryClosed: replies.isBoundaryClosed,
-            nextView: nextView(in: document, target: target, currentView: target.view, isBoundaryClosed: replies.isBoundaryClosed)
+            nextView: next,
+            isThreadEndConfirmed: (isUnfiltered || target.authorID == nil) && containsTarget && !replies.isBoundaryClosed && next == nil
         )
     }
 
@@ -37,11 +41,13 @@ enum ChapterCommentsHTMLParser {
     ) throws -> ChapterCommentsPage {
         let document = try KannaSoup.parse(html)
         let replies = try continuationReplies(in: document, target: target)
+        let next = nextView(in: document, target: target, currentView: view, isBoundaryClosed: replies.isBoundaryClosed)
         return ChapterCommentsPage(
             target: target,
             comments: replies.comments,
             isBoundaryClosed: replies.isBoundaryClosed,
-            nextView: nextView(in: document, target: target, currentView: view, isBoundaryClosed: replies.isBoundaryClosed)
+            nextView: next,
+            isThreadEndConfirmed: !replyMessageNodes(in: document).isEmpty && !replies.isBoundaryClosed && next == nil
         )
     }
 

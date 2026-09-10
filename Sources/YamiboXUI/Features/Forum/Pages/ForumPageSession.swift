@@ -126,6 +126,51 @@ final class ForumPageSession {
         } catch { setError(error) }
     }
 
+    /// Refresh server tokens after login without replacing the user's composer draft.
+    func reloadComposerPreservingEdits() async {
+        guard let previous = page, !isLoading, !isSubmitting, !isUploading, !submissionSucceeded,
+              !requiresLoadConfirmation else { return }
+        isLoading = true
+        clearError()
+        defer { isLoading = false }
+        do {
+            let repository = await repositoryProvider()
+            let refreshed = try await repository.fetchPage(url: url, confirmedAction: false)
+            try Task.checkCancellation()
+            guard refreshed.forms.contains(where: { $0.kind == .thread && $0.fields.contains(where: { $0.name == "message" }) }) else {
+                throw YamiboError.underlying(refreshed.message ?? ForumPageError.invalidForm.localizedDescription)
+            }
+            var refreshedDrafts: [String: [String: [String]]] = [:]
+            var refreshedFiles: [String: [ForumFormFile]] = [:]
+            var refreshedAttachments: [String: [ForumUploadedAttachment]] = [:]
+            var refreshedSourceFields: Set<String> = []
+            for form in refreshed.forms {
+                var values = form.initialValues
+                if let oldForm = previous.forms.first(where: { $0.kind == form.kind && $0.id == form.id })
+                    ?? previous.forms.first(where: { $0.kind == form.kind && form.kind == .thread }) {
+                    for field in form.fields where !field.isReadOnly {
+                        guard let oldField = oldForm.fields.first(where: { $0.name == field.name }) else { continue }
+                        let draft = drafts[oldForm.id]?[oldField.id] ?? oldField.initialValues
+                        if draft != oldField.initialValues { values[field.id] = draft }
+                        if htmlSourceFields.contains(oldField.id) { refreshedSourceFields.insert(field.id) }
+                    }
+                    refreshedFiles[form.id] = selectedFiles[oldForm.id]
+                    refreshedAttachments[form.id] = attachments[oldForm.id]
+                }
+                refreshedDrafts[form.id] = values
+            }
+            page = refreshed
+            drafts = refreshedDrafts
+            selectedFiles = refreshedFiles
+            attachments = refreshedAttachments
+            htmlSourceFields = refreshedSourceFields
+            pendingSubmission = nil
+            submissionResponse = nil
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) { setError(error) }
+        }
+    }
+
     func confirmSubmission(_ submission: Submission? = nil) async {
         // Dialog dismissal can clear presentation state before this task runs.
         // Consume the confirmed snapshot once, independently of that state.
