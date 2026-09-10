@@ -215,6 +215,7 @@ struct NovelReaderTranslationPicker: View {
 }
 
 struct NovelReaderThemePicker: View {
+    @ScaledMetric(relativeTo: .caption) private var minimumSwatchWidth = 44
     let selectedStyle: ReaderBackgroundStyle
     let colorScheme: ColorScheme
     let palette: NovelReaderSheetPalette
@@ -226,33 +227,44 @@ struct NovelReaderThemePicker: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
 
-            HStack(spacing: 12) {
-                ForEach(ReaderBackgroundStyle.allCases, id: \.self) { style in
-                    Button {
-                        onSelect(style)
-                    } label: {
-                        VStack(spacing: 10) {
-                            Circle()
-                                .fill(readerThemeColor(for: style, colorScheme: colorScheme))
-                                .frame(width: 44, height: 44)
-                                .overlay {
-                                    Circle()
-                                        .strokeBorder(selectedStyle == style ? palette.primaryText : Color.clear, lineWidth: 2)
-                                }
-                            Text(style.title)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(palette.primaryText)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            selectedStyle == style ? palette.primaryText.opacity(0.06) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        )
-                    }
-                    .buttonStyle(.plain)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    swatches
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumSwatchWidth), spacing: 12)], spacing: 12) {
+                    swatches
                 }
             }
+        }
+    }
+
+    private var swatches: some View {
+        ForEach(ReaderBackgroundStyle.allCases, id: \.self) { style in
+            Button {
+                onSelect(style)
+            } label: {
+                VStack(spacing: 10) {
+                    Circle()
+                        .fill(readerThemeColor(for: style, colorScheme: colorScheme))
+                        .frame(width: 44, height: 44)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(selectedStyle == style ? palette.primaryText : Color.clear, lineWidth: 2)
+                        }
+                    Text(style.title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(palette.primaryText)
+                }
+                .frame(minWidth: minimumSwatchWidth, maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    selectedStyle == style ? palette.primaryText.opacity(0.06) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(style.title)
+            .accessibilityAddTraits(selectedStyle == style ? .isSelected : [])
         }
     }
 }

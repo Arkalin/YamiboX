@@ -518,6 +518,8 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
                 return UIColor(white: 1, alpha: 0.62)
             case .sakura:
                 return UIColor(white: 1, alpha: 0.60)
+            case .quiet:
+                return UIColor(white: 1, alpha: 0.08)
             }
         }
     }

@@ -1472,6 +1472,12 @@ public final class NovelReaderViewModel {
 
 private extension NovelReaderAppearanceSettings {
     func isSurfaceOnlyAppearanceChange(to other: NovelReaderAppearanceSettings) -> Bool {
+        // Quiet changes the attributed glyph color, not just the page background.
+        // Rebuild on entry and exit so the live TextKit graph cannot retain old text colors.
+        if backgroundStyle != other.backgroundStyle,
+           backgroundStyle == .quiet || other.backgroundStyle == .quiet {
+            return false
+        }
         var lhs = self
         var rhs = other
         lhs.backgroundStyle = .system

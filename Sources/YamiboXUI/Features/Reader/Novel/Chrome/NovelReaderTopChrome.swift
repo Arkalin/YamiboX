@@ -91,7 +91,9 @@ struct NovelReaderTopChrome: View {
             .font(.callout.weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .foregroundStyle(.primary)
+            .foregroundStyle(model.settings.backgroundStyle == .quiet && model.settings.readingMode == .paged
+                ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
+                : Color.primary)
 
         if model.settings.readingMode == .vertical {
             text
