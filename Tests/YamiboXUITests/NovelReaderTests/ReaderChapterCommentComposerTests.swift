@@ -25,6 +25,7 @@ struct ReaderChapterCommentComposerTests {
         let harness = try makeHarness()
         let model = harness.model
         await model.load()
+        #expect(model.authorName == "Author")
         #expect(model.mode == .comment)
         #expect(!model.canSubmit)
         model.comment?.message = "点评论文"
@@ -97,11 +98,13 @@ struct ReaderChapterCommentComposerTests {
         #expect(harness.model.context == nil)
         #expect(harness.model.replySession == nil)
         #expect(harness.model.feedback != nil)
+        #expect(harness.model.authorName == L10n.string("forum.thread.unknown_author"))
         #expect(await harness.model.submit() == nil)
         #expect(harness.record.contexts.isEmpty)
         harness.record.fails = false
         await harness.model.load(retry: true)
         #expect(harness.model.context?.post.postID == "456")
+        #expect(harness.model.authorName == "Author")
         #expect(harness.model.feedback == nil)
     }
 

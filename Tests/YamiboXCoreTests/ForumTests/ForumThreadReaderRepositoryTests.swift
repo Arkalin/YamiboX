@@ -625,14 +625,61 @@ private struct ForumThreadReaderRepositoryTests {
     #expect(context.replyURL.queryItemValue("page") == "9")
 }
 
-@Test func postActionContextRejectsMissingPostAndAuthentication() async throws {
+@Test func postActionContextReadsTouchTemplateTokenAndAuthor() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA", handlesCookies: false))
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        #expect(request.value(forHTTPHeaderField: "Cookie") == "auth=token")
+        #expect(request.httpShouldHandleCookies == false)
+        let html = forumThreadReaderRepositoryThreadHTML(title: "Target", postID: "456")
+            .replacingOccurrences(of: "</body>", with: """
+                <script type="text/javascript">
+                $('.favbtn').on('click', function() {
+                    $.ajax({type:'POST', data:{'favoritesubmit':'true', 'formhash':'a1b2c3d4'}, dataType:'xml'});
+                });
+                </script>
+                <div class="pg"><strong>9</strong></div>
+                </body>
+                """)
+        return forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: html)
+    }
+    let context = try await repository.fetchPostActionContext(threadID: "123", postID: "456")
+    #expect(context.formHash == "a1b2c3d4")
+    #expect(context.post.author.uid == "42")
+    #expect(context.post.author.name == "楼主名")
+    #expect(context.page == 9)
+}
+
+@Test func postActionContextRejectsMissingPostAndTokenAsParsingFailures() async throws {
     defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
     let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token", userAgent: "Test-UA"))
     for pid in ["other", "456"] {
         ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
             forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: forumThreadReaderRepositoryThreadHTML(title: "No verified form", postID: pid))
         }
-        await #expect(throws: (any Error).self) { try await repository.fetchPostActionContext(threadID: "123", postID: "456") }
+        do {
+            _ = try await repository.fetchPostActionContext(threadID: "123", postID: "456")
+            Issue.record("Expected an unavailable post or token")
+        } catch {
+            guard case .parsingFailed = LoadDiagnosticError.classificationError(error) as? YamiboError else {
+                Issue.record("A missing post or token must not imply expired authentication")
+                continue
+            }
+        }
+    }
+}
+
+@Test func postActionContextStillRejectsActualLoginPage() async throws {
+    defer { ForumThreadReaderRepositoryTestURLProtocol.handler = nil }
+    let repository = ForumThreadReaderRepository(client: YamiboClient(session: makeForumThreadReaderRepositoryTestSession(), cookie: "auth=token"))
+    ForumThreadReaderRepositoryTestURLProtocol.handler = { request in
+        forumThreadReaderRepositoryHTTPResponse(url: request.url!, body: "<html><body class='pg_logging'>Login</body></html>")
+    }
+    do {
+        _ = try await repository.fetchPostActionContext(threadID: "123", postID: "456")
+        Issue.record("Expected expired authentication")
+    } catch {
+        #expect(LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated)
     }
 }
 

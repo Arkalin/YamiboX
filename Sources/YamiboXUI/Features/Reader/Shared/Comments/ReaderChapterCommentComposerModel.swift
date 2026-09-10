@@ -127,6 +127,11 @@ final class ReaderChapterCommentComposerModel {
         self.actions = actions
     }
 
+    var authorName: String {
+        context?.post.author.name.nilIfBlank ?? target.authorName?.nilIfBlank
+            ?? L10n.string(isLoading ? "common.loading" : "forum.thread.unknown_author")
+    }
+
     var isBusy: Bool {
         isSubmitting || replySession?.isSubmitting == true || replySession?.isUploading == true || isPreparingAttachment
     }
