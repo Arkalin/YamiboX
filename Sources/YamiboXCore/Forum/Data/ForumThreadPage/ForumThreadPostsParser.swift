@@ -375,7 +375,9 @@ private extension ForumThreadContentBlock {
             true
         case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):
             blocks.contains(where: \.isNonTextRenderable) || !plainTextFragments.isEmpty
-        case .text, .code:
+        case let .text(block):
+            !block.inlineImages.isEmpty
+        case .code:
             false
         }
     }
@@ -383,7 +385,7 @@ private extension ForumThreadContentBlock {
     var plainTextFragments: [String] {
         switch kind {
         case let .text(block):
-            [block.text]
+            [block.text.replacingOccurrences(of: "\u{FFFC}", with: "")]
         case let .attachment(block):
             [block.fileName]
         case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):

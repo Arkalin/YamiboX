@@ -346,19 +346,47 @@ public struct ForumThreadTextBlock: Codable, Equatable, Hashable, Sendable {
     public var links: [ForumThreadTextLink]
     public var styleRuns: [ForumThreadTextStyleRun]
     public var rubies: [ForumThreadRubyText]
+    public var inlineImages: [ForumThreadInlineImage]
 
     public init(
         text: String,
         alignment: ForumThreadTextAlignment = .start,
         links: [ForumThreadTextLink] = [],
         styleRuns: [ForumThreadTextStyleRun] = [],
-        rubies: [ForumThreadRubyText] = []
+        rubies: [ForumThreadRubyText] = [],
+        inlineImages: [ForumThreadInlineImage] = []
     ) {
         self.text = text
         self.alignment = alignment
         self.links = links
         self.styleRuns = styleRuns
         self.rubies = rubies
+        self.inlineImages = inlineImages
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text, alignment, links, styleRuns, rubies, inlineImages
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        alignment = try container.decode(ForumThreadTextAlignment.self, forKey: .alignment)
+        links = try container.decode([ForumThreadTextLink].self, forKey: .links)
+        styleRuns = try container.decode([ForumThreadTextStyleRun].self, forKey: .styleRuns)
+        rubies = try container.decode([ForumThreadRubyText].self, forKey: .rubies)
+        inlineImages = try container.decodeIfPresent([ForumThreadInlineImage].self, forKey: .inlineImages) ?? []
+    }
+}
+
+/// An object-replacement character in the text, indexed by Swift characters.
+public struct ForumThreadInlineImage: Codable, Equatable, Hashable, Sendable {
+    public var start: Int
+    public var image: ForumThreadImageBlock
+
+    public init(start: Int, image: ForumThreadImageBlock) {
+        self.start = start
+        self.image = image
     }
 }
 

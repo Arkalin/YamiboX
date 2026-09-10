@@ -17,6 +17,7 @@ struct ForumThreadTextBlockFormatter {
                 continue
             }
             attributed[range].font = font(for: run.style)
+            attributed[range][ForumThreadItalicKey.self] = run.style.isItalic
             let colors = ForumThreadAuthorColorAdapter.colors(for: run.style, theme: theme)
             if let foregroundColor = colors.foreground {
                 attributed[range].foregroundColor = foregroundColor
@@ -41,6 +42,11 @@ struct ForumThreadTextBlockFormatter {
                 theme: theme
             )
             attributed[range].underlineStyle = .single
+        }
+        for inline in block.inlineImages {
+            guard let range = range(in: attributed, start: inline.start, length: 1, characterCount: characterCount),
+                  String(attributed[range].characters) == "\u{FFFC}" else { continue }
+            attributed[range][ForumThreadInlineImageKey.self] = inline.image
         }
         return attributed
     }
@@ -126,9 +132,8 @@ struct ForumThreadTextBlockFormatter {
         if style.isBold {
             font = font.bold()
         }
-        if style.isItalic {
-            font = font.italic()
-        }
+        // The renderer synthesizes the slant, including CJK fallback glyphs
+        // whose fonts have no italic face. Do not also italicize Latin glyphs.
         return font
     }
 }

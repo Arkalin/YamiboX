@@ -179,3 +179,18 @@ private func resolved(_ color: Color?, _ style: UIUserInterfaceStyle) -> Resolve
     #expect(segments.map { String($0.attributedText.characters) } == ["一二", "三四"])
     #expect(segments.map(\.rubyText) == ["首", nil])
 }
+
+@Test func textBlockFormatterMarksSyntheticItalicsAndInlineImages() throws {
+    let image = ForumThreadImageBlock(url: URL(string: "https://bbs.yamibo.com/static/image/smiley/smile.gif")!, isEmoticon: true)
+    let block = ForumThreadTextBlock(
+        text: "中😀\u{FFFC}文",
+        styleRuns: [ForumThreadTextStyleRun(start: 0, length: 4, style: ForumThreadTextStyle(isBold: true, isItalic: true))],
+        inlineImages: [ForumThreadInlineImage(start: 2, image: image)]
+    )
+    let attributed = ForumThreadTextBlockFormatter(block: block).attributedText
+    let textRange = try #require(attributed.range(of: "中😀"))
+    #expect(attributed[textRange][ForumThreadItalicKey.self] == true)
+    #expect(attributed[textRange].font == Font.system(size: expectedBaseBodyFontSize).bold())
+    let imageRange = try #require(attributed.range(of: "\u{FFFC}"))
+    #expect(attributed[imageRange][ForumThreadInlineImageKey.self] == image)
+}
