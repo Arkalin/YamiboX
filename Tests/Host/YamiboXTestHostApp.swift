@@ -141,7 +141,12 @@ private struct ChapterCommentComposerFixture: View {
     @State private var scrollTarget: String?
     @State private var feedback: TransientFeedback?
     @State private var counts = ChapterCommentFixtureCounts()
+    @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
+    @State private var showingOriginalPost = false
+    @State private var imageCounts: ChapterCommentImageFixtureCounts
+    @State private var imagePipeline: YamiboUIImagePipeline
     private let chapter = ReaderChapterCommentTarget(threadID: "123", view: 2, ownerPostID: "456", title: "第十二章 · 风经过的地方", authorID: "42")
+    private var showsImages: Bool { ProcessInfo.processInfo.environment["CHAPTER_COMMENT_IMAGES"] == "1" }
     private var isNovel: Bool { ProcessInfo.processInfo.environment["CHAPTER_COMMENT_READER"] != "manga" }
     private var placement: ReaderChapterReplyPlacement {
         switch ProcessInfo.processInfo.environment["CHAPTER_COMMENT_BOUNDARY"] {
@@ -151,27 +156,77 @@ private struct ChapterCommentComposerFixture: View {
         }
     }
 
+    init() {
+        let imageCounts = ChapterCommentImageFixtureCounts()
+        _imageCounts = State(initialValue: imageCounts)
+        _imagePipeline = State(initialValue: YamiboUIImagePipeline(core: ChapterCommentFixtureImageLoader(
+            images: ["one.png": Self.imageData(color: .systemRed, title: "FIRST"), "two.png": Self.imageData(color: .systemGreen, title: "SECOND")],
+            counts: imageCounts
+        )))
+    }
+
+    private var comments: [ChapterComment] {
+        if showsImages {
+            return [
+                ChapterComment(id: "photos", source: .postComment, authorName: "远山", metadata: "2026-09-10 12:30", body: "第一张之前。两张之间。第二张之后。", postID: "456", contentBlocks: [
+                    .init(id: "before", kind: .text(.init(text: "第一张之前。"))), imageBlock("one", title: "第一张"),
+                    .init(id: "between", kind: .text(.init(text: "两张之间。"))), imageBlock("two", title: "第二张"),
+                    .init(id: "after", kind: .text(.init(text: "第二张之后。")))
+                ]),
+                ChapterComment(id: "failed", source: .ratingReason, authorName: "夏木", metadata: "积分 +2", body: "", postID: "456", contentBlocks: [imageBlock("missing", title: "加载失败测试")]),
+                ChapterComment(id: "reply", source: .reply, authorName: "见微", metadata: "28楼 · 2026-09-10 14:20", body: "最后那句让我想起第一章的约定，期待她们再见面。", postID: "789")
+            ]
+        }
+        return [
+            ChapterComment(id: "comment", source: .postComment, authorName: "远山", metadata: "2026-09-10 12:30", body: "读到这里，终于明白她为什么一直没有离开。", postID: "456", authorAvatarURL: URL(string: "https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg")),
+            ChapterComment(id: "rating", source: .ratingReason, authorName: "夏木", metadata: "积分 +2", body: "这一章的对话写得真好。", postID: "456", authorAvatarURL: URL(string: "https://avatar.invalid/missing.jpg")),
+            ChapterComment(id: "reply", source: .reply, authorName: "见微", metadata: "28楼 · 2026-09-10 14:20", body: "最后那句让我想起第一章的约定，期待她们再见面。", postID: "789")
+        ]
+    }
+
+    private func imageBlock(_ name: String, title: String) -> ForumThreadContentBlock {
+        .init(id: name, kind: .image(.init(url: URL(string: "https://chapter-images.invalid/\(name).png")!, altText: title)))
+    }
+
+    private static func imageData(color: UIColor, title: String) -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).pngData { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+            (title as NSString).draw(at: CGPoint(x: 80, y: 270), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 70), .foregroundColor: UIColor.white])
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ReaderChapterCommentsContent(
-                state: .loaded(chapter, ChapterCommentsPage(target: chapter, comments: [
-                    ChapterComment(id: "comment", source: .postComment, authorName: "远山", metadata: "2026-09-10 12:30", body: "读到这里，终于明白她为什么一直没有离开。", postID: "456"),
-                    ChapterComment(id: "rating", source: .ratingReason, authorName: "夏木", metadata: "积分 +2", body: "这一章的对话写得真好。", postID: "456"),
-                    ChapterComment(id: "reply", source: .reply, authorName: "见微", metadata: "28楼 · 2026-09-10 14:20", body: "最后那句让我想起第一章的约定，期待她们再见面。", postID: "789")
-                ], isBoundaryClosed: placement == .outsideChapter)),
+                state: .loaded(chapter, ChapterCommentsPage(target: chapter, comments: comments, isBoundaryClosed: placement == .outsideChapter)),
                 isLoadingMore: false, loadMoreError: nil, refreshError: nil, scrollTarget: $scrollTarget,
-                retry: { _ in }, loadNext: {}, openOriginalPost: { _ in }, compose: { selectedTarget = $0 }
+                retry: { _ in }, loadNext: {}, openOriginalPost: { _ in showingOriginalPost = true }, compose: { selectedTarget = $0 },
+                openImage: { comment, blockID in
+                    imageBrowserRequest = ReaderChapterCommentImageGallery.request(comment: comment, target: chapter, selectedBlockID: blockID)
+                }
             )
             .safeAreaInset(edge: .bottom) {
-                ReaderChapterCommentComposeBar { selectedTarget = ReaderChapterCommentComposeTarget.owner(chapter) }
+                VStack(spacing: 0) {
+                    ReaderChapterCommentComposeBar { selectedTarget = ReaderChapterCommentComposeTarget.owner(chapter) }
+                    if showsImages {
+                        Text(verbatim: "loads=\(imageCounts.loads)")
+                            .font(.caption2)
+                            .frame(maxWidth: .infinity)
+                            .background(.background)
+                            .accessibilityIdentifier("chapter-image-loads")
+                    }
+                }
             }
             .navigationTitle("章节评论")
             .navigationBarTitleDisplayMode(.inline)
             .overlay(alignment: .bottomTrailing) {
-                Text(verbatim: "count=\(counts.submissions);mode=\(counts.mode);pid=\(counts.postID);page=\(counts.page);uploads=\(counts.uploads)")
+                if !showsImages {
+                    Text(verbatim: "count=\(counts.submissions);mode=\(counts.mode);pid=\(counts.postID);page=\(counts.page);uploads=\(counts.uploads)")
                     .font(.caption2)
                     .accessibilityIdentifier("chapter-comment-diagnostics")
                     .allowsHitTesting(false)
+                }
             }
         }
         .sheet(item: $selectedTarget) { target in
@@ -183,7 +238,13 @@ private struct ChapterCommentComposerFixture: View {
             }
             .environment(\.dynamicTypeSize, ProcessInfo.processInfo.environment["CHAPTER_COMMENT_LARGE_TEXT"] == "1" ? .accessibility3 : .large)
         }
+        .fullScreenCover(item: $imageBrowserRequest) { request in
+            ImageBrowserView(items: request.items, initialItemID: request.initialItemID,
+                             mode: request.items.count == 1 ? .single : .multiple) { imageBrowserRequest = nil }
+        }
+        .sheet(isPresented: $showingOriginalPost) { ChapterCommentFixtureDestination() }
         .transientMessage(feedback) { feedback = nil }
+        .environment(\.yamiboImagePipeline, showsImages ? imagePipeline : nil)
         .appTheme(.theme(for: .standard))
         .preferredColorScheme(ProcessInfo.processInfo.environment["CHAPTER_COMMENT_DARK"] == "1" ? .dark : .light)
         .dynamicTypeSize(ProcessInfo.processInfo.environment["CHAPTER_COMMENT_LARGE_TEXT"] == "1" ? .accessibility3 : .large)
@@ -229,6 +290,23 @@ private enum ChapterCommentFixtureFailure {
         default: break
         }
     }
+}
+
+@MainActor @Observable private final class ChapterCommentImageFixtureCounts {
+    var loads = 0
+}
+
+private struct ChapterCommentFixtureImageLoader: YamiboImageDataLoading {
+    let images: [String: Data]
+    let counts: ChapterCommentImageFixtureCounts
+
+    func data(for source: YamiboImageSource) async throws -> Data {
+        await MainActor.run { counts.loads += 1 }
+        guard let data = images[source.url.lastPathComponent] else { throw URLError(.fileDoesNotExist) }
+        return data
+    }
+
+    func cachedData(for source: YamiboImageSource) -> Data? { nil }
 }
 
 private struct ChapterCommentFixtureDestination: View {

@@ -47,7 +47,7 @@ struct ChapterCommentEmoticonTests {
         #expect(try JSONDecoder().decode(ChapterCommentsPage.self, from: JSONEncoder().encode(page)) == page)
     }
 
-    @Test func continuationPreservesLazyEmoticonsAndStillExcludesQuotesPhotosAndEditMetadata() throws {
+    @Test func continuationPreservesLazyEmoticonsAndStillExcludesQuotesAndEditMetadata() throws {
         let html = """
         <div id='post_101'><div id='postmessage_101'>
         <div class='quote'>Quoted \(smiley)</div><blockquote>Also quoted \(smiley)</blockquote>
@@ -60,6 +60,7 @@ struct ChapterCommentEmoticonTests {
         let comment = try #require(page.comments.first)
         #expect(comment.body.isEmpty)
         #expect(comment.bodyBlocks?.count == 1)
+        #expect(comment.contentBlocks?.count == 2)
         let block = try #require(comment.bodyBlocks?.first)
         #expect(block.text == "\u{FFFC}")
         #expect(block.inlineImages.count == 1)
@@ -103,5 +104,6 @@ struct ChapterCommentEmoticonTests {
         let comment = try JSONDecoder().decode(ChapterComment.self, from: data)
         #expect(comment.body == "old")
         #expect(comment.bodyBlocks == nil)
+        #expect(comment.contentBlocks == nil)
     }
 }

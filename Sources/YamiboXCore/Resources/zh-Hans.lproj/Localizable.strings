@@ -843,6 +843,7 @@
 "reader.author_replies_to_others" = "楼主对他人的回帖";
 "reader.cache" = "缓存";
 "reader.comment_anonymous" = "匿名";
+"reader.comment_view_image" = "查看图片";
 "reader.comment_source.post_comment" = "点评";
 "reader.comment_source.rating_reason" = "评分";
 "reader.comment_source.others_post" = "帖子";
