@@ -107,20 +107,24 @@ public struct AccountSwitchCoordinator: Sendable {
 
 /// UI-owned web views and sync sessions join the Core transition without Core importing WebKit.
 public actor AccountTransitionLifecycle {
+    private var preserveLocalEdits: (@MainActor @Sendable () async throws -> Void)?
     private var prepare: (@MainActor @Sendable () async throws -> Void)?
     private var finish: (@MainActor @Sendable (SessionState) async -> Void)?
     private var publish: (@MainActor @Sendable () -> Void)?
 
     public func configure(
+        preserveLocalEdits: @escaping @MainActor @Sendable () async throws -> Void = {},
         prepare: @escaping @MainActor @Sendable () async throws -> Void,
         finish: @escaping @MainActor @Sendable (SessionState) async -> Void,
         publish: @escaping @MainActor @Sendable () -> Void = {}
     ) {
+        self.preserveLocalEdits = preserveLocalEdits
         self.prepare = prepare
         self.finish = finish
         self.publish = publish
     }
 
+    func willBegin() async throws { try await preserveLocalEdits?() }
     func willChange() async throws { try await prepare?() }
     func didChange(_ session: SessionState) async { await finish?(session) }
     func didPublish() async { await publish?() }

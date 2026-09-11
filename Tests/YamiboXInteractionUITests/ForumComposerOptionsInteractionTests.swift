@@ -31,7 +31,8 @@ final class ForumComposerOptionsInteractionTests: XCTestCase {
         XCTAssertEqual(toggle.value as? String, "1")
         toggle.tap()
         expectDiagnostics("signature=false", in: app)
-        XCTAssertEqual(app.switches["纯文本"].value as? String, "0")
+        let sourceMode = app.switches.matching(NSPredicate(format: "identifier == %@ OR label == %@", "native-composer-plain-text", "源码")).firstMatch
+        XCTAssertEqual(sourceMode.value as? String, "0")
 
         reveal(options, in: app)
         options.tap()

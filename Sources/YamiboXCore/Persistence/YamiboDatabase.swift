@@ -16,6 +16,7 @@ enum YamiboDatabase {
         BookmarkDatabaseSchema.self,
         ReaderDatabaseSchema.self,
         BrowsingHistoryDatabaseSchema.self,
+        ForumComposerDraftDatabaseSchema.self,
     ]
 
     static func defaultRootDirectory(fileManager: FileManager = .default) -> URL {

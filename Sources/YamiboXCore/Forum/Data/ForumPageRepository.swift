@@ -2,6 +2,7 @@ import Foundation
 
 public actor ForumPageRepository {
     private let client: YamiboClient
+    private var composerBackgrounds: [URL: [ForumComposerBackground]] = [:]
 
     init(client: YamiboClient) {
         self.client = client
@@ -13,7 +14,20 @@ public actor ForumPageRepository {
             throw ForumPageError.confirmationRequired
         }
         let response = try await client.fetchPageDocument(url: ForumWebPagePolicy.secureURL(url))
-        return try parse(response)
+        var page = try parse(response)
+        if let url = page.composerContext?.backgroundCatalogURL, page.composerContext?.backgrounds.isEmpty == true {
+            if let cached = composerBackgrounds[url] { page.composerContext?.backgrounds = cached }
+            else {
+                do {
+                    let catalog = try await client.fetchPageDocument(url: url, referer: page.url)
+                    let backgrounds = ForumComposerContextParser.backgrounds(in: catalog.html, baseURL: page.url)
+                    composerBackgrounds[url] = backgrounds
+                    page.composerContext?.backgrounds = backgrounds
+                } catch is CancellationError { throw CancellationError() }
+                catch { /* A missing optional catalog must not prevent editing. */ }
+            }
+        }
+        return page
     }
 
     public func submit(

@@ -154,6 +154,10 @@ public final class YamiboAppModel {
 
     private func configureAccountTransitions() async {
         await appContext.accountTransitionLifecycle.configure(
+            preserveLocalEdits: { [weak self] in
+                guard let self else { return }
+                try await ForumComposerDraftCoordinator.prepareForAccountChange(sessionStore: appContext.accountDependencies.sessionStore)
+            },
             prepare: { [weak self] in
                 guard let self else { return }
                 cancelMangaReaderOpen()
@@ -163,6 +167,7 @@ public final class YamiboAppModel {
             },
             finish: { [weak self] session in
                 guard let self else { return }
+                ForumComposerDraftCoordinator.finishAccountChange(sessionStore: appContext.accountDependencies.sessionStore)
                 await webSessionCoordinator.finishAccountChange(session)
                 await IOSForumWebView.Coordinator.finishAccountChange(session, sessionStore: appContext.accountDependencies.sessionStore)
             },

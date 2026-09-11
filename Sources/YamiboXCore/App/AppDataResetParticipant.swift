@@ -13,6 +13,7 @@ enum AppDataResetParticipant: String, CaseIterable, Sendable {
     case favoriteSyncRunStore
     case readingProgressStore
     case browsingHistoryStore
+    case composerDraftStore
     case contentCoverStore
     case novelReaderCacheStore
     case mangaDirectoryStore

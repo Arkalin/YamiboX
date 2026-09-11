@@ -6,6 +6,24 @@ import Testing
 @MainActor
 @Suite("AppTests: Application Data Reset", .serialized)
 struct YamiboAppContextResetTests {
+    @Test func failedLocalEditPreservationDoesNotBeginAnAccountTransition() async throws {
+        let accounts = AccountStore.temporary()
+        let fixture = try AppResetFixture(accountStore: accounts)
+        defer { fixture.cleanup() }
+        try await activateAccount("1", in: accounts)
+        let before = try await fixture.context.sessionStore.snapshot()
+        await fixture.context.accountTransitionLifecycle.configure(
+            preserveLocalEdits: { throw CocoaError(.fileWriteOutOfSpace) },
+            prepare: { Issue.record("Identity fencing must not begin after a failed draft save") },
+            finish: { _ in Issue.record("A failed preflight must leave the old UI intact") }
+        )
+        await #expect(throws: CocoaError.self) { try await fixture.context.accountSwitcher.signOut() }
+        let after = try await fixture.context.sessionStore.snapshot()
+        #expect(after.generation == before.generation)
+        #expect(after.session.accountUID == "1")
+        #expect(await fixture.context.sessionStore.isCurrentGeneration(before.generation))
+    }
+
     @Test func everyOwnedStoreIsRegisteredForReset() throws {
         let fixture = try AppResetFixture()
         defer { fixture.cleanup() }
@@ -36,7 +54,8 @@ struct YamiboAppContextResetTests {
         let remainingRows = try await fixture.context.databasePool.read { db in
             let tables = try String.fetchAll(db, sql: """
                 SELECT name FROM sqlite_master
-                WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations'
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                  AND name NOT IN ('grdb_migrations', 'forum_composer_draft_generation')
                 """)
             return try tables.filter { try Table<Row>($0).fetchCount(db) > 0 }
         }
@@ -207,6 +226,9 @@ private final class AppResetFixture {
             try await context.browsingHistoryStore.record(BrowsingHistoryEntry(
                 target: .novelThread(threadID: "100"), title: "Fixture"
             ))
+        case .composerDraftStore:
+            let generation = try await context.composerDraftStore.generation()
+            try await context.composerDraftStore.save(.init(accountUID: "100", target: .init(kind: .newThread, forumID: "5"), fields: ["message": ["Fixture"]]), expecting: nil, generation: generation)
         case .contentCoverStore:
             try await context.contentCoverStore.setManualCover(
                 imageURL, for: ContentCoverKey(targetType: .thread, targetID: "100")
@@ -291,6 +313,8 @@ private final class AppResetFixture {
             #expect(await context.readingProgressStore.loadAll().isEmpty)
         case .browsingHistoryStore:
             #expect(await context.browsingHistoryStore.entries().isEmpty)
+        case .composerDraftStore:
+            #expect(try await context.composerDraftStore.drafts(accountUID: "100").isEmpty)
         case .contentCoverStore:
             #expect(try await context.contentCoverStore.allCovers().isEmpty)
         case .novelReaderCacheStore:

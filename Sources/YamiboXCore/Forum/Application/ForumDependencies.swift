@@ -13,6 +13,7 @@ public struct ForumDependencies: Sendable {
     /// working; the app composition root always supplies one.
     public let browsingHistoryStore: BrowsingHistoryStore?
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    public let composerDraftStore: ForumComposerDraftStore?
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -34,6 +35,7 @@ public struct ForumDependencies: Sendable {
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore? = nil,
         browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
+        composerDraftStore: ForumComposerDraftStore? = nil,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
@@ -53,6 +55,7 @@ public struct ForumDependencies: Sendable {
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
+        self.composerDraftStore = composerDraftStore
         self.settingsStore = settingsStore
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore

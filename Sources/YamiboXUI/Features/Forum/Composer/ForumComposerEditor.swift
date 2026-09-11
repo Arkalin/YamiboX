@@ -11,6 +11,11 @@ struct ForumComposerEditor: View {
     let isBlog: Bool
     @Binding var isHTMLSource: Bool
     var editorController: ForumEditorController? = nil
+    var composerContext = ForumComposerContext()
+    var parsesBBCode = true
+    var parsesEmoticons = true
+    var onDrafts: (() -> Void)?
+    var draftStatus: String?
     @State private var localController = ForumEditorController()
     @State private var showsLinkPrompt = false
     @State private var showsEmoticons = false
@@ -21,6 +26,14 @@ struct ForumComposerEditor: View {
     private var controller: ForumEditorController { editorController ?? localController }
 
     var body: some View {
+        if isBlog { blogEditor }
+        else {
+            ForumBBCodeEditor(text: $text, controller: controller, composerContext: composerContext, parsesBBCode: parsesBBCode,
+                              parsesEmoticons: parsesEmoticons, onDrafts: onDrafts, draftStatus: draftStatus)
+        }
+    }
+
+    private var blogEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
                 ForumTextEditor(text: $text, isHTMLSource: $isHTMLSource, isBlog: isBlog, mode: mode, controller: controller)
@@ -181,6 +194,17 @@ final class ForumEditorRegistry {
         }
     }
 
+    func clear() {
+        for controller in controllers.values {
+            controller.view?.resignFirstResponder()
+            controller.bbcodeSession.onSourceChange = nil
+            controller.bbcodeSession.onStateChange = nil
+            controller.bbcodeSession.load("", force: true)
+            controller.view?.text = ""
+        }
+        controllers = [:]
+    }
+
     func prepareSubmission(form: ForumForm, button: ForumFormButton, model: ForumPageSession) {
         commitEditing()
         model.prepareSubmission(form: form, button: button)
@@ -190,11 +214,15 @@ final class ForumEditorRegistry {
 @MainActor
 final class ForumEditorController {
     weak var view: UITextView?
+    let bbcodeSession = ForumBBCodeSession()
+    var usesBBCodeDocument = false
+    var hasRestoredDraftState = false
     var richSession: ForumRichEditorSession?
     var isVisual = false
     private var savedSelection: NSRange?
 
     func pauseEditing() {
+        if usesBBCodeDocument { bbcodeSession.commitComposition(resign: true); return }
         guard let view else { return }
         // Commit IME composition before bookmarking the final UTF-16 cursor.
         view.unmarkText()
@@ -213,6 +241,7 @@ final class ForumEditorController {
     }
 
     func insertEmoticon(_ item: ForumEmoticon, isBlog: Bool, encodeHTML: Bool) {
+        if usesBBCodeDocument { _ = bbcodeSession.insertMarkup(item.code); return }
         if isVisual, let view, let richSession {
             restoreSelection(in: view)
             richSession.insertEmoticon(item, in: view)
@@ -225,6 +254,11 @@ final class ForumEditorController {
     }
 
     func wrap(before: String, after: String, placeholder: String, encodeHTML: Bool) {
+        if usesBBCodeDocument {
+            let document = ForumComposerDocument(source: before + "x" + after)
+            if let node = document.nodes.first, let tag = node.tag { bbcodeSession.format(tag, parameter: node.parameter) }
+            return
+        }
         if isVisual, let view, let richSession {
             restoreSelection(in: view)
             richSession.wrap(before: before, after: after, placeholder: placeholder, in: view)
@@ -263,7 +297,7 @@ final class ForumEditorController {
         view.becomeFirstResponder()
     }
 
-    func undo() { view?.undoManager?.undo() }
+    func undo() { if usesBBCodeDocument { bbcodeSession.undo() } else { view?.undoManager?.undo() } }
 }
 
 struct ForumTextEditor: UIViewRepresentable {

@@ -8,6 +8,7 @@ enum ForumPageParser {
         let document = try KannaSoup.parse(payload, baseURL: url.absoluteString)
         let uploads = ForumUploadParser.configurations(in: document, pageURL: url)
         let isFirstPost = composerIsFirstPost(in: document)
+        let composerContext = ForumComposerContextParser.parse(in: document, pageURL: url, isFirstPost: isFirstPost)
         resolveComposerTabs(in: document, pageURL: url)
         // These are desktop upload dialog forms, not independent user forms.
         // Remove their chrome too; otherwise hidden dialog text leaks below
@@ -35,7 +36,7 @@ enum ForumPageParser {
         guard !blocks.isEmpty || !forms.isEmpty || message != nil else {
             throw YamiboError.parsingFailed(context: L10n.string("forum.native.title"))
         }
-        return ForumPageDocument(url: url, title: title, blocks: blocks, forms: forms, message: message, continuationURL: continuationURL, uploads: uploads)
+        return ForumPageDocument(url: url, title: title, blocks: blocks, forms: forms, message: message, continuationURL: continuationURL, uploads: uploads, composerContext: composerContext)
     }
 
     private static func pageTitle(document: Document, root: Element) -> String {

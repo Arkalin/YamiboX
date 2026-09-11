@@ -50,8 +50,8 @@ final class ForumAttachmentUploadInteractionTests: XCTestCase {
     }
 
     private func selectFixtureDocument(_ app: XCUIApplication, attempt: Int) throws {
-        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15), app.debugDescription)
+        let picker = app.otherElements["Browse View (Picker)"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 15), app.debugDescription)
         attachState(app, name: "offline-attachment-files-open-\(attempt)")
         let file = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["offline-attachment", "offline-attachment.txt"])).firstMatch
         if !file.exists {
@@ -68,7 +68,11 @@ final class ForumAttachmentUploadInteractionTests: XCTestCase {
         }
         XCTAssertTrue(file.waitForExistence(timeout: 10), app.debugDescription)
         attachState(app, name: "offline-attachment-file-ready-\(attempt)")
-        file.tap()
+        let item = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "offline-attachment,")).firstMatch
+        XCTAssertTrue(item.exists, app.debugDescription)
+        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed, app.debugDescription)
     }
 
     private func attachState(_ app: XCUIApplication, name: String) {

@@ -13,6 +13,10 @@ struct ForumFormSection: View {
     let onSubmit: (ForumFormButton) -> Void
     let onURLTap: (URL) -> Void
     var editorRegistry: ForumEditorRegistry? = nil
+    var composerContext = ForumComposerContext()
+    var editorDisabled: Bool? = nil
+    var onDrafts: (() -> Void)?
+    var draftStatus: String?
     @State private var showsOptions = false
 
     private var isComposer: Bool { form.kind != .standard }
@@ -101,9 +105,16 @@ struct ForumFormSection: View {
             isHTMLSource: Binding(get: { htmlSourceFields.contains(field.id) }, set: {
                 if $0 { htmlSourceFields.insert(field.id) } else { htmlSourceFields.remove(field.id) }
             }),
-            editorController: isComposer && field.name == "message" ? editorRegistry?.controller(for: field.id) : nil
+            editorController: isComposer && field.name == "message" ? editorRegistry?.controller(for: field.id) : nil,
+            composerContext: composerContext,
+            parsesBBCode: !isChecked("bbcodeoff"), parsesEmoticons: !isChecked("smileyoff"),
+            onDrafts: onDrafts, draftStatus: draftStatus
         )
-        .disabled(disabled || field.isReadOnly)
+        .disabled((form.kind == .thread ? editorDisabled ?? disabled : disabled) || field.isReadOnly)
+    }
+
+    private func isChecked(_ name: String) -> Bool {
+        form.fields.first(where: { $0.name == name }).map { !(values[$0.id] ?? $0.initialValues).isEmpty } ?? false
     }
 
     private func fileField(_ field: ForumFormField) -> some View {
@@ -129,6 +140,11 @@ private struct ForumFieldView: View {
     let isBlog: Bool
     @Binding var isHTMLSource: Bool
     var editorController: ForumEditorController? = nil
+    var composerContext = ForumComposerContext()
+    var parsesBBCode = true
+    var parsesEmoticons = true
+    var onDrafts: (() -> Void)?
+    var draftStatus: String?
 
     private var text: Binding<String> {
         Binding(get: { values.first ?? "" }, set: { values = [$0] })
@@ -156,7 +172,9 @@ private struct ForumFieldView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(field.label).font(.subheadline).foregroundStyle(.secondary)
                     if isComposer && field.name == "message" {
-                        ForumComposerEditor(text: text, isBlog: isBlog, isHTMLSource: $isHTMLSource, editorController: editorController)
+                        ForumComposerEditor(text: text, isBlog: isBlog, isHTMLSource: $isHTMLSource, editorController: editorController,
+                                            composerContext: composerContext, parsesBBCode: parsesBBCode, parsesEmoticons: parsesEmoticons,
+                                            onDrafts: onDrafts, draftStatus: draftStatus)
                     } else {
                         TextEditor(text: text).frame(minHeight: 110)
                     }

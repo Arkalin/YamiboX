@@ -23,6 +23,7 @@ public final class YamiboAppContext: Sendable {
     /// Public for change-ID observation in the app-entry layer.
     public let readingProgressStore: ReadingProgressStore
     let browsingHistoryStore: BrowsingHistoryStore
+    let composerDraftStore: ForumComposerDraftStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let messageUnreadWorkflow: MessageUnreadWorkflow
     /// Public for change-ID observation in the app-entry layer.
@@ -64,6 +65,7 @@ public final class YamiboAppContext: Sendable {
         favoriteSyncRunStore: FavoriteSyncRunStore? = nil,
         readingProgressStore: ReadingProgressStore? = nil,
         browsingHistoryStore: BrowsingHistoryStore? = nil,
+        composerDraftStore: ForumComposerDraftStore? = nil,
         contentCoverStore: ContentCoverStore? = nil,
         novelReaderCacheStore: NovelReaderProjectionStore? = nil,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore? = nil,
@@ -122,6 +124,7 @@ public final class YamiboAppContext: Sendable {
         self.favoriteSyncRunStore = favoriteSyncRunStore ?? FavoriteSyncRunStore(databasePool: resolvedGRDBDatabasePool)
         self.readingProgressStore = readingProgressStore ?? ReadingProgressStore(databasePool: resolvedGRDBDatabasePool)
         self.browsingHistoryStore = browsingHistoryStore ?? BrowsingHistoryStore(databasePool: resolvedGRDBDatabasePool)
+        self.composerDraftStore = composerDraftStore ?? ForumComposerDraftStore(databasePool: resolvedGRDBDatabasePool, baseDirectory: resolvedGRDBRootDirectory.appendingPathComponent("composer-drafts", isDirectory: true))
         self.contentCoverStore = contentCoverStore ?? ContentCoverStore(databasePool: resolvedGRDBDatabasePool)
         self.novelReaderCacheStore = novelReaderCacheStore ?? NovelReaderProjectionStore(
             diskCacheStore: diskCacheStore
@@ -219,6 +222,7 @@ public final class YamiboAppContext: Sendable {
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
             browsingHistoryWorkflow: browsingHistoryWorkflow,
+            composerDraftStore: composerDraftStore,
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
@@ -487,6 +491,8 @@ public final class YamiboAppContext: Sendable {
     private enum AccountWebDataCleanup: Sendable { case session, all, none }
 
     private func transitionAccount(webDataCleanup: AccountWebDataCleanup = .session, _ commit: @escaping @Sendable (UUID) async throws -> Void) async throws {
+        // A failed durable save must leave the old identity and its UI intact.
+        try await accountTransitionLifecycle.willBegin()
         let token = try await sessionStore.beginIdentityTransition()
         do {
             try await webDAVSyncSettingsStore.syncCoordinator.reset { [self] in
@@ -610,6 +616,7 @@ public final class YamiboAppContext: Sendable {
         case .favoriteSyncRunStore: try await favoriteSyncRunStore.clearAll()
         case .readingProgressStore: try await readingProgressStore.clearAll()
         case .browsingHistoryStore: try await browsingHistoryStore.clearAll()
+        case .composerDraftStore: try await composerDraftStore.clearAll()
         case .contentCoverStore: try await contentCoverStore.clearAll()
         case .novelReaderCacheStore: try await novelReaderCacheStore.clearAll()
         case .mangaDirectoryStore: try await mangaDirectoryStore.clearAll()

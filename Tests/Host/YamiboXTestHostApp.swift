@@ -8,7 +8,9 @@ import UIKit
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["BBCODE_PASTE_FIXTURE"] == "1" {
+                ForumBBCodePasteFixture()
+            } else if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
                 CreditLogFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FIXTURE"] == "1" {
                 ChapterCommentFilterFixture()

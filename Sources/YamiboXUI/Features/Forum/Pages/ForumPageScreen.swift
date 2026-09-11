@@ -28,6 +28,9 @@ struct ForumPageScreen: View {
             .accessibilityIdentifier("forum-native-page")
             .transientMessage(model.transientFeedback) { model.transientFeedback = nil }
             .task { await model.load() }
+            .sheet(isPresented: Binding(get: { model.page == nil && model.showsDrafts }, set: { if !$0 { model.showsDrafts = false } })) {
+                ForumComposerDraftList(model: model)
+            }
     }
 
     @ViewBuilder
@@ -63,6 +66,9 @@ struct ForumPageScreen: View {
                 }
                 if model.errorDetails?.requiresAuthentication == true {
                     Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                }
+                if model.composerDraft?.active == true {
+                    Button(L10n.string("forum.composer.drafts"), systemImage: "doc.on.doc") { Task { await model.openDrafts() } }
                 }
             }
             .padding()
