@@ -183,6 +183,7 @@ private struct ReadingHomeHeader: View {
                 .overlay { Circle().strokeBorder(.quaternary, lineWidth: 1) }
             }
             .buttonStyle(.plain)
+            .modifier(ReadingHomeAvatarPressFeedback())
             .accessibilityLabel(L10n.string(profile == nil ? "mine.tap_to_login" : "home.profile"))
             .accessibilityIdentifier("home.profile")
             .blur(radius: reduceMotion ? 0 : motion.avatarBlurRadius)
@@ -193,6 +194,16 @@ private struct ReadingHomeHeader: View {
         // Keep the chrome in place while the shelf passes beneath it. The
         // transition follows scroll distance, so reversing never queues an animation.
         .offset(y: scrollOffset)
+    }
+}
+
+private struct ReadingHomeAvatarPressFeedback: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content
+        }
     }
 }
 
