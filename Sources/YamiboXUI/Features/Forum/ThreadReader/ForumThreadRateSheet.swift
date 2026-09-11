@@ -8,6 +8,8 @@ final class ForumThreadRateSheetModel {
     var reason = ""
     var noticeAuthor = false
     private(set) var options: ForumThreadRateOptionsPage?
+    private(set) var optionsFailure: TransientFeedback?
+    private(set) var canRetryOptions = true
     private(set) var isLoadingOptions = false
     private(set) var isSubmitting = false
     private(set) var successMessage: String?
@@ -33,11 +35,16 @@ final class ForumThreadRateSheetModel {
     }
 
     var canSubmit: Bool {
-        !isSubmitting && !scoreText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isSubmitting && !isLoadingOptions && optionsFailure == nil
+            && !scoreText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func loadRateOptions() async {
+        guard !isLoadingOptions, !isSubmitting else { return }
         isLoadingOptions = true
+        options = nil
+        optionsFailure = nil
+        canRetryOptions = true
         errorMessage = nil
         hintMessage = L10n.string("forum.thread.rate_loading_options")
         defer { isLoadingOptions = false }
@@ -48,8 +55,12 @@ final class ForumThreadRateSheetModel {
         } catch {
             hintMessage = nil
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = L10n.string("forum.thread.rate_options_failed")
+                errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
+                optionsFailure = .failure(error)
+                if case .underlying = LoadDiagnosticError.classificationError(error) as? YamiboError {
+                    canRetryOptions = false
+                }
                 errorEventID = UUID()
             }
         }
@@ -59,7 +70,7 @@ final class ForumThreadRateSheetModel {
 
     /// Returns true when the rating was submitted and the sheet should dismiss.
     func submitRate() async -> Bool {
-        guard !isSubmitting else { return false }
+        guard !isSubmitting, !isLoadingOptions, optionsFailure == nil else { return false }
         errorEventID = UUID()
         guard let score = Int(scoreText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = L10n.string("forum.thread.rate_score_invalid")
@@ -84,7 +95,6 @@ final class ForumThreadRateSheetModel {
 }
 
 struct ForumThreadRateSheet: View {
-    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadRateSheetModel
     @State private var submissionTask: Task<Void, Never>?
@@ -99,47 +109,18 @@ struct ForumThreadRateSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField(L10n.string("forum.thread.rate_score"), text: $model.scoreText)
-
-                    if let options = model.options, !options.availableScores.isEmpty {
-                        Menu(L10n.string("forum.thread.rate_score_options")) {
-                            ForEach(options.availableScores, id: \.self) { score in
-                                Button(String(score)) {
-                                    model.scoreText = String(score)
-                                }
-                            }
-                        }
+            Group {
+                if let failure = model.optionsFailure {
+                    LoadFailureView(title: L10n.string("forum.thread.rate_unavailable"), systemImage: "star.slash",
+                                    message: failure.message, details: failure.details, showsRetry: model.canRetryOptions) {
+                        Task { await model.loadRateOptions() }
                     }
-
-                    TextField(L10n.string("forum.thread.rate_reason"), text: $model.reason, axis: .vertical)
-                        .lineLimit(3 ... 5)
-
-                    if let options = model.options, !options.defaultReasons.isEmpty {
-                        Menu(L10n.string("forum.thread.rate_reason_options")) {
-                            ForEach(options.defaultReasons, id: \.self) { value in
-                                Button(value) {
-                                    model.reason = value
-                                }
-                            }
-                        }
-                    }
-
-                    Toggle(L10n.string("forum.thread.rate_notice_author"), isOn: $model.noticeAuthor)
+                } else {
+                    ForumThreadRateForm(model: model)
                 }
-
-                if let hintMessage = model.hintMessage {
-                    Section {
-                        Text(hintMessage)
-                            .font(.caption)
-                            .foregroundStyle(theme.secondaryText)
-                    }
-                }
-
             }
             .navigationTitle(L10n.string("forum.thread.ratings"))
-            .failureToast(message: model.errorMessage, details: model.errorDetails,
+            .failureToast(message: model.optionsFailure == nil ? model.errorMessage : nil, details: model.errorDetails,
                           eventID: model.errorEventID, clear: model.clearError)
             .yamiboInlineNavigationTitleDisplayMode()
             .toolbar {
@@ -169,5 +150,51 @@ struct ForumThreadRateSheet: View {
             await model.loadRateOptions()
         }
         .onDisappear { submissionTask?.cancel() }
+    }
+}
+
+private struct ForumThreadRateForm: View {
+    @Environment(\.forumTheme) private var theme
+    @Bindable var model: ForumThreadRateSheetModel
+
+    var body: some View {
+        Form {
+            Section {
+                TextField(L10n.string("forum.thread.rate_score"), text: $model.scoreText)
+
+                if let options = model.options, !options.availableScores.isEmpty {
+                    Menu(L10n.string("forum.thread.rate_score_options")) {
+                        ForEach(options.availableScores, id: \.self) { score in
+                            Button(String(score)) {
+                                model.scoreText = String(score)
+                            }
+                        }
+                    }
+                }
+
+                TextField(L10n.string("forum.thread.rate_reason"), text: $model.reason, axis: .vertical)
+                    .lineLimit(3 ... 5)
+
+                if let options = model.options, !options.defaultReasons.isEmpty {
+                    Menu(L10n.string("forum.thread.rate_reason_options")) {
+                        ForEach(options.defaultReasons, id: \.self) { value in
+                            Button(value) {
+                                model.reason = value
+                            }
+                        }
+                    }
+                }
+
+                Toggle(L10n.string("forum.thread.rate_notice_author"), isOn: $model.noticeAuthor)
+            }
+
+            if let hintMessage = model.hintMessage {
+                Section {
+                    Text(hintMessage)
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryText)
+                }
+            }
+        }
     }
 }

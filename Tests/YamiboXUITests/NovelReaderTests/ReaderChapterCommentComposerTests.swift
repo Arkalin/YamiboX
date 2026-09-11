@@ -119,6 +119,69 @@ struct ReaderChapterCommentComposerTests {
         #expect(harness.record.contexts.first?.page == 10)
     }
 
+    @Test(arguments: [true, false]) func contextFailureKeepsRecoveryAcrossModes(authentication: Bool) async throws {
+        let harness = try makeHarness()
+        harness.record.contextError = authentication ? YamiboError.notAuthenticated : YamiboError.parsingFailed(context: "post")
+        await harness.model.load()
+        for mode in ReaderChapterCommentComposeMode.allCases {
+            harness.model.selectMode(mode)
+            await harness.model.loadMode()
+            #expect(harness.model.context == nil)
+            #expect(harness.model.feedback?.details?.requiresAuthentication == authentication)
+            #expect(!harness.model.canSubmit)
+        }
+    }
+
+    @Test func ratingRejectionSurvivesModeSwitchUntilExplicitRetry() async throws {
+        let harness = try makeHarness()
+        harness.record.optionsError = YamiboError.underlying("抱歉，您不能给自己发表的帖子评分")
+        await harness.model.load()
+        harness.model.selectMode(.rating)
+        await harness.model.loadMode()
+        harness.model.rating?.scoreText = "2"
+        #expect(!harness.model.canSubmit)
+        #expect(!harness.model.hasSubmissionFailure)
+        harness.model.selectMode(.comment)
+        harness.model.comment?.message = "Can still comment"
+        #expect(harness.model.canSubmit)
+        harness.model.selectMode(.rating)
+        await harness.model.loadMode()
+        #expect(harness.record.optionLoads == 1)
+        #expect(harness.model.rating?.optionsFailure != nil)
+        #expect(harness.model.rating?.optionsFailure?.details?.requiresAuthentication == false)
+        #expect(!harness.model.canSubmit)
+        harness.record.optionsError = nil
+        await harness.model.load(retry: true)
+        #expect(harness.record.optionLoads == 2)
+        #expect(harness.model.rating?.optionsFailure == nil)
+        #expect(harness.model.canSubmit)
+    }
+
+    @Test(arguments: ReaderChapterCommentComposeMode.allCases, [true, false])
+    func submissionLoginRecoveryUsesOnlyActiveTypedError(mode: ReaderChapterCommentComposeMode, authentication: Bool) async throws {
+        let harness = try makeHarness()
+        let error: any Error = authentication ? YamiboError.notAuthenticated : YamiboError.underlying("暂时无法发表")
+        harness.record.submissionError = error
+        await harness.repository.setSubmissionError(error)
+        await harness.model.load()
+        harness.model.selectMode(mode)
+        await harness.model.loadMode()
+        switch mode {
+        case .rating: harness.model.rating?.scoreText = "2"
+        case .comment: harness.model.comment?.message = "Keep comment"
+        case .reply:
+            let form = try #require(harness.model.replyForm)
+            harness.model.replySession?.drafts[form.id]?["message"] = ["Keep reply"]
+        }
+        #expect(await harness.model.submit() == nil)
+        #expect(harness.model.hasSubmissionFailure)
+        #expect(harness.model.submissionRequiresAuthentication == authentication)
+        #expect(harness.model.hasEdits)
+        harness.model.selectMode(mode == .comment ? .rating : .comment)
+        #expect(!harness.model.hasSubmissionFailure)
+        #expect(!harness.model.submissionRequiresAuthentication)
+    }
+
     @Test func submissionBlocksModeSwitchAndDuplicateRequest() async throws {
         let harness = try makeHarness()
         await harness.model.load()
@@ -229,15 +292,20 @@ struct ReaderChapterCommentComposerTests {
                              buttons: [.init(id: "send", title: "Send")])
         let repository = ChapterReplyTestRepository(page: ForumPageDocument(url: url, title: "Reply", forms: [form]))
         let actions = ReaderChapterCommentComposeActions(loadContext: { tid, pid in
+            if let error = record.contextError { throw error }
             if record.fails { throw YamiboError.notAuthenticated }
             return ForumPostActionContext(threadID: tid, post: .init(postID: pid, author: .init(uid: "42", name: "Author"), contentHTML: "", contentText: "Chapter"), page: record.page, formHash: "fresh")
         }, loadRateOptions: { _, _ in
-            .init(availableScores: [1, 2], defaultReasons: ["Good"])
+            record.optionLoads += 1
+            if let error = record.optionsError { throw error }
+            return .init(availableScores: [1, 2], defaultReasons: ["Good"])
         }, rate: { context, _, _, _ in
+            if let error = record.submissionError { throw error }
             if record.fails { throw YamiboError.notAuthenticated }
             record.contexts.append(context)
             return "评分成功"
         }, comment: { context, _ in
+            if let error = record.submissionError { throw error }
             if record.cancels { throw CancellationError() }
             record.contexts.append(context)
             if record.suspends { await withCheckedContinuation { record.continuation = $0 } }
@@ -249,6 +317,10 @@ struct ReaderChapterCommentComposerTests {
 
 @MainActor private final class ComposerActionRecord {
     var contexts: [ForumPostActionContext] = []
+    var contextError: (any Error)?
+    var optionsError: (any Error)?
+    var submissionError: (any Error)?
+    var optionLoads = 0
     var fails = false
     var cancels = false
     var page = 9
@@ -261,12 +333,15 @@ private actor ChapterReplyTestRepository: ForumPageLoading {
     private(set) var loads = 0
     private(set) var submissions = 0
     var message = "发表成功"
+    var submissionError: (any Error)?
     init(page: ForumPageDocument) { self.page = page }
     func setPage(_ page: ForumPageDocument) { self.page = page }
     func setMessage(_ message: String) { self.message = message }
+    func setSubmissionError(_ error: any Error) { submissionError = error }
     func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { loads += 1; return page }
     func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
         submissions += 1
+        if let submissionError { throw submissionError }
         return ForumPageDocument(url: page.url, title: "Result", message: message)
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {

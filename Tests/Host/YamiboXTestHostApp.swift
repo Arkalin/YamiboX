@@ -79,9 +79,13 @@ private struct ChapterCommentComposerFixture: View {
     private var fixtureActions: ReaderChapterCommentComposeActions {
         ReaderChapterCommentComposeActions(loadContext: { tid, pid in
             if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_CONTEXT_FAIL"] == "1" { throw YamiboError.notAuthenticated }
+            try ChapterCommentFixtureFailure.check("CHAPTER_COMMENT_CONTEXT_FAIL")
             return ForumPostActionContext(threadID: tid, post: ForumThreadPost(postID: pid,
                 author: .init(uid: pid == "456" ? "42" : "77", name: pid == "456" ? "南枝" : "见微"), contentHTML: "", contentText: "正文"), page: 9, formHash: "offline")
-        }, loadRateOptions: { _, _ in .init(availableScores: [-1, 1, 2, 5], defaultReasons: ["好文", "谢谢分享"]) }, rate: { context, _, _, _ in
+        }, loadRateOptions: { _, _ in
+            try ChapterCommentFixtureFailure.check("CHAPTER_COMMENT_RATE_FAIL")
+            return .init(availableScores: [-1, 1, 2, 5], defaultReasons: ["好文", "谢谢分享"])
+        }, rate: { context, _, _, _ in
             try await counts.submit(mode: "rating", pid: context.post.postID, page: context.page)
             return "评分成功"
         }, comment: { context, _ in
@@ -99,6 +103,18 @@ private struct ChapterCommentComposerFixture: View {
             let page = ForumPageDocument(url: url, title: "发表回复", forms: [form], uploads: uploads)
             return ForumPageSession(url: url, repository: ChapterCommentFixtureReplyRepository(page: page, counts: counts))
         })
+    }
+}
+
+private enum ChapterCommentFixtureFailure {
+    static func check(_ key: String) throws {
+        switch ProcessInfo.processInfo.environment[key] {
+        case "auth": throw YamiboError.notAuthenticated
+        case "offline": throw URLError(.notConnectedToInternet)
+        case "own":
+            _ = try ForumThreadPageHTMLParser.parseRateOptions(from: "<div class='messagetext'><p>抱歉，您不能给自己发表的帖子评分</p></div>")
+        default: break
+        }
     }
 }
 
@@ -125,6 +141,7 @@ private struct ChapterCommentFixtureDestination: View {
         self.postID = pid
         self.page = page
         try await Task.sleep(for: .milliseconds(300))
+        try ChapterCommentFixtureFailure.check("CHAPTER_COMMENT_SEND_FAIL")
         if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_SEND_FAIL"] == "1", submissions == 1 {
             throw NSError(domain: "OfflineChapterFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Offline submission failed"])
         }
@@ -135,7 +152,10 @@ private actor ChapterCommentFixtureReplyRepository: ForumPageLoading {
     let page: ForumPageDocument
     let counts: ChapterCommentFixtureCounts
     init(page: ForumPageDocument, counts: ChapterCommentFixtureCounts) { self.page = page; self.counts = counts }
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { page }
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument {
+        try ChapterCommentFixtureFailure.check("CHAPTER_COMMENT_REPLY_FAIL")
+        return page
+    }
     func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
         try await counts.submit(mode: "reply", pid: page.url.queryItemValue("repquote") ?? "", page: Int(page.url.queryItemValue("page") ?? "") ?? 0)
         return ForumPageDocument(url: page.url, title: "Offline Result", message: "回复发表成功")
