@@ -73,6 +73,7 @@ final class MangaReaderLikeModule {
             workKey: workKey,
             anchor: anchor,
             sourceImageURL: source.url,
+            chapterTitle: page.chapterTitle,
             imageData: { [imageData = reading.imageData] in try await imageData(source) }
             )
         } catch {
@@ -121,6 +122,7 @@ final class MangaReaderLikeModule {
             return
         }
         let items = await like.likeStore.likes(for: workKey)
+        _ = await like.resolveChapterInfo(for: items, work: workKey)
         reading.setLikedPageIDs(Set(items.compactMap { item -> String? in
             guard case let .mangaImage(anchor) = item.anchor else { return nil }
             return "\(anchor.chapterTID)#\(anchor.pageLocalIndex)"

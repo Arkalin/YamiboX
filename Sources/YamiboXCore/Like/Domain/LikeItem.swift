@@ -345,6 +345,8 @@ public struct LikeItem: Codable, Hashable, Identifiable, Sendable {
     /// carry one — "this page's art is off" is as real a note as a comment on a
     /// sentence.
     public var note: String?
+    /// Display snapshot, independent of the anchor and retained across cache eviction and sync.
+    public var chapterTitle: String?
     public var createdAt: Date
     public var updatedAt: Date
     /// Soft-delete marker (WebDAV tombstone). `nil` for a live item; set when
@@ -369,6 +371,7 @@ public struct LikeItem: Codable, Hashable, Identifiable, Sendable {
         anchor: LikeAnchorPayload,
         style: LikeStyle = .default,
         note: String? = nil,
+        chapterTitle: String? = nil,
         sortKey: Int64 = 0,
         chapterOrdinal: Int? = nil,
         createdAt: Date = .now,
@@ -385,6 +388,7 @@ public struct LikeItem: Codable, Hashable, Identifiable, Sendable {
         self.anchor = anchor
         self.style = style
         self.note = note
+        self.chapterTitle = Self.normalizedChapterTitle(chapterTitle)
         self.sortKey = sortKey
         self.chapterOrdinal = chapterOrdinal
         self.createdAt = createdAt
@@ -403,6 +407,7 @@ extension LikeItem {
         case anchor
         case style
         case note
+        case chapterTitle
         case createdAt
         case updatedAt
         case deletedAt
@@ -428,6 +433,7 @@ extension LikeItem {
         self.anchor = try container.decode(LikeAnchorPayload.self, forKey: .anchor)
         self.style = try container.decodeIfPresent(LikeStyle.self, forKey: .style) ?? .default
         self.note = try container.decodeIfPresent(String.self, forKey: .note)
+        self.chapterTitle = Self.normalizedChapterTitle(try container.decodeIfPresent(String.self, forKey: .chapterTitle))
         // Derived locally from `anchor`; a value arriving over the wire would
         // be another device's, computed against a page this one may never have
         // laid out.
@@ -436,6 +442,21 @@ extension LikeItem {
         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         self.deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+    }
+
+    static func normalizedChapterTitle(_ value: String?) -> String? {
+        guard let title = value?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return nil
+        }
+        return title
+    }
+
+    func fillingChapterTitle(from other: LikeItem) -> LikeItem {
+        guard workKey == other.workKey, anchor == other.anchor,
+              Self.normalizedChapterTitle(chapterTitle) == nil else { return self }
+        var filled = self
+        filled.chapterTitle = Self.normalizedChapterTitle(other.chapterTitle)
+        return filled
     }
 }
 

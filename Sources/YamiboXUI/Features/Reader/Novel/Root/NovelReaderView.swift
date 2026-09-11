@@ -304,6 +304,7 @@ public struct NovelReaderView: View {
                     }
                     Task { await loadLikedNovelImageAnchors() }
                     Task { await refreshAnnotationState() }
+                    Task { await model.resolveLikeChapterTitles() }
                 }
             }
             // Bookmarks live in their own store, so they need their own
@@ -514,8 +515,8 @@ public struct NovelReaderView: View {
             onImageTap: { url, title in
                 handleImageTap(url: url, title: title)
             },
-            onImageLongPress: { anchor, imageURL in
-                handleImageLongPress(anchor, imageURL: imageURL)
+            onImageLongPress: { anchor, imageURL, chapterTitle in
+                handleImageLongPress(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
             }
         )
     }
@@ -677,8 +678,8 @@ public struct NovelReaderView: View {
             onImageTap: { url, title in
                 handleImageTap(url: url, title: title)
             },
-            onImageLongPress: { anchor, imageURL in
-                handleImageLongPress(anchor, imageURL: imageURL)
+            onImageLongPress: { anchor, imageURL, chapterTitle in
+                handleImageLongPress(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
             }
         )
         .contentShape(Rectangle())
@@ -1163,6 +1164,7 @@ public struct NovelReaderView: View {
     /// revisits keep their approximate key, which is already correct except
     /// among several posts sharing one page.
     private func resolveAnnotationSortKeys() async {
+        await model.resolveLikeChapterTitles()
         let ordinals = model.currentChapterOrdinalsByIdentity
         guard !ordinals.isEmpty else { return }
         await dependencies.like.likeStore.resolveChapterOrdinals(
@@ -1244,7 +1246,7 @@ public struct NovelReaderView: View {
         )
     }
 
-    private func handleImageLongPress(_ anchor: NovelImageLikeAnchor, imageURL: URL) {
+    private func handleImageLongPress(_ anchor: NovelImageLikeAnchor, imageURL: URL, chapterTitle: String?) {
         // The async capture below gives the Taptic Engine time to spin up
         // before the success haptic fires.
         likeFeedbackGenerator.prepare()
@@ -1266,6 +1268,7 @@ public struct NovelReaderView: View {
                 workKey: workKey,
                 anchor: anchor,
                 sourceImageURL: imageURL,
+                chapterTitle: chapterTitle,
                 imageData: {
                     try await dependencies.imagePipeline.data(for: YamiboImageSource(
                         url: imageURL,

@@ -351,5 +351,5 @@ struct NovelReaderPagedViewportBindings {
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
     let onImageTap: (URL, String?) -> Void
-    let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
+    let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 }

@@ -362,7 +362,7 @@ final class ReaderInlineImageCacheTests: XCTestCase {
                 searchHighlightController: nil, likedImageAnchors: [], isChromeVisible: false,
                 canBoundaryPageTurn: { _ in false }, onSelectionChange: { _ in }, onBoundaryPageTurn: { _ in },
                 onPageTapZone: { _ in }, onScrollAnimationRequestConsumed: { _ in },
-                onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _ in }
+                onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _, _ in }
             ).environment(\.yamiboImagePipeline, pipeline))
         }
         return AnyView(NovelReaderPagedCollectionViewport(
@@ -373,7 +373,7 @@ final class ReaderInlineImageCacheTests: XCTestCase {
             searchHighlightController: nil, likedImageAnchors: [], isChromeVisible: false,
             canBoundaryPageTurn: { _ in false }, onSelectionChange: { _ in }, onBoundaryPageTurn: { _ in },
             onPageTapZone: { _ in }, onScrollAnimationRequestConsumed: { _ in },
-            onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _ in }
+            onChromeVisibleImageTap: {}, onImageTap: { _, _ in }, onImageLongPress: { _, _, _ in }
         ).environment(\.yamiboImagePipeline, pipeline))
     }
 

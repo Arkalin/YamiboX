@@ -46,7 +46,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
     let onImageTap: (URL, String?) -> Void
-    let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
+    let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     var itemCount: Int {
         switch itemSource {
@@ -378,7 +378,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             }
             let onImageLongPress = parent.onImageLongPress
             callbackScheduler.publish {
-                onImageLongPress(anchor, payload.url)
+                onImageLongPress(anchor, payload.url, payload.title)
             }
         }
 

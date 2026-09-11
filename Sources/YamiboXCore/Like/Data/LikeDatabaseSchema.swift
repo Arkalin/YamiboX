@@ -89,6 +89,11 @@ enum LikeDatabaseSchema: DatabaseSchemaModule {
         migrator.registerMigration("like.v7.sync-deletions") { db in
             try SyncDeletionState.migrateSoftDeletions(from: "like_items", to: "like_sync_state", in: db)
         }
+        migrator.registerMigration("like.v8.chapter-title") { db in
+            try db.alter(table: "like_items") { table in
+                table.add(column: "chapter_title", .text)
+            }
+        }
     }
 
     static func erase(in db: Database) throws {

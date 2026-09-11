@@ -295,6 +295,7 @@ final class NovelTextLikeCaptureAcrossVerticalSurfacesTests: XCTestCase {
 
         let databaseRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("vertical-like-capture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: databaseRoot) }
         let likeStore = LikeStore(databasePool: try YamiboDatabase.openPool(rootDirectory: databaseRoot))
         let captureExpectation = expectation(description: "Persisted selection")
         var capturedItem: LikeItem?
@@ -314,6 +315,9 @@ final class NovelTextLikeCaptureAcrossVerticalSurfacesTests: XCTestCase {
         await fulfillment(of: [captureExpectation], timeout: 1)
 
         let captured = try XCTUnwrap(capturedItem)
+        XCTAssertEqual(captured.chapterTitle, "Selection")
+        let storedTitle = await likeStore.like(id: captured.id)?.chapterTitle
+        XCTAssertEqual(storedTitle, "Selection")
         guard case let .novelText(anchor) = captured.anchor else {
             return XCTFail("Expected a text-like anchor")
         }
