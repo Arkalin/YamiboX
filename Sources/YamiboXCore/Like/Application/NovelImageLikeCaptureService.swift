@@ -14,12 +14,17 @@ public struct NovelImageLikeCaptureService: Sendable {
         workKey: LikeWorkKey,
         anchor: NovelImageLikeAnchor,
         sourceImageURL: URL?,
+        chapterTitle: String? = nil,
         imageData: @Sendable () async throws -> Data,
         date: Date = .now
     ) async throws -> LikeCaptureOutcome {
         let payload = LikeAnchorPayload.novelImage(anchor)
         let existing = await likeStore.likes(for: workKey)
-        if let match = existing.first(where: { $0.kind == .image && $0.anchor == payload }) {
+        if var match = existing.first(where: { $0.kind == .image && $0.anchor == payload }) {
+            if match.chapterTitle == nil {
+                match.chapterTitle = LikeItem.normalizedChapterTitle(chapterTitle)
+                try await likeStore.resolveChapterTitles([match])
+            }
             return .alreadyLiked(match)
         }
 
@@ -34,6 +39,7 @@ public struct NovelImageLikeCaptureService: Sendable {
                 workKey: workKey,
                 anchor: payload,
                 sourceImageURL: sourceImageURL,
+                chapterTitle: chapterTitle,
                 date: date
             )
         }.value

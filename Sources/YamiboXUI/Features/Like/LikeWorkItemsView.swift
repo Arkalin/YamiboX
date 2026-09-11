@@ -22,6 +22,8 @@ struct LikeWorkItemsView: View {
     @State private var hasLoaded = false
     @State private var chapterInfoByItemID: [String: String] = [:]
     @State private var searchText = ""
+    @State private var filter = LikeContentFilter.all
+    @State private var loadGeneration = 0
     @State private var presentedTextItem: LikeItem?
     @State private var presentedImageItem: LikeItem?
     @State private var noteEditTarget: LikeItem?
@@ -66,7 +68,7 @@ struct LikeWorkItemsView: View {
                     action: { open(item) },
                     onToggleSelection: { toggleSelection(item.id) }
                 )
-                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .deleteSwipeAction(allowsFullSwipe: false, isVisible: !isSelecting) {
@@ -76,7 +78,7 @@ struct LikeWorkItemsView: View {
         }
         .listStyle(.plain)
         .environment(\.imageBrowserZoomNamespace, imageBrowserZoomNamespace)
-        .contentMargins(.top, 8, for: .scrollContent)
+        .contentMargins(.top, 4, for: .scrollContent)
         // The List stays permanently mounted (rather than being swapped for
         // an empty-state view via if/else) so `.searchable` below always has
         // a stable scrollable view to attach its search bar to — swapping it
@@ -88,7 +90,18 @@ struct LikeWorkItemsView: View {
             } else if items.isEmpty {
                 ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
             } else if filteredItems.isEmpty {
-                ContentUnavailableView.search(text: searchText)
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView {
+                        Label { Text(filter.emptyTitle) } icon: { Image(systemName: "heart") }
+                    }
+                } else {
+                    ContentUnavailableView.search(text: searchText)
+                }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if work.kind == .novel {
+                LikeContentFilterBar(selection: $filter, usesMenu: onAnnotationNavigationStateChange != nil)
             }
         }
         .likeWorkItemsNavigationTitle(
@@ -134,10 +147,13 @@ struct LikeWorkItemsView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if !items.isEmpty {
-                        Button(L10n.string("common.select")) {
+                    if !filteredItems.isEmpty {
+                        Button {
                             setSelecting(true)
+                        } label: {
+                            Image(systemName: "checklist")
                         }
+                        .accessibilityLabel(L10n.string("common.select"))
                     }
                 }
             }
@@ -177,12 +193,18 @@ struct LikeWorkItemsView: View {
                 guard changeID == like.likeStore.changeID else {
                     continue
                 }
-                Task { await load() }
+                await load()
             }
         }
         .onChange(of: annotationSelectionRequest) { _, request in
-            guard request != nil, !items.isEmpty else { return }
+            guard request != nil, !filteredItems.isEmpty else { return }
             setSelecting(true)
+        }
+        .onChange(of: filter) { _, _ in clearSelection() }
+        .onChange(of: searchText) { _, _ in clearSelection() }
+        .onChange(of: filteredItems.map(\.id)) { _, visibleIDs in
+            selectedItemIDs.formIntersection(visibleIDs)
+            publishAnnotationNavigationState()
         }
         .sheet(item: $presentedTextItem) { item in
             LikeTextDetailView(
@@ -225,17 +247,7 @@ struct LikeWorkItemsView: View {
     }
 
     private var filteredItems: [LikeItem] {
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return items }
-        return items.filter { item in
-            if let excerpt = item.excerptText, excerpt.localizedCaseInsensitiveContains(trimmed) {
-                return true
-            }
-            if let chapterInfo = chapterInfoByItemID[item.id], chapterInfo.localizedCaseInsensitiveContains(trimmed) {
-                return true
-            }
-            return false
-        }
+        filter.applying(to: items, chapterTitles: chapterInfoByItemID, searchText: searchText)
     }
 
     private func open(_ item: LikeItem) {
@@ -279,25 +291,27 @@ struct LikeWorkItemsView: View {
     }
 
     private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         let fetched = await like.likeStore.likes(for: work)
+        let sorted: [LikeItem]
+        let chapterInfo: [String: String]
         switch work.kind {
         case .novel:
-            let sorted = Self.sortedNovelItems(fetched)
-            items = sorted
-            chapterInfoByItemID = await LikeChapterInfoResolver.novelChapterInfo(
-                for: sorted,
-                threadID: work.id,
-                cacheStore: like.novelReaderCacheStore
-            )
+            sorted = Self.sortedNovelItems(fetched)
+            chapterInfo = await like.resolveChapterInfo(for: sorted, work: work)
         case .manga:
             // Manga Like Items never store a chapter ordinal (see
             // implementation-design.md §11): chapter order is always resolved
             // live against the directory's current chapter array.
             let directory = try? await like.mangaDirectoryStore.directory(named: work.id)
-            let sorted = Self.sortedMangaItems(fetched, chapterOrder: Self.chapterOrder(for: directory))
-            items = sorted
-            chapterInfoByItemID = LikeChapterInfoResolver.mangaChapterInfo(for: sorted, directory: directory)
+            sorted = Self.sortedMangaItems(fetched, chapterOrder: Self.chapterOrder(for: directory))
+            chapterInfo = await like.resolveChapterInfo(for: sorted, work: work, mangaDirectory: directory)
         }
+        guard generation == loadGeneration, !Task.isCancelled else { return }
+        items = sorted
+        chapterInfoByItemID = chapterInfo
+        selectedItemIDs.formIntersection(filteredItems.map(\.id))
         hasLoaded = true
         publishAnnotationNavigationState()
     }
@@ -352,8 +366,13 @@ struct LikeWorkItemsView: View {
         publishAnnotationNavigationState()
     }
 
+    private func clearSelection() {
+        selectedItemIDs.removeAll()
+        publishAnnotationNavigationState()
+    }
+
     private func deleteSelection() async {
-        let ids = selectedItemIDs
+        let ids = selectedItemIDs.intersection(filteredItems.map(\.id))
         let imageIDs = items.filter { $0.kind == .image && ids.contains($0.id) }.map(\.id)
         try? await like.likeStore.delete(ids: Array(ids))
         for imageID in imageIDs {
@@ -366,7 +385,7 @@ struct LikeWorkItemsView: View {
     private func publishAnnotationNavigationState() {
         onAnnotationNavigationStateChange?(
             ReaderAnnotationSegmentNavigationState(
-                itemCount: items.count,
+                itemCount: filteredItems.count,
                 isSelecting: isSelecting,
                 selectedItemCount: selectedItemIDs.count
             )
@@ -446,7 +465,7 @@ private extension View {
         prompt: String
     ) -> some View {
         if isEnabled {
-            self.searchable(text: text, prompt: prompt)
+            self.searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
         } else {
             self
         }
@@ -509,10 +528,11 @@ private struct LikeItemCard: View {
         }
         .buttonStyle(.plain)
         .imageBrowserZoomSource(id: item.id, in: item.kind == .image ? imageBrowserZoomNamespace : nil)
+        .accessibilityIdentifier("like.item.\(item.id)")
         .favoriteSelectionEmphasis(
             isSelectionMode: isSelecting,
             isSelected: isSelected,
-            cornerRadius: 10,
+            cornerRadius: 8,
             // These rows are flat, so the border has nothing but glyphs to sit
             // against without this. The list row gives the same amount back.
             contentInset: 8
@@ -524,38 +544,25 @@ private struct LikeTextCardContent: View {
     let item: LikeItem
     let chapterInfo: String?
 
-    /// Apple Books-style highlight row: one line of excerpt with the mark
-    /// painted inline (clause context plain around it), then — after a blank
-    /// gap — the note, then the date. The style needs no separate indicator
-    /// because the line itself is painted in it.
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let chapterInfo {
-                Text(chapterInfo)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        VStack(alignment: .leading, spacing: 8) {
             Text(LikeStyleAppearance.inlineExcerptLine(for: item))
                 .font(.callout)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .accessibilityIdentifier("like.excerpt")
             if item.hasNote, let note = item.note {
                 Text(note)
                     .font(.callout)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                    // The "blank line" between excerpt and note: enough gap to
-                    // read as a paragraph break, not merely line spacing.
-                    .padding(.top, 12)
+                    .padding(.top, 4)
             }
-            Text(LocalFavoriteRelativeDate.string(from: item.createdAt))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 2)
+            LikeItemMetadata(chapterTitle: chapterInfo, createdAt: item.createdAt)
         }
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -571,14 +578,16 @@ private struct LikeImageCardContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LikeImageCardPhoto(
-                itemID: itemID,
-                sourceImageURL: sourceImageURL,
-                likeImageStore: likeImageStore
-            )
-            .frame(height: 220)
-            .frame(maxWidth: .infinity)
-            .clipped()
+            Color.clear
+                .frame(height: 220)
+                .overlay {
+                    LikeImageCardPhoto(
+                        itemID: itemID,
+                        sourceImageURL: sourceImageURL,
+                        likeImageStore: likeImageStore
+                    )
+                }
+                .clipped()
 
             LikeImageCardDetails(
                 note: note,
@@ -586,8 +595,8 @@ private struct LikeImageCardContent: View {
                 createdAt: createdAt
             )
         }
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -607,21 +616,9 @@ private struct LikeImageCardDetails: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            HStack(spacing: 6) {
-                if let chapterInfo {
-                    Text(chapterInfo)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Text(LocalFavoriteRelativeDate.string(from: createdAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            LikeItemMetadata(chapterTitle: chapterInfo, createdAt: createdAt)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(12)
     }
 }
 

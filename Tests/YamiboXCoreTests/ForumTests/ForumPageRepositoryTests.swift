@@ -3,12 +3,20 @@ import Testing
 @testable import YamiboXCore
 import YamiboXTestSupport
 
+private extension ForumPageLoadResult {
+    var page: ForumPageDocument? {
+        if case let .page(page) = self { return page }
+        return nil
+    }
+}
+
 @Suite(.serialized) struct ForumPageRepositoryTests {
     private let url = URL(string: "https://bbs.yamibo.com/home.php?mod=spacecp&ac=profile")!
 
     @Test func readOnlyLoadUsesCredentialsAndNeverSubmits() async throws {
         PageDocumentURLProtocol.configure()
-        let page = try await repository().fetchPage(url: url)
+        let response = try await repository().fetchPage(url: url)
+        let page = try #require(response.page)
         #expect(page.title == "Fixture")
         let request = try #require(PageDocumentURLProtocol.requests.first)
         #expect(request.httpMethod == "GET")
@@ -28,12 +36,34 @@ import YamiboXTestSupport
         #expect(PageDocumentURLProtocol.requests.isEmpty)
     }
 
+    @Test func unknownHTMLUsesWebFallbackInsteadOfExtractingMenus() async throws {
+        PageDocumentURLProtocol.configure(html: "<nav>只看楼主 倒序浏览 返回首页 电脑版</nav>")
+        #expect(try await repository().fetchPage(url: url) == .webFallback(url))
+        #expect(PageDocumentURLProtocol.requests.count == 1)
+    }
+
+    @Test func knownGETDestinationIsHandedToNativeRouting() async throws {
+        PageDocumentURLProtocol.configure()
+        let thread = URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123")!
+        #expect(try await repository().fetchPage(url: thread) == .nativeRedirect(thread))
+    }
+
+    @Test func ambiguousPOSTKeepsAnUnconfirmedStatusWithoutReplaying() async throws {
+        PageDocumentURLProtocol.configure(html: "<p>Arbitrary page</p>")
+        let form = ForumForm(id: "f", title: "Save", actionURL: url,
+                             hiddenValues: [.init(name: "formhash", value: "fixture")], buttons: [.init(id: "b", title: "Save")])
+        let response = try await repository().submit(form: form, values: [:], buttonID: "b", referer: url)
+        #expect(try #require(response.page).submissionAccepted == false)
+        #expect(PageDocumentURLProtocol.requests.count == 1)
+    }
+
     @Test func explicitPostPreservesTokensAndRepeatedControls() async throws {
         PageDocumentURLProtocol.configure(html: "<div id='messagetext'>保存成功</div>")
         let form = ForumForm(id: "form", title: "Save", actionURL: url,
                                    hiddenValues: [.init(name: "formhash", value: "fixture-token"), .init(name: "items[]", value: "a"), .init(name: "items[]", value: "b")],
                                    buttons: [.init(id: "save", title: "Save", values: [.init(name: "profilesubmit", value: "true")])])
-        let page = try await repository().submit(form: form, values: [:], buttonID: "save", referer: url)
+        let response = try await repository().submit(form: form, values: [:], buttonID: "save", referer: url)
+        let page = try #require(response.page)
         #expect(page.submissionAccepted)
         let request = try #require(PageDocumentURLProtocol.requests.first)
         #expect(request.httpMethod == "POST")
@@ -76,14 +106,16 @@ import YamiboXTestSupport
 
     @Test func binaryAttachmentBecomesNativeFile() async throws {
         PageDocumentURLProtocol.configure(html: "%PDF-fixture", headers: ["Content-Type": "application/pdf", "Content-Disposition": "attachment; filename=sample.pdf"])
-        let page = try await repository().fetchPage(url: url)
+        let response = try await repository().fetchPage(url: url)
+        let page = try #require(response.page)
         #expect(page.file?.name == "sample.pdf")
         #expect(page.file?.data == Data("%PDF-fixture".utf8))
     }
 
     @Test func blockedRedirectIsAnExplicitLinkNotAnAutomaticRequest() async throws {
         PageDocumentURLProtocol.configure(status: 302, headers: ["Location": "https://example.com/download.pdf"])
-        let page = try await repository().fetchPage(url: url)
+        let response = try await repository().fetchPage(url: url)
+        let page = try #require(response.page)
         #expect(page.continuationURL == URL(string: "https://example.com/download.pdf"))
         #expect(PageDocumentURLProtocol.requests.count == 1)
         #expect(!page.submissionAccepted)
@@ -114,7 +146,7 @@ import YamiboXTestSupport
     }
 
     @Test func mobileImageAndAttachmentUploadUseTheirOwnEndpointsWithoutPostingReply() async throws {
-        let page = try ForumPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
+        let page = try ForumFormPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
         try #require(page.uploads.count == 2)
         for configuration in page.uploads {
             let isImage = configuration.kind == .threadImage
@@ -164,7 +196,7 @@ private final class PageDocumentURLProtocol: URLProtocol {
     static var requests: [URLRequest] { lock.withLock { recorded } }
     static var bodies: [String] { lock.withLock { recordedBodies } }
 
-    static func configure(html: String = "<title>Fixture</title><div id='ct'>Native document</div>", status: Int = 200, headers: [String: String] = [:]) {
+    static func configure(html: String = "<title>Fixture</title><div id='messagetext'>Explicit status</div>", status: Int = 200, headers: [String: String] = [:]) {
         lock.withLock {
             payload = html
             self.status = status

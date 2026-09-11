@@ -13,7 +13,7 @@ import Testing
         </form>
         <script src="data/cache/common_postimg.js?version=1"></script>
         """#
-        let page = try ForumPageParser.parse(html: html, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=newthread&fid=5")!)
+        let page = try ForumFormPageParser.parse(html: html, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=newthread&fid=5")!)
         let context = try #require(page.composerContext)
         #expect(context.target.kind == .newThread)
         #expect(context.bbcode == .allowed)

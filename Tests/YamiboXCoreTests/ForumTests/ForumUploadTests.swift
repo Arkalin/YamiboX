@@ -36,13 +36,10 @@ import Testing
     }
 
     @Test func pollTabsResolveToNativeComposerAndPreserveBoard() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><a onclick="switchpost('forum.php?mod=post&amp;action=newthread&amp;special=1')" href="javascript:;">投票</a></div>
         """, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=newthread&fid=16")!)
-        let links = page.blocks.flatMap { block -> [URL] in
-            if case let .text(content) = block.kind { return content.links.map(\.url) }
-            return []
-        }
+        let links = page.composerLinks.map(\.url)
         #expect(links.contains { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.contains(.init(name: "fid", value: "16")) == true })
     }
 }

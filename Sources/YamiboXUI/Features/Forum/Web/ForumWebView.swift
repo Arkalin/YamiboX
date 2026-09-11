@@ -26,10 +26,10 @@ public struct IOSForumWebView: UIViewRepresentable {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .default()
         let appearance = ForumWebAppearance(theme: theme, colorScheme: context.environment.colorScheme)
-        configuration.userContentController.addUserScript(.yamiboHideChromeScript(appearance))
+        configuration.userContentController.addUserScript(.yamiboHideChromeScript(appearance, stylesPage: model.currentURL.map(ForumRouteResolver.supportsNativePage) ?? false))
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
+        webView.isOpaque = true
         context.coordinator.applyAppearance(to: webView, appearance: appearance)
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.navigationDelegate = context.coordinator
@@ -56,10 +56,18 @@ public struct IOSForumWebView: UIViewRepresentable {
         private weak var webView: WKWebView?
         private var didPrepareInitialLoad = false
         private var appliedAppearance: ForumWebAppearance?
+        private var appliedPageStyling: Bool?
         private var sessionObservationTask: Task<Void, Never>?
         private var sessionSyncState = ForumWebSessionSyncState()
         private var sessionSyncTask: Task<Void, Never>?
         private var isChangingAccount = false
+        private var accountGeneration = 0
+        private var nativeNavigationTask: Task<Void, Never>?
+        private var didHandOffNavigation = false
+        private var mainNavigationMethod = "GET"
+        private var lastAuthenticationCookie: String?
+        private var didObserveAuthentication = false
+        private var authenticationObservationTask: Task<Void, Never>?
 
         init(model: ForumBrowserModel, sessionStore: SessionStore) {
             self.model = model
@@ -71,6 +79,8 @@ public struct IOSForumWebView: UIViewRepresentable {
         deinit {
             sessionObservationTask?.cancel()
             sessionSyncTask?.cancel()
+            nativeNavigationTask?.cancel()
+            authenticationObservationTask?.cancel()
         }
 
         func attach(_ webView: WKWebView) {
@@ -93,14 +103,16 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         fileprivate func applyAppearance(to webView: WKWebView, appearance: ForumWebAppearance) {
+            let stylesPage = (webView.url ?? model.currentURL).map(ForumRouteResolver.supportsNativePage) ?? false
             webView.overrideUserInterfaceStyle = appearance.isDark ? .dark : .light
-            webView.backgroundColor = appearance.pageBackground
-            webView.scrollView.backgroundColor = appearance.pageBackground
+            webView.backgroundColor = stylesPage ? appearance.pageBackground : .white
+            webView.scrollView.backgroundColor = stylesPage ? appearance.pageBackground : .white
 
-            guard appliedAppearance != appearance else { return }
+            guard appliedAppearance != appearance || appliedPageStyling != stylesPage else { return }
             appliedAppearance = appearance
+            appliedPageStyling = stylesPage
 
-            let script = WKUserScript.yamiboHideChromeScript(appearance)
+            let script = WKUserScript.yamiboHideChromeScript(appearance, stylesPage: stylesPage)
             webView.configuration.userContentController.removeAllUserScripts()
             webView.configuration.userContentController.addUserScript(script)
             webView.evaluateJavaScript(script.source)
@@ -121,11 +133,27 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            if let appliedAppearance { applyAppearance(to: webView, appearance: appliedAppearance) }
             model.sync(with: webView)
         }
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.sync(with: webView)
+            guard let url = webView.url, isInternal(url), !isChangingAccount else { return }
+            authenticationObservationTask?.cancel()
+            let generation = accountGeneration
+            authenticationObservationTask = Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
+                let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies().map { YamiboCookie($0) }
+                guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
+                let header = YamiboRequestCredentials(cookies: cookies, userAgent: "").cookieHeader(for: YamiboDomain.baseURL)
+                guard SessionState.authenticationCookieValue(in: header) != lastAuthenticationCookie else { return }
+                model.rearmNativeRouting()
+                didHandOffNavigation = false
+                if model.shouldRouteNatively(url, method: mainNavigationMethod, isMainFrame: true) {
+                    routeNatively(url, webView: webView)
+                }
+            }
         }
 
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
@@ -147,7 +175,13 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             }
 
-            if navigationAction.targetFrame?.isMainFrame != false, ForumWebPagePolicy.requiresForumHandling(url) {
+            let isMainFrame = navigationAction.targetFrame?.isMainFrame != false
+            let isUserLink = navigationAction.navigationType == .linkActivated
+            if isMainFrame {
+                mainNavigationMethod = navigationAction.request.httpMethod ?? "GET"
+                if isUserLink { didHandOffNavigation = false }
+            }
+            if model.shouldRouteNatively(url, method: navigationAction.request.httpMethod, isMainFrame: isMainFrame, isUserLink: isUserLink) {
                 decisionHandler(.cancel)
                 routeNatively(url, webView: webView)
                 return
@@ -170,31 +204,55 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         public func webView(
             _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+        ) {
+            guard !isChangingAccount else { decisionHandler(.cancel); return }
+            if let url = navigationResponse.response.url,
+               model.shouldRouteNatively(url, method: mainNavigationMethod, isMainFrame: navigationResponse.isForMainFrame) {
+                decisionHandler(.cancel)
+                routeNatively(url, webView: webView)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+
+        public func webView(
+            _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            if let url = navigationAction.request.url {
-                if ForumWebPagePolicy.requiresForumHandling(url) {
-                    routeNatively(url, webView: webView)
-                } else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-                    webView.load(navigationAction.request)
-                } else {
-                    UIApplication.shared.open(url)
-                }
-            }
+            // Target-blank requests are handled once in the action policy.
             return nil
         }
 
         private func routeNatively(_ url: URL, webView: WKWebView) {
-            Task { @MainActor [weak self, weak webView] in
+            guard !didHandOffNavigation, !isChangingAccount else { return }
+            didHandOffNavigation = true
+            let generation = accountGeneration
+            nativeNavigationTask = Task { @MainActor [weak self, weak webView] in
                 guard let self, let webView else { return }
+                defer { nativeNavigationTask = nil }
+                guard let snapshot = try? await sessionStore.snapshot() else { return }
                 // Commit the login response's cookies before the native screen
                 // builds its first authenticated URLSession request.
                 let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
                     .map { YamiboCookie($0) }
                     .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
-                try? await sessionStore.updateWebSession(cookies: cookies, userAgent: webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent)
+                guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
+                do {
+                    try await sessionStore.updateWebSession(cookies: cookies, userAgent: webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent, expectedGeneration: snapshot.generation)
+                } catch {
+                    didHandOffNavigation = false
+                    return
+                }
+                guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
+                let persisted = await sessionStore.load()
+                guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
+                sessionSyncState.markPersistedWebSession(cookieHeader: persisted.cookie)
+                lastAuthenticationCookie = SessionState.authenticationCookieValue(in: persisted.cookie)
+                didObserveAuthentication = true
                 model.openNative(url)
             }
         }
@@ -228,7 +286,14 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         @MainActor
         private func synchronizeWebViewSession(_ sessionState: SessionState, reloadIfNeeded: Bool) async {
-            guard let webView, !isChangingAccount, !Task.isCancelled else { return }
+            guard let webView, !isChangingAccount, !Task.isCancelled, nativeNavigationTask == nil else { return }
+            let authenticationCookie = SessionState.authenticationCookieValue(in: sessionState.cookie)
+            if didObserveAuthentication, authenticationCookie != lastAuthenticationCookie {
+                model.rearmNativeRouting()
+                didHandOffNavigation = false
+            }
+            didObserveAuthentication = true
+            lastAuthenticationCookie = authenticationCookie
 
             // `nilIfBlank`, not `nilIfEmpty`: this file's deleted private
             // `nilIfEmpty` copy trimmed whitespace, so the trimming variant is
@@ -311,6 +376,11 @@ public struct IOSForumWebView: UIViewRepresentable {
         static func prepareForAccountChange(sessionStore: SessionStore) async {
             for coordinator in instances.allObjects where coordinator.sessionStore === sessionStore {
                 coordinator.isChangingAccount = true
+                coordinator.accountGeneration += 1
+                let handoff = coordinator.nativeNavigationTask
+                handoff?.cancel()
+                let authentication = coordinator.authenticationObservationTask
+                authentication?.cancel()
                 coordinator.webView?.stopLoading()
                 let observation = coordinator.sessionObservationTask
                 let sync = coordinator.sessionSyncTask
@@ -318,6 +388,8 @@ public struct IOSForumWebView: UIViewRepresentable {
                 sync?.cancel()
                 await observation?.value
                 await sync?.value
+                await handoff?.value
+                await authentication?.value
                 coordinator.sessionObservationTask = nil
                 coordinator.sessionSyncTask = nil
             }
@@ -326,6 +398,8 @@ public struct IOSForumWebView: UIViewRepresentable {
         static func finishAccountChange(_ session: SessionState, sessionStore: SessionStore) async {
             for coordinator in instances.allObjects where coordinator.sessionStore === sessionStore {
                 coordinator.isChangingAccount = false
+                coordinator.didHandOffNavigation = false
+                coordinator.model.rearmNativeRouting()
                 coordinator.sessionSyncState = ForumWebSessionSyncState()
                 await coordinator.synchronizeWebViewSession(session, reloadIfNeeded: true)
                 coordinator.startObservingSessionChanges()
@@ -378,11 +452,11 @@ fileprivate struct ForumWebAppearance: Equatable {
 }
 
 private extension WKUserScript {
-    static func yamiboHideChromeScript(_ appearance: ForumWebAppearance) -> WKUserScript {
+    static func yamiboHideChromeScript(_ appearance: ForumWebAppearance, stylesPage: Bool) -> WKUserScript {
         WKUserScript(
-            source: yamiboHideChromeSource(appearance),
+            source: stylesPage ? yamiboHideChromeSource(appearance) : "document.getElementById('yamibo-hide-style')?.remove();",
             injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         )
     }
 

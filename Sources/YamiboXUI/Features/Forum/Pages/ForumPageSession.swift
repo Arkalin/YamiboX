@@ -4,8 +4,8 @@ import UIKit
 import YamiboXCore
 
 protocol ForumPageLoading: Sendable {
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment
 }
 
@@ -16,6 +16,7 @@ extension ForumPageRepository: ForumPageLoading {}
 final class ForumPageSession {
     let url: URL
     private(set) var page: ForumPageDocument?
+    var navigationResult: ForumPageLoadResult?
     private(set) var isLoading = false
     private(set) var isSubmitting = false
     private(set) var errorDetails: LoadFailureDetails?
@@ -104,10 +105,17 @@ final class ForumPageSession {
         do {
             let generation = try await sessionStore?.snapshot().generation
             let repository = await repositoryProvider()
-            let result = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: confirmedAction)
+            let response = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: confirmedAction)
             try Task.checkCancellation()
             try await checkGeneration(generation)
             pageGeneration = generation
+            guard case let .page(result) = response else {
+                navigationResult = response
+                // Embedded composers cannot navigate; leave them a retryable
+                // failure rather than a permanently empty loading surface.
+                setError(ForumPageError.invalidForm)
+                return
+            }
             page = result
             drafts = Dictionary(uniqueKeysWithValues: result.forms.map { ($0.id, $0.initialValues) })
             htmlSourceFields = Set(result.forms.filter { $0.kind == .blog }.flatMap { form in
@@ -192,9 +200,10 @@ final class ForumPageSession {
         do {
             let generation = try await sessionStore?.snapshot().generation
             let repository = await repositoryProvider()
-            let refreshed = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: false)
+            let response = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: false)
             try Task.checkCancellation()
             try await checkGeneration(generation)
+            guard case let .page(refreshed) = response else { throw ForumPageError.invalidForm }
             guard refreshed.forms.contains(where: { $0.kind == .thread && $0.fields.contains(where: { $0.name == "message" }) }) else {
                 throw YamiboError.underlying(refreshed.message ?? ForumPageError.invalidForm.localizedDescription)
             }
@@ -248,12 +257,18 @@ final class ForumPageSession {
             _ = await composerDraft?.flush()
             let repository = await repositoryProvider()
             try await checkGeneration(pending.accountGeneration)
-            let result = try await repository.submit(
+            let response = try await repository.submit(
                 form: pending.form, values: pending.values, buttonID: pending.buttonID, referer: page.url,
                 files: pending.files, attachments: pending.attachments
             )
             try await checkGeneration(pending.accountGeneration)
-            if pending.form.method == "GET" || pending.form.actionURL.path == "/search.php" {
+            try Task.checkCancellation()
+            guard case let .page(result) = response else {
+                guard pending.form.method == "GET" else { throw ForumPageError.submissionUnconfirmed }
+                navigationResult = response
+                return
+            }
+            if pending.form.method == "GET" {
                 self.page = result
                 drafts = Dictionary(uniqueKeysWithValues: result.forms.map { ($0.id, $0.initialValues) })
                 submissionResponse = nil
@@ -455,8 +470,9 @@ final class ForumPageSession {
         do {
             let generation = try await sessionStore?.snapshot().generation
             let repository = await repositoryProvider()
-            let document = try await repository.fetchPage(url: targetURL, confirmedAction: false)
+            let response = try await repository.fetchPage(url: targetURL, confirmedAction: false)
             try await checkGeneration(generation)
+            guard case let .page(document) = response else { throw ForumPageError.invalidForm }
             guard let form = document.forms.first(where: { $0.kind == .thread }) else { throw ForumPageError.invalidForm }
             if [.editFirstPost, .editReply].contains(draft.target.kind), !draft.baseline.isEmpty,
                ForumComposerDraft.fingerprint(form: form) != draft.baseline {

@@ -14,6 +14,7 @@ public struct MangaImageLikeCaptureService: Sendable {
         workKey: LikeWorkKey,
         anchor: MangaImageLikeAnchor,
         sourceImageURL: URL?,
+        chapterTitle: String? = nil,
         imageData: @Sendable () async throws -> Data,
         date: Date = .now
     ) async throws -> LikeCaptureOutcome {
@@ -22,11 +23,15 @@ public struct MangaImageLikeCaptureService: Sendable {
         // Match by the anchor's identity fields only — `forumID` is a board
         // snapshot (R13 metadata), not identity, so a row captured before the
         // field existed must still count as "already liked" for the same page.
-        if let match = existing.first(where: { item in
+        if var match = existing.first(where: { item in
             guard item.kind == .image, case let .mangaImage(existingAnchor) = item.anchor else { return false }
             return existingAnchor.chapterTID == anchor.chapterTID
                 && existingAnchor.pageLocalIndex == anchor.pageLocalIndex
         }) {
+            if match.chapterTitle == nil {
+                match.chapterTitle = LikeItem.normalizedChapterTitle(chapterTitle)
+                try await likeStore.resolveChapterTitles([match])
+            }
             return .alreadyLiked(match)
         }
 
@@ -41,6 +46,7 @@ public struct MangaImageLikeCaptureService: Sendable {
                 workKey: workKey,
                 anchor: payload,
                 sourceImageURL: sourceImageURL,
+                chapterTitle: chapterTitle,
                 date: date
             )
         }.value

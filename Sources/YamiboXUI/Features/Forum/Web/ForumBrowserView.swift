@@ -10,10 +10,12 @@ public final class ForumBrowserModel: ObservableObject {
 
     private weak var webView: WKWebView?
     private let onNativeNavigation: @MainActor (URL) -> Void
+    private var suppressesNativeRouting: Bool
 
-    public init(initialURL: URL, onNativeNavigation: @escaping @MainActor (URL) -> Void = { _ in }) {
+    public init(initialURL: URL, nativeFallback: Bool = false, onNativeNavigation: @escaping @MainActor (URL) -> Void = { _ in }) {
         self.currentURL = initialURL
         self.onNativeNavigation = onNativeNavigation
+        self.suppressesNativeRouting = nativeFallback
     }
 
     public func attach(webView: WKWebView) {
@@ -21,12 +23,21 @@ public final class ForumBrowserModel: ObservableObject {
     }
 
     public func load(_ url: URL) {
-        guard !ForumWebPagePolicy.requiresForumHandling(url) else {
+        guard !shouldRouteNatively(url, method: "GET", isMainFrame: true) else {
             openNative(url)
             return
         }
         currentURL = url
         webView?.load(URLRequest(url: url))
+    }
+
+    func rearmNativeRouting() { suppressesNativeRouting = false }
+
+    func shouldRouteNatively(_ url: URL, method: String?, isMainFrame: Bool, isUserLink: Bool = false) -> Bool {
+        guard isMainFrame else { return false }
+        if isUserLink { rearmNativeRouting() }
+        return !suppressesNativeRouting && (method ?? "GET").uppercased() == "GET"
+            && ForumRouteResolver.supportsNativePage(url)
     }
 
     public func openNative(_ url: URL) {
@@ -57,9 +68,10 @@ public struct ForumBrowserView: View {
         sessionStore: SessionStore,
         appModel: YamiboAppModel,
         listensToForumNavigationRequest: Bool = true,
+        nativeFallback: Bool = false,
         onNativeNavigation: (@MainActor (URL) -> Void)? = nil
     ) {
-        _model = StateObject(wrappedValue: ForumBrowserModel(initialURL: url, onNativeNavigation: onNativeNavigation ?? { appModel.openForumURL($0) }))
+        _model = StateObject(wrappedValue: ForumBrowserModel(initialURL: url, nativeFallback: nativeFallback, onNativeNavigation: onNativeNavigation ?? { appModel.openForumURL($0) }))
         self.sessionStore = sessionStore
         self.appModel = appModel
         self.listensToForumNavigationRequest = listensToForumNavigationRequest
@@ -70,7 +82,7 @@ public struct ForumBrowserView: View {
             IOSForumWebView(
                 model: model,
                 sessionStore: sessionStore,
-                isSelected: appModel.selectedTab == .forum
+                isSelected: true
             )
             if model.isLoading {
                 ProgressView()

@@ -24,6 +24,7 @@ import Testing
     let page = try await repository.loadChapterComments(for: target)
 
     #expect(page.comments.map(\.body) == ["好萌好萌好萌", "完整评分理由"])
+    #expect(page.comments.last?.authorAvatarURL?.absoluteString == "https://bbs.yamibo.com/uc_server/avatar.php?uid=77&size=small")
 }
 
 @Test func readerChapterCommentsRepositoryLoadsSamePageRepliesFromUnfilteredPageForAuthorFilteredTarget() async throws {

@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 import UIKit
 import Nuke
+import Combine
 
 typealias YamiboPlatformImage = UIImage
 
@@ -82,6 +83,16 @@ public final class YamiboUIImagePipeline {
     let dataLoader: any YamiboImageDataLoading
     private let pipeline: ImagePipeline
     private var prefetchingKeys = Set<String>()
+    private let loadedImages = PassthroughSubject<(String, YamiboDisplayImage), Never>()
+
+    /// Recover failed views when another consumer loads the same image, even
+    /// when its decoded size exceeds the memory cache's single-entry limit.
+    func successfulLoads(for source: YamiboImageSource) -> AnyPublisher<YamiboDisplayImage, Never> {
+        loadedImages
+            .filter { $0.0 == source.cacheKey }
+            .map { $0.1 }
+            .eraseToAnyPublisher()
+    }
 
     convenience init(
         core: any YamiboImageDataLoading,
@@ -127,6 +138,7 @@ public final class YamiboUIImagePipeline {
         priority: ImageRequest.Priority = .normal
     ) async throws -> YamiboDisplayImage {
         if let cached = cachedDisplayImage(for: source) {
+            loadedImages.send((source.cacheKey, cached))
             return cached
         }
 
@@ -134,7 +146,9 @@ public final class YamiboUIImagePipeline {
             var request = nukeRequest(for: source)
             request.priority = priority
             let response = try await pipeline.imageTask(with: request).response
-            return YamiboDisplayImage(container: response.container)
+            let image = YamiboDisplayImage(container: response.container)
+            loadedImages.send((source.cacheKey, image))
+            return image
         } catch {
             throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
         }
@@ -200,12 +214,13 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     @Environment(\.yamiboImagePipeline) private var environmentPipeline
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
-    private let failure: () -> Failure
+    private let failure: (@escaping () -> Void) -> Failure
 
     @State private var image: YamiboPlatformImage?
     @State private var animatedData: Data?
     @State private var didFail = false
     @State private var loadedIdentity: YamiboUIImageRequestIdentity?
+    @State private var attempt = 0
 
     init(
         source: YamiboImageSource?,
@@ -220,7 +235,23 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         self.injectedPipeline = pipeline
         self.content = content
         self.placeholder = placeholder
-        self.failure = failure
+        self.failure = { _ in failure() }
+    }
+
+    init(
+        source: YamiboImageSource?,
+        animates: Bool = false,
+        pipeline: YamiboUIImagePipeline? = nil,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
+        @ViewBuilder retryableFailure: @escaping (@escaping () -> Void) -> Failure
+    ) {
+        self.source = source
+        self.animates = animates
+        self.injectedPipeline = pipeline
+        self.content = content
+        self.placeholder = placeholder
+        self.failure = retryableFailure
     }
 
     var body: some View {
@@ -237,15 +268,36 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
                     content(Image(uiImage: image))
                 }
             } else if didFail {
-                failure()
+                failure {
+                    didFail = false
+                    attempt += 1
+                }
             } else {
                 placeholder()
             }
         }
-        .task(id: requestIdentity) {
+        .task(id: LoadIdentity(request: requestIdentity, attempt: attempt)) {
             await load()
         }
+        .onReceive(successfulLoads) { loaded in
+            guard didFail else { return }
+            apply(loaded)
+            loadedIdentity = requestIdentity
+            didFail = false
+        }
         .environment(\.yamiboRemoteImageSize, image?.size)
+    }
+
+    private struct LoadIdentity: Hashable {
+        let request: YamiboUIImageRequestIdentity
+        let attempt: Int
+    }
+
+    private var successfulLoads: AnyPublisher<YamiboDisplayImage, Never> {
+        guard let source, let pipeline = injectedPipeline ?? environmentPipeline else {
+            return Empty().eraseToAnyPublisher()
+        }
+        return pipeline.successfulLoads(for: source)
     }
 
     private var taskIdentity: String {

@@ -4,6 +4,12 @@ import Testing
 
 @Suite("YamiboThreadURLCanonicalizer")
 struct YamiboThreadURLCanonicalizerTests {
+    @Test func unresolvedPIDIsPreservedAndNeverUsedAsThreadID() throws {
+        let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?pid=456&goto=findpost&mod=redirect&mobile=2"))
+        #expect(YamiboThreadURLCanonicalizer.canonicalThreadURL(from: url) == url)
+        #expect(YamiboThreadURLCanonicalizer.threadID(from: url) == nil)
+    }
+
     @Test func canonicalThreadURLRemovesRequestOnlyQueryItemsAndExtra() throws {
         let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mobile=2&page=25&authorid=406769&tid=521519&mod=viewthread&extra=page%3D1"))
 

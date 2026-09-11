@@ -105,8 +105,20 @@ public actor ReaderChapterCommentsRepository {
             ?? comments.firstIndex { $0.source != .postComment }
             ?? comments.count
         let retainedBeforeInsertion = comments[..<insertionIndex].filter { $0.source != .ratingReason }.count
+        // The full ratings dialog can omit profile links and avatars present in the preview.
+        let previewRatings = Dictionary(grouping: comments.filter {
+            $0.source == .ratingReason && !$0.authorName.isEmpty
+        }, by: \.authorName)
+        let enrichedRatings = fullRatings.map { rating in
+            var rating = rating
+            let avatars = Set(previewRatings[rating.authorName, default: []].compactMap(\.authorAvatarURL))
+            if rating.authorAvatarURL == nil, avatars.count == 1 {
+                rating.authorAvatarURL = avatars.first
+            }
+            return rating
+        }
         var merged = comments.filter { $0.source != .ratingReason }
-        merged.insert(contentsOf: fullRatings, at: retainedBeforeInsertion)
+        merged.insert(contentsOf: enrichedRatings, at: retainedBeforeInsertion)
         return merged
     }
 

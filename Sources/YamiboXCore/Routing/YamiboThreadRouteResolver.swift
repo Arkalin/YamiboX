@@ -26,32 +26,70 @@ public actor YamiboThreadRouteResolver {
     ) async throws -> YamiboThreadRouteTarget {
         let requestURL = URL(string: request.threadURL.absoluteString, relativeTo: YamiboDomain.baseURL)?.absoluteURL
             ?? request.threadURL.absoluteURL
-        let canonicalURL = canonicalThreadURL(from: requestURL) ?? requestURL
+        var canonicalURL = canonicalThreadURL(from: requestURL) ?? requestURL
         let targetPostID = request.targetPostID ?? postID(from: requestURL)
-        let baseInitialPage = pageNumber(from: requestURL) ?? pageNumber(from: canonicalURL) ?? 1
+        var baseInitialPage = pageNumber(from: requestURL) ?? pageNumber(from: canonicalURL) ?? 1
+        var locationMetadata: YamiboThreadMetadata?
+        if isFindPostURL(requestURL) {
+            do {
+                let response = try await client.fetchPageDocument(url: ForumWebPagePolicy.secureURL(requestURL))
+                guard response.continuationURL == nil, response.file == nil,
+                      ForumWebPagePolicy.requiresForumHandling(response.url) else {
+                    return .webFallback(requestURL)
+                }
+                let metadata = try YamiboThreadMetadataHTMLParser.parse(from: response.html, url: response.url)
+                guard let tid = metadata.tid ?? threadID(from: canonicalURL) ?? request.threadID else {
+                    return .webFallback(requestURL)
+                }
+                let thread = ThreadIdentity(tid: tid, fid: metadata.fid)
+                let page = try ForumThreadPageHTMLParser.parsePage(from: response.html, thread: thread, fallbackTitle: metadata.title)
+                var components = URLComponents(url: response.url, resolvingAgainstBaseURL: true)!
+                components.path = "/forum.php"
+                components.queryItems = [.init(name: "mod", value: "viewthread"), .init(name: "tid", value: tid)]
+                canonicalURL = YamiboThreadURLCanonicalizer.canonicalThreadURL(from: components.url!)
+                baseInitialPage = pageNumber(from: response.url) ?? page.pageNavigation?.currentPage ?? baseInitialPage
+                locationMetadata = metadata
+                locationMetadata?.tid = tid
+            } catch {
+                if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
+                let classified = LoadDiagnosticError.classificationError(error)
+                if let yamiboError = classified as? YamiboError,
+                   yamiboError == .notAuthenticated || yamiboError == .floodControl || yamiboError == .securityVerificationRequired {
+                    if allowsAuthenticationFallback { return .webFallback(requestURL) }
+                    throw error
+                }
+                if threadID(from: canonicalURL) == nil && request.threadID == nil {
+                    if classified is URLError || classified as? YamiboError == .offline { throw error }
+                    if let error = classified as? YamiboError {
+                        switch error {
+                        case .parsingFailed, .underlying, .emptyHTML, .unreadableBody,
+                             .invalidResponse(statusCode: 403), .invalidResponse(statusCode: 404):
+                            return .webFallback(requestURL)
+                        default: break
+                        }
+                    }
+                    throw error
+                }
+                YamiboLog.forum.warning("Failed to locate post; retaining known thread and page: \(error)")
+            }
+        }
 
-        // A 普通帖子 override lands in exactly the same place as the native
-        // thread reader intent: no classification, no metadata fetch, and the
-        // findpost page lookup stays best-effort.
+        // All entry points share the location response before classification.
         if request.intent == .nativeThreadReader || request.readerOverride == .plainThread {
-            let tid = request.threadID
+            let tid = locationMetadata?.tid ?? request.threadID
                 ?? threadID(from: canonicalURL)
                 ?? MangaTitleCleaner.extractTid(from: canonicalURL.absoluteString)
                 ?? ""
             let thread = ThreadIdentity(
                 tid: tid,
-                fid: request.tapContext.containingFid ?? request.threadFid
+                fid: locationMetadata?.fid ?? request.tapContext.containingFid ?? request.threadFid
             )
-            let initialPage = await resolvedNativeThreadReaderInitialPage(
-                requestURL: requestURL,
-                baseInitialPage: baseInitialPage,
-                thread: thread,
-                title: request.title
-            )
+            guard !tid.isEmpty else { return .webFallback(requestURL) }
+            let initialPage = baseInitialPage
             return .thread(
                 YamiboThreadRoutePayload(
                     thread: thread,
-                    title: request.title ?? L10n.string("forum.default_title"),
+                    title: request.title ?? locationMetadata?.title ?? L10n.string("forum.default_title"),
                     authorID: request.authorID,
                     canonicalURL: canonicalURL,
                     requestedURL: requestURL,
@@ -63,7 +101,7 @@ public actor YamiboThreadRouteResolver {
 
         let settings = await settingsStore.load().boardReader
 
-        let initialFid = request.tapContext.containingFid ?? request.threadFid
+        let initialFid = locationMetadata?.fid ?? request.tapContext.containingFid ?? request.threadFid
         let initialKind = kindForKnownInputs(
             fid: initialFid,
             knownThreadKind: request.knownThreadKind,
@@ -74,7 +112,9 @@ public actor YamiboThreadRouteResolver {
         // An override already settles the classification, so the metadata
         // round-trip it exists to inform would be pure latency.
         let metadata: YamiboThreadMetadata?
-        if request.readerOverride == nil,
+        if let locationMetadata {
+            metadata = locationMetadata
+        } else if !isFindPostURL(requestURL), request.readerOverride == nil,
            shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
             do {
                 metadata = try await loadMetadata(
@@ -88,11 +128,12 @@ public actor YamiboThreadRouteResolver {
             metadata = nil
         }
 
-        let tid = request.threadID
+        let tid = locationMetadata?.tid ?? request.threadID
             ?? metadata?.tid
             ?? threadID(from: canonicalURL)
             ?? MangaTitleCleaner.extractTid(from: canonicalURL.absoluteString)
             ?? ""
+        guard !tid.isEmpty else { return .webFallback(requestURL) }
         let fid = initialFid ?? metadata?.fid
         let title = request.title ?? metadata?.title
         let authorID = request.authorID ?? metadata?.authorID
@@ -147,12 +188,7 @@ public actor YamiboThreadRouteResolver {
             }
             return .manga(payload)
         case .regular, .unknown:
-            let initialPage = try await resolvedThreadReaderInitialPage(
-                requestURL: requestURL,
-                baseInitialPage: baseInitialPage,
-                thread: thread,
-                title: title
-            )
+            let initialPage = baseInitialPage
             return .thread(
                 YamiboThreadRoutePayload(
                     thread: thread,
@@ -285,41 +321,6 @@ public actor YamiboThreadRouteResolver {
             .flatMap(Int.init)
     }
 
-    private func resolvedThreadReaderInitialPage(
-        requestURL: URL,
-        baseInitialPage: Int,
-        thread: ThreadIdentity,
-        title: String?
-    ) async throws -> Int {
-        guard baseInitialPage <= 1, isFindPostURL(requestURL) else {
-            return baseInitialPage
-        }
-
-        let html = try await client.fetchHTML(url: requestURL, cachePolicy: .reloadIgnoringLocalCacheData)
-        let page = try LoadDiagnosticError.parsing(html: html, context: requestURL.absoluteString) {
-            try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: title)
-        }
-        return page.pageNavigation?.currentPage ?? baseInitialPage
-    }
-
-    private func resolvedNativeThreadReaderInitialPage(
-        requestURL: URL,
-        baseInitialPage: Int,
-        thread: ThreadIdentity,
-        title: String?
-    ) async -> Int {
-        do {
-            return try await resolvedThreadReaderInitialPage(
-                requestURL: requestURL,
-                baseInitialPage: baseInitialPage,
-                thread: thread,
-                title: title
-            )
-        } catch {
-            YamiboLog.forum.warning("Failed to resolve native thread reader initial page from findpost lookup, falling back to base page: \(error)")
-            return baseInitialPage
-        }
-    }
 }
 
 private struct YamiboThreadRouteResolverWebFallback: Error {

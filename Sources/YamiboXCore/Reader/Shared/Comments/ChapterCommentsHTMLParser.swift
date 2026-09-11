@@ -60,7 +60,7 @@ enum ChapterCommentsHTMLParser {
         let document = try KannaSoup.parse(html)
         let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
-        var pending: (author: String, uid: String?, metadata: String?)?
+        var pending: (author: String, uid: String?, metadata: String?, avatarURL: URL?)?
 
         for row in rows {
             let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
@@ -68,15 +68,15 @@ enum ChapterCommentsHTMLParser {
                 pending = (
                     author: values[1],
                     uid: row.select("a[href]").array().compactMap(linkUID).first,
-                    metadata: nilIfEmpty([values[0], values[2]].joined(separator: " · "))
+                    metadata: nilIfEmpty([values[0], values[2]].joined(separator: " · ")),
+                    avatarURL: avatarURL(in: row)
                 )
                 continue
             }
 
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select("span.z, span.y").first())
+            let body = try ChapterCommentBodyParser.parse(row.select("span.z, span.y").first())
             guard let current = pending,
-                  let reason = values.first.map(normalizeRatingReason),
-                  bodyBlocks != nil || !reason.isEmpty else {
+                  !body.isEmpty else {
                 pending = nil
                 continue
             }
@@ -86,10 +86,12 @@ enum ChapterCommentsHTMLParser {
                     source: .ratingReason,
                     authorName: normalizeText(current.author),
                     metadata: current.metadata,
-                    body: reason,
+                    body: normalizeRatingReason(body.text),
                     postID: target.ownerPostID,
-                    bodyBlocks: bodyBlocks,
-                    authorUID: current.uid
+                    bodyBlocks: body.bodyBlocks,
+                    authorUID: current.uid,
+                    authorAvatarURL: current.avatarURL,
+                    contentBlocks: body.contentBlocks
                 )
             )
             pending = nil
@@ -104,23 +106,24 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("#comment_\(target.ownerPostID) .pstl")
         var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
-            let authorLink = row.select(".psta a.xi2, .psta a.xw1, .psta a").first()
-            let author = authorLink?.text() ?? ""
+            let author = row.firstText(anyOf: [".psta a.xi2", ".psta a.xw1"])
+                ?? row.selectAll(".psta a").compactMap { $0.normalizedText().nilIfBlank }.first ?? ""
             guard let bodyElement = row.select(".psti").first() else { return nil }
             let metadata = bodyElement.select(".xg1").first()?.text()
             bodyElement.select(".xg1").remove()
-            let body = normalizeText(bodyElement.text())
-            let bodyBlocks = try emoticonBodyBlocks(in: bodyElement)
-            guard !body.isEmpty || bodyBlocks != nil else { return nil }
+            let body = try ChapterCommentBodyParser.parse(bodyElement)
+            guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment:\(offset)",
                 source: .postComment,
                 authorName: normalizeText(author),
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
-                body: body,
+                body: body.text,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorUID: authorLink.flatMap(linkUID)
+                bodyBlocks: body.bodyBlocks,
+                authorUID: row.selectAll(".psta a[href]").compactMap(linkUID).first,
+                authorAvatarURL: avatarURL(in: row.selectFirst(".psta")),
+                contentBlocks: body.contentBlocks
             )
         }
         comments.append(contentsOf: try mobilePostComments(in: document, target: target))
@@ -136,9 +139,9 @@ enum ChapterCommentsHTMLParser {
             let cells = row.select("td")
             let authorLink = cells.first()?.select("a").last()
             let author = authorLink?.text() ?? ""
-            let reason = normalizeRatingReason(row.select("td.xg1").first()?.text() ?? "")
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select("td.xg1").first())
-            guard bodyBlocks != nil || !reason.isEmpty else {
+            let body = try ChapterCommentBodyParser.parse(row.select("td.xg1").first())
+            let reason = normalizeRatingReason(body.text)
+            guard !body.isEmpty else {
                 return nil
             }
             return ChapterComment(
@@ -147,8 +150,10 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorUID: authorLink.flatMap(linkUID)
+                bodyBlocks: body.bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID),
+                authorAvatarURL: avatarURL(in: cells.first()),
+                contentBlocks: body.contentBlocks
             )
         }
         comments.append(contentsOf: try mobileRatingReasons(in: document, target: target))
@@ -161,21 +166,27 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("[id=comment_\(target.ownerPostID)] [id^=commentdetail_]")
         return try rows.array().enumerated().compactMap { offset, row in
-            let authorLink = row.select("a").first()
-            let author = authorLink?.text() ?? ""
+            let authorLinks = row.selectAll("a").filter { link in
+                !link.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+            }
+            let author = authorLinks.compactMap { $0.normalizedText().nilIfBlank }.first ?? ""
             let metadata = row.select(".mtime").first()?.text()
-            let body = normalizeText(row.select(".mtxt").first()?.text() ?? "")
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select(".mtxt").first())
-            guard !body.isEmpty || bodyBlocks != nil else { return nil }
+            let body = try ChapterCommentBodyParser.parse(row.select(".mtxt").first())
+            guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment-mobile:\(offset)",
                 source: .postComment,
                 authorName: normalizeText(author),
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
-                body: body,
+                body: body.text,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorUID: authorLink.flatMap(linkUID)
+                bodyBlocks: body.bodyBlocks,
+                authorUID: authorLinks.compactMap(linkUID).first,
+                authorAvatarURL: avatarURL(
+                    in: row,
+                    imageSelector: ".avatar img[src], .mimg img[src], li:first-child img[src]"
+                ),
+                contentBlocks: body.contentBlocks
             )
         }
     }
@@ -190,10 +201,10 @@ enum ChapterCommentsHTMLParser {
             guard cells.count >= 3 else { return nil }
             let authorLink = cells[0].select("a").last()
             let author = authorLink?.text() ?? ""
-            let reason = normalizeRatingReason(cells[2].text())
-            let bodyBlocks = try emoticonBodyBlocks(in: cells[2])
+            let body = try ChapterCommentBodyParser.parse(cells[2])
+            let reason = normalizeRatingReason(body.text)
             guard reason != "理由",
-                  bodyBlocks != nil || !reason.isEmpty else {
+                  !body.isEmpty else {
                 return nil
             }
             return ChapterComment(
@@ -202,8 +213,10 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorUID: authorLink.flatMap(linkUID)
+                bodyBlocks: body.bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID),
+                authorAvatarURL: avatarURL(in: cells[0]),
+                contentBlocks: body.contentBlocks
             )
         }
     }
@@ -239,8 +252,10 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks,
-                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) }
+                    bodyBlocks: body.bodyBlocks,
+                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) },
+                    authorAvatarURL: replyAvatarURL(for: message),
+                    contentBlocks: body.contentBlocks
                 )
             )
         }
@@ -271,8 +286,10 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks,
-                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) }
+                    bodyBlocks: body.bodyBlocks,
+                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) },
+                    authorAvatarURL: replyAvatarURL(for: message),
+                    contentBlocks: body.contentBlocks
                 )
             )
         }
@@ -296,40 +313,9 @@ enum ChapterCommentsHTMLParser {
         return uniqueNodes
     }
 
-    private static func replyBody(from message: Element) throws -> (text: String, blocks: [ForumThreadTextBlock]?)? {
-        let fragment = try KannaSoup.parseBodyFragment(message.html())
-        guard let body = fragment.body() else { return nil }
-        body.select(".quote, blockquote, i, .pstatus").remove()
-        let text = normalizeText(body.text())
-        let blocks = try emoticonBodyBlocks(in: body)
-        return text.isEmpty && blocks == nil ? nil : (text, blocks)
-    }
-
-    private static func emoticonBodyBlocks(in element: Element?) throws -> [ForumThreadTextBlock]? {
-        guard let element,
-              element.select("img").array().contains(where: { image in
-                  YamiboImageReferenceExtractor.forumContent.url(from: image)
-                      .map(YamiboImageReferenceExtractor.isEmoticonURL) == true
-              }) else { return nil }
-        let blocks = try ForumThreadHTMLBlockParser.parseBlocks(in: element).flatMap(commentTextBlocks)
-        return blocks.contains(where: { !$0.inlineImages.isEmpty }) ? blocks : nil
-    }
-
-    // Comments remain text-only apart from smileys; do not introduce photo or
-    // attachment previews, or forum-specific styling, into the reader sheet.
-    private static func commentTextBlocks(_ block: ForumThreadContentBlock) -> [ForumThreadTextBlock] {
-        switch block.kind {
-        case let .text(text):
-            [ForumThreadTextBlock(text: text.text, inlineImages: text.inlineImages)]
-        case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):
-            blocks.flatMap(commentTextBlocks)
-        case let .table(rows):
-            rows.flatMap { $0.flatMap { $0.blocks.flatMap(commentTextBlocks) } }
-        case let .code(text):
-            [ForumThreadTextBlock(text: text)]
-        case .image, .attachment, .horizontalRule:
-            []
-        }
+    private static func replyBody(from message: Element) throws -> ChapterCommentParsedBody? {
+        let body = try ChapterCommentBodyParser.parse(message, attachmentsFrom: postContainer(for: message))
+        return body.isEmpty ? nil : body
     }
 
     private static func isOwnerPost(_ message: Element, target: ReaderChapterCommentTarget) -> Bool {
@@ -358,6 +344,42 @@ enum ChapterCommentsHTMLParser {
             ".psta a.xi2",
             ".psta a"
         ]) ?? ""
+    }
+
+    private static func avatarURL(
+        in element: Element?,
+        imageSelector: String = "img[src]"
+    ) -> URL? {
+        guard let element else { return nil }
+        for image in element.selectAll(imageSelector) {
+            let isCommentContent = image.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+            if !isCommentContent, let url = image.attrURL("src") {
+                return url
+            }
+        }
+        guard let uid = element.selectAll("a[href]").filter({ link in
+            !link.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+        }).compactMap({
+            ForumUserIDParser.userID(fromHref: $0.attr("href"))
+        }).first, !uid.isEmpty, uid.allSatisfy(\.isNumber), uid != "0" else { return nil }
+        var components = URLComponents(url: YamiboDomain.baseURL.appendingPathComponent("uc_server/avatar.php"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "uid", value: uid), URLQueryItem(name: "size", value: "small")]
+        return components?.url
+    }
+
+    private static func replyAvatarURL(for message: Element) -> URL? {
+        guard let container = postContainer(for: message) else { return nil }
+        // Never use images from the reply body or another user's inline comments.
+        for image in container.selectAll(".avatar img[src], .pls .avt img[src]") {
+            let isCommentContent = image.parents().contains {
+                $0.hasClass("message") || $0.id().hasPrefix("postmessage_")
+                    || $0.id().hasPrefix("comment_") || $0.id().hasPrefix("commentdetail_")
+            }
+            if !isCommentContent, let url = image.attrURL("src") {
+                return url
+            }
+        }
+        return avatarURL(in: container.selectFirst(".authi"), imageSelector: "a[href*=uid] img[src]")
     }
 
     private static func replyMetadata(for message: Element) -> String? {

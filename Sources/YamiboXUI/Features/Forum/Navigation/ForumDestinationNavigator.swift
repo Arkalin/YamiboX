@@ -52,13 +52,8 @@ final class ForumDestinationNavigator {
     }
 
     func push(_ destination: ForumDestination) {
-        if case let .web(url) = destination, ForumWebPagePolicy.requiresForumHandling(url) {
-            switch ForumPagePurpose(url: url) {
-            case .postEditor: path.append(.postEditor(url))
-            case .blogEditor: path.append(.blogEditor(url))
-            case .actionForm: path.append(.actionForm(url))
-            case .document: path.append(.document(url))
-            }
+        if case let .web(url) = destination, ForumRouteResolver.supportsNativePage(url) {
+            route(url, source: .external)
             return
         }
         path.append(destination)
@@ -97,8 +92,6 @@ final class ForumDestinationNavigator {
             push(.blogEditor(url))
         case let .actionForm(url):
             push(.actionForm(url))
-        case let .document(url):
-            push(.document(url))
         case let .web(url):
             push(.web(url))
         }
@@ -333,7 +326,7 @@ final class ForumDestinationNavigator {
             )
             push(.threadReader(context))
         case let .webFallback(url):
-            push(.web(url))
+            push(.webFallback(url))
         }
     }
 }

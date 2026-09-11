@@ -393,10 +393,10 @@ private actor ComposerDraftPageRepository: ForumPageLoading {
     func holdUpload() { holdsUpload = true; uploadStarted = false }
     func waitForUpload() async { while !uploadStarted { await Task.yield() } }
     func releaseUpload() { uploadGate?.resume(); uploadGate = nil }
-    func fetchPage(url: URL, confirmedAction: Bool) throws -> ForumPageDocument { if failsFetch { throw URLError(.notConnectedToInternet) }; return page }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) throws -> ForumPageLoadResult { if failsFetch { throw URLError(.notConnectedToInternet) }; return .page(page) }
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) -> ForumPageLoadResult {
         submissionCount += 1
-        return .init(url: page.url, title: "Result", message: accepted ? "发表成功" : "结果不明")
+        return .page(.init(url: page.url, title: "Result", message: accepted ? "发表成功" : "结果不明"))
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {
         uploadCount += 1

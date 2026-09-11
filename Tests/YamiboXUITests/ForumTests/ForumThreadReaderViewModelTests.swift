@@ -792,10 +792,10 @@ private enum ForumThreadReaderTestError: LocalizedError {
 @MainActor
 @Test func forumThreadUnresolvedReplyPageRefreshesOriginalPageInsteadOfJumping() async throws {
     let fixture = try ForumThreadReaderViewModelFixture()
-    let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=704&pid=missing")!
+    let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=704&pid=999999")!
     let model = fixture.makeModel(initialPage: 3, resolveReplyTarget: { url in
         YamiboThreadRoutePayload(thread: ThreadIdentity(tid: "704"), title: "Thread",
-                                 canonicalURL: url, requestedURL: url, initialPage: 1, targetPostID: "missing")
+                                 canonicalURL: url, requestedURL: url, initialPage: 1, targetPostID: "999999")
     })
     await model.load()
     model.updateVisibleAnchor(postID: "4001")

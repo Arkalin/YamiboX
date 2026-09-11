@@ -117,9 +117,12 @@ struct ForumDestinationScreen: View {
                 navigator: navigator
             )
             .forumNavigationBarStyle()
-        case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url), let .document(url):
+        case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url):
             ForumURLDestinationView(url: url, navigator: navigator)
             .forumNavigationBarStyle()
+        case let .webFallback(url):
+            ForumURLDestinationView(url: url, navigator: navigator, fallback: true)
+                .forumNavigationBarStyle()
         }
     }
 
@@ -180,7 +183,7 @@ struct ForumThreadLinkScreen: View {
         case let .thread(context):
             ForumThreadDestinationView(context: context, navigator: navigator)
         case let .web(webURL):
-            ForumURLDestinationView(url: webURL, navigator: navigator)
+            ForumURLDestinationView(url: webURL, navigator: navigator, fallback: true)
         case let .failed(details):
             LoadFailureView(message: details.summary, details: details, prominentRetry: true) {
                 resolution = .resolving
@@ -243,15 +246,22 @@ private struct ForumHomeDestination: View {
     }
 }
 
-/// Defense in depth for old saved destinations and failed thread resolution:
-/// neither path is allowed to turn an internal document back into a WebView.
 private struct ForumURLDestinationView: View {
     let url: URL
     let navigator: ForumDestinationNavigator
+    var fallback = false
+    @State private var fallbackURL: URL?
+
+    private var isNativeForm: Bool {
+        switch ForumRouteResolver.resolve(url: url) {
+        case .postEditor, .blogEditor, .actionForm: true
+        default: false
+        }
+    }
 
     var body: some View {
-        if ForumWebPagePolicy.requiresForumHandling(url) {
-            let accountGeneration = navigator.appModel.accountGeneration
+        let accountGeneration = navigator.appModel.accountGeneration
+        if isNativeForm, !fallback, fallbackURL == nil {
             ForumPageScreen(model: ForumPageSession(
                 url: url, dependencies: navigator.dependencies,
                 onSubmissionAccepted: { change in
@@ -259,15 +269,31 @@ private struct ForumURLDestinationView: View {
                     navigator.appModel.forumContentRefresh.record(change)
                 }
             ),
-                                onSubmissionSucceeded: { navigator.transientFeedback = $0 }) {
+                onSubmissionSucceeded: { navigator.transientFeedback = $0 },
+                onNavigationResult: { result in
+                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
+                    switch result {
+                    case let .webFallback(url): fallbackURL = url
+                    case let .nativeRedirect(url):
+                        if !navigator.path.isEmpty { navigator.path.removeLast() }
+                        navigator.route(url, source: .external)
+                    case .page: break
+                    }
+                }) {
                 navigator.route($0, source: .external)
             }
+            .id(accountGeneration)
         } else {
             ForumBrowserView(
-                url: url, sessionStore: navigator.dependencies.sessionStore,
+                url: fallbackURL ?? url, sessionStore: navigator.dependencies.sessionStore,
                 appModel: navigator.appModel, listensToForumNavigationRequest: false,
-                onNativeNavigation: { navigator.route($0, source: .external) }
+                nativeFallback: fallback || fallbackURL != nil,
+                onNativeNavigation: {
+                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
+                    navigator.route($0, source: .external)
+                }
             )
+            .id(navigator.appModel.accountGeneration)
         }
     }
 }

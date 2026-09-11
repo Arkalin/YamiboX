@@ -327,7 +327,7 @@ enum ForumThreadPostsParser {
     /// Only the `<img>` elements are lifted, not their wrappers: the surrounding
     /// markup is a download link plus upload/size chatter that
     /// `ForumThreadAttachmentParser` already reports separately.
-    private static func attachmentImagesHTML(in container: Element, body: Element) -> [String] {
+    static func attachmentImagesHTML(in container: Element, body: Element) -> [String] {
         var seen = Set(
             body.selectAll("img").compactMap {
                 YamiboImageReferenceExtractor.forumPostImage.rawReference(from: $0)

@@ -19,8 +19,9 @@
 		91A000000000000000000032 /* YamiboXTestSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 91A000000000000000000030 /* YamiboXTestSupport */; };
 		91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */; };
 		91A000000000000000000061 /* ChapterCommentFilterFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000062 /* ChapterCommentFilterFixture.swift */; };
-		91A000000000000000000063 /* ForumBBCodePasteFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000064 /* ForumBBCodePasteFixture.swift */; };
+		91A000000000000000000065 /* ForumBBCodePasteFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000066 /* ForumBBCodePasteFixture.swift */; };
 		91A000000000000000000049 /* YamiboXUI in Frameworks */ = {isa = PBXBuildFile; productRef = A22732C54EFA3206F0D5DA4F /* YamiboXUI */; };
+		91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */; };
 		E40F0270FCC083EAA9080652 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDA66CE60A7503624B088913 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
@@ -44,9 +45,10 @@
 		91A000000000000000000024 /* YamiboXCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YamiboXCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/YamiboXTestHostApp.swift; sourceTree = "<group>"; };
 		91A000000000000000000062 /* ChapterCommentFilterFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ChapterCommentFilterFixture.swift; sourceTree = "<group>"; };
-		91A000000000000000000064 /* ForumBBCodePasteFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumBBCodePasteFixture.swift; sourceTree = "<group>"; };
+		91A000000000000000000066 /* ForumBBCodePasteFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumBBCodePasteFixture.swift; sourceTree = "<group>"; };
 		91A000000000000000000043 /* YamiboXTestHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = YamiboXTestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		91A000000000000000000051 /* YamiboXInteractionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = YamiboXInteractionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/LikeListFixture.swift; sourceTree = "<group>"; };
 		FDA66CE60A7503624B088913 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
@@ -104,7 +106,8 @@
 				443671A87482B50E67142F19 /* YamiboX */,
 				91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */,
 				91A000000000000000000062 /* ChapterCommentFilterFixture.swift */,
-				91A000000000000000000064 /* ForumBBCodePasteFixture.swift */,
+				91A000000000000000000066 /* ForumBBCodePasteFixture.swift */,
+				91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */,
 				91A000000000000000000052 /* Tests/YamiboXInteractionUITests */,
 				91A000000000000000000025 /* Tests/YamiboXCoreTests */,
 				91A000000000000000000015 /* Tests/YamiboXUITests */,
@@ -359,7 +362,8 @@
 			files = (
 				91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */,
 				91A000000000000000000061 /* ChapterCommentFilterFixture.swift in Sources */,
-				91A000000000000000000063 /* ForumBBCodePasteFixture.swift in Sources */,
+				91A000000000000000000065 /* ForumBBCodePasteFixture.swift in Sources */,
+				91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

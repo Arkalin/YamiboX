@@ -29,6 +29,7 @@ struct ReaderChapterCommentsContent: View {
     let loadNext: () -> Void
     let openOriginalPost: (URL) -> Void
     var compose: ((ReaderChapterCommentComposeTarget) -> Void)? = nil
+    var openImage: ((ChapterComment, String) -> Void)? = nil
     var emptyTitle = L10n.string("reader.chapter_comments_empty")
 
     var body: some View {
@@ -100,7 +101,8 @@ struct ReaderChapterCommentsContent: View {
             comment: comment,
             originalPostURL: comment.originalPostURL(threadID: target.threadID),
             openOriginalPost: openOriginalPost,
-            onReply: replyAction
+            onReply: replyAction,
+            onImageTap: { blockID in openImage?(comment, blockID) }
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
@@ -161,6 +163,7 @@ struct ReaderChapterCommentsSheet: View {
     private let discussionWorkTIDs: Set<String>
 
     @State private var threadOverlayItem: ForumThreadOverlayItem?
+    @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
     @State private var scrollTarget: String?
     @State private var controlHandlerToken: UUID?
     @State private var actionTask: Task<Void, Never>?
@@ -232,6 +235,7 @@ struct ReaderChapterCommentsSheet: View {
                 loadNext: loadNextPage,
                 openOriginalPost: openOriginalPost(_:),
                 compose: { composerTarget = $0 },
+                openImage: openImage(_:blockID:),
                 emptyTitle: filterModel.hasHiddenComments ? L10n.string("reader.chapter_comments_filtered_empty") : emptyTitle
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -289,6 +293,14 @@ struct ReaderChapterCommentsSheet: View {
                 discussionWorkTIDs: discussionWorkTIDs
             )
         }
+        .fullScreenCover(item: $imageBrowserRequest) { request in
+            ImageBrowserView(
+                items: request.items,
+                initialItemID: request.initialItemID,
+                mode: request.items.count == 1 ? .single : .multiple,
+                onDismiss: { imageBrowserRequest = nil }
+            )
+        }
         .task(id: target) {
             actionTask?.cancel()
             await loadInitial(target)
@@ -331,10 +343,8 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func handleControlEvent(_ event: ReaderControlEvent) {
-        // While the original-post cover is up, the comment list is fully
-        // hidden; the cover is a touch-first surface, and close must not
-        // tear down this sheet underneath it.
-        guard threadOverlayItem == nil, composerTarget == nil else { return }
+        // Presented content owns input; closing must not dismiss this sheet underneath it.
+        guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil else { return }
         // The next-page bound action is a dead no-op everywhere else in this
         // sheet (dpad owns scrolling); only once already at the last loaded
         // comment does it act as "load next page", mirroring the
@@ -425,6 +435,11 @@ struct ReaderChapterCommentsSheet: View {
     private func openOriginalPost(_ url: URL) {
         threadOverlayItem = ForumThreadOverlayItem(url: url, title: target?.title)
     }
+
+    private func openImage(_ comment: ChapterComment, blockID: String) {
+        guard let target else { return }
+        imageBrowserRequest = ReaderChapterCommentImageGallery.request(comment: comment, target: target, selectedBlockID: blockID)
+    }
 }
 
 struct ReaderChapterCommentsToolbarTitle: View {
@@ -449,24 +464,18 @@ private struct ReaderChapterCommentRow: View {
     let originalPostURL: URL?
     let openOriginalPost: (URL) -> Void
     let onReply: (() -> Void)?
+    let onImageTap: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
+                ForumAvatarView(url: comment.authorAvatarURL, size: 28, placeholderFont: .system(size: 22))
+                    .accessibilityHidden(true)
                 Text(comment.authorName.isEmpty ? L10n.string("reader.comment_anonymous") : comment.authorName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 ReaderChapterCommentSourceBadge(source: comment.source)
-                if let onReply {
-                    Button(action: onReply) {
-                        Image(systemName: "arrowshape.turn.up.left")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(L10n.string("forum.thread.reply"))
-                    .accessibilityIdentifier("chapter-comment-reply-\(comment.postID ?? comment.id)")
-                }
                 if let originalPostURL {
                     Button {
                         openOriginalPost(originalPostURL)
@@ -476,20 +485,57 @@ private struct ReaderChapterCommentRow: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(L10n.string("reader.open_original_post"))
+                    .accessibilityIdentifier("chapter-comment-original-\(comment.id)")
                 }
-            }
-            if let metadata = comment.metadata {
-                Text(metadata)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             ReaderChapterCommentBody(
                 text: comment.body,
                 blocks: comment.bodyBlocks,
-                refererURL: originalPostURL ?? YamiboDomain.baseURL
+                refererURL: originalPostURL ?? YamiboDomain.baseURL,
+                contentBlocks: comment.contentBlocks,
+                imageIdentifierPrefix: "chapter-comment-image-\(comment.id)",
+                onImageTap: onImageTap
             )
+            .accessibilityIdentifier("chapter-comment-body-\(comment.id)")
+            if comment.metadata != nil || onReply != nil {
+                ReaderChapterCommentFooter(
+                    metadata: comment.metadata,
+                    replyIdentifier: comment.postID ?? comment.id,
+                    onReply: onReply
+                )
+            }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ReaderChapterCommentFooter: View {
+    let metadata: String?
+    let replyIdentifier: String
+    let onReply: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let metadata {
+                Text(metadata)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if let onReply {
+                Button(action: onReply) {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.system(size: 18))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.string("forum.thread.reply"))
+                .accessibilityIdentifier("chapter-comment-reply-\(replyIdentifier)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -520,12 +566,35 @@ struct ReaderChapterCommentBody: View {
     let text: String
     let blocks: [ForumThreadTextBlock]?
     let refererURL: URL
+    var contentBlocks: [ForumThreadContentBlock]? = nil
+    var imageIdentifierPrefix = "chapter-comment-image"
+    var onImageTap: (String) -> Void = { _ in }
 
     var body: some View {
-        ForumThreadInlineTextView(attributedText: attributedText, refererURL: refererURL)
-            .font(.body)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+        if let contentBlocks, !contentBlocks.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(contentBlocks) { block in
+                    switch block.kind {
+                    case let .text(text):
+                        ReaderChapterCommentText(attributedText: ForumThreadTextBlockFormatter(block: text).attributedText, refererURL: refererURL)
+                    case .image:
+                        Button { onImageTap(block.id) } label: {
+                            Label(L10n.string("reader.comment_view_image"), systemImage: "photo")
+                                .font(.body)
+                                .frame(minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("\(imageIdentifierPrefix)-\(block.id)")
+                    default:
+                        EmptyView()
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+        } else {
+            ReaderChapterCommentText(attributedText: attributedText, refererURL: refererURL)
+        }
     }
 
     var attributedText: AttributedString {
@@ -536,6 +605,18 @@ struct ReaderChapterCommentBody: View {
             }
             result.append(ForumThreadTextBlockFormatter(block: block).attributedText)
         }
+    }
+}
+
+private struct ReaderChapterCommentText: View {
+    let attributedText: AttributedString
+    let refererURL: URL
+
+    var body: some View {
+        ForumThreadInlineTextView(attributedText: attributedText, refererURL: refererURL)
+            .font(.body)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

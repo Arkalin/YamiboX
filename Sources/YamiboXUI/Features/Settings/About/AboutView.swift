@@ -108,6 +108,29 @@ private struct AboutLinksSection: View {
 
             Divider()
 
+            NavigationLink {
+                ChangelogView()
+            } label: {
+                HStack(spacing: 16) {
+                    Text(L10n.string("about.changelog"))
+                        .font(.title3)
+                        .foregroundStyle(.primary)
+
+                    Spacer(minLength: 16)
+
+                    Image(systemName: "chevron.right")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("about-changelog-link")
+
+            Divider()
+
             Button(action: checkForUpdates) {
                 HStack(spacing: 16) {
                     Text(L10n.string("about.check_update"))

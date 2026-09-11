@@ -2,6 +2,18 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
+@Test(arguments: ["mod=redirect&goto=findpost&pid=456", "pid=456&mobile=2&goto=findpost&mod=redirect"])
+func forumRouteResolverRecognizesPIDOnlyLinks(query: String) throws {
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?\(query)"))
+    #expect(ForumRouteResolver.resolve(url: url) == .thread(url))
+}
+
+@Test(arguments: ["", "0", "-1", "abc", "1.5", "１２３"])
+func forumRouteResolverRejectsInvalidPostIdentifiers(pid: String) throws {
+    let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=\(pid)"))
+    #expect(ForumRouteResolver.resolve(url: url) == .web(url))
+}
+
 @Test func forumRouteResolverResolvesBoardURLs() throws {
     let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=forumdisplay&fid=5&page=3&mobile=2"))
 
@@ -92,10 +104,10 @@ import Testing
     #expect(ForumRouteResolver.resolve(url: url) == .home)
 }
 
-@Test func forumRouteResolverUsesDocumentForAnnouncements() throws {
+@Test func forumRouteResolverUsesWebForAnnouncements() throws {
     let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=announcement&id=17&mobile=2"))
 
-    #expect(ForumRouteResolver.resolve(url: url) == .document(url))
+    #expect(ForumRouteResolver.resolve(url: url) == .web(url))
 }
 
 @Test func forumBoardRouteIncludesFilterAndOrderQueryItems() throws {

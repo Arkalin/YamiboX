@@ -28,7 +28,7 @@ struct CreditLogTests {
             creditRow(
                 operation: #"<a href="home.php?mod=spacecp&amp;ac=credit&amp;op=log&amp;optype=PRC">帖子被评分</a>"#,
                 credit: #"积分 <span class="xi1">+10</span>"#,
-                description: #"<a href="forum.php?mod=redirect&amp;goto=findpost&amp;ptid=123&amp;pid=456">Yamibo X &amp; iOS</a>，来自<a href="home.php?mod=space&amp;uid=42">读者</a>"#
+                description: #"<a href="forum.php?mod=redirect&amp;goto=findpost&amp;pid=456">Yamibo X &amp; iOS</a>，来自<a href="home.php?mod=space&amp;uid=42">读者</a>"#
             )
         ]))
 

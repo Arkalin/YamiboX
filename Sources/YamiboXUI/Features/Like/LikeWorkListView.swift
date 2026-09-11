@@ -13,6 +13,9 @@ struct LikeWorkListView: View {
     @State private var titlesByWorkKey: [LikeWorkKey: String] = [:]
     @State private var coverURLsByWorkKey: [LikeWorkKey: URL] = [:]
     @State private var searchText = ""
+    @State private var filter = LikeWorkFilter.all
+    @State private var hasLoaded = false
+    @State private var loadGeneration = 0
     @State private var pushedWorkKey: LikeWorkKey?
 
     @State private var isSelecting = false
@@ -20,9 +23,7 @@ struct LikeWorkListView: View {
     @State private var isShowingDeleteConfirmation = false
 
     private var filteredSummaries: [LikeWorkSummary] {
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return summaries }
-        return summaries.filter { title(for: $0.workKey).localizedCaseInsensitiveContains(trimmed) }
+        filter.applying(to: summaries, titles: titlesByWorkKey, searchText: searchText)
     }
 
     var body: some View {
@@ -34,24 +35,44 @@ struct LikeWorkListView: View {
                     pushedWorkKey = summary.workKey
                 }
             } label: {
-                row(for: summary)
+                LikeWorkRow(
+                    title: title(for: summary.workKey),
+                    coverURL: coverURLsByWorkKey[summary.workKey],
+                    kind: summary.workKey.kind,
+                    itemCount: summary.itemCount,
+                    lastLikedAt: summary.lastLikedAt,
+                    isSelecting: isSelecting,
+                    isSelected: selectedWorkKeys.contains(summary.workKey)
+                )
             }
             .buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-            .listRowSeparator(.hidden)
+            .accessibilityIdentifier("like.work.\(summary.workKey.kind.rawValue).\(summary.workKey.id)")
+            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+            .listRowSeparator(.visible, edges: .bottom)
             .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
-        .contentMargins(.top, 8, for: .scrollContent)
+        .contentMargins(.top, 0, for: .scrollContent)
         // Kept permanently mounted rather than swapped for an empty-state
         // view — see the matching comment in LikeWorkItemsView.body for why
         // that swap makes `.searchable`'s search bar ghost during a push.
         .overlay {
-            if summaries.isEmpty {
+            if !hasLoaded {
+                ProgressView()
+            } else if summaries.isEmpty {
                 ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
             } else if filteredSummaries.isEmpty {
-                ContentUnavailableView.search(text: searchText)
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView {
+                        Label { Text(filter.emptyTitle) } icon: { Image(systemName: "heart") }
+                    }
+                } else {
+                    ContentUnavailableView.search(text: searchText)
+                }
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            LikeWorkFilterBar(selection: $filter)
         }
         .navigationTitle(
             isSelecting
@@ -59,7 +80,11 @@ struct LikeWorkListView: View {
                 : L10n.string("likes.section_title")
         )
         .navigationBarBackButtonHidden(isSelecting)
-        .searchable(text: $searchText, prompt: L10n.string("likes.search_placeholder"))
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: L10n.string("likes.search_works_placeholder")
+        )
         .toolbar {
             if isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
@@ -86,10 +111,13 @@ struct LikeWorkListView: View {
                 }
             } else {
                 ToolbarItem(placement: .primaryAction) {
-                    if !summaries.isEmpty {
-                        Button(L10n.string("common.select")) {
+                    if !filteredSummaries.isEmpty {
+                        Button {
                             setSelecting(true)
+                        } label: {
+                            Image(systemName: "checklist")
                         }
+                        .accessibilityLabel(L10n.string("common.select"))
                     }
                 }
             }
@@ -127,7 +155,7 @@ struct LikeWorkListView: View {
                 guard changeID == likeDependencies.likeStore.changeID else {
                     continue
                 }
-                Task { await load() }
+                await load()
             }
         }
         .destructiveConfirmationDialog(
@@ -138,51 +166,11 @@ struct LikeWorkListView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedWorkKeys)
-    }
-
-    private func row(for summary: LikeWorkSummary) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            LocalFavoriteCoverThumbnail(url: coverURLsByWorkKey[summary.workKey], title: title(for: summary.workKey))
-                .frame(width: 92, height: 128)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title(for: summary.workKey))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "heart.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.pink)
-                    Text(L10n.string("likes.item_count_format", summary.itemCount))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 128, alignment: .topLeading)
-
-            Spacer(minLength: 0)
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .frame(minHeight: 128, alignment: .center)
-                .opacity(isSelecting ? 0 : 1)
-                .accessibilityHidden(isSelecting)
+        .onChange(of: filter) { _, _ in selectedWorkKeys.removeAll() }
+        .onChange(of: searchText) { _, _ in selectedWorkKeys.removeAll() }
+        .onChange(of: filteredSummaries.map(\.workKey)) { _, visibleKeys in
+            selectedWorkKeys.formIntersection(visibleKeys)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .favoriteSelectionEmphasis(
-            isSelectionMode: isSelecting,
-            isSelected: selectedWorkKeys.contains(summary.workKey),
-            cornerRadius: 12
-        )
     }
 
     private func title(for workKey: LikeWorkKey) -> String {
@@ -227,7 +215,7 @@ struct LikeWorkListView: View {
     }
 
     private func deleteSelection() async {
-        let keys = selectedWorkKeys
+        let keys = selectedWorkKeys.intersection(filteredSummaries.map(\.workKey))
         for key in keys {
             try? await likeDependencies.likeStore.deleteAll(workKey: key)
         }
@@ -236,10 +224,11 @@ struct LikeWorkListView: View {
     }
 
     private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         async let fetchedSummaries = likeDependencies.likeStore.workSummaries()
         async let favoriteDocument = try? favoriteLibraryStore.load()
         let (summaries, document) = await (fetchedSummaries, favoriteDocument ?? FavoriteLibraryDocument())
-        self.summaries = summaries
 
         var titles: [LikeWorkKey: String] = [:]
         var covers: [LikeWorkKey: URL] = [:]
@@ -257,8 +246,11 @@ struct LikeWorkListView: View {
                 covers[key] = await contentCoverStore.cover(for: .smartManga(cleanBookName: key.id))?.resolvedURL
             }
         }
+        guard generation == loadGeneration, !Task.isCancelled else { return }
+        self.summaries = summaries
         titlesByWorkKey = titles
         coverURLsByWorkKey = covers
+        hasLoaded = true
     }
 
     private func openAnchor(_ anchor: LikeAnchorPayload, work: LikeWorkKey) {

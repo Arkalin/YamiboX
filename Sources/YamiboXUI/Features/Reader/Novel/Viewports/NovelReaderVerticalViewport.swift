@@ -38,7 +38,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let onTap: () -> Void
     let onChromeVisibleImageTap: () -> Void
     let onImageTap: (URL, String?) -> Void
-    let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
+    let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     private var contentIdentity: NovelReaderVerticalViewportContentIdentity {
         NovelReaderVerticalViewportContentIdentity(
@@ -379,7 +379,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             }
             let onImageLongPress = parent.onImageLongPress
             callbackScheduler.publish {
-                onImageLongPress(anchor, payload.url)
+                onImageLongPress(anchor, payload.url, payload.title)
             }
         }
 

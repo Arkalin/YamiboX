@@ -97,7 +97,10 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         lastAppliedLikedPageIDs = parent.likedPageIDs
 
         for case let controller as MangaPagedPageCurlHostingController in pageViewController.viewControllers ?? [] {
-            controller.updateRootView(rootView(for: controller.leaf), pageBackgroundColor: parent.pageEdgeFillColor)
+            controller.updateRootView(
+                rootView(for: controller.leaf, preserving: controller.rootView.pageSurface),
+                pageBackgroundColor: parent.pageEdgeFillColor
+            )
         }
     }
 
@@ -287,9 +290,12 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         )
     }
 
-    private func rootView(for leaf: MangaPagedPageCurlLeaf) -> MangaPagedPageCurlLeafView {
+    private func rootView(
+        for leaf: MangaPagedPageCurlLeaf,
+        preserving existingSurface: MangaPagedReaderSpreadPageSurface? = nil
+    ) -> MangaPagedPageCurlLeafView {
         MangaPagedPageCurlLeafView(
-            pageSurface: pageSurface(for: leaf),
+            pageSurface: pageSurface(for: leaf, preserving: existingSurface),
             imageLoader: parent.imageLoader,
             pageScaleMode: parent.effectivePageScaleMode,
             pageEdgeFillStyle: parent.settings.pageEdgeFillStyle,
@@ -300,16 +306,26 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         )
     }
 
-    private func pageSurface(for leaf: MangaPagedPageCurlLeaf) -> MangaPagedReaderSpreadPageSurface? {
+    private func pageSurface(
+        for leaf: MangaPagedPageCurlLeaf,
+        preserving existingSurface: MangaPagedReaderSpreadPageSurface?
+    ) -> MangaPagedReaderSpreadPageSurface? {
         guard let pageIndex = leaf.pageIndex,
               let page = parent.plan.page(at: pageIndex) else {
             return nil
         }
+        let identity = pageCurlPageSurfaceIdentity(for: page)
+        let interaction = surfaceInteraction(for: page)
+        // Chrome/like refreshes must not reinterpret a backward entry after selection catches up.
+        let alignment = existingSurface.flatMap { surface in
+            surface.surfaceIdentity == identity && surface.surfaceInteraction === interaction
+                ? surface.initialHorizontalAlignment : nil
+        } ?? initialHorizontalAlignment(for: page, pageIndex: pageIndex)
         return MangaPagedReaderSpreadPageSurface(
             page: page,
-            surfaceIdentity: pageCurlPageSurfaceIdentity(for: page),
-            initialHorizontalAlignment: initialHorizontalAlignment(for: page, pageIndex: pageIndex),
-            surfaceInteraction: surfaceInteraction(for: page),
+            surfaceIdentity: identity,
+            initialHorizontalAlignment: alignment,
+            surfaceInteraction: interaction,
             onLongPress: { [weak self] page in
                 guard let self else { return }
                 let onPageLongPress = self.parent.onPageLongPress

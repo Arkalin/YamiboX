@@ -2,6 +2,59 @@ import XCTest
 
 @MainActor
 final class ChapterCommentComposerInteractionTests: XCTestCase {
+    func testCommentMetadataAndReplyMoveBelowBodyWhileOriginalPostStaysInHeader() throws {
+        let app = launch()
+        defer { app.terminate() }
+
+        for (id, metadata) in [
+            ("comment", "2026-09-10 12:30"),
+            ("rating", "积分 +2"),
+            ("reply", "28楼 · 2026-09-10 14:20")
+        ] {
+            let body = app.staticTexts["chapter-comment-body-\(id)"]
+            let details = app.staticTexts[metadata]
+            let originalPost = app.buttons["chapter-comment-original-\(id)"]
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(details.exists)
+            XCTAssertTrue(originalPost.isHittable)
+            XCTAssertLessThan(originalPost.frame.midY, body.frame.minY)
+            // Selectable Text expands its accessibility frame beyond the rendered lines.
+            XCTAssertGreaterThan(details.frame.midY, body.frame.midY)
+            XCTAssertEqual(details.frame.minX, app.frame.minX + 16, accuracy: 1)
+        }
+
+        let reply = app.buttons["chapter-comment-reply-789"]
+        let details = app.staticTexts["28楼 · 2026-09-10 14:20"]
+        let body = app.staticTexts["chapter-comment-body-reply"]
+        XCTAssertTrue(reply.isHittable)
+        XCTAssertGreaterThan(reply.frame.midY, body.frame.midY)
+        XCTAssertGreaterThanOrEqual(reply.frame.minX, details.frame.maxX)
+        XCTAssertEqual(reply.frame.maxX, app.frame.maxX - 16, accuracy: 1)
+        attach(app, "chapter-comments-footer-layout")
+    }
+
+    func testCommentFooterKeepsLeftMetadataAndRightReplyWithLargeText() {
+        let app = launch(extra: ["CHAPTER_COMMENT_DARK": "1", "CHAPTER_COMMENT_LARGE_TEXT": "1"])
+        defer { app.terminate() }
+        for metadata in ["2026-09-10 12:30", "积分 +2"] {
+            let details = app.staticTexts[metadata]
+            XCTAssertTrue(details.exists)
+            XCTAssertEqual(details.frame.minX, app.frame.minX + 16, accuracy: 1)
+        }
+        let reply = app.buttons["chapter-comment-reply-789"]
+        if !reply.isHittable { app.swipeUp() }
+        let details = app.staticTexts["28楼 · 2026-09-10 14:20"]
+        XCTAssertTrue(reply.isHittable)
+        XCTAssertEqual(details.frame.minX, app.frame.minX + 16, accuracy: 1)
+        XCTAssertEqual(reply.frame.maxX, app.frame.maxX - 16, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(reply.frame.minX, details.frame.maxX + 8)
+        XCTAssertEqual(reply.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(reply.frame.height, 44, accuracy: 1)
+        attach(app, "chapter-comments-footer-left-right-large")
+        reply.tap()
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 8))
+    }
+
     func testOwnerDraftSwitchingAndSingleTapReplyReturnsToComments() throws {
         let app = launch()
         defer { app.terminate() }

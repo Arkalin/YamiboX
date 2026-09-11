@@ -713,6 +713,13 @@ public final class NovelReadingWorkflow {
         session?.currentChapterOrdinalsByIdentity() ?? [:]
     }
 
+    package nonisolated(nonsending) func resolveLikeChapterTitles(using store: LikeStore) async {
+        let projections = [currentProjection, prefetchedProjection].compactMap { $0 }
+        for projection in projections {
+            await LikeChapterInfoResolver.backfillNovelChapterTitles(in: projection, store: store)
+        }
+    }
+
     public func updateVisibleSurfaceIdentities(_ surfaceIdentities: [NovelReaderSurfaceIdentity]) {
         viewportRuntime.updateVisibleSurfaceIdentities(surfaceIdentities)
     }

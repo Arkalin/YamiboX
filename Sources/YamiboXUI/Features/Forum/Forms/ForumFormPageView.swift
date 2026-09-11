@@ -180,7 +180,7 @@ struct ForumFormPageView: View {
                     }
                 }
             }
-            ForumDocumentSections(document: page, onImageTap: showImage, onURLTap: navigate)
+            ForumPageStatusSections(document: page, onURLTap: navigate)
             ForEach(isEmbedded ? composerForm.map { [$0] } ?? [] : page.forms) { form in
                 ForumFormSection(
                     form: form,

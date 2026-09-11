@@ -170,7 +170,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
     let onImageTap: (URL, String?) -> Void
-    let onImageLongPress: (NovelImageLikeAnchor, URL) -> Void
+    let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.yamiboImagePipeline) private var imagePipeline
@@ -411,7 +411,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             }
             let onImageLongPress = parent.onImageLongPress
             callbackScheduler.publish {
-                onImageLongPress(anchor, payload.url)
+                onImageLongPress(anchor, payload.url, payload.title)
             }
         }
 
