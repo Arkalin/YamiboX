@@ -8,7 +8,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case forum
     case favorites
     case reading
-    case peripherals
     case storage
 
     var id: String { rawValue }
@@ -25,8 +24,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             L10n.string("settings.section.favorites")
         case .reading:
             L10n.string("settings.section.reading")
-        case .peripherals:
-            L10n.string("settings.peripheral_behavior")
         case .storage:
             L10n.string("settings.section.data_storage")
         }
@@ -39,7 +36,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .forum: "text.bubble"
         case .favorites: "heart.text.square"
         case .reading: "book"
-        case .peripherals: "gamecontroller"
         case .storage: "externaldrive"
         }
     }
@@ -185,19 +181,19 @@ enum SettingsSearchRegistry {
         SettingsSearchEntry(
             id: "peripherals.apple_pencil",
             title: L10n.string("apple_pencil.page_turn"),
-            category: .peripherals,
+            category: .reading,
             keywords: ["Apple Pencil", "翻页", "iPad"]
         ),
         SettingsSearchEntry(
             id: "peripherals.gamepad",
             title: L10n.string("settings.gamepad"),
-            category: .peripherals,
+            category: .reading,
             keywords: ["手柄", "控制器", "按键绑定"]
         ),
         SettingsSearchEntry(
             id: "peripherals.keyboard",
             title: L10n.string("settings.keyboard"),
-            category: .peripherals,
+            category: .reading,
             keywords: ["键盘", "按键绑定"]
         ),
         SettingsSearchEntry(

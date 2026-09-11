@@ -3,6 +3,8 @@ import YamiboXCore
 
 struct SettingsReadingView: View {
     let viewModel: SettingsReadingViewModel
+    let peripheralsViewModel: SettingsPeripheralsViewModel
+    var peripheralInput: ReaderPeripheralInputManager?
 
     var body: some View {
         Form {
@@ -33,6 +35,7 @@ struct SettingsReadingView: View {
                 )
                 .disabled(viewModel.isBusy)
             }
+            SettingsPeripheralSections(viewModel: peripheralsViewModel, peripheralInput: peripheralInput)
         }
         .navigationTitle(L10n.string("settings.section.reading"))
         .navigationBarTitleDisplayMode(.inline)

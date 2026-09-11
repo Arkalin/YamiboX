@@ -9,7 +9,7 @@ struct ChapterCommentFilterFixture: View {
 
     var body: some View {
         NavigationStack {
-            SettingsReadingView(viewModel: model.settings)
+            SettingsReadingView(viewModel: model.settings, peripheralsViewModel: model.peripherals)
                 .toolbar {
                     ToolbarItem(placement: .bottomBar) {
                         Button("章节评论", systemImage: "text.bubble") { showsComments = true }
@@ -45,6 +45,7 @@ private final class ChapterCommentFilterFixtureModel {
     let context: YamiboAppContext
     let appModel: YamiboAppModel
     let settings: SettingsReadingViewModel
+    let peripherals: SettingsPeripheralsViewModel
     let chapter = ReaderChapterCommentTarget(threadID: "123", view: 1, ownerPostID: "456", title: "第十二章", authorID: "42")
     var page: ChapterCommentsPage
     var isLoggedIn = true
@@ -59,8 +60,10 @@ private final class ChapterCommentFilterFixtureModel {
                                       uiDefaults: UserDefaults(suiteName: suite)!, clearsWebDataOnReset: false)
         self.context = context
         appModel = YamiboAppModel(appContext: context)
+        let activity = SystemSettingsActivity()
+        peripherals = SettingsPeripheralsViewModel(dependencies: context.settingsDependencies, activity: activity)
         let fails = ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FAIL_SAVE"] == "1"
-        settings = SettingsReadingViewModel(dependencies: context.settingsDependencies, activity: .init(),
+        settings = SettingsReadingViewModel(dependencies: context.settingsDependencies, activity: activity,
                                             updateSettings: { mutate in
             if fails { throw YamiboError.underlying("测试存储不可用") }
             return try await store.update(mutate)
@@ -83,6 +86,7 @@ private final class ChapterCommentFilterFixtureModel {
             try? await context.settingsStore.save(.init())
         }
         settings.applyLoadedSettings(await context.settingsStore.load())
+        peripherals.applyLoadedSettings(await context.settingsStore.load())
         await signIn()
     }
 

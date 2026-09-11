@@ -5,6 +5,31 @@ import UIKit
 struct SystemSettingsPeripheralPageTurnView: View {
     let viewModel: SettingsPeripheralsViewModel
     var peripheralInput: ReaderPeripheralInputManager?
+
+    var body: some View {
+        Form {
+            SettingsPeripheralSections(viewModel: viewModel, peripheralInput: peripheralInput)
+        }
+        .navigationTitle(L10n.string("settings.peripheral_behavior"))
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: .presentation(
+                isPresented: { viewModel.errorMessage != nil },
+                clearOnDismiss: { viewModel.errorMessage = nil }
+            )
+        ) {
+            Button(L10n.string("common.ok")) {
+                viewModel.errorMessage = nil
+            }
+        }
+    }
+}
+
+struct SettingsPeripheralSections: View {
+    let viewModel: SettingsPeripheralsViewModel
+    var peripheralInput: ReaderPeripheralInputManager?
     @State private var showsApplePencilHelp = false
     @State private var capturingAction: ReaderControlAction?
     @State private var showsCaptureRejectedNotice = false
@@ -27,7 +52,7 @@ struct SystemSettingsPeripheralPageTurnView: View {
     }
 
     var body: some View {
-        Form {
+        Group {
             if showsApplePencilSection {
                 Section("Apple Pencil") {
                     HStack(spacing: 8) {
@@ -119,28 +144,10 @@ struct SystemSettingsPeripheralPageTurnView: View {
                 Text(keyboardFooterText)
             }
         }
-        .navigationTitle(L10n.string("settings.peripheral_behavior"))
         .onDisappear {
             cancelCaptureIfNeeded()
             cancelKeyboardCaptureIfNeeded()
         }
-        .failureAlert(
-            L10n.string("common.operation_failed"),
-            message: viewModel.errorMessage,
-            details: viewModel.errorDetails,
-            isPresented: errorIsPresented
-        ) {
-            Button(L10n.string("common.ok")) {
-                viewModel.errorMessage = nil
-            }
-        }
-    }
-
-    private var errorIsPresented: Binding<Bool> {
-        .presentation(
-            isPresented: { viewModel.errorMessage != nil },
-            clearOnDismiss: { viewModel.errorMessage = nil }
-        )
     }
 
     private var connectionStatusRow: some View {

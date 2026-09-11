@@ -195,9 +195,11 @@ public struct SettingsHomeView: View {
         case .favorites:
             SettingsFavoritesView(dependencies: dependencies, viewModel: viewModel.favorites)
         case .reading:
-            SettingsReadingView(viewModel: viewModel.reading)
-        case .peripherals:
-            SystemSettingsPeripheralPageTurnView(viewModel: viewModel.peripherals, peripheralInput: peripheralInput)
+            SettingsReadingView(
+                viewModel: viewModel.reading,
+                peripheralsViewModel: viewModel.peripherals,
+                peripheralInput: peripheralInput
+            )
         case .storage:
             SettingsStorageView(
                 dependencies: dependencies,
