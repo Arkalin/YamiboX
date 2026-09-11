@@ -24,6 +24,44 @@ import YamiboXCore
         #expect(await repo.submissions == 0)
     }
 
+    @Test func loadExposesWebFallbackWithoutCreatingAnEmptyDocument() async {
+        let repo = PageSessionRepository(page: .init(url: url, title: ""), loadResult: .webFallback(url))
+        let model = ForumPageSession(url: url, repository: repo)
+        await model.load()
+        #expect(model.page == nil)
+        #expect(model.navigationResult == .webFallback(url))
+        #expect(!model.isLoading)
+        #expect(await repo.loads == 1)
+    }
+
+    @Test func getResultRoutesWithoutClaimingSubmissionSuccess() async {
+        let getForm = ForumForm(id: "search", title: "Search", actionURL: url, method: "GET", buttons: [.init(id: "search", title: "Search")])
+        let target = URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123")!
+        let repo = PageSessionRepository(page: .init(url: url, title: "Search", forms: [getForm]), submissionResult: .nativeRedirect(target))
+        let model = ForumPageSession(url: url, repository: repo)
+        await model.load()
+        model.prepareSubmission(form: getForm, button: getForm.buttons[0])
+        await model.confirmSubmission()
+        #expect(model.navigationResult == .nativeRedirect(target))
+        #expect(!model.submissionSucceeded)
+        #expect(await repo.submissions == 1)
+    }
+
+    @Test func unexpectedPostNavigationNeverDiscardsDraftOrReplays() async {
+        let repo = PageSessionRepository(page: .init(url: url, title: "Post", forms: [form]), submissionResult: .webFallback(url))
+        let model = ForumPageSession(url: url, repository: repo)
+        await model.load()
+        model.drafts[form.id]?["message"] = ["Keep this draft"]
+        model.prepareSubmission(form: form, button: form.buttons[0])
+        await model.confirmSubmission()
+        await model.confirmSubmission()
+        #expect(model.navigationResult == nil)
+        #expect(!model.submissionSucceeded)
+        #expect(model.drafts[form.id]?["message"] == ["Keep this draft"])
+        #expect(model.errorMessage != nil)
+        #expect(await repo.submissions == 1)
+    }
+
     @Test(arguments: ["发表成功", "等待审核", "抱歉，没有权限", "Unknown response"])
     func onlyConfirmedSuccessPublishesOneContentChange(message: String) async throws {
         let repo = PageSessionRepository(page: .init(url: url, title: "Post", forms: [form]),
@@ -187,15 +225,23 @@ import YamiboXCore
 private actor PageSessionRepository: ForumPageLoading {
     let page: ForumPageDocument
     let result: ForumPageDocument?
+    let loadResult: ForumPageLoadResult?
+    let submissionResult: ForumPageLoadResult?
     private(set) var loads = 0
     private(set) var submissions = 0
     private(set) var submittedValues: [String: [String]]?
-    init(page: ForumPageDocument, result: ForumPageDocument? = nil) { self.page = page; self.result = result }
-    func fetchPage(url: URL, confirmedAction: Bool) -> ForumPageDocument { loads += 1; return page }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) throws -> ForumPageDocument {
+    init(page: ForumPageDocument, result: ForumPageDocument? = nil, loadResult: ForumPageLoadResult? = nil, submissionResult: ForumPageLoadResult? = nil) {
+        self.page = page
+        self.result = result
+        self.loadResult = loadResult
+        self.submissionResult = submissionResult
+    }
+    func fetchPage(url: URL, confirmedAction: Bool) -> ForumPageLoadResult { loads += 1; return loadResult ?? .page(page) }
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) throws -> ForumPageLoadResult {
         submissions += 1
         submittedValues = values
-        if let result { return result }
+        if let submissionResult { return submissionResult }
+        if let result { return .page(result) }
         throw URLError(.timedOut)
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) throws -> ForumUploadedAttachment {

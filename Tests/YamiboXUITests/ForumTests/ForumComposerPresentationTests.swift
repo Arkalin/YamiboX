@@ -127,10 +127,10 @@ final class ForumComposerPresentationTests: XCTestCase {
 
     @MainActor
     func testMobileComposerRendersOneUploadSectionWithoutGenericFileRows() async throws {
-        let page = try ForumPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
+        let page = try ForumFormPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
         let form = try XCTUnwrap(page.forms.first)
         XCTAssertEqual(page.forms.count, 1)
-        XCTAssertTrue(page.blocks.isEmpty)
+        XCTAssertNil(page.message)
         XCTAssertEqual(form.kind, .thread)
         XCTAssertEqual(form.fields.map(\.name), ["message"])
         XCTAssertFalse(form.fields.contains { $0.kind == .file || $0.name == "Filedata" })
@@ -171,7 +171,7 @@ final class ForumComposerPresentationTests: XCTestCase {
 
     @MainActor
     func testReplyConfirmationDialogPresentsNativeReplyAction() async throws {
-        let page = try ForumPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
+        let page = try ForumFormPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
         let form = try XCTUnwrap(page.forms.first)
         let field = try XCTUnwrap(form.fields.first { $0.name == "message" })
         let button = try XCTUnwrap(form.buttons.first)
@@ -296,7 +296,7 @@ final class ForumComposerPresentationTests: XCTestCase {
 
     @MainActor
     func testPageSubmissionPreparationCommitsMarkedTextThroughRegisteredEditor() async throws {
-        let page = try ForumPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
+        let page = try ForumFormPageParser.parse(html: ForumMobileComposerFixture.html, url: ForumMobileComposerFixture.url)
         let form = try XCTUnwrap(page.forms.first)
         let field = try XCTUnwrap(form.fields.first { $0.name == "message" })
         let button = try XCTUnwrap(form.buttons.first)
@@ -446,7 +446,7 @@ final class ForumComposerPresentationTests: XCTestCase {
         XCTAssertFalse(state.isHTMLSource)
 
         let url = URL(string: "https://bbs.yamibo.com/home.php?mod=spacecp&ac=blog")!
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><form method="post" action="home.php?mod=spacecp&amp;ac=blog">
         <input name="subject" value="草稿"><textarea name="message"></textarea>
         <button type="submit" name="blogsubmit" value="true">发布</button></form></div>
@@ -709,7 +709,7 @@ final class ForumComposerPresentationTests: XCTestCase {
 
     @MainActor
     func testParsedComposerLocalizesAttachmentsRendersAndPreparesWithoutSubmitting() async throws {
-        let page = try ForumPageParser.parse(html: Self.composerHTML, url: Self.postURL)
+        let page = try ForumFormPageParser.parse(html: Self.composerHTML, url: Self.postURL)
         XCTAssertEqual(page.forms.count, 1)
         let form = try XCTUnwrap(page.forms.first)
         XCTAssertEqual(page.uploads.count, 2)
@@ -766,7 +766,7 @@ final class ForumComposerPresentationTests: XCTestCase {
     }
 
     func testLegitimateFileInputStillHasChineseLabel() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><form method="post" action="home.php?mod=spacecp&amp;ac=profile">
         <input type="file" name="Filedata"><button type="submit">Confirm</button>
         </form></div>
@@ -976,8 +976,8 @@ private actor ComposerPageRepository: ForumPageLoading {
     let page: ForumPageDocument
     private(set) var counts = Counts()
     init(page: ForumPageDocument) { self.page = page }
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { counts.loads += 1; return page }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult { counts.loads += 1; return .page(page) }
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         counts.submissions += 1
         XCTFail("Composer fixtures must never submit")
         throw ForumPageError.invalidForm
@@ -995,11 +995,11 @@ private actor ComposerConfirmedReplyRepository: ForumPageLoading {
 
     init(page: ForumPageDocument) { self.page = page }
 
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { page }
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult { .page(page) }
 
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         submissionValues.append(values)
-        return page
+        return .page(page)
     }
 
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {

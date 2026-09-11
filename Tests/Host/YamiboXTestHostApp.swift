@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Network
 @testable import YamiboXCore
 @testable import YamiboXUI
 
@@ -14,6 +15,8 @@ struct YamiboXTestHostApp: App {
                 ImageBrowserFixture()
             } else if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
                 CreditLogFixture()
+            } else if ProcessInfo.processInfo.environment["FORUM_WEB_FIXTURE"] == "1" {
+                ForumWebLayoutFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FIXTURE"] == "1" {
                 ChapterCommentFilterFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {
@@ -29,6 +32,101 @@ struct YamiboXTestHostApp: App {
             }
         }
     }
+}
+
+private struct ForumWebLayoutFixture: View {
+    @State private var model: ForumBrowserModel?
+    @State private var server: ForumWebFixtureServer?
+    @State private var handoffs: [URL] = []
+    @State private var failure: String?
+    private let sessionStore = SessionStore(defaults: UserDefaults(suiteName: "forum-web-fixture")!, key: "session")
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if let model {
+                    IOSForumWebView(model: model, sessionStore: sessionStore)
+                } else if let failure {
+                    Text(failure)
+                } else {
+                    ProgressView()
+                }
+                Text("Native handoffs: \(handoffs.count)")
+                    .accessibilityIdentifier("web-fixture-handoffs")
+            }
+            .navigationTitle("网页布局测试")
+            .toolbar {
+                Button("刷新") { model?.reload() }
+            }
+        }
+        .task {
+            guard server == nil else { return }
+            do {
+                let server = try ForumWebFixtureServer()
+                self.server = server
+                let url = try await server.start()
+                model = ForumBrowserModel(initialURL: url, onNativeNavigation: { handoffs.append($0) })
+            } catch { failure = error.localizedDescription }
+        }
+        .onDisappear { server?.stop() }
+    }
+}
+
+private final class ForumWebFixtureServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "forum.web.fixture")
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+    }
+
+    func start() async throws -> URL {
+        listener.newConnectionHandler = { connection in
+            connection.start(queue: DispatchQueue.global())
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
+                let request = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                let response: String
+                if request.hasPrefix("GET /redirect ") {
+                    response = "HTTP/1.1 302 Found\r\nLocation: https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                } else {
+                    let isPost = request.hasPrefix("POST ")
+                    let body = """
+                    <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Original Web Layout</title>
+                    <style>body{font:18px -apple-system;margin:20px}main{display:grid;grid-template-columns:1fr 1fr;gap:16px}.tile{height:120px;padding:16px;background:#afe2cb}.tile+div{background:#ffd978}button,a{display:block;margin:20px 0;padding:12px}button{font:inherit}</style></head>
+                    <body><h1>Original Web Layout</h1><main><div class="tile">CSS Left</div><div class="tile">CSS Right</div></main>
+                    <button onclick="this.textContent='JavaScript works'">Run JavaScript</button>
+                    <p>\(isPost ? "POST stayed in WebView" : "GET page")</p>
+                    <form method="post" action="/submit"><button>Submit POST</button></form>
+                    <a href="https://bbs.yamibo.com/forum.php?mod=viewthread&amp;tid=123" target="_blank">Native new window</a>
+                    <a href="/redirect">Native redirect</a></body></html>
+                    """
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+                }
+                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+            }
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self else { return }
+                switch state {
+                case .ready:
+                    self.listener.stateUpdateHandler = nil
+                    guard let port = self.listener.port else { continuation.resume(throwing: ForumPageError.invalidURL); return }
+                    continuation.resume(returning: URL(string: "http://127.0.0.1:\(port.rawValue)/")!)
+                case let .failed(error):
+                    self.listener.stateUpdateHandler = nil
+                    continuation.resume(throwing: error)
+                default: break
+                }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    func stop() { listener.cancel() }
+    deinit { listener.cancel() }
 }
 
 private struct ImageBrowserFixture: View {
@@ -114,14 +212,82 @@ private struct CreditLogFixture: View {
                             .accessibilityIdentifier("credit-fixture-switch-account")
                     }
                 case .link(let url):
-                    Text(url.absoluteString)
-                        .accessibilityIdentifier("credit-fixture-opened-url")
-                        .navigationTitle("链接目标")
+                    CreditLogThreadFixture(url: url)
                 }
             }
         }
         .forumTheme(.theme(for: AppThemePreset(rawValue: environment["CREDIT_LOG_THEME"] ?? "standard") ?? .standard))
         .preferredColorScheme(environment["CREDIT_LOG_DARK"] == "1" ? .dark : .light)
+    }
+}
+
+private struct CreditLogThreadFixture: View {
+    let url: URL
+    @State private var model: ForumThreadReaderViewModel?
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if let model {
+                ForumThreadReaderView(model: model, onUserTap: { _, _ in }, onURLTap: { _ in })
+            } else if let failure {
+                Text(failure)
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            guard model == nil else { return }
+            do {
+                guard case .thread = ForumRouteResolver.resolve(url: url) else { throw ForumPageError.invalidURL }
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [CreditLogThreadURLProtocol.self]
+                configuration.httpCookieStorage = nil
+                let client = YamiboClient(session: URLSession(configuration: configuration))
+                let target = try await YamiboThreadRouteResolver(client: client).resolve(.init(threadURL: url, intent: .nativeThreadReader))
+                guard case let .thread(payload) = target else { throw ForumPageError.invalidURL }
+                let context = ThreadNovelLaunchContext(thread: payload.thread, title: payload.title,
+                    initialPage: payload.initialPage, targetPostID: payload.targetPostID)
+                let cache = ForumCacheStore(rootDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("credit-thread-\(UUID().uuidString)"))
+                model = ForumThreadReaderViewModel(context: context, repository: ForumThreadReaderRepository(client: client, cacheStore: cache))
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+    }
+}
+
+private final class CreditLogThreadURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+    override func startLoading() {
+        guard let url = request.url, request.httpMethod == "GET" else {
+            client?.urlProtocol(self, didFailWithError: ForumPageError.invalidURL)
+            return
+        }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let isLocation = items.contains(.init(name: "goto", value: "findpost")) && items.contains(.init(name: "pid", value: "456"))
+        let isPage = items.contains(.init(name: "tid", value: "123")) && items.contains(.init(name: "page", value: "3"))
+        guard isLocation || isPage else {
+            client?.urlProtocol(self, didFailWithError: ForumPageError.invalidURL)
+            return
+        }
+        let responseURL = URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123&page=3#pid456")!
+        let preceding = (441...455).map { pid in
+            "<div id='post_\(pid)'><div class='authi'><a class='author' href='home.php?mod=space&amp;uid=42'>测试作者</a><em>发表于 2026-9-11</em></div><div class='message' id='postmessage_\(pid)'>第 \(pid) 条回复<br>定位前的测试正文<br>定位前的测试正文</div></div>"
+        }.joined()
+        let html = """
+        <html><head><title>真实帖子定位夹具</title></head><body>
+        \(preceding)
+        <div id='post_456'><div class='authi'><a class='author' href='home.php?mod=space&amp;uid=42'>目标作者</a><em>发表于 2026-9-11</em></div>
+        <div class='message' id='postmessage_456'>评分对应的目标楼层 456</div></div>
+        <div class='pg'><a href='forum.php?mod=viewthread&amp;tid=123&amp;page=1'>1</a><a>2</a><strong>3</strong><span>/ 5 页</span></div>
+        </body></html>
+        """
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: responseURL, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/html; charset=utf-8"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(html.utf8))
+        client?.urlProtocolDidFinishLoading(self)
     }
 }
 
@@ -145,7 +311,7 @@ private actor CreditLogFixtureRepository: CreditLogPageLoading {
         let threadTitle = "Yamibo X：iOS端的百合会App，提供原生阅读体验与收藏管理"
         let description = ForumThreadTextBlock(
             text: threadTitle,
-            links: [ForumThreadTextLink(start: 0, length: threadTitle.count, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=123&pid=456")!)]
+            links: [ForumThreadTextLink(start: 0, length: threadTitle.count, url: URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!)]
         )
         let checkIn = CreditLogEntry(
             id: "check-in-\(account)-\(page)", operation: page == 1 ? "天天打卡" : "第2页记录",
@@ -386,13 +552,13 @@ private actor ChapterCommentFixtureReplyRepository: ForumPageLoading {
     let page: ForumPageDocument
     let counts: ChapterCommentFixtureCounts
     init(page: ForumPageDocument, counts: ChapterCommentFixtureCounts) { self.page = page; self.counts = counts }
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult {
         try ChapterCommentFixtureFailure.check("CHAPTER_COMMENT_REPLY_FAIL")
-        return page
+        return .page(page)
     }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         try await counts.submit(mode: "reply", pid: page.url.queryItemValue("repquote") ?? "", page: Int(page.url.queryItemValue("page") ?? "") ?? 0)
-        return ForumPageDocument(url: page.url, title: "Offline Result", message: "回复发表成功")
+        return .page(ForumPageDocument(url: page.url, title: "Offline Result", message: "回复发表成功"))
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {
         await MainActor.run { counts.uploads += 1 }
@@ -419,7 +585,7 @@ private struct ForumPhotoUploadFixture: View {
         <button type="submit" name="replysubmit" value="yes">Send Reply</button>
         </form></body></html>
         """
-        let parsed = try! ForumPageParser.parse(html: html, url: url)
+        let parsed = try! ForumFormPageParser.parse(html: html, url: url)
         let configurations = attachmentFixture ? [
             ForumUploadConfiguration(id: "offline-attachment", url: url, kind: .threadAttachment, values: [], maximumBytes: 5 * 1_024 * 1_024, extensions: ["txt", "pdf", "jpg"])
         ] : [
@@ -460,9 +626,9 @@ private actor ForumPhotoUploadRepository: ForumPageLoading {
         self.counts = counts
     }
 
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { page }
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult { .page(page) }
 
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         throw NSError(domain: "OfflinePhotoFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Posting is disabled in the photo fixture"])
     }
 
@@ -503,7 +669,7 @@ private struct ForumSendCrashFixture: View {
         <button type="submit" name="replysubmit" value="yes">Send Reply</button>
         </form></body></html>
         """
-        let page = try! ForumPageParser.parse(html: html, url: url)
+        let page = try! ForumFormPageParser.parse(html: html, url: url)
         let counts = ForumSendCrashCounts()
         _counts = State(wrappedValue: counts)
         _model = State(wrappedValue: ForumPageSession(url: url, repository: ForumSendCrashRepository(page: page, counts: counts)))
@@ -551,14 +717,14 @@ private actor ForumSendCrashRepository: ForumPageLoading {
     let page: ForumPageDocument
     let counts: ForumSendCrashCounts
     init(page: ForumPageDocument, counts: ForumSendCrashCounts) { self.page = page; self.counts = counts }
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { page }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult { .page(page) }
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         let attempt = await MainActor.run { counts.submissions += 1; return counts.submissions }
         try await Task.sleep(for: .seconds(1))
         if ProcessInfo.processInfo.environment["FORUM_SEND_FAIL"] == "1", attempt == 1 {
             throw NSError(domain: "OfflineFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Offline submission failed"])
         }
-        return ForumPageDocument(url: page.url, title: "Offline Result", message: "Offline submission captured 发表成功")
+        return .page(ForumPageDocument(url: page.url, title: "Offline Result", message: "Offline submission captured 发表成功"))
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {
         throw ForumPageError.unsupportedUpload

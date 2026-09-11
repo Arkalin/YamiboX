@@ -338,11 +338,11 @@ private actor ChapterReplyTestRepository: ForumPageLoading {
     func setPage(_ page: ForumPageDocument) { self.page = page }
     func setMessage(_ message: String) { self.message = message }
     func setSubmissionError(_ error: any Error) { submissionError = error }
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument { loads += 1; return page }
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult { loads += 1; return .page(page) }
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         submissions += 1
         if let submissionError { throw submissionError }
-        return ForumPageDocument(url: page.url, title: "Result", message: message)
+        return .page(ForumPageDocument(url: page.url, title: "Result", message: message))
     }
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {
         throw ForumPageError.unsupportedUpload

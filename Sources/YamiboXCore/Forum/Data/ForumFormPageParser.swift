@@ -1,14 +1,17 @@
 import Foundation
 
-/// Parses the remaining Discuz documents into native text/image/table blocks
-/// and typed form controls. No HTML or script is handed to a UI web renderer.
-enum ForumPageParser {
+/// Extracts native forms and explicit status messages, never general page content.
+enum ForumFormPageParser {
     static func parse(html: String, url: URL) throws -> ForumPageDocument {
         let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
         let document = try KannaSoup.parse(payload, baseURL: url.absoluteString)
         let uploads = ForumUploadParser.configurations(in: document, pageURL: url)
         let isFirstPost = composerIsFirstPost(in: document)
         resolveComposerTabs(in: document, pageURL: url)
+        let composerLinks = document.select("a[data-native-composer-tab]").array().compactMap { link -> ForumComposerLink? in
+            guard let url = link.attrURL("href") else { return nil }
+            return ForumComposerLink(title: link.normalizedText(), url: url)
+        }
         // These are desktop upload dialog forms, not independent user forms.
         // Remove their chrome too; otherwise hidden dialog text leaks below
         // the native composer even when its controls were excluded.
@@ -29,13 +32,7 @@ enum ForumPageParser {
             throw YamiboError.notAuthenticated
         }
         let continuationURL = continuationURL(document: document, root: root, baseURL: url)
-        root.select("form, iframe, object, embed, input, select, textarea, button, .editor, .edt, .header, .footer, .foot, .foot_height").remove()
-        resolveReferences(in: root, baseURL: url)
-        let blocks = try ForumThreadHTMLBlockParser.parseBlocks(in: root)
-        guard !blocks.isEmpty || !forms.isEmpty || message != nil else {
-            throw YamiboError.parsingFailed(context: L10n.string("forum.native.title"))
-        }
-        return ForumPageDocument(url: url, title: title, blocks: blocks, forms: forms, message: message, continuationURL: continuationURL, uploads: uploads)
+        return ForumPageDocument(url: url, title: title, forms: forms, message: message, continuationURL: continuationURL, uploads: uploads, composerLinks: composerLinks)
     }
 
     private static func pageTitle(document: Document, root: Element) -> String {
@@ -267,6 +264,7 @@ enum ForumPageParser {
             if !items.contains(where: { $0.name == "fid" }), let fid = pageItems.first(where: { $0.name == "fid" }) { items.append(fid) }
             parts.queryItems = items
             link.setAttribute("href", value: parts.url?.absoluteString ?? "")
+            link.setAttribute("data-native-composer-tab", value: "true")
         }
     }
 }

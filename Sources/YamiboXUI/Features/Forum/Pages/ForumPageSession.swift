@@ -3,8 +3,8 @@ import Observation
 import YamiboXCore
 
 protocol ForumPageLoading: Sendable {
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment
 }
 
@@ -15,6 +15,7 @@ extension ForumPageRepository: ForumPageLoading {}
 final class ForumPageSession {
     let url: URL
     private(set) var page: ForumPageDocument?
+    var navigationResult: ForumPageLoadResult?
     private(set) var isLoading = false
     private(set) var isSubmitting = false
     private(set) var errorDetails: LoadFailureDetails?
@@ -73,8 +74,15 @@ final class ForumPageSession {
         defer { isLoading = false }
         do {
             let repository = await repositoryProvider()
-            let result = try await repository.fetchPage(url: url, confirmedAction: confirmedAction)
+            let response = try await repository.fetchPage(url: url, confirmedAction: confirmedAction)
             try Task.checkCancellation()
+            guard case let .page(result) = response else {
+                navigationResult = response
+                // Embedded composers cannot navigate; leave them a retryable
+                // failure rather than a permanently empty loading surface.
+                setError(ForumPageError.invalidForm)
+                return
+            }
             page = result
             drafts = Dictionary(uniqueKeysWithValues: result.forms.map { ($0.id, $0.initialValues) })
             htmlSourceFields = Set(result.forms.filter { $0.kind == .blog }.flatMap { form in
@@ -135,8 +143,9 @@ final class ForumPageSession {
         defer { isLoading = false }
         do {
             let repository = await repositoryProvider()
-            let refreshed = try await repository.fetchPage(url: url, confirmedAction: false)
+            let response = try await repository.fetchPage(url: url, confirmedAction: false)
             try Task.checkCancellation()
+            guard case let .page(refreshed) = response else { throw ForumPageError.invalidForm }
             guard refreshed.forms.contains(where: { $0.kind == .thread && $0.fields.contains(where: { $0.name == "message" }) }) else {
                 throw YamiboError.underlying(refreshed.message ?? ForumPageError.invalidForm.localizedDescription)
             }
@@ -184,11 +193,17 @@ final class ForumPageSession {
         defer { isSubmitting = false }
         do {
             let repository = await repositoryProvider()
-            let result = try await repository.submit(
+            let response = try await repository.submit(
                 form: pending.form, values: pending.values, buttonID: pending.buttonID, referer: page.url,
                 files: pending.files, attachments: pending.attachments
             )
-            if pending.form.method == "GET" || pending.form.actionURL.path == "/search.php" {
+            try Task.checkCancellation()
+            guard case let .page(result) = response else {
+                guard pending.form.method == "GET" else { throw ForumPageError.submissionUnconfirmed }
+                navigationResult = response
+                return
+            }
+            if pending.form.method == "GET" {
                 self.page = result
                 drafts = Dictionary(uniqueKeysWithValues: result.forms.map { ($0.id, $0.initialValues) })
                 submissionResponse = nil

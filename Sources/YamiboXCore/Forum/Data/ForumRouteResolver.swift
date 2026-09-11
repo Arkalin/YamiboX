@@ -23,7 +23,6 @@ public enum ForumResolvedRoute: Equatable, Hashable, Sendable {
     case postEditor(URL)
     case blogEditor(URL)
     case actionForm(URL)
-    case document(URL)
     case web(URL)
 }
 
@@ -70,8 +69,13 @@ public enum ForumRouteResolver {
         case .postEditor: return .postEditor(resolvedURL)
         case .blogEditor: return .blogEditor(resolvedURL)
         case .actionForm: return .actionForm(resolvedURL)
-        case .document: return .document(resolvedURL)
+        case .document: return .web(resolvedURL)
         }
+    }
+
+    public static func supportsNativePage(_ url: URL) -> Bool {
+        if case .web = resolve(url: url) { return false }
+        return true
     }
 
     public static func boardURL(fid: String, page: Int? = nil) -> URL {
@@ -119,12 +123,18 @@ public enum ForumRouteResolver {
         }
         let items = components.queryItems ?? []
         let mod = items.value(named: "mod")?.nilIfBlank
-        if items.value(named: "tid")?.nilIfBlank != nil {
+        func validID(_ name: String) -> Bool {
+            guard let value = items.value(named: name), !value.isEmpty else { return false }
+            return value.allSatisfy { $0.isASCII && $0.isNumber } && Int(value).map { $0 > 0 } == true
+        }
+        if validID("tid") {
             return mod == nil || mod == "viewthread" || mod == "redirect"
         }
-        if items.value(named: "ptid")?.nilIfBlank != nil,
-           items.value(named: "pid")?.nilIfBlank != nil,
+        if validID("ptid"), validID("pid"),
            (items.value(named: "goto") == "findpost" || items.value(named: "mod") == "redirect") {
+            return true
+        }
+        if url.path == "/forum.php", mod == "redirect", items.value(named: "goto") == "findpost", validID("pid") {
             return true
         }
         return HTMLTextExtractor.firstMatch(pattern: #"thread-\d+-\d+-\d+\.html"#, in: url.absoluteString) != nil

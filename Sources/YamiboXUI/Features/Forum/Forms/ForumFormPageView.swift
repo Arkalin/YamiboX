@@ -147,7 +147,7 @@ struct ForumFormPageView: View {
     private var content: some View {
         let page = document
         let list = List {
-            ForumDocumentSections(document: page, onImageTap: showImage, onURLTap: navigate)
+            ForumPageStatusSections(document: page, onURLTap: navigate)
             ForEach(isEmbedded ? composerForm.map { [$0] } ?? [] : page.forms) { form in
                 ForumFormSection(
                     form: form,

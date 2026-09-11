@@ -47,7 +47,7 @@ import Testing
     @Test(arguments: ["/forum.php?mod=announcement&id=17", "/plugin.php?id=example", "/guide.html"])
     func contentWithoutASpecializedRouteIsADocument(path: String) throws {
         let url = try #require(URL(string: "https://bbs.yamibo.com" + path))
-        #expect(ForumRouteResolver.resolve(url: url) == .document(url))
+        #expect(ForumRouteResolver.resolve(url: url) == .web(url))
     }
 
     @Test(arguments: [

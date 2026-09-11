@@ -38,9 +38,11 @@ final class CreditLogInteractionTests: XCTestCase {
         let link = app.links[title]
         XCTAssertTrue(link.waitForExistence(timeout: 5), app.debugDescription)
         link.tap()
-        let opened = app.staticTexts["credit-fixture-opened-url"]
-        XCTAssertTrue(opened.waitForExistence(timeout: 5))
-        XCTAssertTrue(opened.label.contains("pid=456"))
+        let opened = app.staticTexts["评分对应的目标楼层 456"]
+        XCTAssertTrue(opened.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(opened.isHittable, app.debugDescription)
+        XCTAssertTrue(app.navigationBars["真实帖子定位夹具"].exists)
+        attach(app, name: "credit-log-native-target-floor")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let next = app.buttons["下一页"]
         scrollTo(next, in: app)

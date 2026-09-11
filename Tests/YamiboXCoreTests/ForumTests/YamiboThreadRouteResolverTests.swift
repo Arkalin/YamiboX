@@ -24,6 +24,13 @@ private final class YamiboThreadRouteResolverTestURLProtocol: URLProtocol {
 
         do {
             let (data, response) = try handler(request)
+            if response.statusCode == 302, let location = response.value(forHTTPHeaderField: "Location"),
+               let url = URL(string: location, relativeTo: response.url)?.absoluteURL {
+                var redirected = request
+                redirected.url = url
+                client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+                return
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
@@ -551,6 +558,121 @@ struct YamiboThreadRouteResolverTests {
     #expect(context.initialPage == 4)
 }
 
+@Test func pidOnlyWAFUsesExistingRecoveryBeforeResolvingTarget() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
+    for recovers in [false, true] {
+        var count = 0
+        YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+            count += 1
+            if count == 1 {
+                return (Data("challenge".utf8), HTTPURLResponse(url: url, statusCode: 405, httpVersion: nil, headerFields: ["Server": "BAIDU_WAF"])!)
+            }
+            #expect(request.url == url)
+            return yamiboThreadRouteHTTPResponse(url: URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123&page=3")!,
+                body: "<div id='post_456'><div class='message' id='postmessage_456'>Target</div></div>")
+        }
+        let recovery = PostLocationWAFRecoverySpy()
+        let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler(recoverer: recovers ? recovery : nil))
+        let target = try await resolver.resolve(.init(threadURL: url))
+        if recovers {
+            guard case let .thread(payload) = target else { Issue.record("Expected recovered thread"); continue }
+            #expect(payload.thread.tid == "123")
+            #expect(payload.initialPage == 3)
+            #expect(await recovery.count == 1)
+            #expect(count == 2)
+        } else {
+            #expect(target == .webFallback(url))
+            #expect(count == 1)
+        }
+    }
+}
+
+@Test func pidOnlyHTTPRedirectFollowsProtectedClientAndReusesLocation() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let location = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
+    let thread = URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123&page=3")!
+    var requests: [URL] = []
+    YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+        requests.append(request.url!)
+        if request.url == location {
+            return (Data(), HTTPURLResponse(url: location, statusCode: 302, httpVersion: nil, headerFields: ["Location": thread.absoluteString])!)
+        }
+        #expect(request.url == thread)
+        return yamiboThreadRouteHTTPResponse(url: thread, body: "<div id='post_456'><div class='message' id='postmessage_456'>Target</div></div>")
+    }
+    let target = try await YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler()).resolve(.init(threadURL: location))
+    guard case let .thread(payload) = target else { Issue.record("Expected redirected thread, got \(target)"); return }
+    #expect(payload.thread.tid == "123")
+    #expect(payload.initialPage == 3)
+    #expect(payload.targetPostID == "456")
+    #expect(requests == [location, thread])
+}
+
+@Test func pidOnlyLocationUsesFinalThreadAndPageForEveryIntentWithOneRequest() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    for intent in [YamiboThreadRouteIntent.contentRoute, .nativeThreadReader] {
+        for oldThread in ["", "&ptid=999"] {
+            var count = 0
+            let url = try #require(URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456\(oldThread)"))
+            YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+                count += 1
+                #expect(request.url == url)
+                return yamiboThreadRouteHTTPResponse(
+                    url: URL(string: "https://bbs.yamibo.com/forum.php?mod=viewthread&tid=123&page=3#pid456")!,
+                    body: "<title>Located thread</title><div id='post_456'><div class='message' id='postmessage_456'>Target reply</div></div><div class='pg'><strong>2</strong></div>"
+                )
+            }
+            let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
+            let target = try await resolver.resolve(.init(threadURL: url, intent: intent))
+            guard case let .thread(payload) = target else { Issue.record("Expected native thread, got \(target)"); continue }
+            #expect(payload.thread.tid == "123")
+            #expect(payload.initialPage == 3)
+            #expect(payload.targetPostID == "456")
+            #expect(payload.canonicalURL.absoluteString.contains("tid=123"))
+            #expect(count == 1)
+        }
+    }
+}
+
+@Test func pidOnlyLocationUsesExplicitCanonicalNotUnrelatedThreadLinks() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
+    for canonical in ["", "<link rel='canonical' href='forum.php?mod=viewthread&amp;tid=123'>"] {
+        let html = "<head>\(canonical)</head><body><a href='thread-999-1-1.html'>Unrelated</a><div id='post_456'><div class='message' id='postmessage_456'>Target</div></div><div class='pg'><strong>4</strong></div></body>"
+        let metadata = try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
+        #expect(metadata.tid == (canonical.isEmpty ? nil : "123"))
+        let page = try ForumThreadPageHTMLParser.parsePage(from: html, thread: .init(tid: "123"), fallbackTitle: nil)
+        #expect(page.posts.map(\.id) == ["456"])
+        YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+            yamiboThreadRouteHTTPResponse(url: request.url!, body: html)
+        }
+        let target = try await YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler()).resolve(.init(threadURL: url))
+        if canonical.isEmpty {
+            #expect(target == .webFallback(url))
+        } else {
+            guard case let .thread(payload) = target else { Issue.record("Expected canonical thread"); continue }
+            #expect(payload.thread.tid == "123")
+            #expect(payload.initialPage == 4)
+        }
+    }
+}
+
+@Test func pidOnlyUnreadableResponseFallsBackButTimeoutRemainsRetryable() async throws {
+    defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
+    for status in [200, 401, 403, 404] {
+        YamiboThreadRouteResolverTestURLProtocol.handler = { request in
+            yamiboThreadRouteHTTPResponse(url: request.url!, body: "<div id='messagetext'>无权查看或帖子已删除</div>", statusCode: status)
+        }
+        #expect(try await YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler()).resolve(.init(threadURL: url)) == .webFallback(url))
+    }
+    YamiboThreadRouteResolverTestURLProtocol.handler = { _ in throw URLError(.timedOut) }
+    await #expect {
+        try await YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler()).resolve(.init(threadURL: url))
+    } throws: { LoadDiagnosticError.classificationError($0) is URLError }
+}
+
 @Test func yamiboThreadRouteResolverNormalizesFindPostURLAndCarriesTargetPost() async throws {
     defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
 
@@ -596,7 +718,7 @@ struct YamiboThreadRouteResolverTests {
     #expect(context.targetPostID == "9001")
 }
 
-@Test func yamiboThreadRouteResolverUsesThreadURLForReplyMetadataLookup() async throws {
+@Test func yamiboThreadRouteResolverReusesFindPostResponseForMetadata() async throws {
     defer { YamiboThreadRouteResolverTestURLProtocol.handler = nil }
 
     let resolver = YamiboThreadRouteResolver(client: yamiboThreadRouteTestClientWithHandler())
@@ -647,7 +769,7 @@ struct YamiboThreadRouteResolverTests {
     }
     #expect(context.thread.tid == "304")
     #expect(context.targetPostID == "9003")
-    #expect(fetchedCanonicalThread)
+    #expect(!fetchedCanonicalThread)
 }
 
 @Test func yamiboThreadRouteResolverNativeThreadIntentKeepsFindPostTargetWhenPageResolutionFails() async throws {
@@ -827,10 +949,19 @@ private func yamiboThreadRouteTestClient() -> YamiboClient {
     YamiboClient(session: URLSession(configuration: .ephemeral), userAgent: "Test-UA")
 }
 
-private func yamiboThreadRouteTestClientWithHandler() -> YamiboClient {
+private func yamiboThreadRouteTestClientWithHandler(recoverer: (any YamiboWAFChallengeRecovering)? = nil) -> YamiboClient {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [YamiboThreadRouteResolverTestURLProtocol.self]
-    return YamiboClient(session: URLSession(configuration: configuration), userAgent: "Test-UA")
+    return YamiboClient(session: URLSession(configuration: configuration), userAgent: "Test-UA", wafRecoverer: recoverer)
+}
+
+private actor PostLocationWAFRecoverySpy: YamiboWAFChallengeRecovering {
+    private(set) var count = 0
+    func recover(from challenge: YamiboWAFChallenge) -> YamiboRequestCredentials {
+        count += 1
+        return .init(cookies: [], userAgent: "Recovered-UA")
+    }
+    func presentFallback(for challenge: YamiboWAFChallenge) {}
 }
 
 private func yamiboThreadRouteHTTPResponse(

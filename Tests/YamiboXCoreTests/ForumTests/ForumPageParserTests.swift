@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
-@Suite struct ForumPageParserTests {
+@Suite struct ForumFormPageParserTests {
     private let baseURL = URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=newthread&fid=16")!
 
-    @Test func announcementUsesNativeContentBlocksWithoutSiteChrome() throws {
-        let page = try ForumPageParser.parse(html: """
+    @Test func generalPageContentIsNeverExtracted() throws {
+        let page = try ForumFormPageParser.parse(html: """
         <html><head><title>公告 - 百合会</title></head><body>
         <div id="hd">Header<form id="loginform"><input name="username"></form></div>
         <div id="ct"><h1>欢迎光临</h1><p>论坛<strong>规则</strong></p>
@@ -15,23 +15,12 @@ import Testing
         """, url: baseURL)
         #expect(page.title == "公告")
         #expect(page.forms.isEmpty)
-        #expect(!page.blocks.isEmpty)
-        let text = page.blocks.compactMap { block -> String? in
-            if case let .text(value) = block.kind { return value.text }
-            return nil
-        }.joined()
-        #expect(text.contains("欢迎光临"))
-        #expect(!text.contains("Header"))
-        #expect(!text.contains("Footer"))
-        #expect(!text.contains("location.href"))
-        #expect(page.blocks.contains { block in
-            guard case let .image(image) = block.kind else { return false }
-            return image.url.absoluteString == "https://bbs.yamibo.com/images/banner.jpg"
-        })
+        #expect(page.message == nil)
+        #expect(page.continuationURL == nil)
     }
 
     @Test func postFormPreservesWhitespaceTokensOptionsAndSelectedSubmitButton() throws {
-        let page = try ForumPageParser.parse(html: Self.postHTML, url: baseURL)
+        let page = try ForumFormPageParser.parse(html: Self.postHTML, url: baseURL)
         let form = try #require(page.forms.first)
         #expect(form.kind == .thread)
         #expect(form.actionURL.absoluteString == "https://bbs.yamibo.com/forum.php?mod=post&action=newthread&fid=16&topicsubmit=yes")
@@ -54,7 +43,7 @@ import Testing
     }
 
     @Test func blogFormIncludesHiddenEditorBodyAndPrivacyFields() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><form id="ttHtmlEditor" method="post" action="home.php?mod=spacecp&amp;ac=blog&amp;blogid=">
         <input name="subject" value="A title"><textarea name="message" style="display:none">&lt;p&gt;正文&lt;/p&gt;</textarea>
         <table><tr><th>个人分类</th><td><select name="classid"><option value="0">无分类</option><option value="addoption">新增</option></select></td></tr></table>
@@ -84,7 +73,7 @@ import Testing
         <input name="readonly" value="original" readonly><fieldset disabled><input name="ignored" value="bad"></fieldset>
         <button name="save" value="true">保存</button></form>
         """
-        let form = try #require(ForumPageParser.parse(html: html, url: baseURL).forms.first)
+        let form = try #require(ForumFormPageParser.parse(html: html, url: baseURL).forms.first)
         var values = form.initialValues
         let readOnly = try #require(form.fields.first { $0.name == "readonly" })
         values[readOnly.id] = ["changed"]
@@ -96,7 +85,7 @@ import Testing
     }
 
     @Test func validationRejectsMissingTitleAndInventedChoices() throws {
-        let form = try #require(ForumPageParser.parse(html: Self.postHTML, url: baseURL).forms.first)
+        let form = try #require(ForumFormPageParser.parse(html: Self.postHTML, url: baseURL).forms.first)
         let subject = try #require(form.fields.first { $0.name == "subject" })
         let permission = try #require(form.fields.first { $0.name == "readperm" })
         var values = form.initialValues
@@ -121,7 +110,7 @@ import Testing
             <input name="formhash" type="hidden" value="fixture"><input id="needsubject" name="subject" value="\(subject)" required>
             <textarea name="message">Reply body</textarea><button>Save</button></form>
             """
-            let form = try #require(ForumPageParser.parse(html: html, url: url).forms.first)
+            let form = try #require(ForumFormPageParser.parse(html: html, url: url).forms.first)
             #expect(!form.fields.contains { $0.name == "subject" })
             var draft = form.initialValues
             draft["subject"] = ["Unwanted thread title change"]
@@ -139,7 +128,7 @@ import Testing
         <form id="postform" method="post" action="forum.php?mod=post&amp;action=edit&amp;editsubmit=yes">
         <input name="subject" value="Original"><textarea name="message">Body</textarea><button>Save</button></form>
         """
-        let form = try #require(ForumPageParser.parse(html: html, url: url).forms.first)
+        let form = try #require(ForumFormPageParser.parse(html: html, url: url).forms.first)
         let subject = try #require(form.fields.first { $0.name == "subject" })
         #expect(subject.isRequired)
         #expect(!subject.isReadOnly)
@@ -154,7 +143,7 @@ import Testing
 
     @Test func newReplyDoesNotExposeSubjectEvenWhenFirstPostFlagIsPresent() throws {
         let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=post&action=reply&tid=123")!
-        let form = try #require(ForumPageParser.parse(html: """
+        let form = try #require(ForumFormPageParser.parse(html: """
         <script>var isfirstpost = 1;</script>
         <form id="postform" method="post" action="forum.php?mod=post&amp;action=reply&amp;tid=123">
         <input name="subject" value="Original"><textarea name="message">Body</textarea><button>Reply</button></form>
@@ -164,7 +153,7 @@ import Testing
     }
 
     @Test func desktopUploaderFormsAndHiddenMenuChromeAreNotNativeForms() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><div id="pt">Desktop breadcrumb</div>
         <form id="postform" action="forum.php?mod=post&amp;action=newthread" method="post">
         <input name="subject" value="Title"><textarea name="message">Body</textarea>
@@ -177,14 +166,11 @@ import Testing
         """, url: baseURL)
         #expect(page.forms.map(\.id) == ["postform"])
         #expect(page.forms[0].fields.map(\.name) == ["subject", "message"])
-        let text = page.blocks.compactMap { if case let .text(value) = $0.kind { return value.text }; return nil }.joined()
-        #expect(!text.contains("upload"))
-        #expect(!text.contains("Choose File"))
-        #expect(!text.contains("Desktop breadcrumb"))
+        #expect(page.forms[0].instructions.isEmpty)
     }
 
     @Test func legitimateMultipartFieldsRemainAvailableWithLocalizedLabels() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <form id="fileform" action="home.php?mod=spacecp&amp;ac=upload" method="post">
         <input type="hidden" name="formhash" value="fixture"><input type="file" name="Filedata" required>
         <input type="file" name="another_unlabeled_file"><button>上传</button></form>
@@ -196,7 +182,7 @@ import Testing
     }
 
     @Test func externalAndScriptFormsNeverBecomeSubmitActions() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <div id="ct"><h1>Page</h1>
         <form method="post" action="https://evil.example/collect"><input name="password"><button>Save</button></form>
         <form method="post" action="javascript:send()"><button>Save</button></form></div>
@@ -206,7 +192,7 @@ import Testing
 
     @Test func ajaxFriendConfirmationIsNativeAndDestructive() throws {
         let url = URL(string: "https://bbs.yamibo.com/home.php?mod=spacecp&ac=friend&op=ignore&uid=42")!
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <root><![CDATA[<form method="post" action="home.php?mod=spacecp&ac=friend&op=ignore&uid=42">
         <div class="c">确定删除好友？</div><input name="formhash" value="fixture-token" type="hidden">
         <input name="friendsubmit" type="hidden" value="true"><button type="submit">确定</button></form>]]></root>
@@ -217,7 +203,7 @@ import Testing
     }
 
     @Test func refreshIsOnlyAnExplicitContinuationLink() throws {
-        let page = try ForumPageParser.parse(html: """
+        let page = try ForumFormPageParser.parse(html: """
         <html><head><meta http-equiv="refresh" content="1;url=forum.php?mod=viewthread&amp;tid=123"></head>
         <body><div id="messagetext">发表成功</div></body></html>
         """, url: baseURL)

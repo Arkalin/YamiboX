@@ -9,13 +9,16 @@ struct ForumPageScreen: View {
     @Environment(\.forumTheme) private var theme
     let onURLTap: (URL) -> Void
     let onSubmissionSucceeded: ((TransientFeedback) -> Void)?
+    let onNavigationResult: (ForumPageLoadResult) -> Void
 
     init(model: ForumPageSession, editorRegistry: ForumEditorRegistry? = nil,
-         onSubmissionSucceeded: ((TransientFeedback) -> Void)? = nil, onURLTap: @escaping (URL) -> Void) {
+         onSubmissionSucceeded: ((TransientFeedback) -> Void)? = nil,
+         onNavigationResult: @escaping (ForumPageLoadResult) -> Void = { _ in }, onURLTap: @escaping (URL) -> Void) {
         _model = State(wrappedValue: model)
         _editorRegistry = State(wrappedValue: editorRegistry ?? ForumEditorRegistry())
         self.onURLTap = onURLTap
         self.onSubmissionSucceeded = onSubmissionSucceeded
+        self.onNavigationResult = onNavigationResult
     }
 
     var body: some View {
@@ -28,6 +31,11 @@ struct ForumPageScreen: View {
             .accessibilityIdentifier("forum-native-page")
             .transientMessage(model.transientFeedback) { model.transientFeedback = nil }
             .task { await model.load() }
+            .onChange(of: model.navigationResult) { _, result in
+                guard let result else { return }
+                model.navigationResult = nil
+                onNavigationResult(result)
+            }
     }
 
     @ViewBuilder
@@ -43,7 +51,8 @@ struct ForumPageScreen: View {
             case .actionForm:
                 ForumActionFormView(model: model, document: document, editorRegistry: editorRegistry, onURLTap: onURLTap)
             case .document:
-                ForumDocumentView(document: document, onRefresh: { await model.refresh() }, onURLTap: onURLTap)
+                List { ForumPageStatusSections(document: document, onURLTap: onURLTap) }
+                    .refreshable { await model.refresh() }
             }
         } else if model.isLoading {
             ContentLoadingView(layout: .fillsPage)

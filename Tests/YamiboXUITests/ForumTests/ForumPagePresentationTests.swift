@@ -40,12 +40,8 @@ final class ForumPagePresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testNativeArticleRendersInDarkLargeTypeWithoutWebView() async throws {
-        let page = ForumPageDocument(url: Self.pageURL, title: "Native article", blocks: [
-            .init(id: "paragraph", kind: .text(.init(text: "A synthetic article rendered with native text. This paragraph wraps across multiple lines on a phone."))),
-            .init(id: "quote", kind: .quote([.init(id: "quoted", kind: .text(.init(text: "Quoted article text remains selectable.")))])),
-            .init(id: "code", kind: .code("let native = true"))
-        ])
+    func testExplicitStatusRendersInDarkLargeTypeWithoutWebView() async throws {
+        let page = ForumPageDocument(url: Self.pageURL, title: "Status", message: "An explicit server status message wraps across multiple lines on a phone.")
         for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 1194)] {
             let repository = NativePresentationRepository(page: page)
             let model = ForumPageSession(url: Self.pageURL, repository: repository)
@@ -252,14 +248,14 @@ private actor NativePresentationRepository: ForumPageLoading {
         self.delays = delays
     }
 
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageDocument {
+    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult {
         let index = counts.started
         counts.started += 1
         do {
             if delays.indices.contains(index) { try await Task.sleep(for: delays[index]) }
             if failure { throw URLError(.notConnectedToInternet) }
             counts.completed += 1
-            return page
+            return .page(page)
         } catch is CancellationError {
             counts.cancelled += 1
             throw CancellationError()
@@ -269,7 +265,7 @@ private actor NativePresentationRepository: ForumPageLoading {
         }
     }
 
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageDocument {
+    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult {
         counts.submissions += 1
         XCTFail("Presentation fixtures must never submit")
         throw ForumPageError.invalidForm

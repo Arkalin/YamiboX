@@ -13,7 +13,7 @@ struct CreditLogNavigationTests {
         let user = URL(string: "https://bbs.yamibo.com/home.php?mod=space&uid=42")!
         navigator.route(user, source: .external)
         #expect(navigator.path.last == .userSpace(uid: "42", name: nil, section: .space, subPage: .profile))
-        let post = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=123&pid=456")!
+        let post = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
         navigator.route(post, source: .external)
         #expect(navigator.path.last == .threadLink(url: post, title: nil, containingFid: nil, authorID: nil, isDiscussionView: false))
         let external = URL(string: "https://example.com/info")!
@@ -25,7 +25,7 @@ struct CreditLogNavigationTests {
 @MainActor
 @Test func readerOverlayNavigatorPushesThreadRoutesAsInPlaceThreadLinks() throws {
     let navigator = try makeNavigator(mode: .readerOverlay)
-    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&ptid=123&pid=456")!
+    let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=redirect&goto=findpost&pid=456")!
 
     navigator.route(url, source: .external)
 
@@ -104,7 +104,7 @@ struct CreditLogNavigationTests {
     navigator.push(.web(external))
     navigator.push(.web(reply))
     navigator.push(.web(home))
-    #expect(navigator.path == [.web(external), .postEditor(reply), .document(home)])
+    #expect(navigator.path.isEmpty)
 }
 
 /// 帖子卡片长按菜单只在论坛标签页里有意义：阅读器之上的论坛栈永远不会再启动
@@ -122,17 +122,17 @@ struct CreditLogNavigationTests {
 }
 
 /// 公告类置顶行背后没有帖子，长按菜单不该出现在那里；即使调用方硬塞一个
-/// 阅读方式，也必须还是打开原生公告——绝不能去解析成阅读器（测试用的 resolver
+/// 阅读方式，也必须还是打开网页公告，绝不能去解析成阅读器（测试用的 resolver
 /// 工厂会 fatalError，所以走到那条路就直接崩）。
 @MainActor
-@Test func openPinnedItemKeepsAnnouncementRowsOnTheDocumentPageDespiteAReaderOverride() throws {
+@Test func openPinnedItemKeepsAnnouncementRowsOnTheWebPageDespiteAReaderOverride() throws {
     let navigator = try makeNavigator(mode: .forumTab)
     let url = URL(string: "https://bbs.yamibo.com/forum.php?mod=announcement&id=17")!
     let announcement = ForumPinnedItem(id: "announcement-17", kind: .announcement, title: "欢迎光临。", url: url)
 
     navigator.openPinnedItem(announcement, containingFid: "5", readerOverride: .manga)
 
-    #expect(navigator.path == [.document(url)])
+    #expect(navigator.path == [.web(url)])
 }
 
 /// Threads of the reader's own work opened inside the overlay must stay

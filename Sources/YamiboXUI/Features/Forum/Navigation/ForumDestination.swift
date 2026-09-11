@@ -19,10 +19,10 @@ enum ForumDestination: Hashable {
     /// navigation. Only `.readerOverlay` stacks produce this.
     case threadLink(url: URL, title: String?, containingFid: String?, authorID: String?, isDiscussionView: Bool)
     case web(URL)
+    case webFallback(URL)
     case postEditor(URL)
     case blogEditor(URL)
     case actionForm(URL)
-    case document(URL)
 }
 
 /// How a `ForumDestinationNavigator` treats thread links.

@@ -1,14 +1,25 @@
 import Foundation
 
+public enum ForumPageLoadResult: Equatable, Sendable {
+    case page(ForumPageDocument)
+    case nativeRedirect(URL)
+    case webFallback(URL)
+}
+
+public struct ForumComposerLink: Equatable, Sendable {
+    public let title: String
+    public let url: URL
+}
+
 public struct ForumPageDocument: Equatable, Sendable {
     public let url: URL
     public let title: String
-    public let blocks: [ForumThreadContentBlock]
     public let forms: [ForumForm]
     public let message: String?
     public let continuationURL: URL?
     public let file: ForumAttachmentFile?
     public let uploads: [ForumUploadConfiguration]
+    public let composerLinks: [ForumComposerLink]
 
     // The response can differ from the requested route, for example a search
     // result, permission message, or a form reached through an unknown link.
@@ -28,18 +39,19 @@ public struct ForumPageDocument: Equatable, Sendable {
     }
 
     public init(
-        url: URL, title: String, blocks: [ForumThreadContentBlock] = [],
+        url: URL, title: String,
         forms: [ForumForm] = [], message: String? = nil, continuationURL: URL? = nil,
-        file: ForumAttachmentFile? = nil, uploads: [ForumUploadConfiguration] = []
+        file: ForumAttachmentFile? = nil, uploads: [ForumUploadConfiguration] = [],
+        composerLinks: [ForumComposerLink] = []
     ) {
         self.url = url
         self.title = title
-        self.blocks = blocks
         self.forms = forms
         self.message = message
         self.continuationURL = continuationURL
         self.file = file
         self.uploads = uploads
+        self.composerLinks = composerLinks
     }
 }
 
