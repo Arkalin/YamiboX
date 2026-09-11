@@ -520,9 +520,10 @@ private struct ReaderChapterCommentFooter: View {
                 Text(metadata)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
             if let onReply {
                 Button(action: onReply) {
                     Image(systemName: "arrowshape.turn.up.left")
@@ -534,7 +535,7 @@ private struct ReaderChapterCommentFooter: View {
                 .accessibilityIdentifier("chapter-comment-reply-\(replyIdentifier)")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
