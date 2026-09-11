@@ -19,21 +19,11 @@ struct ForumThreadImageBlockView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .accessibilityLabel(block.altText ?? L10n.string("forum.thread.image"))
         } else {
-            Button {
-                if let linkURL = block.linkURL {
-                    onURLTap(linkURL)
-                } else {
-                    onImageTap(blockID, block.url, block.altText, refererURL)
-                }
-            } label: {
-                image
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(maxHeight: 520)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .imageBrowserZoomSource(id: blockID, in: block.linkURL == nil ? imageBrowserZoomNamespace : nil)
-            .accessibilityLabel(block.altText ?? L10n.string("forum.thread.image"))
+            image
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxHeight: 520)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .imageBrowserZoomSource(id: blockID, in: block.linkURL == nil ? imageBrowserZoomNamespace : nil)
         }
     }
 
@@ -44,14 +34,39 @@ struct ForumThreadImageBlockView: View {
             source: YamiboImageSource(url: block.url, refererPageURL: refererURL),
             animates: true
         ) { image in
-            ForumThreadImageContentView(
-                image: image,
-                maxDimension: block.isEmoticon ? 40 : 520
-            )
+            imageAction {
+                ForumThreadImageContentView(
+                    image: image,
+                    maxDimension: block.isEmoticon ? 40 : 520
+                )
+            }
         } placeholder: {
-            ForumThreadImagePlaceholderView()
-        } failure: {
-            ForumThreadImageFailureView()
+            imageAction { ForumThreadImagePlaceholderView() }
+        } retryableFailure: { retry in
+            ForumThreadImageFailureView(
+                isEmoticon: block.isEmoticon,
+                retry: retry,
+                open: openImage
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func imageAction<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if block.isEmoticon {
+            content()
+        } else {
+            Button(action: openImage, label: content)
+                .buttonStyle(.plain)
+                .accessibilityLabel(block.altText ?? L10n.string("forum.thread.image"))
+        }
+    }
+
+    private func openImage() {
+        if let linkURL = block.linkURL {
+            onURLTap(linkURL)
+        } else {
+            onImageTap(blockID, block.url, block.altText, refererURL)
         }
     }
 }
@@ -108,14 +123,35 @@ private struct ForumThreadImagePlaceholderView: View {
 
 private struct ForumThreadImageFailureView: View {
     @Environment(\.forumTheme) private var theme
+    let isEmoticon: Bool
+    let retry: () -> Void
+    let open: () -> Void
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(theme.pageBackground)
-            .frame(height: 120)
-            .overlay {
-                Label(L10n.string("forum.thread.image_load_failed"), systemImage: "photo")
-                    .font(.caption)
-                    .foregroundStyle(theme.secondaryText)
+        VStack(spacing: 8) {
+            if !isEmoticon {
+                Button(action: open) {
+                    failureLabel
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
             }
+            Button(action: retry) {
+                Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
+                    .frame(minHeight: isEmoticon ? 40 : 44)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("forum-thread-image-retry")
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: isEmoticon ? 40 : 120)
+        .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var failureLabel: some View {
+        Label(L10n.string("forum.thread.image_load_failed"), systemImage: "photo")
+            .font(.caption)
+            .foregroundStyle(theme.secondaryText)
     }
 }
