@@ -1,17 +1,6 @@
 import Foundation
 
 enum ChapterCommentsHTMLParser {
-    private static let filteredRatingReasons: Set<String> = [
-        "你太可爱",
-        "你太可愛",
-        "好萌好萌好萌",
-        "我很赞同",
-        "我很贊同",
-        "精品文章",
-        "原创内容",
-        "原創內容"
-    ]
-
     static func parseInitialPage(
         html: String,
         target: ReaderChapterCommentTarget,
@@ -71,13 +60,14 @@ enum ChapterCommentsHTMLParser {
         let document = try KannaSoup.parse(html)
         let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
-        var pending: (author: String, metadata: String?)?
+        var pending: (author: String, uid: String?, metadata: String?)?
 
         for row in rows {
             let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
             if values.count >= 3, values[0].contains("积分") {
                 pending = (
                     author: values[1],
+                    uid: row.select("a[href]").array().compactMap(linkUID).first,
                     metadata: nilIfEmpty([values[0], values[2]].joined(separator: " · "))
                 )
                 continue
@@ -86,7 +76,7 @@ enum ChapterCommentsHTMLParser {
             let bodyBlocks = try emoticonBodyBlocks(in: row.select("span.z, span.y").first())
             guard let current = pending,
                   let reason = values.first.map(normalizeRatingReason),
-                  bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+                  bodyBlocks != nil || !reason.isEmpty else {
                 pending = nil
                 continue
             }
@@ -98,7 +88,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: current.metadata,
                     body: reason,
                     postID: target.ownerPostID,
-                    bodyBlocks: bodyBlocks
+                    bodyBlocks: bodyBlocks,
+                    authorUID: current.uid
                 )
             )
             pending = nil
@@ -113,7 +104,8 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("#comment_\(target.ownerPostID) .pstl")
         var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
-            let author = row.select(".psta a.xi2, .psta a.xw1, .psta a").first()?.text() ?? ""
+            let authorLink = row.select(".psta a.xi2, .psta a.xw1, .psta a").first()
+            let author = authorLink?.text() ?? ""
             guard let bodyElement = row.select(".psti").first() else { return nil }
             let metadata = bodyElement.select(".xg1").first()?.text()
             bodyElement.select(".xg1").remove()
@@ -127,7 +119,8 @@ enum ChapterCommentsHTMLParser {
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
                 body: body,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID)
             )
         }
         comments.append(contentsOf: try mobilePostComments(in: document, target: target))
@@ -141,10 +134,11 @@ enum ChapterCommentsHTMLParser {
         let rows = document.select("[id=ratelog_\(target.ownerPostID)] tr")
         var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
             let cells = row.select("td")
-            let author = cells.first()?.select("a").last()?.text() ?? ""
+            let authorLink = cells.first()?.select("a").last()
+            let author = authorLink?.text() ?? ""
             let reason = normalizeRatingReason(row.select("td.xg1").first()?.text() ?? "")
             let bodyBlocks = try emoticonBodyBlocks(in: row.select("td.xg1").first())
-            guard bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+            guard bodyBlocks != nil || !reason.isEmpty else {
                 return nil
             }
             return ChapterComment(
@@ -153,7 +147,8 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID)
             )
         }
         comments.append(contentsOf: try mobileRatingReasons(in: document, target: target))
@@ -166,7 +161,8 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("[id=comment_\(target.ownerPostID)] [id^=commentdetail_]")
         return try rows.array().enumerated().compactMap { offset, row in
-            let author = row.select("a").first()?.text() ?? ""
+            let authorLink = row.select("a").first()
+            let author = authorLink?.text() ?? ""
             let metadata = row.select(".mtime").first()?.text()
             let body = normalizeText(row.select(".mtxt").first()?.text() ?? "")
             let bodyBlocks = try emoticonBodyBlocks(in: row.select(".mtxt").first())
@@ -178,7 +174,8 @@ enum ChapterCommentsHTMLParser {
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
                 body: body,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID)
             )
         }
     }
@@ -191,11 +188,12 @@ enum ChapterCommentsHTMLParser {
         return try rows.array().enumerated().compactMap { offset, row in
             let cells = row.children().array()
             guard cells.count >= 3 else { return nil }
-            let author = cells[0].select("a").last()?.text() ?? ""
+            let authorLink = cells[0].select("a").last()
+            let author = authorLink?.text() ?? ""
             let reason = normalizeRatingReason(cells[2].text())
             let bodyBlocks = try emoticonBodyBlocks(in: cells[2])
             guard reason != "理由",
-                  bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+                  bodyBlocks != nil || !reason.isEmpty else {
                 return nil
             }
             return ChapterComment(
@@ -204,7 +202,8 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorUID: authorLink.flatMap(linkUID)
             )
         }
     }
@@ -240,7 +239,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks
+                    bodyBlocks: body.blocks,
+                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) }
                 )
             )
         }
@@ -271,7 +271,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks
+                    bodyBlocks: body.blocks,
+                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) }
                 )
             )
         }
@@ -435,9 +436,14 @@ enum ChapterCommentsHTMLParser {
     }
 
     private static func authorUID(for element: Element) -> String? {
-        element.selectFirst(".authi a[href*=uid]")?
-            .attrURL("href")?
-            .queryItemValue("uid")
+        element.select(".authi a[href*=uid], .psta a[href*=uid]").array().compactMap(linkUID).first
+    }
+
+    private static func linkUID(_ element: Element) -> String? {
+        guard let url = element.attrURL("href") else { return nil }
+        if let uid = url.queryItemValue("uid"), !uid.isEmpty { return uid }
+        if case let .userSpace(uid, _) = ForumRouteResolver.resolve(url: url) { return uid }
+        return nil
     }
 
     private static func nextView(

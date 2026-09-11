@@ -8,7 +8,9 @@ import UIKit
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FIXTURE"] == "1" {
+                ChapterCommentFilterFixture()
+            } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {
                 ChapterCommentComposerFixture()
             } else if ProcessInfo.processInfo.environment["FORUM_ATTACHMENT_UPLOAD_FIXTURE"] == "1" {
                 ForumPhotoUploadFixture(attachmentFixture: true)

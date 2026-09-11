@@ -23,7 +23,7 @@ import Testing
 
     let page = try await repository.loadChapterComments(for: target)
 
-    #expect(page.comments.map(\.body) == ["完整评分理由"])
+    #expect(page.comments.map(\.body) == ["好萌好萌好萌", "完整评分理由"])
 }
 
 @Test func readerChapterCommentsRepositoryLoadsSamePageRepliesFromUnfilteredPageForAuthorFilteredTarget() async throws {

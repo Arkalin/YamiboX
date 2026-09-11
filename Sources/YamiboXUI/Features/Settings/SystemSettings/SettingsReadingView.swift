@@ -6,6 +6,20 @@ struct SettingsReadingView: View {
 
     var body: some View {
         Form {
+            Section(L10n.string("settings.chapter_comments.title")) {
+                ForEach(ChapterCommentFilterScope.allCases, id: \.self) { scope in
+                    NavigationLink {
+                        ChapterCommentRulesView(viewModel: viewModel, scope: scope)
+                    } label: {
+                        LabeledContent(scope.title) {
+                            Text(viewModel.chapterComments[scope].isEnabled
+                                 ? L10n.string("settings.chapter_comments.rule_count", viewModel.chapterComments[scope].rules.count)
+                                 : L10n.string("settings.chapter_comments.disabled"))
+                        }
+                    }
+                    .accessibilityIdentifier("chapter-comment-rules-\(scope.rawValue)")
+                }
+            }
             Section(L10n.string("settings.section.novel_offline_cache")) {
                 Toggle(
                     L10n.string("settings.novel_offline_cache.retain_inline_images"),
@@ -36,7 +50,7 @@ struct SettingsReadingView: View {
 
     private var errorIsPresented: Binding<Bool> {
         .presentation(
-            isPresented: { viewModel.errorMessage != nil },
+            isPresented: { viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
     }

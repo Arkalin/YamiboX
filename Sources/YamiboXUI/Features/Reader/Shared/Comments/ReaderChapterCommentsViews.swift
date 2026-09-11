@@ -65,10 +65,10 @@ struct ReaderChapterCommentsContent: View {
             .padding()
         case let .loaded(target, page):
             if page.comments.isEmpty {
-                ContentUnavailableView(
-                    emptyTitle,
-                    systemImage: "text.bubble"
-                )
+                VStack(spacing: 0) {
+                    ContentUnavailableView(emptyTitle, systemImage: "text.bubble")
+                    if page.nextView != nil { loadNextButton }
+                }
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -168,6 +168,7 @@ struct ReaderChapterCommentsSheet: View {
     @State private var feedback: TransientFeedback?
     @State private var pendingSubmissionFeedback: TransientFeedback?
     @State private var refreshAnchor: String?
+    @State private var filterModel: ChapterCommentFilterModel
 
     init(
         target: ReaderChapterCommentTarget?,
@@ -208,12 +209,17 @@ struct ReaderChapterCommentsSheet: View {
         self.discussionWorkTIDs = discussionWorkTIDs
         self.isNovel = isNovel
         self.hasLaterChapter = hasLaterChapter
+        _filterModel = State(initialValue: ChapterCommentFilterModel(
+            settingsStore: forumDependencies.settingsStore,
+            sessionStore: forumDependencies.sessionStore,
+            profileStore: forumDependencies.profileStore
+        ))
     }
 
     var body: some View {
         NavigationStack {
             ReaderChapterCommentsContent(
-                state: state,
+                state: filterModel.state,
                 isLoadingMore: isLoadingMore,
                 loadMoreError: loadMoreError,
                 loadMoreErrorDetails: loadMoreErrorDetails,
@@ -226,7 +232,7 @@ struct ReaderChapterCommentsSheet: View {
                 loadNext: loadNextPage,
                 openOriginalPost: openOriginalPost(_:),
                 compose: { composerTarget = $0 },
-                emptyTitle: emptyTitle
+                emptyTitle: filterModel.hasHiddenComments ? L10n.string("reader.chapter_comments_filtered_empty") : emptyTitle
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let target, let owner = ReaderChapterCommentComposeTarget.owner(target) {
@@ -287,9 +293,26 @@ struct ReaderChapterCommentsSheet: View {
             actionTask?.cancel()
             await loadInitial(target)
         }
-        .onChange(of: state) { _, state in
-            guard let refreshAnchor, case let .loaded(_, page) = state else { return }
-            scrollTarget = page.comments.contains { $0.id == refreshAnchor } ? refreshAnchor : nil
+        .onChange(of: state, initial: true) { _, state in filterModel.update(state) }
+        .task {
+            let changes = forumDependencies.settingsStore.changes()
+            filterModel.refresh()
+            for await _ in changes { filterModel.refresh() }
+        }
+        .task {
+            let changes = forumDependencies.sessionStore.changes()
+            filterModel.refresh()
+            for await _ in changes { filterModel.refresh() }
+        }
+        .task {
+            let changes = forumDependencies.profileStore.changes()
+            filterModel.refresh()
+            for await _ in changes { filterModel.refresh() }
+        }
+        .onChange(of: filterModel.state) { _, state in
+            guard case let .loaded(_, page) = state else { return }
+            let anchor = refreshAnchor ?? scrollTarget
+            scrollTarget = page.comments.contains { $0.id == anchor } ? anchor : nil
             self.refreshAnchor = nil
         }
         .onAppear {
@@ -299,6 +322,7 @@ struct ReaderChapterCommentsSheet: View {
             }
         }
         .onDisappear {
+            filterModel.cancel()
             actionTask?.cancel()
             actionTask = nil
             peripheralInput?.removeHandler(controlHandlerToken)
@@ -340,14 +364,18 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private var isAtCommentsBottomWithMorePages: Bool {
-        guard case let .loaded(_, page) = state, !page.comments.isEmpty,
+        guard case let .loaded(_, page) = filterModel.state,
               page.nextView != nil, !isLoadingMore else { return false }
         let ids = page.comments.map(\.id)
         return currentCommentIndex(ids: ids) >= ids.count - 1
     }
 
     private func scrollComments(_ direction: ReaderControlScrollDirection) {
-        guard case let .loaded(_, page) = state, !page.comments.isEmpty else { return }
+        guard case let .loaded(_, page) = filterModel.state else { return }
+        guard !page.comments.isEmpty else {
+            if direction == .down, page.nextView != nil { loadNextPage() }
+            return
+        }
         let ids = page.comments.map(\.id)
         let currentIndex = currentCommentIndex(ids: ids)
         let stride = ReaderControlCommandResolver.commentsScrollStride

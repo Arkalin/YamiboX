@@ -304,7 +304,8 @@ final class SettingsStorageViewModelTests: XCTestCase {
                 custom.setEntry(.init(mode: .manga(smartEnabled: false)), forumID: "30")
                 return custom
             }(),
-            appearance: AppAppearanceSettings(themePreset: .rose)
+            appearance: AppAppearanceSettings(themePreset: .rose),
+            chapterComments: .init(ratings: .init(), discussions: .init(isEnabled: true, rules: [.init(pattern: "custom")]))
         ))
 
         let settings = SystemSettingsViewModel(dependencies: fixture.appContext.settingsDependencies)
@@ -313,12 +314,14 @@ final class SettingsStorageViewModelTests: XCTestCase {
 
         XCTAssertTrue(didReset)
         XCTAssertEqual(settings.reading.novelOfflineCache, NovelOfflineCacheSettings())
+        XCTAssertEqual(settings.reading.chapterComments, ChapterCommentFilterSettings())
         XCTAssertEqual(settings.peripherals.applePencilPageTurn, ApplePencilPageTurnSettings())
         XCTAssertEqual(settings.forum.boardReader, BoardReaderSettings())
         XCTAssertFalse(settings.forum.enhancedCheckInEnabled)
         XCTAssertEqual(settings.general.themePreset, .classic)
         let loaded = await fixture.settingsStore.load()
         XCTAssertEqual(loaded.novelOfflineCache, NovelOfflineCacheSettings())
+        XCTAssertEqual(loaded.chapterComments, ChapterCommentFilterSettings())
         XCTAssertEqual(loaded.system.applePencilPageTurn, ApplePencilPageTurnSettings())
         XCTAssertFalse(loaded.system.enhancedCheckInEnabled)
         XCTAssertEqual(loaded.appearance.themePreset, .classic)

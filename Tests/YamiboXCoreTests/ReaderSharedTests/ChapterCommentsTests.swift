@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
-@Test func chapterCommentsParserReadsOwnerPostCommentsAndFilteredRatings() throws {
+@Test func chapterCommentsParserReadsOwnerPostCommentsAndUnfilteredRatings() throws {
     let html = """
     <html><body>
       <div id="postlist">
@@ -10,7 +10,7 @@ import Testing
           <div class="t_f" id="postmessage_100">第一章<br>正文</div>
           <div id="comment_100" class="cm">
             <div class="pstl xs1 cl">
-              <div class="psta vm"><a class="xi2 xw1">读者甲</a></div>
+              <div class="psta vm"><a class="xi2 xw1" href="home.php?mod=space&uid=11">读者甲</a></div>
               <div class="psti">这章很好 <span class="xg1">发表于 2026-5-1 12:00</span></div>
             </div>
           </div>
@@ -19,7 +19,7 @@ import Testing
               <table>
                 <tbody class="ratl_l">
                   <tr>
-                    <td><a>读者乙</a></td><td class="xi1"> + 1</td><td class="xg1">我很赞同</td>
+                    <td><a href="space-uid-12.html">读者乙</a></td><td class="xi1"> + 1</td><td class="xg1">我很赞同</td>
                   </tr>
                   <tr>
                     <td><a>读者丙</a></td><td class="xi1"> + 5</td><td class="xg1">这期神了</td>
@@ -44,9 +44,10 @@ import Testing
 
     let page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
 
-    #expect(page.comments.map(\.source) == [.postComment, .ratingReason])
-    #expect(page.comments.map(\.authorName) == ["读者甲", "读者丙"])
-    #expect(page.comments.map(\.body) == ["这章很好", "这期神了"])
+    #expect(page.comments.map(\.source) == [.postComment, .ratingReason, .ratingReason])
+    #expect(page.comments.map(\.authorName) == ["读者甲", "读者乙", "读者丙"])
+    #expect(page.comments.map(\.body) == ["这章很好", "我很赞同", "这期神了"])
+    #expect(page.comments.map(\.authorUID) == ["11", "12", nil])
     #expect(page.comments.first?.metadata == "发表于 2026-5-1 12:00")
     #expect(page.comments.last?.metadata == nil)
     #expect(page.isBoundaryClosed == false)
@@ -62,7 +63,7 @@ import Testing
           <h3>点评</h3>
           <div class="plc p0 cl" id="commentdetail_1">
             <ul>
-              <li><a>读者甲</a></li>
+              <li><a href="home.php?mod=space&uid=11">读者甲</a></li>
               <li class="mtime">发表于 2025-5-25 19:58</li>
               <li class="mtxt mt5">悠宇把自己开发成了0</li>
             </ul>
@@ -77,7 +78,7 @@ import Testing
               <div class="flex-3 xs1 xg1 xw1">理由</div>
             </li>
             <li class="flex-box mli p0">
-              <div class="flex-2 xs1 xg1"><a>丰川之刃</a></div>
+              <div class="flex-2 xs1 xg1"><a href="space-uid-12.html">丰川之刃</a></div>
               <div class="flex-2 xs1 xi1 xw1"> + 10</div>
               <div class="flex-3 xs1 xg1">精品文章</div>
             </li>
@@ -105,9 +106,10 @@ import Testing
 
     let page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
 
-    #expect(page.comments.map(\.source) == [.postComment, .ratingReason, .ratingReason])
-    #expect(page.comments.map(\.authorName) == ["读者甲", "seccyzwvvk", "3504822324"])
-    #expect(page.comments.map(\.body) == ["悠宇把自己开发成了0", "翻译大大辛苦了", "感谢款待"])
+    #expect(page.comments.map(\.source) == [.postComment, .ratingReason, .ratingReason, .ratingReason])
+    #expect(page.comments.map(\.authorName) == ["读者甲", "丰川之刃", "seccyzwvvk", "3504822324"])
+    #expect(page.comments.map(\.body) == ["悠宇把自己开发成了0", "精品文章", "翻译大大辛苦了", "感谢款待"])
+    #expect(page.comments.map(\.authorUID) == ["11", "12", nil, nil])
     #expect(page.comments.first?.metadata == "发表于 2025-5-25 19:58")
 }
 
@@ -152,11 +154,12 @@ import Testing
     #expect(page.comments.map(\.authorName) == ["读者甲"])
     #expect(page.comments.map(\.body) == ["楼间回复内容"])
     #expect(page.comments.first?.metadata == "22# · 2021-10-16 21:00")
+    #expect(page.comments.first?.authorUID == "700001")
     #expect(page.isBoundaryClosed == true)
     #expect(page.nextView == nil)
 }
 
-@Test func chapterCommentsParserFiltersDefaultRatingReasonTemplatesExactly() throws {
+@Test func chapterCommentsParserPreservesDefaultRatingReasonTemplates() throws {
     let filteredReasons = ["你太可爱", "好萌好萌好萌", "我很赞同", "精品文章", "原创内容"]
     let rows = filteredReasons.enumerated().map { index, reason in
         """
@@ -181,7 +184,7 @@ import Testing
 
     let page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
 
-    #expect(page.comments.map(\.body) == ["我很赞同这个观点"])
+    #expect(page.comments.map(\.body) == filteredReasons + ["我很赞同这个观点"])
 }
 
 @Test func chapterCommentsParserOmitsImageOnlyUnresolvableEmoticonAndEmptyRows() throws {
@@ -391,7 +394,7 @@ import Testing
     <html><body>
       <a href="forum.php?mod=viewthread&tid=42&page=3&mobile=2">3</a>
       <div id="post_150">
-        <div class="authi"><a class="author">读者甲</a></div>
+        <div class="authi"><a class="author" href="space-uid-11.html">读者甲</a></div>
         <div class="t_f" id="postmessage_150">跨页回复</div>
       </div>
       <div id="post_200">
@@ -410,11 +413,12 @@ import Testing
     let page = try ChapterCommentsHTMLParser.parseContinuationPage(html: html, target: target, view: 2)
 
     #expect(page.comments.map(\.body) == ["跨页回复"])
+    #expect(page.comments.first?.authorUID == "11")
     #expect(page.isBoundaryClosed == true)
     #expect(page.nextView == nil)
 }
 
-@Test func chapterCommentsParserReadsFullRatingReasonDialogAndFiltersTemplates() throws {
+@Test func chapterCommentsParserReadsUnfilteredFullRatingReasonDialog() throws {
     let html = """
     <html><body>
       <div id="floatlayout_topicadmin">
@@ -427,7 +431,7 @@ import Testing
           </li>
           <li class="flex-box mli">
             <div><span class="z">积分 +2 点</span></div>
-            <div><span class="z">读者甲</span></div>
+            <div><span class="z"><a href="home.php?mod=space&uid=11">读者甲</a></span></div>
             <div><span class="y">2026-5-6 00:10</span></div>
           </li>
           <li class="flex-box mli"><div><span class="z">好萌好萌好萌</span></div></li>
@@ -456,7 +460,8 @@ import Testing
 
     let comments = try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(html: html, target: target)
 
-    #expect(comments.map(\.body) == ["嘿嘿，急了👈"])
-    #expect(comments.first?.authorName == "读者乙")
-    #expect(comments.first?.metadata == "积分 +5 点 · 2024-11-23 11:15")
+    #expect(comments.map(\.body) == ["好萌好萌好萌", "嘿嘿，急了👈", "你太可愛"])
+    #expect(comments.map(\.authorUID) == ["11", nil, nil])
+    #expect(comments[1].authorName == "读者乙")
+    #expect(comments[1].metadata == "积分 +5 点 · 2024-11-23 11:15")
 }
