@@ -142,7 +142,12 @@ public struct SettingsHomeView: View {
                 Button(role: .destructive) {
                     pendingConfirmation = .signOut
                 } label: {
-                    Label(L10n.string("mine.sign_out"), systemImage: "rectangle.portrait.and.arrow.right")
+                    Label {
+                        Text(L10n.string("mine.sign_out"))
+                    } icon: {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundStyle(.red)
+                    }
                 }
                 .disabled(viewModel.isBusy || isSigningOut)
             }
