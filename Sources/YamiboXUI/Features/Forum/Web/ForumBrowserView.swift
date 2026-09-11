@@ -78,36 +78,41 @@ public struct ForumBrowserView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .top) {
-            IOSForumWebView(
-                model: model,
-                sessionStore: sessionStore,
-                isSelected: true
-            )
-            if model.isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.top, 8)
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                IOSForumWebView(
+                    model: model,
+                    sessionStore: sessionStore,
+                    isSelected: true
+                )
+                if model.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.top, 8)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    ForumBrowserNavigationTitle(
+                        title: model.pageTitle,
+                        urlText: model.currentURL?.absoluteString
+                    )
+                    // A cancelled pop can remeasure the title without a width proposal.
+                    // Reserve room for both bar buttons and the navigation bar's title margins.
+                    .frame(width: max(0, min(320, geometry.size.width - 176)))
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: model.reload) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(L10n.string("common.refresh"))
+                    .help(L10n.string("common.refresh"))
+                    .accessibilityIdentifier("forum-browser-refresh")
+                }
             }
         }
         .forumPageBackground()
         .tint(theme.accentText)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                ForumBrowserNavigationTitle(
-                    title: model.pageTitle,
-                    urlText: model.currentURL?.absoluteString
-                )
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: model.reload) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel(L10n.string("common.refresh"))
-                .help(L10n.string("common.refresh"))
-                .accessibilityIdentifier("forum-browser-refresh")
-            }
-        }
         .yamiboInlineNavigationTitleDisplayMode()
         .onChange(of: appModel.forumNavigationRequest?.id) { _, _ in
             guard listensToForumNavigationRequest else { return }

@@ -17,6 +17,8 @@ struct YamiboXTestHostApp: App {
                 CreditLogFixture()
             } else if ProcessInfo.processInfo.environment["FORUM_WEB_FIXTURE"] == "1" {
                 ForumWebLayoutFixture()
+            } else if ProcessInfo.processInfo.environment["FORUM_WEB_NAVIGATION_FIXTURE"] == "1" {
+                ForumWebNavigationFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FIXTURE"] == "1" {
                 ChapterCommentFilterFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {
@@ -66,6 +68,60 @@ private struct ForumWebLayoutFixture: View {
                 self.server = server
                 let url = try await server.start()
                 model = ForumBrowserModel(initialURL: url, onNativeNavigation: { handoffs.append($0) })
+            } catch { failure = error.localizedDescription }
+        }
+        .onDisappear { server?.stop() }
+    }
+}
+
+private struct ForumWebNavigationFixture: View {
+    @State private var appModel: YamiboAppModel
+    @State private var server: ForumWebFixtureServer?
+    @State private var url: URL?
+    @State private var failure: String?
+    private let sessionStore: SessionStore
+
+    init() {
+        let suite = "forum-web-navigation-fixture"
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("forum-web-navigation-fixture")
+        let sessionStore = SessionStore(defaults: UserDefaults(suiteName: suite)!)
+        let context = YamiboAppContext(
+            sessionStore: sessionStore, settingsStore: SettingsStore(defaults: UserDefaults(suiteName: suite)!),
+            grdbRootDirectory: root, cachesRootDirectory: root.appendingPathComponent("caches"),
+            uiDefaults: UserDefaults(suiteName: suite)!, clearsWebDataOnReset: false
+        )
+        self.sessionStore = sessionStore
+        _appModel = State(wrappedValue: YamiboAppModel(appContext: context))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let url {
+                    NavigationLink("Open WebView") {
+                        ForumBrowserView(
+                            url: url, sessionStore: sessionStore, appModel: appModel,
+                            listensToForumNavigationRequest: false
+                        )
+                        .forumNavigationBarStyle()
+                    }
+                } else if let failure {
+                    Text(failure)
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle("Previous Page")
+            .navigationBarTitleDisplayMode(.inline)
+            .forumNavigationBarStyle()
+        }
+        .task {
+            guard server == nil else { return }
+            do {
+                let server = try ForumWebFixtureServer()
+                self.server = server
+                let baseURL = try await server.start()
+                url = baseURL.appendingPathComponent("a-long-web-page-address-to-exercise-navigation-title-layout")
             } catch { failure = error.localizedDescription }
         }
         .onDisappear { server?.stop() }
