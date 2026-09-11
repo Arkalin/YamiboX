@@ -153,8 +153,8 @@ private struct ChapterCommentComposerFixture: View {
         NavigationStack {
             ReaderChapterCommentsContent(
                 state: .loaded(chapter, ChapterCommentsPage(target: chapter, comments: [
-                    ChapterComment(id: "comment", source: .postComment, authorName: "远山", metadata: "2026-09-10 12:30", body: "读到这里，终于明白她为什么一直没有离开。", postID: "456"),
-                    ChapterComment(id: "rating", source: .ratingReason, authorName: "夏木", metadata: "积分 +2", body: "这一章的对话写得真好。", postID: "456"),
+                    ChapterComment(id: "comment", source: .postComment, authorName: "远山", metadata: "2026-09-10 12:30", body: "读到这里，终于明白她为什么一直没有离开。", postID: "456", authorAvatarURL: URL(string: "https://bbs.yamibo.com/uc_server/data/avatar/000/70/52/16_avatar_middle.jpg")),
+                    ChapterComment(id: "rating", source: .ratingReason, authorName: "夏木", metadata: "积分 +2", body: "这一章的对话写得真好。", postID: "456", authorAvatarURL: URL(string: "https://avatar.invalid/missing.jpg")),
                     ChapterComment(id: "reply", source: .reply, authorName: "见微", metadata: "28楼 · 2026-09-10 14:20", body: "最后那句让我想起第一章的约定，期待她们再见面。", postID: "789")
                 ], isBoundaryClosed: placement == .outsideChapter)),
                 isLoadingMore: false, loadMoreError: nil, refreshError: nil, scrollTarget: $scrollTarget,

@@ -2,6 +2,94 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
+@Suite struct ChapterCommentAvatarTests {
+    private let target = ReaderChapterCommentTarget(threadID: "42", view: 1, ownerPostID: "100", title: "Chapter")
+
+    @Test func desktopCommentsAndRatingsPreferAuthorImages() throws {
+        let html = """
+        <div id="comment_100"><div class="pstl">
+          <div class="psta"><a href="home.php?mod=space&amp;uid=11"><img src="/avatars/comment.jpg"></a><a class="xi2">Reader</a></div>
+          <div class="psti">Comment<img src="/body.jpg"></div>
+        </div></div>
+        <table id="ratelog_100"><tr>
+          <td><a href="space-uid-12.html"><img src="//bbs.yamibo.com/avatars/rating.jpg">Rater</a></td>
+          <td>+2</td><td class="xg1">Rating<img src="/body.jpg"></td>
+        </tr></table>
+        """
+        let comments = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target).comments
+        #expect(comments.map(\.authorAvatarURL?.absoluteString) == [
+            "https://bbs.yamibo.com/avatars/comment.jpg",
+            "https://bbs.yamibo.com/avatars/rating.jpg"
+        ])
+        #expect(comments.first?.authorName == "Reader")
+    }
+
+    @Test func mobileCommentsAndRatingsResolveProfileLinks() throws {
+        let html = """
+        <div id="comment_100">
+          <div id="commentdetail_1"><ul><li><a href="home.php?mod=space&amp;uid=11">Reader</a></li><li class="mtxt">Comment</li></ul></div>
+          <div id="commentdetail_2"><div class="avatar"><img src="/avatars/mobile.jpg"></div><ul><li><a>Reader</a></li><li class="mtxt">Comment</li></ul></div>
+          <div id="commentdetail_3"><ul><li><a>Anonymous</a></li><li class="mtxt">Comment <a class="avatar" href="space-uid-99.html"><img src="/body.jpg">Mention</a></li></ul></div>
+        </div>
+        <ul id="ratelog_100"><li class="flex-box"><div><a href="space-uid-12.html">Rater</a></div><div>+2</div><div>Rating</div></li></ul>
+        """
+        let comments = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target).comments
+        #expect(comments.map(\.authorAvatarURL?.absoluteString) == [
+            "https://bbs.yamibo.com/uc_server/avatar.php?uid=11&size=small",
+            "https://bbs.yamibo.com/avatars/mobile.jpg",
+            nil,
+            "https://bbs.yamibo.com/uc_server/avatar.php?uid=12&size=small"
+        ])
+    }
+
+    @Test func repliesKeepAvatarsOnInitialAndContinuationPages() throws {
+        let replies = """
+        <div id="post_101"><div class="pls"><div class="avt"><img src="/avatars/desktop.jpg"></div></div>
+          <div class="authi"><a href="space-uid-11.html">Reader</a></div><div id="postmessage_101">Reply</div></div>
+        <div id="pid102"><div class="avatar"><img src="/avatars/mobile.jpg"></div>
+          <ul class="authi"><li><a href="home.php?mod=space&amp;uid=12">Reader</a></li></ul><div class="message">Reply</div></div>
+        <div id="pid103"><div class="authi"><img src="/settop.png"><a href="space-uid-13.html">Reader</a></div><div class="message">Reply<img src="/body.jpg"></div></div>
+        <div id="pid104"><div class="authi"><a>Anonymous</a></div><div class="message">Reply<div class="avatar"><img src="/body.jpg"></div></div>
+          <div id="comment_104"><div class="avatar"><img src="/other-user.jpg"></div></div></div>
+        """
+        let initial = try ChapterCommentsHTMLParser.parseInitialPage(
+            html: "<div id='post_100'><div id='postmessage_100'>Chapter</div></div>" + replies, target: target
+        )
+        let continuation = try ChapterCommentsHTMLParser.parseContinuationPage(html: replies, target: target, view: 2)
+        let expected: [String?] = [
+            "https://bbs.yamibo.com/avatars/desktop.jpg",
+            "https://bbs.yamibo.com/avatars/mobile.jpg",
+            "https://bbs.yamibo.com/uc_server/avatar.php?uid=13&size=small",
+            nil
+        ]
+        #expect(initial.comments.map(\.authorAvatarURL?.absoluteString) == expected)
+        #expect(continuation.comments.map(\.authorAvatarURL?.absoluteString) == expected)
+    }
+
+    @Test func fullRatingsKeepHeaderAvatarAndIgnoreReasonImages() throws {
+        let html = """
+        <ul class="post_box">
+          <li class="flex-box"><span class="z">积分 +2</span><span class="z"><a href="space-uid-11.html">Reader</a></span><span class="y">2026-09-11</span></li>
+          <li class="flex-box"><span class="z">Rating<img src="/body.jpg"></span></li>
+          <li class="flex-box"><span class="z">积分 +3</span><span class="z">Anonymous</span><span class="y">2026-09-11</span></li>
+          <li class="flex-box"><span class="z">Another rating<img src="/body.jpg"></span></li>
+        </ul>
+        """
+        let comments = try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(html: html, target: target)
+        #expect(comments.map(\.authorAvatarURL?.absoluteString) == [
+            "https://bbs.yamibo.com/uc_server/avatar.php?uid=11&size=small", nil
+        ])
+    }
+
+    @Test func avatarIsOptionalWhenDecodingOlderComments() throws {
+        let data = Data(#"{"id":"1","source":"reply","authorName":"Reader","body":"Reply"}"#.utf8)
+        var comment = try JSONDecoder().decode(ChapterComment.self, from: data)
+        #expect(comment.authorAvatarURL == nil)
+        comment.authorAvatarURL = URL(string: "https://bbs.yamibo.com/avatar.jpg")
+        #expect(try JSONDecoder().decode(ChapterComment.self, from: JSONEncoder().encode(comment)) == comment)
+    }
+}
+
 @Test func chapterCommentsParserReadsOwnerPostCommentsAndFilteredRatings() throws {
     let html = """
     <html><body>

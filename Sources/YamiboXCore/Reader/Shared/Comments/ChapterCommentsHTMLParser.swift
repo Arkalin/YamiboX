@@ -71,14 +71,15 @@ enum ChapterCommentsHTMLParser {
         let document = try KannaSoup.parse(html)
         let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
-        var pending: (author: String, metadata: String?)?
+        var pending: (author: String, metadata: String?, avatarURL: URL?)?
 
         for row in rows {
             let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
             if values.count >= 3, values[0].contains("积分") {
                 pending = (
                     author: values[1],
-                    metadata: nilIfEmpty([values[0], values[2]].joined(separator: " · "))
+                    metadata: nilIfEmpty([values[0], values[2]].joined(separator: " · ")),
+                    avatarURL: avatarURL(in: row)
                 )
                 continue
             }
@@ -98,7 +99,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: current.metadata,
                     body: reason,
                     postID: target.ownerPostID,
-                    bodyBlocks: bodyBlocks
+                    bodyBlocks: bodyBlocks,
+                    authorAvatarURL: current.avatarURL
                 )
             )
             pending = nil
@@ -113,7 +115,8 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("#comment_\(target.ownerPostID) .pstl")
         var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
-            let author = row.select(".psta a.xi2, .psta a.xw1, .psta a").first()?.text() ?? ""
+            let author = row.firstText(anyOf: [".psta a.xi2", ".psta a.xw1"])
+                ?? row.selectAll(".psta a").compactMap { $0.normalizedText().nilIfBlank }.first ?? ""
             guard let bodyElement = row.select(".psti").first() else { return nil }
             let metadata = bodyElement.select(".xg1").first()?.text()
             bodyElement.select(".xg1").remove()
@@ -127,7 +130,8 @@ enum ChapterCommentsHTMLParser {
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
                 body: body,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorAvatarURL: avatarURL(in: row.selectFirst(".psta"))
             )
         }
         comments.append(contentsOf: try mobilePostComments(in: document, target: target))
@@ -153,7 +157,8 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorAvatarURL: avatarURL(in: cells.first())
             )
         }
         comments.append(contentsOf: try mobileRatingReasons(in: document, target: target))
@@ -166,7 +171,9 @@ enum ChapterCommentsHTMLParser {
     ) throws -> [ChapterComment] {
         let rows = document.select("[id=comment_\(target.ownerPostID)] [id^=commentdetail_]")
         return try rows.array().enumerated().compactMap { offset, row in
-            let author = row.select("a").first()?.text() ?? ""
+            let author = row.selectAll("a").filter { link in
+                !link.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+            }.compactMap { $0.normalizedText().nilIfBlank }.first ?? ""
             let metadata = row.select(".mtime").first()?.text()
             let body = normalizeText(row.select(".mtxt").first()?.text() ?? "")
             let bodyBlocks = try emoticonBodyBlocks(in: row.select(".mtxt").first())
@@ -178,7 +185,11 @@ enum ChapterCommentsHTMLParser {
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
                 body: body,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorAvatarURL: avatarURL(
+                    in: row,
+                    imageSelector: ".avatar img[src], .mimg img[src], li:first-child img[src]"
+                )
             )
         }
     }
@@ -204,7 +215,8 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks
+                bodyBlocks: bodyBlocks,
+                authorAvatarURL: avatarURL(in: cells[0])
             )
         }
     }
@@ -240,7 +252,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks
+                    bodyBlocks: body.blocks,
+                    authorAvatarURL: replyAvatarURL(for: message)
                 )
             )
         }
@@ -271,7 +284,8 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks
+                    bodyBlocks: body.blocks,
+                    authorAvatarURL: replyAvatarURL(for: message)
                 )
             )
         }
@@ -357,6 +371,42 @@ enum ChapterCommentsHTMLParser {
             ".psta a.xi2",
             ".psta a"
         ]) ?? ""
+    }
+
+    private static func avatarURL(
+        in element: Element?,
+        imageSelector: String = "img[src]"
+    ) -> URL? {
+        guard let element else { return nil }
+        for image in element.selectAll(imageSelector) {
+            let isCommentContent = image.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+            if !isCommentContent, let url = image.attrURL("src") {
+                return url
+            }
+        }
+        guard let uid = element.selectAll("a[href]").filter({ link in
+            !link.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
+        }).compactMap({
+            ForumUserIDParser.userID(fromHref: $0.attr("href"))
+        }).first, !uid.isEmpty, uid.allSatisfy(\.isNumber), uid != "0" else { return nil }
+        var components = URLComponents(url: YamiboDomain.baseURL.appendingPathComponent("uc_server/avatar.php"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "uid", value: uid), URLQueryItem(name: "size", value: "small")]
+        return components?.url
+    }
+
+    private static func replyAvatarURL(for message: Element) -> URL? {
+        guard let container = postContainer(for: message) else { return nil }
+        // Never use images from the reply body or another user's inline comments.
+        for image in container.selectAll(".avatar img[src], .pls .avt img[src]") {
+            let isCommentContent = image.parents().contains {
+                $0.hasClass("message") || $0.id().hasPrefix("postmessage_")
+                    || $0.id().hasPrefix("comment_") || $0.id().hasPrefix("commentdetail_")
+            }
+            if !isCommentContent, let url = image.attrURL("src") {
+                return url
+            }
+        }
+        return avatarURL(in: container.selectFirst(".authi"), imageSelector: "a[href*=uid] img[src]")
     }
 
     private static func replyMetadata(for message: Element) -> String? {

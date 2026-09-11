@@ -425,6 +425,8 @@ private struct ReaderChapterCommentRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
+                ForumAvatarView(url: comment.authorAvatarURL, size: 28, placeholderFont: .system(size: 22))
+                    .accessibilityHidden(true)
                 Text(comment.authorName.isEmpty ? L10n.string("reader.comment_anonymous") : comment.authorName)
                     .font(.caption)
                     .foregroundStyle(.secondary)

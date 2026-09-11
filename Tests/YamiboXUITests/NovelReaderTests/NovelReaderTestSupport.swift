@@ -311,7 +311,7 @@ final class StubURLProtocol: URLProtocol {
                           <div>参与人数</div><div>积分</div><div>理由</div>
                         </li>
                         <li class="flex-box mli p0">
-                          <div><a>读者甲</a></div><div> + 2</div><div>有效评分理由</div>
+                          <div><a href="space-uid-77.html">读者乙</a></div><div> + 2</div><div>有效评分理由</div>
                         </li>
                         <li class="flex-box mli p0">
                           <div><a href="forum.php?mod=misc&amp;action=viewratings&amp;tid=26&amp;pid=2601&amp;mobile=2" title="查看全部评分">查看全部评分</a></div>
