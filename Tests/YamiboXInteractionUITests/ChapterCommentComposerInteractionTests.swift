@@ -119,6 +119,78 @@ final class ChapterCommentComposerInteractionTests: XCTestCase {
         }
     }
 
+    func testOwnPostRatingShowsReasonWithoutFormOrLogin() throws {
+        for largeText in [false, true] {
+            var extra = ["CHAPTER_COMMENT_RATE_FAIL": "own"]
+            if largeText {
+                extra["CHAPTER_COMMENT_LARGE_TEXT"] = "1"
+                extra["CHAPTER_COMMENT_DARK"] = "1"
+            }
+            let app = launch(extra: extra)
+            defer { app.terminate() }
+            app.buttons["chapter-comment-compose"].tap()
+            XCTAssertTrue(app.textViews["chapter-comment-text"].waitForExistence(timeout: 8))
+            select("评分", app: app)
+            let reason = app.staticTexts["抱歉，您不能给自己发表的帖子评分"]
+            XCTAssertTrue(reason.waitForExistence(timeout: 5))
+            XCTAssertTrue(reason.isHittable)
+            XCTAssertTrue(app.staticTexts["无法评分"].exists)
+            XCTAssertFalse(app.textFields["chapter-comment-score"].exists)
+            XCTAssertFalse(app.buttons["chapter-comment-web-login"].exists)
+            XCTAssertFalse(app.buttons["重试"].exists)
+            XCTAssertFalse(app.buttons["chapter-comment-send"].isEnabled)
+            attach(app, largeText ? "own-rating-dark-large" : "own-rating-unavailable")
+            select("点评", app: app)
+            XCTAssertTrue(app.textViews["chapter-comment-text"].waitForExistence(timeout: 5))
+            select("评分", app: app)
+            XCTAssertTrue(reason.waitForExistence(timeout: 5))
+            XCTAssertFalse(app.buttons["chapter-comment-web-login"].exists)
+            app.buttons["chapter-comment-close"].tap()
+            waitForComposerDismissal(app)
+            XCTAssertTrue(app.staticTexts["chapter-comment-diagnostics"].label.contains("count=0"))
+        }
+    }
+
+    func testLoadFailureLoginActionFollowsAuthenticationType() throws {
+        for source in ["CONTEXT", "RATE", "REPLY"] {
+            for error in ["auth", "offline"] {
+                let app = launch(extra: ["CHAPTER_COMMENT_\(source)_FAIL": error])
+                defer { app.terminate() }
+                app.buttons["chapter-comment-compose"].tap()
+                if source != "CONTEXT" {
+                    XCTAssertTrue(app.textViews["chapter-comment-text"].waitForExistence(timeout: 8))
+                    select(source == "RATE" ? "评分" : "回复", app: app)
+                }
+                XCTAssertTrue(app.buttons["重试"].waitForExistence(timeout: 8))
+                XCTAssertEqual(app.buttons["chapter-comment-web-login"].exists, error == "auth")
+                XCTAssertFalse(app.buttons["chapter-comment-send"].isEnabled)
+                if source == "CONTEXT" {
+                    select("评分", app: app)
+                    XCTAssertTrue(app.buttons["重试"].exists)
+                    XCTAssertEqual(app.buttons["chapter-comment-web-login"].exists, error == "auth")
+                }
+                attach(app, "\(source.lowercased())-\(error)-recovery")
+            }
+        }
+    }
+
+    func testSubmissionFailureOnlyOffersLoginForAuthentication() throws {
+        for error in ["auth", "offline"] {
+            let app = launch(extra: ["CHAPTER_COMMENT_SEND_FAIL": error])
+            defer { app.terminate() }
+            app.buttons["chapter-comment-compose"].tap()
+            let editor = app.textViews["chapter-comment-text"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 8))
+            editor.tap()
+            editor.typeText("Keep my draft")
+            app.buttons["chapter-comment-send"].tap()
+            XCTAssertTrue(app.buttons["toast-failure-details"].waitForExistence(timeout: 8))
+            XCTAssertEqual(app.buttons["chapter-comment-web-login"].exists, error == "auth")
+            XCTAssertTrue((editor.value as? String)?.contains("Keep my draft") == true)
+            attach(app, "submit-\(error)-recovery")
+        }
+    }
+
     private func launch(extra: [String: String] = [:]) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()

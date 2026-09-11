@@ -12,6 +12,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var system: SystemSettings
     public var boardReader: BoardReaderSettings
     public var appearance: AppAppearanceSettings
+    public var chapterComments: ChapterCommentFilterSettings
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -21,7 +22,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
         webBrowser: WebBrowserSettings = .init(),
         system: SystemSettings = .init(),
         boardReader: BoardReaderSettings = .init(),
-        appearance: AppAppearanceSettings = .init()
+        appearance: AppAppearanceSettings = .init(),
+        chapterComments: ChapterCommentFilterSettings = .init()
     ) {
         self.novelReader = novelReader
         self.novelOfflineCache = novelOfflineCache
@@ -31,6 +33,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.system = system
         self.boardReader = boardReader
         self.appearance = appearance
+        self.chapterComments = chapterComments
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -42,10 +45,11 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case system
         case boardReader
         case appearance
+        case chapterComments
     }
 
-    /// Application appearance was added after the aggregate shipped. Only that new
-    /// field is optional so malformed or incomplete legacy payloads keep the
+    /// Fields added after the aggregate shipped are optional so legacy payloads
+    /// retain their other settings. Malformed original fields keep the
     /// store's existing all-settings fallback behavior.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -57,7 +61,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
             webBrowser: try container.decode(WebBrowserSettings.self, forKey: .webBrowser),
             system: try container.decode(SystemSettings.self, forKey: .system),
             boardReader: try container.decode(BoardReaderSettings.self, forKey: .boardReader),
-            appearance: try container.decodeIfPresent(AppAppearanceSettings.self, forKey: .appearance) ?? .init()
+            appearance: try container.decodeIfPresent(AppAppearanceSettings.self, forKey: .appearance) ?? .init(),
+            chapterComments: try container.decodeIfPresent(ChapterCommentFilterSettings.self, forKey: .chapterComments) ?? .init()
         )
     }
 

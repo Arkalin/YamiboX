@@ -4,6 +4,134 @@ import Testing
 
 @Suite("Load failure diagnostics")
 struct LoadFailureDetailsTests {
+    @Test func typedAuthenticationFailuresRequireAuthenticationThroughWrappingAndContext() {
+        let errors: [any Error] = [
+            YamiboError.notAuthenticated,
+            YamiboError.loginVerificationRequired,
+            YamiboError.invalidResponse(statusCode: 401),
+            URLError(.userAuthenticationRequired)
+        ]
+        for error in errors {
+            let original = LoadFailureDetails(error: error)
+            #expect(original.requiresAuthentication)
+            let enriched = original.adding(requestContext: "chapter 4", httpStatus: 403, html: "<p>body</p>")
+            #expect(enriched.requiresAuthentication)
+            #expect(enriched.summary == original.summary)
+            #expect(enriched.causes == original.causes)
+
+            let wrapped = LoadDiagnosticError.attaching(to: error, requestContext: "chapter 4", httpStatus: 403, html: "<p>body</p>")
+            let reattached = LoadDiagnosticError.attaching(to: wrapped, requestContext: "ignored")
+            #expect(LoadFailureDetails(error: wrapped) == enriched)
+            #expect(LoadFailureDetails(error: reattached) == enriched)
+        }
+    }
+
+    @Test func nonAuthenticationFailuresDoNotRequestAuthenticationEvenWithHTTP401Context() {
+        let errors: [any Error] = [
+            YamiboError.invalidResponse(statusCode: 403),
+            YamiboError.invalidResponse(statusCode: 500),
+            YamiboError.invalidResponse(statusCode: nil),
+            YamiboError.invalidImageData,
+            YamiboError.unreadableBody,
+            YamiboError.emptyHTML,
+            YamiboError.parsingFailed(context: "Login required"),
+            YamiboError.floodControl,
+            YamiboError.securityVerificationRequired,
+            YamiboError.accountUIDUnavailable,
+            YamiboError.loginFormUnavailable,
+            YamiboError.loginFailed("Authentication required"),
+            YamiboError.offline,
+            YamiboError.searchCooldown(seconds: 30),
+            YamiboError.missingForumSearchToken,
+            YamiboError.underlying("Cannot rate your own post"),
+            URLError(.notConnectedToInternet),
+            URLError(.noPermissionsToReadFile),
+            URLError(.userCancelledAuthentication),
+            CocoaError(.fileReadNoPermission)
+        ]
+        for error in errors {
+            let original = LoadFailureDetails(error: error)
+            #expect(!original.requiresAuthentication)
+            #expect(!original.adding(requestContext: "login", httpStatus: 401).requiresAuthentication)
+            let wrapped = LoadDiagnosticError.attaching(to: error, httpStatus: 401)
+            let reattached = LoadDiagnosticError.attaching(to: wrapped, html: "<p>Authentication required</p>")
+            #expect(!LoadFailureDetails(error: wrapped).requiresAuthentication)
+            #expect(!LoadFailureDetails(error: reattached).requiresAuthentication)
+        }
+    }
+
+    @Test func authenticationClassificationUsesRecoveryMappingWithoutLosingOriginalDiagnostics() {
+        let mappings: [(original: YamiboError, recovery: YamiboError, expected: Bool)] = [
+            (.notAuthenticated, .offline, false),
+            (.offline, .notAuthenticated, true)
+        ]
+        for mapping in mappings {
+            let original = LoadDiagnosticError.attaching(
+                to: mapping.original, requestContext: "chapter 4", httpStatus: 403, html: "<p>original body</p>"
+            )
+            let originalDetails = LoadFailureDetails(error: original)
+            let mapped = LoadDiagnosticError.mapping(original, to: mapping.recovery)
+            let reattached = LoadDiagnosticError.attaching(to: mapped, requestContext: "ignored", httpStatus: 401)
+            let twiceAttached = LoadDiagnosticError.attaching(to: reattached, html: "<p>ignored</p>")
+            for error in [mapped, reattached, twiceAttached] {
+                let details = LoadFailureDetails(error: error)
+                #expect(details.requiresAuthentication == mapping.expected)
+                #expect(details.adding(requestContext: "ignored").requiresAuthentication == mapping.expected)
+                #expect(details.summary == originalDetails.summary)
+                #expect(details.causes == originalDetails.causes)
+                #expect(details.requestContext == originalDetails.requestContext)
+                #expect(details.httpStatus == originalDetails.httpStatus)
+                #expect(details.isHTMLParsingFailure == originalDetails.isHTMLParsingFailure)
+                #expect(details.html == originalDetails.html)
+                #expect(details.copyText == originalDetails.copyText)
+            }
+
+            let remapped = LoadDiagnosticError.mapping(twiceAttached, to: mapping.original)
+            let finalAttachment = LoadDiagnosticError.attaching(to: remapped, requestContext: "ignored")
+            #expect(LoadFailureDetails(error: remapped).requiresAuthentication == !mapping.expected)
+            #expect(LoadFailureDetails(error: finalAttachment) == originalDetails)
+        }
+    }
+
+    @Test func ordinaryAuthenticationWordsDoNotRequestAuthentication() {
+        let messages = [
+            "Not authenticated. Please log in.",
+            "Authentication required",
+            "HTTP 401 Unauthorized",
+            YamiboError.notAuthenticated.localizedDescription,
+            YamiboError.loginVerificationRequired.localizedDescription
+        ]
+        for message in messages {
+            #expect(!LoadFailureDetails(message: message).requiresAuthentication)
+            #expect(!LoadFailureDetails(error: YamiboError.underlying(message)).requiresAuthentication)
+            let ordinaryError = NSError(domain: "Test.BusinessError", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: message
+            ])
+            #expect(!LoadFailureDetails(error: ordinaryError).requiresAuthentication)
+        }
+    }
+
+    @Test func underlyingAuthenticationCauseDoesNotOverrideTopLevelFailure() {
+        let error = NSError(domain: "Test.BusinessError", code: 403, userInfo: [
+            NSLocalizedDescriptionKey: "Permission denied",
+            NSUnderlyingErrorKey: URLError(.userAuthenticationRequired)
+        ])
+        let details = LoadFailureDetails(error: error)
+        #expect(!details.requiresAuthentication)
+        #expect(details.causes.count == 2)
+        #expect(!LoadFailureDetails(error: LoadDiagnosticError.attaching(to: error)).requiresAuthentication)
+    }
+
+    @Test func messageOnlyFailureDoesNotAggregateAuthenticationRequirements() {
+        let failure = LoadFailureDetails.Item(title: "Chapter 4", details: LoadFailureDetails(error: YamiboError.notAuthenticated))
+        let details = LoadFailureDetails(message: YamiboError.notAuthenticated.localizedDescription, failures: [failure])
+        #expect(!details.requiresAuthentication)
+        let enriched = details.adding(requestContext: "login", httpStatus: 401)
+        #expect(!enriched.requiresAuthentication)
+        #expect(enriched.failures == [failure])
+        #expect(enriched.failures.first?.details.requiresAuthentication == true)
+    }
+
     @Test func forbiddenResponsePreservesDiagnosticsWithoutRequestingLogin() {
         let url = "https://bbs.yamibo.com/data/attachment/forum/202508/11/003523dz9krfcc73rjld62.png"
         let error = LoadDiagnosticError.attaching(to: YamiboError.invalidResponse(statusCode: 403), requestContext: url)
@@ -11,6 +139,7 @@ struct LoadFailureDetailsTests {
         #expect(details.summary == L10n.string("error.access_restricted"))
         #expect(details.causes.first?.message == details.summary)
         #expect(details.httpStatus == 403)
+        #expect(!details.requiresAuthentication)
         #expect(details.requestContext == url)
         #expect(details.copyText.contains("HTTP: 403"))
         #expect(!details.copyText.contains(YamiboError.notAuthenticated.localizedDescription))

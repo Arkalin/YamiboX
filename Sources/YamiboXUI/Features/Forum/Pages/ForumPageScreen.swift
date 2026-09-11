@@ -61,7 +61,9 @@ struct ForumPageScreen: View {
                 LoadFailureView(message: message, details: model.errorDetails, prominentRetry: true) {
                     Task { await model.load() }
                 }
-                Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                if model.errorDetails?.requiresAuthentication == true {
+                    Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                }
             }
             .padding()
         } else {

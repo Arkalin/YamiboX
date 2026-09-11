@@ -10,6 +10,7 @@ struct LoadFailureView: View {
     let message: String
     var details: LoadFailureDetails?
     var prominentRetry = false
+    var showsRetry = true
     let retry: () -> Void
 
     var body: some View {
@@ -19,11 +20,13 @@ struct LoadFailureView: View {
             Text(message)
         } actions: {
             VStack(spacing: 0) {
-                if prominentRetry {
-                    Button(L10n.string("common.retry"), action: retry)
-                        .buttonStyle(.borderedProminent)
-                } else {
-                    Button(L10n.string("common.retry"), action: retry)
+                if showsRetry {
+                    if prominentRetry {
+                        Button(L10n.string("common.retry"), action: retry)
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Button(L10n.string("common.retry"), action: retry)
+                    }
                 }
                 LoadFailureDetailsButton(details: details, message: message)
             }

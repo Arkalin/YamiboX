@@ -119,7 +119,7 @@ private enum SheetModelTestError: LocalizedError {
 }
 
 @MainActor
-@Test func rateSheetModelLoadOptionsFailureProducesToastDetailsInsteadOfInlineHint() async {
+@Test func rateSheetModelLoadOptionsFailurePreservesActualReason() async {
     let model = ForumThreadRateSheetModel(
         postID: "4001",
         loadOptions: { _ in throw SheetModelTestError.plannedFailure },
@@ -130,9 +130,65 @@ private enum SheetModelTestError: LocalizedError {
 
     #expect(model.options == nil)
     #expect(model.hintMessage == nil)
-    #expect(model.errorMessage == L10n.string("forum.thread.rate_options_failed"))
+    #expect(model.errorMessage == SheetModelTestError.plannedFailure.localizedDescription)
     #expect(model.errorDetails?.summary == SheetModelTestError.plannedFailure.localizedDescription)
+    #expect(model.optionsFailure?.message == model.errorMessage)
+    #expect(model.canRetryOptions)
     #expect(!model.isLoadingOptions)
+}
+
+@MainActor
+@Suite struct RateSheetFailureTests {
+    @Test func ownPostRejectionBlocksFormAndSubmissionEvenAfterClearingToast() async {
+        let message = "抱歉，您不能给自己发表的帖子评分"
+        var submissions = 0
+        let model = ForumThreadRateSheetModel(postID: "4001", loadOptions: { _ in
+            try ForumThreadPageHTMLParser.parseRateOptions(from: "<div class='messagetext'><p>\(message)</p></div>")
+        }, submit: { _, _, _, _ in submissions += 1; return "" })
+        model.scoreText = "2"
+        await model.loadRateOptions()
+        #expect(model.optionsFailure?.message == message)
+        #expect(model.optionsFailure?.details?.requiresAuthentication == false)
+        #expect(!model.canRetryOptions)
+        #expect(!model.canSubmit)
+        model.clearError()
+        #expect(model.optionsFailure?.message == message)
+        #expect(!model.canSubmit)
+        #expect(await model.submitRate() == false)
+        #expect(submissions == 0)
+    }
+
+    @Test func transientFailureCanRetryWithoutLosingDraftOrKeepingStaleOptions() async {
+        var fails = false
+        let model = ForumThreadRateSheetModel(postID: "4001", loadOptions: { _ in
+            if fails { throw URLError(.notConnectedToInternet) }
+            return .init(availableScores: [1, 2], defaultReasons: [])
+        }, submit: { _, _, _, _ in "" })
+        model.scoreText = "2"
+        model.reason = "Keep reason"
+        await model.loadRateOptions()
+        #expect(model.canSubmit)
+        fails = true
+        await model.loadRateOptions()
+        #expect(model.options == nil)
+        #expect(model.canRetryOptions)
+        #expect(!model.canSubmit)
+        #expect(model.optionsFailure?.details?.requiresAuthentication == false)
+        fails = false
+        await model.loadRateOptions()
+        #expect(model.optionsFailure == nil)
+        #expect(model.errorDetails == nil)
+        #expect(model.canSubmit)
+        #expect(model.reason == "Keep reason")
+    }
+
+    @Test func authenticationFailuresRemainRetryable() async {
+        let error = LoadDiagnosticError.mapping(YamiboError.invalidResponse(statusCode: 401), to: YamiboError.notAuthenticated)
+        let model = ForumThreadRateSheetModel(postID: "4001", loadOptions: { _ in throw error }, submit: { _, _, _, _ in "" })
+        await model.loadRateOptions()
+        #expect(model.optionsFailure?.details?.requiresAuthentication == true)
+        #expect(model.canRetryOptions)
+    }
 }
 
 @MainActor

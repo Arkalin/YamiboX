@@ -171,6 +171,12 @@ enum SettingsSearchRegistry {
             keywords: ["通知", "提醒", "推送"]
         ),
         SettingsSearchEntry(
+            id: "reading.chapter_comments",
+            title: L10n.string("settings.chapter_comments.title"),
+            category: .reading,
+            keywords: ["评论", "屏蔽", "正则", "评分", "点评", "回复", "过滤"]
+        ),
+        SettingsSearchEntry(
             id: "reading.novel_offline_cache",
             title: L10n.string("settings.section.novel_offline_cache"),
             category: .reading,

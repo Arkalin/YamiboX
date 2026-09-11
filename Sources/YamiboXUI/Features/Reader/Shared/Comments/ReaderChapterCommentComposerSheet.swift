@@ -196,7 +196,10 @@ private struct ReaderChapterCommentComposerFields: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if model.hasSubmissionFailure {
                 HStack {
-                    Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                    if model.submissionRequiresAuthentication {
+                        Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                            .accessibilityIdentifier("chapter-comment-web-login")
+                    }
                     Spacer()
                     Button {
                         Task { await model.load(retry: true) }
@@ -217,6 +220,27 @@ private struct ReaderChapterCommentRatingFields: View {
     @Bindable var model: ForumThreadRateSheetModel
     let disabled: Bool
     let onURLTap: (URL) -> Void
+
+    var body: some View {
+        Group {
+            if let failure = model.optionsFailure {
+                ReaderChapterCommentComposerFailure(
+                    title: L10n.string("forum.thread.rate_unavailable"), systemImage: "star.slash",
+                    message: failure.message, details: failure.details, showsRetry: model.canRetryOptions,
+                    retry: model.loadRateOptions, onURLTap: onURLTap
+                )
+            } else {
+                ReaderChapterCommentRatingForm(model: model, disabled: disabled)
+            }
+        }
+        .failureToast(message: model.optionsFailure == nil ? model.errorMessage : nil, details: model.errorDetails,
+                      eventID: model.errorEventID, clear: model.clearError)
+    }
+}
+
+private struct ReaderChapterCommentRatingForm: View {
+    @Bindable var model: ForumThreadRateSheetModel
+    let disabled: Bool
 
     var body: some View {
         ScrollView {
@@ -259,13 +283,8 @@ private struct ReaderChapterCommentRatingFields: View {
             .padding(16)
             .disabled(disabled || model.isLoadingOptions)
             if model.isLoadingOptions { ProgressView().padding() }
-            if model.options == nil, let message = model.errorMessage {
-                ReaderChapterCommentComposerFailure(message: message, details: model.errorDetails, retry: model.loadRateOptions, onURLTap: onURLTap)
-            }
         }
         .scrollDismissesKeyboard(.interactively)
-        .failureToast(message: model.options == nil ? nil : model.errorMessage, details: model.errorDetails,
-                      eventID: model.errorEventID, clear: model.clearError)
     }
 }
 
@@ -324,16 +343,23 @@ private struct ReaderChapterCommentReplyFields: View {
 }
 
 private struct ReaderChapterCommentComposerFailure: View {
+    var title = L10n.string("common.load_failed")
+    var systemImage = "exclamationmark.triangle"
     let message: String
     let details: LoadFailureDetails?
+    var showsRetry = true
     let retry: () async -> Void
     let onURLTap: (URL) -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            LoadFailureView(message: message, details: details, prominentRetry: true) { Task { await retry() } }
-            Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
-                .frame(minHeight: 44)
+            LoadFailureView(title: title, systemImage: systemImage, message: message, details: details,
+                            prominentRetry: true, showsRetry: showsRetry) { Task { await retry() } }
+            if details?.requiresAuthentication == true {
+                Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("chapter-comment-web-login")
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

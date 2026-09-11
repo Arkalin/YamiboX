@@ -150,6 +150,14 @@ final class ReaderChapterCommentComposerModel {
         }
     }
 
+    var submissionRequiresAuthentication: Bool {
+        switch mode {
+        case .rating: rating?.errorDetails?.requiresAuthentication == true
+        case .comment: comment?.errorDetails?.requiresAuthentication == true
+        case .reply: replySession?.errorDetails?.requiresAuthentication == true
+        }
+    }
+
     var replyForm: ForumForm? { replySession?.page?.forms.first { $0.kind == .thread } }
 
     var replyButton: ForumFormButton? {
@@ -180,7 +188,7 @@ final class ReaderChapterCommentComposerModel {
         guard !isBusy, !didSubmit, mode != newMode else { return }
         editorRegistry.commitEditing()
         mode = newMode
-        clearFailure()
+        if context != nil { clearFailure() }
     }
 
     func load(retry: Bool = false) async {
@@ -215,7 +223,9 @@ final class ReaderChapterCommentComposerModel {
         guard context != nil, !isBusy, !didSubmit else { return }
         switch mode {
         case .rating:
-            if let rating, !rating.isLoadingOptions, rating.options == nil || retry { await rating.loadRateOptions() }
+            if let rating, !rating.isLoadingOptions, (rating.options == nil && rating.optionsFailure == nil) || retry {
+                await rating.loadRateOptions()
+            }
         case .comment: break
         case .reply:
             await replySession?.load()
