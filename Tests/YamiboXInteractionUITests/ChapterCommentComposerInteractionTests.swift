@@ -2,6 +2,36 @@ import XCTest
 
 @MainActor
 final class ChapterCommentComposerInteractionTests: XCTestCase {
+    func testCommentMetadataAndReplyMoveBelowBodyWhileOriginalPostStaysInHeader() throws {
+        let app = launch()
+        defer { app.terminate() }
+
+        for (id, metadata) in [
+            ("comment", "2026-09-10 12:30"),
+            ("rating", "积分 +2"),
+            ("reply", "28楼 · 2026-09-10 14:20")
+        ] {
+            let body = app.staticTexts["chapter-comment-body-\(id)"]
+            let details = app.staticTexts[metadata]
+            let originalPost = app.buttons["chapter-comment-original-\(id)"]
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(details.exists)
+            XCTAssertTrue(originalPost.isHittable)
+            XCTAssertLessThan(originalPost.frame.midY, body.frame.minY)
+            // Selectable Text expands its accessibility frame beyond the rendered lines.
+            XCTAssertGreaterThan(details.frame.midY, body.frame.midY)
+            XCTAssertGreaterThan(details.frame.maxX, app.frame.midX)
+        }
+
+        let reply = app.buttons["chapter-comment-reply-789"]
+        let details = app.staticTexts["28楼 · 2026-09-10 14:20"]
+        let body = app.staticTexts["chapter-comment-body-reply"]
+        XCTAssertTrue(reply.isHittable)
+        XCTAssertGreaterThan(reply.frame.midY, body.frame.midY)
+        XCTAssertGreaterThanOrEqual(reply.frame.minX, details.frame.maxX)
+        attach(app, "chapter-comments-footer-layout")
+    }
+
     func testOwnerDraftSwitchingAndSingleTapReplyReturnsToComments() throws {
         let app = launch()
         defer { app.terminate() }

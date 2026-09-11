@@ -432,15 +432,6 @@ private struct ReaderChapterCommentRow: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 ReaderChapterCommentSourceBadge(source: comment.source)
-                if let onReply {
-                    Button(action: onReply) {
-                        Image(systemName: "arrowshape.turn.up.left")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(L10n.string("forum.thread.reply"))
-                    .accessibilityIdentifier("chapter-comment-reply-\(comment.postID ?? comment.id)")
-                }
                 if let originalPostURL {
                     Button {
                         openOriginalPost(originalPostURL)
@@ -450,20 +441,53 @@ private struct ReaderChapterCommentRow: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(L10n.string("reader.open_original_post"))
+                    .accessibilityIdentifier("chapter-comment-original-\(comment.id)")
                 }
-            }
-            if let metadata = comment.metadata {
-                Text(metadata)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             ReaderChapterCommentBody(
                 text: comment.body,
                 blocks: comment.bodyBlocks,
                 refererURL: originalPostURL ?? YamiboDomain.baseURL
             )
+            .accessibilityIdentifier("chapter-comment-body-\(comment.id)")
+            if comment.metadata != nil || onReply != nil {
+                ReaderChapterCommentFooter(
+                    metadata: comment.metadata,
+                    replyIdentifier: comment.postID ?? comment.id,
+                    onReply: onReply
+                )
+            }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ReaderChapterCommentFooter: View {
+    let metadata: String?
+    let replyIdentifier: String
+    let onReply: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let metadata {
+                Text(metadata)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let onReply {
+                Button(action: onReply) {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.system(size: 18))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.string("forum.thread.reply"))
+                .accessibilityIdentifier("chapter-comment-reply-\(replyIdentifier)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
