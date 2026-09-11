@@ -397,20 +397,11 @@ private struct ImageBrowserContentView: View {
             item: item,
             pageDistance: pageDistance,
             dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
-            dismissRecognitionDistance: dismissRecognitionDistance,
             onSingleTap: onSingleTap,
             onSwipeDownProgressChange: onSwipeDownProgressChange,
             onSwipeDownCommit: onSwipeDownCommit,
             onSwipeDownDismiss: onSwipeDownDismiss
         )
-    }
-
-    /// The 20pt recognition dead zone only exists to lose the race to the
-    /// pager's pan; without a pager it is pure latency.
-    private var dismissRecognitionDistance: CGFloat {
-        mode == .multiple && items.count > 1
-            ? ImageBrowserSwipeDismissGesture.minimumRecognitionDistance
-            : ImageBrowserSwipeDismissGesture.singleImageRecognitionDistance
     }
 }
 
@@ -421,7 +412,6 @@ private struct ImageBrowserPageView: View {
     /// windowed loading, since `.page` `TabView` builds every page up front.
     let pageDistance: Int
     let dismissesViaSystemZoomTransition: Bool
-    let dismissRecognitionDistance: CGFloat
     let onSingleTap: () -> Void
     let onSwipeDownProgressChange: (CGFloat) -> Void
     let onSwipeDownCommit: () -> Void
@@ -449,7 +439,6 @@ private struct ImageBrowserPageView: View {
             animationFrame: animationFrame,
             title: item.title,
             dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
-            dismissRecognitionDistance: dismissRecognitionDistance,
             onSingleTap: onSingleTap,
             onSwipeDownProgressChange: onSwipeDownProgressChange,
             onSwipeDownCommit: onSwipeDownCommit,
@@ -581,30 +570,18 @@ private struct ImageBrowserPageStatusOverlay: View {
     }
 }
 
-/// One zoomable page: the `UIScrollView` container handles zooming and
-/// panning, while the swipe-down-to-dismiss drag stays a SwiftUI gesture on
-/// top, active only at minimum zoom (see `swipeDismissGestureMask`).
+/// The zoom container pans enlarged images; the directional dismiss pan
+/// only begins at minimum zoom and leaves horizontal drags to the pager.
 private struct ImageBrowserZoomableImagePage: View {
     let image: UIImage?
     /// The animated payload's current frame, or `nil` for a still image.
     let animationFrame: UIImage?
     let title: String
     let dismissesViaSystemZoomTransition: Bool
-    let dismissRecognitionDistance: CGFloat
     let onSingleTap: () -> Void
     let onSwipeDownProgressChange: (CGFloat) -> Void
     let onSwipeDownCommit: () -> Void
     let onSwipeDownDismiss: () -> Void
-
-    /// Live swipe-dismiss drag. `engagementOrigin` records the raw
-    /// translation at the moment the vertical-dominance gate passed;
-    /// `translation` is measured from there, so the image starts following
-    /// from directly under the finger instead of jumping by the recognition
-    /// distance the moment the gesture engages.
-    private struct SwipeDismissDrag: Equatable {
-        var engagementOrigin: CGSize?
-        var translation: CGSize = .zero
-    }
 
     @State private var zoomProxy = ImageBrowserZoomProxy()
     @State private var zoomFactor: CGFloat = 1
@@ -612,38 +589,40 @@ private struct ImageBrowserZoomableImagePage: View {
     @State private var committedTranslation: CGSize = .zero
     @State private var exitOffset: CGFloat = 0
     @State private var imageOpacity: CGFloat = 1
-    /// Snapshot of the last `updating` tick for `onEnded`, which runs after
-    /// `@GestureState` has already reset and so cannot read `drag` itself.
-    @State private var lastDrag = SwipeDismissDrag()
+    @State private var dragTranslation: CGPoint = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// `@GestureState` (rather than `@State`) so a system-cancelled drag —
-    /// incoming call, notification-center grab — springs back automatically
-    /// instead of wedging the image at a stale offset.
-    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.22, dampingFraction: 0.86)))
-    private var drag = SwipeDismissDrag()
 
     var body: some View {
         GeometryReader { geometry in
-            ImageBrowserZoomableScrollView(
-                image: image,
-                animationFrame: animationFrame,
-                proxy: zoomProxy,
-                onSingleTap: onSingleTap,
-                onZoomFactorChange: { zoomFactor = $0 }
-            )
-            .scaleEffect(reduceMotion ? 1 : ImageBrowserSwipeDismissGesture.imageScale(for: swipeProgress))
-            .offset(x: swipeOffset.width, y: swipeOffset.height)
-            .opacity(imageOpacity)
-            .simultaneousGesture(
-                swipeDismissGesture(containerSize: geometry.size),
-                including: swipeDismissGestureMask
-            )
+            // Keep gesture coordinates fixed while the image follows the drag.
+            ZStack {
+                ImageBrowserZoomableScrollView(
+                    image: image,
+                    animationFrame: animationFrame,
+                    proxy: zoomProxy,
+                    onSingleTap: onSingleTap,
+                    onZoomFactorChange: { zoomFactor = $0 }
+                )
+                .scaleEffect(reduceMotion ? 1 : ImageBrowserSwipeDismissGesture.imageScale(for: swipeProgress))
+                .offset(x: swipeOffset.width, y: swipeOffset.height)
+                .opacity(imageOpacity)
+            }
+            .gesture(ImageBrowserDismissPanGesture(
+                isEnabled: !isSwipeDismissCommitted,
+                zoomFactor: zoomFactor,
+                onChanged: { dragTranslation = $0 },
+                onEnded: { translation, velocity in
+                    finishSwipeDismiss(translation: translation, velocity: velocity, containerSize: geometry.size)
+                },
+                onCancelled: cancelSwipeDismiss
+            ))
         }
         .onChange(of: swipeProgress) { _, newValue in
             onSwipeDownProgressChange(newValue)
         }
         .onDisappear {
             zoomProxy.resetZoom(animated: false)
+            dragTranslation = .zero
         }
         .accessibilityElement()
         .accessibilityLabel(title)
@@ -663,66 +642,29 @@ private struct ImageBrowserZoomableImagePage: View {
     private var swipeOffset: CGSize {
         isSwipeDismissCommitted
             ? CGSize(width: committedTranslation.width, height: committedTranslation.height + exitOffset)
-            : drag.translation
+            : CGSize(width: dragTranslation.x, height: dragTranslation.y)
     }
 
     private var swipeProgress: CGFloat {
-        isSwipeDismissCommitted ? 1 : ImageBrowserSwipeDismissGesture.progress(for: drag.translation.height)
+        isSwipeDismissCommitted ? 1 : ImageBrowserSwipeDismissGesture.progress(for: dragTranslation.y)
     }
 
-    /// Detaches the dismiss drag entirely while zoomed in, so it never
-    /// competes with the scroll view's own pan for the same touch; at minimum
-    /// zoom the scroll view has nothing to scroll and the drag takes over.
-    private var swipeDismissGestureMask: GestureMask {
-        isZoomedIn || isSwipeDismissCommitted ? .subviews : .all
+    private func cancelSwipeDismiss() {
+        guard !isSwipeDismissCommitted, dragTranslation != .zero else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            dragTranslation = .zero
+        }
     }
 
-    private func swipeDismissGesture(containerSize: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: dismissRecognitionDistance)
-            .updating($drag) { value, state, _ in
-                // Mirror every tick — including non-engaged ones — so
-                // `onEnded` never acts on a stale snapshot left behind by an
-                // earlier, system-cancelled drag.
-                defer { lastDrag = state }
-                guard !isSwipeDismissCommitted, !isZoomedIn else { return }
-                // Gate on downward intent only until the drag engages; once
-                // the image is following the finger, losing momentary
-                // vertical dominance must not snap it back to zero mid-drag.
-                if state.engagementOrigin == nil {
-                    guard ImageBrowserSwipeDismissGesture.canBegin(
-                        translation: CGPoint(x: value.translation.width, y: value.translation.height),
-                        zoomScale: zoomFactor,
-                        minimumZoomScale: 1
-                    ) else {
-                        return
-                    }
-                    state.engagementOrigin = value.translation
-                }
-                guard let origin = state.engagementOrigin else { return }
-                // Track both axes so the image stays under the finger during
-                // a diagonal drag, Photos-style; progress/commit still key
-                // off the vertical component alone.
-                state.translation = CGSize(
-                    width: value.translation.width - origin.width,
-                    height: max(value.translation.height - origin.height, 0)
-                )
-            }
-            .onEnded { value in
-                let finalDrag = lastDrag
-                lastDrag = SwipeDismissDrag()
-                guard !isSwipeDismissCommitted, !isZoomedIn, finalDrag.engagementOrigin != nil else { return }
-                let translation = CGPoint(x: finalDrag.translation.width, y: finalDrag.translation.height)
-                let velocity = CGPoint(x: value.velocity.width, y: value.velocity.height)
-                guard ImageBrowserSwipeDismissGesture.shouldDismiss(
-                    translation: translation,
-                    velocity: velocity,
-                    zoomScale: zoomFactor,
-                    minimumZoomScale: 1
-                ) else {
-                    return
-                }
-                commitSwipeDismiss(translation: translation, velocity: velocity, containerSize: containerSize)
-            }
+    private func finishSwipeDismiss(translation: CGPoint, velocity: CGPoint, containerSize: CGSize) {
+        guard !isSwipeDismissCommitted else { return }
+        guard !isZoomedIn, ImageBrowserSwipeDismissGesture.shouldDismiss(
+            translation: translation, velocity: velocity, zoomScale: zoomFactor, minimumZoomScale: 1
+        ) else {
+            cancelSwipeDismiss()
+            return
+        }
+        commitSwipeDismiss(translation: translation, velocity: velocity, containerSize: containerSize)
     }
 
     private func commitSwipeDismiss(translation: CGPoint, velocity: CGPoint, containerSize: CGSize) {

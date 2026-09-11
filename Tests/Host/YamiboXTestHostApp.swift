@@ -8,7 +8,9 @@ import UIKit
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["IMAGE_BROWSER_FIXTURE"] == "1" {
+                ImageBrowserFixture()
+            } else if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
                 CreditLogFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {
                 ChapterCommentComposerFixture()
@@ -22,6 +24,45 @@ struct YamiboXTestHostApp: App {
                 MangaLongPressFixture()
             }
         }
+    }
+}
+
+private struct ImageBrowserFixture: View {
+    @Namespace private var zoomNamespace
+    @State private var isPresented = false
+    private let items: [ImageBrowserItem]
+
+    init() {
+        let sizes = [CGSize(width: 401, height: 801), CGSize(width: 803, height: 401), CGSize(width: 601, height: 601)]
+        let colors: [UIColor] = [.systemRed, .systemGreen, .systemBlue]
+        items = sizes.enumerated().map { index, size in
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let data = UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+                colors[index].setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+                UIColor.white.setFill()
+                context.fill(CGRect(x: size.width / 4, y: size.height / 4, width: size.width / 2, height: size.height / 2))
+                ("\(index + 1)" as NSString).draw(at: CGPoint(x: size.width / 2 - 25, y: size.height / 2 - 40),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 72), .foregroundColor: UIColor.black])
+            }
+            return ImageBrowserItem(id: "image-\(index + 1)",
+                source: YamiboImageSource(url: URL(fileURLWithPath: "/offline-image-\(index + 1).png")),
+                title: "Image \(index + 1)", localDataProvider: { data })
+        }
+    }
+
+    var body: some View {
+        Button("Open gallery") { isPresented = true }
+            .imageBrowserZoomSource(id: "image-2", in: zoomNamespace)
+            .fullScreenCover(isPresented: $isPresented) {
+                let isSingle = ProcessInfo.processInfo.environment["IMAGE_BROWSER_SINGLE"] == "1"
+                ImageBrowserView(items: isSingle ? [items[1]] : items, initialItemID: "image-2",
+                    mode: isSingle ? .single : .multiple,
+                    presentation: ProcessInfo.processInfo.environment["IMAGE_BROWSER_PRESENTATION"] == "fade"
+                        ? .fade : .zoom(zoomNamespace),
+                    onDismiss: { isPresented = false })
+            }
     }
 }
 

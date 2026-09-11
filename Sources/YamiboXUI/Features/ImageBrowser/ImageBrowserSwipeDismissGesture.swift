@@ -7,14 +7,6 @@ enum ImageBrowserSwipeDismissGesture {
     static let committedTranslation: CGFloat = 150
     /// Seconds of release velocity folded into the projected landing point.
     static let velocityProjectionInterval: CGFloat = 0.15
-    /// Larger than the default `DragGesture` minimum distance (10pt) so a horizontal swipe
-    /// between pages loses the recognition race to `TabView(.page)`'s own pan gesture instead
-    /// of competing with it for every drag on an unzoomed image.
-    static let minimumRecognitionDistance: CGFloat = 20
-    /// Single-image mode has no pager pan to lose the race to, so the drag
-    /// engages at the platform-default distance instead of paying the 20pt
-    /// dead zone.
-    static let singleImageRecognitionDistance: CGFloat = 10
 
     static func progress(for translationY: CGFloat) -> CGFloat {
         min(max(translationY / committedTranslation, 0), 1)
