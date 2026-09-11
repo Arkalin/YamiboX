@@ -1,6 +1,9 @@
 "about.title" = "关于";
 "about.github" = "GitHub";
 "about.check_update" = "检查更新";
+"about.changelog" = "更新日志";
+"changelog.empty" = "暂无更新日志";
+"changelog.no_description" = "此版本暂无更新说明";
 "about.version" = "版本 %@";
 "about.version_with_build" = "版本 %@ (%@)";
 "about.special_thanks" = "特别感谢";
