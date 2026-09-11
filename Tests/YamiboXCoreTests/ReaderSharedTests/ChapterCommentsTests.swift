@@ -272,7 +272,7 @@ import Testing
     #expect(page.comments.map(\.body) == ["我很赞同这个观点"])
 }
 
-@Test func chapterCommentsParserOmitsImageOnlyUnresolvableEmoticonAndEmptyRows() throws {
+@Test func chapterCommentsParserKeepsImageOnlyButOmitsUnresolvableEmoticonAndEmptyRows() throws {
     let html = """
     <html><body>
       <div id="post_100"><div class="t_f" id="postmessage_100">第一章<br>正文</div></div>
@@ -301,7 +301,7 @@ import Testing
 
     let page = try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
 
-    #expect(page.comments.map(\.body) == ["有文字", "有效回复"])
+    #expect(page.comments.map(\.body) == ["", "有文字", "", "有效回复"])
 }
 
 @Test func chapterCommentOriginalPostURLUsesThreadAndPostIdentity() throws {

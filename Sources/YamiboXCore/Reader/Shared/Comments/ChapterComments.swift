@@ -26,6 +26,8 @@ public struct ChapterComment: Codable, Hashable, Identifiable, Sendable {
     public var body: String
     /// Optional display content for comments with smileys; `body` stays plain text.
     public var bodyBlocks: [ForumThreadTextBlock]?
+    /// Ordered text and photo blocks; absent in older comments and text-only content.
+    public var contentBlocks: [ForumThreadContentBlock]?
     public var postID: String?
 
     public init(
@@ -36,7 +38,8 @@ public struct ChapterComment: Codable, Hashable, Identifiable, Sendable {
         body: String,
         postID: String? = nil,
         bodyBlocks: [ForumThreadTextBlock]? = nil,
-        authorAvatarURL: URL? = nil
+        authorAvatarURL: URL? = nil,
+        contentBlocks: [ForumThreadContentBlock]? = nil
     ) {
         self.id = id
         self.source = source
@@ -45,6 +48,7 @@ public struct ChapterComment: Codable, Hashable, Identifiable, Sendable {
         self.metadata = Self.nilIfEmpty(metadata?.trimmingCharacters(in: .whitespacesAndNewlines))
         self.body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         self.bodyBlocks = bodyBlocks
+        self.contentBlocks = contentBlocks
         self.postID = Self.nilIfEmpty(postID?.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 

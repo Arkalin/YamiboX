@@ -84,10 +84,9 @@ enum ChapterCommentsHTMLParser {
                 continue
             }
 
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select("span.z, span.y").first())
+            let body = try ChapterCommentBodyParser.parse(row.select("span.z, span.y").first())
             guard let current = pending,
-                  let reason = values.first.map(normalizeRatingReason),
-                  bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+                  body.hasMedia || (!body.text.isEmpty && !filteredRatingReasons.contains(normalizeRatingReason(body.text))) else {
                 pending = nil
                 continue
             }
@@ -97,10 +96,11 @@ enum ChapterCommentsHTMLParser {
                     source: .ratingReason,
                     authorName: normalizeText(current.author),
                     metadata: current.metadata,
-                    body: reason,
+                    body: normalizeRatingReason(body.text),
                     postID: target.ownerPostID,
-                    bodyBlocks: bodyBlocks,
-                    authorAvatarURL: current.avatarURL
+                    bodyBlocks: body.bodyBlocks,
+                    authorAvatarURL: current.avatarURL,
+                    contentBlocks: body.contentBlocks
                 )
             )
             pending = nil
@@ -120,18 +120,18 @@ enum ChapterCommentsHTMLParser {
             guard let bodyElement = row.select(".psti").first() else { return nil }
             let metadata = bodyElement.select(".xg1").first()?.text()
             bodyElement.select(".xg1").remove()
-            let body = normalizeText(bodyElement.text())
-            let bodyBlocks = try emoticonBodyBlocks(in: bodyElement)
-            guard !body.isEmpty || bodyBlocks != nil else { return nil }
+            let body = try ChapterCommentBodyParser.parse(bodyElement)
+            guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment:\(offset)",
                 source: .postComment,
                 authorName: normalizeText(author),
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
-                body: body,
+                body: body.text,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorAvatarURL: avatarURL(in: row.selectFirst(".psta"))
+                bodyBlocks: body.bodyBlocks,
+                authorAvatarURL: avatarURL(in: row.selectFirst(".psta")),
+                contentBlocks: body.contentBlocks
             )
         }
         comments.append(contentsOf: try mobilePostComments(in: document, target: target))
@@ -146,9 +146,9 @@ enum ChapterCommentsHTMLParser {
         var comments: [ChapterComment] = try rows.array().enumerated().compactMap { offset, row in
             let cells = row.select("td")
             let author = cells.first()?.select("a").last()?.text() ?? ""
-            let reason = normalizeRatingReason(row.select("td.xg1").first()?.text() ?? "")
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select("td.xg1").first())
-            guard bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+            let body = try ChapterCommentBodyParser.parse(row.select("td.xg1").first())
+            let reason = normalizeRatingReason(body.text)
+            guard body.hasMedia || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
                 return nil
             }
             return ChapterComment(
@@ -157,8 +157,9 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorAvatarURL: avatarURL(in: cells.first())
+                bodyBlocks: body.bodyBlocks,
+                authorAvatarURL: avatarURL(in: cells.first()),
+                contentBlocks: body.contentBlocks
             )
         }
         comments.append(contentsOf: try mobileRatingReasons(in: document, target: target))
@@ -175,21 +176,21 @@ enum ChapterCommentsHTMLParser {
                 !link.parents().contains { $0.hasClass("mtxt") || $0.hasClass("mtime") }
             }.compactMap { $0.normalizedText().nilIfBlank }.first ?? ""
             let metadata = row.select(".mtime").first()?.text()
-            let body = normalizeText(row.select(".mtxt").first()?.text() ?? "")
-            let bodyBlocks = try emoticonBodyBlocks(in: row.select(".mtxt").first())
-            guard !body.isEmpty || bodyBlocks != nil else { return nil }
+            let body = try ChapterCommentBodyParser.parse(row.select(".mtxt").first())
+            guard !body.isEmpty else { return nil }
             return ChapterComment(
                 id: "\(target.ownerPostID):comment-mobile:\(offset)",
                 source: .postComment,
                 authorName: normalizeText(author),
                 metadata: nilIfEmpty(normalizeText(metadata ?? "")),
-                body: body,
+                body: body.text,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
+                bodyBlocks: body.bodyBlocks,
                 authorAvatarURL: avatarURL(
                     in: row,
                     imageSelector: ".avatar img[src], .mimg img[src], li:first-child img[src]"
-                )
+                ),
+                contentBlocks: body.contentBlocks
             )
         }
     }
@@ -203,10 +204,10 @@ enum ChapterCommentsHTMLParser {
             let cells = row.children().array()
             guard cells.count >= 3 else { return nil }
             let author = cells[0].select("a").last()?.text() ?? ""
-            let reason = normalizeRatingReason(cells[2].text())
-            let bodyBlocks = try emoticonBodyBlocks(in: cells[2])
+            let body = try ChapterCommentBodyParser.parse(cells[2])
+            let reason = normalizeRatingReason(body.text)
             guard reason != "理由",
-                  bodyBlocks != nil || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
+                  body.hasMedia || (!reason.isEmpty && !filteredRatingReasons.contains(reason)) else {
                 return nil
             }
             return ChapterComment(
@@ -215,8 +216,9 @@ enum ChapterCommentsHTMLParser {
                 authorName: normalizeText(author),
                 body: reason,
                 postID: target.ownerPostID,
-                bodyBlocks: bodyBlocks,
-                authorAvatarURL: avatarURL(in: cells[0])
+                bodyBlocks: body.bodyBlocks,
+                authorAvatarURL: avatarURL(in: cells[0]),
+                contentBlocks: body.contentBlocks
             )
         }
     }
@@ -252,8 +254,9 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks,
-                    authorAvatarURL: replyAvatarURL(for: message)
+                    bodyBlocks: body.bodyBlocks,
+                    authorAvatarURL: replyAvatarURL(for: message),
+                    contentBlocks: body.contentBlocks
                 )
             )
         }
@@ -284,8 +287,9 @@ enum ChapterCommentsHTMLParser {
                     metadata: replyMetadata(for: message),
                     body: body.text,
                     postID: postID,
-                    bodyBlocks: body.blocks,
-                    authorAvatarURL: replyAvatarURL(for: message)
+                    bodyBlocks: body.bodyBlocks,
+                    authorAvatarURL: replyAvatarURL(for: message),
+                    contentBlocks: body.contentBlocks
                 )
             )
         }
@@ -309,40 +313,9 @@ enum ChapterCommentsHTMLParser {
         return uniqueNodes
     }
 
-    private static func replyBody(from message: Element) throws -> (text: String, blocks: [ForumThreadTextBlock]?)? {
-        let fragment = try KannaSoup.parseBodyFragment(message.html())
-        guard let body = fragment.body() else { return nil }
-        body.select(".quote, blockquote, i, .pstatus").remove()
-        let text = normalizeText(body.text())
-        let blocks = try emoticonBodyBlocks(in: body)
-        return text.isEmpty && blocks == nil ? nil : (text, blocks)
-    }
-
-    private static func emoticonBodyBlocks(in element: Element?) throws -> [ForumThreadTextBlock]? {
-        guard let element,
-              element.select("img").array().contains(where: { image in
-                  YamiboImageReferenceExtractor.forumContent.url(from: image)
-                      .map(YamiboImageReferenceExtractor.isEmoticonURL) == true
-              }) else { return nil }
-        let blocks = try ForumThreadHTMLBlockParser.parseBlocks(in: element).flatMap(commentTextBlocks)
-        return blocks.contains(where: { !$0.inlineImages.isEmpty }) ? blocks : nil
-    }
-
-    // Comments remain text-only apart from smileys; do not introduce photo or
-    // attachment previews, or forum-specific styling, into the reader sheet.
-    private static func commentTextBlocks(_ block: ForumThreadContentBlock) -> [ForumThreadTextBlock] {
-        switch block.kind {
-        case let .text(text):
-            [ForumThreadTextBlock(text: text.text, inlineImages: text.inlineImages)]
-        case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):
-            blocks.flatMap(commentTextBlocks)
-        case let .table(rows):
-            rows.flatMap { $0.flatMap { $0.blocks.flatMap(commentTextBlocks) } }
-        case let .code(text):
-            [ForumThreadTextBlock(text: text)]
-        case .image, .attachment, .horizontalRule:
-            []
-        }
+    private static func replyBody(from message: Element) throws -> ChapterCommentParsedBody? {
+        let body = try ChapterCommentBodyParser.parse(message, attachmentsFrom: postContainer(for: message))
+        return body.isEmpty ? nil : body
     }
 
     private static func isOwnerPost(_ message: Element, target: ReaderChapterCommentTarget) -> Bool {
