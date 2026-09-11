@@ -172,7 +172,7 @@ private struct ReaderChapterCommentComposerFields: View {
                 if let failure = model.feedback {
                     ReaderChapterCommentComposerFailure(message: failure.message, details: failure.details, retry: { await model.load(retry: true) }, onURLTap: onURLTap)
                 } else {
-                    ContentLoadingView(layout: .fillsPage)
+                    ContentLoadingView(layout: .fills)
                 }
             } else {
                 switch model.mode {
@@ -326,7 +326,7 @@ private struct ReaderChapterCommentReplyFields: View {
                                   editorRegistry: model.editorRegistry, isEmbedded: true,
                                   onAttachmentActivityChanged: { model.isPreparingAttachment = $0 }, onURLTap: onURLTap)
             } else if session.isLoading || session.page == nil && session.errorMessage == nil {
-                ContentLoadingView(layout: .fillsPage)
+                ContentLoadingView(layout: .fills)
             } else {
                 ReaderChapterCommentComposerFailure(
                     message: session.errorMessage ?? session.page?.message ?? L10n.string("reader.comment_composer.reply_unavailable"),
