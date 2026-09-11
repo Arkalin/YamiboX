@@ -14,11 +14,7 @@ public struct LikeDependencies: Sendable {
     /// Resolves manga chapter order for the second-level Like list; manga
     /// Like Items don't store a chapter ordinal (see implementation-design §11).
     public let mangaDirectoryStore: MangaDirectoryStore
-    /// Best-effort novel chapter-title lookup for Like item cards: a
-    /// disk-cache-only read (no network), matched against a Like anchor's
-    /// segment identity. Like anchors never persist a chapter title (same
-    /// "resolve live" philosophy as `mangaDirectoryStore` above), so this can
-    /// return nil on a cold cache and the card simply omits chapter info.
+    /// Local-only source for backfilling chapter titles on legacy Like items.
     public let novelReaderCacheStore: NovelReaderProjectionStore
 
     public init(
@@ -33,5 +29,38 @@ public struct LikeDependencies: Sendable {
         self.bookmarkStore = bookmarkStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.novelReaderCacheStore = novelReaderCacheStore
+    }
+
+    public func resolveChapterInfo(
+        for items: [LikeItem],
+        work: LikeWorkKey,
+        mangaDirectory: MangaDirectory? = nil
+    ) async -> [String: String] {
+        let scopedItems = items.filter { $0.workKey == work }
+        let titles: [String: String]
+        switch work.kind {
+        case .novel:
+            titles = await LikeChapterInfoResolver.novelChapterInfo(
+                for: scopedItems, threadID: work.id, cacheStore: novelReaderCacheStore
+            )
+        case .manga:
+            let directory: MangaDirectory?
+            if let mangaDirectory {
+                directory = mangaDirectory
+            } else if scopedItems.contains(where: { $0.chapterTitle == nil }) {
+                directory = try? await mangaDirectoryStore.directory(named: work.id)
+            } else {
+                directory = nil
+            }
+            titles = LikeChapterInfoResolver.mangaChapterInfo(for: scopedItems, directory: directory)
+        }
+        let snapshots = scopedItems.compactMap { item -> LikeItem? in
+            guard item.chapterTitle == nil, let title = titles[item.id] else { return nil }
+            var snapshot = item
+            snapshot.chapterTitle = title
+            return snapshot
+        }
+        _ = try? await likeStore.resolveChapterTitles(snapshots)
+        return titles
     }
 }

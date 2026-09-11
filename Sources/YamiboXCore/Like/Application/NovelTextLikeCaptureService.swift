@@ -12,6 +12,7 @@ package struct NovelTextLikeCaptureRequest: Sendable {
     /// The active projection's cache-key identity at selection time (see
     /// `NovelTextLikeAnchor.resolvedAuthorID`).
     package var resolvedAuthorID: String?
+    package var chapterTitle: String?
     /// The style to paint the new (or merged) annotation with — the reader's
     /// sticky "last colour I chose". On a merge it overwrites every subsumed
     /// item's style, because the merged range is one annotation.
@@ -28,6 +29,7 @@ package struct NovelTextLikeCaptureRequest: Sendable {
         excerptText: String,
         view: Int,
         resolvedAuthorID: String?,
+        chapterTitle: String? = nil,
         style: LikeStyle = .default,
         excerptPrefix: String? = nil,
         excerptSuffix: String? = nil
@@ -38,6 +40,7 @@ package struct NovelTextLikeCaptureRequest: Sendable {
         self.excerptText = excerptText
         self.view = view
         self.resolvedAuthorID = resolvedAuthorID
+        self.chapterTitle = chapterTitle
         self.style = style
         self.excerptPrefix = excerptPrefix
         self.excerptSuffix = excerptSuffix
@@ -120,6 +123,7 @@ public struct NovelTextLikeCaptureService: Sendable {
                     excerptPrefix: request.excerptPrefix,
                     excerptSuffix: request.excerptSuffix,
                     style: request.style,
+                    chapterTitle: request.chapterTitle,
                     date: date
                 )
             }.value
@@ -127,7 +131,12 @@ public struct NovelTextLikeCaptureService: Sendable {
         }
 
         if overlapping.count == 1, overlapping[0].anchor == requestAnchor {
-            return .alreadyLiked(overlapping[0].item)
+            var item = overlapping[0].item
+            if item.chapterTitle == nil {
+                item.chapterTitle = LikeItem.normalizedChapterTitle(request.chapterTitle)
+                try await likeStore.resolveChapterTitles([item])
+            }
+            return .alreadyLiked(item)
         }
 
         var survivor = overlapping[0]
@@ -200,6 +209,7 @@ public struct NovelTextLikeCaptureService: Sendable {
                 excerptSuffix: unionSuffix,
                 style: request.style,
                 note: mergedNote.isEmpty ? nil : mergedNote,
+                chapterTitle: request.chapterTitle,
                 date: date
             )
         }.value

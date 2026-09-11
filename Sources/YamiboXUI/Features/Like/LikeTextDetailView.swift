@@ -45,9 +45,7 @@ struct LikeTextDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Text(LocalFavoriteRelativeDate.string(from: displayedItem.createdAt))
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
+                    LikeItemMetadata(chapterTitle: chapterInfo, createdAt: displayedItem.createdAt)
                 }
                 .padding(20)
             }

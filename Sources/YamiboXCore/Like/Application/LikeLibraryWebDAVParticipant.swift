@@ -51,15 +51,14 @@ struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
         }
     }
 
-    /// Restores fields an older client would have dropped, but only when the
-    /// remote row is the *same version* of the same row (identical
-    /// `updatedAt`). A genuine edit on another device bumps `updatedAt`, so a
-    /// deliberate change back to yellow or a cleared note still wins.
+    /// Restores style and notes only for equal versions, preserving genuine edits.
+    /// Chapter titles are metadata: a missing snapshot can be filled at any version.
     static func restoringDroppedFields(_ remoteItem: LikeItem, from localByID: [String: LikeItem]) -> LikeItem {
-        guard let local = localByID[remoteItem.id], local.updatedAt == remoteItem.updatedAt else {
+        guard let local = localByID[remoteItem.id] else {
             return remoteItem
         }
-        var restored = remoteItem
+        var restored = remoteItem.fillingChapterTitle(from: local)
+        guard local.updatedAt == remoteItem.updatedAt else { return restored }
         if restored.style == .default {
             restored.style = local.style
         }
@@ -175,9 +174,10 @@ struct LikeLibraryWebDAVMerger: Sendable {
             // recover them, which is the accepted cost of keeping the payload at
             // v1 so old clients keep syncing.
             if let existing = byID[remoteItem.id], existing.updatedAt >= remoteItem.updatedAt {
+                byID[remoteItem.id] = existing.fillingChapterTitle(from: remoteItem)
                 continue
             }
-            byID[remoteItem.id] = remoteItem
+            byID[remoteItem.id] = byID[remoteItem.id].map { remoteItem.fillingChapterTitle(from: $0) } ?? remoteItem
         }
 
         let rowTombstones = Dictionary(localSnapshot.compactMap { item in

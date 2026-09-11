@@ -671,6 +671,11 @@ package final class NovelTextViewportRuntimeOwner {
         )
     }
 
+    package func chapterTitle(for segmentIdentity: NovelTextSegmentIdentity) -> String? {
+        guard let projection else { return nil }
+        return LikeChapterInfoResolver.novelChapterTitle(forSegmentIdentity: segmentIdentity.rawValue, in: projection)
+    }
+
     /// The document text on either side of a selection, each side capped at
     /// `radius` characters — the raw material `NovelLikeExcerptContext` trims
     /// to clause boundaries. Capped here so a selection near the middle of a

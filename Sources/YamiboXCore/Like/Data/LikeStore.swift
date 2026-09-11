@@ -68,6 +68,7 @@ public actor LikeStore {
         excerptSuffix: String? = nil,
         style: LikeStyle = .default,
         note: String? = nil,
+        chapterTitle: String? = nil,
         date: Date = .now
     ) async throws -> LikeTextUpsertResult {
         do {
@@ -89,7 +90,13 @@ public actor LikeStore {
                     // one that subsumed it.
                     try Self.softDeleteRow(id: replacedID, date: date, in: db)
                 }
-                let createdAt = try Self.fetchLike(id: id, in: db)?.createdAt ?? date
+                let previous = try Self.fetchLike(id: id, in: db)
+                let createdAt = previous?.createdAt ?? date
+                let retainedTitle = existing.first {
+                    ($0.id == id || replacedIDs.contains($0.id))
+                        && LikeSortKey.chapterIdentity(of: $0.anchor) == anchor.chapterIdentity
+                        && LikeItem.normalizedChapterTitle($0.chapterTitle) != nil
+                }?.chapterTitle
                 let item = LikeItem(
                     id: id,
                     workKey: workKey,
@@ -103,6 +110,7 @@ public actor LikeStore {
                     // annotation that can only have one.
                     style: style,
                     note: note,
+                    chapterTitle: LikeItem.normalizedChapterTitle(chapterTitle) ?? retainedTitle,
                     createdAt: createdAt,
                     updatedAt: date
                 )
@@ -129,20 +137,26 @@ public actor LikeStore {
         workKey: LikeWorkKey,
         anchor: LikeAnchorPayload,
         sourceImageURL: URL?,
+        chapterTitle: String? = nil,
         date: Date = .now
     ) async throws -> LikeItem {
         do {
             let item = try await database.write { db -> LikeItem in
-                let createdAt = try Self.fetchLike(id: id, in: db)?.createdAt ?? date
-                let item = LikeItem(
+                let previous = try Self.fetchLike(id: id, in: db)
+                let createdAt = previous?.createdAt ?? date
+                var item = LikeItem(
                     id: id,
                     workKey: workKey,
                     kind: .image,
                     sourceImageURL: sourceImageURL,
                     anchor: anchor,
+                    chapterTitle: chapterTitle,
                     createdAt: createdAt,
                     updatedAt: date
                 )
+                if let previous {
+                    item = item.fillingChapterTitle(from: previous)
+                }
                 try Self.upsertRow(item, in: db)
                 return item
             }
@@ -386,6 +400,31 @@ public actor LikeStore {
         try await database.read { db in try Self.syncSnapshot(in: db) }
     }
 
+    /// Fills missing metadata without changing edit timestamps or reviving deleted items.
+    /// Rechecks the anchor inside the transaction because a sync may have replaced the row.
+    @discardableResult
+    public func resolveChapterTitles(_ snapshots: [LikeItem]) async throws -> Bool {
+        guard !snapshots.isEmpty else { return false }
+        let changed = try await database.write { db -> Bool in
+            var didChange = false
+            for snapshot in snapshots {
+                guard let current = try Self.fetchLike(id: snapshot.id, in: db) else { continue }
+                let filled = current.fillingChapterTitle(from: snapshot)
+                guard let title = filled.chapterTitle, title != current.chapterTitle else { continue }
+                try db.execute(
+                    sql: "UPDATE like_items SET chapter_title = ? WHERE id = ?",
+                    arguments: [title, current.id]
+                )
+                didChange = true
+            }
+            return didChange
+        }
+        if changed {
+            postChangeNotification()
+        }
+        return changed
+    }
+
     private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<LikeItem> {
         let records = try Self.fetchAllIncludingDeleted(in: db)
         var deletions = try SyncDeletionState.load(from: "like_sync_state", in: db)
@@ -484,8 +523,8 @@ public actor LikeStore {
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO like_items
-            (id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, sort_key, chapter_ordinal, created_at, updated_at, deleted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, chapter_title, sort_key, chapter_ordinal, created_at, updated_at, deleted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 item.id,
@@ -499,6 +538,7 @@ public actor LikeStore {
                 anchorJSON,
                 item.style.rawValue,
                 item.note,
+                LikeItem.normalizedChapterTitle(item.chapterTitle),
                 // Always recomputed here rather than trusted from the caller:
                 // the key is derived state, and a stale one silently reorders
                 // the panel.
@@ -551,6 +591,7 @@ public actor LikeStore {
             anchor: anchor,
             style: (row["style"] as String?).flatMap(LikeStyle.init(rawValue:)) ?? .default,
             note: row["note"],
+            chapterTitle: row["chapter_title"],
             sortKey: row["sort_key"],
             chapterOrdinal: row["chapter_ordinal"],
             createdAt: Date(timeIntervalSince1970: row["created_at"]),
@@ -560,7 +601,7 @@ public actor LikeStore {
     }
 
     private static let selectColumns = """
-    SELECT id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, sort_key, chapter_ordinal, created_at, updated_at, deleted_at
+    SELECT id, work_kind, work_id, kind, excerpt_text, excerpt_prefix, excerpt_suffix, source_image_url, anchor_json, style, note, chapter_title, sort_key, chapter_ordinal, created_at, updated_at, deleted_at
     FROM like_items
     """
 }

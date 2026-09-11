@@ -425,6 +425,10 @@ public final class NovelReaderViewModel {
         readingWorkflow?.currentChapterOrdinalsByIdentity() ?? [:]
     }
 
+    func resolveLikeChapterTitles() async {
+        await readingWorkflow?.resolveLikeChapterTitles(using: dependencies.like.likeStore)
+    }
+
     public func handleMemoryPressure() {
         imagePrefetchSuspendedPosition = novelReaderPresentation.map(NovelReaderImagePrefetchPosition.init)
         imagePrefetchCoordinator.cancel()

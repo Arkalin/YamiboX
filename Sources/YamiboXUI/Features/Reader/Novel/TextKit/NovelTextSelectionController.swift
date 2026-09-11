@@ -219,6 +219,7 @@ final class NovelTextSelectionController {
             excerptText: endpoints.excerptText,
             view: endpoints.documentView,
             resolvedAuthorID: endpoints.resolvedAuthorID,
+            chapterTitle: endpoints.chapterTitle,
             // "Whatever colour I used last time" — read at capture time rather
             // than cached, so a change made in another reader session applies
             // immediately.
@@ -313,10 +314,11 @@ final class NovelTextSelectionController {
         excerptPrefix: String?,
         excerptSuffix: String?,
         documentView: Int,
-        resolvedAuthorID: String?
+        resolvedAuthorID: String?,
+        chapterTitle: String?
     )? {
         guard let resolved = resolvedSelectionEndpoints(), !resolved.crossesChapters else { return nil }
-        return (resolved.start, resolved.end, resolved.excerptText, resolved.excerptPrefix, resolved.excerptSuffix, resolved.documentView, resolved.resolvedAuthorID)
+        return (resolved.start, resolved.end, resolved.excerptText, resolved.excerptPrefix, resolved.excerptSuffix, resolved.documentView, resolved.resolvedAuthorID, resolved.chapterTitle)
     }
 
     /// Resolves both selection endpoints to semantic positions, reporting
@@ -335,6 +337,7 @@ final class NovelTextSelectionController {
         excerptSuffix: String?,
         documentView: Int,
         resolvedAuthorID: String?,
+        chapterTitle: String?,
         crossesChapters: Bool
     )? {
         guard let selectionRangeValue,
@@ -385,6 +388,7 @@ final class NovelTextSelectionController {
             context.suffix,
             metadataSample.documentView,
             metadataSample.resolvedAuthorID,
+            displayReference.chapterTitle(for: endpoints.start.textSegmentIdentity),
             startChapterIdentity != endChapterIdentity
         )
     }

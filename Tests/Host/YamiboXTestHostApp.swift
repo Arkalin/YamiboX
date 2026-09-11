@@ -8,7 +8,9 @@ import UIKit
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["IMAGE_BROWSER_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["LIKES_FIXTURE"] == "1" {
+                LikeListFixture()
+            } else if ProcessInfo.processInfo.environment["IMAGE_BROWSER_FIXTURE"] == "1" {
                 ImageBrowserFixture()
             } else if ProcessInfo.processInfo.environment["CREDIT_LOG_FIXTURE"] == "1" {
                 CreditLogFixture()

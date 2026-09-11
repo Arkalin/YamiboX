@@ -88,6 +88,11 @@ public final class NovelTextViewportDisplayReference {
         runtimeOwner?.surroundingText(for: selectionRange, radius: radius)
     }
 
+    func chapterTitle(for segmentIdentity: NovelTextSegmentIdentity) -> String? {
+        guard !isStale else { return nil }
+        return runtimeOwner?.chapterTitle(for: segmentIdentity)
+    }
+
     func highlightRange(
         from start: NovelResumePoint,
         to end: NovelResumePoint

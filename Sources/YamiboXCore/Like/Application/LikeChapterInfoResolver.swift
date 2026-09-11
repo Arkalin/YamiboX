@@ -1,13 +1,6 @@
 import Foundation
-import YamiboXCore
 
-/// Best-effort chapter-title lookup for Like item cards. Like anchors never
-/// persist a chapter title (see implementation-design.md §11's "resolve
-/// live, don't persist a value that can drift" philosophy, already applied
-/// to manga chapter order) — novel titles are read back from the disk-cached
-/// `NovelReaderProjection` instead. A cache miss (page never opened as a
-/// reader view, or since evicted) simply yields no chapter info; the card
-/// falls back to showing just the excerpt/image with no chapter caption.
+/// Saved chapter titles win; local reading data only fills missing snapshots.
 enum LikeChapterInfoResolver {
     /// A `NovelReaderProjection` cache lookup is keyed by more than just the
     /// forum page: `NovelReaderProjectionStore` also keys on `authorID`, and
@@ -56,12 +49,16 @@ enum LikeChapterInfoResolver {
         case .mangaImage:
             return nil
         }
-        guard let index = projection.segmentSemantics.firstIndex(where: {
-            $0?.textSegmentIdentity?.rawValue == segmentIdentity
-        }) else {
-            return nil
+        return novelChapterTitle(forSegmentIdentity: segmentIdentity, in: projection)
+    }
+
+    static func novelChapterTitle(forSegmentIdentity identity: String, in projection: NovelReaderProjection) -> String? {
+        for (segment, semantics) in zip(projection.segments, projection.segmentSemantics) {
+            if semantics?.textSegmentIdentity?.rawValue == identity {
+                return LikeItem.normalizedChapterTitle(segment.chapterTitle)
+            }
         }
-        return trimmedOrNil(projection.segments[index].chapterTitle)
+        return nil
     }
 
     /// Resolves chapter titles for a batch of novel Like items, caching one
@@ -78,6 +75,11 @@ enum LikeChapterInfoResolver {
         var result: [String: String] = [:]
 
         for item in items {
+            guard item.workKey == .novel(threadID: threadID) else { continue }
+            if let title = LikeItem.normalizedChapterTitle(item.chapterTitle) {
+                result[item.id] = title
+                continue
+            }
             guard let context = cacheContext(for: item.anchor) else { continue }
             if !attemptedContexts.contains(context) {
                 attemptedContexts.insert(context)
@@ -97,19 +99,38 @@ enum LikeChapterInfoResolver {
     /// Resolves chapter titles for a batch of manga Like items from the
     /// (already-loaded) manga directory's chapter list, matched by `tid`.
     static func mangaChapterInfo(for items: [LikeItem], directory: MangaDirectory?) -> [String: String] {
-        guard let directory else { return [:] }
         var titleByTID: [String: String] = [:]
-        for chapter in directory.chapters where titleByTID[chapter.tid] == nil {
+        for chapter in directory?.chapters ?? [] where titleByTID[chapter.tid] == nil {
             if let title = trimmedOrNil(chapter.rawTitle) {
                 titleByTID[chapter.tid] = title
             }
         }
         var result: [String: String] = [:]
         for item in items {
+            if let title = LikeItem.normalizedChapterTitle(item.chapterTitle) {
+                result[item.id] = title
+                continue
+            }
             guard case let .mangaImage(anchor) = item.anchor, let title = titleByTID[anchor.chapterTID] else { continue }
             result[item.id] = title
         }
         return result
+    }
+
+    static func backfillNovelChapterTitles(in projection: NovelReaderProjection, store: LikeStore) async {
+        let work = LikeWorkKey.novel(threadID: projection.threadID)
+        let items = await store.likes(for: work)
+        let snapshots = items.compactMap { item -> LikeItem? in
+            guard item.chapterTitle == nil,
+                  let context = cacheContext(for: item.anchor),
+                  context.view == projection.view,
+                  context.resolvedAuthorID == projection.resolvedAuthorID,
+                  let title = novelChapterTitle(for: item.anchor, in: projection) else { return nil }
+            var snapshot = item
+            snapshot.chapterTitle = title
+            return snapshot
+        }
+        _ = try? await store.resolveChapterTitles(snapshots)
     }
 
     private static func trimmedOrNil(_ value: String?) -> String? {
