@@ -53,16 +53,10 @@ struct LocalFavoriteCollectionEditorSheet: View {
             onCancel: onCancel,
             onSave: { name in await onSave(name, color) }
         ) {
-            Picker(L10n.string("common.select"), selection: $color) {
-                ForEach(FavoriteCollectionColor.allCases, id: \.self) { color in
-                    Label {
-                        Text(color.localizedTitle)
-                    } icon: {
-                        color.pickerIcon
-                    }
-                    .tag(color)
-                }
-            }
+            ColorPicker(L10n.string("common.select"), selection: Binding(
+                get: { color.swiftUIColor },
+                set: { color.setSwiftUIColor($0) }
+            ), supportsOpacity: false)
         }
         .presentationDetents([.medium])
     }

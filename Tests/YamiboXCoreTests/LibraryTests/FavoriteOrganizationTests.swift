@@ -2,6 +2,41 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
+@Test func collectionColorsPreserveLegacyEncoding() throws {
+    let colors: [(String, FavoriteCollectionColor)] = [
+        ("red", .red), ("orange", .orange), ("yellow", .yellow), ("green", .green),
+        ("blue", .blue), ("purple", .purple), ("pink", .pink), ("gray", .gray)
+    ]
+    for (name, color) in colors {
+        let data = try JSONEncoder().encode(name)
+        #expect(try JSONDecoder().decode(FavoriteCollectionColor.self, from: data) == color)
+        #expect(try JSONDecoder().decode(String.self, from: JSONEncoder().encode(color)) == name)
+    }
+}
+
+@Test func customCollectionColorsSurviveDocumentRoundTrip() throws {
+    var document = FavoriteLibraryDocument()
+    let color = FavoriteCollectionColor.custom(red: 18, green: 171, blue: 239)
+    let collection = document.createCollection(categoryID: document.defaultCategory.id, name: "Custom", color: color)
+    let data = try JSONEncoder().encode(document)
+    let restored = try JSONDecoder().decode(FavoriteLibraryDocument.self, from: data)
+    #expect(restored.collections.first { $0.id == collection.id }?.color == color)
+    #expect(try JSONDecoder().decode(String.self, from: JSONEncoder().encode(color)) == "#12ABEF")
+    for hex in ["#000000", "#ffffff", "#12abef"] {
+        let decoded = try JSONDecoder().decode(FavoriteCollectionColor.self, from: JSONEncoder().encode(hex))
+        #expect(try JSONDecoder().decode(String.self, from: JSONEncoder().encode(decoded)) == hex.uppercased())
+    }
+}
+
+@Test func collectionColorsRejectMalformedValues() throws {
+    for value in ["", "unknown", "#123", "123456", "#GG0000", "#+12345", "#1234567"] {
+        let data = try JSONEncoder().encode(value)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(FavoriteCollectionColor.self, from: data)
+        }
+    }
+}
+
 @Test func favoriteCategoriesCanBeCreatedRenamedReorderedAndDeletedToDefault() throws {
     var document = FavoriteLibraryDocument()
     let first = document.createCategory(name: "第一类")

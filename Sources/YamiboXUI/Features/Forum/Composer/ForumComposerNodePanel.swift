@@ -313,22 +313,12 @@ struct ForumComposerDimensionFields: View {
 
 struct ForumComposerColorField: View {
     @Binding var value: String
-    private let swatches = ["#000000", "#FFFFFF", "#FF0000", "#FF9900", "#FFFF00", "#008000", "#00BFFF", "#0000FF", "#800080", "#808080"]
     var body: some View {
         ColorPicker(L10n.string("forum.composer.custom_color"), selection: Binding(get: { ForumComposerNodePanelModel.color(ForumComposerSyntax.normalizedColor(value) ?? "#000000") }, set: { color in
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
             value = String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
         }), supportsOpacity: false)
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 2)], spacing: 2) {
-            ForEach(swatches, id: \.self) { hex in
-                Button { value = hex } label: {
-                    Circle().fill(ForumComposerNodePanelModel.color(hex)).frame(width: 26, height: 26)
-                        .overlay(Circle().stroke(.secondary, lineWidth: value.uppercased() == hex ? 3 : 0.5)).frame(width: 44, height: 44)
-                }.buttonStyle(.borderless).accessibilityLabel(hex).accessibilityAddTraits(value.uppercased() == hex ? .isSelected : [])
-            }
-        }
-        TextField("#RRGGBB", text: $value).autocorrectionDisabled().textInputAutocapitalization(.never)
     }
 }
 
