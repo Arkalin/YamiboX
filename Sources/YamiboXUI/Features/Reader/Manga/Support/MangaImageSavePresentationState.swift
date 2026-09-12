@@ -32,7 +32,11 @@ struct MangaImageSaveFeedback: Identifiable {
     }
 
     var transientFeedback: TransientFeedback {
-        TransientFeedback(message: "\(title)\(message)", details: details, id: id)
+        TransientFeedback(
+            message: [title, message].filter { !$0.isEmpty }.joined(separator: "\n"),
+            details: details,
+            id: id
+        )
     }
 
     var title: String {

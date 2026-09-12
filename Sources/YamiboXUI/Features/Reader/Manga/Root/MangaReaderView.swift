@@ -514,15 +514,10 @@ public struct MangaReaderView: View {
                 likedItemForActionTarget = nil
             }
         }
-        .transientFeedbackOverlay(
+        .transientMessage(
             imageSavePresentation.feedback?.transientFeedback,
-            bottomPadding: 28, horizontalPadding: 20, minimumSeconds: 1.8,
-            animation: .easeInOut(duration: 0.18)
-        ) { _, showDetails in
-            if let feedback = imageSavePresentation.feedback {
-                MangaImageSaveFeedbackToast(feedback: feedback, showDetails: showDetails)
-            }
-        } clear: {
+            bottomPadding: 28
+        ) {
             imageSavePresentation.feedback = nil
         }
         .onChange(of: imageSavePresentation.feedback?.id) {
