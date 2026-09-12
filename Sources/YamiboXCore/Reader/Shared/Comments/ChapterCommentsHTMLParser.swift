@@ -69,14 +69,18 @@ enum ChapterCommentsHTMLParser {
         html: String,
         target: ReaderChapterCommentTarget
     ) throws -> [ChapterComment] {
-        let document = try KannaSoup.parse(html)
+        try YamiboHTMLPageInspector.ensureReadable(html)
+        let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
+        let document = try KannaSoup.parse(payload)
         let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
+        var hasRatingStructure = false
         var pending: (author: String, uid: String?, metadata: String?, avatarURL: URL?)?
 
         for row in rows {
             let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
             if values.count >= 3, values[0].contains("积分") {
+                hasRatingStructure = true
                 pending = (
                     author: values[1],
                     uid: row.select("a[href]").array().compactMap(linkUID).first,
@@ -109,6 +113,8 @@ enum ChapterCommentsHTMLParser {
             pending = nil
         }
 
+        // Ratings may all omit reasons. Validate the page, not the number of comments.
+        guard hasRatingStructure else { throw ReaderChapterCommentsUnavailableError() }
         return comments
     }
 

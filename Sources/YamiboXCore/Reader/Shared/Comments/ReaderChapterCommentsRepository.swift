@@ -60,7 +60,6 @@ public actor ReaderChapterCommentsRepository {
         let ratings = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseFullRatingReasonsPage") {
             try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(html: html, target: postTarget)
         }
-        guard !ratings.isEmpty else { throw ReaderChapterCommentsUnavailableError() }
         return ratings.map { rating in
             var result = rating
             if let uid = rating.authorUID, let authorID = target.authorID { result.isThreadAuthor = uid == authorID }
