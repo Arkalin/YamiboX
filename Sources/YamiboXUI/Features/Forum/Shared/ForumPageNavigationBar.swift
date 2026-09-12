@@ -37,9 +37,10 @@ struct ForumPageNavigationBar: View {
                 } label: {
                     Label(L10n.string("forum.board.next_page"), systemImage: "chevron.right")
                 }
-                .labelStyle(.titleAndIcon)
                 .disabled(navigation.totalPages.map { currentPage >= $0 } ?? false)
             }
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(theme.accentText)
