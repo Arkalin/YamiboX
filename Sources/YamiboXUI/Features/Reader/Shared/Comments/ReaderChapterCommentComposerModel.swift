@@ -77,13 +77,17 @@ struct ReaderChapterCommentComposeActions {
         }
         rate = { context, score, reason, notice in
             let repository = await dependencies.makeForumThreadReaderRepository()
-            return try await repository.ratePost(threadID: context.threadID, postID: context.post.postID,
+            let result = try await repository.ratePost(threadID: context.threadID, postID: context.post.postID,
                                                  score: score, reason: reason, formHash: context.formHash, noticeAuthor: notice)
+            onSubmissionAccepted(ForumSubmissionChange(postInteractionThreadID: context.threadID))
+            return result
         }
         comment = { context, message in
             let repository = await dependencies.makeForumThreadReaderRepository()
-            return try await repository.commentPost(threadID: context.threadID, postID: context.post.postID,
+            let result = try await repository.commentPost(threadID: context.threadID, postID: context.post.postID,
                                                     message: message, formHash: context.formHash, page: context.page)
+            onSubmissionAccepted(ForumSubmissionChange(postInteractionThreadID: context.threadID))
+            return result
         }
         makeReplySession = { ForumPageSession(url: $0, dependencies: dependencies, onSubmissionAccepted: onSubmissionAccepted) }
     }

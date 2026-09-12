@@ -7,6 +7,35 @@ import YamiboXTestSupport
 @MainActor
 @Suite(.serialized)
 struct ReaderChapterCommentComposerIntegrationTests {
+    @Test(arguments: [ReaderChapterCommentComposeMode.comment, .rating], [true, false])
+    func nativeSubmissionNotifiesOriginalThreadOnlyOnSuccess(mode: ReaderChapterCommentComposeMode, accepted: Bool) async throws {
+        try await withContext(findPostHTML: ChapterComposerIntegrationHTML.touchThread, submissionAccepted: accepted) { context in
+            let refreshState = ForumContentRefreshState()
+            var changes: [ForumSubmissionChange] = []
+            let model = try makeModel(context: context, mode: mode) { change in
+                changes.append(change)
+                refreshState.record(change)
+            }
+            await model.load()
+            #expect(changes.isEmpty)
+            if mode == .comment {
+                model.comment?.message = "A chapter comment"
+            } else {
+                model.rating?.scoreText = "5"
+                model.rating?.reason = "Great chapter"
+            }
+            #expect(model.canSubmit)
+
+            let feedback = await model.submit()
+            #expect((feedback != nil) == accepted)
+            #expect(model.didSubmit == accepted)
+            #expect(changes.count == (accepted ? 1 : 0))
+            #expect(refreshState.threadChange("123")?.kind == (accepted ? .postInteraction(threadID: "123") : nil))
+            #expect(refreshState.threadChange("999") == nil)
+            #expect(ChapterComposerIntegrationURLProtocol.record.requests.filter { $0.httpMethod == "POST" }.count == 1)
+        }
+    }
+
     @Test(arguments: ReaderChapterCommentComposeMode.allCases)
     func touchTemplateLoadsThroughProductionDependencies(mode: ReaderChapterCommentComposeMode) async throws {
         try await withContext(findPostHTML: ChapterComposerIntegrationHTML.touchThread) { context in
@@ -101,7 +130,8 @@ struct ReaderChapterCommentComposerIntegrationTests {
 
     private func makeModel(
         context: YamiboAppContext,
-        mode: ReaderChapterCommentComposeMode
+        mode: ReaderChapterCommentComposeMode,
+        onSubmissionAccepted: @escaping (ForumSubmissionChange) -> Void = { _ in Issue.record("Loading must not accept a submission") }
     ) throws -> ReaderChapterCommentComposerModel {
         let chapter = ReaderChapterCommentTarget(
             threadID: "123", view: 2, ownerPostID: "456", title: "Chapter", authorID: "42"
@@ -112,7 +142,7 @@ struct ReaderChapterCommentComposerIntegrationTests {
             target: target,
             actions: ReaderChapterCommentComposeActions(
                 dependencies: context.forumDependencies,
-                onSubmissionAccepted: { _ in Issue.record("Loading must not accept a submission") }
+                onSubmissionAccepted: onSubmissionAccepted
             )
         )
         model.selectMode(mode)
@@ -132,6 +162,7 @@ struct ReaderChapterCommentComposerIntegrationTests {
 
     private func withContext(
         findPostHTML: String,
+        submissionAccepted: Bool? = nil,
         body: (YamiboAppContext) async throws -> Void
     ) async throws {
         let suiteName = YamiboTestDefaults.suiteName(prefix: "chapter-composer-integration")
@@ -142,7 +173,7 @@ struct ReaderChapterCommentComposerIntegrationTests {
             try? FileManager.default.removeItem(at: root)
         }
 
-        ChapterComposerIntegrationURLProtocol.record.configure(findPostHTML: findPostHTML)
+        ChapterComposerIntegrationURLProtocol.record.configure(findPostHTML: findPostHTML, submissionAccepted: submissionAccepted)
         defer { ChapterComposerIntegrationURLProtocol.record.reset() }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ChapterComposerIntegrationURLProtocol.self]
@@ -218,13 +249,15 @@ private enum ChapterComposerIntegrationHTML {
 private final class ChapterComposerIntegrationRequestRecord: @unchecked Sendable {
     private let lock = NSLock()
     private var findPostHTML: String?
+    private var submissionAccepted: Bool?
     private var recordedRequests: [URLRequest] = []
 
     var requests: [URLRequest] { lock.withLock { recordedRequests } }
 
-    func configure(findPostHTML: String) {
+    func configure(findPostHTML: String, submissionAccepted: Bool?) {
         lock.withLock {
             self.findPostHTML = findPostHTML
+            self.submissionAccepted = submissionAccepted
             recordedRequests = []
         }
     }
@@ -232,6 +265,7 @@ private final class ChapterComposerIntegrationRequestRecord: @unchecked Sendable
     func reset() {
         lock.withLock {
             findPostHTML = nil
+            submissionAccepted = nil
             recordedRequests = []
         }
     }
@@ -239,8 +273,21 @@ private final class ChapterComposerIntegrationRequestRecord: @unchecked Sendable
     func responseBody(for request: URLRequest) -> String? {
         lock.withLock {
             recordedRequests.append(request)
-            guard request.httpMethod == "GET", let url = request.url,
+            guard let url = request.url,
                   url.host == YamiboDomain.baseURL.host, url.path == "/forum.php" else { return nil }
+            if request.httpMethod == "POST", let submissionAccepted {
+                if !submissionAccepted {
+                    return "<root><![CDATA[<div id=\"messagetext\"><p>抱歉，您没有权限</p></div>]]></root>"
+                }
+                if url.queryItemValue("ratesubmit") == "yes" {
+                    return "<root><![CDATA[<div id=\"messagetext\"><p>评分成功</p></div><script>succeedhandle_rate();</script>]]></root>"
+                }
+                if url.queryItemValue("commentsubmit") == "yes" {
+                    return "<root><![CDATA[<div id=\"messagetext\"><p>点评成功</p></div><script>succeedhandle_comment();</script>]]></root>"
+                }
+                return nil
+            }
+            guard request.httpMethod == "GET" else { return nil }
             switch (url.queryItemValue("mod"), url.queryItemValue("action")) {
             case ("redirect", _) where url.queryItemValue("goto") == "findpost":
                 return findPostHTML

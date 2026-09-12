@@ -728,6 +728,31 @@ private enum ForumThreadReaderTestError: LocalizedError {
 }
 
 @MainActor
+@Test(arguments: [true, false])
+func forumThreadChapterInteractionRefreshesResumedAndNewReaders(hasLoadedPage: Bool) async throws {
+    let cached = makeThreadPage(title: "Cached", postID: "4001", contentText: "Old", page: 2)
+    let fixture = try ForumThreadReaderViewModelFixture(cachedPages: [2: cached])
+    let model = fixture.makeModel(initialPage: 2, resolveReplyTarget: { _ in
+        Issue.record("A chapter interaction must preserve the original reading position")
+        return nil
+    })
+    if hasLoadedPage {
+        await model.load()
+        model.updateVisibleAnchor(postID: "4001")
+        model.suspendForModeSwitch()
+    }
+    let change = ForumSubmissionChange(postInteractionThreadID: "704")
+    await model.load(submissionChange: change)
+    #expect(model.currentPage == 2)
+    #expect(model.page?.posts.first?.contentText == "正文")
+    #expect(fixture.repository.fetchPageCalls() == [2])
+    #expect(fixture.repository.cachedPageCalls() == (hasLoadedPage ? [2] : []))
+    if hasLoadedPage { #expect(model.restoredAnchorPostID == "4001") }
+    await model.load(submissionChange: change)
+    #expect(fixture.repository.fetchPageCalls() == [2])
+}
+
+@MainActor
 @Test func forumThreadSubmissionRefreshesCurrentPageOnceAndPreservesAnchor() async throws {
     let fixture = try ForumThreadReaderViewModelFixture()
     let model = fixture.makeModel(initialPage: 2)
