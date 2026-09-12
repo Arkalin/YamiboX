@@ -126,14 +126,10 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private var zoomTransitionOverlay: UIView?
         private(set) var verticalZoomScale = MangaPageZoomPolicy.minimumScale
         private var pinchStartScale: CGFloat?
-        private var lastScrollMotionTime = CACurrentMediaTime()
-        /// Grace window after real scroll motion in which a completed tap is
-        /// treated as "braking the scroll" rather than a chrome toggle.
-        /// UIKit halts deceleration synchronously on touch-down, so by the
-        /// time this tap's `.ended` fires, `isDecelerating` already reads
-        /// false again — the recent-motion timestamp is what still proves
-        /// the tap landed on a moving list. Mirrors
-        /// `NovelReaderVerticalScrollCoordinator.motionSuppressionInterval`.
+        private let currentTime: () -> CFTimeInterval
+        private var lastScrollMotionTime: CFTimeInterval?
+        // Also checked at touch-down: waiting for double-tap failure can
+        // outlast this window after a touch has stopped deceleration.
         private static let chromeToggleMotionSuppressionInterval: CFTimeInterval = 0.35
         lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         lazy var doubleTapGesture: UITapGestureRecognizer = {
@@ -143,8 +139,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }()
         lazy var pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
 
-        init(parent: MangaVerticalCollectionViewport) {
+        init(parent: MangaVerticalCollectionViewport, currentTime: @escaping () -> CFTimeInterval = CACurrentMediaTime) {
             self.parent = parent
+            self.currentTime = currentTime
             self.prefetchImageLoader = parent.imageLoader
             self.imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
         }
@@ -239,7 +236,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            lastScrollMotionTime = CACurrentMediaTime()
+            lastScrollMotionTime = currentTime()
             guard pendingInitialPageIndex == nil,
                   let collectionView = scrollView as? UICollectionView else {
                 return
@@ -401,9 +398,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended else { return }
-            let sinceLastMotion = CACurrentMediaTime() - lastScrollMotionTime
-            guard sinceLastMotion > Self.chromeToggleMotionSuppressionInterval else { return }
+            guard recognizer.state == .ended,
+                  let scrollView = recognizer.view as? UIScrollView,
+                  canRecognizeTap(in: scrollView) else { return }
             let onTap = parent.onTap
             callbackScheduler.publish {
                 onTap()
@@ -412,7 +409,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
 
         @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
-                  let collectionView = recognizer.view as? UICollectionView else {
+                  let collectionView = recognizer.view as? UICollectionView,
+                  canRecognizeTap(in: collectionView) else {
                 return
             }
 
@@ -475,19 +473,42 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            touch.view?.isDescendant(ofType: UIControl.self) != true
+            guard touch.view?.isDescendant(ofType: UIControl.self) != true else { return false }
+            guard gestureRecognizer === tapGesture || gestureRecognizer === doubleTapGesture else { return true }
+            guard let scrollView = gestureRecognizer.view as? UIScrollView else { return false }
+            // Reject this touch entirely, rather than reconsidering it after
+            // the single-tap recognizer finishes waiting for a second tap.
+            return canRecognizeTap(in: scrollView)
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            guard gestureRecognizer === tapGesture || gestureRecognizer === doubleTapGesture,
+                  let scrollView = gestureRecognizer.view as? UIScrollView else { return false }
+            return otherGestureRecognizer === scrollView.panGestureRecognizer || otherGestureRecognizer === pinchGesture
         }
 
         func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            true
+            guard let scrollView = pinchGesture.view as? UIScrollView else { return false }
+            return (gestureRecognizer === pinchGesture && otherGestureRecognizer === scrollView.panGestureRecognizer)
+                || (gestureRecognizer === scrollView.panGestureRecognizer && otherGestureRecognizer === pinchGesture)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard gestureRecognizer === pinchGesture else { return true }
             return parent.zoomEnabled && !parent.isChromeVisible && !parent.pages.isEmpty
+        }
+
+        private func canRecognizeTap(in scrollView: UIScrollView) -> Bool {
+            guard !scrollView.isDragging, !scrollView.isDecelerating,
+                  pinchGesture.state != .began, pinchGesture.state != .changed else { return false }
+            guard let lastScrollMotionTime else { return true }
+            return currentTime() - lastScrollMotionTime > Self.chromeToggleMotionSuppressionInterval
         }
 
         private func resetVerticalZoomIfUnavailable(in collectionView: UICollectionView) {

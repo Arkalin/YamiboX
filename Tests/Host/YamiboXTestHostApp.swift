@@ -31,6 +31,8 @@ struct YamiboXTestHostApp: App {
                 ForumPhotoUploadFixture()
             } else if ProcessInfo.processInfo.environment["FORUM_SEND_CRASH_FIXTURE"] == "1" {
                 ForumSendCrashFixture()
+            } else if ProcessInfo.processInfo.environment["MANGA_VERTICAL_SCROLL_FIXTURE"] == "1" {
+                MangaVerticalScrollFixture()
             } else {
                 MangaLongPressFixture()
             }
@@ -787,6 +789,133 @@ private actor ForumSendCrashRepository: ForumPageLoading {
     func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment {
         throw ForumPageError.unsupportedUpload
     }
+}
+
+private struct MangaVerticalScrollFixture: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> MangaVerticalScrollFixtureController {
+        MangaVerticalScrollFixtureController()
+    }
+
+    func updateUIViewController(_ controller: MangaVerticalScrollFixtureController, context: Context) {}
+}
+
+private final class MangaVerticalScrollFixtureController: UIViewController {
+    private let pages: [MangaReaderPageProjection]
+    private let imageLoader: MangaReaderPageImageLoader
+    private var chromeVisible = false
+    private var tapCount = 0
+    private var currentPageIndex = 0
+    private var diagnosticsTimer: Timer?
+    private let diagnosticsLabel = UILabel()
+    private lazy var host = UIHostingController(rootView: viewport)
+
+    init() {
+        let size = CGSize(width: 400, height: 600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let data = UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            for (index, color) in [UIColor.systemTeal, .systemYellow, .systemPink].enumerated() {
+                color.setFill()
+                context.fill(CGRect(x: 0, y: index * 200, width: 400, height: 200))
+                ("Panel \(index + 1)" as NSString).draw(at: CGPoint(x: 130, y: index * 200 + 80),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 32), .foregroundColor: UIColor.black])
+            }
+        }
+        pages = (0..<12).map { index in
+            MangaReaderPageProjection(tid: "vertical-fixture", ownerPostID: "1", chapterTitle: "Offline manga",
+                imageURL: URL(fileURLWithPath: "/manga-vertical-\(index).png"),
+                sourceIdentity: MangaReaderProjectionSourceIdentity(tid: "vertical-fixture", authorID: nil, view: 1),
+                globalIndex: index, localIndex: index, chapterPageCount: 12)
+        }
+        imageLoader = MangaReaderPageImageLoader(imageSource: {
+            YamiboImageSource(url: $0.imageURL, offlineScope: YamiboImageOfflineScope(tid: "vertical-fixture"))
+        }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline(
+            offlineImages: MangaVerticalScrollFixtureImages(data: data))))
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(host)
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host.view)
+        host.didMove(toParent: self)
+        diagnosticsLabel.translatesAutoresizingMaskIntoConstraints = false
+        diagnosticsLabel.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
+        diagnosticsLabel.textAlignment = .center
+        diagnosticsLabel.textColor = .white
+        diagnosticsLabel.backgroundColor = .black
+        diagnosticsLabel.numberOfLines = 2
+        diagnosticsLabel.accessibilityIdentifier = "manga-vertical-diagnostics"
+        diagnosticsLabel.isUserInteractionEnabled = false
+        view.addSubview(diagnosticsLabel)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: view.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            diagnosticsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            diagnosticsLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            diagnosticsLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            diagnosticsLabel.heightAnchor.constraint(equalToConstant: 44)
+        ])
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        diagnosticsTimer = Timer(timeInterval: 0.05, target: self,
+            selector: #selector(refreshDiagnostics), userInfo: nil, repeats: true)
+        RunLoop.main.add(diagnosticsTimer!, forMode: .common)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        diagnosticsTimer?.invalidate()
+        diagnosticsTimer = nil
+    }
+
+    private var viewport: MangaVerticalCollectionViewport {
+        MangaVerticalCollectionViewport(pages: pages, currentPageIndex: currentPageIndex,
+            viewportPlacement: nil, controlScrollStep: nil, imageLoader: imageLoader,
+            isChromeVisible: chromeVisible, zoomEnabled: true, likedPageIDs: [],
+            onCurrentPageChange: { [weak self] in self?.currentPageIndex = $0 },
+            onControlScrollEdgeReached: { _ in }, onPageLongPress: { _ in },
+            onTap: { [weak self] in
+                guard let self else { return }
+                self.tapCount += 1
+                self.chromeVisible.toggle()
+                self.host.rootView = self.viewport
+            })
+    }
+
+    @objc private func refreshDiagnostics() {
+        guard let collection = findCollection(in: host.view),
+              let coordinator = collection.delegate as? MangaVerticalCollectionViewport.Coordinator else { return }
+        collection.accessibilityIdentifier = "manga-vertical-viewport"
+        let values: [String: Double] = [
+            "taps": Double(tapCount), "chrome": chromeVisible ? 1 : 0,
+            "loaded": imageLoader.cachedImage(for: pages[0]) != nil && collection.alpha == 1 ? 1 : 0,
+            "offsetY": collection.contentOffset.y, "zoom": coordinator.verticalZoomScale,
+            "decelerating": collection.isDecelerating ? 1 : 0,
+            "dragging": collection.isDragging ? 1 : 0
+        ]
+        diagnosticsLabel.text = "Chrome: \(chromeVisible ? "visible" : "hidden")  Taps: \(tapCount)\n"
+            + String(format: "Page: %d  Zoom: %.2fx", currentPageIndex + 1, coordinator.verticalZoomScale)
+        diagnosticsLabel.accessibilityValue = String(decoding: try! JSONEncoder().encode(values), as: UTF8.self)
+    }
+
+    private func findCollection(in view: UIView) -> UICollectionView? {
+        if let collection = view as? UICollectionView { return collection }
+        return view.subviews.lazy.compactMap { self.findCollection(in: $0) }.first
+    }
+}
+
+private struct MangaVerticalScrollFixtureImages: YamiboOfflineImageDataProviding {
+    let data: Data
+
+    func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? { data }
 }
 
 private struct MangaLongPressFixture: View {
