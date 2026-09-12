@@ -6,7 +6,12 @@ public struct ForumSubmissionChange: Equatable, Sendable, Identifiable {
 
     public enum Kind: Equatable, Sendable {
         case post(mode: ForumPostEditorMode, threadID: String?, forumID: String?, replyURL: URL?)
+        case postInteraction(threadID: String)
         case blog(blogID: String?)
+    }
+
+    public init(postInteractionThreadID: String) {
+        kind = .postInteraction(threadID: postInteractionThreadID)
     }
 
     public init?(form: ForumForm, sourceURL: URL, response: ForumPageDocument) {

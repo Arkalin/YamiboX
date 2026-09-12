@@ -234,8 +234,14 @@ final class ForumThreadReaderViewModel {
     func load(submissionChange: ForumSubmissionChange? = nil) async {
         isSuspendedForModeSwitch = false
         let change = submissionChange.flatMap { change -> ForumSubmissionChange? in
-            guard case let .post(_, threadID, _, _) = change.kind, threadID == context.thread.tid else { return nil }
-            return change
+            switch change.kind {
+            case let .post(_, threadID, _, _) where threadID == context.thread.tid:
+                return change
+            case let .postInteraction(threadID) where threadID == context.thread.tid:
+                return change
+            default:
+                return nil
+            }
         }
         if let change, change.id != handledSubmissionID, page != nil {
             await refresh(after: change)

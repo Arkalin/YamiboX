@@ -4,6 +4,17 @@ import YamiboXCore
 @testable import YamiboXUI
 
 @MainActor @Suite struct ForumContentRefreshStateTests {
+    @Test func postInteractionRetainsOnlyTheAffectedThreadInvalidation() {
+        let state = ForumContentRefreshState()
+        let change = ForumSubmissionChange(postInteractionThreadID: "704")
+        state.record(change)
+        #expect(state.threadChange("704") == change)
+        #expect(state.threadChange("705") == nil)
+        #expect(state.boardRevision("40") == nil)
+        state.reset()
+        #expect(state.threadChange("704") == nil)
+    }
+
     @Test func retainsChangesForOffscreenPagesAndDoesNotInvalidateOtherThreads() throws {
         let state = ForumContentRefreshState()
         let first = try change("action=reply&tid=704&fid=40")

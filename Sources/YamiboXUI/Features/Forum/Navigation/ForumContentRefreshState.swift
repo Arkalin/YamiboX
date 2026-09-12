@@ -26,6 +26,8 @@ final class ForumContentRefreshState {
                 allBoards = change.id
                 boards = [:]
             }
+        case let .postInteraction(threadID):
+            threads[threadID] = change
         case let .blog(blogID):
             if let blogID { blogs[blogID] = change.id }
         }
