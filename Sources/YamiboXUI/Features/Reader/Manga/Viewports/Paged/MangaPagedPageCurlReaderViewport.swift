@@ -9,6 +9,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         coordinator.invalidatePageCurlTransitions()
         coordinator.gestures.detach()
         coordinator.interactionRuntime.reset()
+        coordinator.zoom.detach(from: controller)
     }
     let plan: MangaPagedReadingPlan
     let viewportPlacement: MangaNovelReaderViewportPlacement?
@@ -86,7 +87,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         _ = context.coordinator.configureSpine(in: pageViewController)
         context.coordinator.applyPageBackground(to: containerViewController)
         context.coordinator.setCurrentSelection(in: pageViewController, animated: false)
-        context.coordinator.zoom.updatePageCurlSpreadZoomAvailability(in: containerViewController, animated: false)
+        context.coordinator.zoom.updatePageCurlSpreadZoomAvailability(in: containerViewController)
         return containerViewController
     }
 
@@ -98,7 +99,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
                 contentIdentity: contentIdentity
             )
             context.coordinator.applyPageBackground(to: containerViewController)
-            context.coordinator.zoom.updatePageCurlSpreadZoomAvailability(in: containerViewController, animated: true)
+            context.coordinator.zoom.updatePageCurlSpreadZoomAvailability(in: containerViewController)
         }
         let gestures = context.coordinator.gestures
         controlPageTurnBridge.route = { [weak gestures, weak containerViewController] step in

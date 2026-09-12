@@ -19,682 +19,391 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> MangaVerticalNativeViewport {
+        makeViewportView(coordinator: context.coordinator)
     }
 
-    func makeUIView(context: Context) -> UICollectionView {
-        makeCollectionView(coordinator: context.coordinator)
+    func makeViewportView(coordinator: Coordinator) -> MangaVerticalNativeViewport {
+        let view = MangaVerticalNativeViewport()
+        coordinator.attach(to: view)
+        return view
     }
 
-    func makeCollectionView(coordinator: Coordinator) -> UICollectionView {
-        let collectionView = MangaVerticalCollectionView(
-            frame: .zero,
-            collectionViewLayout: Self.makeLayout(
-                zoomScaleProvider: { [weak coordinator] in
-                    coordinator?.verticalZoomScale ?? MangaPageZoomPolicy.minimumScale
-                }
-            )
-        )
-        collectionView.alwaysBounceVertical = true
-        collectionView.contentInsetAdjustmentBehavior = .never
-        collectionView.backgroundColor = .black
-        collectionView.showsHorizontalScrollIndicator = false
-        collectionView.showsVerticalScrollIndicator = false
-        collectionView.dataSource = coordinator
-        collectionView.delegate = coordinator
-        collectionView.panGestureRecognizer.addTarget(coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
-        collectionView.register(
-            MangaVerticalCollectionPageCell.self,
-            forCellWithReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier
-        )
-        collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
-            guard let collectionView else { return }
-            coordinator?.applyInitialPlacementIfNeeded(in: collectionView)
-            coordinator?.applyViewportPlacementIfNeeded(in: collectionView)
-            coordinator?.updateImagePrefetch(in: collectionView)
-        }
-        coordinator.tapGesture.cancelsTouchesInView = false
-        coordinator.tapGesture.delegate = coordinator
-        coordinator.tapGesture.require(toFail: coordinator.doubleTapGesture)
-        collectionView.addGestureRecognizer(coordinator.tapGesture)
-        coordinator.doubleTapGesture.cancelsTouchesInView = false
-        coordinator.doubleTapGesture.delegate = coordinator
-        collectionView.addGestureRecognizer(coordinator.doubleTapGesture)
-        coordinator.pinchGesture.cancelsTouchesInView = false
-        coordinator.pinchGesture.delegate = coordinator
-        collectionView.addGestureRecognizer(coordinator.pinchGesture)
-        return collectionView
-    }
-
-    func updateUIView(_ collectionView: UICollectionView, context: Context) {
+    func updateUIView(_ view: MangaVerticalNativeViewport, context: Context) {
         context.coordinator.parent = self
         context.coordinator.callbackScheduler.performViewUpdate {
-            context.coordinator.updateContentIfNeeded(in: collectionView)
+            context.coordinator.updateContentIfNeeded(in: view)
         }
     }
 
-    static func dismantleUIView(_ collectionView: UICollectionView, coordinator: Coordinator) {
+    static func dismantleUIView(_ view: MangaVerticalNativeViewport, coordinator: Coordinator) {
         coordinator.dismantle()
-        collectionView.panGestureRecognizer.removeTarget(coordinator, action: #selector(Coordinator.handleBoundaryPan(_:)))
-        (collectionView as? MangaVerticalCollectionView)?.onLayoutSubviews = nil
     }
 
-    private static func makeLayout(
-        zoomScaleProvider: @escaping () -> CGFloat
-    ) -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout { _, environment in
-            let zoomScale = zoomScaleProvider()
-            let itemWidth = MangaVerticalCollectionZoomLayout.itemWidth(
-                viewportWidth: environment.container.effectiveContentSize.width,
-                zoomScale: zoomScale
-            )
-            let estimatedHeight = MangaVerticalCollectionZoomLayout.estimatedItemHeight(
-                baseHeight: MangaVerticalCollectionPageCell.defaultEstimatedHeight,
-                zoomScale: zoomScale
-            )
-            let itemSize = NSCollectionLayoutSize(
-                widthDimension: .absolute(itemWidth),
-                heightDimension: .estimated(estimatedHeight)
-            )
-            let item = NSCollectionLayoutItem(layoutSize: itemSize)
-            let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
-            let section = NSCollectionLayoutSection(group: group)
-            section.interGroupSpacing = 0
-            return section
-        }
-    }
-
-    final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDelegate, UIGestureRecognizerDelegate {
         var parent: MangaVerticalCollectionViewport
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
-        private var pendingBoundaryPull: ReaderPageBoundary?
+        private(set) weak var viewport: MangaVerticalNativeViewport?
+        private(set) var logicalLayout = MangaVerticalCollectionZoomLayout()
+        private(set) var layoutRevision = 0
         private var contentIdentity: [String] = []
+        private var heightToWidthRatios: [String: CGFloat] = [:]
+        private var pendingRatios: [String: CGFloat] = [:]
+        private var ratioUpdateTask: Task<Void, Never>?
         private var prefetchImageLoader: MangaReaderPageImageLoader
         private var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
         private var lastPrefetchSources: [YamiboImageSource] = []
         private var isDismantled = false
-        private var heightToWidthRatios: [String: CGFloat] = [:]
+        private var isUpdatingLayout = false
         private var lastAppliedLikedPageIDs: Set<String> = []
         private var pendingInitialPageIndex: Int?
-        private var lastReportedGlobalIndex: Int?
-        private var pendingReportedGlobalIndex: Int?
-        private var currentPagePublishDisplayLink: CADisplayLink?
         private var lastAppliedPlacementRevision: Int?
         private var lastAppliedControlScrollRevision: Int?
         private var pendingControlScrollTarget: (y: CGFloat, timestamp: TimeInterval)?
-        private var zoomTransitionOverlay: UIView?
-        private(set) var verticalZoomScale = MangaPageZoomPolicy.minimumScale
-        private var pinchStartScale: CGFloat?
+        private var lastReportedGlobalIndex: Int?
+        private var pendingReportedGlobalIndex: Int?
+        private var currentPagePublishDisplayLink: CADisplayLink?
+        private var pendingBoundaryPull: ReaderPageBoundary?
+        private var panIncludedPinch = false
         private let currentTime: () -> CFTimeInterval
         private var lastScrollMotionTime: CFTimeInterval?
-        // Also checked at touch-down: waiting for double-tap failure can
-        // outlast this window after a touch has stopped deceleration.
         private static let chromeToggleMotionSuppressionInterval: CFTimeInterval = 0.35
+        var verticalZoomScale: CGFloat { viewport?.normalizedZoomFactor ?? 1 }
+        var pinchGesture: UIPinchGestureRecognizer { viewport!.pinchGestureRecognizer! }
         lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         lazy var doubleTapGesture: UITapGestureRecognizer = {
             let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
             recognizer.numberOfTapsRequired = 2
             return recognizer
         }()
-        lazy var pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
 
         init(parent: MangaVerticalCollectionViewport, currentTime: @escaping () -> CFTimeInterval = CACurrentMediaTime) {
             self.parent = parent
             self.currentTime = currentTime
-            self.prefetchImageLoader = parent.imageLoader
-            self.imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
+            prefetchImageLoader = parent.imageLoader
+            imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
         }
 
-        func updateContentIfNeeded(in collectionView: UICollectionView) {
-            resetVerticalZoomIfUnavailable(in: collectionView)
+        func attach(to view: MangaVerticalNativeViewport) {
+            viewport = view
+            view.collectionView.dataSource = self
+            view.collectionView.delegate = self
+            view.collectionView.register(MangaVerticalCollectionPageCell.self,
+                                         forCellWithReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier)
+            for gesture in [tapGesture, doubleTapGesture] {
+                gesture.cancelsTouchesInView = false
+                gesture.delegate = self
+                view.addGestureRecognizer(gesture)
+            }
+            tapGesture.require(toFail: doubleTapGesture)
+            view.panGestureRecognizer.addTarget(self, action: #selector(handleBoundaryPan(_:)))
+            view.permitsPinch = { [weak self] in
+                guard let self else { return false }
+                return self.parent.zoomEnabled && !self.parent.pages.isEmpty
+            }
+            view.onViewportSizeChange = { [weak self] _, previous in
+                self?.rebuildLayout(preserving: previous)
+                self?.applyPlacementIfNeeded()
+            }
+            view.onSnapshotChange = { [weak self] snapshot in
+                guard let self, !self.isUpdatingLayout else { return }
+                if snapshot.isInteracting { self.lastScrollMotionTime = self.currentTime() }
+                if snapshot.isDragging { self.pendingControlScrollTarget = nil }
+                if snapshot.isZooming || snapshot.isZoomBouncing {
+                    self.panIncludedPinch = true
+                    self.pendingBoundaryPull = nil
+                }
+                self.updateWindow()
+                self.publishCurrentPageIfNeeded()
+            }
+            view.onInteractionEnd = { [weak self] in
+                self?.applyPendingRatios()
+                self?.publishCurrentPageIfNeeded()
+            }
+        }
+
+        func updateContentIfNeeded(in view: MangaVerticalNativeViewport) {
             if parent.likedPageIDs != lastAppliedLikedPageIDs {
                 lastAppliedLikedPageIDs = parent.likedPageIDs
-                for case let cell as MangaVerticalCollectionPageCell in collectionView.visibleCells {
+                for case let cell as MangaVerticalCollectionPageCell in view.collectionView.visibleCells {
                     cell.refreshLiked(using: parent.likedPageIDs)
                 }
             }
             let nextIdentity = parent.pages.map(\.id)
-            guard nextIdentity != contentIdentity else {
-                applyInitialPlacementIfNeeded(in: collectionView)
-                applyViewportPlacementIfNeeded(in: collectionView)
-                applyControlScrollStepIfNeeded(in: collectionView)
-                updateImagePrefetch(in: collectionView)
-                return
+            if nextIdentity != contentIdentity {
+                imagePrefetchCoordinator.cancel()
+                lastPrefetchSources = []
+                contentIdentity = nextIdentity
+                let validIDs = Set(nextIdentity)
+                heightToWidthRatios = heightToWidthRatios.filter { validIDs.contains($0.key) }
+                pendingRatios = [:]
+                ratioUpdateTask?.cancel()
+                ratioUpdateTask = nil
+                lastReportedGlobalIndex = nil
+                pendingReportedGlobalIndex = nil
+                cancelPendingCurrentPagePublish()
+                pendingControlScrollTarget = nil
+                view.stopInteraction()
+                view.resetZoom(animated: false)
+                pendingInitialPageIndex = parent.pages.isEmpty ? nil
+                    : min(max(parent.viewportPlacement?.targetPageIndex ?? parent.currentPageIndex ?? 0, 0), parent.pages.count - 1)
+                view.alpha = parent.pages.isEmpty ? 1 : 0
+                view.collectionView.reloadData()
+                rebuildLayout(preserving: nil)
+                lastAppliedControlScrollRevision = parent.controlScrollStep?.revision
             }
-
-            imagePrefetchCoordinator.cancel()
-            lastPrefetchSources = []
-            contentIdentity = nextIdentity
-            let validIDs = Set(nextIdentity)
-            heightToWidthRatios = heightToWidthRatios.filter { validIDs.contains($0.key) }
-            lastReportedGlobalIndex = nil
-            pendingReportedGlobalIndex = nil
-            pendingControlScrollTarget = nil
-            cancelPendingCurrentPagePublish()
-            resetVerticalZoom(in: collectionView, animated: false)
-
-            if parent.pages.isEmpty {
-                pendingInitialPageIndex = nil
-                collectionView.alpha = 1
-            } else {
-                let requestedIndex = parent.viewportPlacement?.targetPageIndex ?? parent.currentPageIndex ?? 0
-                pendingInitialPageIndex = min(max(requestedIndex, 0), parent.pages.count - 1)
-                collectionView.alpha = 0
+            if !parent.zoomEnabled, MangaPageZoomPolicy.isActive(view.normalizedZoomFactor) {
+                view.stopInteraction()
+                view.resetZoom(animated: false)
             }
+            let maximumScale = parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
+            if view.maximumZoomScale != maximumScale { view.maximumZoomScale = maximumScale }
+            applyPlacementIfNeeded()
+            applyControlScrollStepIfNeeded()
+            updateImagePrefetch()
+        }
 
-            updateImagePrefetch(in: collectionView)
-            collectionView.collectionViewLayout.invalidateLayout()
-            collectionView.reloadData()
-            collectionView.setNeedsLayout()
-            collectionView.layoutIfNeeded()
-            applyInitialPlacementIfNeeded(in: collectionView)
-            applyViewportPlacementIfNeeded(in: collectionView)
-            // A scroll step issued against the previous content is stale.
-            lastAppliedControlScrollRevision = parent.controlScrollStep?.revision
+        private func rebuildLayout(preserving previous: NativeZoomSnapshot?) {
+            guard let view = viewport, view.bounds.width > 0, view.bounds.height > 0 else { return }
+            let screenAnchor = CGPoint(x: view.bounds.width / 2, y: view.bounds.height / 2)
+            let anchor = previous.flatMap {
+                logicalLayout.anchor(at: CGPoint(x: $0.visibleRect.midX, y: $0.visibleRect.midY),
+                                     viewportPoint: screenAnchor)
+            }
+            isUpdatingLayout = true
+            logicalLayout = MangaVerticalCollectionZoomLayout(
+                pageIDs: contentIdentity, width: view.bounds.width, heightToWidthRatios: heightToWidthRatios
+            )
+            layoutRevision += 1
+            view.logicalCollectionLayout.logicalLayout = logicalLayout
+            view.configureGeometry(
+                contentSize: CGSize(width: view.bounds.width, height: max(1, logicalLayout.contentSize.height)),
+                maximumFactor: parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
+            )
+            if let anchor, let point = logicalLayout.contentPoint(for: anchor) {
+                view.place(contentPoint: point, at: anchor.viewportPoint)
+            }
+            isUpdatingLayout = false
+            updateWindow(force: true)
+            publishCurrentPageIfNeeded()
+        }
+
+        private func updateWindow(force: Bool = false) {
+            guard !isUpdatingLayout, let view = viewport, logicalLayout.contentSize.height > 0 else { return }
+            let visible = view.snapshot.visibleRect
+            let desired = logicalLayout.window(covering: visible)
+            let current = view.collectionView.frame
+            let protected = current.insetBy(dx: 0, dy: min(current.height / 4, visible.height / 4))
+            let actual = visible.intersection(CGRect(origin: .zero, size: logicalLayout.contentSize))
+            guard force || !protected.contains(actual) || current.height > desired.height * 1.5 else { return }
+            isUpdatingLayout = true
+            view.collectionView.frame = desired
+            view.collectionView.contentOffset = CGPoint(x: 0, y: desired.minY)
+            view.collectionView.layoutIfNeeded()
+            isUpdatingLayout = false
+        }
+
+        func recordHeightToWidthRatio(_ ratio: CGFloat, for pageID: String) {
+            guard !isDismantled, ratio.isFinite, ratio > 0, contentIdentity.contains(pageID),
+                  abs((heightToWidthRatios[pageID] ?? (1 / 0.72)) - ratio) > 0.001 else { return }
+            pendingRatios[pageID] = ratio
+            guard ratioUpdateTask == nil else { return }
+            ratioUpdateTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                self.ratioUpdateTask = nil
+                self.applyPendingRatios()
+            }
+        }
+
+        private func applyPendingRatios() {
+            // Double-tap zoom uses isZoomAnimating. Keep its host geometry stable
+            // until UIKit finishes animating the presentation transform.
+            guard !isDismantled, !pendingRatios.isEmpty, let view = viewport,
+                  !view.isZooming, !view.isZoomBouncing, !view.isZoomAnimating else { return }
+            let previous = view.snapshot
+            heightToWidthRatios.merge(pendingRatios) { _, new in new }
+            pendingRatios = [:]
+            callbackScheduler.performViewUpdate { rebuildLayout(preserving: previous) }
         }
 
         func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
             parent.pages.count
         }
 
-        func collectionView(
-            _ collectionView: UICollectionView,
-            cellForItemAt indexPath: IndexPath
-        ) -> UICollectionViewCell {
+        func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
             let cell = collectionView.dequeueReusableCell(
-                withReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier,
-                for: indexPath
+                withReuseIdentifier: MangaVerticalCollectionPageCell.reuseIdentifier, for: indexPath
             )
             guard let cell = cell as? MangaVerticalCollectionPageCell,
-                  parent.pages.indices.contains(indexPath.item) else {
-                return cell
-            }
-
+                  parent.pages.indices.contains(indexPath.item) else { return cell }
             let page = parent.pages[indexPath.item]
             cell.configure(
-                page: page,
-                imageLoader: parent.imageLoader,
+                page: page, imageLoader: parent.imageLoader,
                 knownHeightToWidthRatio: heightToWidthRatios[page.id],
                 isLiked: parent.likedPageIDs.contains(page.id),
-                onHeightToWidthRatioChange: { [weak self, weak collectionView] ratio in
-                    self?.heightToWidthRatios[page.id] = ratio
-                    collectionView?.collectionViewLayout.invalidateLayout()
-                    if let collectionView {
-                        self?.publishCurrentPageIfNeeded(from: collectionView)
-                    }
+                onHeightToWidthRatioChange: { [weak self] ratio in
+                    self?.recordHeightToWidthRatio(ratio, for: page.id)
                 },
                 onLongPress: { [weak self] page in
                     guard let self else { return }
-                    let onPageLongPress = self.parent.onPageLongPress
-                    self.callbackScheduler.publish {
-                        onPageLongPress(page)
-                    }
+                    let callback = self.parent.onPageLongPress
+                    self.callbackScheduler.publish { callback(page) }
                 }
             )
             return cell
         }
 
-        func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            lastScrollMotionTime = currentTime()
-            guard pendingInitialPageIndex == nil,
-                  let collectionView = scrollView as? UICollectionView else {
-                return
+        private func applyPlacementIfNeeded() {
+            guard let view = viewport, !logicalLayout.frames.isEmpty else { return }
+            if let index = pendingInitialPageIndex, logicalLayout.frames.indices.contains(index) {
+                pendingInitialPageIndex = nil
+                lastAppliedPlacementRevision = parent.viewportPlacement?.revision
+                view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero)
+                view.alpha = 1
+            } else if let placement = parent.viewportPlacement, placement.revision != lastAppliedPlacementRevision {
+                lastAppliedPlacementRevision = placement.revision
+                view.stopInteraction()
+                view.resetZoom(animated: false)
+                let index = min(max(placement.targetPageIndex, 0), logicalLayout.frames.count - 1)
+                view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero, animated: placement.animated)
             }
-            publishCurrentPageIfNeeded(from: collectionView)
+            updateWindow()
+            publishCurrentPageIfNeeded()
         }
 
-        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            guard !decelerate,
-                  let collectionView = scrollView as? UICollectionView else {
+        private func applyControlScrollStepIfNeeded() {
+            guard pendingInitialPageIndex == nil, let view = viewport, !parent.pages.isEmpty,
+                  view.bounds.height > 0, let request = parent.controlScrollStep,
+                  request.revision != lastAppliedControlScrollRevision else { return }
+            lastAppliedControlScrollRevision = request.revision
+            let minY = -view.contentInset.top
+            let maxY = max(minY, view.contentSize.height - view.bounds.height + view.contentInset.bottom)
+            let currentY = view.contentOffset.y
+            let isAtEdge = request.direction == .down ? currentY >= maxY - 0.5 : currentY <= minY + 0.5
+            if isAtEdge {
+                let callback = parent.onControlScrollEdgeReached
+                callbackScheduler.publish { callback(request.direction) }
                 return
             }
-            publishCurrentPageIfNeeded(from: collectionView)
+            let now = currentTime()
+            let baseY = pendingControlScrollTarget.flatMap { now - $0.timestamp < 0.45 ? $0.y : nil } ?? currentY
+            let step = view.bounds.height * CGFloat(ReaderControlCommandResolver.verticalScrollViewportFraction)
+            let target = min(max(baseY + (request.direction == .down ? step : -step), minY), maxY)
+            pendingControlScrollTarget = (target, now)
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
         }
+
+        // Exposed to gesture tests to model a recent scroll even after UIKit has
+        // already stopped decelerating at touch-down.
+        func scrollViewDidScroll(_ scrollView: UIScrollView) { lastScrollMotionTime = currentTime() }
 
         @objc func handleBoundaryPan(_ recognizer: UIPanGestureRecognizer) {
-            guard let collectionView = recognizer.view as? UICollectionView else { return }
+            guard let view = viewport else { return }
             switch recognizer.state {
-            case .began, .changed:
-                guard pendingInitialPageIndex == nil, !parent.pages.isEmpty,
-                      pinchGesture.state != .began, pinchGesture.state != .changed else {
-                    pendingBoundaryPull = nil
-                    return
-                }
-                let minY = -collectionView.adjustedContentInset.top
-                let maxY = max(minY, collectionView.contentSize.height - collectionView.bounds.height
-                    + collectionView.adjustedContentInset.bottom)
+            case .began:
+                panIncludedPinch = view.isZooming || view.isZoomBouncing || recognizer.numberOfTouches > 1
+                pendingBoundaryPull = nil
+            case .changed:
+                guard !panIncludedPinch, !view.isZooming, !view.isZoomBouncing,
+                      recognizer.numberOfTouches == 1, pendingInitialPageIndex == nil,
+                      !parent.pages.isEmpty else { pendingBoundaryPull = nil; return }
+                let minY = -view.contentInset.top
+                let maxY = max(minY, view.contentSize.height - view.bounds.height + view.contentInset.bottom)
                 pendingBoundaryPull = ReaderVerticalBoundaryAttempt.boundary(
-                    offsetY: collectionView.contentOffset.y, minOffsetY: minY, maxOffsetY: maxY,
-                    translationY: recognizer.translation(in: collectionView).y
+                    offsetY: view.contentOffset.y, minOffsetY: minY, maxOffsetY: maxY,
+                    translationY: recognizer.translation(in: view).y
                 )
             case .ended:
                 defer { pendingBoundaryPull = nil }
-                guard let boundary = pendingBoundaryPull else { return }
-                let onVerticalBoundaryPull = parent.onVerticalBoundaryPull
-                callbackScheduler.publish { onVerticalBoundaryPull(boundary) }
+                guard !panIncludedPinch, let boundary = pendingBoundaryPull else { return }
+                let callback = parent.onVerticalBoundaryPull
+                callbackScheduler.publish { callback(boundary) }
             case .cancelled, .failed:
                 pendingBoundaryPull = nil
-            default:
-                break
+            default: break
             }
-        }
-
-        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            guard let collectionView = scrollView as? UICollectionView else { return }
-            publishCurrentPageIfNeeded(from: collectionView)
-        }
-
-        func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-            guard let collectionView = scrollView as? UICollectionView else { return }
-            publishCurrentPageIfNeeded(from: collectionView)
-        }
-
-        func applyInitialPlacementIfNeeded(in collectionView: UICollectionView) {
-            guard let targetIndex = pendingInitialPageIndex else { return }
-            guard parent.pages.indices.contains(targetIndex) else {
-                pendingInitialPageIndex = nil
-                collectionView.alpha = 1
-                return
-            }
-            guard collectionView.bounds.width > 0, collectionView.bounds.height > 0 else {
-                return
-            }
-
-            collectionView.scrollToItem(
-                at: IndexPath(item: targetIndex, section: 0),
-                at: .top,
-                animated: false
-            )
-            lastAppliedPlacementRevision = parent.viewportPlacement?.revision
-            pendingInitialPageIndex = nil
-            collectionView.alpha = 1
-            publishCurrentPageIfNeeded(from: collectionView)
-        }
-
-        func applyViewportPlacementIfNeeded(in collectionView: UICollectionView) {
-            guard pendingInitialPageIndex == nil,
-                  let placement = parent.viewportPlacement,
-                  placement.revision != lastAppliedPlacementRevision else {
-                return
-            }
-            let targetIndex = min(max(placement.targetPageIndex, 0), max(parent.pages.count - 1, 0))
-            guard parent.pages.indices.contains(targetIndex),
-                  collectionView.bounds.width > 0,
-                  collectionView.bounds.height > 0 else {
-                return
-            }
-
-            resetVerticalZoom(in: collectionView, animated: false)
-            collectionView.scrollToItem(
-                at: IndexPath(item: targetIndex, section: 0),
-                at: .top,
-                animated: placement.animated
-            )
-            lastAppliedPlacementRevision = placement.revision
-            publishCurrentPageIfNeeded(from: collectionView)
-        }
-
-        /// Grace window in which a still-animating step's target keeps serving
-        /// as the base for the next one, so rapid presses compound instead of
-        /// re-reading the mid-animation offset.
-        private static let controlScrollAnimationGrace: TimeInterval = 0.45
-
-        func applyControlScrollStepIfNeeded(in collectionView: UICollectionView) {
-            guard pendingInitialPageIndex == nil,
-                  let request = parent.controlScrollStep,
-                  request.revision != lastAppliedControlScrollRevision else {
-                return
-            }
-            guard !parent.pages.isEmpty,
-                  collectionView.bounds.height > 0 else {
-                return
-            }
-            lastAppliedControlScrollRevision = request.revision
-
-            let minOffsetY = -collectionView.adjustedContentInset.top
-            let maxOffsetY = max(
-                minOffsetY,
-                collectionView.contentSize.height - collectionView.bounds.height
-                    + collectionView.adjustedContentInset.bottom
-            )
-            let currentY = collectionView.contentOffset.y
-            let edgeTolerance: CGFloat = 0.5
-
-            // Already clamped at the edge when pressed: report instead of
-            // scrolling so the reader can cross to the adjacent chapter.
-            let isAtEdge = switch request.direction {
-            case .down: currentY >= maxOffsetY - edgeTolerance
-            case .up: currentY <= minOffsetY + edgeTolerance
-            }
-            if isAtEdge {
-                let onControlScrollEdgeReached = parent.onControlScrollEdgeReached
-                let direction = request.direction
-                callbackScheduler.publish {
-                    onControlScrollEdgeReached(direction)
-                }
-                return
-            }
-
-            let now = CACurrentMediaTime()
-            var baseY = currentY
-            if let pending = pendingControlScrollTarget,
-               now - pending.timestamp < Self.controlScrollAnimationGrace {
-                baseY = pending.y
-            }
-            let step = collectionView.bounds.height
-                * CGFloat(ReaderControlCommandResolver.verticalScrollViewportFraction)
-            let desiredY = request.direction == .down ? baseY + step : baseY - step
-            let targetY = min(max(desiredY, minOffsetY), maxOffsetY)
-            pendingControlScrollTarget = (targetY, now)
-            collectionView.setContentOffset(
-                CGPoint(x: collectionView.contentOffset.x, y: targetY),
-                animated: true
-            )
-        }
-
-        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-            pendingControlScrollTarget = nil
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended,
-                  let scrollView = recognizer.view as? UIScrollView,
-                  canRecognizeTap(in: scrollView) else { return }
-            let onTap = parent.onTap
-            callbackScheduler.publish {
-                onTap()
-            }
+            guard recognizer.state == .ended, let view = recognizer.view as? UIScrollView,
+                  canRecognizeTap(in: view) else { return }
+            let callback = parent.onTap
+            callbackScheduler.publish { callback() }
         }
 
         @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended,
-                  let collectionView = recognizer.view as? UICollectionView,
-                  canRecognizeTap(in: collectionView) else {
-                return
-            }
-
+            guard recognizer.state == .ended, let view = viewport, canRecognizeTap(in: view) else { return }
             if parent.isChromeVisible {
-                let onTap = parent.onTap
-                callbackScheduler.publish {
-                    onTap()
-                }
+                let callback = parent.onTap
+                callbackScheduler.publish { callback() }
                 return
             }
-
-            guard parent.zoomEnabled,
-                  !parent.pages.isEmpty else {
-                return
-            }
-            let targetScale = MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: verticalZoomScale)
-            setVerticalZoomScale(
-                targetScale,
-                in: collectionView,
-                anchorPointInContent: recognizer.location(in: collectionView),
-                animated: true
-            )
-        }
-
-        @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
-            guard let collectionView = recognizer.view as? UICollectionView,
-                  parent.zoomEnabled,
-                  !parent.isChromeVisible,
-                  !parent.pages.isEmpty else {
-                pinchStartScale = nil
-                return
-            }
-
-            switch recognizer.state {
-            case .began:
-                pinchStartScale = verticalZoomScale
-            case .changed:
-                let startScale = pinchStartScale ?? verticalZoomScale
-                let targetScale = MangaVerticalCollectionZoomLayout.clampedScale(startScale * recognizer.scale)
-                setVerticalZoomScale(
-                    targetScale,
-                    in: collectionView,
-                    anchorPointInContent: recognizer.location(in: collectionView),
-                    animated: false
-                )
-            case .ended, .cancelled, .failed:
-                let targetScale = MangaPageZoomPolicy.isActive(verticalZoomScale)
-                    ? verticalZoomScale
-                    : MangaPageZoomPolicy.minimumScale
-                setVerticalZoomScale(
-                    targetScale,
-                    in: collectionView,
-                    anchorPointInContent: recognizer.location(in: collectionView),
-                    animated: true
-                )
-                pinchStartScale = nil
-            default:
-                break
+            guard parent.zoomEnabled, !parent.pages.isEmpty else { return }
+            let factor = MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: view.normalizedZoomFactor)
+            if factor == 1 {
+                view.resetZoom(animated: true)
+            } else {
+                view.zoom(factor: factor, centeredAt: recognizer.location(in: view.zoomContentView), animated: true)
             }
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard touch.view?.isDescendant(ofType: UIControl.self) != true else { return false }
             guard gestureRecognizer === tapGesture || gestureRecognizer === doubleTapGesture else { return true }
-            guard let scrollView = gestureRecognizer.view as? UIScrollView else { return false }
-            // Reject this touch entirely, rather than reconsidering it after
-            // the single-tap recognizer finishes waiting for a second tap.
-            return canRecognizeTap(in: scrollView)
+            guard let view = gestureRecognizer.view as? UIScrollView else { return false }
+            return canRecognizeTap(in: view)
         }
 
-        func gestureRecognizer(
-            _ gestureRecognizer: UIGestureRecognizer,
-            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
-        ) -> Bool {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             guard gestureRecognizer === tapGesture || gestureRecognizer === doubleTapGesture,
-                  let scrollView = gestureRecognizer.view as? UIScrollView else { return false }
-            return otherGestureRecognizer === scrollView.panGestureRecognizer || otherGestureRecognizer === pinchGesture
+                  let view = gestureRecognizer.view as? UIScrollView else { return false }
+            return otherGestureRecognizer === view.panGestureRecognizer || otherGestureRecognizer === view.pinchGestureRecognizer
         }
 
-        func gestureRecognizer(
-            _ gestureRecognizer: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-        ) -> Bool {
-            guard let scrollView = pinchGesture.view as? UIScrollView else { return false }
-            return (gestureRecognizer === pinchGesture && otherGestureRecognizer === scrollView.panGestureRecognizer)
-                || (gestureRecognizer === scrollView.panGestureRecognizer && otherGestureRecognizer === pinchGesture)
+        private func canRecognizeTap(in view: UIScrollView) -> Bool {
+            guard !view.isDragging, !view.isDecelerating, !view.isZooming, !view.isZoomBouncing,
+                  view.pinchGestureRecognizer?.state != .began, view.pinchGestureRecognizer?.state != .changed else { return false }
+            return lastScrollMotionTime.map { currentTime() - $0 > Self.chromeToggleMotionSuppressionInterval } ?? true
         }
 
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard gestureRecognizer === pinchGesture else { return true }
-            return parent.zoomEnabled && !parent.isChromeVisible && !parent.pages.isEmpty
+        func visiblePageIndexes() -> [Int] {
+            guard pendingInitialPageIndex == nil, let view = viewport else { return [] }
+            return Array(logicalLayout.indexes(intersecting: view.snapshot.visibleRect))
         }
 
-        private func canRecognizeTap(in scrollView: UIScrollView) -> Bool {
-            guard !scrollView.isDragging, !scrollView.isDecelerating,
-                  pinchGesture.state != .began, pinchGesture.state != .changed else { return false }
-            guard let lastScrollMotionTime else { return true }
-            return currentTime() - lastScrollMotionTime > Self.chromeToggleMotionSuppressionInterval
-        }
-
-        private func resetVerticalZoomIfUnavailable(in collectionView: UICollectionView) {
-            guard parent.isChromeVisible || !parent.zoomEnabled else { return }
-            resetVerticalZoom(in: collectionView, animated: true)
-        }
-
-        private func resetVerticalZoom(in collectionView: UICollectionView, animated: Bool) {
-            let anchorPoint = CGPoint(
-                x: collectionView.contentOffset.x + collectionView.bounds.midX,
-                y: collectionView.contentOffset.y + collectionView.bounds.midY
-            )
-            setVerticalZoomScale(
-                MangaPageZoomPolicy.minimumScale,
-                in: collectionView,
-                anchorPointInContent: anchorPoint,
-                animated: animated
-            )
-        }
-
-        private func setVerticalZoomScale(
-            _ scale: CGFloat,
-            in collectionView: UICollectionView,
-            anchorPointInContent: CGPoint,
-            animated: Bool
-        ) {
-            guard collectionView.bounds.width > 0, collectionView.bounds.height > 0 else {
-                verticalZoomScale = MangaVerticalCollectionZoomLayout.clampedScale(scale)
-                return
+        private func publishCurrentPageIfNeeded() {
+            updateImagePrefetch()
+            guard pendingInitialPageIndex == nil, let view = viewport else { return }
+            let visible = view.snapshot.visibleRect
+            let index = logicalLayout.indexes(intersecting: visible).max { lhs, rhs in
+                let left = visible.intersection(logicalLayout.frames[lhs])
+                let right = visible.intersection(logicalLayout.frames[rhs])
+                let leftArea = left.width * left.height
+                let rightArea = right.width * right.height
+                if leftArea == rightArea {
+                    return abs(logicalLayout.frames[lhs].minY - visible.minY) > abs(logicalLayout.frames[rhs].minY - visible.minY)
+                }
+                return leftArea < rightArea
             }
-            let oldScale = verticalZoomScale
-            let targetScale = MangaVerticalCollectionZoomLayout.clampedScale(scale)
-            let currentOffset = collectionView.contentOffset
-            let visibleAnchor = CGPoint(
-                x: min(max(anchorPointInContent.x - currentOffset.x, 0), collectionView.bounds.width),
-                y: min(max(anchorPointInContent.y - currentOffset.y, 0), collectionView.bounds.height)
-            )
-            let projectedContentSize = MangaVerticalCollectionZoomLayout.projectedContentSize(
-                currentContentSize: collectionView.contentSize,
-                viewportSize: collectionView.bounds.size,
-                oldScale: oldScale,
-                newScale: targetScale
-            )
-            let targetOffset = MangaVerticalCollectionZoomLayout.anchoredContentOffset(
-                currentOffset: currentOffset,
-                visibleAnchor: visibleAnchor,
-                oldScale: oldScale,
-                newScale: targetScale,
-                targetContentSize: projectedContentSize,
-                viewportSize: collectionView.bounds.size,
-                adjustedContentInset: collectionView.adjustedContentInset.verticalZoomInsets
-            )
-
-            guard abs(targetScale - oldScale) > 0.001 else {
-                clampContentOffset(in: collectionView, animated: animated)
-                return
-            }
-
-            zoomTransitionOverlay?.removeFromSuperview()
-            zoomTransitionOverlay = nil
-            let isZoomingIn = targetScale > oldScale
-            let zoomInSnapshot = animated && isZoomingIn
-                ? makeZoomTransitionSnapshot(
-                    in: collectionView,
-                    visibleAnchor: visibleAnchor,
-                    initialScale: 1,
-                    afterScreenUpdates: false
-                )
-                : nil
-
-            verticalZoomScale = targetScale
-            let updates = {
-                collectionView.collectionViewLayout.invalidateLayout()
-                collectionView.layoutIfNeeded()
-                collectionView.setContentOffset(targetOffset, animated: false)
-                collectionView.layoutIfNeeded()
-            }
-            UIView.performWithoutAnimation(updates)
-            clampContentOffset(in: collectionView, animated: false)
-            collectionView.layoutIfNeeded()
-
-            let transitionSnapshot = zoomInSnapshot ?? (
-                animated && !isZoomingIn
-                    ? makeZoomTransitionSnapshot(
-                        in: collectionView,
-                        visibleAnchor: visibleAnchor,
-                        initialScale: oldScale / max(targetScale, 0.001),
-                        afterScreenUpdates: true
-                    )
-                    : nil
-            )
-            if let transitionSnapshot {
-                zoomTransitionOverlay = transitionSnapshot.overlay
-                let finalTransform = isZoomingIn
-                    ? CGAffineTransform(
-                        scaleX: targetScale / max(oldScale, 0.001),
-                        y: targetScale / max(oldScale, 0.001)
-                    )
-                    : .identity
-                UIView.animate(
-                    withDuration: 0.18,
-                    delay: 0,
-                    options: [.allowUserInteraction, .beginFromCurrentState],
-                    animations: {
-                        transitionSnapshot.snapshot.transform = finalTransform
-                    },
-                    completion: { [weak self, weak collectionView] _ in
-                        transitionSnapshot.overlay.removeFromSuperview()
-                        guard let self, let collectionView else { return }
-                        guard self.zoomTransitionOverlay === transitionSnapshot.overlay else { return }
-                        self.zoomTransitionOverlay = nil
-                        self.clampContentOffset(in: collectionView, animated: false)
-                        self.publishCurrentPageIfNeeded(from: collectionView)
-                    }
-                )
-            }
-            publishCurrentPageIfNeeded(from: collectionView)
-        }
-
-        private func makeZoomTransitionSnapshot(
-            in collectionView: UICollectionView,
-            visibleAnchor: CGPoint,
-            initialScale: CGFloat,
-            afterScreenUpdates: Bool
-        ) -> (overlay: UIView, snapshot: UIView)? {
-            guard let hostView = collectionView.superview,
-                  let snapshot = collectionView.snapshotView(afterScreenUpdates: afterScreenUpdates) else {
-                return nil
-            }
-
-            let overlay = UIView(frame: collectionView.convert(collectionView.bounds, to: hostView))
-            overlay.clipsToBounds = true
-            overlay.isUserInteractionEnabled = false
-            snapshot.frame = overlay.bounds
-            snapshot.layer.anchorPoint = CGPoint(
-                x: visibleAnchor.x / max(overlay.bounds.width, 1),
-                y: visibleAnchor.y / max(overlay.bounds.height, 1)
-            )
-            snapshot.layer.position = visibleAnchor
-            snapshot.transform = CGAffineTransform(scaleX: initialScale, y: initialScale)
-            overlay.addSubview(snapshot)
-            hostView.addSubview(overlay)
-            return (overlay, snapshot)
-        }
-
-        private func clampContentOffset(in collectionView: UICollectionView, animated: Bool) {
-            let clampedOffset = MangaVerticalCollectionZoomLayout.clampedContentOffset(
-                collectionView.contentOffset,
-                contentSize: collectionView.contentSize,
-                viewportSize: collectionView.bounds.size,
-                adjustedContentInset: collectionView.adjustedContentInset.verticalZoomInsets
-            )
-            guard clampedOffset != collectionView.contentOffset else { return }
-            collectionView.setContentOffset(clampedOffset, animated: animated)
-        }
-
-        private func publishCurrentPageIfNeeded(from collectionView: UICollectionView) {
-            updateImagePrefetch(in: collectionView)
-            guard let globalIndex = currentGlobalIndex(in: collectionView),
-                  globalIndex != lastReportedGlobalIndex else {
-                return
-            }
-
-            pendingReportedGlobalIndex = globalIndex
-            guard currentPagePublishDisplayLink == nil else { return }
-
-            let displayLink = CADisplayLink(
-                target: self,
-                selector: #selector(flushPendingCurrentPagePublish)
-            )
-            displayLink.add(to: .main, forMode: .common)
-            currentPagePublishDisplayLink = displayLink
+            guard let index else { return }
+            pendingReportedGlobalIndex = index
+            guard index != lastReportedGlobalIndex, currentPagePublishDisplayLink == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(flushPendingCurrentPagePublish))
+            link.add(to: .main, forMode: .common)
+            currentPagePublishDisplayLink = link
         }
 
         @objc private func flushPendingCurrentPagePublish(_ displayLink: CADisplayLink) {
             displayLink.invalidate()
             currentPagePublishDisplayLink = nil
-
-            guard let globalIndex = pendingReportedGlobalIndex,
-                  globalIndex != lastReportedGlobalIndex else {
-                pendingReportedGlobalIndex = nil
-                return
-            }
+            guard let index = pendingReportedGlobalIndex, index != lastReportedGlobalIndex else { return }
             pendingReportedGlobalIndex = nil
-            lastReportedGlobalIndex = globalIndex
-            parent.onCurrentPageChange(globalIndex)
+            lastReportedGlobalIndex = index
+            parent.onCurrentPageChange(index)
         }
 
         private func cancelPendingCurrentPagePublish() {
@@ -702,14 +411,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             currentPagePublishDisplayLink = nil
         }
 
-        func dismantle() {
-            isDismantled = true
-            imagePrefetchCoordinator.cancel()
-            lastPrefetchSources = []
-            cancelPendingCurrentPagePublish()
-        }
-
-        func updateImagePrefetch(in collectionView: UICollectionView) {
+        func updateImagePrefetch() {
             guard !isDismantled else { return }
             if prefetchImageLoader !== parent.imageLoader {
                 imagePrefetchCoordinator.cancel()
@@ -717,20 +419,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
                 lastPrefetchSources = []
             }
-
-            // UIKit's prepared cells aren't necessarily on screen. Use actual intersections.
-            let rect = CGRect(origin: collectionView.contentOffset, size: collectionView.bounds.size)
-            let visibleIndexes = pendingInitialPageIndex == nil
-                ? collectionView.indexPathsForVisibleItems.compactMap { indexPath -> Int? in
-                    guard let attributes = collectionView.layoutAttributesForItem(at: indexPath) else { return nil }
-                    let intersection = rect.intersection(attributes.frame)
-                    return !intersection.isNull && intersection.width > 0 && intersection.height > 0
-                        ? indexPath.item : nil
-                }
-                : []
             let pages = MangaVerticalImagePrefetchPlan.pagesToPrefetch(
-                pages: parent.pages,
-                visiblePageIndexes: visibleIndexes,
+                pages: parent.pages, visiblePageIndexes: visiblePageIndexes(),
                 fallbackPageIndex: pendingInitialPageIndex ?? parent.viewportPlacement?.targetPageIndex ?? parent.currentPageIndex ?? 0
             )
             let sources = parent.imageLoader.imageSources(for: pages)
@@ -739,41 +429,43 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             imagePrefetchCoordinator.update(sources: sources)
         }
 
-        private func currentGlobalIndex(in collectionView: UICollectionView) -> Int? {
-            let visibleRect = CGRect(origin: collectionView.contentOffset, size: collectionView.bounds.size)
-            return collectionView.indexPathsForVisibleItems
-                .compactMap { indexPath -> (index: Int, visibleArea: CGFloat, topDistance: CGFloat)? in
-                    guard parent.pages.indices.contains(indexPath.item),
-                          let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
-                        return nil
-                    }
-                    let intersection = visibleRect.intersection(attributes.frame)
-                    guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else {
-                        return nil
-                    }
-                    return (
-                        index: indexPath.item,
-                        visibleArea: intersection.width * intersection.height,
-                        topDistance: abs(attributes.frame.minY - visibleRect.minY)
-                    )
-                }
-                .max { lhs, rhs in
-                    if lhs.visibleArea == rhs.visibleArea {
-                        return lhs.topDistance > rhs.topDistance
-                    }
-                    return lhs.visibleArea < rhs.visibleArea
-                }?.index
+        func dismantle() {
+            isDismantled = true
+            ratioUpdateTask?.cancel()
+            ratioUpdateTask = nil
+            imagePrefetchCoordinator.cancel()
+            cancelPendingCurrentPagePublish()
+            viewport?.onSnapshotChange = nil
+            viewport?.onViewportSizeChange = nil
+            viewport?.onInteractionEnd = nil
+            viewport?.stopInteraction()
+            viewport?.collectionView.dataSource = nil
+            viewport?.collectionView.delegate = nil
+            viewport?.panGestureRecognizer.removeTarget(self, action: #selector(handleBoundaryPan(_:)))
         }
     }
 }
 
-private final class MangaVerticalCollectionView: UICollectionView {
-    var onLayoutSubviews: (() -> Void)?
+final class MangaVerticalNativeViewport: NativeZoomScrollView {
+    let logicalCollectionLayout = MangaVerticalNativeCollectionLayout()
+    let collectionView: UICollectionView
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        onLayoutSubviews?()
+    override init() {
+        collectionView = UICollectionView(frame: .zero, collectionViewLayout: logicalCollectionLayout)
+        super.init()
+        centersVertically = false
+        alwaysBounceVertical = true
+        backgroundColor = .black
+        collectionView.isScrollEnabled = false
+        collectionView.contentInsetAdjustmentBehavior = .never
+        collectionView.backgroundColor = .black
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.showsVerticalScrollIndicator = false
+        zoomContentView.addSubview(collectionView)
     }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
@@ -832,15 +524,6 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
     override func layoutSubviews() {
         super.layoutSubviews()
         imageView.frame = contentView.bounds
-    }
-
-    override func preferredLayoutAttributesFitting(
-        _ layoutAttributes: UICollectionViewLayoutAttributes
-    ) -> UICollectionViewLayoutAttributes {
-        let attributes = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
-        let width = max(attributes.size.width, 1)
-        attributes.size.height = max(ceil(width * heightToWidthRatio), 160)
-        return attributes
     }
 
     func configure(
@@ -993,14 +676,4 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
     }
 }
 
-private extension UIEdgeInsets {
-    var verticalZoomInsets: MangaVerticalCollectionZoomInsets {
-        MangaVerticalCollectionZoomInsets(
-            top: top,
-            left: left,
-            bottom: bottom,
-            right: right
-        )
-    }
-}
 #endif

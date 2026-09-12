@@ -272,10 +272,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     func updateGestureState(in collectionView: UICollectionView) {
         pagingDriver.updateGestureState(in: collectionView, inputs: pagingInputs)
-        if parent.isChromeVisible {
-            collectionView.panGestureRecognizer.isEnabled = false
-        }
-        gestures.discretePagePanGesture.isEnabled = !parent.isChromeVisible && parent.settings.pagedTurnStyle.usesDiscretePageTurns
+        // Admission is checked at gesture begin; chrome updates leave ongoing
+        // recognizers untouched.
+        gestures.discretePagePanGesture.isEnabled = parent.settings.pagedTurnStyle.usesDiscretePageTurns
     }
 
     private func updateVisiblePageSurfacesIfNeeded(in collectionView: UICollectionView) {
@@ -285,8 +284,15 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         )
         let likedPageIDsChanged = parent.likedPageIDs != lastAppliedLikedPageIDs
         guard nextIdentity != surfaceInteractionIdentity || likedPageIDsChanged else { return }
+        let needsContentUpdate = nextIdentity.zoomEnabled != surfaceInteractionIdentity?.zoomEnabled || likedPageIDsChanged
         surfaceInteractionIdentity = nextIdentity
         lastAppliedLikedPageIDs = parent.likedPageIDs
+        for surface in Array(pageSurfaceInteractions.values) + Array(spreadSurfaceInteractions.values) {
+            surface.runtime.setChromeVisible(parent.isChromeVisible)
+        }
+        // UIHostingConfiguration can detach a representable while replacing its
+        // content. A policy-only chrome update must not interrupt native input.
+        guard needsContentUpdate else { return }
 
         for case let cell as ReaderPagedPageTurnCell in collectionView.visibleCells {
             guard let indexPath = collectionView.indexPath(for: cell) else { continue }
@@ -322,7 +328,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             imageLoader: parent.imageLoader,
             pageScaleMode: parent.effectivePageScaleMode,
             pageEdgeFillStyle: parent.settings.pageEdgeFillStyle,
-            isChromeVisible: parent.isChromeVisible,
             zoomEnabled: parent.zoomEnabled,
             allowsUnzoomedSurfacePan: true,
             spreadSurfaceInteraction: spreadSurfaceInteraction(for: spread),
@@ -388,6 +393,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             return interaction
         }
         let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "page:" + page.id)))
+        interaction.runtime.setChromeVisible(parent.isChromeVisible)
         pageSurfaceInteractions[page.id] = interaction
         return interaction
     }
@@ -397,6 +403,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             return interaction
         }
         let interaction = MangaSurfaceAttachment(runtime: interactionRuntime.surface(SurfaceID(value: "spread:" + spread.id)))
+        interaction.runtime.setChromeVisible(parent.isChromeVisible)
         spreadSurfaceInteractions[spread.id] = interaction
         return interaction
     }

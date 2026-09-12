@@ -1,9 +1,8 @@
 #if os(iOS)
-/// Binds one runtime surface to its recognizer registry without owning image state.
+/// Stable surface identity shared by paging and the native image host.
 @MainActor
 final class MangaSurfaceAttachment {
     let runtime: MangaSurfaceRuntime
-    let gestures = MangaSurfaceGestureRegistry()
 
     init(runtime: MangaSurfaceRuntime = MangaSurfaceRuntime()) { self.runtime = runtime }
 }

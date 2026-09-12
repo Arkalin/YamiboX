@@ -39,7 +39,7 @@ final class MangaNativePanAdmission: NSObject, UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        if other.delegate is MangaSurfaceGestureInput { return false }
+        if other.view is NativeZoomScrollView { return false }
         return original?.gestureRecognizer?(gestureRecognizer, shouldRecognizeSimultaneouslyWith: other) ?? false
     }
 

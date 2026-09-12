@@ -5,6 +5,19 @@ import Testing
 
 @Suite("MangaReaderTests: Paged Layout Policy")
 struct MangaPagedLayoutPolicyTests {
+    @Test func statusBarChangesDoNotResizeReadingViewport() {
+        var insets = MangaReadingViewportInsets()
+        let portrait = CGSize(width: 1024, height: 1366)
+        insets.update(viewport: portrait, topInset: 24)
+        for top: CGFloat in [0, 24, 0] {
+            insets.update(viewport: portrait, topInset: top)
+            #expect(insets.topInset(for: portrait, proposed: top) == 24)
+        }
+        let landscape = CGSize(width: 1366, height: 1024)
+        insets.update(viewport: landscape, topInset: 0)
+        #expect(insets.topInset(for: landscape, proposed: 24) == 0)
+    }
+
     @Test func twoPageSpreadActivatesOnlyForIPadPagedLandscapePreference() {
         let settings = MangaReaderSettings(
             readingMode: .paged,

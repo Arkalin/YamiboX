@@ -2,8 +2,7 @@ import XCTest
 
 @MainActor
 final class MangaInteractionUIKitTests: XCTestCase {
-    // Representable recognizers are created for an event sequence, not on view mount.
-    // Exercise their real attachment and coordinate conversion with system-delivered touches.
+    // Exercise native hit testing and coordinate conversion with system-delivered touches.
     func testProductionViewInstallsLongPressInFixedViewport() throws {
         continueAfterFailure = false
         for imageWidth in [400, 600, 800, 1200] {
@@ -17,8 +16,8 @@ final class MangaInteractionUIKitTests: XCTestCase {
                 XCTAssertTrue(diagnostics.waitForExistence(timeout: 5))
                 let initial = try snapshot(diagnostics)
                 XCTAssertEqual(initial["loaded"], 1)
-                XCTAssertEqual(initial["viewportWidth"], 400)
-                XCTAssertEqual(initial["viewportHeight"], 800)
+                XCTAssertEqual(try XCTUnwrap(initial["viewportWidth"]), 400, accuracy: 0.5)
+                XCTAssertEqual(try XCTUnwrap(initial["viewportHeight"]), 800, accuracy: 0.5)
                 XCTAssertEqual(initial["count"], 0)
 
                 let center = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))

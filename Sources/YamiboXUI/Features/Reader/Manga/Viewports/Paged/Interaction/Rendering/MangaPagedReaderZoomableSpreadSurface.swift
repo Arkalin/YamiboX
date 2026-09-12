@@ -2,6 +2,8 @@ import SwiftUI
 import YamiboXCore
 
 #if os(iOS)
+import UIKit
+
 struct MangaPagedReaderZoomableSpreadSurface: View {
     let spreadID: String
     let leftPageSurface: MangaPagedReaderSpreadPageSurface?
@@ -9,54 +11,22 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isChromeVisible: Bool
     let isZoomInteractionEnabled: Bool
     let spreadSurfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
 
-    @State private var instance = UUID()
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         GeometryReader { proxy in
-            let runtime = spreadSurfaceInteraction.runtime
-            let configuration = MangaInteractionConfiguration(chromeVisible: isChromeVisible,
-                zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: false)
-            let geometry = MangaSurfaceGeometry.spread(viewport: proxy.size)
-            ZStack {
-                pageEdgeFillStyle.color(for: colorScheme)
+            MangaNativeHostedSurface(runtime: spreadSurfaceInteraction.runtime,
+                configuration: MangaInteractionConfiguration(chromeVisible: spreadSurfaceInteraction.runtime.configuration.chromeVisible,
+                    zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: false),
+                viewport: proxy.size, imageLoaded: hasLoadedImage) {
                 HStack(spacing: 0) {
                     pageSlot(leftPageSurface)
                     pageSlot(rightPageSurface)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
-                .scaleEffect(runtime.transform.scale)
-                .offset(runtime.transform.offset)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .contentShape(Rectangle())
-            .clipped()
-            .gesture(MangaSurfaceGesture(runtime: runtime, registry: spreadSurfaceInteraction.gestures, role: .pan, instance: instance))
-            .gesture(MangaSurfaceGesture(runtime: runtime, registry: spreadSurfaceInteraction.gestures, role: .pinch, instance: instance))
-            .onAppear {
-                runtime.mount(instance)
-                runtime.configure(configuration, geometry: geometry, imageLoaded: hasLoadedImage)
-            }
-            .onChange(of: geometry) { _, _ in
-                guard runtime.isMounted(instance) else { return }
-                runtime.configure(configuration, geometry: geometry, imageLoaded: hasLoadedImage)
-                spreadSurfaceInteraction.gestures.cancel()
-            }
-            .onChange(of: configuration) { _, _ in
-                guard runtime.isMounted(instance) else { return }
-                runtime.configure(configuration, geometry: geometry, imageLoaded: hasLoadedImage)
-                spreadSurfaceInteraction.gestures.cancel()
-            }
-            .onChange(of: hasLoadedImage) { _, _ in
-                guard runtime.isMounted(instance) else { return }
-                runtime.configure(configuration, geometry: geometry, imageLoaded: hasLoadedImage)
-            }
-            .onDisappear { runtime.unmount(instance) }
         }
     }
 
@@ -66,8 +36,42 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
 
     private func pageSlot(_ surface: MangaPagedReaderSpreadPageSurface?) -> some View {
         MangaPagedReaderPageSlot(surface: surface, imageLoader: imageLoader, pageScaleMode: pageScaleMode,
-            pageEdgeFillStyle: pageEdgeFillStyle, isChromeVisible: isChromeVisible, zoomEnabled: false,
+            pageEdgeFillStyle: pageEdgeFillStyle, zoomEnabled: false,
             allowsUnzoomedSurfacePan: false, isPageZoomEnabled: false, likedPageIDs: likedPageIDs)
+    }
+}
+
+private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
+    let runtime: MangaSurfaceRuntime
+    let configuration: MangaInteractionConfiguration
+    let viewport: CGSize
+    let imageLoaded: Bool
+    @ViewBuilder let content: () -> Content
+
+    final class Coordinator {
+        var hostedView: (UIView & UIContentView)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> MangaNativeSurfaceView {
+        let view = MangaNativeSurfaceView()
+        let hosted = UIHostingConfiguration { content() }.margins(.all, 0).makeContentView()
+        context.coordinator.hostedView = hosted
+        view.zoomContentView.addSubview(hosted)
+        view.onBaseSizeChange = { [weak hosted] size in hosted?.frame = CGRect(origin: .zero, size: size) }
+        return view
+    }
+
+    func updateUIView(_ view: MangaNativeSurfaceView, context: Context) {
+        context.coordinator.hostedView?.configuration = UIHostingConfiguration { content() }.margins(.all, 0)
+        view.configure(runtime: runtime, configuration: configuration,
+                       geometry: .spread(viewport: viewport), imageLoaded: imageLoaded)
+    }
+
+    static func dismantleUIView(_ view: MangaNativeSurfaceView, coordinator: Coordinator) {
+        view.detach()
+        coordinator.hostedView = nil
     }
 }
 #endif

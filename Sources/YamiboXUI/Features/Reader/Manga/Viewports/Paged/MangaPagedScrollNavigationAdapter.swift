@@ -45,7 +45,6 @@ final class MangaPagedScrollNavigationAdapter {
             case .navigationPan:
                 guard let pan = recognizer as? UIPanGestureRecognizer, let coordinator = self.coordinator else { return }
                 coordinator.pagingDriver.handleDiscretePagePan(pan, inputs: coordinator.pagingInputs)
-            case .surfacePan, .surfacePinch: break
             }
         }
     }
@@ -66,7 +65,7 @@ final class MangaPagedScrollNavigationAdapter {
     }
 
     private func navigationStep(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> NavigationStep? {
-        guard let coordinator, !coordinator.parent.plan.spreads.isEmpty else { return nil }
+        guard let coordinator, !coordinator.parent.plan.spreads.isEmpty, pan.numberOfTouches <= 1 else { return nil }
         let translation = pan.translation(in: collection)
         let velocity = pan.velocity(in: collection)
         let decision = coordinator.interactionRuntime.navigationDecision(

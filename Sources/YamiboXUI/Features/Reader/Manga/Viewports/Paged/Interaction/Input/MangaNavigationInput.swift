@@ -4,12 +4,10 @@ import UIKit
 /// Owns recognizers, not reading rules or a paging coordinator.
 @MainActor
 final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
-    enum Role { case tap, doubleTap, navigationPan, surfacePan, surfacePinch }
+    enum Role { case tap, doubleTap, navigationPan }
     let tap = UITapGestureRecognizer()
     let doubleTap = UITapGestureRecognizer()
     let navigationPan: UIPanGestureRecognizer
-    let surfacePan = UIPanGestureRecognizer()
-    let surfacePinch = UIPinchGestureRecognizer()
     var onEvent: (Role, UIGestureRecognizer) -> Void = { _, _ in }
     var permits: (UIGestureRecognizer) -> Bool = { _ in false }
     var receives: (UIGestureRecognizer, UITouch) -> Bool = { _, _ in true }
@@ -45,26 +43,30 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
         var view = touch.view
         while let current = view {
             if current is UIControl { return false }
+            if let scroll = current as? NativeZoomScrollView {
+                if recognizer === tap, !scroll.acceptsDiscreteTouch { return false }
+                if recognizer === doubleTap, scroll.snapshot.isInteracting { return false }
+            }
             view = current.superview
         }
         return receives(recognizer, touch)
     }
 
     func gestureRecognizer(_ recognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        (recognizer === surfacePan && other === surfacePinch) ||
-            (recognizer === surfacePinch && other === surfacePan)
+        shouldRequireFailureOf other: UIGestureRecognizer) -> Bool {
+        guard recognizer === tap || recognizer === doubleTap,
+              let root = recognizer.view, let scroll = other.view as? NativeZoomScrollView,
+              scroll.isDescendant(of: root) else { return false }
+        return other === scroll.panGestureRecognizer || other === scroll.pinchGestureRecognizer
     }
 
-    private var recognizers: [UIGestureRecognizer] { [tap, doubleTap, navigationPan, surfacePan, surfacePinch] }
+    private var recognizers: [UIGestureRecognizer] { [tap, doubleTap, navigationPan] }
 
     @objc private func receive(_ recognizer: UIGestureRecognizer) {
         let role: Role
         if recognizer === tap { role = .tap }
         else if recognizer === doubleTap { role = .doubleTap }
         else if recognizer === navigationPan { role = .navigationPan }
-        else if recognizer === surfacePan { role = .surfacePan }
-        else if recognizer === surfacePinch { role = .surfacePinch }
         else { return }
         if role == .navigationPan {
             switch recognizer.state {

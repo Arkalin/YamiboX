@@ -13,7 +13,6 @@ extension ReaderPagedPageTurnCell {
         imageLoader: MangaReaderPageImageLoader,
         pageScaleMode: MangaPageScaleMode,
         pageEdgeFillStyle: MangaPageEdgeFillStyle,
-        isChromeVisible: Bool,
         zoomEnabled: Bool,
         allowsUnzoomedSurfacePan: Bool,
         spreadSurfaceInteraction: MangaSurfaceAttachment,
@@ -32,7 +31,6 @@ extension ReaderPagedPageTurnCell {
                 imageLoader: imageLoader,
                 pageScaleMode: pageScaleMode,
                 pageEdgeFillStyle: pageEdgeFillStyle,
-                isChromeVisible: isChromeVisible,
                 zoomEnabled: zoomEnabled,
                 allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
                 spreadSurfaceInteraction: spreadSurfaceInteraction,
@@ -55,7 +53,6 @@ private struct MangaPagedReaderSpreadSurface: View {
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isChromeVisible: Bool
     let zoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let spreadSurfaceInteraction: MangaSurfaceAttachment
@@ -73,8 +70,7 @@ private struct MangaPagedReaderSpreadSurface: View {
                     imageLoader: imageLoader,
                     pageScaleMode: pageScaleMode,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    isChromeVisible: isChromeVisible,
-                    isZoomInteractionEnabled: !isChromeVisible && zoomEnabled,
+                    isZoomInteractionEnabled: zoomEnabled,
                     spreadSurfaceInteraction: spreadSurfaceInteraction,
                     likedPageIDs: likedPageIDs
                 )
@@ -84,7 +80,6 @@ private struct MangaPagedReaderSpreadSurface: View {
                     imageLoader: imageLoader,
                     pageScaleMode: pageScaleMode,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    isChromeVisible: isChromeVisible,
                     zoomEnabled: zoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
                     isPageZoomEnabled: true,
@@ -103,7 +98,6 @@ struct MangaPagedReaderPageSlot: View {
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isChromeVisible: Bool
     let zoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let isPageZoomEnabled: Bool
@@ -120,7 +114,6 @@ struct MangaPagedReaderPageSlot: View {
                     pageScaleMode: pageScaleMode,
                     initialHorizontalAlignment: surface.initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    isChromeVisible: isChromeVisible,
                     zoomEnabled: zoomEnabled && isPageZoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan && isPageZoomEnabled,
                     surfaceInteraction: surface.surfaceInteraction,

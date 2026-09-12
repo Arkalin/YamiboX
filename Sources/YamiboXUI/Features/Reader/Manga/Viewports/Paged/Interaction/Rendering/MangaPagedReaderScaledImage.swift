@@ -10,50 +10,49 @@ struct MangaPagedReaderScaledImage: View {
     let pageScaleMode: MangaPageScaleMode
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isSurfaceInteractionEnabled: Bool
     let isZoomInteractionEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaSurfaceAttachment
     let onLongPress: () -> Void
-
-    @State private var instance = UUID()
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
-            let runtime = surfaceInteraction.runtime
-            let transform = runtime.transform
-            let layout = MangaPagedImageSurfaceLayout(imageSize: image.size, containerSize: proxy.size,
-                pageScaleMode: pageScaleMode, initialHorizontalAlignment: initialHorizontalAlignment, zoomScale: transform.scale)
-            let menuFrame = MangaPageLongPressHitTesting.allowedFrame(in: CGRect(origin: .zero, size: proxy.size),
-                imageFrame: layout.displayedImageFrame(forUserOffset: transform.offset))
-            let geometry = MangaSurfaceGeometry.image(size: image.size, viewport: proxy.size,
-                fit: MangaSurfaceFit(pageScaleMode), alignment: initialHorizontalAlignment)
-            let configuration = MangaInteractionConfiguration(chromeVisible: !isSurfaceInteractionEnabled,
-                zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: allowsUnzoomedSurfacePan)
-
-            MangaSurfaceDrawing(image: Image(uiImage: image), background: pageEdgeFillStyle.color(for: colorScheme),
-                layout: layout, offset: transform.offset)
-            .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures, role: .pan, instance: instance))
-            .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures, role: .pinch, instance: instance))
-            .gesture(MangaSurfaceGesture(runtime: runtime, registry: surfaceInteraction.gestures,
-                role: .longPress, menuFrame: menuFrame, onMenu: onLongPress, instance: instance))
-            .onAppear {
-                runtime.mount(instance)
-                runtime.configure(configuration, geometry: geometry, imageLoaded: true)
-            }
-            .onChange(of: geometry) { _, _ in
-                guard runtime.isMounted(instance) else { return }
-                runtime.configure(configuration, geometry: geometry, imageLoaded: true)
-                surfaceInteraction.gestures.cancel()
-            }
-            .onChange(of: configuration) { _, _ in
-                guard runtime.isMounted(instance) else { return }
-                runtime.configure(configuration, geometry: geometry, imageLoaded: true)
-                surfaceInteraction.gestures.cancel()
-            }
-            .onDisappear { runtime.unmount(instance) }
+            MangaNativeImageSurface(image: image, runtime: surfaceInteraction.runtime,
+                configuration: MangaInteractionConfiguration(chromeVisible: surfaceInteraction.runtime.configuration.chromeVisible,
+                    zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: allowsUnzoomedSurfacePan),
+                geometry: .image(size: image.size, viewport: proxy.size,
+                    fit: MangaSurfaceFit(pageScaleMode), alignment: initialHorizontalAlignment),
+                background: pageEdgeFillStyle.uiColor(for: colorScheme), onLongPress: onLongPress)
         }
     }
+}
+
+private struct MangaNativeImageSurface: UIViewRepresentable {
+    let image: UIImage
+    let runtime: MangaSurfaceRuntime
+    let configuration: MangaInteractionConfiguration
+    let geometry: MangaSurfaceGeometry
+    let background: UIColor
+    let onLongPress: () -> Void
+
+    func makeUIView(context: Context) -> MangaNativeSurfaceView {
+        let view = MangaNativeSurfaceView()
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleToFill
+        view.zoomContentView.addSubview(imageView)
+        view.onBaseSizeChange = { [weak imageView] size in imageView?.frame = CGRect(origin: .zero, size: size) }
+        return view
+    }
+
+    func updateUIView(_ view: MangaNativeSurfaceView, context: Context) {
+        let imageView = view.zoomContentView.subviews.first as? UIImageView
+        if imageView?.image !== image { imageView?.image = image }
+        view.backgroundColor = background
+        view.onLongPress = onLongPress
+        view.configure(runtime: runtime, configuration: configuration, geometry: geometry, imageLoaded: true)
+    }
+
+    static func dismantleUIView(_ view: MangaNativeSurfaceView, coordinator: ()) { view.detach() }
 }
 #endif

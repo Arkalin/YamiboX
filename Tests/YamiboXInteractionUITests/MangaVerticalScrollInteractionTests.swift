@@ -2,10 +2,38 @@ import XCTest
 
 @MainActor
 final class MangaVerticalScrollInteractionTests: XCTestCase {
+    func testAnimatedResetKeepsVirtualizedPageCoordinatesStable() async throws {
+        for factor in [2, 4] {
+            let app = XCUIApplication()
+            app.launchEnvironment["MANGA_VERTICAL_SCROLL_FIXTURE"] = "1"
+            app.launchEnvironment["MANGA_VERTICAL_INITIAL_ZOOM"] = String(factor)
+            app.launch()
+            defer { app.terminate() }
+            let diagnostics = app.staticTexts["manga-vertical-diagnostics"]
+            XCTAssertTrue(diagnostics.waitForExistence(timeout: 5))
+            try await Task.sleep(for: .milliseconds(700))
+            XCTAssertEqual(try XCTUnwrap(snapshot(diagnostics)["zoom"]), Double(factor), accuracy: 0.01)
+            app.scrollViews["manga-vertical-viewport"].doubleTap()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while try snapshot(diagnostics)["deferredLayoutApplied"] != 1, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let result = try snapshot(diagnostics)
+            XCTAssertEqual(try XCTUnwrap(result["zoom"]), 1, accuracy: 0.01)
+            XCTAssertGreaterThan(try XCTUnwrap(result["zoomFrames"]), 2, "\(result)")
+            XCTAssertLessThan(try XCTUnwrap(result["windowDrift"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertLessThan(try XCTUnwrap(result["pageDrift"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertLessThan(try XCTUnwrap(result["contentDrift"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertEqual(result["uncoveredZoomFrames"], 0, "\(result)")
+            XCTAssertEqual(result["zoomLayoutChanges"], 0, "\(result)")
+            XCTAssertEqual(result["deferredLayoutApplied"], 1, "\(result)")
+        }
+    }
+
     func testStationaryTapsToggleChromeButScrollsAndShortDragsDoNot() async throws {
         let app = try await launchFixture()
         defer { app.terminate() }
-        let viewport = app.collectionViews["manga-vertical-viewport"]
+        let viewport = app.scrollViews["manga-vertical-viewport"]
         let diagnostics = app.staticTexts["manga-vertical-diagnostics"]
         let center = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
 
@@ -36,7 +64,7 @@ final class MangaVerticalScrollInteractionTests: XCTestCase {
     func testDoubleTapPinchAndZoomedScrollingRemainUsableWithoutChromeToggles() async throws {
         let app = try await launchFixture()
         defer { app.terminate() }
-        let viewport = app.collectionViews["manga-vertical-viewport"]
+        let viewport = app.scrollViews["manga-vertical-viewport"]
         let diagnostics = app.staticTexts["manga-vertical-diagnostics"]
         let center = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
 
@@ -76,6 +104,37 @@ final class MangaVerticalScrollInteractionTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(500))
         try await assertDiagnostics(diagnostics, taps: 0, chrome: 0)
         return app
+    }
+
+    func testChromePreservesNativeZoomAndAllowsPinchAndPan() async throws {
+        let app = try await launchFixture()
+        defer { app.terminate() }
+        let viewport = app.scrollViews["manga-vertical-viewport"]
+        let diagnostics = app.staticTexts["manga-vertical-diagnostics"]
+        let center = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        center.doubleTap()
+        viewport.swipeUp()
+        try await Task.sleep(for: .milliseconds(500))
+        let before = try snapshot(diagnostics)
+        center.tap()
+        try await assertDiagnostics(diagnostics, taps: 1, chrome: 1)
+        let shown = try snapshot(diagnostics)
+        XCTAssertEqual(try XCTUnwrap(shown["zoom"]), try XCTUnwrap(before["zoom"]), accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(shown["offsetY"]), try XCTUnwrap(before["offsetY"]), accuracy: 2)
+        viewport.pinch(withScale: 1.5, velocity: 1)
+        let pinched = try snapshot(diagnostics)
+        XCTAssertGreaterThan(try XCTUnwrap(pinched["zoom"]), 2.2)
+        try await assertDiagnostics(diagnostics, taps: 1, chrome: 1)
+        viewport.swipeUp()
+        XCTAssertGreaterThan(try XCTUnwrap(snapshot(diagnostics)["offsetY"]), try XCTUnwrap(pinched["offsetY"]) + 100)
+        try await assertDiagnostics(diagnostics, taps: 1, chrome: 1)
+        let beforeHide = try snapshot(diagnostics)
+        center.doubleTap()
+        try await assertDiagnostics(diagnostics, taps: 2, chrome: 0)
+        let hidden = try snapshot(diagnostics)
+        XCTAssertEqual(try XCTUnwrap(hidden["zoom"]), try XCTUnwrap(beforeHide["zoom"]), accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(hidden["offsetY"]), try XCTUnwrap(beforeHide["offsetY"]), accuracy: 2)
+        attachScreenshot(app, name: "Chrome preserves native zoom and pan")
     }
 
     private func snapshot(_ element: XCUIElement) throws -> [String: Double] {

@@ -1,6 +1,22 @@
 import SwiftUI
 import YamiboXCore
 
+/// Status-bar visibility changes chrome, not the reading surface's geometry.
+struct MangaReadingViewportInsets {
+    private var viewport: CGSize?
+    private var reservedTop: CGFloat = 0
+
+    func topInset(for viewport: CGSize, proposed: CGFloat) -> CGFloat {
+        self.viewport == viewport ? reservedTop : proposed
+    }
+
+    mutating func update(viewport: CGSize, topInset: CGFloat) {
+        guard viewport.width > 0, viewport.height > 0, self.viewport != viewport else { return }
+        self.viewport = viewport
+        reservedTop = topInset
+    }
+}
+
 enum MangaPagedLayoutPolicy {
     static func usesTwoPageSpread(
         settings: MangaReaderSettings,

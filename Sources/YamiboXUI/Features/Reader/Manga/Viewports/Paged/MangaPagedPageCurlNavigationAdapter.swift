@@ -9,8 +9,6 @@ final class MangaPagedPageCurlNavigationAdapter {
     private weak var coordinator: MangaPagedPageCurlCoordinator?
     private var nativePanAdmissions: [ObjectIdentifier: MangaNativePanAdmission] = [:]
     let input: MangaNavigationInput
-    var spreadPanGesture: UIPanGestureRecognizer { input.surfacePan }
-    var spreadPinchGesture: UIPinchGestureRecognizer { input.surfacePinch }
 
     init(coordinator: MangaPagedPageCurlCoordinator, input: MangaNavigationInput = MangaNavigationInput()) {
         self.coordinator = coordinator
@@ -39,20 +37,16 @@ final class MangaPagedPageCurlNavigationAdapter {
                 self.route(request, in: container)
             case .navigationPan:
                 if let pan = recognizer as? UIPanGestureRecognizer { self.finishBoundaryPan(pan) }
-            case .surfacePan:
-                if let pan = recognizer as? UIPanGestureRecognizer { coordinator.zoom.handleSpreadPan(pan) }
-            case .surfacePinch:
-                if let pinch = recognizer as? UIPinchGestureRecognizer { coordinator.zoom.handleSpreadPinch(pinch) }
             }
         }
     }
 
     func configureContainerGestures(in container: MangaPagedPageCurlContainerViewController) {
         coordinator?.activeContainerViewController = container
-        for recognizer in [input.tap, input.doubleTap, input.surfacePan, input.surfacePinch] {
+        for recognizer in [input.tap, input.doubleTap] {
             input.install(recognizer, in: container.view)
         }
-        coordinator?.zoom.updateInputAvailability()
+        coordinator?.zoom.updatePageCurlSpreadZoomAvailability(in: container)
     }
 
     func configureGestures(in pageController: UIPageViewController) {
@@ -71,7 +65,7 @@ final class MangaPagedPageCurlNavigationAdapter {
                 if nativePanAdmissions[id] == nil {
                     nativePanAdmissions[id] = MangaNativePanAdmission(pan) { [weak self] in self?.permits($0) ?? false }
                 }
-                pan.isEnabled = !coordinator.parent.isChromeVisible
+                pan.isEnabled = true
             }
         }
     }
@@ -88,17 +82,15 @@ final class MangaPagedPageCurlNavigationAdapter {
 
     private func permits(_ recognizer: UIGestureRecognizer) -> Bool {
         guard let coordinator, let container = coordinator.activeContainerViewController else { return false }
-        if recognizer === input.surfacePinch { return coordinator.zoom.runtime.canPinch }
         guard let pan = recognizer as? UIPanGestureRecognizer else { return true }
+        guard pan.numberOfTouches <= 1 else { return false }
         let translation = pan.translation(in: container.view)
         let velocity = pan.velocity(in: container.view)
         let decision = coordinator.interactionRuntime.navigationDecision(
             .pan(translation: CGSize(width: translation.x, height: translation.y), velocity: CGSize(width: velocity.x, height: velocity.y)),
             surface: currentSurface, configuration: configuration)
-        if recognizer === input.surfacePan {
-            return coordinator.parent.sequence.usesTwoPageSpread && decision == .panImage
-        }
-        guard case let .navigate(edge) = decision, !coordinator.isPageTurnInProgress else { return false }
+        guard case let .navigate(edge) = decision, !coordinator.isPageTurnInProgress,
+              currentSurface?.isManipulating != true else { return false }
         let step = configuration.direction.step(toward: edge)
         if recognizer === input.navigationPan {
             let target = coordinator.selectionIndex + step.rawValue
@@ -142,8 +134,6 @@ final class MangaPagedPageCurlNavigationAdapter {
             }
         case .toggleChrome:
             coordinator.callbackScheduler.publish { [weak coordinator] in coordinator?.parent.onTap() }
-        case .reveal, .zoom:
-            if coordinator.parent.sequence.usesTwoPageSpread { coordinator.zoom.render(animated: true) }
         default: break
         }
     }

@@ -66,53 +66,45 @@ struct MangaInteractionUIKitTests {
 
     @Test func installedSurfaceRecognizersUsePolicyAndScopedRelationships() throws {
         let runtime = MangaSurfaceRuntime()
-        runtime.configure(MangaInteractionConfiguration(zoomEnabled: false),
+        let view = MangaNativeSurfaceView()
+        view.frame = CGRect(x: 0, y: 0, width: 400, height: 800)
+        view.configure(runtime: runtime, configuration: MangaInteractionConfiguration(zoomEnabled: false),
             geometry: .image(size: CGSize(width: 800, height: 800), viewport: CGSize(width: 400, height: 800),
                 fit: .fitHeight, alignment: .left), imageLoaded: true)
-        let registry = MangaSurfaceGestureRegistry()
-        let input = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pan)
-        let pan = try #require(input.makeRecognizer() as? UIPanGestureRecognizer)
-        let pinchInput = MangaSurfaceGestureInput(runtime: runtime, registry: registry, role: .pinch)
-        let pinch = pinchInput.makeRecognizer()
-        let view = UIView(frame: CGRect(x: 40, y: 80, width: 400, height: 800))
+        let pan = SamplePan()
         view.addGestureRecognizer(pan)
-        view.addGestureRecognizer(pinch)
-        // SwiftUI supplies converted samples; an idle UIKit pan has no touch translation.
-        input.localTranslation = { CGPoint(x: -2, y: 0) }
-        input.localVelocity = { .zero }
-        #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == true)
-        input.localTranslation = { CGPoint(x: 2, y: 0) }
-        #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == false)
-        input.localVelocity = { CGPoint(x: -100, y: 0) }
-        #expect(pan.delegate?.gestureRecognizerShouldBegin?(pan) == true)
-        #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: pinch) == true)
-        #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: UIPinchGestureRecognizer()) == false)
-        #expect(pan.delegate?.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: UILongPressGestureRecognizer()) == false)
+        pan.sampleTranslation = CGPoint(x: -2, y: 0)
+        #expect(view.permitsPan?(pan) == true)
+        pan.sampleTranslation = CGPoint(x: 2, y: 0)
+        #expect(view.permitsPan?(pan) == false)
+        pan.sampleVelocity = CGPoint(x: -100, y: 0)
+        #expect(view.permitsPan?(pan) == true)
         runtime.configure(MangaInteractionConfiguration(chromeVisible: true), geometry: runtime.geometry, imageLoaded: true)
-        input.update(pan)
-        #expect(!pan.isEnabled)
+        #expect(view.permitsPan?(pan) == true)
+        #expect(view.panGestureRecognizer.isEnabled)
+        let navigation = MangaNavigationInput()
+        let parent = UIView()
+        parent.addSubview(view)
+        navigation.install(navigation.tap, in: parent)
+        #expect(navigation.gestureRecognizer(navigation.tap, shouldRequireFailureOf: view.panGestureRecognizer))
+        #expect(!navigation.gestureRecognizer(navigation.tap, shouldRequireFailureOf: UIScrollView().panGestureRecognizer))
+        view.detach()
     }
 
     @Test func longPressRecognizerUsesMenuPolicyAndConfiguredThresholds() throws {
         let runtime = MangaSurfaceRuntime()
         runtime.configure(MangaInteractionConfiguration(),
             geometry: .spread(viewport: CGSize(width: 400, height: 800)), imageLoaded: true)
-        let input = MangaSurfaceGestureInput(runtime: runtime, registry: MangaSurfaceGestureRegistry(), role: .longPress)
-        let longPress = try #require(input.makeRecognizer() as? UILongPressGestureRecognizer)
-        #expect(longPress.delegate === input)
+        let view = MangaNativeSurfaceView()
+        let longPress = view.longPress
+        #expect(longPress.delegate === view)
         #expect(longPress.minimumPressDuration == 0.45)
         #expect(longPress.allowableMovement == 10)
-        input.menuFrame = CGRect(x: CGFloat(400) / 3, y: 0, width: CGFloat(400) / 3, height: 800)
-        input.update(longPress)
-        #expect(longPress.isEnabled)
-        input.localLocation = { CGPoint(x: 200, y: 400) }
-        #expect(longPress.delegate?.gestureRecognizerShouldBegin?(longPress) == true)
-        #expect(runtime.menuFrame == input.menuFrame)
-        input.localLocation = { CGPoint(x: 100, y: 400) }
-        #expect(longPress.delegate?.gestureRecognizerShouldBegin?(longPress) == false)
-        input.menuFrame = .zero
-        input.update(longPress)
-        #expect(!longPress.isEnabled)
+        runtime.setMenuFrame(CGRect(x: CGFloat(400) / 3, y: 0, width: CGFloat(400) / 3, height: 800))
+        #expect(runtime.decision(.longPress(CGPoint(x: 200, y: 400))) == .menu)
+        #expect(runtime.decision(.longPress(CGPoint(x: 100, y: 400))) == .ignore)
+        runtime.setMenuFrame(.zero)
+        #expect(runtime.decision(.longPress(CGPoint(x: 200, y: 400))) == .ignore)
     }
 
     private func waitUntil(_ condition: () -> Bool) async throws {
@@ -130,6 +122,13 @@ struct MangaInteractionUIKitTests {
             calls += 1
             return true
         }
+    }
+
+    private final class SamplePan: UIPanGestureRecognizer {
+        var sampleTranslation = CGPoint.zero
+        var sampleVelocity = CGPoint.zero
+        override func translation(in view: UIView?) -> CGPoint { sampleTranslation }
+        override func velocity(in view: UIView?) -> CGPoint { sampleVelocity }
     }
 }
 #endif

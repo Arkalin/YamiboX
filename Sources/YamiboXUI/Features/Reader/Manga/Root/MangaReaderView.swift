@@ -50,6 +50,7 @@ public struct MangaReaderView: View {
     /// `ReaderWindowSafeAreaInsetsProbe`; seeded from the key-window
     /// backstop for the frames before the reader attaches to its window.
     @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
+    @State private var readingViewportInsets = MangaReadingViewportInsets()
 
     private let onClose: () -> Void
     private let onOpenOriginalPost: (URL, MangaLaunchContext) async -> Bool
@@ -103,7 +104,7 @@ public struct MangaReaderView: View {
             )
             let pagedContentTopInset = MangaPagedLayoutPolicy.pagedContentTopInset(
                 settings: model.presentation.settings,
-                topInset: topInset
+                topInset: readingViewportInsets.topInset(for: proxy.size, proposed: topInset)
             )
 
             MangaReaderPresentationContent(
@@ -147,6 +148,9 @@ public struct MangaReaderView: View {
                 }
             )
             .ignoresSafeArea()
+            .onChange(of: proxy.size, initial: true) { _, size in
+                readingViewportInsets.update(viewport: size, topInset: topInset)
+            }
             .onChange(of: usesTwoPageSpread, initial: true) { _, newValue in
                 controlUsesTwoPageSpread = newValue
             }
@@ -264,6 +268,7 @@ public struct MangaReaderView: View {
                 }
             }
         }
+        .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!isChromeVisible)

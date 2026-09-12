@@ -92,15 +92,14 @@ struct MangaVerticalGestureUIKitTests {
 
         fixture.owner.scrollViewDidScroll(fixture.collection)
         #expect(fixture.owner.gestureRecognizer(fixture.owner.pinchGesture, shouldReceive: UITouch()))
-        #expect(fixture.owner.gestureRecognizerShouldBegin(fixture.owner.pinchGesture))
+        #expect(fixture.collection.gestureRecognizerShouldBegin(fixture.owner.pinchGesture))
     }
 
-    @Test func installedRecognizersGivePanAndPinchPriorityAndOnlyAllowTheirSimultaneity() throws {
+    @Test func installedRecognizersGiveNativePanAndPinchPriority() throws {
         let fixture = try makeFixture()
         let owner = fixture.owner
         let pan = fixture.collection.panGestureRecognizer
         let unrelatedPan = UIPanGestureRecognizer()
-        let longPress = UILongPressGestureRecognizer()
 
         for tap in [owner.tapGesture, owner.doubleTapGesture] {
             #expect(tap.view === fixture.collection)
@@ -108,15 +107,11 @@ struct MangaVerticalGestureUIKitTests {
             #expect(tap.delegate?.gestureRecognizer?(tap, shouldRequireFailureOf: pan) == true)
             #expect(tap.delegate?.gestureRecognizer?(tap, shouldRequireFailureOf: owner.pinchGesture) == true)
             #expect(tap.delegate?.gestureRecognizer?(tap, shouldRequireFailureOf: unrelatedPan) == false)
-            for other in [pan, owner.pinchGesture, longPress] {
-                #expect(owner.gestureRecognizer(tap, shouldRecognizeSimultaneouslyWith: other) == false)
-                #expect(owner.gestureRecognizer(other, shouldRecognizeSimultaneouslyWith: tap) == false)
-            }
         }
-        #expect(owner.gestureRecognizer(owner.pinchGesture, shouldRecognizeSimultaneouslyWith: pan))
-        #expect(owner.gestureRecognizer(pan, shouldRecognizeSimultaneouslyWith: owner.pinchGesture))
-        #expect(!owner.gestureRecognizer(owner.pinchGesture, shouldRecognizeSimultaneouslyWith: unrelatedPan))
-        #expect(!owner.gestureRecognizer(owner.pinchGesture, shouldRecognizeSimultaneouslyWith: longPress))
+        #expect(owner.pinchGesture === fixture.collection.pinchGestureRecognizer)
+        #expect(owner.pinchGesture.delegate !== owner)
+        #expect(fixture.collection.collectionView.isScrollEnabled == false)
+        #expect(fixture.collection.gestureRecognizers?.filter { $0 is UIPinchGestureRecognizer }.count == 1)
     }
 
     private func sendTap(to fixture: Fixture, doubleTap: Bool) {
@@ -138,12 +133,17 @@ struct MangaVerticalGestureUIKitTests {
             onControlScrollEdgeReached: { _ in }, onPageLongPress: { _ in }, onTap: { state.taps += 1 }
         )
         let owner = MangaVerticalCollectionViewport.Coordinator(parent: viewport, currentTime: { state.time })
-        return Fixture(owner: owner, collection: viewport.makeCollectionView(coordinator: owner), state: state)
+        let view = viewport.makeViewportView(coordinator: owner)
+        view.frame = CGRect(x: 0, y: 0, width: 400, height: 800)
+        owner.updateContentIfNeeded(in: view)
+        view.layoutIfNeeded()
+        state.time += 1
+        return Fixture(owner: owner, collection: view, state: state)
     }
 
     private struct Fixture {
         let owner: MangaVerticalCollectionViewport.Coordinator
-        let collection: UICollectionView
+        let collection: MangaVerticalNativeViewport
         let state: State
     }
 

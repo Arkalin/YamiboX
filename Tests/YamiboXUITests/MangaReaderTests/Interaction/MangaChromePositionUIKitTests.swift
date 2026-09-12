@@ -36,7 +36,8 @@ struct MangaChromePositionUIKitTests {
         let runtime = try #require(owner.pageSurfaceInteractions[page.id]?.runtime)
         try await waitUntil { runtime.imageLoaded }
         let edge: MangaPagedImageSurfaceHorizontalEdge = direction == .leftToRight ? .right : .left
-        #expect(runtime.perform(.edge(edge)) == .reveal(edge))
+        #expect(runtime.perform(.edge(edge), animated: false) == .reveal(edge))
+        try await waitUntil { !runtime.hiddenEdges.contains(edge) }
         let revealed = runtime.transform
         let geometry = runtime.geometry
         #expect(revealed.offset.width != 0)
@@ -99,7 +100,8 @@ struct MangaChromePositionUIKitTests {
         for revealOppositeEdge in [false, true] {
             if revealOppositeEdge {
                 let edge: MangaPagedImageSurfaceHorizontalEdge = alignment == .left ? .right : .left
-                #expect(runtime.perform(.edge(edge)) == .reveal(edge))
+                #expect(runtime.perform(.edge(edge), animated: false) == .reveal(edge))
+                try await waitUntil { !runtime.hiddenEdges.contains(edge) }
                 #expect(runtime.transform.offset.width != 0)
             }
             let transform = runtime.transform

@@ -6,6 +6,7 @@ import UIKit
 
 final class MangaPagedPageCurlContainerViewController: UIViewController {
     let pageViewController: UIPageViewController
+    let zoomView = MangaNativeSurfaceView()
     var onLayoutSubviews: (() -> Void)?
 
     init(pageViewController: UIPageViewController) {
@@ -22,19 +23,17 @@ final class MangaPagedPageCurlContainerViewController: UIViewController {
         super.viewDidLoad()
         view.clipsToBounds = true
         addChild(pageViewController)
-        pageViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(pageViewController.view)
-        NSLayoutConstraint.activate([
-            pageViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            pageViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            pageViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            pageViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
+        view.addSubview(zoomView)
+        zoomView.zoomContentView.addSubview(pageViewController.view)
+        zoomView.onBaseSizeChange = { [weak self] size in
+            self?.pageViewController.view.frame = CGRect(origin: .zero, size: size)
+        }
         pageViewController.didMove(toParent: self)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        zoomView.frame = view.bounds
         onLayoutSubviews?()
     }
 }
@@ -73,7 +72,6 @@ struct MangaPagedPageCurlLeafView: View {
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isChromeVisible: Bool
     let zoomEnabled: Bool
     let isPageZoomEnabled: Bool
     let likedPageIDs: Set<String>
@@ -84,7 +82,6 @@ struct MangaPagedPageCurlLeafView: View {
             imageLoader: imageLoader,
             pageScaleMode: pageScaleMode,
             pageEdgeFillStyle: pageEdgeFillStyle,
-            isChromeVisible: isChromeVisible,
             zoomEnabled: zoomEnabled,
             allowsUnzoomedSurfacePan: true,
             isPageZoomEnabled: isPageZoomEnabled,

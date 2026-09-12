@@ -11,7 +11,6 @@ struct MangaPagedReaderPageSurface: View {
     let pageScaleMode: MangaPageScaleMode
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isChromeVisible: Bool
     let zoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaSurfaceAttachment
@@ -37,8 +36,7 @@ struct MangaPagedReaderPageSurface: View {
                     pageScaleMode: pageScaleMode,
                     initialHorizontalAlignment: initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    isSurfaceInteractionEnabled: !isChromeVisible,
-                    isZoomInteractionEnabled: !isChromeVisible && zoomEnabled,
+                    isZoomInteractionEnabled: zoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
                     surfaceInteraction: surfaceInteraction,
                     onLongPress: {

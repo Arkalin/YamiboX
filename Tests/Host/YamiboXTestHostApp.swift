@@ -33,6 +33,9 @@ struct YamiboXTestHostApp: App {
                 ForumSendCrashFixture()
             } else if ProcessInfo.processInfo.environment["MANGA_VERTICAL_SCROLL_FIXTURE"] == "1" {
                 MangaVerticalScrollFixture()
+            } else if ProcessInfo.processInfo.environment["MANGA_PAGED_NATIVE_FIXTURE"] == "1" {
+                MangaNativePagedFixture()
+                    .ignoresSafeArea()
             } else {
                 MangaLongPressFixture()
             }
@@ -806,6 +809,20 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
     private var tapCount = 0
     private var currentPageIndex = 0
     private var diagnosticsTimer: Timer?
+    private var animationDisplayLink: CADisplayLink?
+    private var preparedAnimationProbe = false
+    private var previousZoomFactor: CGFloat = 1
+    private var measuringZoomReset = false
+    private var intermediateZoomFrames = 0
+    private var maximumWindowOriginDrift: CGFloat = 0
+    private var maximumPageFrameDrift: CGFloat = 0
+    private var maximumContentOriginDrift: CGFloat = 0
+    private var uncoveredZoomFrames = 0
+    private var previousLayoutRevision = 0
+    private var resetLayoutRevision = 0
+    private var layoutChangesDuringZoom = 0
+    private var deferredLayoutApplied = false
+    private var injectedImageRatio = false
     private let diagnosticsLabel = UILabel()
     private lazy var host = UIHostingController(rootView: viewport)
 
@@ -868,12 +885,19 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
         diagnosticsTimer = Timer(timeInterval: 0.05, target: self,
             selector: #selector(refreshDiagnostics), userInfo: nil, repeats: true)
         RunLoop.main.add(diagnosticsTimer!, forMode: .common)
+        if ProcessInfo.processInfo.environment["MANGA_VERTICAL_INITIAL_ZOOM"] != nil {
+            let link = CADisplayLink(target: self, selector: #selector(sampleZoomAnimation))
+            link.add(to: .main, forMode: .common)
+            animationDisplayLink = link
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         diagnosticsTimer?.invalidate()
         diagnosticsTimer = nil
+        animationDisplayLink?.invalidate()
+        animationDisplayLink = nil
     }
 
     private var viewport: MangaVerticalCollectionViewport {
@@ -891,24 +915,88 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
     }
 
     @objc private func refreshDiagnostics() {
-        guard let collection = findCollection(in: host.view),
-              let coordinator = collection.delegate as? MangaVerticalCollectionViewport.Coordinator else { return }
-        collection.accessibilityIdentifier = "manga-vertical-viewport"
+        guard let viewport = findViewport(in: host.view),
+              let coordinator = viewport.collectionView.delegate as? MangaVerticalCollectionViewport.Coordinator else { return }
+        viewport.accessibilityIdentifier = "manga-vertical-viewport"
+        if !preparedAnimationProbe, viewport.alpha == 1,
+           let factor = ProcessInfo.processInfo.environment["MANGA_VERTICAL_INITIAL_ZOOM"].flatMap(Double.init) {
+            preparedAnimationProbe = true
+            viewport.zoom(factor: factor, centeredAt: CGPoint(x: viewport.bounds.width * 0.65, y: 3200), animated: false)
+            previousZoomFactor = factor
+        }
+        if injectedImageRatio, !viewport.isZoomAnimating, !viewport.isZooming {
+            deferredLayoutApplied = coordinator.logicalLayout.frames.first?.height == ceil(viewport.bounds.width * 2)
+        }
         let values: [String: Double] = [
             "taps": Double(tapCount), "chrome": chromeVisible ? 1 : 0,
-            "loaded": imageLoader.cachedImage(for: pages[0]) != nil && collection.alpha == 1 ? 1 : 0,
-            "offsetY": collection.contentOffset.y, "zoom": coordinator.verticalZoomScale,
-            "decelerating": collection.isDecelerating ? 1 : 0,
-            "dragging": collection.isDragging ? 1 : 0
+            "loaded": imageLoader.cachedImage(for: pages[0]) != nil && viewport.alpha == 1 ? 1 : 0,
+            "offsetY": viewport.contentOffset.y, "offsetX": viewport.contentOffset.x,
+            "zoom": coordinator.verticalZoomScale,
+            "decelerating": viewport.isDecelerating ? 1 : 0,
+            "dragging": viewport.isDragging ? 1 : 0,
+            "zoomFrames": Double(intermediateZoomFrames), "windowDrift": Double(maximumWindowOriginDrift),
+            "pageDrift": Double(maximumPageFrameDrift), "contentDrift": Double(maximumContentOriginDrift),
+            "uncoveredZoomFrames": Double(uncoveredZoomFrames),
+            "zoomLayoutChanges": Double(layoutChangesDuringZoom), "deferredLayoutApplied": deferredLayoutApplied ? 1 : 0
         ]
         diagnosticsLabel.text = "Chrome: \(chromeVisible ? "visible" : "hidden")  Taps: \(tapCount)\n"
             + String(format: "Page: %d  Zoom: %.2fx", currentPageIndex + 1, coordinator.verticalZoomScale)
         diagnosticsLabel.accessibilityValue = String(decoding: try! JSONEncoder().encode(values), as: UTF8.self)
     }
 
-    private func findCollection(in view: UIView) -> UICollectionView? {
-        if let collection = view as? UICollectionView { return collection }
-        return view.subviews.lazy.compactMap { self.findCollection(in: $0) }.first
+    @objc private func sampleZoomAnimation() {
+        guard let viewport = findViewport(in: host.view),
+              let coordinator = viewport.collectionView.delegate as? MangaVerticalCollectionViewport.Coordinator else { return }
+        let factor = viewport.normalizedZoomFactor
+        defer {
+            previousZoomFactor = factor
+            previousLayoutRevision = coordinator.layoutRevision
+        }
+        if previousZoomFactor > 1.1, factor == 1 {
+            measuringZoomReset = true
+            intermediateZoomFrames = 0
+            maximumWindowOriginDrift = 0
+            maximumPageFrameDrift = 0
+            maximumContentOriginDrift = 0
+            uncoveredZoomFrames = 0
+            resetLayoutRevision = previousLayoutRevision
+            layoutChangesDuringZoom = 0
+            deferredLayoutApplied = false
+            injectedImageRatio = false
+        }
+        guard measuringZoomReset,
+              let content = viewport.zoomContentView.layer.presentation(),
+              let collection = viewport.collectionView.layer.presentation(),
+              let outer = viewport.layer.presentation() else { return }
+        guard content.transform.m11 > 1.01 else {
+            if !viewport.isZoomAnimating {
+                measuringZoomReset = false
+            }
+            return
+        }
+        intermediateZoomFrames += 1
+        layoutChangesDuringZoom = max(layoutChangesDuringZoom, coordinator.layoutRevision - resetLayoutRevision)
+        if !injectedImageRatio {
+            injectedImageRatio = true
+            coordinator.recordHeightToWidthRatio(2, for: pages[0].id)
+        }
+        maximumWindowOriginDrift = max(maximumWindowOriginDrift, abs(collection.frame.minY - collection.bounds.minY))
+        maximumContentOriginDrift = max(maximumContentOriginDrift, abs(content.frame.minY))
+        for cell in viewport.collectionView.visibleCells {
+            guard let index = viewport.collectionView.indexPath(for: cell)?.item,
+                  let rendered = cell.layer.presentation() else { continue }
+            let expected = viewport.logicalCollectionLayout.logicalLayout.frames[index]
+            maximumPageFrameDrift = max(maximumPageFrameDrift, abs(rendered.frame.minY - expected.minY),
+                                       abs(rendered.bounds.height - expected.height))
+        }
+        let visible = content.convert(outer.bounds, from: outer)
+            .intersection(CGRect(origin: .zero, size: viewport.logicalCollectionLayout.logicalLayout.contentSize))
+        if !collection.frame.insetBy(dx: -1, dy: -1).contains(visible) { uncoveredZoomFrames += 1 }
+    }
+
+    private func findViewport(in view: UIView) -> MangaVerticalNativeViewport? {
+        if let viewport = view as? MangaVerticalNativeViewport { return viewport }
+        return view.subviews.lazy.compactMap { self.findViewport(in: $0) }.first
     }
 }
 
@@ -916,6 +1004,151 @@ private struct MangaVerticalScrollFixtureImages: YamiboOfflineImageDataProviding
     let data: Data
 
     func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? { data }
+}
+
+private struct MangaNativePagedFixture: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> MangaNativePagedFixtureController { MangaNativePagedFixtureController() }
+    func updateUIViewController(_ controller: MangaNativePagedFixtureController, context: Context) {}
+}
+
+private final class MangaNativePagedFixtureController: UIViewController {
+    private var chrome = false
+    private var index = 0
+    private var taps = 0
+    private var changedChromeDuringPinch = false
+    private var timer: Timer?
+    private let diagnostics = UILabel()
+    private let chromeButton = UIButton(type: .system)
+    private let pinchArea = UIView()
+    private let bridge = MangaPagedControlPageTurnBridge()
+    private let pages: [MangaReaderPageProjection]
+    private let loader: MangaReaderPageImageLoader
+    private lazy var host = UIHostingController(rootView: content)
+    private var spread: Bool { ProcessInfo.processInfo.environment["MANGA_NATIVE_SPREAD"] == "1" }
+    private var curl: Bool { ProcessInfo.processInfo.environment["MANGA_NATIVE_STYLE"] == "curl" }
+    private var direction: MangaPageTurnDirection {
+        ProcessInfo.processInfo.environment["MANGA_NATIVE_RTL"] == "1" ? .rightToLeft : .leftToRight
+    }
+
+    init() {
+        let width = Double(ProcessInfo.processInfo.environment["MANGA_NATIVE_IMAGE_WIDTH"] ?? "400") ?? 400
+        let size = CGSize(width: width, height: 800)
+        let data = UIGraphicsImageRenderer(size: size).pngData { context in
+            for (index, color) in [UIColor.systemTeal, .systemYellow, .systemPink].enumerated() {
+                color.setFill()
+                context.fill(CGRect(x: CGFloat(index) * size.width / 3, y: 0, width: size.width / 3, height: 800))
+                ("Panel \(index + 1)" as NSString).draw(at: CGPoint(x: CGFloat(index) * size.width / 3 + 10, y: 360),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 28), .foregroundColor: UIColor.black])
+            }
+        }
+        pages = (0..<8).map { index in
+            MangaReaderPageProjection(tid: "native-paged-fixture", ownerPostID: "1", chapterTitle: "Offline manga",
+                imageURL: URL(fileURLWithPath: "/native-paged-\(index).png"),
+                sourceIdentity: MangaReaderProjectionSourceIdentity(tid: "native-paged-fixture", authorID: nil, view: 1),
+                globalIndex: index, localIndex: index, chapterPageCount: 8)
+        }
+        loader = MangaReaderPageImageLoader(imageSource: {
+            YamiboImageSource(url: $0.imageURL, offlineScope: YamiboImageOfflineScope(tid: "native-paged-fixture"))
+        }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline(offlineImages: MangaVerticalScrollFixtureImages(data: data))))
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(host)
+        host.safeAreaRegions = []
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host.view)
+        host.didMove(toParent: self)
+        diagnostics.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        diagnostics.textColor = .white
+        diagnostics.backgroundColor = .black
+        diagnostics.textAlignment = .center
+        diagnostics.accessibilityIdentifier = "manga-native-diagnostics"
+        diagnostics.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(diagnostics)
+        chromeButton.setTitle("Chrome", for: .normal)
+        chromeButton.backgroundColor = .white
+        chromeButton.accessibilityIdentifier = "manga-native-chrome"
+        chromeButton.addTarget(self, action: #selector(toggleChrome), for: .touchUpInside)
+        chromeButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chromeButton)
+        // Keep injected pinches away from the diagnostics and toolbar controls.
+        pinchArea.isUserInteractionEnabled = false
+        pinchArea.isAccessibilityElement = true
+        pinchArea.accessibilityIdentifier = "manga-native-pinch-area"
+        pinchArea.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(pinchArea)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: view.topAnchor), host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            diagnostics.leadingAnchor.constraint(equalTo: view.leadingAnchor), diagnostics.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            diagnostics.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), diagnostics.heightAnchor.constraint(equalToConstant: 28),
+            chromeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            chromeButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            chromeButton.widthAnchor.constraint(equalToConstant: 90), chromeButton.heightAnchor.constraint(equalToConstant: 44),
+            pinchArea.centerXAnchor.constraint(equalTo: view.centerXAnchor), pinchArea.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            pinchArea.widthAnchor.constraint(equalToConstant: 300), pinchArea.heightAnchor.constraint(equalToConstant: 300)
+        ])
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        timer = Timer(timeInterval: 0.05, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); timer?.invalidate(); timer = nil }
+
+    @objc private func toggleChrome() { chrome.toggle(); host.rootView = content }
+
+    private var content: AnyView {
+        let style: ReaderPagedTurnStyle = curl ? .pageCurl : (ProcessInfo.processInfo.environment["MANGA_NATIVE_STYLE"] == "none" ? .none : .slide)
+        let fit: MangaPageScaleMode = ProcessInfo.processInfo.environment["MANGA_NATIVE_IMAGE_WIDTH"] == nil ? .fitWidth : .fitHeight
+        let settings = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: style, pageTurnDirection: direction, pageScaleMode: fit)
+        let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: index, pageTurnDirection: direction, usesTwoPageSpread: spread)
+        let onChange: (Int) -> Void = { [weak self] index in
+            guard let self, self.index != index else { return }; self.index = index; self.host.rootView = self.content
+        }
+        let onTap: () -> Void = { [weak self] in self?.taps += 1; self?.toggleChrome() }
+        if curl {
+            return AnyView(MangaPagedPageCurlReaderViewport(plan: plan, viewportPlacement: nil, settings: settings,
+                imageLoader: loader, isChromeVisible: chrome, zoomEnabled: true, likedPageIDs: [], controlPageTurnBridge: bridge,
+                onCurrentPageChange: onChange, canBoundaryPageTurn: { _ in false }, onBoundaryPageTurn: { _ in }, onPageLongPress: { _ in }, onTap: onTap))
+        }
+        return AnyView(MangaPagedReaderViewport(plan: plan, viewportPlacement: nil, settings: settings,
+            imageLoader: loader, isChromeVisible: chrome, zoomEnabled: true, likedPageIDs: [], controlPageTurnBridge: bridge,
+            onCurrentPageChange: onChange, canBoundaryPageTurn: { _ in false }, onBoundaryPageTurn: { _ in }, onPageLongPress: { _ in }, onTap: onTap))
+    }
+
+    @objc private func refresh() {
+        let surfaces = nativeSurfaces(in: host.view).filter {
+            $0.window != nil && !$0.isHidden && host.view.bounds.intersects($0.convert($0.bounds, to: host.view))
+        }
+        let surface = surfaces.first { $0.runtime?.configuration.zoomEnabled == true }
+        if surface?.isZooming == true, !changedChromeDuringPinch,
+           ProcessInfo.processInfo.environment["MANGA_NATIVE_CHROME_DURING_PINCH"] == "1" {
+            changedChromeDuringPinch = true
+            toggleChrome()
+        }
+        let values: [String: Double] = ["page": Double(index), "chrome": chrome ? 1 : 0, "taps": Double(taps),
+            "zoom": Double(surface?.normalizedZoomFactor ?? 1), "x": Double(surface?.contentOffset.x ?? 0), "y": Double(surface?.contentOffset.y ?? 0),
+            "runtimeZoom": Double(surface?.runtime?.transform.scale ?? 0),
+            "viewWidth": Double(surface?.bounds.width ?? 0), "viewHeight": Double(surface?.bounds.height ?? 0),
+            "hiddenEdges": Double(surface?.runtime?.hiddenEdges.count ?? 0),
+            "manipulating": surface?.runtime?.isManipulating == true ? 1 : 0,
+            "runtimeChrome": surface?.runtime?.configuration.chromeVisible == true ? 1 : 0,
+            "loaded": surface?.runtime?.imageLoaded == true ? 1 : 0]
+        diagnostics.text = "Page \(index + 1)  Zoom \(String(format: "%.2f", values["zoom"]!))  Chrome \(chrome)"
+        diagnostics.accessibilityValue = String(decoding: try! JSONEncoder().encode(values), as: UTF8.self)
+    }
+
+    private func nativeSurfaces(in view: UIView) -> [MangaNativeSurfaceView] {
+        if let surface = view as? MangaNativeSurfaceView, surface.runtime?.configuration.zoomEnabled == true { return [surface] }
+        return view.subviews.flatMap { nativeSurfaces(in: $0) }
+    }
 }
 
 private struct MangaLongPressFixture: View {
@@ -937,19 +1170,21 @@ private struct MangaLongPressFixture: View {
             MangaPagedReaderScaledImage(
                 image: image, pageID: "layout", pageScaleMode: .fitHeight,
                 initialHorizontalAlignment: .left, pageEdgeFillStyle: .system,
-                isSurfaceInteractionEnabled: true, isZoomInteractionEnabled: true,
+                isZoomInteractionEnabled: true,
                 allowsUnzoomedSurfacePan: true, surfaceInteraction: surface,
                 onLongPress: { menuCount += 1 }
             )
             .frame(width: 400, height: 800)
 
-            Text(diagnostics)
-                .font(.system(size: 10))
-                .foregroundStyle(.white)
-                .padding(8)
-                .background(.black)
-                .accessibilityIdentifier("manga-diagnostics")
-                .allowsHitTesting(false)
+            TimelineView(.periodic(from: .now, by: 0.05)) { _ in
+                Text(diagnostics)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white)
+                    .padding(8)
+                    .background(.black)
+                    .accessibilityIdentifier("manga-diagnostics")
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()

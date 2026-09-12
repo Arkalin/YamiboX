@@ -15,8 +15,8 @@ struct MangaNavigationPolicyTests {
         #expect(surface.canPinch == zoomEnabled)
         configuration.chromeVisible = true
         surface.configure(configuration, geometry: geometry, imageLoaded: true)
-        #expect(!surface.canPan)
-        #expect(!surface.canPinch)
+        #expect(surface.canPan == allowsUnzoomedPan)
+        #expect(surface.canPinch == zoomEnabled)
         configuration.chromeVisible = false
         surface.configure(configuration, geometry: geometry, imageLoaded: false)
         #expect(!surface.canPan)
@@ -26,11 +26,14 @@ struct MangaNavigationPolicyTests {
     @Test func zoomedVerticalPanStillBelongsToImage() {
         let runtime = MangaPagedInteractionRuntime()
         let surface = runtime.surface(SurfaceID(value: "spread"))
+        let instance = UUID()
+        surface.mount(instance)
         let configuration = MangaNavigationConfiguration(direction: .leftToRight,
             surface: MangaInteractionConfiguration(allowsUnzoomedPan: false))
         surface.configure(configuration.surface, geometry: .spread(viewport: CGSize(width: 1000, height: 700)), imageLoaded: true)
         #expect(!surface.canPan)
         runtime.handleNavigation(.doubleTap(zone: .center, location: CGPoint(x: 500, y: 350)), surface: surface, configuration: configuration)
+        surface.receiveNative(MangaSurfaceTransform(scale: 2), interacting: false, instance: instance)
         #expect(surface.canPan)
         #expect(runtime.navigationDecision(.pan(translation: CGSize(width: 2, height: 30), velocity: .zero),
             surface: surface, configuration: configuration) == .panImage)
@@ -48,6 +51,8 @@ struct MangaNavigationPolicyTests {
     func tapControlAndSwipeShareContentPriority(direction: MangaReadingDirection, zoomEnabled: Bool) {
         let runtime = MangaPagedInteractionRuntime()
         let surface = runtime.surface(SurfaceID(value: "page"))
+        let instance = UUID()
+        surface.mount(instance)
         let configuration = MangaNavigationConfiguration(direction: direction,
             surface: MangaInteractionConfiguration(zoomEnabled: zoomEnabled))
         surface.configure(configuration.surface, geometry: .image(size: CGSize(width: 800, height: 800),
@@ -59,6 +64,7 @@ struct MangaNavigationPolicyTests {
             surface: surface, configuration: configuration) == .panImage)
         #expect(surface.transform.offset == .zero)
         #expect(runtime.handleNavigation(.control(step), surface: surface, configuration: configuration) == .reveal(.right))
+        surface.receiveNative(MangaSurfaceTransform(offset: CGSize(width: -400, height: 0)), interacting: false, instance: instance)
         #expect(runtime.navigationDecision(.tap(.right), surface: surface, configuration: configuration) == .navigate(.right))
         #expect(runtime.navigationDecision(.pan(translation: CGSize(width: -2, height: 0), velocity: .zero),
             surface: surface, configuration: configuration) == .navigate(.right))

@@ -138,34 +138,20 @@ struct ImageBrowserZoomableScrollView: UIViewRepresentable {
     }
 }
 
-final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
+final class ImageBrowserZoomScrollView: NativeZoomScrollView {
     var onSingleTap: (() -> Void)?
     var onZoomFactorChange: ((CGFloat) -> Void)?
     private(set) var currentImage: UIImage?
 
     private let imageView = UIImageView()
     private var lastLayoutSize: CGSize = .zero
-    /// `layoutSubviews` runs inside the SwiftUI render commit and `resetZoom`
-    /// inside `onDisappear`, and their zoom mutations fire
-    /// `scrollViewDidZoom` synchronously — publishing the factor straight
-    /// into `@State` from there is "Modifying state during view update". The
-    /// scheduler defers publishes born in those scopes to the next runloop
-    /// turn, while gesture-driven zoom keeps reporting synchronously.
-    private let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
-
-    init() {
-        super.init(frame: .zero)
-        delegate = self
-        showsVerticalScrollIndicator = false
-        showsHorizontalScrollIndicator = false
-        contentInsetAdjustmentBehavior = .never
-        bouncesZoom = true
-        bounces = true
-        alwaysBounceVertical = false
-        alwaysBounceHorizontal = false
-        scrollsToTop = false
-        backgroundColor = .clear
-        addSubview(imageView)
+    override init() {
+        super.init()
+        zoomContentView.addSubview(imageView)
+        onSnapshotChange = { [weak self] _ in self?.reportZoomFactor() }
+        onViewportSizeChange = { [weak self] _, previous in
+            self?.configureImageGeometry(preserving: previous)
+        }
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
@@ -186,7 +172,6 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
         imageView.image = image
         let size = image?.size ?? .zero
         imageView.frame = CGRect(origin: .zero, size: size)
-        contentSize = size
         lastLayoutSize = .zero
         setNeedsLayout()
     }
@@ -208,44 +193,27 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
-    func resetZoom(animated: Bool) {
-        callbackScheduler.performViewUpdate {
-            setZoomScale(minimumZoomScale, animated: animated)
-        }
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
+        if bounds.size != lastLayoutSize { configureImageGeometry(preserving: nil) }
+    }
+
+    private func configureImageGeometry(preserving previous: NativeZoomSnapshot?) {
         guard let image = currentImage, bounds.width > 0, bounds.height > 0 else { return }
         callbackScheduler.performViewUpdate {
-            if bounds.size != lastLayoutSize {
-                // Preserve the user's zoom factor relative to fit across container
-                // size changes (rotation, split view), re-fitting on first layout.
-                let previousFactor = ImageBrowserZoomMath.normalizedFactor(
-                    zoomScale: zoomScale,
-                    fitScale: minimumZoomScale
-                )
-                let hadLayout = lastLayoutSize != .zero
-                lastLayoutSize = bounds.size
-
-                let fit = ImageBrowserZoomMath.fitScale(imageSize: image.size, containerSize: bounds.size)
-                minimumZoomScale = fit
-                maximumZoomScale = fit * ImageBrowserZoomMath.maximumZoomFactor
-                let factor = hadLayout ? ImageBrowserZoomMath.clampedFactor(previousFactor) : 1
-                zoomScale = fit * factor
-                reportZoomFactor()
+            let hadLayout = lastLayoutSize != .zero
+            lastLayoutSize = bounds.size
+            let fit = ImageBrowserZoomMath.fitScale(imageSize: image.size, containerSize: bounds.size)
+            configureGeometry(contentSize: image.size, minimumScale: fit,
+                              maximumFactor: ImageBrowserZoomMath.maximumZoomFactor)
+            if hadLayout, let previous {
+                place(contentPoint: CGPoint(x: previous.visibleRect.midX, y: previous.visibleRect.midY),
+                      at: CGPoint(x: bounds.width / 2, y: bounds.height / 2))
+            } else if !hadLayout {
+                resetZoom(animated: false)
             }
-            recenterContent()
+            reportZoomFactor()
         }
-    }
-
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-        imageView
-    }
-
-    func scrollViewDidZoom(_ scrollView: UIScrollView) {
-        recenterContent()
-        reportZoomFactor()
     }
 
     @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
@@ -280,13 +248,6 @@ final class ImageBrowserZoomScrollView: UIScrollView, UIScrollViewDelegate {
         guard gestureRecognizer === panGestureRecognizer else { return true }
         return ImageBrowserZoomMath.isEngagedZoom(
             factor: ImageBrowserZoomMath.normalizedFactor(zoomScale: zoomScale, fitScale: minimumZoomScale)
-        )
-    }
-
-    private func recenterContent() {
-        contentInset = ImageBrowserZoomMath.centeringInsets(
-            contentSize: contentSize,
-            containerSize: bounds.size
         )
     }
 

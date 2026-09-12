@@ -37,7 +37,7 @@ enum MangaInteractionPolicy {
         imageLoaded: Bool,
         isManipulating: Bool
     ) -> Set<MangaContinuousInput> {
-        guard imageLoaded, !configuration.chromeVisible else { return [] }
+        guard imageLoaded else { return [] }
         var result: Set<MangaContinuousInput> = []
         if configuration.zoomEnabled { result.insert(.pinch) }
         if isManipulating || MangaPageZoomPolicy.isActive(scale) || (configuration.allowsUnzoomedPan && !hiddenEdges.isEmpty) {
@@ -74,13 +74,12 @@ enum MangaInteractionPolicy {
         case let .control(edge):
             return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)
         case let .pan(translation, velocity):
-            guard !configuration.chromeVisible else { return .ignore }
             if imageLoaded && MangaPageZoomPolicy.isActive(scale) { return .panImage }
             guard let edge = dragEdge(translation: translation, velocity: velocity) else { return .ignore }
             if imageLoaded && configuration.allowsUnzoomedPan && hiddenEdges.contains(edge) {
                 return .panImage
             }
-            return .navigate(edge)
+            return configuration.chromeVisible ? .ignore : .navigate(edge)
         }
     }
 }

@@ -11,51 +11,42 @@ struct MangaVerticalCollectionZoomLayoutTests {
         #expect(MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: 2) == 1)
     }
 
-    @Test func scaleAndItemMetricsAreClamped() {
-        #expect(MangaVerticalCollectionZoomLayout.clampedScale(0.2) == 1)
-        #expect(MangaVerticalCollectionZoomLayout.clampedScale(2.5) == 2.5)
-        #expect(MangaVerticalCollectionZoomLayout.clampedScale(8) == 4)
-        #expect(MangaVerticalCollectionZoomLayout.itemWidth(viewportWidth: 390, zoomScale: 2) == 780)
-        #expect(MangaVerticalCollectionZoomLayout.estimatedItemHeight(baseHeight: 560, zoomScale: 2) == 1_120)
+    @Test func baseGeometryUsesKnownRatiosAndExistingFallback() {
+        let layout = MangaVerticalCollectionZoomLayout(
+            pageIDs: ["a", "b"], width: 360, heightToWidthRatios: ["a": 2]
+        )
+        #expect(layout.frames == [
+            CGRect(x: 0, y: 0, width: 360, height: 720),
+            CGRect(x: 0, y: 720, width: 360, height: 500)
+        ])
+        #expect(layout.contentSize == CGSize(width: 360, height: 1220))
     }
 
-    @Test func zoomingInKeepsVisibleAnchorStable() {
-        let offset = MangaVerticalCollectionZoomLayout.anchoredContentOffset(
-            currentOffset: CGPoint(x: 20, y: 100),
-            visibleAnchor: CGPoint(x: 100, y: 200),
-            oldScale: 1,
-            newScale: 2,
-            targetContentSize: CGSize(width: 800, height: 2_400),
-            viewportSize: CGSize(width: 400, height: 800)
-        )
-
-        #expect(offset == CGPoint(x: 140, y: 400))
+    @Test func exactBoundariesDoNotCountOverscanOrAdjacentPages() {
+        let layout = MangaVerticalCollectionZoomLayout(pageIDs: ["a", "b", "c"], width: 360)
+        #expect(layout.indexes(intersecting: CGRect(x: 0, y: 500, width: 360, height: 500)) == 1..<2)
+        #expect(layout.indexes(intersecting: CGRect(x: 0, y: -100, width: 360, height: 300)) == 0..<1)
+        #expect(layout.indexes(intersecting: CGRect(x: 0, y: 2000, width: 360, height: 300)).isEmpty)
     }
 
-    @Test func zoomingOutKeepsVerticalAnchorStableAndClampsHorizontalOffset() {
-        let offset = MangaVerticalCollectionZoomLayout.anchoredContentOffset(
-            currentOffset: CGPoint(x: 140, y: 400),
-            visibleAnchor: CGPoint(x: 100, y: 200),
-            oldScale: 2,
-            newScale: 1,
-            targetContentSize: CGSize(width: 400, height: 1_200),
-            viewportSize: CGSize(width: 400, height: 800)
-        )
-
-        #expect(offset == CGPoint(x: 0, y: 100))
+    @Test(arguments: [20, 200])
+    func virtualWindowIsBoundedIndependentlyOfChapterLength(count: Int) {
+        let layout = MangaVerticalCollectionZoomLayout(pageIDs: (0..<count).map(String.init), width: 360)
+        let visible = CGRect(x: 40, y: 3000, width: 180, height: 400)
+        let window = layout.window(covering: visible)
+        #expect(window == CGRect(x: 0, y: 2600, width: 360, height: 1200))
+        #expect(layout.indexes(intersecting: window).count <= 4)
+        #expect(layout.indexes(intersecting: visible).count == 1)
     }
 
-    @Test func anchoredOffsetIsClampedToContentEdges() {
-        let offset = MangaVerticalCollectionZoomLayout.anchoredContentOffset(
-            currentOffset: CGPoint(x: 350, y: 1_100),
-            visibleAnchor: CGPoint(x: 380, y: 760),
-            oldScale: 1,
-            newScale: 2,
-            targetContentSize: CGSize(width: 800, height: 1_400),
-            viewportSize: CGSize(width: 400, height: 800),
-            adjustedContentInset: MangaVerticalCollectionZoomInsets(top: 10, left: 20, bottom: 30, right: 40)
+    @Test func normalizedPageAnchorSurvivesEarlierHeightCorrectionAndRotation() throws {
+        let original = MangaVerticalCollectionZoomLayout(pageIDs: ["a", "b"], width: 360)
+        let anchor = try #require(original.anchor(at: CGPoint(x: 90, y: 750), viewportPoint: CGPoint(x: 100, y: 200)))
+        #expect(anchor.pageID == "b")
+        #expect(anchor.normalizedPoint == CGPoint(x: 0.25, y: 0.5))
+        let corrected = MangaVerticalCollectionZoomLayout(
+            pageIDs: ["a", "b"], width: 720, heightToWidthRatios: ["a": 2, "b": 3]
         )
-
-        #expect(offset == CGPoint(x: 440, y: 630))
+        #expect(corrected.contentPoint(for: anchor) == CGPoint(x: 180, y: 2520))
     }
 }
