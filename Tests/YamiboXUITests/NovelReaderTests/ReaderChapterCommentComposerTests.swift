@@ -259,7 +259,7 @@ struct ReaderChapterCommentComposerTests {
         #expect(ReaderChapterReplyPlacement.resolve(target: chapter, hasLaterChapter: false, state: .loaded(chapter, confirmed)) == .withinChapter)
         #expect(ReaderChapterReplyPlacement.outsideChapter.warning(isNovel: true, isChapterOwner: true, mode: .reply) != nil)
         #expect(ReaderChapterReplyPlacement.outsideChapter.warning(isNovel: false, isChapterOwner: true, mode: .reply) == nil)
-        #expect(ReaderChapterReplyPlacement.outsideChapter.warning(isNovel: true, isChapterOwner: false, mode: .reply) == nil)
+        #expect(ReaderChapterReplyPlacement.outsideChapter.warning(isNovel: true, isChapterOwner: false, mode: .reply) != nil)
         for mode in [ReaderChapterCommentComposeMode.rating, .comment] {
             #expect(ReaderChapterReplyPlacement.outsideChapter.warning(isNovel: true, isChapterOwner: true, mode: mode) == nil)
         }

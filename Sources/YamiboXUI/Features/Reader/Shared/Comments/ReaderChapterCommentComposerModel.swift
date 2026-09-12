@@ -48,7 +48,7 @@ enum ReaderChapterReplyPlacement: Equatable {
     }
 
     func warning(isNovel: Bool, isChapterOwner: Bool, mode: ReaderChapterCommentComposeMode) -> String? {
-        guard isNovel, isChapterOwner, mode == .reply else { return nil }
+        guard isNovel, mode == .reply else { return nil }
         switch self {
         case .outsideChapter: return L10n.string("reader.comment_composer.reply_outside_chapter")
         case .withinChapter: return nil

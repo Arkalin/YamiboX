@@ -46,7 +46,7 @@ import UIKit
     #expect(vertical.viewportIndex.chapters.last?.title == "第二章")
 }
 
-@Test func novelTextLayoutFiltersAuthorRepliesToOthersWhenSettingIsDisabled() throws {
+@Test func novelTextLayoutAlwaysFiltersAuthorRepliesToOthers() throws {
     let document = NovelReaderProjection(
         threadID: "188",
         view: 1,
@@ -70,14 +70,14 @@ import UIKit
     )
     let hidden = try NovelTextLayout.layout(
         document: document,
-        settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false, readingMode: .vertical),
+        settings: NovelReaderAppearanceSettings(readingMode: .vertical),
         layout: layout
     )
 
     let visibleSegmentIndexes = Set(visible.viewportIndex.surfaces.flatMap { $0.ranges.map(\.segmentIndex) })
     let hiddenSegmentIndexes = Set(hidden.viewportIndex.surfaces.flatMap { $0.ranges.map(\.segmentIndex) })
 
-    #expect(visibleSegmentIndexes.contains(1))
+    #expect(!visibleSegmentIndexes.contains(1))
     #expect(!hiddenSegmentIndexes.contains(1))
     #expect(hidden.viewportIndex.chapters.map(\.title) == ["第一章", "第二章"])
 }
@@ -99,7 +99,7 @@ import UIKit
 
     let result = try NovelTextLayout.layout(
         document: document,
-        settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false, readingMode: .vertical),
+        settings: NovelReaderAppearanceSettings(readingMode: .vertical),
         layout: NovelReaderLayout(width: 320, height: 568)
     )
 

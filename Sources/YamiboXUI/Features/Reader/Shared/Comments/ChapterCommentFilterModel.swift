@@ -7,6 +7,7 @@ import YamiboXCore
 final class ChapterCommentFilterModel {
     private(set) var state: ReaderChapterCommentsState = .idle
     private(set) var hasHiddenComments = false
+    private(set) var discussions: [ChapterCommentDiscussion] = []
     @ObservationIgnored private var rawState: ReaderChapterCommentsState = .idle
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -32,6 +33,7 @@ final class ChapterCommentFilterModel {
         guard case let .loaded(target, page) = rawState else {
             state = rawState
             hasHiddenComments = false
+            discussions = []
             return
         }
         // Do not expose another chapter's list while the new projection loads.
@@ -52,6 +54,8 @@ final class ChapterCommentFilterModel {
                 guard let self, !Task.isCancelled, generation == request else { return }
                 var visiblePage = page
                 visiblePage.comments = comments
+                let visibleIDs = Set(comments.map(\.id))
+                discussions = page.discussions.compactMap { $0.filtering(visibleIDs: visibleIDs) }
                 hasHiddenComments = comments.count < page.comments.count
                 state = .loaded(target, visiblePage)
             } catch { /* Cancelled projections never replace a newer result. */ }

@@ -855,7 +855,14 @@
 "reader.background.sakura" = "樱粉";
 "reader.background.system" = "系统";
 "reader.background_theme" = "背景主题";
-"reader.author_replies_to_others" = "楼主对他人的回帖";
+"reader.comment_replies_title" = "评论详情";
+"reader.comment_conversation_title" = "对话列表";
+"reader.comment_view_conversation" = "查看对话";
+"reader.comment_replies_count" = "共 %d 条回复";
+"reader.comment_replies_loaded" = "已加载 %d 条回复";
+"reader.comment_reply_prefix" = "回复 %@：";
+"reader.comment_author" = "作者";
+"reader.comment_filtered" = "该评论已过滤";
 "reader.cache" = "缓存";
 "reader.comment_anonymous" = "匿名";
 "reader.comment_view_image" = "查看图片";

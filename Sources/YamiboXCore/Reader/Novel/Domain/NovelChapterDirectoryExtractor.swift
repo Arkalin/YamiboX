@@ -34,7 +34,7 @@ package enum NovelChapterDirectoryExtractor {
             let segment = projection.segments[index]
             let semantics = projection.semantics(forSegmentIndex: index)
             let source = projection.source(forSegmentIndex: index)
-            if source?.isAuthorReplyToOther == true, !settings.showsAuthorRepliesToOthers {
+            if source?.isAuthorReplyToOther == true {
                 return nil
             }
             guard let semantics,
