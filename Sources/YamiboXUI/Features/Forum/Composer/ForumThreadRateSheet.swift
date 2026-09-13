@@ -109,92 +109,21 @@ struct ForumThreadRateSheet: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let failure = model.optionsFailure {
-                    LoadFailureView(title: L10n.string("forum.thread.rate_unavailable"), systemImage: "star.slash",
-                                    message: failure.message, details: failure.details, showsRetry: model.canRetryOptions) {
-                        Task { await model.loadRateOptions() }
-                    }
-                } else {
-                    ForumThreadRateForm(model: model)
-                }
-            }
-            .navigationTitle(L10n.string("forum.thread.ratings"))
-            .failureToast(message: model.optionsFailure == nil ? model.errorMessage : nil, details: model.errorDetails,
-                          eventID: model.errorEventID, clear: model.clearError)
-            .yamiboInlineNavigationTitleDisplayMode()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.cancel")) {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(model.isSubmitting ? L10n.string("forum.thread.submitting") : L10n.string("forum.thread.submit")) {
+            ForumPostRatingFields(model: model, disabled: model.isSubmitting)
+                .modifier(ForumComposerSurface())
+                .navigationTitle(L10n.string("forum.thread.ratings"))
+                .toolbar {
+                    ForumComposerToolbar(isBusy: model.isSubmitting, isSubmitting: model.isSubmitting,
+                                         canSubmit: model.canSubmit, close: { dismiss() }) {
                         submissionTask = Task {
-                            if await model.submitRate() {
-                                dismiss()
-                            }
+                            if await model.submitRate() { dismiss() }
                         }
                     }
-                    .disabled(!model.canSubmit)
                 }
-            }
-            .overlay {
-                if model.isLoadingOptions || model.isSubmitting {
-                    ProgressView()
-                }
-            }
         }
-        .task {
-            await model.loadRateOptions()
-        }
+        .modifier(ForumComposerSheetPresentation())
+        .interactiveDismissDisabled(model.isSubmitting)
+        .task { await model.loadRateOptions() }
         .onDisappear { submissionTask?.cancel() }
-    }
-}
-
-private struct ForumThreadRateForm: View {
-    @Environment(\.forumTheme) private var theme
-    @Bindable var model: ForumThreadRateSheetModel
-
-    var body: some View {
-        Form {
-            Section {
-                TextField(L10n.string("forum.thread.rate_score"), text: $model.scoreText)
-
-                if let options = model.options, !options.availableScores.isEmpty {
-                    Menu(L10n.string("forum.thread.rate_score_options")) {
-                        ForEach(options.availableScores, id: \.self) { score in
-                            Button(String(score)) {
-                                model.scoreText = String(score)
-                            }
-                        }
-                    }
-                }
-
-                TextField(L10n.string("forum.thread.rate_reason"), text: $model.reason, axis: .vertical)
-                    .lineLimit(3 ... 5)
-
-                if let options = model.options, !options.defaultReasons.isEmpty {
-                    Menu(L10n.string("forum.thread.rate_reason_options")) {
-                        ForEach(options.defaultReasons, id: \.self) { value in
-                            Button(value) {
-                                model.reason = value
-                            }
-                        }
-                    }
-                }
-
-                Toggle(L10n.string("forum.thread.rate_notice_author"), isOn: $model.noticeAuthor)
-            }
-
-            if let hintMessage = model.hintMessage {
-                Section {
-                    Text(hintMessage)
-                        .font(.caption)
-                        .foregroundStyle(theme.secondaryText)
-                }
-            }
-        }
     }
 }

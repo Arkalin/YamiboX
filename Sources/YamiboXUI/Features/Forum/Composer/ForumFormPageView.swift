@@ -43,6 +43,7 @@ struct ForumFormPageView: View {
         ZStack {
             content
         }
+        .modifier(ForumComposerSurface(isEnabled: composerForm?.kind == .thread))
         .onChange(of: model.submissionSucceeded) { _, succeeded in
             guard succeeded, composerForm != nil, !isEmbedded else { return }
             let feedback = model.transientFeedback ?? TransientFeedback(message: L10n.string("forum.native.submitted"))
@@ -61,12 +62,10 @@ struct ForumFormPageView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 if !isEmbedded, let form = composerForm, let button = primaryButton(form) {
-                    Button { prepareSubmission(form: form, button: button) } label: {
-                        Label(button.title, systemImage: "paperplane.fill")
+                    ForumComposerSubmitButton(title: button.title, identifier: "native-form-submit-\(button.id)",
+                                              isSubmitting: model.isSubmitting, canSubmit: !formDisabled) {
+                        prepareSubmission(form: form, button: button)
                     }
-                    .labelStyle(.iconOnly)
-                    .accessibilityIdentifier("native-form-submit-\(button.id)")
-                    .disabled(formDisabled)
                 }
             }
             if !isEmbedded, composerForm == nil {
@@ -230,7 +229,7 @@ struct ForumFormPageView: View {
         }
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
-        if isEmbedded {
+        if isEmbedded || composerForm?.kind == .thread {
             list.listStyle(.plain)
         } else if composerForm == nil {
             list.listStyle(.insetGrouped).refreshable { if !isPreparingPhoto { await model.refresh() } }

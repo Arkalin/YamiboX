@@ -50,7 +50,6 @@ final class ForumThreadCommentSheetModel {
 }
 
 struct ForumThreadCommentSheet: View {
-    @Environment(\.forumTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var model: ForumThreadCommentSheetModel
     @State private var submissionTask: Task<Void, Never>?
@@ -61,51 +60,20 @@ struct ForumThreadCommentSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                TextEditor(text: $model.message)
-                    .frame(minHeight: 160)
-                    .padding(8)
-                    .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(alignment: .topLeading) {
-                        if model.message.isEmpty {
-                            Text(L10n.string("forum.thread.comment_placeholder"))
-                                .foregroundStyle(theme.secondaryText)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 16)
-                                .allowsHitTesting(false)
-                        }
-                    }
-
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .failureToast(message: model.errorMessage, details: model.errorDetails,
-                          eventID: model.errorEventID, clear: model.clearError)
-            .navigationTitle(L10n.string("forum.thread.comment"))
-            .yamiboInlineNavigationTitleDisplayMode()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.cancel")) {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(model.isSubmitting ? L10n.string("forum.thread.submitting") : L10n.string("forum.thread.publish")) {
+            ForumPostCommentFields(model: model, disabled: model.isSubmitting)
+                .modifier(ForumComposerSurface())
+                .navigationTitle(L10n.string("forum.thread.comment"))
+                .toolbar {
+                    ForumComposerToolbar(isBusy: model.isSubmitting, isSubmitting: model.isSubmitting,
+                                         canSubmit: model.canSubmit, close: { dismiss() }) {
                         submissionTask = Task {
-                            if await model.submitComment() {
-                                dismiss()
-                            }
+                            if await model.submitComment() { dismiss() }
                         }
                     }
-                    .disabled(!model.canSubmit)
                 }
-            }
-            .overlay {
-                if model.isSubmitting {
-                    ProgressView()
-                }
-            }
         }
+        .modifier(ForumComposerSheetPresentation())
+        .interactiveDismissDisabled(model.isSubmitting)
         .onDisappear { submissionTask?.cancel() }
     }
 }

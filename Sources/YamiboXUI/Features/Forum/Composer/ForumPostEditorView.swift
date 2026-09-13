@@ -14,8 +14,15 @@ struct ForumPostEditorView: View {
     }
 
     var body: some View {
-        ForumFormPageView(model: model, document: document, composerForm: form, editorRegistry: editorRegistry,
-                          onSubmissionSucceeded: onSubmissionSucceeded, onURLTap: onURLTap)
-            .accessibilityIdentifier("forum-post-editor-\(mode?.rawValue ?? "form")")
+        Group {
+            if mode == .reply, let form {
+                ForumPostReplyFields(session: model, form: form, editorRegistry: editorRegistry,
+                                     onSubmissionSucceeded: onSubmissionSucceeded, onURLTap: onURLTap)
+            } else {
+                ForumFormPageView(model: model, document: document, composerForm: form, editorRegistry: editorRegistry,
+                                  onSubmissionSucceeded: onSubmissionSucceeded, onURLTap: onURLTap)
+            }
+        }
+        .accessibilityIdentifier("forum-post-editor-\(mode?.rawValue ?? "form")")
     }
 }
