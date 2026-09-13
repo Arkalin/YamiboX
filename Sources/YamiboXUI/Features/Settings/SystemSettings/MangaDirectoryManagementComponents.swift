@@ -85,7 +85,7 @@ extension View {
             // confirm button should read as the same action, not a
             // more destructive-sounding synonym.
             actionTitle: { _ in L10n.string("common.clear") },
-            message: \.message
+            message: { $0.message + "\n\n" + viewModel.deletionNotice }
         ) { confirmation in
             Task {
                 _ = await viewModel.confirmMangaDirectoryManagementDeletion(confirmation)

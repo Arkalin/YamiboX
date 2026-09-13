@@ -8,8 +8,8 @@ import Foundation
 /// readers use `BrowsingHistoryWorkflow` instead.
 ///
 /// Retention (decision #9): capped at `maxEntryCount` rows, trimmed by
-/// `last_visit_time` after every insert. Purely local — never synced
-/// (decision #12).
+/// `last_visit_time` after every insert. Sync keeps stable visits separately
+/// from this device's canonical reader-mode and progress projection.
 public actor BrowsingHistoryStore {
     public static let maxEntryCount = 2000
 
@@ -20,12 +20,14 @@ public actor BrowsingHistoryStore {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    private let syncSettingsStore: WebDAVSyncSettingsStore
     private var deletedTargets: [String: Date] = [:]
     private var deletedThreads: [String: Date] = [:]
     private var lastClearTime = Date.distantPast
 
-    public init(databasePool: DatabasePool? = nil) {
+    public init(databasePool: DatabasePool? = nil, syncSettingsStore: WebDAVSyncSettingsStore = WebDAVSyncSettingsStore()) {
         self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "BrowsingHistoryStore")
+        self.syncSettingsStore = syncSettingsStore
     }
 
     /// Upserts one visit, absorbing superseded rows in the same transaction
@@ -47,6 +49,12 @@ public actor BrowsingHistoryStore {
     ) async throws {
         do {
             try await database.write { db in
+                let deletions = try SyncDeletionState.load(from: "browsing_history_local_deletions", in: db)
+                    .merging(SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
+                let record = BrowsingHistorySyncRecord(entry)
+                guard !deletions.containsDeletion(of: record.id, updatedAt: entry.lastVisitTime),
+                      !deletions.containsDeletion(of: entry.id, updatedAt: entry.lastVisitTime) else { return }
+                try Self.recordSyncVisit(entry, in: db)
                 if let threadID = entry.target.threadID {
                     try db.execute(
                         sql: "DELETE FROM browsing_history WHERE thread_id = ? AND id != ?",
@@ -123,7 +131,12 @@ public actor BrowsingHistoryStore {
                         targetID,
                     ]
                 )
-                return db.changesCount > 0
+                let changed = db.changesCount > 0
+                if changed, let row = try Row.fetchOne(db, sql: "SELECT * FROM browsing_history WHERE id = ?", arguments: [targetID]),
+                   let entry = Self.entry(from: row) {
+                    try Self.recordSyncVisit(entry, in: db)
+                }
+                return changed
             }
             if changed {
                 postChangeNotification()
@@ -181,15 +194,33 @@ public actor BrowsingHistoryStore {
     }
 
     public func delete(id: String) async throws {
-        let entry = await entry(forID: id)
         let date = Date.now
-        deletedTargets[id] = date
-        if let tid = entry?.lastVisitedThreadID { deletedThreads[tid] = date }
-        if let tid = entry?.chapterThreadID { deletedThreads[tid] = date }
+        let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.browsingHistory)
         do {
-            try await database.write { db in
+            let deletedSourceIDs = try await database.write { db in
+                let entry = try Row.fetchOne(db, sql: "SELECT * FROM browsing_history WHERE id = ?", arguments: [id]).flatMap(Self.entry(from:))
+                var tids = Set([entry?.lastVisitedThreadID, entry?.chapterThreadID].compactMap { $0 })
+                if let name = entry?.target.mangaCleanBookName {
+                    tids.formUnion(try String.fetchAll(db, sql: "SELECT tid FROM manga_directory_chapters WHERE directory_name = ?", arguments: [name]))
+                }
+                let records = try BrowsingHistorySyncRecord.load(in: db)
+                let deleted = records.filter { $0.target.id == id || $0.threadID.map(tids.contains) == true }
+                var keys = Set(deleted.map(\.id))
+                keys.formUnion(tids.map { "source:\($0)" })
+                keys.insert(id)
+                for table in synchronizesDeletion
+                    ? ["browsing_history_local_deletions", "browsing_history_sync_state"]
+                    : ["browsing_history_local_deletions"] {
+                    var state = try SyncDeletionState.load(from: table, in: db)
+                    for key in keys { state.recordDeletion(of: key, at: date) }
+                    try state.save(to: table, in: db)
+                }
+                try BrowsingHistorySyncRecord.save(records.filter { !keys.contains($0.id) }, in: db)
                 try db.execute(sql: "DELETE FROM browsing_history WHERE id = ?", arguments: [id])
+                return tids
             }
+            deletedTargets[id] = date
+            for tid in deletedSourceIDs { deletedThreads[tid] = date }
             postChangeNotification()
         } catch {
             throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
@@ -197,20 +228,42 @@ public actor BrowsingHistoryStore {
     }
 
     public func clearAll() async throws {
+        try await database.write { db in try BrowsingHistoryDatabaseSchema.erase(in: db) }
         lastClearTime = .now
         deletedTargets = [:]
         deletedThreads = [:]
+        postChangeNotification()
+    }
+
+    public func clearAllForSync(at date: Date = .now) async throws {
+        let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.browsingHistory)
         do {
             try await database.write { db in
+                for table in synchronizesDeletion
+                    ? ["browsing_history_local_deletions", "browsing_history_sync_state"]
+                    : ["browsing_history_local_deletions"] {
+                    var state = try SyncDeletionState.load(from: table, in: db)
+                    state.clear(at: date)
+                    try state.save(to: table, in: db)
+                }
                 try db.execute(sql: "DELETE FROM browsing_history")
+                try db.execute(sql: "DELETE FROM browsing_history_sync_records")
             }
+            lastClearTime = date
+            deletedTargets = [:]
+            deletedThreads = [:]
             postChangeNotification()
         } catch {
             throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
-    /// Logical row payload; excludes shared database indexes, WAL and free pages.
+    public func deletionNotice() async -> String {
+        await syncSettingsStore.load().deletionNotice(for: .browsingHistory)
+    }
+
+    /// Live projection and sync visit payloads; excludes retained deletion
+    /// markers, shared database indexes, WAL and free pages.
     public func estimatedDataUsageBytes() async throws -> Int {
         try await database.read { db in
             try Int.fetchOne(db, sql: """
@@ -229,7 +282,8 @@ public actor BrowsingHistoryStore {
                     COALESCE(length(CAST(last_visited_thread_id AS BLOB)), 0) +
                     COALESCE(length(CAST(last_visited_thread_title AS BLOB)), 0) +
                     8 * (1 + (page_index IS NOT NULL) + (page_count IS NOT NULL))
-                ), 0) FROM browsing_history
+                ), 0) + (SELECT COALESCE(SUM(length(record) + length(CAST(id AS BLOB)) + 8), 0)
+                    FROM browsing_history_sync_records) FROM browsing_history
                 """) ?? 0
         }
     }
@@ -244,18 +298,34 @@ public actor BrowsingHistoryStore {
 
     /// Compare-and-swap protects asynchronous normalization from concurrent
     /// deletes or writes. Only changed rows are touched; observers see one commit.
-    func canRecord(_ visit: BrowsingHistoryVisit, targetID: String) -> Bool {
-        visit.date > lastClearTime && visit.date > (deletedTargets[targetID] ?? .distantPast)
-            && visit.date > (deletedThreads[visit.threadID] ?? .distantPast)
+    func canRecord(_ visit: BrowsingHistoryVisit, targetID: String) async throws -> Bool {
+        guard visit.date > lastClearTime && visit.date > (deletedTargets[targetID] ?? .distantPast)
+            && visit.date > (deletedThreads[visit.threadID] ?? .distantPast) else { return false }
+        return try await database.read { db in
+            let state = try SyncDeletionState.load(from: "browsing_history_local_deletions", in: db)
+                .merging(SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
+            return !state.containsDeletion(of: targetID, updatedAt: visit.date)
+                && !state.containsDeletion(of: "source:\(visit.threadID)", updatedAt: visit.date)
+        }
     }
 
     func applyCanonicalEntries(
         _ entries: [BrowsingHistoryEntry], replacing expected: [BrowsingHistoryEntry],
         visit: BrowsingHistoryVisit? = nil, visitTargetID: String? = nil
     ) async throws -> Bool {
-        if let visit, let visitTargetID, !canRecord(visit, targetID: visitTargetID) { return false }
+        if let visit, let visitTargetID, try await !canRecord(visit, targetID: visitTargetID) { return false }
         let applied = try await database.write { db in
             guard try Self.snapshotEntries(in: db) == expected else { return false }
+            if let visit, let visitTargetID {
+                let local = try SyncDeletionState.load(from: "browsing_history_local_deletions", in: db)
+                let synced = try SyncDeletionState.load(from: "browsing_history_sync_state", in: db)
+                let deletions = local.merging(synced)
+                guard !deletions.containsDeletion(of: visitTargetID, updatedAt: visit.date),
+                      !deletions.containsDeletion(of: "source:\(visit.threadID)", updatedAt: visit.date) else { return false }
+                if let entry = entries.first(where: { $0.id == visitTargetID }) {
+                    try Self.recordSyncVisit(entry, in: db)
+                }
+            }
             let retained = Array(entries.sorted(by: Self.newestFirst).prefix(Self.maxEntryCount))
             let byID = Dictionary(uniqueKeysWithValues: retained.map { ($0.id, $0) })
             let oldByID = Dictionary(uniqueKeysWithValues: expected.map { ($0.id, $0) })
@@ -271,9 +341,71 @@ public actor BrowsingHistoryStore {
         return applied
     }
 
-    private static func snapshotEntries(in db: Database) throws -> [BrowsingHistoryEntry] {
+    static func snapshotEntries(in db: Database) throws -> [BrowsingHistoryEntry] {
         try Row.fetchAll(db, sql: "SELECT * FROM browsing_history ORDER BY last_visit_time DESC, id ASC")
-            .compactMap(Self.entry(from:))
+            .map { row in
+                guard let entry = Self.entry(from: row) else { throw YamiboPersistenceError(context: "Invalid browsing history row") }
+                return entry
+            }
+    }
+
+    private static func recordSyncVisit(_ entry: BrowsingHistoryEntry, in db: Database) throws {
+        let incoming = BrowsingHistorySyncRecord(entry)
+        let existing = try Data.fetchOne(db, sql: "SELECT record FROM browsing_history_sync_records WHERE id = ?", arguments: [incoming.id])
+            .map { try JSONDecoder().decode(BrowsingHistorySyncRecord.self, from: $0) }
+        let payload = try BrowsingHistoryWebDAVPayload(updatedAt: .distantPast,
+            records: [existing, incoming].compactMap { $0 }).merging(nil)
+        if let record = payload.records.first, record != existing { try record.save(in: db) }
+        try db.execute(sql: """
+            DELETE FROM browsing_history_sync_records WHERE id IN (
+                SELECT id FROM browsing_history_sync_records ORDER BY last_visit_time DESC, id ASC LIMIT -1 OFFSET ?
+            )
+            """, arguments: [Self.maxEntryCount])
+    }
+
+    func syncSnapshot() async throws -> SyncRecordSnapshot<BrowsingHistorySyncRecord> {
+        try await database.read { db in
+            SyncRecordSnapshot(records: try BrowsingHistorySyncRecord.load(in: db),
+                deletions: try SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
+        }
+    }
+
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<BrowsingHistorySyncRecord>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = SyncRecordSnapshot(records: try BrowsingHistorySyncRecord.load(in: db),
+                deletions: try SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
+            let previous = snapshot
+            let result = try transform(&snapshot)
+            snapshot.records.sort { $0.id < $1.id }
+            guard snapshot != previous else { return (result, false) }
+            try BrowsingHistorySyncRecord.save(snapshot.records, in: db)
+            try snapshot.deletions.save(to: "browsing_history_sync_state", in: db)
+            let existing = try Self.snapshotEntries(in: db)
+            var byID: [String: BrowsingHistoryEntry] = [:]
+            for record in snapshot.records {
+                // Keep locally derived position fields until the workflow refreshes them.
+                var entry = record.entry
+                if let local = existing.first(where: { BrowsingHistorySyncRecord($0).id == record.id && $0.lastVisitTime == record.lastVisitTime }) {
+                    entry.target = local.target
+                    entry.title = local.target.mangaCleanBookName ?? record.title
+                    entry.pageIndex = local.pageIndex
+                    entry.pageCount = local.pageCount
+                    entry.chapterTitle = local.chapterTitle
+                    entry.chapterThreadID = local.chapterThreadID
+                }
+                if let old = byID[entry.id], !Self.newestFirst(entry, old) { continue }
+                byID[entry.id] = entry
+            }
+            try db.execute(sql: "DELETE FROM browsing_history")
+            for entry in byID.values.sorted(by: Self.newestFirst).prefix(Self.maxEntryCount) {
+                try Self.upsert(entry, in: db)
+            }
+            return (result, true)
+        }
+        if result.1 { postChangeNotification() }
+        return result.0
     }
 
     static func newestFirst(_ lhs: BrowsingHistoryEntry, _ rhs: BrowsingHistoryEntry) -> Bool {

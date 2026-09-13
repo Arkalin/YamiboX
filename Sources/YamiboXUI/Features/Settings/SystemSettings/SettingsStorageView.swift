@@ -20,6 +20,7 @@ struct SettingsStorageView: View {
     @State private var showingOfflineCacheManagement = false
     @State private var showingMangaDirectoryManagement = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
+    @State private var syncSettings = WebDAVSyncSettings()
 
     var body: some View {
         Form {
@@ -139,6 +140,15 @@ struct SettingsStorageView: View {
         }
         .navigationTitle(L10n.string("settings.section.data_storage"))
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            let store = dependencies.webDAVSync.settingsStore
+            let changes = store.changes()
+            syncSettings = await store.load()
+            for await _ in changes {
+                guard !Task.isCancelled else { return }
+                syncSettings = await store.load()
+            }
+        }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             await viewModel.refreshStorageUsage()
@@ -167,7 +177,16 @@ struct SettingsStorageView: View {
             item: $pendingConfirmation,
             title: \.title,
             actionTitle: \.buttonTitle,
-            message: \.message
+            message: { confirmation in
+                let content: WebDAVSyncContent?
+                switch confirmation {
+                case .clearBrowsingHistory: content = .browsingHistory
+                case .clearReadingProgress: content = .readingProgress
+                case .clearContentCoverCache: content = .contentCovers
+                default: content = nil
+                }
+                return confirmation.message + (content.map { "\n\n" + syncSettings.deletionNotice(for: $0) } ?? "")
+            }
         ) { confirmation in
             Task {
                 await handleConfirmation(confirmation)

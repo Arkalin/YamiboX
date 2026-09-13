@@ -3,6 +3,37 @@ import XCTest
 @testable import YamiboXUI
 
 final class WebDAVSyncSettingsViewModelTests: XCTestCase {
+    @MainActor
+    func testContentSelectionSavesImmediatelyAndSurvivesNavigationWithoutSubmittingCredentials() async throws {
+        let suite = "webdav-content-ui-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let root = makeWebDAVSettingsTemporaryDirectory(prefix: "content-selection")
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = WebDAVSyncSettingsStore(defaults: defaults)
+        let context = YamiboAppContext(webDAVSyncSettingsStore: store, grdbRootDirectory: root, cachesRootDirectory: root)
+        try await store.save(WebDAVSyncSettings(baseURLString: "https://saved.example.com", username: "saved", lastSyncedAt: Date(timeIntervalSince1970: 100)))
+        let model = WebDAVSyncSettingsViewModel(dependencies: context.webDAVSyncDependencies)
+        await model.load()
+        model.username = "unsaved"
+        await model.setContent(.browsingHistory, enabled: false)
+        let stored = await store.load()
+        XCTAssertFalse(stored.isEnabled(.browsingHistory))
+        XCTAssertEqual(stored.username, "saved")
+        XCTAssertEqual(stored.lastSyncedAt, Date(timeIntervalSince1970: 100))
+        await model.load()
+        XCTAssertEqual(model.username, "unsaved")
+        let reopened = WebDAVSyncSettingsViewModel(dependencies: context.webDAVSyncDependencies)
+        await reopened.load()
+        XCTAssertTrue(reopened.disabledContentIDs.contains("browsingHistory"))
+        for content in WebDAVSyncContent.allCases { await model.setContent(content, enabled: false) }
+        XCTAssertFalse(model.canContinue)
+        await model.setContent(.mangaDirectories, enabled: true)
+        XCTAssertTrue(model.canContinue)
+    }
+
     func testDownloadMismatchShowsErrorWithoutConfirmationAndPreservesSyncTimestamps() async throws {
         let suiteName = "webdav-settings-view-model-\(UUID().uuidString)"
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)

@@ -9,6 +9,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    private let syncSettingsStore: WebDAVSyncSettingsStore
     private let identityMigration: GRDBMangaDirectoryIdentityMigration
     /// These instances receive notifications only; the migration uses this
     /// store's pool. Custom compositions must supply owners of the same data.
@@ -17,11 +18,13 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
 
     public init(
         databasePool: DatabasePool? = nil,
+        syncSettingsStore: WebDAVSyncSettingsStore = WebDAVSyncSettingsStore(),
         favoriteUpdateStore: FavoriteUpdateStore? = nil,
         readingProgressStore: ReadingProgressStore? = nil
     ) {
         let database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "MangaDirectoryStore")
         self.database = database
+        self.syncSettingsStore = syncSettingsStore
         self.identityMigration = GRDBMangaDirectoryIdentityMigration(databasePool: database)
         self.favoriteUpdateStore = favoriteUpdateStore
         self.readingProgressStore = readingProgressStore
@@ -122,7 +125,9 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
 
     public func deleteDirectory(named name: String) async throws {
         guard let name = name.mangaReaderTrimmedNonEmpty else { return }
+        let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.mangaDirectories)
         try await database.write { db in
+            if synchronizesDeletion { try Self.recordDeletion(named: name, at: .now, in: db) }
             try Self.delete(named: name, in: db)
         }
         postChangeNotification()
@@ -138,7 +143,8 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             try await saveDirectory(newDirectory)
             return
         }
-        try await identityMigration.renameDirectory(from: oldName, to: newDirectory)
+        let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.mangaDirectories)
+        try await identityMigration.renameDirectory(from: oldName, to: newDirectory, synchronizesDeletion: synchronizesDeletion)
         favoriteUpdateStore?.notifyExternalMutation()
         postChangeNotification()
         if oldName != newDirectory.cleanBookName {
@@ -150,7 +156,62 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         try await database.write { db in
             try db.execute(sql: "DELETE FROM manga_directory_chapters")
             try db.execute(sql: "DELETE FROM manga_directories")
+            try db.execute(sql: "DELETE FROM manga_directory_sync_state")
         }
+        postChangeNotification()
+    }
+
+    public func clearAllForSync(at date: Date = .now) async throws {
+        let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.mangaDirectories)
+        try await database.write { db in
+            if synchronizesDeletion {
+                var deletions = try SyncDeletionState.load(from: "manga_directory_sync_state", in: db)
+                deletions.clear(at: date)
+                try deletions.save(to: "manga_directory_sync_state", in: db)
+            }
+            try db.execute(sql: "DELETE FROM manga_directories")
+        }
+        postChangeNotification()
+    }
+
+    static func recordDeletion(named name: String, at date: Date, in db: Database) throws {
+        var deletions = try SyncDeletionState.load(from: "manga_directory_sync_state", in: db)
+        deletions.recordDeletion(of: name, at: date)
+        try deletions.save(to: "manga_directory_sync_state", in: db)
+    }
+
+    func syncSnapshot() async throws -> SyncRecordSnapshot<MangaDirectorySyncRecord> {
+        try await database.read { db in try Self.syncSnapshot(in: db) }
+    }
+
+    func updateSyncSnapshot<T: Sendable>(
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<MangaDirectorySyncRecord>) throws -> T
+    ) async throws -> T {
+        let result = try await database.write { db in
+            var snapshot = try Self.syncSnapshot(in: db)
+            let previous = snapshot
+            let result = try transform(&snapshot)
+            snapshot.records.sort { $0.id < $1.id }
+            guard snapshot != previous else { return (result, false) }
+            try db.execute(sql: "DELETE FROM manga_directories")
+            for record in snapshot.records {
+                try Self.save(record.directory, modifiedAt: record.modifiedAt, in: db)
+            }
+            try snapshot.deletions.save(to: "manga_directory_sync_state", in: db)
+            return (result, true)
+        }
+        if result.1 { postChangeNotification() }
+        return result.0
+    }
+
+    private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<MangaDirectorySyncRecord> {
+        let records = try Row.fetchAll(db, sql: "SELECT clean_book_name, modified_at FROM manga_directories ORDER BY clean_book_name").map { row in
+            guard let directory = try Self.directory(named: row["clean_book_name"], in: db) else {
+                throw YamiboPersistenceError(context: "Invalid manga directory")
+            }
+            return MangaDirectorySyncRecord(directory: directory, modifiedAt: Date(timeIntervalSince1970: row["modified_at"]))
+        }
+        return SyncRecordSnapshot(records: records, deletions: try SyncDeletionState.load(from: "manga_directory_sync_state", in: db))
     }
 
     /// Lightweight per-directory listing for the settings management screen:
@@ -225,7 +286,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         try db.execute(sql: "DELETE FROM manga_directories WHERE clean_book_name = ?", arguments: [name])
     }
 
-    static func save(_ directory: MangaDirectory, in db: Database) throws {
+    static func save(_ directory: MangaDirectory, modifiedAt: Date = .now, in db: Database) throws {
         var normalized = directory
         guard let cleanBookName = directory.cleanBookName.mangaReaderTrimmedNonEmpty else {
             throw YamiboPersistenceError(context: "Directory name is empty")
@@ -235,8 +296,8 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         try db.execute(
             sql: """
             INSERT INTO manga_directories
-            (clean_book_name, strategy, source_key, last_updated_at, search_keyword)
-            VALUES (?, ?, ?, ?, ?)
+            (clean_book_name, strategy, source_key, last_updated_at, search_keyword, modified_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 normalized.cleanBookName,
@@ -244,6 +305,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
                 normalized.sourceKey,
                 normalized.lastUpdatedAt.map(timeInterval(from:)),
                 normalized.searchKeyword,
+                modifiedAt.timeIntervalSince1970,
             ]
         )
         try db.execute(sql: "DELETE FROM manga_directory_chapters WHERE directory_name = ?", arguments: [normalized.cleanBookName])

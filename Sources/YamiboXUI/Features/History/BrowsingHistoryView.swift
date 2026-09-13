@@ -49,7 +49,7 @@ struct BrowsingHistoryView: View {
                 if !model.showsPreviousReading {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
-                            model.clearAllConfirmationPresented = true
+                            Task { await model.prepareClearAllConfirmation() }
                         } label: {
                             Label(L10n.string("history.clear_all"), systemImage: "trash")
                         }
@@ -62,7 +62,7 @@ struct BrowsingHistoryView: View {
             L10n.string("history.clear_all.title"),
             isPresented: Bindable(model).clearAllConfirmationPresented,
             actionTitle: L10n.string("history.clear_all"),
-            message: L10n.string("history.clear_all.message")
+            message: model.clearAllMessage
         ) {
             Task { await model.clearAll() }
         }

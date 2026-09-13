@@ -94,6 +94,7 @@ final class MangaReaderPresentationTests: XCTestCase {
             username: "admin",
             password: "secret",
             isAutoSyncEnabled: true,
+            disabledContentIDs: [WebDAVSyncContent.mangaDirectories.rawValue, WebDAVSyncContent.browsingHistory.rawValue],
             lastRemoteUpdatedAt: Date(timeIntervalSince1970: 2_000),
             localUpdatedAt: Date(timeIntervalSince1970: 1_000)
         ))
@@ -178,6 +179,7 @@ final class MangaReaderPresentationTests: XCTestCase {
             username: "admin",
             password: "secret",
             isAutoSyncEnabled: true,
+            disabledContentIDs: [WebDAVSyncContent.mangaDirectories.rawValue, WebDAVSyncContent.browsingHistory.rawValue],
             lastRemoteUpdatedAt: Date(timeIntervalSince1970: 2_000),
             localUpdatedAt: Date(timeIntervalSince1970: 1_000)
         ))

@@ -13,12 +13,14 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
     func renameDirectory(
         from oldName: String,
         to newDirectory: MangaDirectory,
-        date: Date = .now
+        date: Date = .now,
+        synchronizesDeletion: Bool = true
     ) async throws {
         try await database.write { db in
-            try MangaDirectoryStore.save(newDirectory, in: db)
+            try MangaDirectoryStore.save(newDirectory, modifiedAt: date, in: db)
             let newName = newDirectory.cleanBookName
             guard oldName != newName else { return }
+            if synchronizesDeletion { try MangaDirectoryStore.recordDeletion(named: oldName, at: date, in: db) }
             try ReadingProgressStore.renameMangaTitleTargets(from: oldName, to: newName, date: date, in: db)
             try ContentCoverStore.renameSmartMangaCover(from: oldName, to: newName, date: date, in: db)
             try LikeStore.renameMangaTitleLikes(from: oldName, to: newName, date: date, in: db)
