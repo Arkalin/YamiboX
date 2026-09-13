@@ -72,25 +72,15 @@ final class NovelReadingSessionRuntimeTests: XCTestCase {
             ]
         )
         let layout = NovelReaderLayout(width: 320, height: 568)
-        var session = try NovelReadingSession(
-            validating: document,
-            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
-            layout: layout
+        let semantics = try XCTUnwrap(document.semantics(forSegmentIndex: 1))
+        let replyPosition = NovelResumePoint(
+            view: 1, chapterIdentity: semantics.chapterIdentity, textSegmentIdentity: semantics.textSegmentIdentity,
+            displayedTextOffset: 20, chapterOrdinal: 1, chapterTitle: "作者回复", segmentProgress: 0.5,
+            authorID: nil, readingModeHint: .vertical
         )
-        let replySurface = try XCTUnwrap(session.viewportSurfacesForTesting.first { surface in
-            surface.ranges.contains { $0.segmentIndex == 1 }
-        })
-
-        session.updateVerticalViewportPosition(surfaceOrdinal: replySurface.surfaceOrdinal, intraSurfaceProgress: 0.5)
-        let replyPosition = try XCTUnwrap(session.captureNovelReadingPosition())
-        session.consumeCommittedLayoutResult(
-            try committedLayoutResult(
-                document: document,
-                settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false, readingMode: .vertical),
-                layout: layout
-            ),
-            preferredSurfaceOrdinal: session.snapshot.selectedSurfaceOrdinal,
-            preferredResumePoint: replyPosition
+        let session = try NovelReadingSession(
+            validating: document, settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            layout: layout, resumePoint: replyPosition
         )
 
         let restoredSurface = session.viewportSurfacesForTesting[session.snapshot.selectedSurfaceOrdinal]
@@ -115,25 +105,15 @@ final class NovelReadingSessionRuntimeTests: XCTestCase {
             ]
         )
         let layout = NovelReaderLayout(width: 320, height: 568)
-        var session = try NovelReadingSession(
-            validating: document,
-            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
-            layout: layout
+        let semantics = try XCTUnwrap(document.semantics(forSegmentIndex: 0))
+        let replyPosition = NovelResumePoint(
+            view: 1, chapterIdentity: semantics.chapterIdentity, textSegmentIdentity: semantics.textSegmentIdentity,
+            displayedTextOffset: 20, chapterOrdinal: 0, chapterTitle: "作者回复", segmentProgress: 0.5,
+            authorID: nil, readingModeHint: .vertical
         )
-        let replySurface = try XCTUnwrap(session.viewportSurfacesForTesting.first { surface in
-            surface.ranges.contains { $0.segmentIndex == 0 }
-        })
-
-        session.updateVerticalViewportPosition(surfaceOrdinal: replySurface.surfaceOrdinal, intraSurfaceProgress: 0.5)
-        let replyPosition = try XCTUnwrap(session.captureNovelReadingPosition())
-        session.consumeCommittedLayoutResult(
-            try committedLayoutResult(
-                document: document,
-                settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false, readingMode: .vertical),
-                layout: layout
-            ),
-            preferredSurfaceOrdinal: session.snapshot.selectedSurfaceOrdinal,
-            preferredResumePoint: replyPosition
+        let session = try NovelReadingSession(
+            validating: document, settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+            layout: layout, resumePoint: replyPosition
         )
 
         let restoredSurface = session.viewportSurfacesForTesting[session.snapshot.selectedSurfaceOrdinal]

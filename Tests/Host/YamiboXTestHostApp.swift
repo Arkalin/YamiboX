@@ -29,6 +29,8 @@ struct YamiboXTestHostApp: App {
                 ForumWebLayoutFixture()
             } else if ProcessInfo.processInfo.environment["FORUM_WEB_NAVIGATION_FIXTURE"] == "1" {
                 ForumWebNavigationFixture()
+            } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_DISCUSSION_FIXTURE"] == "1" {
+                ChapterCommentDiscussionFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FILTER_FIXTURE"] == "1" {
                 ChapterCommentFilterFixture()
             } else if ProcessInfo.processInfo.environment["CHAPTER_COMMENT_FIXTURE"] == "1" {

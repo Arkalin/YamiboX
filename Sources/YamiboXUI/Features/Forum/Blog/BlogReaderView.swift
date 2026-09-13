@@ -148,10 +148,9 @@ private struct BlogReaderBodyView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .refreshable {
+        .refreshableWithTopIndicator(isRefreshing: isLoading && page != nil) {
             await refresh()
         }
-        .topRefreshIndicator(isVisible: isLoading && page != nil)
         .forumPageBackground()
         .tint(theme.accentText)
     }

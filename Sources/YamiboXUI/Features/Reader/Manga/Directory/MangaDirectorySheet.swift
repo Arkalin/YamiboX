@@ -128,7 +128,6 @@ struct MangaDirectorySheet: View {
                           details: panel.errorDetails,
                           eventID: panel.failureEventID, clear: onClearFailure)
             .scrollContentBackground(.hidden)
-            .background(YamiboColors.SystemSurface.groupedBackground)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if isSelecting && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: selectionActions)

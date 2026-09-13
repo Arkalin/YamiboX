@@ -87,7 +87,6 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var usesJustifiedText: Bool
     public var indentsParagraphFirstLine: Bool
     public var loadsInlineImages: Bool
-    public var showsAuthorRepliesToOthers: Bool
     /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var backgroundStyle: ReaderBackgroundStyle
@@ -105,7 +104,6 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         usesJustifiedText: Bool = false,
         indentsParagraphFirstLine: Bool = false,
         loadsInlineImages: Bool = true,
-        showsAuthorRepliesToOthers: Bool = true,
         showsTwoPagesInLandscapeOnPad: Bool = true,
         backgroundStyle: ReaderBackgroundStyle = .system,
         readingMode: ReaderReadingMode = .paged,
@@ -121,7 +119,6 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         self.usesJustifiedText = usesJustifiedText
         self.indentsParagraphFirstLine = indentsParagraphFirstLine
         self.loadsInlineImages = loadsInlineImages
-        self.showsAuthorRepliesToOthers = showsAuthorRepliesToOthers
         self.showsTwoPagesInLandscapeOnPad = showsTwoPagesInLandscapeOnPad
         self.backgroundStyle = backgroundStyle
         self.readingMode = readingMode

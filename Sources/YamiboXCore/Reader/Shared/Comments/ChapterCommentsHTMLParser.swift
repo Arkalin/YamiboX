@@ -16,10 +16,12 @@ enum ChapterCommentsHTMLParser {
         let containsTarget = replyMessageNodes(in: document).contains { postID(from: $0) == target.ownerPostID }
         return ChapterCommentsPage(
             target: target,
-            comments: comments,
+            comments: markAuthors(comments, target: target),
             isBoundaryClosed: replies.isBoundaryClosed,
             nextView: next,
-            isThreadEndConfirmed: (isUnfiltered || target.authorID == nil) && containsTarget && !replies.isBoundaryClosed && next == nil
+            isThreadEndConfirmed: (isUnfiltered || target.authorID == nil) && containsTarget && !replies.isBoundaryClosed && next == nil,
+            pendingRatings: ratingRequests(in: document, postIDs: [target.ownerPostID] + comments.filter { $0.source == .reply }.compactMap(\.postID)),
+            needsInitialRetry: (isUnfiltered || target.authorID == nil) && !containsTarget ? true : nil
         )
     }
 
@@ -29,20 +31,30 @@ enum ChapterCommentsHTMLParser {
         view: Int
     ) throws -> ChapterCommentsPage {
         let document = try KannaSoup.parse(html)
+        guard !replyMessageNodes(in: document).isEmpty else { throw ReaderChapterCommentsUnavailableError() }
+        if let actualView = currentView(in: document), actualView != view {
+            throw ReaderChapterCommentsUnavailableError()
+        }
         let replies = try continuationReplies(in: document, target: target)
         let next = nextView(in: document, target: target, currentView: view, isBoundaryClosed: replies.isBoundaryClosed)
         return ChapterCommentsPage(
             target: target,
-            comments: replies.comments,
+            comments: markAuthors(replies.comments, target: target),
             isBoundaryClosed: replies.isBoundaryClosed,
             nextView: next,
-            isThreadEndConfirmed: !replyMessageNodes(in: document).isEmpty && !replies.isBoundaryClosed && next == nil
+            isThreadEndConfirmed: !replyMessageNodes(in: document).isEmpty && !replies.isBoundaryClosed && next == nil,
+            pendingRatings: ratingRequests(in: document, postIDs: replies.comments.filter { $0.source == .reply }.compactMap(\.postID))
         )
     }
 
     static func currentView(html: String, fallback: Int) throws -> Int {
         let document = try KannaSoup.parse(html)
-        return document.firstText(".pg strong").flatMap(Int.init) ?? max(1, fallback)
+        return currentView(in: document) ?? max(1, fallback)
+    }
+
+    private static func currentView(in document: Document) -> Int? {
+        document.firstText(".pg strong").flatMap(Int.init)
+            ?? document.selectFirst("#dumppage option[selected], select[name=page] option[selected]")?.attrText("value").flatMap(Int.init)
     }
 
     static func fullRatingReasonsURL(
@@ -57,14 +69,18 @@ enum ChapterCommentsHTMLParser {
         html: String,
         target: ReaderChapterCommentTarget
     ) throws -> [ChapterComment] {
-        let document = try KannaSoup.parse(html)
+        try YamiboHTMLPageInspector.ensureReadable(html)
+        let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
+        let document = try KannaSoup.parse(payload)
         let rows = document.select(".post_box li.flex-box").array()
         var comments: [ChapterComment] = []
+        var hasRatingStructure = false
         var pending: (author: String, uid: String?, metadata: String?, avatarURL: URL?)?
 
         for row in rows {
             let values = row.select("span.z, span.y").array().map { normalizeText($0.text()) }
             if values.count >= 3, values[0].contains("积分") {
+                hasRatingStructure = true
                 pending = (
                     author: values[1],
                     uid: row.select("a[href]").array().compactMap(linkUID).first,
@@ -97,6 +113,8 @@ enum ChapterCommentsHTMLParser {
             pending = nil
         }
 
+        // Ratings may all omit reasons. Validate the page, not the number of comments.
+        guard hasRatingStructure else { throw ReaderChapterCommentsUnavailableError() }
         return comments
     }
 
@@ -225,8 +243,23 @@ enum ChapterCommentsHTMLParser {
         in document: Document,
         target: ReaderChapterCommentTarget
     ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
+        try replies(in: document, target: target, isContinuation: false)
+    }
+
+    private static func continuationReplies(
+        in document: Document,
+        target: ReaderChapterCommentTarget
+    ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
+        try replies(in: document, target: target, isContinuation: true)
+    }
+
+    private static func replies(
+        in document: Document,
+        target: ReaderChapterCommentTarget,
+        isContinuation: Bool
+    ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
         let messageNodes = replyMessageNodes(in: document)
-        var foundTarget = false
+        var foundTarget = isContinuation
         var comments: [ChapterComment] = []
 
         for message in messageNodes {
@@ -236,65 +269,57 @@ enum ChapterCommentsHTMLParser {
                 continue
             }
             guard foundTarget else { continue }
-
-            if isOwnerPost(message, target: target) {
+            let reference = ForumPostReplyReferenceParser.parse(in: message, threadID: target.threadID)
+            let isAuthor = isOwnerPost(message, target: target)
+            if isAuthor, reference == nil {
                 return (comments, true)
             }
-
-            guard let body = try replyBody(from: message) else {
-                continue
-            }
+            let body = try ChapterCommentBodyParser.parse(message, attachmentsFrom: postContainer(for: message))
+            let quotes = try ChapterCommentBodyParser.quotes(in: message)
+            var postTarget = target
+            postTarget.ownerPostID = postID
+            let attached = try postComments(in: document, target: postTarget) + ratingReasons(in: document, target: postTarget)
+            guard !body.isEmpty || quotes != nil || !attached.isEmpty else { continue }
+            let metadata = replyMetadata(for: message)
             comments.append(
                 ChapterComment(
                     id: "\(target.ownerPostID):reply:\(postID)",
                     source: .reply,
                     authorName: authorName(for: message),
-                    metadata: replyMetadata(for: message),
+                    metadata: metadata,
                     body: body.text,
                     postID: postID,
                     bodyBlocks: body.bodyBlocks,
                     authorUID: postContainer(for: message).flatMap { authorUID(for: $0) },
                     authorAvatarURL: replyAvatarURL(for: message),
-                    contentBlocks: body.contentBlocks
+                    contentBlocks: body.contentBlocks,
+                    replyReference: reference,
+                    postedAt: metadata.flatMap(ForumPostReplyReferenceParser.timestamp),
+                    isThreadAuthor: isAuthor,
+                    quoteBlocks: quotes
                 )
             )
+            comments.append(contentsOf: attached)
         }
 
         return (comments, false)
     }
 
-    private static func continuationReplies(
-        in document: Document,
-        target: ReaderChapterCommentTarget
-    ) throws -> (comments: [ChapterComment], isBoundaryClosed: Bool) {
-        let messageNodes = replyMessageNodes(in: document)
-        var comments: [ChapterComment] = []
-
-        for message in messageNodes {
-            guard let postID = postID(from: message) else { continue }
-            if isOwnerPost(message, target: target) {
-                return (comments, true)
-            }
-            guard let body = try replyBody(from: message) else {
-                continue
-            }
-            comments.append(
-                ChapterComment(
-                    id: "\(target.ownerPostID):reply:\(postID)",
-                    source: .reply,
-                    authorName: authorName(for: message),
-                    metadata: replyMetadata(for: message),
-                    body: body.text,
-                    postID: postID,
-                    bodyBlocks: body.bodyBlocks,
-                    authorUID: postContainer(for: message).flatMap { authorUID(for: $0) },
-                    authorAvatarURL: replyAvatarURL(for: message),
-                    contentBlocks: body.contentBlocks
-                )
-            )
+    private static func markAuthors(_ comments: [ChapterComment], target: ReaderChapterCommentTarget) -> [ChapterComment] {
+        comments.map { comment in
+            var result = comment
+            if let uid = comment.authorUID, let authorID = target.authorID { result.isThreadAuthor = uid == authorID }
+            return result
         }
+    }
 
-        return (comments, false)
+    private static func ratingRequests(in document: Document, postIDs: [String]) -> [ChapterCommentRatingRequest] {
+        var seen = Set<String>()
+        return postIDs.compactMap { pid in
+            guard seen.insert(pid).inserted,
+                  let url = document.firstURL("[id=ratelog_\(pid)] a[href*=action=viewratings]") else { return nil }
+            return ChapterCommentRatingRequest(postID: pid, url: url)
+        }
     }
 
     private static func replyMessageNodes(in document: Document) -> [Element] {
@@ -311,11 +336,6 @@ enum ChapterCommentsHTMLParser {
             uniqueNodes.append(node)
         }
         return uniqueNodes
-    }
-
-    private static func replyBody(from message: Element) throws -> ChapterCommentParsedBody? {
-        let body = try ChapterCommentBodyParser.parse(message, attachmentsFrom: postContainer(for: message))
-        return body.isEmpty ? nil : body
     }
 
     private static func isOwnerPost(_ message: Element, target: ReaderChapterCommentTarget) -> Bool {

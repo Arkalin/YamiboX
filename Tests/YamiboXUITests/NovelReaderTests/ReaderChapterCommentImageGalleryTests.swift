@@ -3,6 +3,21 @@ import XCTest
 @testable import YamiboXUI
 
 final class ReaderChapterCommentImageGalleryTests: XCTestCase {
+    func testVisibleCrossChapterQuoteImagesDisappearWhenReplyIsGrouped() throws {
+        let target = ReaderChapterCommentTarget(threadID: "42", view: 1, ownerPostID: "100")
+        let reply = ChapterComment(
+            id: "reply", source: .reply, authorName: "Reader", body: "Text", postID: "102",
+            contentBlocks: [image("body")], replyReference: .init(postID: "101"),
+            quoteBlocks: [.init(id: "quote", kind: .quote([image("quoted")]))]
+        )
+        let crossChapter = try XCTUnwrap(ReaderChapterCommentImageGallery.request(comment: reply, target: target, selectedBlockID: "quoted"))
+        XCTAssertEqual(crossChapter.items.map(\.id), ["reply:quoted", "reply:body"])
+        let root = ChapterComment(id: "root", source: .reply, authorName: "Parent", body: "Root", postID: "101")
+        let child = try XCTUnwrap(ChapterCommentDiscussion.group([root, reply], target: target).first?.replies.first?.comment)
+        XCTAssertNil(ReaderChapterCommentImageGallery.request(comment: child, target: target, selectedBlockID: "quoted"))
+        XCTAssertEqual(ReaderChapterCommentImageGallery.request(comment: child, target: target, selectedBlockID: "body")?.items.count, 1)
+    }
+
     func testSelectedSecondImageOrderIdentityTitlesAndReferer() throws {
         let target = ReaderChapterCommentTarget(threadID: "42", view: 1, ownerPostID: "100", title: "Chapter")
         let comment = ChapterComment(id: "first", source: .reply, authorName: "Reader", body: "Text", postID: "101", contentBlocks: [

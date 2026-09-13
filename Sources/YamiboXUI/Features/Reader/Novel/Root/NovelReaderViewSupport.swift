@@ -208,7 +208,8 @@ struct NovelReaderPresentationModifier: ViewModifier {
                 appModel: appModel,
                 discussionWorkTIDs: [model.context.threadID],
                 isNovel: true,
-                hasLaterChapter: chapterCommentsHasLaterChapter
+                hasLaterChapter: chapterCommentsHasLaterChapter,
+                cancelLoading: model.cancelChapterCommentsLoading
             )
         case .cachePanel:
             NovelReaderCachePanel(cache: model.cache)

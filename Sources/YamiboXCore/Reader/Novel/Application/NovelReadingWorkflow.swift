@@ -916,7 +916,7 @@ public final class NovelReadingWorkflow {
             view: targetView,
             authorID: requestedAuthorID
         )
-        let pageLoad: NovelReaderProjectionLoad
+        var pageLoad: NovelReaderProjectionLoad
         if let preparedPageLoad {
             pageLoad = preparedPageLoad
         } else {
@@ -924,8 +924,27 @@ public final class NovelReadingWorkflow {
                 ? try await repository.loadPageIgnoringCacheResult(request)
                 : try await repository.loadPageResult(request)
         }
+        var visitedViews: Set<Int> = [pageLoad.projection.view]
+        var direction = preferredSurfaceOrdinal == .max || preferredResumePoint != nil ? -1 : 1
+        let knownMaxView = pageLoad.projection.maxView
+        while !pageLoad.projection.segments.isEmpty,
+              pageLoad.projection.segments.indices.allSatisfy({ pageLoad.projection.source(forSegmentIndex: $0)?.isAuthorReplyToOther == true }) {
+            try Task.checkCancellation()
+            var next = pageLoad.projection.view + direction
+            if next < 1, preferredResumePoint != nil {
+                direction = 1
+                next = targetView + 1
+            }
+            guard (1...max(1, knownMaxView)).contains(next), visitedViews.insert(next).inserted else {
+                throw YamiboError.parsingFailed(context: L10n.string("context.novel_body"))
+            }
+            let nextRequest = NovelPageRequest(threadID: context.threadID, view: next, authorID: requestedAuthorID)
+            pageLoad = forceRefresh ? try await repository.loadPageIgnoringCacheResult(nextRequest)
+                : try await repository.loadPageResult(nextRequest)
+        }
         let projection = pageLoad.projection
-        let preservedResumePoint = preferredResumePoint ?? captureNovelReadingPosition()
+        let skippedHiddenPage = projection.view != targetView
+        let preservedResumePoint = skippedHiddenPage ? nil : preferredResumePoint ?? captureNovelReadingPosition()
         let nextAuthorID = Self.normalizedAuthorID(projection.resolvedAuthorID) ?? requestedAuthorID
         let transaction = try prepareRuntimeTransaction(
             projection: projection,
@@ -936,7 +955,7 @@ public final class NovelReadingWorkflow {
         let candidateSession = try NovelReadingSession(
             validating: projection,
             layoutResult: transaction.result,
-            preferredSurfaceOrdinal: preferredSurfaceOrdinal,
+            preferredSurfaceOrdinal: skippedHiddenPage ? (direction < 0 ? .max : 0) : preferredSurfaceOrdinal,
             resumePoint: preservedResumePoint,
             currentAuthorID: nextAuthorID,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(

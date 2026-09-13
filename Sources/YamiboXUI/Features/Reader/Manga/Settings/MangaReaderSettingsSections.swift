@@ -25,6 +25,7 @@ struct MangaReaderSettingsSections: View {
                 )
 
                 MangaReaderSettingsOtherSection(
+                    zoomEnabled: $settings.zoomEnabled,
                     palette: palette,
                     onOpenPeripheralSettings: onOpenPeripheralSettings
                 )
@@ -49,12 +50,6 @@ private struct MangaReaderSettingsDisplaySection: View {
             MangaReaderBrightnessRow(
                 value: $settings.brightness,
                 palette: palette
-            )
-            ReaderSettingsDivider(palette: palette)
-            ReaderSettingsToggleRow(
-                title: L10n.string("manga.double_tap_zoom"),
-                palette: palette,
-                isOn: $settings.zoomEnabled
             )
         }
     }
@@ -100,9 +95,8 @@ struct MangaReaderSettingsPagingSection: View {
     }
 }
 
-/// Entries that leave this sheet rather than edit the draft settings, in the
-/// same "Other" card the Novel sheet ends with.
 private struct MangaReaderSettingsOtherSection: View {
+    @Binding var zoomEnabled: Bool
     let palette: MangaReaderSettingsPalette
     let onOpenPeripheralSettings: () -> Void
 
@@ -111,6 +105,12 @@ private struct MangaReaderSettingsOtherSection: View {
             title: L10n.string("reader.section.other"),
             palette: palette
         ) {
+            ReaderSettingsToggleRow(
+                title: L10n.string("manga.double_tap_zoom"),
+                palette: palette,
+                isOn: $zoomEnabled
+            )
+            ReaderSettingsDivider(palette: palette)
             ReaderSettingsNavigationRow(
                 title: L10n.string("settings.peripheral_behavior"),
                 palette: palette,

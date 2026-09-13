@@ -123,9 +123,7 @@ struct NovelReaderSettingsSheet: View {
                 NovelReaderMiscSection(
                     palette: palette,
                     loadsInlineImages: draftSettings.loadsInlineImages,
-                    showsAuthorRepliesToOthers: draftSettings.showsAuthorRepliesToOthers,
                     onLoadsInlineImagesChange: setImageLoading,
-                    onShowsAuthorRepliesToOthersChange: setAuthorReplyVisibility,
                     onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                 )
             }
@@ -165,5 +163,4 @@ struct NovelReaderSettingsSheet: View {
     private func setPageTurnDirection(_ value: ReaderPageTurnDirection) { draftSettings.pageTurnDirection = value }
     private func setTranslationMode(_ value: ReaderTranslationMode) { draftSettings.translationMode = value }
     private func setImageLoading(_ value: Bool) { draftSettings.loadsInlineImages = value }
-    private func setAuthorReplyVisibility(_ value: Bool) { draftSettings.showsAuthorRepliesToOthers = value }
 }

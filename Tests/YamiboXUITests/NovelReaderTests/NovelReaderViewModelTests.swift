@@ -1632,7 +1632,6 @@ final class NovelReaderViewModelTests: XCTestCase {
             horizontalPadding: 22,
             usesJustifiedText: true,
             loadsInlineImages: false,
-            showsAuthorRepliesToOthers: false,
             backgroundStyle: .paper,
             readingMode: .vertical,
             translationMode: .traditional
@@ -1928,7 +1927,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         ]
         let model = try await makeModel(
             documents: documents,
-            settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false, readingMode: .vertical),
+            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
             launchContext: NovelLaunchContext(
                 threadID: threadID,
                 threadTitle: "测试线程",

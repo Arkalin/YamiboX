@@ -139,10 +139,9 @@ struct ForumThreadReaderBodyView: View {
                 .frame(maxWidth: .infinity)
             }
             .id(currentPage)
-            .refreshable {
+            .refreshableWithTopIndicator(isRefreshing: isLoading && page != nil) {
                 await refresh()
             }
-            .topRefreshIndicator(isVisible: isLoading && page != nil)
             .task(id: scrollTaskIdentity(page: page, targetPostID: targetPostID, restoredAnchorPostID: restoredAnchorPostID)) {
                 guard page != nil else { return }
                 if let targetPostID {

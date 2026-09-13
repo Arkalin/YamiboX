@@ -51,7 +51,7 @@ import Testing
     #expect(entries[0].anchor?.resumePoint.readingModeHint == .vertical)
 }
 
-@Test func novelChapterDirectoryExtractorUsesReaderAuthorReplyVisibilitySetting() throws {
+@Test func novelChapterDirectoryExtractorAlwaysExcludesAuthorReplies() throws {
     let document = NovelReaderProjection(
         threadID: "100",
         view: 1,
@@ -76,13 +76,13 @@ import Testing
 
     let visible = NovelChapterDirectoryExtractor.entries(
         from: document,
-        settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: true)
+        settings: NovelReaderAppearanceSettings()
     )
     let hidden = NovelChapterDirectoryExtractor.entries(
         from: document,
-        settings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false)
+        settings: NovelReaderAppearanceSettings()
     )
 
-    #expect(visible.map(\.chapter.title) == ["第一章", "作者回复", "第二章"])
+    #expect(visible.map(\.chapter.title) == ["第一章", "第二章"])
     #expect(hidden.map(\.chapter.title) == ["第一章", "第二章"])
 }

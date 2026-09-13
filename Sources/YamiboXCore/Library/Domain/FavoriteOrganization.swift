@@ -88,7 +88,7 @@ public struct FavoriteCategory: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public enum FavoriteCollectionColor: String, Codable, CaseIterable, Sendable {
+public enum FavoriteCollectionColor: Codable, Hashable, Sendable {
     case red
     case orange
     case yellow
@@ -97,6 +97,47 @@ public enum FavoriteCollectionColor: String, Codable, CaseIterable, Sendable {
     case purple
     case pink
     case gray
+    case custom(red: UInt8, green: UInt8, blue: UInt8)
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        switch value {
+        case "red": self = .red
+        case "orange": self = .orange
+        case "yellow": self = .yellow
+        case "green": self = .green
+        case "blue": self = .blue
+        case "purple": self = .purple
+        case "pink": self = .pink
+        case "gray": self = .gray
+        default:
+            guard value.count == 7, value.first == "#",
+                  value.dropFirst().allSatisfy({ $0.isASCII && $0.isHexDigit }),
+                  let rgb = UInt32(value.dropFirst(), radix: 16) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid collection color")
+            }
+            self = .custom(red: UInt8((rgb >> 16) & 255), green: UInt8((rgb >> 8) & 255), blue: UInt8(rgb & 255))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        let value: String
+        switch self {
+        case .red: value = "red"
+        case .orange: value = "orange"
+        case .yellow: value = "yellow"
+        case .green: value = "green"
+        case .blue: value = "blue"
+        case .purple: value = "purple"
+        case .pink: value = "pink"
+        case .gray: value = "gray"
+        case let .custom(red, green, blue):
+            value = String(format: "#%02X%02X%02X", Int(red), Int(green), Int(blue))
+        }
+        var container = encoder.singleValueContainer()
+        try container.encode(value)
+    }
 }
 
 public struct LocalFavoriteCollection: Codable, Hashable, Identifiable, Sendable {

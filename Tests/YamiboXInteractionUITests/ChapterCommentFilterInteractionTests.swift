@@ -53,13 +53,11 @@ final class ChapterCommentFilterInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["默认评分"].waitForExistence(timeout: 5))
     }
 
-    func testAllHiddenCanStillLoadNextPage() {
+    func testAllHiddenStillLoadsNextPageInBackground() {
         let app = launch(["CHAPTER_COMMENT_FILTER_ALL_HIDDEN": "1"])
         app.buttons["filter-fixture-open-comments"].tap()
         XCTAssertTrue(app.staticTexts["暂无可见评论"].waitForExistence(timeout: 5))
-        let next = app.buttons["加载更多..."]
-        XCTAssertTrue(next.exists)
-        next.tap()
+        XCTAssertFalse(app.buttons["加载更多..."].exists)
         XCTAssertTrue(app.staticTexts["下一页读者"].waitForExistence(timeout: 5))
     }
 

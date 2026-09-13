@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import YamiboXCore
 
 /// Presentation mapping for favorite domain values: user-facing labels and
@@ -36,40 +35,17 @@ extension FavoriteCollectionColor {
             .pink
         case .gray:
             .gray
+        case let .custom(red, green, blue):
+            Color(.sRGB, red: Double(red) / 255, green: Double(green) / 255, blue: Double(blue) / 255, opacity: 1)
         }
     }
 
-    var localizedTitle: String {
-        switch self {
-        case .red:
-            L10n.string("color.red")
-        case .orange:
-            L10n.string("color.orange")
-        case .yellow:
-            L10n.string("color.yellow")
-        case .green:
-            L10n.string("color.green")
-        case .blue:
-            L10n.string("color.blue")
-        case .purple:
-            L10n.string("color.purple")
-        case .pink:
-            L10n.string("color.pink")
-        case .gray:
-            L10n.string("color.gray")
+    mutating func setSwiftUIColor(_ color: Color) {
+        let resolved = color.resolve(in: EnvironmentValues())
+        func component(_ value: Float) -> UInt8 {
+            UInt8((min(max(value, 0), 1) * 255).rounded())
         }
-    }
-
-    /// A `circle.fill` baked to this color at the bitmap level via
-    /// `.alwaysOriginal`. Plain `Image(systemName:).foregroundStyle(_:)`
-    /// renders correctly in a normal row, but `Picker`/`Menu` force their
-    /// item icons to monochrome template rendering regardless of
-    /// `.foregroundStyle` — baking the color into the image bytes with a
-    /// `UIImage` and marking it "original" is what actually survives that.
-    var pickerIcon: Image {
-        let uiImage = UIImage(systemName: "circle.fill")?
-            .withTintColor(UIColor(swiftUIColor), renderingMode: .alwaysOriginal)
-        return Image(uiImage: uiImage ?? UIImage())
+        self = .custom(red: component(resolved.red), green: component(resolved.green), blue: component(resolved.blue))
     }
 }
 

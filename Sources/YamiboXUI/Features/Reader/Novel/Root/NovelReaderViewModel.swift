@@ -967,16 +967,18 @@ public final class NovelReaderViewModel {
     }
 
     public func loadChapterComments(for target: ReaderChapterCommentTarget?) async {
-        await chapterCommentsModule.load(target)
+        await chapterCommentsModule.loadAndContinue(target)
     }
 
     public func refreshChapterComments(for target: ReaderChapterCommentTarget?) async {
-        await chapterCommentsModule.refresh(target)
+        await chapterCommentsModule.refreshAndContinue(target)
     }
 
     public func loadNextChapterCommentsPage() async {
-        await chapterCommentsModule.loadNextPage()
+        await chapterCommentsModule.continueLoading()
     }
+
+    func cancelChapterCommentsLoading() { chapterCommentsModule.cancelLoading() }
 
     func clearChapterCommentsFailure() {
         chapterCommentsModule.clearTransientFailure()

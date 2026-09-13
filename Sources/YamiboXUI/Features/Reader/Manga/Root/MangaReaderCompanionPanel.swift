@@ -90,7 +90,8 @@ struct MangaReaderCompanionPanel: View {
                 loadNext: model.loadNextChapterCommentsPage,
                 forumDependencies: appModel.appContext.forumDependencies,
                 appModel: appModel,
-                discussionWorkTIDs: discussionWorkTIDs
+                discussionWorkTIDs: discussionWorkTIDs,
+                cancelLoading: model.cancelChapterCommentsLoading
             )
         }
     }

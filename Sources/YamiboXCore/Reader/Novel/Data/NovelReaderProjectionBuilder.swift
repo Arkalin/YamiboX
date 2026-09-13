@@ -112,7 +112,10 @@ public enum NovelReaderProjectionBuilder {
                     )
                 }
             )
-            result.retainedChapterCount += projected.chapterTitle == nil ? 0 : 1
+            if projected.chapterTitle != nil {
+                if projected.isReplyToOther { result.filteredChapterCandidateCount += 1 }
+                else { result.retainedChapterCount += 1 }
+            }
         }
 
         return result
@@ -123,7 +126,7 @@ public enum NovelReaderProjectionBuilder {
             return try NovelReaderPostHTMLProjectionParser.project(post: post)
         }
 
-        if !post.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if post.contentBlocks.isEmpty, !post.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return NovelReaderPostHTMLProjectionParser.projectPlainTextPost(post)
         }
 
@@ -260,7 +263,7 @@ private enum NovelReaderPostHTMLProjectionParser {
     static func project(post: ForumThreadPost) throws -> NovelReaderProjectedPost {
         let fragment = try KannaSoup.parseBodyFragment(post.contentHTML, baseURL: YamiboDomain.baseURL.absoluteString)
         let body = fragment.body() ?? fragment
-        let isReplyToOther = try isReplyToOther(in: body)
+        let isReplyToOther = ForumPostReplyReferenceParser.parse(in: body) != nil
         body.select("i").remove()
 
         let text = readableText(from: body)
@@ -313,30 +316,6 @@ private enum NovelReaderPostHTMLProjectionParser {
                 .first(where: { !$0.isEmpty })
                 .map { String($0.prefix(30)) }
         )
-    }
-
-    private static func isReplyToOther(in body: Element) throws -> Bool {
-        let quoteCandidates = body.select(".quote, blockquote").array()
-        guard quoteCandidates.contains(where: isDiscuzReplyQuote) else {
-            return false
-        }
-
-        let remainingFragment = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
-        let remainingBody = remainingFragment.body() ?? remainingFragment
-        remainingBody.select(".quote").remove()
-        for blockquote in remainingBody.select("blockquote") where isDiscuzReplyQuote(blockquote) {
-            blockquote.remove()
-        }
-        remainingBody.select("i, .pstatus").remove()
-        return !normalizeText(remainingBody.text()).isEmpty
-    }
-
-    private static func isDiscuzReplyQuote(_ element: Element) -> Bool {
-        if element.hasClass("quote") {
-            return true
-        }
-        let text = normalizeText(element.text())
-        return containsDiscuzQuoteHeader(text)
     }
 
     private static func readableText(from body: Element) -> String {
@@ -764,11 +743,6 @@ private enum NovelReaderPostHTMLProjectionParser {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func containsDiscuzQuoteHeader(_ text: String) -> Bool {
-        let markers = ["发表于", "發表於", "發表于", "发表於"]
-        return markers.contains { text.contains($0) }
-    }
-
     private static func isTrimmable(_ character: Character) -> Bool {
         character == " " || character == "\t" || character == "\n" || character == "\r"
     }
@@ -916,7 +890,7 @@ private enum NovelPostContentProjector {
             chapterTitle: chapterTitle,
             emittedImageURLs: &emittedImageURLs
         )
-        projected.isReplyToOther = isReplyToOther(blocks)
+        projected.isReplyToOther = ForumPostReplyReferenceParser.parse(in: blocks) != nil
         return projected
     }
 
@@ -1059,25 +1033,6 @@ private enum NovelPostContentProjector {
         }
     }
 
-    private static func isReplyToOther(_ blocks: [ForumThreadContentBlock]) -> Bool {
-        guard blocks.contains(where: containsDiscuzReplyQuote) else { return false }
-        return !readableText(in: blocks, excludingDiscuzQuotes: true).isEmpty
-    }
-
-    private static func containsDiscuzReplyQuote(_ block: ForumThreadContentBlock) -> Bool {
-        switch block.kind {
-        case let .quote(blocks):
-            return containsDiscuzQuoteHeader(readableText(in: blocks, excludingDiscuzQuotes: false))
-                || blocks.contains(where: containsDiscuzReplyQuote)
-        case let .collapse(_, blocks), let .locked(_, blocks):
-            return blocks.contains(where: containsDiscuzReplyQuote)
-        case let .table(rows):
-            return rows.flatMap { $0 }.contains { $0.blocks.contains(where: containsDiscuzReplyQuote) }
-        default:
-            return false
-        }
-    }
-
     private static func readableTextFragments(
         in block: ForumThreadContentBlock,
         excludingDiscuzQuotes: Bool
@@ -1112,7 +1067,6 @@ private enum NovelPostContentProjector {
     }
 
     private static func containsDiscuzQuoteHeader(_ text: String) -> Bool {
-        let markers = ["发表于", "發表於", "發表于", "发表於"]
-        return markers.contains { text.contains($0) }
+        ForumPostReplyReferenceParser.parseHeader(text) != nil
     }
 }

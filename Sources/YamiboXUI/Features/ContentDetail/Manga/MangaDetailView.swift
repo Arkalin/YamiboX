@@ -58,6 +58,14 @@ struct MangaDetailView: View {
                     Button(action: onViewThread) {
                         Label(L10n.string("forum.detail.view_thread"), systemImage: "text.bubble")
                     }
+                    ShareLink(item: YamiboRoute.threadByID(
+                        tid: model.context.thread.tid,
+                        page: 1,
+                        authorID: nil,
+                        reverse: false
+                    ).url) {
+                        Label(L10n.string("forum.thread.share"), systemImage: "square.and.arrow.up")
+                    }
                     Button(action: presentCorrectionSheet) {
                         Label(L10n.string("manga.correction_title"), systemImage: "pencil")
                     }

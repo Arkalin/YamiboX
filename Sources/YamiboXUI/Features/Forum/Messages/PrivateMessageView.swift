@@ -113,10 +113,9 @@ private struct PrivateMessageContentView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 16)
                 }
-                .refreshable {
+                .refreshableWithTopIndicator(isRefreshing: isLoading) {
                     await refresh()
                 }
-                .topRefreshIndicator(isVisible: isLoading)
             } else if isLoading {
                 ContentLoadingView(layout: .fills)
             } else if let errorMessage {

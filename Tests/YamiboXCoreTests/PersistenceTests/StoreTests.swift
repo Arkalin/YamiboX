@@ -41,7 +41,6 @@ func settingsStorePersistsReaderFlags(backgroundStyle: ReaderBackgroundStyle) as
             horizontalPadding: 20,
             usesJustifiedText: true,
             loadsInlineImages: false,
-            showsAuthorRepliesToOthers: false,
             showsTwoPagesInLandscapeOnPad: true,
             backgroundStyle: backgroundStyle,
             readingMode: .vertical,

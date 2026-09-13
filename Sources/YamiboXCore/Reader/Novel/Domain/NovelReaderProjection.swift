@@ -26,7 +26,7 @@ public struct NovelReaderProjectionLoad: Hashable, Sendable {
 }
 
 public struct NovelReaderProjection: Codable, Hashable, Sendable {
-    public static let schemaVersion = 7
+    public static let schemaVersion = 8
 
     public var threadID: String
     public var view: Int
