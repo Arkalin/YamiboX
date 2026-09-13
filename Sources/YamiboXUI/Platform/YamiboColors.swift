@@ -23,19 +23,6 @@ enum YamiboColors {
 }
 
 extension FavoriteTagColor {
-    var swiftUIColor: Color {
-        switch self {
-        case .red: .red
-        case .orange: .orange
-        case .yellow: .yellow
-        case .green: .green
-        case .blue: .blue
-        case .purple: .purple
-        case .pink: .pink
-        case .gray: .gray
-        }
-    }
-
     var iconTextColor: Color {
         relativeLuminance > 0.52 ? .black : .white
     }
@@ -50,6 +37,7 @@ extension FavoriteTagColor {
         case .purple: (0.69, 0.32, 0.87)
         case .pink: (1.00, 0.18, 0.33)
         case .gray: (0.56, 0.56, 0.58)
+        case let .custom(red, green, blue): (Double(red) / 255, Double(green) / 255, Double(blue) / 255)
         }
 
         return 0.2126 * components.red + 0.7152 * components.green + 0.0722 * components.blue

@@ -140,16 +140,7 @@ public enum FavoriteType: Int, Codable, CaseIterable, Sendable {
     }
 }
 
-public enum FavoriteTagColor: String, Codable, CaseIterable, Sendable {
-    case red
-    case orange
-    case yellow
-    case green
-    case blue
-    case purple
-    case pink
-    case gray
-}
+public typealias FavoriteTagColor = FavoriteColor
 
 public struct FavoriteTag: Codable, Hashable, Identifiable, Sendable {
     public let id: String

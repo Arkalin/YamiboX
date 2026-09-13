@@ -16,7 +16,7 @@ extension FavoriteSourceGroup {
     }
 }
 
-extension FavoriteCollectionColor {
+extension FavoriteColor {
     var swiftUIColor: Color {
         switch self {
         case .red:
@@ -46,29 +46,6 @@ extension FavoriteCollectionColor {
             UInt8((min(max(value, 0), 1) * 255).rounded())
         }
         self = .custom(red: component(resolved.red), green: component(resolved.green), blue: component(resolved.blue))
-    }
-}
-
-extension FavoriteTagColor {
-    var localizedTitle: String {
-        switch self {
-        case .red:
-            L10n.string("color.red")
-        case .orange:
-            L10n.string("color.orange")
-        case .yellow:
-            L10n.string("color.yellow")
-        case .green:
-            L10n.string("color.green")
-        case .blue:
-            L10n.string("color.blue")
-        case .purple:
-            L10n.string("color.purple")
-        case .pink:
-            L10n.string("color.pink")
-        case .gray:
-            L10n.string("color.gray")
-        }
     }
 }
 

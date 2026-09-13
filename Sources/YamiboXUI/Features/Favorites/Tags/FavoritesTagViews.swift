@@ -254,7 +254,7 @@ struct FavoriteTagPickerView: View {
     }
 
     private var nextDefaultColor: FavoriteTagColor {
-        let colors = FavoriteTagColor.allCases
+        let colors = FavoriteTagColor.presetColors
         guard !colors.isEmpty else { return .gray }
         return colors[organizer.tags.count % colors.count]
     }
@@ -432,27 +432,10 @@ private struct FavoriteTagEditorView: View {
                 }
 
                 Section {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 12)], spacing: 12) {
-                        ForEach(FavoriteTagColor.allCases, id: \.self) { tagColor in
-                            Button {
-                                color = tagColor
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(tagColor.swiftUIColor)
-                                        .frame(width: 32, height: 32)
-                                    if color == tagColor {
-                                        Image(systemName: "checkmark")
-                                            .font(.caption.weight(.bold))
-                                            .foregroundStyle(.white)
-                                    }
-                                }
-                                .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    ColorPicker(L10n.string("common.select"), selection: Binding(
+                        get: { color.swiftUIColor },
+                        set: { color.setSwiftUIColor($0) }
+                    ), supportsOpacity: false)
                 }
             }
             .disabled(isSaving)

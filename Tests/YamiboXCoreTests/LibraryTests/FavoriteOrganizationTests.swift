@@ -2,6 +2,26 @@ import Foundation
 import Testing
 @testable import YamiboXCore
 
+@Test func tagColorsPreserveLegacyDataAndCustomColors() throws {
+    for (name, expected) in zip(
+        ["red", "orange", "yellow", "green", "blue", "purple", "pink", "gray"],
+        FavoriteTagColor.presetColors
+    ) {
+        let data = try JSONSerialization.data(withJSONObject: ["id": "legacy", "name": "Tag", "color": name])
+        let tag = try JSONDecoder().decode(FavoriteTag.self, from: data)
+        #expect(tag.color == expected)
+        #expect(try JSONDecoder().decode(String.self, from: JSONEncoder().encode(tag.color)) == name)
+    }
+    let missingColor = Data(#"{"id":"legacy","name":"Tag"}"#.utf8)
+    #expect(try JSONDecoder().decode(FavoriteTag.self, from: missingColor).color == .gray)
+
+    var document = FavoriteLibraryDocument()
+    let tag = document.createTag(name: "Custom", color: .custom(red: 18, green: 171, blue: 239))
+    document.recolorTag(id: tag.id, color: .custom(red: 255, green: 128, blue: 0))
+    let restored = try JSONDecoder().decode(FavoriteLibraryDocument.self, from: JSONEncoder().encode(document))
+    #expect(restored.tags.first { $0.id == tag.id }?.color == .custom(red: 255, green: 128, blue: 0))
+}
+
 @Test func collectionColorsPreserveLegacyEncoding() throws {
     let colors: [(String, FavoriteCollectionColor)] = [
         ("red", .red), ("orange", .orange), ("yellow", .yellow), ("green", .green),

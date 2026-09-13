@@ -5,6 +5,14 @@ import YamiboXCore
 
 @MainActor
 @Suite struct FavoriteCollectionColorTests {
+    @Test func tagColorsUseTheSamePickerConversionAndAdaptIconText() {
+        var color = FavoriteTagColor.gray
+        color.setSwiftUIColor(Color(.sRGB, red: 18.0 / 255, green: 171.0 / 255, blue: 239.0 / 255))
+        #expect(color == .custom(red: 18, green: 171, blue: 239))
+        #expect(FavoriteTagColor.custom(red: 255, green: 255, blue: 255).iconTextColor == .black)
+        #expect(FavoriteTagColor.custom(red: 0, green: 0, blue: 0).iconTextColor == .white)
+    }
+
     @Test func customColorsRoundTripThroughSystemPicker() {
         for expected in [
             FavoriteCollectionColor.custom(red: 0, green: 0, blue: 0),

@@ -88,7 +88,9 @@ public struct FavoriteCategory: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public enum FavoriteCollectionColor: Codable, Hashable, Sendable {
+public typealias FavoriteCollectionColor = FavoriteColor
+
+public enum FavoriteColor: Codable, Hashable, Sendable {
     case red
     case orange
     case yellow
@@ -98,6 +100,8 @@ public enum FavoriteCollectionColor: Codable, Hashable, Sendable {
     case pink
     case gray
     case custom(red: UInt8, green: UInt8, blue: UInt8)
+
+    public static let presetColors: [Self] = [.red, .orange, .yellow, .green, .blue, .purple, .pink, .gray]
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -115,7 +119,7 @@ public enum FavoriteCollectionColor: Codable, Hashable, Sendable {
             guard value.count == 7, value.first == "#",
                   value.dropFirst().allSatisfy({ $0.isASCII && $0.isHexDigit }),
                   let rgb = UInt32(value.dropFirst(), radix: 16) else {
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid collection color")
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid favorite color")
             }
             self = .custom(red: UInt8((rgb >> 16) & 255), green: UInt8((rgb >> 8) & 255), blue: UInt8(rgb & 255))
         }
