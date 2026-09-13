@@ -89,7 +89,9 @@ struct ForumThreadPostCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .forumCardBackground(fill: isTarget ? theme.selectedFill : theme.surface)
+        .animation(isTarget ? nil : .easeOut(duration: 1.2)) { content in
+            content.forumCardBackground(fill: isTarget ? theme.selectedFill : theme.surface)
+        }
         .sheet(isPresented: $isShowingRateSheet) {
             ForumThreadRateSheet(
                 postID: post.postID,

@@ -9,6 +9,7 @@ struct ForumThreadReaderBodyView: View {
     @State private var ratingResultsRequest: ForumThreadRatingResultsRequest?
     @State private var pollVotersRequest: ForumThreadPollVotersRequest?
     @State private var visiblePostIDs: Set<String> = []
+    @State private var highlightedPostID: String?
 
     let page: ForumThreadPage?
     let pageNavigation: ForumPageNavigation?
@@ -88,7 +89,7 @@ struct ForumThreadReaderBodyView: View {
                                 && post.postID == page.posts.first?.postID
                             ForumThreadPostCard(
                                 post: post,
-                                isTarget: post.postID == targetPostID,
+                                isTarget: post.postID == highlightedPostID,
                                 threadTitle: isFirstPost ? page.title : nil,
                                 totalViews: isFirstPost ? page.totalViews : nil,
                                 totalReplies: isFirstPost ? page.totalReplies : nil,
@@ -143,6 +144,7 @@ struct ForumThreadReaderBodyView: View {
                 await refresh()
             }
             .task(id: scrollTaskIdentity(page: page, targetPostID: targetPostID, restoredAnchorPostID: restoredAnchorPostID)) {
+                highlightedPostID = nil
                 guard page != nil else { return }
                 if let targetPostID {
                     guard page?.posts.contains(where: { $0.postID == targetPostID }) == true else {
@@ -154,9 +156,13 @@ struct ForumThreadReaderBodyView: View {
                     // empirical workaround, not a synchronization mechanism.
                     try? await Task.sleep(nanoseconds: 150_000_000)
                     guard !Task.isCancelled else { return }
+                    highlightedPostID = targetPostID
                     withAnimation(.snappy) {
                         proxy.scrollTo(targetPostID, anchor: .center)
                     }
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                    highlightedPostID = nil
                     return
                 }
                 guard let restoredAnchorPostID else { return }
