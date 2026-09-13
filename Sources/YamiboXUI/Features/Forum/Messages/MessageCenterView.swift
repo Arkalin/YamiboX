@@ -123,10 +123,9 @@ private struct MessageCenterBodyView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .refreshable {
+        .refreshableWithTopIndicator(isRefreshing: isLoading && content != nil) {
             await refresh()
         }
-        .topRefreshIndicator(isVisible: isLoading && content != nil)
         .forumPageBackground()
         .tint(theme.accentText)
     }

@@ -74,10 +74,9 @@ struct UserSpaceBodyView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .refreshable {
+        .refreshableWithTopIndicator(isRefreshing: isLoadingContent && content != nil) {
             await refresh()
         }
-        .topRefreshIndicator(isVisible: isLoadingContent && content != nil)
         .forumPageBackground()
         .tint(theme.accentText)
     }

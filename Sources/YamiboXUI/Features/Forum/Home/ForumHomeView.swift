@@ -125,10 +125,9 @@ private struct ForumHomeContentView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .refreshable {
+        .refreshableWithTopIndicator(isRefreshing: isRefreshing) {
             await refresh()
         }
-        .topRefreshIndicator(isVisible: isRefreshing)
         .forumPageBackground()
     }
 }
