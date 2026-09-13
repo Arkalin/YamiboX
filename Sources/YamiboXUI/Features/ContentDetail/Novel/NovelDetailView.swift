@@ -189,7 +189,7 @@ private struct NovelFirstFloorPreview: View {
                 .font(.footnote)
                 .foregroundStyle(theme.secondaryText)
                 .lineSpacing(3)
-                .lineLimit(isExpanded ? nil : 3)
+                .lineLimit(isExpanded ? 20 : 3)
                 .textSelection(.enabled)
                 .contextMenu {
                     if let onCopyText {
