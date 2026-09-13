@@ -77,6 +77,7 @@ struct LikeWorkItemsView: View {
             }
         }
         .listStyle(.plain)
+        .scrollDismissesKeyboard(.interactively)
         .environment(\.imageBrowserZoomNamespace, imageBrowserZoomNamespace)
         .contentMargins(.top, 4, for: .scrollContent)
         // The List stays permanently mounted (rather than being swapped for
@@ -108,8 +109,7 @@ struct LikeWorkItemsView: View {
             isManagedByAnnotationPanel: onAnnotationNavigationStateChange != nil,
             isSelecting: isSelecting,
             selectedItemCount: selectedItemIDs.count,
-            workTitle: workTitle,
-            onDismiss: onDismiss
+            workTitle: workTitle
         )
         .likeWorkItemsSearchable(
             isEnabled: isAnnotationSegmentActive,
@@ -441,8 +441,7 @@ private extension View {
         isManagedByAnnotationPanel: Bool,
         isSelecting: Bool,
         selectedItemCount: Int,
-        workTitle: String,
-        onDismiss: (() -> Void)?
+        workTitle: String
     ) -> some View {
         if isManagedByAnnotationPanel {
             self
@@ -453,7 +452,7 @@ private extension View {
                         ? L10n.string("likes.selected_count", selectedItemCount)
                         : workTitle
                 )
-                .navigationBarTitleDisplayMode(onDismiss == nil ? .automatic : .inline)
+                .yamiboInlineNavigationTitleDisplayMode()
                 .navigationBarBackButtonHidden(isSelecting)
         }
     }
@@ -465,7 +464,7 @@ private extension View {
         prompt: String
     ) -> some View {
         if isEnabled {
-            self.searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
+            self.searchable(text: text, prompt: prompt)
         } else {
             self
         }

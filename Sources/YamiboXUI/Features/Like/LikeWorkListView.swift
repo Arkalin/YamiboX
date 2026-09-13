@@ -68,6 +68,7 @@ struct LikeWorkListView: View {
                 .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
+            .scrollDismissesKeyboard(.interactively)
             .contentMargins(.top, 0, for: .scrollContent)
             // Kept permanently mounted rather than swapped for an empty-state
             // view — see the matching comment in LikeWorkItemsView.body for why
@@ -98,6 +99,7 @@ struct LikeWorkListView: View {
                 )
             )
             .navigationBarBackButtonHidden(isSelecting)
+            .yamiboInlineNavigationTitleDisplayMode()
             .searchable(
                 text: $searchText,
                 prompt: L10n.string("likes.search_works_placeholder")
