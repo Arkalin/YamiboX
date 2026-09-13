@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumThreadReaderView: View {
+    @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
     @State private var model: ForumThreadReaderViewModel
 
     let onUserTap: (String, String?) -> Void
@@ -64,10 +65,9 @@ struct ForumThreadReaderView: View {
         )
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
-        // The reader's own action bar already owns the bottom edge; keeping
-        // the tab bar under it would stack two bars there. No-op in the
-        // reader-overlay stack, which has no tab bar to begin with.
-        .toolbar(.hidden, for: .tabBar)
+        .toolbar(.visible, for: .navigationBar)
+        // A detail column can be compact even when its containing window is regular.
+        .toolbar(keepsTabBarVisible ? .visible : .hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -91,6 +91,14 @@ struct ForumThreadReaderView: View {
                     .disabled(model.isLoading)
 
                     Divider()
+                    OpenContentInNewWindowButton(request: YamiboWindowRequest(
+                        forumURL: YamiboRoute.threadByID(
+                            tid: model.context.thread.tid,
+                            page: model.currentPage,
+                            authorID: nil,
+                            reverse: false
+                        ).url
+                    ))
                     ShareLink(item: YamiboRoute.threadByID(
                         tid: model.context.thread.tid, page: 1, authorID: nil, reverse: false
                     ).url) {

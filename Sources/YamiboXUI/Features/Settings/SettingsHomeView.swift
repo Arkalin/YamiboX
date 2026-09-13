@@ -1,30 +1,20 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
-/// Root settings screen: search plus entries into the settings
-/// categories. Pushed onto the Mine tab's navigation stack (not a sheet),
-/// so it owns no `NavigationStack` of its own.
+/// iPhone settings are pushed into Mine. iPad owns an independent split
+/// container so both settings columns survive window-size changes.
 public struct SettingsHomeView: View {
-    private let dependencies: SettingsDependencies
-    private let peripheralInput: ReaderPeripheralInputManager?
-    private let onSignOut: @MainActor () async -> LoadFailureDetails?
-    private let onApplicationReset: @MainActor () async -> Void
     private let onClose: () -> Void
-    private let accountSwitcher: AccountSwitchCoordinator?
-
-    /// `@State` (not `@StateObject`) because the view model is `@Observable`.
-    /// SwiftUI keeps the first instance for the view's lifetime; the
-    /// constructions on later `init` calls are discarded, which is safe here
-    /// because `SystemSettingsViewModel.init` only wires objects together and
-    /// has no side effects.
-    @State private var viewModel: SystemSettingsViewModel
+    @State private var state: SettingsPresentationState
     @State private var searchText = ""
     @State private var pushedCategory: SettingsCategory?
     @State private var isAboutPushed = false
-    @State private var pendingConfirmation: SystemSettingsConfirmation?
-    @State private var isSigningOut = false
     @State private var isAccountManagementPushed = false
+    @State private var selectedDestination: SettingsSidebarDestination? = .category(.general)
+    @State private var compactColumn: NavigationSplitViewColumn = .sidebar
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     public init(
         dependencies: SettingsDependencies,
@@ -34,23 +24,69 @@ public struct SettingsHomeView: View {
         onClose: @escaping () -> Void,
         accountSwitcher: AccountSwitchCoordinator? = nil
     ) {
-        _viewModel = State(initialValue: SystemSettingsViewModel(dependencies: dependencies))
-        self.dependencies = dependencies
-        self.peripheralInput = peripheralInput
-        self.onSignOut = onSignOut
-        self.onApplicationReset = onApplicationReset
+        _state = State(initialValue: SettingsPresentationState(
+            dependencies: dependencies,
+            peripheralInput: peripheralInput,
+            onSignOut: onSignOut,
+            onApplicationReset: onApplicationReset,
+            onClose: onClose,
+            accountSwitcher: accountSwitcher
+        ))
         self.onClose = onClose
-        self.accountSwitcher = accountSwitcher
     }
 
     public var body: some View {
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                NavigationSplitView(preferredCompactColumn: $compactColumn) {
+                    SettingsSidebar(
+                        viewModel: state.viewModel,
+                        selection: sidebarSelection,
+                        accountManagementAvailable: state.accountSwitcher != nil,
+                        isSigningOut: state.isSigningOut,
+                        aboutTitle: state.aboutTitle,
+                        showsCloseButton: horizontalSizeClass == .compact,
+                        onSignOut: { state.pendingConfirmation = .signOut },
+                        onClose: onClose,
+                        usesCompactLayout: horizontalSizeClass == .compact
+                    )
+                    .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 360)
+                } detail: {
+                    NavigationStack {
+                        SettingsSidebarDetail(
+                            destination: selectedDestination,
+                            dependencies: state.dependencies,
+                            viewModel: state.viewModel,
+                            peripheralInput: state.peripheralInput,
+                            accountSwitcher: state.accountSwitcher,
+                            onReset: state.handleApplicationReset,
+                            usesCompactLayout: horizontalSizeClass == .compact
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button(L10n.string("common.close"), systemImage: "xmark", action: onClose)
+                                    .labelStyle(.iconOnly)
+                            }
+                        }
+                    }
+                    .id(selectedDestination)
+                }
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                phoneSettingsList
+            }
+        }
+        .modifier(SettingsPresentationEffects(state: state))
+    }
+
+    private var phoneSettingsList: some View {
         List {
             if isSearching {
                 searchResultsSection
             } else {
                 categorySection
                 aboutSection
-                if viewModel.isLoggedIn || accountSwitcher != nil {
+                if state.viewModel.isLoggedIn || state.accountSwitcher != nil {
                     signOutSection
                 }
             }
@@ -59,49 +95,35 @@ public struct SettingsHomeView: View {
         .navigationTitle(L10n.string("settings.title"))
         .yamiboInlineNavigationTitleDisplayMode()
         .searchable(text: $searchText, prompt: L10n.string("settings.search.placeholder"))
-        .overlay(content: loadingOverlay)
-        .task {
-            await viewModel.load()
-        }
-        .task {
-            for await _ in dependencies.sessionStore.changes() {
-                guard !Task.isCancelled else { return }
-                await viewModel.refreshSessionState()
-            }
-        }
         .navigationDestination(isPresented: $isAccountManagementPushed) {
-            if let accountSwitcher { AccountManagementView(switcher: accountSwitcher) }
+            if let accountSwitcher = state.accountSwitcher { AccountManagementView(switcher: accountSwitcher) }
         }
         .navigationDestination(isPresented: $isAboutPushed) {
             AboutView()
         }
         .navigationDestination(item: $pushedCategory) { category in
-            categoryView(for: category)
-        }
-        .failureAlert(
-            L10n.string("common.operation_failed"),
-            message: viewModel.errorMessage,
-            details: viewModel.errorDetails,
-            isPresented: errorIsPresented
-        ) {
-            Button(L10n.string("common.ok")) {
-                viewModel.errorMessage = nil
-            }
-        }
-        .destructiveConfirmationAlert(
-            item: $pendingConfirmation,
-            title: \.title,
-            actionTitle: \.buttonTitle,
-            message: \.message
-        ) { confirmation in
-            Task {
-                await handleConfirmation(confirmation)
-            }
+            SettingsCategoryPage(
+                category: category,
+                dependencies: state.dependencies,
+                viewModel: state.viewModel,
+                peripheralInput: state.peripheralInput,
+                onReset: state.handleApplicationReset
+            )
         }
     }
 
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sidebarSelection: Binding<SettingsSidebarDestination?> {
+        Binding {
+            selectedDestination
+        } set: { destination in
+            guard state.canNavigate else { return }
+            selectedDestination = destination
+            if destination != nil { compactColumn = .detail }
+        }
     }
 
     private var categorySection: some View {
@@ -112,7 +134,7 @@ public struct SettingsHomeView: View {
                 } label: {
                     SettingsCategoryRow(category: category)
                 }
-                .disabled(viewModel.isBusy)
+                .disabled(state.viewModel.isBusy)
             }
         }
     }
@@ -122,25 +144,25 @@ public struct SettingsHomeView: View {
             Button {
                 isAboutPushed = true
             } label: {
-                SystemSettingsRow(title: aboutSettingsTitle, titleColor: appTheme.controlAccent)
+                SystemSettingsRow(title: state.aboutTitle, titleColor: appTheme.controlAccent)
             }
-            .disabled(viewModel.isBusy)
+            .disabled(state.viewModel.isBusy)
         }
     }
 
     private var signOutSection: some View {
         Section {
-            if accountSwitcher != nil {
+            if state.accountSwitcher != nil {
                 Button {
                     isAccountManagementPushed = true
                 } label: {
                     Label(L10n.string("account.switch"), systemImage: "arrow.left.arrow.right")
                 }
-                .disabled(viewModel.isBusy || isSigningOut)
+                .disabled(!state.canNavigate)
             }
-            if viewModel.isLoggedIn {
+            if state.viewModel.isLoggedIn {
                 Button(role: .destructive) {
-                    pendingConfirmation = .signOut
+                    state.pendingConfirmation = .signOut
                 } label: {
                     Label {
                         Text(L10n.string("mine.sign_out"))
@@ -149,7 +171,7 @@ public struct SettingsHomeView: View {
                             .foregroundStyle(.red)
                     }
                 }
-                .disabled(viewModel.isBusy || isSigningOut)
+                .disabled(!state.canNavigate)
             }
         }
     }
@@ -182,86 +204,12 @@ public struct SettingsHomeView: View {
                         }
                         .padding(.vertical, 2)
                     }
-                    .disabled(viewModel.isBusy)
+                    .disabled(state.viewModel.isBusy)
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private func categoryView(for category: SettingsCategory) -> some View {
-        switch category {
-        case .general:
-            SettingsGeneralView(viewModel: viewModel.general)
-        case .home:
-            SettingsHomePageView(viewModel: viewModel.home)
-        case .forum:
-            SettingsForumView(viewModel: viewModel.forum)
-        case .favorites:
-            SettingsFavoritesView(dependencies: dependencies, viewModel: viewModel.favorites)
-        case .reading:
-            SettingsReadingView(
-                viewModel: viewModel.reading,
-                peripheralsViewModel: viewModel.peripherals,
-                peripheralInput: peripheralInput
-            )
-        case .storage:
-            SettingsStorageView(
-                dependencies: dependencies,
-                viewModel: viewModel.storage,
-                offlineCacheManagement: viewModel.offlineCacheManagement,
-                mangaDirectoryManagement: viewModel.mangaDirectoryManagement,
-                onReset: handleApplicationReset
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func loadingOverlay() -> some View {
-        if viewModel.isBusy || isSigningOut {
-            ProgressView(loadingOverlayTitle)
-                .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    private var loadingOverlayTitle: String {
-        isSigningOut ? L10n.string("mine.signing_out") : L10n.string("common.loading")
-    }
-
-    private var errorIsPresented: Binding<Bool> {
-        .presentation(
-            isPresented: { viewModel.errorMessage != nil },
-            clearOnDismiss: { viewModel.errorMessage = nil }
-        )
-    }
-
-
-    private var aboutSettingsTitle: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return L10n.string(
-            "settings.about_app_with_version",
-            version?.isEmpty == false ? version! : "--"
-        )
-    }
-
-    private func handleConfirmation(_ confirmation: SystemSettingsConfirmation) async {
-        guard confirmation == .signOut else { return }
-        isSigningOut = true
-        let failureDetails = await onSignOut()
-        isSigningOut = false
-        if let failureDetails {
-            viewModel.errorMessage = failureDetails.summary
-            viewModel.errorDetails = failureDetails
-        } else {
-            onClose()
-        }
-    }
-
-    private func handleApplicationReset() async {
-        onClose()
-        await onApplicationReset()
-    }
 }
 
 private struct SettingsCategoryRow: View {

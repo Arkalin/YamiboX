@@ -68,10 +68,9 @@ struct NovelReaderLifecycleModifier: ViewModifier {
     }
 }
 
-/// The reader's boolean-presented sheets, collapsed into one enum: they are
-/// mutually exclusive by construction (each is opened from the chrome, and
-/// the chrome is disabled while any overlay is presented), so a single
-/// optional drives one `.sheet(item:)` instead of five independent booleans.
+/// A single route keeps companion panels and modal work mutually exclusive.
+/// Chapters and comments use large sheets; complete settings,
+/// cache management and note editing have independent sheet content.
 /// The item-driven full-screen covers (`forumThreadOverlayItem`,
 /// `imageBrowserItem`) are separate presentation slots and stay item-based.
 enum NovelReaderPresentedSheet: Identifiable, Hashable {
@@ -87,6 +86,34 @@ enum NovelReaderPresentedSheet: Identifiable, Hashable {
     case note(LikeItem)
 
     var id: Self { self }
+
+    var isCompanionPanel: Bool {
+        switch self {
+        case .annotations, .chapterComments: true
+        case .settings, .cachePanel, .cacheProgress, .note: false
+        }
+    }
+}
+
+extension Optional where Wrapped == NovelReaderPresentedSheet {
+    var modalSheet: Wrapped? {
+        get { self?.isCompanionPanel == true ? nil : self }
+        set {
+            // A modal's dismissal must not clear a newly opened companion.
+            if newValue != nil || self?.isCompanionPanel != true {
+                self = newValue
+            }
+        }
+    }
+
+    var isCompanionPresented: Bool {
+        get { self?.isCompanionPanel == true }
+        set {
+            if !newValue, self?.isCompanionPanel == true {
+                self = nil
+            }
+        }
+    }
 }
 
 /// Performs an in-session annotation jump and restores the imperative
@@ -126,79 +153,13 @@ struct NovelReaderPresentationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(item: $presentedSheet) { sheet in
-                switch sheet {
-                case .settings:
-                    NovelReaderSettingsSheet(model: model, appModel: appModel)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.hidden)
-                        .presentationBackground(.clear)
-                case .chapterComments:
-                    ReaderChapterCommentsSheet(
-                        target: chapterCommentsTarget,
-                        state: model.chapterComments.state,
-                        isLoadingMore: model.chapterComments.isLoadingMore,
-                        loadMoreError: model.chapterComments.loadMoreError,
-                        loadMoreErrorDetails: model.chapterComments.loadMoreErrorDetails,
-                        refreshError: model.chapterComments.refreshError,
-                        refreshErrorDetails: model.chapterComments.refreshErrorDetails,
-                        failureEventID: model.chapterComments.failureEventID,
-                        clearFailure: model.clearChapterCommentsFailure,
-                        loadInitial: model.loadChapterComments(for:),
-                        refresh: model.refreshChapterComments(for:),
-                        loadNext: model.loadNextChapterCommentsPage,
-                        forumDependencies: appModel.appContext.forumDependencies,
-                        appModel: appModel,
-                        discussionWorkTIDs: [model.context.threadID],
-                        isNovel: true,
-                        hasLaterChapter: chapterCommentsHasLaterChapter
-                    )
-                case .cachePanel:
-                    NovelReaderCachePanel(cache: model.cache)
-                case .cacheProgress:
-                    NovelReaderCacheProgressSheet(cache: model.cache) {
-                        presentedSheet = nil
-                    }
-                    // Was this sheet's own `onDismiss`. The shared
-                    // `.sheet(item:)` cannot scope an `onDismiss` to a single
-                    // case (the item is already nil when it fires), so the
-                    // side effect rides on the content's disappearance, which
-                    // in every reachable flow coincides with dismissal of
-                    // exactly this sheet.
-                    .onDisappear {
-                        if model.cache.hasOperationSession {
-                            model.cache.hideProgress()
-                        }
-                    }
-                case .annotations:
-                    NavigationStack {
-                        ReaderAnnotationPanel(
-                            work: .novel(threadID: model.context.threadID),
-                            workTitle: model.title,
-                            like: likeDependencies,
-                            annotationSegment: $annotationSegment,
-                            initialTab: initialReaderLibraryTab,
-                            onOpenBookmark: onOpenBookmark,
-                            onOpenLikeAnchor: onOpenLikeAnchor,
-                            onDismiss: { presentedSheet = nil }
-                        ) { isActive, _ in
-                            NovelReaderChapterSheet(
-                                model: model,
-                                onSelect: { chapter in
-                                    presentedSheet = nil
-                                    onJumpToChapterDirectoryChapter(chapter)
-                                },
-                                onSelectWebView: onPreviewChapterDirectoryWebView,
-                                isEmbeddedInReaderPanel: true,
-                                isActive: isActive
-                            )
-                        }
-                    }
-                case let .note(item):
-                    LikeNoteEditorSheet(item: item) { note in
-                        onSaveNote(item, note)
-                    }
+            .modifier(ReaderCompanionPresentation(isPresented: $presentedSheet.isCompanionPresented) {
+                if let sheet = presentedSheet, sheet.isCompanionPanel {
+                    auxiliaryContent(sheet)
                 }
+            })
+            .sheet(item: $presentedSheet.modalSheet) { sheet in
+                auxiliaryContent(sheet)
             }
             .fullScreenCover(item: $forumThreadOverlayItem) { item in
                 ForumThreadOverlayScreen(
@@ -219,6 +180,77 @@ struct NovelReaderPresentationModifier: ViewModifier {
                     imageBrowserItem = nil
                 }
             }
+    }
+
+    @ViewBuilder
+    private func auxiliaryContent(_ sheet: NovelReaderPresentedSheet) -> some View {
+        switch sheet {
+        case .settings:
+            NovelReaderSettingsSheet(model: model, appModel: appModel)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.clear)
+        case .chapterComments:
+            ReaderChapterCommentsSheet(
+                target: chapterCommentsTarget,
+                state: model.chapterComments.state,
+                isLoadingMore: model.chapterComments.isLoadingMore,
+                loadMoreError: model.chapterComments.loadMoreError,
+                loadMoreErrorDetails: model.chapterComments.loadMoreErrorDetails,
+                refreshError: model.chapterComments.refreshError,
+                refreshErrorDetails: model.chapterComments.refreshErrorDetails,
+                failureEventID: model.chapterComments.failureEventID,
+                clearFailure: model.clearChapterCommentsFailure,
+                loadInitial: model.loadChapterComments(for:),
+                refresh: model.refreshChapterComments(for:),
+                loadNext: model.loadNextChapterCommentsPage,
+                forumDependencies: appModel.appContext.forumDependencies,
+                appModel: appModel,
+                discussionWorkTIDs: [model.context.threadID],
+                isNovel: true,
+                hasLaterChapter: chapterCommentsHasLaterChapter
+            )
+        case .cachePanel:
+            NovelReaderCachePanel(cache: model.cache)
+        case .cacheProgress:
+            NovelReaderCacheProgressSheet(cache: model.cache) {
+                presentedSheet = nil
+            }
+            .onDisappear {
+                if model.cache.hasOperationSession {
+                    model.cache.hideProgress()
+                }
+            }
+        case .annotations:
+            NavigationStack {
+                ReaderAnnotationPanel(
+                    work: .novel(threadID: model.context.threadID),
+                    workTitle: model.title,
+                    like: likeDependencies,
+                    annotationSegment: $annotationSegment,
+                    initialTab: initialReaderLibraryTab,
+                    onOpenBookmark: onOpenBookmark,
+                    onOpenLikeAnchor: onOpenLikeAnchor,
+                    onDismiss: { presentedSheet = nil },
+                    dismissesAfterNavigation: true
+                ) { isActive, _ in
+                    NovelReaderChapterSheet(
+                        model: model,
+                        onSelect: { chapter in
+                            presentedSheet = nil
+                            onJumpToChapterDirectoryChapter(chapter)
+                        },
+                        onSelectWebView: onPreviewChapterDirectoryWebView,
+                        isEmbeddedInReaderPanel: true,
+                        isActive: isActive
+                    )
+                }
+            }
+        case let .note(item):
+            LikeNoteEditorSheet(item: item) { note in
+                onSaveNote(item, note)
+            }
+        }
     }
 }
 

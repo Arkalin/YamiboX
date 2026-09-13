@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 struct ReadingHomeView: View {
@@ -23,6 +24,19 @@ struct ReadingHomeView: View {
     }
 
     var body: some View {
+        if UIDevice.current.userInterfaceIdiom == .pad, showsHistory {
+            BrowsingHistoryView(
+                dependencies: appModel.appContext.libraryDependencies,
+                appModel: appModel,
+                showsPreviousReading: true,
+                onClose: { showsHistory = false }
+            )
+        } else {
+            homeNavigation
+        }
+    }
+
+    private var homeNavigation: some View {
         ForumDestinationStackView(navigator: navigator) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -62,7 +76,7 @@ struct ReadingHomeView: View {
             }
             .background(Color(uiColor: .systemBackground))
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(isPresented: $showsHistory) {
+            .navigationDestination(isPresented: UIDevice.current.userInterfaceIdiom == .pad ? .constant(false) : $showsHistory) {
                 BrowsingHistoryView(
                     dependencies: appModel.appContext.libraryDependencies,
                     appModel: appModel,

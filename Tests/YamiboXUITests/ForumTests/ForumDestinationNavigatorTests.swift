@@ -22,6 +22,61 @@ struct CreditLogNavigationTests {
     }
 }
 
+@MainActor @Suite
+struct ForumBrowserNavigationTests {
+    @Test func listAndDetailPathsPreserveNestedRoutes() throws {
+        let navigator = try makeNavigator(mode: .forumTab, usesSplitNavigation: true)
+        let list: [ForumDestination] = [.board(fid: "5", title: nil, page: 2), .search(fid: "5")]
+        let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "123"), title: "Title")
+        let detail: [ForumDestination] = [.threadReader(context), .userSpace(uid: "42", name: nil, section: .space, subPage: .profile)]
+        navigator.path = list + detail
+        #expect(navigator.browserListPath == list)
+        #expect(navigator.browserDetailPath == detail)
+        #expect(navigator.selectedBrowserThreadID == "123")
+        navigator.path = navigator.browserListPath
+        #expect(navigator.browserDetailPath.isEmpty)
+        #expect(navigator.selectedBrowserThreadID == nil)
+    }
+
+    @Test func detailOnlyDeepLinkDoesNotInventABoard() throws {
+        let navigator = try makeNavigator(mode: .forumTab, usesSplitNavigation: true)
+        navigator.path = [.webFallback(URL(string: "https://example.com")!)]
+        #expect(navigator.browserListPath.isEmpty)
+        #expect(navigator.browserDetailPath == navigator.path)
+    }
+
+    @Test func searchingFromTheListReplacesTheDetailAndKeepsTheBoard() throws {
+        let navigator = try makeNavigator(mode: .forumTab, usesSplitNavigation: true)
+        let board = ForumDestination.board(fid: "5", title: nil, page: 2)
+        navigator.path = [board, .webFallback(URL(string: "https://example.com")!)]
+        navigator.openSearch(fid: "5", fromBrowserList: true)
+        #expect(navigator.path == [board, .search(fid: "5")])
+        navigator.openSearch(fid: "5", fromBrowserList: true)
+        #expect(navigator.path == [board, .search(fid: "5")])
+    }
+
+    @Test func reselectingTheSameDetailRequestsTheCompactDetailColumnAgain() throws {
+        let navigator = try makeNavigator(mode: .forumTab, usesSplitNavigation: true)
+        let destination = ForumDestination.webFallback(URL(string: "https://example.com")!)
+        navigator.push(destination)
+        let previousRevision = navigator.browserDetailRevision
+        navigator.path = navigator.browserListPath
+        navigator.push(destination)
+        #expect(navigator.path == [destination])
+        #expect(navigator.browserDetailRevision != previousRevision)
+    }
+
+    @Test func keyboardSelectionClampsAndRecoversAfterResultsChange() {
+        #expect(ForumKeyboardSelection.moved(in: [], from: nil, delta: 1) == nil)
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: nil, delta: 1) == "a")
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: nil, delta: -1) == "b")
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: "a", delta: 1) == "b")
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: "a", delta: -1) == "a")
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: "b", delta: 1) == "b")
+        #expect(ForumKeyboardSelection.moved(in: ["a", "b"], from: "removed", delta: 1) == "a")
+    }
+}
+
 @MainActor
 @Test func readerOverlayNavigatorPushesThreadRoutesAsInPlaceThreadLinks() throws {
     let navigator = try makeNavigator(mode: .readerOverlay)
@@ -166,7 +221,8 @@ struct CreditLogNavigationTests {
 @MainActor
 private func makeNavigator(
     mode: ForumNavigationMode,
-    discussionWorkTIDs: Set<String> = []
+    discussionWorkTIDs: Set<String> = [],
+    usesSplitNavigation: Bool = false
 ) throws -> ForumDestinationNavigator {
     let suiteName = YamiboTestDefaults.suiteName(prefix: "forum-destination-navigator")
     let defaults = try YamiboTestDefaults.make(suiteName: suiteName)
@@ -234,7 +290,8 @@ private func makeNavigator(
         dependencies: dependencies,
         appModel: YamiboAppModel(appContext: appContext),
         mode: mode,
-        discussionWorkTIDs: discussionWorkTIDs
+        discussionWorkTIDs: discussionWorkTIDs,
+        usesSplitNavigation: usesSplitNavigation
     )
 }
 

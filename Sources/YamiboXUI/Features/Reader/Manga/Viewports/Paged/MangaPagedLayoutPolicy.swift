@@ -24,8 +24,9 @@ enum MangaPagedLayoutPolicy {
         availableSize: CGSize
     ) -> Bool {
         settings.readingMode == .paged &&
-            settings.showsTwoPagesInLandscapeOnPad &&
             isPadDevice &&
+            availableSize.width.isFinite && availableSize.height.isFinite &&
+            availableSize.height > 0 && availableSize.width >= 720 &&
             availableSize.width > availableSize.height
     }
 

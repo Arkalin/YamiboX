@@ -77,7 +77,15 @@ private struct ReaderLoadStateFailureContent: View {
                 }
                 .buttonStyle(.plain)
                 .tint(tint)
+                #if os(iOS)
+                ReaderFailureDetailsButton(
+                    details: details ?? LoadFailureDetails(message: message.isEmpty ? title : message),
+                    tint: tint
+                )
+                .frame(minHeight: 44)
+                #else
                 LoadFailureDetailsButton(details: details, message: message.isEmpty ? title : message)
+                #endif
             }
         }
         .foregroundStyle(tint)
@@ -88,6 +96,67 @@ private struct ReaderLoadStateFailureContent: View {
 }
 
 #if os(iOS)
+// Collection-cell hosting configurations cannot host a SwiftUI sheet's navigation stack.
+private struct ReaderFailureDetailsButton: UIViewRepresentable {
+    let details: LoadFailureDetails
+    let tint: Color
+
+    func makeUIView(context: Context) -> ReaderFailureDetailsSourceButton {
+        ReaderFailureDetailsSourceButton(frame: .zero)
+    }
+
+    func updateUIView(_ button: ReaderFailureDetailsSourceButton, context: Context) {
+        button.details = details
+        button.tintColor = UIColor(tint)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ReaderFailureDetailsSourceButton, context: Context) -> CGSize? {
+        let size = uiView.intrinsicContentSize
+        return CGSize(width: size.width, height: max(44, size.height))
+    }
+
+    static func dismantleUIView(_ button: ReaderFailureDetailsSourceButton, coordinator: ()) {
+        button.details = nil
+    }
+}
+
+private final class ReaderFailureDetailsSourceButton: UIButton {
+    private weak var detailsController: UIViewController?
+    var details: LoadFailureDetails? {
+        didSet {
+            guard oldValue != details else { return }
+            detailsController?.dismiss(animated: true)
+            detailsController = nil
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = L10n.string("load_failure.details")
+        configuration.image = UIImage(systemName: "info.circle")
+        configuration.imagePadding = 8
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = .preferredFont(forTextStyle: .subheadline)
+            return result
+        }
+        self.configuration = configuration
+        accessibilityIdentifier = "load-failure-details"
+        addTarget(self, action: #selector(showDetails), for: .touchUpInside)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func showDetails() {
+        guard let details else { return }
+        if let controller = LoadFailureDetailsPresenter.present(details, from: self) {
+            detailsController = controller
+        }
+    }
+}
+
 final class ReaderLoadStateOverlayView: UIView {
     private let loadingStack = UIStackView()
     private let loadingIndicator = UIActivityIndicatorView(style: .medium)

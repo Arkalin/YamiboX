@@ -19,27 +19,29 @@ public struct ForumNavigationHostView: View {
         _navigator = State(wrappedValue: ForumDestinationNavigator(
             dependencies: dependencies,
             appModel: appModel,
-            mode: .forumTab
+            mode: .forumTab,
+            usesSplitNavigation: UIDevice.current.userInterfaceIdiom == .pad
         ))
     }
 
     public var body: some View {
-        ForumDestinationStackView(navigator: navigator) {
+        ForumBrowserNavigationView(navigator: navigator) {
             ForumHomeView(
                 model: model,
-                onBoardTap: { navigator.openBoard($0) },
-                onCarouselTap: { navigator.openCarouselItem($0) }
+                onBoardTap: { navigator.openBoard($0, fromBrowserList: true) },
+                onCarouselTap: { navigator.openCarouselItem($0, fromBrowserList: true) }
             )
             .navigationTitle(L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        navigator.push(.search(fid: nil))
+                        navigator.openSearch(fid: nil, fromBrowserList: true)
                     } label: {
                         Image(systemName: "magnifyingglass")
                     }
                     .accessibilityLabel(L10n.string("forum.home.search_placeholder"))
+                    .keyboardShortcut("f", modifiers: .command)
                 }
             }
             .forumNavigationBarStyle()
@@ -47,7 +49,7 @@ public struct ForumNavigationHostView: View {
         .task {
             await model.load()
         }
-        .onChange(of: appModel.forumNavigationRequest?.id) { _, _ in
+        .onChange(of: appModel.forumNavigationRequest?.id, initial: true) { _, _ in
             guard let request = appModel.forumNavigationRequest else { return }
             navigator.route(request.url, source: request.source, title: request.title)
         }
@@ -57,7 +59,7 @@ public struct ForumNavigationHostView: View {
         // there's no prior value for a plain `.onChange` to transition from.
         .onChange(of: appModel.forumSearchRequest?.id, initial: true) { _, _ in
             guard appModel.forumSearchRequest != nil else { return }
-            navigator.push(.search(fid: nil))
+            navigator.openSearch(fid: nil, fromBrowserList: true)
         }
         .forumTheme(theme)
     }

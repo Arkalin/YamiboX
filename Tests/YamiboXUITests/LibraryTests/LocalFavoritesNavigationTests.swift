@@ -87,6 +87,58 @@ final class LocalFavoritesNavigationTests: XCTestCase {
         XCTAssertNil(navigation.routes.detail)
     }
 
+    func testSidebarCollectionNavigationClearsDetailWithoutClearingSearch() async throws {
+        let navigation = try await makeNavigation()
+        let created = await navigation.organizer.createCollection(name: "Collection")
+        let collection = try XCTUnwrap(created)
+        navigation.organizer.filter.searchText = "Work"
+        navigation.routes.detail = .novel(.init(thread: .init(tid: "501"), title: "Work"))
+        navigation.navigator.openUserSpace(uid: "42", name: "Author")
+
+        navigation.selectSidebarDestination(.collection(collection.id))
+
+        XCTAssertEqual(navigation.path, [.collection(collection.id)])
+        XCTAssertEqual(navigation.sidebarDestination, .collection(collection.id))
+        XCTAssertEqual(navigation.organizer.filter.searchText, "Work")
+        XCTAssertNil(navigation.routes.detail)
+        XCTAssertTrue(navigation.navigator.path.isEmpty)
+        navigation.path = []
+        XCTAssertEqual(navigation.sidebarDestination, .category(collection.categoryID))
+    }
+
+    func testSidebarCategoryNavigationExitsCollectionAndArchive() async throws {
+        let navigation = try await makeNavigation()
+        let created = await navigation.organizer.createCollection(name: "Collection")
+        let collection = try XCTUnwrap(created)
+        navigation.organizer.openCollection(id: collection.id)
+        navigation.organizer.openMergedGroup(cleanBookName: "Work")
+        navigation.routes.isUpdatesPagePushed = true
+
+        navigation.selectSidebarDestination(.category(collection.categoryID))
+
+        XCTAssertTrue(navigation.path.isEmpty)
+        XCTAssertNil(navigation.organizer.selectedCollectionID)
+        XCTAssertNil(navigation.organizer.selectedMergedGroupCleanBookName)
+        XCTAssertEqual(navigation.sidebarDestination, .category(collection.categoryID))
+    }
+
+    func testSidebarDoesNotDiscardActiveSelectionOrAcceptMissingLocations() async throws {
+        let navigation = try await makeNavigation()
+        let created = await navigation.organizer.createCollection(name: "Collection")
+        let collection = try XCTUnwrap(created)
+        navigation.organizer.openCollection(id: collection.id)
+        navigation.organizer.selection.toggleFavoriteSelection(id: "selected-work")
+
+        navigation.selectSidebarDestination(.category(collection.categoryID))
+
+        XCTAssertEqual(navigation.path, [.collection(collection.id)])
+        XCTAssertEqual(navigation.organizer.selection.selectedFavoriteIDs, ["selected-work"])
+        navigation.organizer.selection.exitSelectionMode()
+        navigation.selectSidebarDestination(.collection("missing"))
+        navigation.selectSidebarDestination(.category("missing"))
+        XCTAssertEqual(navigation.path, [.collection(collection.id)])
+    }
+
     private func makeNavigation() async throws -> LocalFavoritesNavigation {
         let fixture = try makeSystemSettingsFixture()
         let dependencies = fixture.appContext.libraryDependencies

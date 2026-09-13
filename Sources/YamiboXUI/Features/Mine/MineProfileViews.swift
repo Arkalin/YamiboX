@@ -145,7 +145,7 @@ private struct MineUIDText: View {
     }
 }
 
-private struct MineCreditProgressView: View {
+struct MineCreditProgressView: View {
     let progress: ForumCreditProgress
     @Environment(\.appTheme) private var appTheme
 

@@ -64,6 +64,7 @@ struct MangaDirectorySheet: View {
             } else {
                 NavigationStack {
                     directoryContent
+                        .toolbar(.visible, for: .navigationBar)
                 }
             }
         }

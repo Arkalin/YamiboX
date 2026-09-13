@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 /// Searchable reading timeline shared by Mine and the previous-reading shelf.
@@ -6,34 +7,54 @@ struct BrowsingHistoryView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: BrowsingHistoryViewModel
     private let appModel: YamiboAppModel
+    private let onClose: (() -> Void)?
+    private let categorySelection: Binding<BrowsingHistoryFilter>?
+    private let onOpenThread: ((URL, String?) -> Void)?
 
-    init(dependencies: LibraryDependencies, appModel: YamiboAppModel, showsPreviousReading: Bool = false) {
-        _model = State(initialValue: BrowsingHistoryViewModel(dependencies: dependencies, showsPreviousReading: showsPreviousReading))
+    init(
+        dependencies: LibraryDependencies,
+        appModel: YamiboAppModel,
+        showsPreviousReading: Bool = false,
+        onClose: (() -> Void)? = nil,
+        categorySelection: Binding<BrowsingHistoryFilter>? = nil,
+        onOpenThread: ((URL, String?) -> Void)? = nil
+    ) {
+        let model = BrowsingHistoryViewModel(dependencies: dependencies, showsPreviousReading: showsPreviousReading)
+        if let categorySelection { model.selectedFilter = categorySelection.wrappedValue }
+        _model = State(initialValue: model)
         self.appModel = appModel
+        self.onClose = onClose
+        self.categorySelection = categorySelection
+        self.onOpenThread = onOpenThread
     }
 
     var body: some View {
-        historyList
-        .safeAreaInset(edge: .top, spacing: 0) {
-            categoryPicker
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(.background)
-                .overlay(alignment: .bottom) { Divider() }
-        }
-        .navigationTitle(L10n.string(model.showsPreviousReading ? "home.previous" : "forum.history"))
-        .yamiboInlineNavigationTitleDisplayMode()
-        .searchable(text: searchTextBinding, prompt: L10n.string("history.search.prompt"))
-        .toolbar {
-            if !model.showsPreviousReading {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        model.clearAllConfirmationPresented = true
-                    } label: {
-                        Label(L10n.string("history.clear_all"), systemImage: "trash")
+        LibraryPageNavigation(
+            ownsNavigation: categorySelection == nil,
+            onClose: onClose
+        ) {
+            historyList
+            .safeAreaInset(edge: .top, spacing: 0) {
+                categoryPicker
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(.background)
+                    .overlay(alignment: .bottom) { Divider() }
+            }
+            .navigationTitle(pageTitle)
+            .yamiboInlineNavigationTitleDisplayMode()
+            .searchable(text: searchTextBinding, prompt: L10n.string("history.search.prompt"))
+            .toolbar {
+                if !model.showsPreviousReading {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            model.clearAllConfirmationPresented = true
+                        } label: {
+                            Label(L10n.string("history.clear_all"), systemImage: "trash")
+                        }
+                        .disabled(model.entries.isEmpty)
                     }
-                    .disabled(model.entries.isEmpty)
                 }
             }
         }
@@ -87,7 +108,15 @@ struct BrowsingHistoryView: View {
             await model.observeSettingsChanges()
         }
         .onChange(of: model.selectedCategory) {
+            if let categorySelection, categorySelection.wrappedValue != model.selectedFilter {
+                categorySelection.wrappedValue = model.selectedFilter
+            }
             Task { await model.reload() }
+        }
+        .onChange(of: categorySelection?.wrappedValue, initial: true) { _, selected in
+            if let selected, model.selectedFilter != selected {
+                model.selectedFilter = selected
+            }
         }
         .onChange(of: model.searchText) {
             model.scheduleReload()
@@ -95,6 +124,10 @@ struct BrowsingHistoryView: View {
         .transientMessage(model.transientFeedback, bottomPadding: 24) {
             model.clearTransientMessage()
         }
+    }
+
+    private var pageTitle: String {
+        L10n.string(model.showsPreviousReading ? "home.previous" : "forum.history")
     }
 
     private var historyList: some View {
@@ -193,6 +226,7 @@ struct BrowsingHistoryView: View {
             Text(L10n.string("history.filter.manga")).tag(BrowsingHistoryCategory?.some(.manga))
         }
         .labelsHidden()
+        .accessibilityIdentifier("history.category.picker")
     }
 
     private var searchTextBinding: Binding<String> {
@@ -211,7 +245,11 @@ struct BrowsingHistoryView: View {
         case let .mangaReader(context):
             appModel.requestMangaReader(context)
         case let .nativeThread(url, title):
-            appModel.openNativeForumThread(url: url, title: title)
+            if let onOpenThread {
+                onOpenThread(url, title)
+            } else {
+                appModel.openNativeForumThread(url: url, title: title)
+            }
         }
     }
 
@@ -288,6 +326,36 @@ struct BrowsingHistoryView: View {
         formatter.timeStyle = .none
         return formatter
     }()
+}
+
+struct BrowsingHistoryCategoryLinks: View {
+    let filters: [BrowsingHistoryFilter]
+    var selectedFilter: BrowsingHistoryFilter? = nil
+    var onSelect: ((BrowsingHistoryFilter) -> Void)? = nil
+
+    var body: some View {
+        ForEach(filters, id: \.self) { filter in
+            categoryRow(filter)
+                .accessibilityIdentifier("history.category.\(filter.rawValue)")
+        }
+    }
+
+    @ViewBuilder
+    private func categoryRow(_ filter: BrowsingHistoryFilter) -> some View {
+        if let onSelect {
+            Button {
+                onSelect(filter)
+            } label: {
+                Label(filter.title, systemImage: filter.systemImage)
+            }
+            .tag(filter)
+            .sidebarCategorySelection(isSelected: selectedFilter.map { $0 == filter })
+        } else {
+            NavigationLink(value: filter) {
+                Label(filter.title, systemImage: filter.systemImage)
+            }
+        }
+    }
 }
 
 private struct BrowsingHistoryRow: View {

@@ -1,7 +1,49 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class LikeListInteractionTests: XCTestCase {
+    func testIPadWorkCategoriesUseTopPickerAndPreserveNativeBackNavigation() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Requires iPad layout")
+        let originalOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = originalOrientation }
+
+        let app = launch()
+        let novel = app.buttons["like.work.novel.100"]
+        XCTAssertTrue(novel.waitForExistence(timeout: 10))
+        let picker = app.segmentedControls["likes.category.picker"]
+        XCTAssertTrue(picker.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["library.category.sidebar"].exists)
+
+        let novelCategory = picker.buttons["小说"]
+        let mangaCategory = picker.buttons["漫画"]
+        XCTAssertTrue(novelCategory.waitForExistence(timeout: 3))
+        novelCategory.tap()
+        XCTAssertTrue(app.navigationBars["喜欢"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["like.work.manga.测试漫画"].exists)
+        novel.tap()
+        XCTAssertTrue(app.buttons["like.item.fixture-text"].waitForExistence(timeout: 3))
+
+        app.navigationBars.buttons["喜欢"].firstMatch.tap()
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        mangaCategory.tap()
+        XCTAssertTrue(app.buttons["like.work.manga.测试漫画"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["喜欢"].exists)
+        XCTAssertFalse(app.buttons["like.item.fixture-text"].exists)
+        XCTAssertTrue(picker.exists)
+
+        app.buttons["选择"].tap()
+        app.buttons["全选"].tap()
+        XCTAssertTrue(app.buttons["删除 1 项"].waitForExistence(timeout: 3))
+        XCTAssertFalse(novelCategory.isEnabled)
+        app.buttons["完成"].tap()
+        XCTAssertTrue(novelCategory.isEnabled)
+        novelCategory.tap()
+        XCTAssertTrue(novel.waitForExistence(timeout: 3))
+        attach(app, "Likes iPad top category picker")
+    }
+
     func testWorkSelectionAndDeletionOnlyAffectFilteredWorks() {
         let app = launch()
         let novel = app.buttons["like.work.novel.100"]

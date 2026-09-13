@@ -1069,7 +1069,7 @@ final class NovelReaderViewModelTests: XCTestCase {
         }
     }
 
-    func testTwoPageSpreadRequiresPadLandscapePagedModeAndSetting() async throws {
+    func testTwoPageSpreadRequiresPadLandscapePagedModeRegardlessOfLegacySetting() async throws {
         let document = makeImageDocument(view: 1, maxView: 1, surfaceCount: 5)
         let model = try await makeModel(
             documents: [document],
@@ -1115,7 +1115,39 @@ final class NovelReaderViewModelTests: XCTestCase {
             )
         )
         await MainActor.run {
-            XCTAssertFalse(model.isTwoPageSpreadActive)
+            XCTAssertTrue(model.isTwoPageSpreadActive)
+        }
+    }
+
+    @MainActor
+    func testResizingBetweenSpreadAndNarrowWindowKeepsTheTextAnchor() async throws {
+        let document = NovelReaderProjection(
+            threadID: "903",
+            view: 1,
+            maxView: 1,
+            segments: [.text(String(repeating: "同一章中的阅读位置。", count: 800), chapterTitle: "第一章")]
+        )
+        let model = try await makeModel(
+            documents: [document],
+            settings: NovelReaderAppearanceSettings(showsTwoPagesInLandscapeOnPad: true, readingMode: .paged),
+            pagination: { document, settings, layout in
+                try NovelTextLayout.layout(document: document, settings: settings, layout: layout)
+            }
+        )
+        defer { model.close() }
+        await model.commitNovelTextPresentationEnvironment(isPad: true)
+        await model.commitNovelTextLayout(NovelReaderLayout(width: 1024, height: 768, readingMode: .paged))
+        XCTAssertTrue(model.isTwoPageSpreadActive)
+        XCTAssertGreaterThan(model.surfaceCount, 2)
+        model.updateVerticalViewportPosition(surfaceIndex: 2, intraSurfaceProgress: 0.5)
+        let anchor = try XCTUnwrap(model.currentNovelResumePoint)
+
+        for width in [600.0, 1024.0] {
+            await model.commitNovelTextLayout(NovelReaderLayout(width: width, height: 500, readingMode: .paged))
+            XCTAssertEqual(model.isTwoPageSpreadActive, width == 1024)
+            XCTAssertEqual(model.currentNovelResumePoint?.textSegmentIdentity, anchor.textSegmentIdentity)
+            let surface = try viewportSurface(in: model, surfaceIndex: model.selectedSurfaceIndex)
+            XCTAssertTrue(viewportSurfaceContainsOffset(surface, offset: anchor.displayedTextOffset))
         }
     }
 

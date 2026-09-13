@@ -39,7 +39,6 @@ final class MangaReaderPagedDisplaySettingsTests: XCTestCase {
             let view = MangaReaderSettingsPagingSection(
                 settings: .constant(MangaReaderSettings(readingMode: mode)),
                 palette: palette,
-                isPadDevice: false,
                 usesTwoPageSpread: false
             ).padding(20).background(palette.bodyBackground)
             let height = measuredSize(view, width: 320).height

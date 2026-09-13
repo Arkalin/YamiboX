@@ -88,6 +88,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var indentsParagraphFirstLine: Bool
     public var loadsInlineImages: Bool
     public var showsAuthorRepliesToOthers: Bool
+    /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var backgroundStyle: ReaderBackgroundStyle
     public var readingMode: ReaderReadingMode
@@ -105,7 +106,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         indentsParagraphFirstLine: Bool = false,
         loadsInlineImages: Bool = true,
         showsAuthorRepliesToOthers: Bool = true,
-        showsTwoPagesInLandscapeOnPad: Bool = false,
+        showsTwoPagesInLandscapeOnPad: Bool = true,
         backgroundStyle: ReaderBackgroundStyle = .system,
         readingMode: ReaderReadingMode = .paged,
         pagedTurnStyle: ReaderPagedTurnStyle = .slide,

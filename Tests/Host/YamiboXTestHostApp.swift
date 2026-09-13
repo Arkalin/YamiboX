@@ -9,7 +9,15 @@ import Network
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["BBCODE_PASTE_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["READER_FAILURE_DETAILS_FIXTURE"] == "1" {
+                ReaderFailureDetailsFixture()
+            } else if ProcessInfo.processInfo.environment["SETTINGS_SIDEBAR_APPEARANCE_FIXTURE"] == "1" {
+                SettingsSidebarAppearanceFixture()
+            } else if ProcessInfo.processInfo.environment["MINE_SIDEBAR_FIXTURE"] == "1" {
+                MineSidebarFixture()
+            } else if ProcessInfo.processInfo.environment["MANGA_READER_CHROME_FIXTURE"] == "1" {
+                MangaReaderChromeFixture()
+            } else if ProcessInfo.processInfo.environment["BBCODE_PASTE_FIXTURE"] == "1" {
                 ForumBBCodePasteFixture()
             } else if ProcessInfo.processInfo.environment["LIKES_FIXTURE"] == "1" {
                 LikeListFixture()

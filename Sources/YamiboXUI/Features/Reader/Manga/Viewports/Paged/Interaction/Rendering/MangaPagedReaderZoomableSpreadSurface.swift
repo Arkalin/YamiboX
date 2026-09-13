@@ -25,7 +25,9 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
                     pageSlot(leftPageSurface)
                     pageSlot(rightPageSurface)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                // UIKit already sizes the hosting view to the spread. A fixed
+                // SwiftUI frame can recenter inside the remaining safe area.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -54,9 +56,18 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    private var hostedContentConfiguration: some UIContentConfiguration {
+        UIHostingConfiguration {
+            // This nested hosting root must not inset the already-laid-out spread again.
+            content()
+                .ignoresSafeArea(.container, edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges)
+        }
+        .margins(.all, 0)
+    }
+
     func makeUIView(context: Context) -> MangaNativeSurfaceView {
         let view = MangaNativeSurfaceView()
-        let hosted = UIHostingConfiguration { content() }.margins(.all, 0).makeContentView()
+        let hosted = hostedContentConfiguration.makeContentView()
         context.coordinator.hostedView = hosted
         view.zoomContentView.addSubview(hosted)
         view.onBaseSizeChange = { [weak hosted] size in hosted?.frame = CGRect(origin: .zero, size: size) }
@@ -64,7 +75,7 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MangaNativeSurfaceView, context: Context) {
-        context.coordinator.hostedView?.configuration = UIHostingConfiguration { content() }.margins(.all, 0)
+        context.coordinator.hostedView?.configuration = hostedContentConfiguration
         view.configure(runtime: runtime, configuration: configuration,
                        geometry: .spread(viewport: viewport), imageLoaded: imageLoaded)
     }

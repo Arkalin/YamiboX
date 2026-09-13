@@ -68,23 +68,35 @@ public struct NovelReaderLayout: Hashable, Sendable {
         settings: NovelReaderAppearanceSettings,
         usesPadPresentation: Bool
     ) -> NovelReaderLayout {
-        guard settings.readingMode == .paged,
-              settings.showsTwoPagesInLandscapeOnPad,
-              usesPadPresentation,
-              width > height else {
-            return self
+        var result = self
+        if usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation) {
+            result.containerSize.width /= 2
+            result.safeAreaInsets.leading = 0
+            result.safeAreaInsets.trailing = 0
         }
 
-        return NovelReaderLayout(
-            containerSize: CGSize(width: width / 2, height: height),
-            safeAreaInsets: NovelReaderLayoutInsets(
-                top: safeAreaInsets.top,
-                bottom: safeAreaInsets.bottom
-            ),
-            contentInsets: contentInsets,
-            chromeInsets: chromeInsets,
-            readingMode: readingMode
-        )
+        // Pagination and display use the same inset, including on resize.
+        if usesPadPresentation {
+            let maximumTextWidth = 700 * max(1, settings.fontScale)
+            let extraInset = max(0, result.readableFrame.width - maximumTextWidth) / 2
+            result.contentInsets.leading += extraInset
+            result.contentInsets.trailing += extraInset
+        }
+        return result
+    }
+
+    public func usesTwoPageSpread(
+        settings: NovelReaderAppearanceSettings,
+        usesPadPresentation: Bool
+    ) -> Bool {
+        let minimumTextWidth = 320 * max(1, settings.fontScale)
+        let columnInsets = contentInsets.leading + contentInsets.trailing
+            + chromeInsets.leading + chromeInsets.trailing
+        return settings.readingMode == .paged
+            && usesPadPresentation
+            && width.isFinite && height.isFinite && height > 0
+            && width > height
+            && width / 2 - columnInsets >= minimumTextWidth
     }
 }
 

@@ -221,10 +221,7 @@ public final class NovelReaderViewModel {
     }
 
     var isTwoPageSpreadActive: Bool {
-        settings.readingMode == .paged &&
-            settings.showsTwoPagesInLandscapeOnPad &&
-            usesPadPresentation &&
-            layout.width > layout.height
+        layout.usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation)
     }
 
     var novelReaderSurfaces: [NovelReaderSurface] {

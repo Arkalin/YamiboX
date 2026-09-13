@@ -57,7 +57,6 @@ struct MangaReaderSettingsSheet: View {
                     MangaReaderSettingsSections(
                         settings: $draftSettings,
                         palette: palette,
-                        isPadDevice: isPadDevice,
                         usesTwoPageSpread: usesTwoPageSpread,
                         onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                     )

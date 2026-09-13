@@ -5,6 +5,18 @@ import Testing
 
 @Suite("MangaReaderTests: Paged Layout Policy")
 struct MangaPagedLayoutPolicyTests {
+    @Test func smallLandscapeWindowsDoNotForceTwoPages() {
+        let settings = MangaReaderSettings(readingMode: .paged, showsTwoPagesInLandscapeOnPad: true)
+        for size in [CGSize(width: 600, height: 400), .zero,
+                     CGSize(width: CGFloat.infinity, height: 500)] {
+            #expect(!MangaPagedLayoutPolicy.usesTwoPageSpread(
+                settings: settings, isPadDevice: true, availableSize: size
+            ))
+        }
+        #expect(MangaPagedLayoutPolicy.usesTwoPageSpread(
+            settings: settings, isPadDevice: true, availableSize: CGSize(width: 720, height: 500)
+        ))
+    }
     @Test func statusBarChangesDoNotResizeReadingViewport() {
         var insets = MangaReadingViewportInsets()
         let portrait = CGSize(width: 1024, height: 1366)
@@ -18,7 +30,7 @@ struct MangaPagedLayoutPolicyTests {
         #expect(insets.topInset(for: landscape, proposed: 24) == 0)
     }
 
-    @Test func twoPageSpreadActivatesOnlyForIPadPagedLandscapePreference() {
+    @Test func twoPageSpreadActivatesOnlyForIPadPagedLandscape() {
         let settings = MangaReaderSettings(
             readingMode: .paged,
             pageScaleMode: .fitHeight,
@@ -42,7 +54,7 @@ struct MangaPagedLayoutPolicyTests {
         ))
     }
 
-    @Test func twoPageSpreadRequiresPagedModeAndEnabledPreference() {
+    @Test func twoPageSpreadIgnoresLegacyDisabledPreferenceButRequiresPagedMode() {
         let landscapeSize = CGSize(width: 1180, height: 820)
         let disabledSettings = MangaReaderSettings(
             readingMode: .paged,
@@ -55,7 +67,7 @@ struct MangaPagedLayoutPolicyTests {
             showsTwoPagesInLandscapeOnPad: true
         )
 
-        #expect(!MangaPagedLayoutPolicy.usesTwoPageSpread(
+        #expect(MangaPagedLayoutPolicy.usesTwoPageSpread(
             settings: disabledSettings,
             isPadDevice: true,
             availableSize: landscapeSize
@@ -106,6 +118,7 @@ struct MangaPagedLayoutPolicyTests {
 
     @Test func mangaReaderSettingsDefaultsToIgnoringTopSafeArea() {
         #expect(MangaReaderSettings().ignoresTopSafeArea)
+        #expect(MangaReaderSettings().showsTwoPagesInLandscapeOnPad)
     }
 
     @Test func hostedPagedContentCanExtendThroughVerticalSafeAreas() {

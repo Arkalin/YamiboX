@@ -3,6 +3,8 @@ import YamiboXCore
 
 struct ForumThreadSummaryRowView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.selectedForumThreadID) private var selectedThreadID
+    @Environment(\.keyboardFocusedForumThreadID) private var keyboardFocusedThreadID
     let thread: ForumThreadSummary
     let onThreadTap: () -> Void
     let onAuthorTap: (String, String?) -> Void
@@ -47,8 +49,20 @@ struct ForumThreadSummaryRowView: View {
         }
         .padding(13)
         .forumCardBackground()
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(keyboardFocusedThreadID == thread.tid ? theme.accentText.opacity(0.14) : .clear)
+                .allowsHitTesting(false)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(theme.accentText, lineWidth: selectedThreadID == thread.tid ? 2 : 0)
+                .allowsHitTesting(false)
+        }
+        .accessibilityAddTraits(selectedThreadID == thread.tid ? .isSelected : [])
         .forumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap)
         .accessibilityIdentifier("forum-thread-row-\(thread.tid)")
+        .id(thread.tid)
     }
 }
 

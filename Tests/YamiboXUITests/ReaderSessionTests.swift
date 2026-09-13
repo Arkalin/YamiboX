@@ -138,32 +138,142 @@ final class ReaderSessionTests {
         session.close()
     }
 
-    @Test func embeddedThreadSwitchNeverCreatesCoverOrChangesNavigation() async throws {
+    @Test(arguments: [YamiboThreadReaderOverride.novel, .manga])
+    func embeddedThreadSwitchCreatesFullScreenReaderAndPreservesThread(mode: YamiboThreadReaderOverride) async throws {
         let app = try makeApp()
         let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "720", fid: "40"), title: "Thread")
-        let session = app.makeReaderSession(content: .thread(context))
+        let session = app.makeReaderSession(content: .thread(context), presentation: .embeddedThread)
         let navigator = ForumDestinationNavigator(dependencies: app.appContext.forumDependencies, appModel: app, mode: .forumTab)
         navigator.push(.threadReader(context))
         let path = navigator.path
         session.activate()
         let model = session.threadModel(for: context, dependencies: app.appContext.forumDependencies)
-        await session.openReader(.novel, from: model)
+        let originalContentID = session.contentID
+        await session.openReader(mode, from: model)
         #expect(model.becameReaderCompanion)
-        #expect(app.activeNovelContext?.threadID == "720")
-        #expect(app.activeNovelContext?.forumID == "40")
-        #expect(app.presentedReaderSession == nil)
+        let reader = try #require(app.presentedReaderSession)
+        #expect(reader !== session)
+        #expect(reader.presentation == .fullScreen)
+        #expect(app.isReaderCoverVisible)
+        #expect(session.contentID == originalContentID)
+        #expect(session.resumeRoute == nil)
+        guard case let .thread(original) = session.content else {
+            Issue.record("The embedded destination must remain a thread")
+            return
+        }
+        #expect(original == context)
+        #expect(session.threadModel(for: context, dependencies: app.appContext.forumDependencies) === model)
+        #expect(!session.isSwitching)
         #expect(navigator.path == path)
         #expect(app.selectedTab == .favorites)
-        let novel = try #require(app.activeNovelContext)
-        await session.openOriginalPost(url: threadURL("720"), resumeRoute: .novel(novel))
-        await session.openReader(.manga, from: model)
-        #expect(app.activeMangaContext?.chapterTID == "720")
-        #expect(app.activeMangaContext?.isSmartModeEnabled == false)
-        #expect(app.activeNovelContext == nil)
+
+        // The covered column cannot steal the active session during layout.
+        session.activate()
+        if mode == .novel {
+            #expect(app.activeNovelContext?.threadID == "720")
+            #expect(app.activeNovelContext?.forumID == "40")
+        } else {
+            #expect(app.activeMangaContext?.chapterTID == "720")
+            #expect(app.activeMangaContext?.isSmartModeEnabled == false)
+            #expect(reader.preparedMangaProjection?.tid == "720")
+        }
+        session.deactivate()
+        #expect(app.presentedReaderSession === reader)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
         #expect(app.presentedReaderSession == nil)
+        #expect(!app.isReaderCoverVisible)
+        #expect(!session.isClosed)
         #expect(navigator.path == path)
-        session.close()
+        #expect(app.activeNovelContext == nil)
         #expect(app.activeMangaContext == nil)
+
+        // SwiftUI can retain the source without another onAppear after dismissal.
+        await session.openReader(mode, from: model)
+        #expect(app.presentedReaderSession != nil)
+        #expect(app.presentedReaderSession !== reader)
+        #expect(session.contentID == originalContentID)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+        session.close()
+    }
+
+    @Test(arguments: [YamiboThreadReaderOverride.novel, .manga])
+    func directReaderLaunchDoesNotReuseEmbeddedThread(mode: YamiboThreadReaderOverride) async throws {
+        let app = try makeApp()
+        let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "721"), title: "Thread")
+        let embedded = app.makeReaderSession(content: .thread(context), presentation: .embeddedThread)
+        embedded.activate()
+        let model = embedded.threadModel(for: context, dependencies: app.appContext.forumDependencies)
+        let contentID = embedded.contentID
+        if mode == .novel {
+            app.presentNovelReader(NovelLaunchContext(threadID: "722", threadTitle: "Novel", source: .forum))
+        } else {
+            await app.requestMangaReader(MangaLaunchContext(
+                originalThreadID: "722", chapterTID: "722", displayTitle: "Manga", source: .forum
+            )).value
+        }
+        #expect(app.presentedReaderSession != nil)
+        #expect(app.presentedReaderSession !== embedded)
+        #expect(app.isReaderCoverVisible)
+        #expect(embedded.contentID == contentID)
+        #expect(embedded.resumeRoute == nil)
+        #expect(model.becameReaderCompanion)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+        embedded.close()
+    }
+
+    @Test func pendingEmbeddedSwitchCannotReplaceANewerFullScreenLaunch() async throws {
+        let app = try makeApp()
+        let embedded = app.makeReaderSession(content: .thread(ThreadNovelLaunchContext(
+            thread: ThreadIdentity(tid: "723"), title: "Thread"
+        )), presentation: .embeddedThread)
+        embedded.activate()
+        let gate = ReaderSessionResolutionGate()
+        let pending = Task {
+            await embedded.transition {
+                await gate.wait()
+                return .novel(NovelLaunchContext(threadID: "723", threadTitle: "Old", source: .forum))
+            }
+        }
+        await gate.waitUntilStarted()
+        let next = NovelLaunchContext(threadID: "724", threadTitle: "New", source: .forum)
+        app.presentNovelReader(next)
+        let reader = try #require(app.presentedReaderSession)
+        gate.release()
+        await pending.value
+        #expect(app.presentedReaderSession === reader)
+        #expect(app.activeNovelContext == next)
+        #expect(embedded.resumeRoute == nil)
+        #expect(!embedded.isSwitching)
+        app.dismissPresentedReaderSession()
+        app.readerCoverDidDismiss()
+        embedded.close()
+    }
+
+    @Test func leavingEmbeddedThreadCancelsLateFullScreenPresentation() async throws {
+        let app = try makeApp()
+        let embedded = app.makeReaderSession(content: .thread(ThreadNovelLaunchContext(
+            thread: ThreadIdentity(tid: "725"), title: "Thread"
+        )), presentation: .embeddedThread)
+        embedded.activate()
+        let gate = ReaderSessionResolutionGate()
+        let pending = Task {
+            await embedded.transition {
+                await gate.wait()
+                return .novel(NovelLaunchContext(threadID: "725", threadTitle: "Old", source: .forum))
+            }
+        }
+        await gate.waitUntilStarted()
+        embedded.deactivate()
+        gate.release()
+        await pending.value
+        #expect(app.presentedReaderSession == nil)
+        #expect(!app.isReaderCoverVisible)
+        #expect(embedded.resumeRoute == nil)
+        #expect(!embedded.isSwitching)
+        embedded.close()
     }
 
     @Test func firstModeSwitchLoadsIndependentPersistedPositions() async throws {
@@ -322,7 +432,7 @@ final class ReaderSessionTests {
             throw MangaReaderDataSupport.currentMangaChapterParsingFailure()
         })
         let context = ThreadNovelLaunchContext(thread: ThreadIdentity(tid: "800", fid: "40"), title: "Text only")
-        let session = app.makeReaderSession(content: .thread(context))
+        let session = app.makeReaderSession(content: .thread(context), presentation: .embeddedThread)
         session.activate()
         let model = session.threadModel(for: context, dependencies: app.appContext.forumDependencies)
         let contentID = session.contentID

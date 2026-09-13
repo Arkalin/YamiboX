@@ -42,10 +42,45 @@ import Testing
     #expect(
         layout.novelTextBoxLayout(settings: settings, usesPadPresentation: false) == layout
     )
-    #expect(
-        layout.novelTextBoxLayout(
-            settings: NovelReaderAppearanceSettings(readingMode: .vertical),
-            usesPadPresentation: true
-        ) == layout
-    )
+    #expect(layout.novelTextBoxLayout(
+        settings: NovelReaderAppearanceSettings(readingMode: .vertical),
+        usesPadPresentation: true
+    ).readableFrame.width == 700)
+}
+
+@Test func readerTextWidthAdaptsWithoutChangingPhoneInsetsOrSavedSettings() {
+    let layout = NovelReaderLayout(width: 1024, height: 1366,
+                                   contentInsets: .init(leading: 16, trailing: 16))
+    let settings = NovelReaderAppearanceSettings()
+    let projected = layout.novelTextBoxLayout(settings: settings, usesPadPresentation: true)
+    #expect(projected.readableFrame.width == 700)
+    #expect(projected.readableFrame.minX == 162)
+    #expect(settings.horizontalPadding == 16)
+    #expect(layout.novelTextBoxLayout(settings: settings, usesPadPresentation: false) == layout)
+    let larger = NovelReaderAppearanceSettings(fontScale: 1.4)
+    #expect(abs(layout.novelTextBoxLayout(settings: larger, usesPadPresentation: true).readableFrame.width - 980) < 0.01)
+}
+
+@Test func readerSpreadRequiresReadableColumnsAtTheCurrentFontSize() {
+    let settings = NovelReaderAppearanceSettings(showsTwoPagesInLandscapeOnPad: true)
+    let narrow = NovelReaderLayout(width: 600, height: 400,
+                                  contentInsets: .init(leading: 16, trailing: 16))
+    #expect(!narrow.usesTwoPageSpread(settings: settings, usesPadPresentation: true))
+    #expect(narrow.novelTextBoxLayout(settings: settings, usesPadPresentation: true).width == 600)
+    let wide = NovelReaderLayout(width: 1024, height: 768,
+                                contentInsets: .init(leading: 16, trailing: 16))
+    #expect(wide.usesTwoPageSpread(settings: settings, usesPadPresentation: true))
+    var largeFont = settings
+    largeFont.fontScale = 2
+    #expect(!wide.usesTwoPageSpread(settings: largeFont, usesPadPresentation: true))
+}
+
+@Test func readerSpreadIgnoresLegacyDisabledPreference() {
+    #expect(NovelReaderAppearanceSettings().showsTwoPagesInLandscapeOnPad)
+    let settings = NovelReaderAppearanceSettings(showsTwoPagesInLandscapeOnPad: false, readingMode: .paged)
+    let wide = NovelReaderLayout(width: 1024, height: 768, readingMode: .paged)
+    #expect(wide.usesTwoPageSpread(settings: settings, usesPadPresentation: true))
+    #expect(!wide.usesTwoPageSpread(settings: settings, usesPadPresentation: false))
+    let portrait = NovelReaderLayout(width: 768, height: 1024, readingMode: .paged)
+    #expect(!portrait.usesTwoPageSpread(settings: settings, usesPadPresentation: true))
 }

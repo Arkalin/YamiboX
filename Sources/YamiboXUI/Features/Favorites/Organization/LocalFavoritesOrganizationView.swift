@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import YamiboXCore
 
@@ -14,6 +15,7 @@ struct LocalFavoritesOrganizationView: View {
     @ObservedObject private var selection: LocalFavoriteBrowseSession
     @ObservedObject private var routes: LocalFavoritesRoutes
     let detailScreen: (ContentDetailDestination) -> ContentDetailScreen
+    let isBookPresented: Bool
 
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
     /// Opens a smart-manga update event by its `cleanBookName` alone — a
@@ -32,6 +34,7 @@ struct LocalFavoritesOrganizationView: View {
         navigator: ForumDestinationNavigator,
         routes: LocalFavoritesRoutes,
         detailScreen: @escaping (ContentDetailDestination) -> ContentDetailScreen,
+        isBookPresented: Bool,
         favoriteShare: FavoriteShareFlowModel,
         remoteSync: FavoriteRemoteSyncSession,
         updateMonitor: FavoriteUpdateMonitor,
@@ -44,6 +47,7 @@ struct LocalFavoritesOrganizationView: View {
         self.navigator = navigator
         self.routes = routes
         self.detailScreen = detailScreen
+        self.isBookPresented = isBookPresented
         self.favoriteShare = favoriteShare
         self.remoteSync = remoteSync
         self.updateMonitor = updateMonitor
@@ -55,21 +59,23 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     var body: some View {
+        LocalFavoritesAdaptiveNavigation(organizer: organizer, routes: routes, navigator: navigator) {
+            browseStack
+        }
+    }
+
+    private var browseStack: some View {
         NavigationStack(path: LocalFavoritesNavigation(organizer: organizer, routes: routes, navigator: navigator).binding) {
             backgrounded {
                 content(derived: organizer.rootDerived, isCollectionDetail: false)
                     .overlay { emptyStateOverlay(derived: organizer.rootDerived, isCollectionDetail: false) }
             }
-            .navigationTitle(
-                selection.isSelectionMode
-                    ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
-                    : L10n.string("favorites.title")
-            )
+            .navigationTitle(browseNavigationTitle(usesSidebar: UIDevice.current.userInterfaceIdiom == .pad))
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: $organizer.filter.searchText,
-                prompt: L10n.string("favorites.search.placeholder")
-            )
+            .modifier(LocalFavoriteBrowseSearch(
+                organizer: organizer,
+                isActive: keyboardCommandsEnabled && organizer.isBrowsingUnscopedRoot
+            ))
             .toolbar { favoriteToolbarContent }
             .toolbar(selection.isSelectionMode ? .hidden : .automatic, for: .tabBar)
             .safeAreaInset(edge: .bottom) {
@@ -157,6 +163,15 @@ struct LocalFavoritesOrganizationView: View {
         .transientMessage(navigator.transientFeedback) { navigator.transientFeedback = nil }
     }
 
+    func browseNavigationTitle(usesSidebar: Bool) -> String {
+        if selection.isSelectionMode {
+            return L10n.string("favorites.selected_count", selection.selectedEntryCount)
+        }
+        guard usesSidebar else { return L10n.string("favorites.title") }
+        return (organizer.categories.first { $0.id == organizer.selectedCategoryID }
+            ?? .defaultCategory).displayName
+    }
+
     @ViewBuilder
     private func destinationView(_ destination: LocalFavoritesDestination) -> some View {
         switch destination {
@@ -225,10 +240,11 @@ struct LocalFavoritesOrganizationView: View {
             content(derived: organizer.derived, isCollectionDetail: true)
                 .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
         }
-        .searchable(
-            text: $organizer.filter.searchText,
-            prompt: L10n.string("favorites.search.placeholder")
-        )
+        .modifier(LocalFavoriteBrowseSearch(
+            organizer: organizer,
+            isActive: keyboardCommandsEnabled && organizer.selectedCollectionID != nil
+                && organizer.selectedMergedGroupCleanBookName == nil
+        ))
         .navigationTitle(
             selection.isSelectionMode
                 ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
@@ -323,10 +339,10 @@ struct LocalFavoritesOrganizationView: View {
             content(derived: organizer.derived, isCollectionDetail: true)
                 .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
         }
-        .searchable(
-            text: $organizer.filter.searchText,
-            prompt: L10n.string("favorites.search.placeholder")
-        )
+        .modifier(LocalFavoriteBrowseSearch(
+            organizer: organizer,
+            isActive: keyboardCommandsEnabled && organizer.selectedMergedGroupCleanBookName != nil
+        ))
         .navigationTitle(
             selection.isSelectionMode
                 ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
@@ -356,6 +372,14 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     // MARK: - Content
+
+    private var keyboardCommandsEnabled: Bool {
+        !isBookPresented && routes.sheet == nil && routes.dialog == nil && routes.detail == nil
+            && !routes.isUpdatesPagePushed && !routes.isBoardFavoritesPushed && !routes.isSyncProgressPushed
+            && navigator.path.isEmpty && organizer.removeRemotePrompt == nil
+            && !favoriteShare.isFileImporterPresented && !favoriteShare.isFileExporterPresented
+            && combinedErrorMessage == nil
+    }
 
     /// Every page of this screen — the root and both pushed detail pages —
     /// draws the user's favorites background, so the pairing of settings and

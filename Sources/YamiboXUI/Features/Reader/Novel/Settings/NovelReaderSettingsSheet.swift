@@ -15,10 +15,6 @@ struct NovelReaderSettingsSheet: View {
     private static let fallbackPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
 
-    private var showsTwoPageToggle: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && draftSettings.readingMode == .paged
-    }
-
     private var controlAccent: Color {
         AppTheme.theme(for: appModel.appThemePreset).controlAccent
     }
@@ -119,11 +115,6 @@ struct NovelReaderSettingsSheet: View {
                     settings: draftSettings,
                     palette: palette,
                     colorScheme: colorScheme,
-                    showsTwoPageToggle: showsTwoPageToggle,
-                    showsTwoPagesInLandscapeOnPad: Binding(
-                        get: { draftSettings.showsTwoPagesInLandscapeOnPad },
-                        set: { draftSettings.showsTwoPagesInLandscapeOnPad = $0 }
-                    ),
                     onBackgroundStyleChange: setBackgroundStyle,
                     onReadingModeChange: setReadingMode,
                     onPageTurnDirectionChange: setPageTurnDirection

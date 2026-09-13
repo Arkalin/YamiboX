@@ -11,7 +11,10 @@ struct LikeListFixture: View {
     private let environment = ProcessInfo.processInfo.environment
 
     var body: some View {
-        NavigationStack {
+        LikeListFixtureNavigation(
+            usesCategoryNavigation: UIDevice.current.userInterfaceIdiom == .pad
+                && !["reader", "novel", "manga"].contains(environment["LIKES_FIXTURE_ENTRY"] ?? "")
+        ) {
             if model.isLoaded {
                 switch environment["LIKES_FIXTURE_ENTRY"] {
                 case "reader":
@@ -45,6 +48,21 @@ struct LikeListFixture: View {
         .preferredColorScheme(environment["LIKES_FIXTURE_DARK"] == "1" ? .dark : .light)
         .dynamicTypeSize(environment["LIKES_FIXTURE_LARGE_TEXT"] == "1" ? .accessibility3 : .large)
         .task { await model.load() }
+    }
+}
+
+private struct LikeListFixtureNavigation<Content: View>: View {
+    let usesCategoryNavigation: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if usesCategoryNavigation {
+            content()
+        } else {
+            NavigationStack {
+                content()
+            }
+        }
     }
 }
 

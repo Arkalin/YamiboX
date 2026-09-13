@@ -21,12 +21,18 @@ struct ReaderSessionDependencies: Sendable {
     let mangaReaderOpenValidator: MangaReaderOpenValidator
 }
 
+enum ReaderSessionPresentation {
+    case fullScreen
+    case embeddedThread
+}
+
 @MainActor
 struct ReaderSessionLifecycle {
     var didActivate: @MainActor (ReaderSession, ReaderResumeRoute?) -> Void = { _, _ in }
     var didUpdateResumeRoute: @MainActor (ReaderSession, ReaderResumeRoute) -> Void = { _, _ in }
     var didDeactivate: @MainActor (ReaderSession) -> Void = { _ in }
     var didClose: @MainActor (ReaderSession) -> Void = { _ in }
+    var didRequestFullScreen: @MainActor (ReaderSession, ReaderSessionContent, MangaReaderProjection?) -> Void = { _, _, _ in }
 }
 
 /// One navigation entry, with independently resumable reading modes.
@@ -35,6 +41,7 @@ struct ReaderSessionLifecycle {
 final class ReaderSession: Identifiable {
     let id = UUID()
     let bookOpeningTransition: BookOpeningTransition?
+    let presentation: ReaderSessionPresentation
     private(set) var content: ReaderSessionContent
     private(set) var resumeRoute: ReaderResumeRoute?
     private(set) var contentID = UUID()
@@ -56,13 +63,15 @@ final class ReaderSession: Identifiable {
         content: ReaderSessionContent,
         dependencies: ReaderSessionDependencies,
         lifecycle: ReaderSessionLifecycle,
-        bookOpeningTransition: BookOpeningTransition? = nil
+        bookOpeningTransition: BookOpeningTransition? = nil,
+        presentation: ReaderSessionPresentation = .fullScreen
     ) {
         self.content = content
         resumeRoute = content.resumeRoute
         self.dependencies = dependencies
         self.lifecycle = lifecycle
         self.bookOpeningTransition = bookOpeningTransition
+        self.presentation = presentation
         switch content {
         case let .novel(context): isPreview = context.isPreview
         case let .manga(context): isPreview = context.isPreview
@@ -95,9 +104,12 @@ final class ReaderSession: Identifiable {
     func present(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
         guard !isClosed else { return }
         let previousRoute = resumeRoute
-        cancelSwitch()
-        if case let .thread(context) = self.content {
-            threadModels[context.thread.tid]?.suspendForModeSwitch()
+        prepareForContentPresentation()
+        // A navigation column owns only its original thread. Reading gets a
+        // separate full-window presentation without replacing that destination.
+        if presentation == .embeddedThread, content.resumeRoute != nil {
+            lifecycle.didRequestFullScreen(self, content, mangaProjection)
+            return
         }
         self.content = content
         resumeRoute = content.resumeRoute
@@ -105,6 +117,13 @@ final class ReaderSession: Identifiable {
         contentID = UUID()
         if let route = content.resumeRoute { remember(route) }
         lifecycle.didActivate(self, previousRoute)
+    }
+
+    func prepareForContentPresentation() {
+        cancelSwitch()
+        if case let .thread(context) = content {
+            threadModels[context.thread.tid]?.suspendForModeSwitch()
+        }
     }
 
     func updateResumeRoute(_ route: ReaderResumeRoute, contentID: UUID) {
@@ -225,6 +244,9 @@ final class ReaderSession: Identifiable {
 
     func transition(title: String = L10n.string("reader.switching"), _ resolve: @escaping @MainActor () async throws -> ReaderSessionContent) async {
         guard !isSwitching, !isClosed else { return }
+        // Dismissing a cover need not trigger the retained column's onAppear.
+        // An explicit mode switch restores its ownership before resolving.
+        if presentation == .embeddedThread { activate() }
         isSwitching = true
         switchingTitle = title
         switchFailure = nil

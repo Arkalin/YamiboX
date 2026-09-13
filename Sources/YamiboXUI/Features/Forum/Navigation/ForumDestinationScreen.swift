@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct ForumDestinationScreen: View {
+    @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     let destination: ForumDestination
     let navigator: ForumDestinationNavigator
 
@@ -20,14 +21,14 @@ struct ForumDestinationScreen: View {
                     dependencies: dependencies
                 ),
                 refreshRevision: navigator.appModel.forumContentRefresh.boardRevision(fid),
-                onSubBoardTap: { navigator.openBoard($0) },
-                onPinnedTap: { navigator.openPinnedItem($0, containingFid: fid) },
-                onThreadTap: { navigator.openThread($0, containingFid: fid) },
-                onThreadReaderOverrideTap: navigator.threadReaderOverrideHandler(containingFid: fid),
-                onPinnedReaderOverrideTap: navigator.pinnedReaderOverrideHandler(containingFid: fid),
+                onSubBoardTap: { navigator.openBoard($0, fromBrowserList: fromBrowserList) },
+                onPinnedTap: { navigator.openPinnedItem($0, containingFid: fid, fromBrowserList: fromBrowserList) },
+                onThreadTap: { navigator.openThread($0, containingFid: fid, fromBrowserList: fromBrowserList) },
+                onThreadReaderOverrideTap: navigator.threadReaderOverrideHandler(containingFid: fid, fromBrowserList: fromBrowserList),
+                onPinnedReaderOverrideTap: navigator.pinnedReaderOverrideHandler(containingFid: fid, fromBrowserList: fromBrowserList),
                 onAuthorTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onSearchTap: {
-                    navigator.push(.search(fid: fid))
+                    navigator.openSearch(fid: fid, fromBrowserList: fromBrowserList)
                 },
                 onPostThreadTap: {
                     navigator.openPostThreadComposer(fid: fid)
@@ -37,10 +38,10 @@ struct ForumDestinationScreen: View {
         case let .search(fid):
             ForumSearchView(
                 model: ForumSearchViewModel(forumID: fid, dependencies: dependencies),
-                onThreadTap: { navigator.openThread($0, containingFid: fid) },
+                onThreadTap: { navigator.openThread($0, containingFid: fid, fromBrowserList: fromBrowserList) },
                 onAuthorTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLSubmit: {
-                    navigator.route($0, source: .external)
+                    navigator.route($0, source: .external, fromBrowserList: fromBrowserList)
                 }
             )
             .forumNavigationBarStyle()
@@ -229,6 +230,7 @@ struct ForumThreadLinkScreen: View {
 }
 
 private struct ForumHomeDestination: View {
+    @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     let navigator: ForumDestinationNavigator
     @State private var model: ForumHomeViewModel
 
@@ -238,7 +240,11 @@ private struct ForumHomeDestination: View {
     }
 
     var body: some View {
-        ForumHomeView(model: model, onBoardTap: navigator.openBoard, onCarouselTap: navigator.openCarouselItem)
+        ForumHomeView(
+            model: model,
+            onBoardTap: { navigator.openBoard($0, fromBrowserList: fromBrowserList) },
+            onCarouselTap: { navigator.openCarouselItem($0, fromBrowserList: fromBrowserList) }
+        )
             .navigationTitle(L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
             .forumNavigationBarStyle()

@@ -107,7 +107,8 @@ final class BrowsingHistoryViewModel {
                 snapshot = await BrowsingHistorySnapshot(entries: browsingHistoryStore.entries(), boardReader: settingsStore.load().boardReader)
             }
         } catch {
-            guard generation == reloadGeneration else { return }
+            guard generation == reloadGeneration,
+                  !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             errorMessage = error.localizedDescription
             errorDetails = LoadFailureDetails(error: error)
             return

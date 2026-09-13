@@ -718,8 +718,7 @@ public final class MangaReaderWorkflow {
             previousSettings.pagedTurnStyle != settings.pagedTurnStyle ||
             previousSettings.pageTurnDirection != settings.pageTurnDirection ||
             previousSettings.pageScaleMode != settings.pageScaleMode ||
-            previousSettings.pageEdgeFillStyle != settings.pageEdgeFillStyle ||
-            previousSettings.showsTwoPagesInLandscapeOnPad != settings.showsTwoPagesInLandscapeOnPad
+            previousSettings.pageEdgeFillStyle != settings.pageEdgeFillStyle
     }
 
     private static func presentationTitle(for context: MangaLaunchContext) -> String {

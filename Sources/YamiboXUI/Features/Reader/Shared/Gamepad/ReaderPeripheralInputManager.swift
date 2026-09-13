@@ -2,6 +2,7 @@
 import Foundation
 import GameController
 import Observation
+import UIKit
 import YamiboXCore
 
 /// App-wide game-controller and hardware-keyboard listener. Translates
@@ -84,9 +85,20 @@ public final class ReaderPeripheralInputManager {
     @ObservationIgnored private var pressTracker = RisingEdgePressTracker()
     @ObservationIgnored private let settingsStore: SettingsStore
     @ObservationIgnored private var monitorTasks: [Task<Void, Never>] = []
+    @ObservationIgnored private let usesWindowKeyboardEvents: Bool
+    @ObservationIgnored private let acceptsInput: @MainActor () -> Bool
+    private static var managers: [WeakManager] = []
 
-    public init(settingsStore: SettingsStore) {
+    public init(
+        settingsStore: SettingsStore,
+        usesWindowKeyboardEvents: Bool = false,
+        acceptsInput: @escaping @MainActor () -> Bool = { true }
+    ) {
         self.settingsStore = settingsStore
+        self.usesWindowKeyboardEvents = usesWindowKeyboardEvents
+        self.acceptsInput = acceptsInput
+        Self.managers.removeAll { $0.value == nil }
+        Self.managers.append(WeakManager(self))
         startMonitoring()
     }
 
@@ -261,9 +273,9 @@ public final class ReaderPeripheralInputManager {
         let controllerKey = ObjectIdentifier(controller)
         let input = controller.input
         input.queue = .main
-        input.elementValueDidChangeHandler = { [weak self] _, element in
+        input.elementValueDidChangeHandler = { _, element in
             MainActor.assumeIsolated {
-                self?.handleElementChange(element, controllerKey: controllerKey)
+                Self.forEachManager { $0.handleElementChange(element, controllerKey: controllerKey) }
             }
         }
     }
@@ -276,9 +288,15 @@ public final class ReaderPeripheralInputManager {
 
     private func attach(_ keyboard: GCKeyboard) {
         keyboard.handlerQueue = .main
-        keyboard.keyboardInput?.keyChangedHandler = { [weak self] _, _, keyCode, isPressed in
+        keyboard.keyboardInput?.keyChangedHandler = { _, _, keyCode, isPressed in
             MainActor.assumeIsolated {
-                self?.handleKeyChange(keyCode, isPressed: isPressed)
+                Self.forEachManager { manager in
+                    // UIKit delivers window-owned presses for scene models; the
+                    // coalesced keyboard has no window identity and must not duplicate them.
+                    if !manager.usesWindowKeyboardEvents {
+                        manager.handleKeyChange(keyCode, isPressed: isPressed)
+                    }
+                }
             }
         }
     }
@@ -286,6 +304,10 @@ public final class ReaderPeripheralInputManager {
     // MARK: - Event translation
 
     private func handleElementChange(_ element: any GCPhysicalInputElement, controllerKey: ObjectIdentifier) {
+        guard acceptsInput() else {
+            pressTracker.reset()
+            return
+        }
         if let button = element as? GCButtonElement {
             let aliases = button.aliases
             guard registerPress(
@@ -354,8 +376,30 @@ public final class ReaderPeripheralInputManager {
     // MARK: - Keyboard event translation
 
     private func handleKeyChange(_ keyCode: GCKeyCode, isPressed: Bool) {
+        guard acceptsInput() else {
+            pressTracker.reset()
+            return
+        }
         guard registerPress(isPressed, key: "keyboard#\(keyCode.rawValue)") else { return }
         routeKeyPress(code: keyCode.rawValue)
+    }
+
+    func handleWindowKey(code: Int, isPressed: Bool, isEditingText: Bool, hasCommandModifier: Bool) {
+        guard usesWindowKeyboardEvents else { return }
+        guard !isPressed || (!isEditingText && !hasCommandModifier) else { return }
+        handleKeyChange(GCKeyCode(rawValue: code), isPressed: isPressed)
+    }
+
+    func resetPressState() { pressTracker.reset() }
+
+    private static func forEachManager(_ body: (ReaderPeripheralInputManager) -> Void) {
+        managers.removeAll { $0.value == nil }
+        for manager in managers.compactMap(\.value) { body(manager) }
+    }
+
+    private final class WeakManager {
+        weak var value: ReaderPeripheralInputManager?
+        init(_ value: ReaderPeripheralInputManager) { self.value = value }
     }
 
     private func routeKeyPress(code: Int) {

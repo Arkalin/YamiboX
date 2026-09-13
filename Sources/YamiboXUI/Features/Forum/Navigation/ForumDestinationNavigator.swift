@@ -7,7 +7,12 @@ import YamiboXCore
 @MainActor
 @Observable
 final class ForumDestinationNavigator {
-    var path: [ForumDestination] = []
+    var path: [ForumDestination] = [] {
+        didSet {
+            if oldValue != path { browserOpenID = nil }
+        }
+    }
+    private(set) var browserDetailRevision = UUID()
     var actionErrorMessage: String? {
         didSet { actionErrorDetails = nil }
     }
@@ -17,6 +22,8 @@ final class ForumDestinationNavigator {
     @ObservationIgnored let dependencies: ForumDependencies
     @ObservationIgnored let appModel: YamiboAppModel
     @ObservationIgnored let mode: ForumNavigationMode
+    @ObservationIgnored let usesSplitNavigation: Bool
+    @ObservationIgnored private var browserOpenID: UUID?
     /// The reader session's own thread IDs (the work plus, for smart manga,
     /// its chapter threads). Any thread opened inside the overlay that
     /// resolves to one of these is still the work's discussion companion, so
@@ -29,12 +36,39 @@ final class ForumDestinationNavigator {
         dependencies: ForumDependencies,
         appModel: YamiboAppModel,
         mode: ForumNavigationMode,
-        discussionWorkTIDs: Set<String> = []
+        discussionWorkTIDs: Set<String> = [],
+        usesSplitNavigation: Bool = false
     ) {
         self.dependencies = dependencies
         self.appModel = appModel
         self.mode = mode
         self.discussionWorkTIDs = discussionWorkTIDs
+        self.usesSplitNavigation = usesSplitNavigation
+    }
+
+    var browserListPath: [ForumDestination] {
+        Array(path.prefix { destination in
+            switch destination {
+            case .home, .board, .search: true
+            default: false
+            }
+        })
+    }
+
+    var browserDetailPath: [ForumDestination] { Array(path.dropFirst(browserListPath.count)) }
+
+    var selectedBrowserThreadID: String? {
+        // Auxiliary pages retain the latest thread's context, not the first
+        // thread opened from the sidebar.
+        for destination in browserDetailPath.reversed() {
+            switch destination {
+            case let .threadReader(context): return context.thread.tid
+            case let .novelDetail(context): return context.thread.tid
+            case let .mangaDetail(context): return context.thread.tid
+            default: continue
+            }
+        }
+        return nil
     }
 
     func threadLinkLaunchContext(
@@ -57,9 +91,12 @@ final class ForumDestinationNavigator {
             return
         }
         path.append(destination)
+        if !browserDetailPath.isEmpty { browserDetailRevision = UUID() }
     }
 
-    func route(_ url: URL, source: ForumNavigationSource, title: String? = nil) {
+    func route(_ url: URL, source: ForumNavigationSource, title: String? = nil, fromBrowserList: Bool = false) {
+        browserOpenID = nil
+        if fromBrowserList && usesSplitNavigation { path = browserListPath }
         switch ForumRouteResolver.resolve(url: url, source: source) {
         case .home:
             switch mode {
@@ -76,7 +113,8 @@ final class ForumDestinationNavigator {
                 title: title,
                 containingFid: nil,
                 intent: source == .readerOrigin || source == .readerDiscussion ? .nativeThreadReader : .contentRoute,
-                isDiscussionView: source == .readerDiscussion
+                isDiscussionView: source == .readerDiscussion,
+                fromBrowserList: fromBrowserList
             )
         case let .userSpace(uid, name):
             push(.userSpace(uid: uid, name: name, section: .space, subPage: .profile))
@@ -97,29 +135,40 @@ final class ForumDestinationNavigator {
         }
     }
 
-    func openBoard(_ board: ForumBoardSummary) {
+    func openBoard(_ board: ForumBoardSummary, fromBrowserList: Bool = false) {
+        if fromBrowserList && usesSplitNavigation { path = browserListPath }
         push(.board(fid: board.fid, title: board.name, page: nil))
     }
 
-    func openCarouselItem(_ item: ForumHomeCarouselItem) {
+    func openSearch(fid: String?, fromBrowserList: Bool = false) {
+        if fromBrowserList && usesSplitNavigation { path = browserListPath }
+        if path.last != .search(fid: fid) { push(.search(fid: fid)) }
+    }
+
+    func openCarouselItem(_ item: ForumHomeCarouselItem, fromBrowserList: Bool = false) {
         if item.isThreadTarget {
-            openThread(item.targetURL, title: nil, containingFid: nil)
+            openThread(item.targetURL, title: nil, containingFid: nil, fromBrowserList: fromBrowserList)
         }
     }
 
+    @discardableResult
     func openThread(
         _ url: URL,
         title: String?,
         containingFid: String?,
         intent: YamiboThreadRouteIntent = .contentRoute,
         readerOverride: YamiboThreadReaderOverride? = nil,
-        isDiscussionView: Bool = false
-    ) {
+        isDiscussionView: Bool = false,
+        fromBrowserList: Bool = false
+    ) -> Task<Void, Never>? {
         if mode == .readerOverlay {
             pushThreadLink(url: url, title: title, containingFid: containingFid, isDiscussionView: isDiscussionView)
-            return
+            return nil
         }
-        Task {
+        let sourceListPath = browserListPath
+        let openID = UUID()
+        if fromBrowserList { browserOpenID = openID }
+        return Task {
             do {
                 let resolver = await dependencies.makeThreadRouteResolver()
                 let target = try await resolver.resolve(
@@ -131,9 +180,13 @@ final class ForumDestinationNavigator {
                         tapContext: YamiboThreadTapContext(containingFid: containingFid)
                     )
                 )
+                try Task.checkCancellation()
+                guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
+                if fromBrowserList && usesSplitNavigation { path = sourceListPath }
                 openYamiboThreadRouteTarget(target, isDiscussionView: isDiscussionView)
             } catch {
-                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                   !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
                 }
@@ -141,11 +194,13 @@ final class ForumDestinationNavigator {
         }
     }
 
+    @discardableResult
     func openThread(
         _ thread: ForumThreadSummary,
         containingFid: String?,
-        readerOverride: YamiboThreadReaderOverride? = nil
-    ) {
+        readerOverride: YamiboThreadReaderOverride? = nil,
+        fromBrowserList: Bool = false
+    ) -> Task<Void, Never>? {
         if mode == .readerOverlay {
             pushThreadLink(
                 url: thread.url,
@@ -153,9 +208,12 @@ final class ForumDestinationNavigator {
                 containingFid: containingFid ?? thread.fid,
                 authorID: thread.authorID
             )
-            return
+            return nil
         }
-        Task {
+        let sourceListPath = browserListPath
+        let openID = UUID()
+        if fromBrowserList { browserOpenID = openID }
+        return Task {
             do {
                 let resolver = await dependencies.makeThreadRouteResolver()
                 let target = try await resolver.resolve(
@@ -169,9 +227,13 @@ final class ForumDestinationNavigator {
                         tapContext: YamiboThreadTapContext(containingFid: containingFid)
                     )
                 )
+                try Task.checkCancellation()
+                guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
+                if fromBrowserList && usesSplitNavigation { path = browserListPath }
                 openYamiboThreadRouteTarget(target)
             } catch {
-                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                   !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
                 }
@@ -184,11 +246,12 @@ final class ForumDestinationNavigator {
     /// never launches a second full reader (every thread opens as a native
     /// thread page there), so offering the menu would promise nothing.
     func threadReaderOverrideHandler(
-        containingFid: String?
+        containingFid: String?,
+        fromBrowserList: Bool = false
     ) -> ((ForumThreadSummary, YamiboThreadReaderOverride) -> Void)? {
         guard mode != .readerOverlay else { return nil }
         return { thread, readerOverride in
-            self.openThread(thread, containingFid: containingFid, readerOverride: readerOverride)
+            self.openThread(thread, containingFid: containingFid, readerOverride: readerOverride, fromBrowserList: fromBrowserList)
         }
     }
 
@@ -196,11 +259,12 @@ final class ForumDestinationNavigator {
     /// the row itself (no `threadID`, so nothing to apply a reader to); this
     /// only decides whether the stack can honor a choice at all.
     func pinnedReaderOverrideHandler(
-        containingFid: String?
+        containingFid: String?,
+        fromBrowserList: Bool = false
     ) -> ((ForumPinnedItem, YamiboThreadReaderOverride) -> Void)? {
         guard mode != .readerOverlay else { return nil }
         return { item, readerOverride in
-            self.openPinnedItem(item, containingFid: containingFid, readerOverride: readerOverride)
+            self.openPinnedItem(item, containingFid: containingFid, readerOverride: readerOverride, fromBrowserList: fromBrowserList)
         }
     }
 
@@ -247,17 +311,19 @@ final class ForumDestinationNavigator {
     func openPinnedItem(
         _ item: ForumPinnedItem,
         containingFid: String?,
-        readerOverride: YamiboThreadReaderOverride? = nil
+        readerOverride: YamiboThreadReaderOverride? = nil,
+        fromBrowserList: Bool = false
     ) {
         if item.threadID != nil {
             openThread(
                 item.url,
                 title: item.title,
                 containingFid: containingFid,
-                readerOverride: readerOverride
+                readerOverride: readerOverride,
+                fromBrowserList: fromBrowserList
             )
         } else {
-            route(item.url, source: .external)
+            route(item.url, source: .external, fromBrowserList: fromBrowserList)
         }
     }
 

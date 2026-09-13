@@ -18,24 +18,11 @@ struct LocalFavoriteItemRow: View {
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
-        Button {
-            if isSelectionMode {
-                // A smart card is selectable just like any other card —
-                // bulk operations expand it to every archived member at
-                // execution time (`FavoriteLibraryOrganizer
-                // .expandedSelectionFavoriteIDs`), including
-                // `deleteSelection` when `smartMangaBulkDeleteEnabled` is on;
-                // when it's off, `deleteSelection` excludes it there
-                // instead of here, so it still requires the dedicated
-                // "查看归档收藏" archive page.
-                onToggleSelection()
-            } else {
-                actions.open(card, .preferred, bookOpeningTransition)
-            }
-        } label: {
+        Button(action: handleTap) {
             rowContent
         }
         .buttonStyle(BookOpeningButtonStyle())
+        .modifier(LocalFavoriteKeyboardActivation(action: handleTap))
         .contextMenu {
             if !isSelectionMode {
                 LocalFavoriteCardContextMenu(card: card, actions: actions, bookOpeningTransition: bookOpeningTransition)
@@ -71,6 +58,16 @@ struct LocalFavoriteItemRow: View {
                 }
                 .tint(appTheme.controlAccent)
             }
+        }
+    }
+
+    private func handleTap() {
+        if isSelectionMode {
+            // Smart-card selection expands to archived members when the
+            // organizer executes a bulk operation, just like pointer input.
+            onToggleSelection()
+        } else {
+            actions.open(card, .preferred, bookOpeningTransition)
         }
     }
 

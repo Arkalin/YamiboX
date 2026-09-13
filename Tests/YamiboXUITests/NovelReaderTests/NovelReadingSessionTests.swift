@@ -1178,10 +1178,7 @@ private func committedUsesPagedSpread(
     layout: NovelReaderLayout,
     usesPadPresentation: Bool
 ) -> Bool {
-    settings.readingMode == .paged &&
-        settings.showsTwoPagesInLandscapeOnPad &&
-        usesPadPresentation &&
-        layout.width > layout.height
+    layout.usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation)
 }
 
 private func layoutResult(

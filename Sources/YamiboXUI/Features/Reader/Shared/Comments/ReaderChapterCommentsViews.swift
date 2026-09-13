@@ -244,6 +244,7 @@ struct ReaderChapterCommentsSheet: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ReaderChapterCommentsToolbarTitle(target: target)

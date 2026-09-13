@@ -21,13 +21,16 @@ public final class AppContinuityWorkflow: Sendable {
         var isWebDAVSyncInProgress = false
         var hasRestoredReaderResumeRoute = false
         var isReaderRoutePresented = false
+        var readerRouteGeneration = UUID()
     }
 
     private let appContext: YamiboAppContext
+    private let readerResumeRouteStore: ReaderResumeRouteStore
     private let state = OSAllocatedUnfairLock(initialState: MutableState())
 
-    public init(appContext: YamiboAppContext) {
+    public init(appContext: YamiboAppContext, readerResumeRouteStore: ReaderResumeRouteStore? = nil) {
         self.appContext = appContext
+        self.readerResumeRouteStore = readerResumeRouteStore ?? appContext.readerResumeRouteStore
     }
 
     public func launchIfNeeded(
@@ -50,21 +53,25 @@ public final class AppContinuityWorkflow: Sendable {
         reconcilesWithReadingProgress: Bool = false,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> ReaderResumeRoute? {
-        let isFirstRestore = state.withLock { mutableState in
-            if mutableState.hasRestoredReaderResumeRoute { return false }
+        let restoreGeneration = state.withLock { mutableState -> UUID? in
+            if mutableState.hasRestoredReaderResumeRoute { return nil }
             mutableState.hasRestoredReaderResumeRoute = true
-            return true
+            return mutableState.readerRouteGeneration
         }
-        guard isFirstRestore else { return nil }
+        guard let restoreGeneration else { return nil }
         guard canRestoreReaderRoute else { return nil }
         await onProgress(.loadingReadingPosition)
-        guard let route = await appContext.readerResumeRouteStore.load() else { return nil }
+        guard let route = await readerResumeRouteStore.load() else { return nil }
 
         guard var restoredRoute = await restorableRoute(
             from: route,
             reconcilesWithReadingProgress: reconcilesWithReadingProgress
         ) else {
-            await appContext.readerResumeRouteStore.clear()
+            state.withLock { mutableState in
+                if mutableState.readerRouteGeneration == restoreGeneration {
+                    readerResumeRouteStore.clearSync()
+                }
+            }
             return nil
         }
 
@@ -73,15 +80,20 @@ public final class AppContinuityWorkflow: Sendable {
             restoredRoute = .novel(context)
         }
 
-        if restoredRoute != route {
-            do {
-                try await appContext.readerResumeRouteStore.save(restoredRoute)
-            } catch {
-                YamiboLog.persistence.error("Failed to save reconciled reader resume route after restore: \(error)")
+        let finalRoute = restoredRoute
+        return state.withLock { mutableState in
+            // Account changes or explicit navigation can arrive during the store awaits.
+            guard mutableState.readerRouteGeneration == restoreGeneration else { return nil }
+            if finalRoute != route {
+                do {
+                    try readerResumeRouteStore.saveSync(finalRoute)
+                } catch {
+                    YamiboLog.persistence.error("Failed to save reconciled reader resume route after restore: \(error)")
+                }
             }
+            mutableState.isReaderRoutePresented = true
+            return finalRoute
         }
-        state.withLock { $0.isReaderRoutePresented = true }
-        return restoredRoute
     }
 
     public func foregroundBecameActive() {
@@ -133,10 +145,11 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     public func readerRoutePresented(_ route: ReaderResumeRoute) {
-        state.withLock { $0.isReaderRoutePresented = true }
-        Task { [appContext] in
+        state.withLock { mutableState in
+            mutableState.isReaderRoutePresented = true
+            mutableState.readerRouteGeneration = UUID()
             do {
-                try await appContext.readerResumeRouteStore.save(route)
+                try readerResumeRouteStore.saveSync(route)
             } catch {
                 YamiboLog.persistence.error("Failed to save presented reader resume route: \(error)")
             }
@@ -144,15 +157,18 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     public func readerRouteDismissed() {
-        state.withLock { $0.isReaderRoutePresented = false }
-        appContext.readerResumeRouteStore.clearSync()
+        state.withLock { mutableState in
+            mutableState.isReaderRoutePresented = false
+            mutableState.readerRouteGeneration = UUID()
+            readerResumeRouteStore.clearSync()
+        }
     }
 
     public func readerReadingPositionChanged(_ route: ReaderResumeRoute) {
-        guard state.withLock({ $0.isReaderRoutePresented }) else { return }
-        Task { [appContext] in
+        state.withLock { mutableState in
+            guard mutableState.isReaderRoutePresented else { return }
             do {
-                try await appContext.readerResumeRouteStore.saveReadingPosition(route)
+                try readerResumeRouteStore.saveReadingPositionSync(route)
             } catch {
                 YamiboLog.persistence.error("Failed to save reader reading position: \(error)")
             }

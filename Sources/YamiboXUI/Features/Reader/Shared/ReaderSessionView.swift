@@ -27,14 +27,16 @@ struct ReaderSessionScreen: View {
     }
 }
 
-/// Embedded threads keep their existing NavigationStack entry when changing mode.
+/// The thread stays in its navigation column while reading opens over the window.
 struct ReaderSessionDestinationView: View {
     @State private var session: ReaderSession
     let navigator: ForumDestinationNavigator
 
     init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator) {
         self.navigator = navigator
-        _session = State(initialValue: navigator.appModel.makeReaderSession(content: .thread(context)))
+        _session = State(initialValue: navigator.appModel.makeReaderSession(
+            content: .thread(context), presentation: .embeddedThread
+        ))
     }
 
     var body: some View {
@@ -44,6 +46,7 @@ struct ReaderSessionDestinationView: View {
 
 private struct ReaderSessionContentView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
     let session: ReaderSession
     let navigator: ForumDestinationNavigator
     let isFullScreenRoot: Bool
@@ -54,8 +57,7 @@ private struct ReaderSessionContentView: View {
     var body: some View {
         content
             .readerTransitionOverlay(isPresented: session.isSwitching, title: session.switchingTitle, onCancel: session.cancelSwitch)
-            .toolbar(.hidden, for: .tabBar)
-            .toolbar(isReader ? .hidden : .visible, for: .navigationBar)
+            .toolbar(!isReader && keepsTabBarVisible ? .visible : .hidden, for: .tabBar)
             .navigationBarBackButtonHidden(isReader)
             .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !isFullScreenRoot && isReader))
             .onAppear { session.activate() }

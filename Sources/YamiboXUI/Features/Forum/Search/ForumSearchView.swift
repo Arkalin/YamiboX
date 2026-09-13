@@ -63,6 +63,7 @@ struct ForumSearchView: View {
 
 private struct ForumSearchBodyView: View {
     @Environment(\.forumTheme) private var theme
+    @FocusState private var isQueryFocused: Bool
     @Binding var query: String
 
     let results: [ForumThreadSummary]
@@ -78,44 +79,29 @@ private struct ForumSearchBodyView: View {
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForumSearchInputView(query: $query, isLoading: isLoading, submit: submit)
-
-                if isLoading && results.isEmpty {
-                    ContentLoadingView(text: L10n.string("forum.search.loading"))
-                } else if let errorMessage, results.isEmpty {
-                    LoadFailureView(message: errorMessage, details: errorDetails, retry: submit)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 36)
-                } else if results.isEmpty {
-                    ForumSearchIdleView()
-                } else {
-                    if let resultCountText {
-                        Text(resultCountText)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(theme.secondaryText)
-                    }
-
-                    ForEach(results) { thread in
-                        ForumThreadSummaryRowView(
-                            thread: thread,
-                            onThreadTap: {
-                                onThreadTap(thread)
-                            },
-                            onAuthorTap: onAuthorTap
-                        )
-                    }
-
-                    if let pageNavigation {
-                        ForumPageNavigationBar(
-                            navigation: pageNavigation,
-                            currentPage: currentPage,
-                            goToPage: goToPage
-                        )
-                        .padding(.top, 4)
-                    }
+        ForumKeyboardBrowser(threadIDs: results.map(\.tid), onOpen: { id in
+            if let thread = results.first(where: { $0.tid == id }) { onThreadTap(thread) }
+        }) {
+            searchContent
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isQueryFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
                 }
+                .accessibilityLabel(L10n.string("forum.home.search_placeholder"))
+                .keyboardShortcut("f", modifiers: .command)
+            }
+        }
+    }
+
+    private var searchContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForumSearchInputView(query: $query, queryFocus: $isQueryFocused, isLoading: isLoading, submit: submit)
+                searchResults
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -123,11 +109,51 @@ private struct ForumSearchBodyView: View {
         .forumPageBackground()
         .tint(theme.accentText)
     }
+
+    private var searchResults: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            if isLoading && results.isEmpty {
+                ContentLoadingView(text: L10n.string("forum.search.loading"))
+            } else if let errorMessage, results.isEmpty {
+                LoadFailureView(message: errorMessage, details: errorDetails, retry: submit)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 36)
+            } else if results.isEmpty {
+                ForumSearchIdleView()
+            } else {
+                if let resultCountText {
+                    Text(resultCountText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(theme.secondaryText)
+                }
+
+                ForEach(results) { thread in
+                    ForumThreadSummaryRowView(
+                        thread: thread,
+                        onThreadTap: {
+                            onThreadTap(thread)
+                        },
+                        onAuthorTap: onAuthorTap
+                    )
+                }
+
+                if let pageNavigation {
+                    ForumPageNavigationBar(
+                        navigation: pageNavigation,
+                        currentPage: currentPage,
+                        goToPage: goToPage
+                    )
+                    .padding(.top, 4)
+                }
+            }
+        }
+    }
 }
 
 private struct ForumSearchInputView: View {
     @Environment(\.forumTheme) private var theme
     @Binding var query: String
+    let queryFocus: FocusState<Bool>.Binding
 
     let isLoading: Bool
     let submit: () -> Void
@@ -135,6 +161,7 @@ private struct ForumSearchInputView: View {
     var body: some View {
         HStack(spacing: 10) {
             TextField(L10n.string("forum.search.placeholder"), text: $query)
+                .focused(queryFocus)
                 .autocorrectionDisabled()
                 #if os(iOS)
                 .textInputAutocapitalization(.never)

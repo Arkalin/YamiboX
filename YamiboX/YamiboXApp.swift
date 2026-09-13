@@ -15,11 +15,12 @@ struct YamiboXApp: App {
     @UIApplicationDelegateAdaptor(YamiboAppDelegate.self) private var appDelegate
     #endif
 
-    @State private var appModel: YamiboAppModel
-    @State private var showsLaunchAnimation = true
+    @State private var windows: YamiboWindowCoordinator
+    private let initialTab: AppTab
 
     init() {
         let initialTab = YamiboXApp.resolveInitialTab()
+        self.initialTab = initialTab
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let imageMemoryCache = YamiboUIImageMemoryCache()
@@ -36,35 +37,24 @@ struct YamiboXApp: App {
         #if os(iOS) && canImport(BackgroundTasks)
         FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
         #endif
-        let appModel = YamiboAppModel(
+        let windows = YamiboWindowCoordinator(
             appContext: appContext,
-            initialTab: initialTab,
             webSessionCoordinator: webSessionCoordinator,
             imagePipeline: YamiboUIImagePipeline(core: appContext.imagePipeline, memoryCache: imageMemoryCache)
         )
-        appModel.startRuntime()
+        windows.startRuntime()
         #if os(iOS)
-        YamiboAppDelegate.appModel = appModel
+        YamiboAppDelegate.windows = windows
         #endif
-        _appModel = State(initialValue: appModel)
+        _windows = State(initialValue: windows)
         #if canImport(AppIntents)
         YamiboAppShortcutsProvider.updateAppShortcutParameters()
         #endif
     }
 
     var body: some Scene {
-        WindowGroup {
-            ZStack {
-                RootTabView(appModel: appModel)
-
-                if showsLaunchAnimation {
-                    LaunchAnimationView {
-                        showsLaunchAnimation = false
-                    }
-                    .transition(.opacity)
-                    .zIndex(1)
-                }
-            }
+        WindowGroup(for: YamiboWindowRequest.self) { request in
+            YamiboAppWindow(windows: windows, initialTab: initialTab, request: request.wrappedValue)
         }
     }
 
@@ -94,7 +84,7 @@ struct YamiboXApp: App {
 #if os(iOS)
 private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     static var appContext: YamiboAppContext?
-    static var appModel: YamiboAppModel?
+    static var windows: YamiboWindowCoordinator?
 
     func application(
         _ application: UIApplication,
@@ -149,8 +139,8 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
     ) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         let userInfo = response.notification.request.content.userInfo
-        guard let appModel = await MainActor.run(body: { Self.appModel }) else { return }
-        await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, appModel: appModel)
+        guard let windows = await MainActor.run(body: { Self.windows }) else { return }
+        await windows.openNotification(userInfo: userInfo)
     }
 }
 
@@ -161,7 +151,7 @@ private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
     // connection options instead of `performActionFor`.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let shortcutItem = connectionOptions.shortcutItem else { return }
-        Self.handle(shortcutItem)
+        Self.handle(shortcutItem, sceneIdentifier: session.persistentIdentifier)
     }
 
     // Warm launch: the app was already running/suspended.
@@ -170,16 +160,38 @@ private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
         performActionFor shortcutItem: UIApplicationShortcutItem,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        Self.handle(shortcutItem)
+        Self.handle(shortcutItem, sceneIdentifier: windowScene.session.persistentIdentifier)
         completionHandler(true)
     }
 
-    private static func handle(_ shortcutItem: UIApplicationShortcutItem) {
+    func sceneDidDisconnect(_ scene: UIScene) {
+        YamiboAppDelegate.windows?.sceneDidDisconnect(scene.session.persistentIdentifier)
+    }
+
+    private static func handle(_ shortcutItem: UIApplicationShortcutItem, sceneIdentifier: String) {
         guard shortcutItem.type == searchShortcutType else { return }
-        YamiboAppDelegate.appModel?.openForumSearch()
+        YamiboAppDelegate.windows?.openForumSearch(sceneIdentifier: sceneIdentifier)
     }
 }
 #endif
+
+private struct YamiboAppWindow: View {
+    let windows: YamiboWindowCoordinator
+    let initialTab: AppTab
+    let request: YamiboWindowRequest?
+    @State private var showsLaunchAnimation = true
+
+    var body: some View {
+        ZStack {
+            YamiboWindowRootView(coordinator: windows, initialTab: initialTab, request: request)
+            if showsLaunchAnimation {
+                LaunchAnimationView { showsLaunchAnimation = false }
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+    }
+}
 
 private struct LaunchAnimationView: View {
     let onCompletion: () -> Void

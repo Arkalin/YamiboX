@@ -76,6 +76,7 @@ struct ForumBoardView: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .accessibilityLabel(L10n.string("forum.home.search_placeholder"))
+                .keyboardShortcut("f", modifiers: .command)
 
                 Menu {
                     Button(action: onPostThreadTap) {
@@ -257,6 +258,14 @@ private struct ForumBoardContentView: View {
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
+        ForumKeyboardBrowser(threadIDs: threads.map(\.tid), onOpen: { id in
+            if let thread = threads.first(where: { $0.tid == id }) { onThreadTap(thread) }
+        }) {
+            boardContent
+        }
+    }
+
+    private var boardContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 headerOptionsView
@@ -582,6 +591,7 @@ private struct ForumPinnedSectionView: View {
             ForEach(items) { item in
                 ForumPinnedRowView(
                     id: item.id,
+                    threadID: item.threadID,
                     title: item.title,
                     kind: item.kind,
                     onTap: {
@@ -607,7 +617,9 @@ private struct ForumPinnedSectionView: View {
 private struct ForumPinnedRowView: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.selectedForumThreadID) private var selectedThreadID
     let id: String
+    let threadID: String?
     let title: String
     let kind: ForumPinnedItem.Kind
     let onTap: () -> Void
@@ -634,8 +646,18 @@ private struct ForumPinnedRowView: View {
             .forumCardBackground(fill: kind == .announcement ? theme.announcementSurface : theme.pinnedSurface)
         }
         .buttonStyle(.plain)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(theme.accentText, lineWidth: isSelected ? 2 : 0)
+                .allowsHitTesting(false)
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .forumThreadReaderOverrideContextMenu(onSelect: onReaderOverrideTap)
         .accessibilityIdentifier("forum-pinned-row-\(id)")
+    }
+
+    private var isSelected: Bool {
+        threadID != nil && threadID == selectedThreadID
     }
 }
 

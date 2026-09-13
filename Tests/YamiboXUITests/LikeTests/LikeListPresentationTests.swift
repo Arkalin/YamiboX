@@ -4,6 +4,18 @@ import XCTest
 @testable import YamiboXUI
 
 final class LikeListPresentationTests: XCTestCase {
+    func testWorkNavigationTitleUsesCategoryOnIPadAndSelectionCountOnBothLayouts() {
+        for filter in LikeWorkFilter.allCases {
+            XCTAssertEqual(filter.navigationTitle(usesSidebar: true, selectedCount: nil), String(localized: filter.title))
+            XCTAssertEqual(filter.navigationTitle(usesSidebar: false, selectedCount: nil), L10n.string("likes.section_title"))
+            for usesSidebar in [false, true] {
+                for count in [0, 3] {
+                    XCTAssertEqual(filter.navigationTitle(usesSidebar: usesSidebar, selectedCount: count), L10n.string("likes.selected_count", count))
+                }
+            }
+        }
+    }
+
     func testWorkFiltersIntersectSearchWithoutChangingOrder() {
         let novel = LikeWorkKey.novel(threadID: "100")
         let manga = LikeWorkKey.mangaTitle(cleanBookName: "100")

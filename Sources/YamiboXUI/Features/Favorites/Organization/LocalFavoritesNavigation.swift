@@ -10,6 +10,11 @@ enum LocalFavoritesDestination: Hashable {
     case forum(ForumDestination)
 }
 
+enum LocalFavoritesSidebarDestination: Hashable {
+    case category(String)
+    case collection(String)
+}
+
 /// Projects the existing browse/presentation state and forum routes into one
 /// stack. Popping a detail must not discard the collection beneath it.
 @MainActor
@@ -52,5 +57,27 @@ struct LocalFavoritesNavigation {
 
     var binding: Binding<[LocalFavoritesDestination]> {
         Binding(get: { path }, set: { path = $0 })
+    }
+
+    var sidebarDestination: LocalFavoritesSidebarDestination {
+        if let id = organizer.selectedCollectionID {
+            .collection(id)
+        } else {
+            .category(organizer.selectedCategoryID)
+        }
+    }
+
+    func selectSidebarDestination(_ destination: LocalFavoritesSidebarDestination) {
+        guard !organizer.selection.isSelectionMode else { return }
+        switch destination {
+        case let .category(id):
+            guard organizer.categories.contains(where: { $0.id == id }) else { return }
+            path = []
+            organizer.selectedCategoryID = id
+        case let .collection(id):
+            guard organizer.collections.contains(where: { $0.id == id }) else { return }
+            path = []
+            organizer.openCollection(id: id)
+        }
     }
 }

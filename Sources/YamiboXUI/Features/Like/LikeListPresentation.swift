@@ -20,6 +20,21 @@ enum LikeWorkFilter: CaseIterable, Hashable {
         }
     }
 
+    var systemImage: String {
+        switch self {
+        case .all: "heart"
+        case .novel: "book.closed"
+        case .manga: "photo.on.rectangle"
+        }
+    }
+
+    func navigationTitle(usesSidebar: Bool, selectedCount: Int?) -> String {
+        if let selectedCount {
+            return L10n.string("likes.selected_count", selectedCount)
+        }
+        return usesSidebar ? String(localized: title) : L10n.string("likes.section_title")
+    }
+
     func applying(to works: [LikeWorkSummary], titles: [LikeWorkKey: String], searchText: String) -> [LikeWorkSummary] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return works.filter { work in
@@ -59,6 +74,37 @@ enum LikeContentFilter: CaseIterable, Hashable {
     }
 }
 
+struct LikeWorkSidebarCategories: View {
+    var selectedFilter: LikeWorkFilter? = nil
+    var onSelect: ((LikeWorkFilter) -> Void)? = nil
+
+    var body: some View {
+        Section(L10n.resource("likes.filter.work_type")) {
+            ForEach(LikeWorkFilter.allCases, id: \.self) { filter in
+                categoryRow(filter)
+                    .accessibilityIdentifier("likes.category.\(filter)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryRow(_ filter: LikeWorkFilter) -> some View {
+        if let onSelect {
+            Button {
+                onSelect(filter)
+            } label: {
+                Label(filter.title, systemImage: filter.systemImage)
+            }
+            .tag(filter)
+            .sidebarCategorySelection(isSelected: selectedFilter.map { $0 == filter })
+        } else {
+            NavigationLink(value: filter) {
+                Label(filter.title, systemImage: filter.systemImage)
+            }
+        }
+    }
+}
+
 struct LikeWorkFilterBar: View {
     @Binding var selection: LikeWorkFilter
 
@@ -69,6 +115,7 @@ struct LikeWorkFilterBar: View {
             }
         }
         .pickerStyle(.segmented)
+        .accessibilityIdentifier("likes.category.picker")
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.background, ignoresSafeAreaEdges: [])

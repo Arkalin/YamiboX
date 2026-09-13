@@ -135,6 +135,10 @@
 "reader.chapter_comments_filtered_empty" = "暂无可见评论";
 "common.search" = "搜索";
 "common.select" = "选择";
+"forum.no_selection" = "未选择主题";
+"window.open_content" = "在新窗口打开";
+"reader.settings.all_settings" = "完整设置";
+"favorites.sidebar.collections" = "合集";
 "common.select_all" = "全选";
 "common.share" = "分享";
 "common.stop" = "终止";

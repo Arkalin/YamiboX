@@ -18,14 +18,10 @@ public struct MangaReaderView: View {
     @State private var isDismissing = false
     @State private var isChromeVisible = true
     @State private var bottomChromeHeight: CGFloat = 0
-    @State private var isDirectoryPresented = false
-    @State private var isChapterCommentsPresented = false
+    @State private var companionPanel: MangaReaderCompanion?
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var isSettingsPresented = false
     @State private var isCachePresented = false
-    /// Replaced `isLikesPresented`: the reader's likes list is now one segment
-    /// of the 书签与喜欢 panel rather than a panel of its own.
-    @State private var isAnnotationsPresented = false
     /// Remembered for the reader session so reopening returns to the segment
     /// the user last looked at; nil means "not chosen yet".
     @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
@@ -47,9 +43,8 @@ public struct MangaReaderView: View {
     @State private var controlUsesTwoPageSpread = false
     @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
     /// Scene-local window safe-area insets reported by
-    /// `ReaderWindowSafeAreaInsetsProbe`; seeded from the key-window
-    /// backstop for the frames before the reader attaches to its window.
-    @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
+    /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
+    @State private var windowSafeAreaInsets: UIEdgeInsets?
     @State private var readingViewportInsets = MangaReadingViewportInsets()
 
     private let onClose: () -> Void
@@ -95,8 +90,8 @@ public struct MangaReaderView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            let topInset = max(proxy.safeAreaInsets.top, windowSafeAreaInsets.top)
-            let bottomInset = max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets.bottom)
+            let topInset = max(proxy.safeAreaInsets.top, windowSafeAreaInsets?.top ?? proxy.safeAreaInsets.top)
+            let bottomInset = max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets?.bottom ?? proxy.safeAreaInsets.bottom)
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: model.presentation.settings,
                 isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
@@ -148,6 +143,7 @@ public struct MangaReaderView: View {
                 }
             )
             .ignoresSafeArea()
+            .toolbar(.hidden, for: .navigationBar)
             .onChange(of: proxy.size, initial: true) { _, size in
                 readingViewportInsets.update(viewport: size, topInset: topInset)
             }
@@ -201,17 +197,17 @@ public struct MangaReaderView: View {
                         guard model.context.isSmartModeEnabled else { return }
                         if model.annotationSheetContext != nil {
                             initialReaderLibraryTab = .chapters
-                            isAnnotationsPresented = true
+                            companionPanel = .annotations
                         } else {
                             // A directory may become available before a Like
                             // identity does; keep that narrow transition on
                             // the existing directory-only fallback rather than
                             // presenting an empty unified sheet.
-                            isDirectoryPresented = true
+                            companionPanel = .directory
                         }
                     },
                     onShowComments: {
-                        isChapterCommentsPresented = true
+                        companionPanel = .comments
                     },
                     onShowSettings: {
                         isSettingsPresented = true
@@ -227,7 +223,7 @@ public struct MangaReaderView: View {
                         initialReaderLibraryTab = ReaderLibraryPanelTab(
                             annotationSegment: annotationSegmentBinding.wrappedValue
                         )
-                        isAnnotationsPresented = true
+                        companionPanel = .annotations
                     },
                     isBookmarked: model.isCurrentPageBookmarked,
                     annotationCapsule: model.annotationCapsule,
@@ -276,56 +272,23 @@ public struct MangaReaderView: View {
         .transientMessage(model.chapterJumpFeedback) {
             model.chapterJumpErrorMessage = nil
         }
-        .sheet(isPresented: $isDirectoryPresented) {
-            if case let .loaded(loaded) = model.presentation.state {
-                MangaDirectorySheet(
-                    panel: loaded.directoryPanel,
-                    onClearFailure: model.clearDirectoryFailure,
-                    onSortOrderChange: { sortOrder in
-                        var settings = model.presentation.settings
-                        settings.directorySortOrder = sortOrder
-                        model.applySettings(settings)
-                    },
-                    onUpdateDirectory: {
-                        Task { await model.updateDirectoryFromPanel() }
-                    },
-                    onResetDirectory: {
-                        Task { await model.resetDirectory() }
-                    },
-                    onSaveCorrection: { draft in
-                        Task { await model.renameDirectory(with: draft) }
-                    },
-                    onDeleteChapters: { selectedTIDs in
-                        Task { await model.deleteDirectoryChapters(tids: selectedTIDs) }
-                    },
-                    onSelectChapter: { chapter in
-                        isDirectoryPresented = false
-                        Task { await model.jumpToChapter(chapter) }
-                    }
+        .modifier(ReaderCompanionPresentation(isPresented: $companionPanel.isPresented) {
+            if let companionPanel {
+                MangaReaderCompanionPanel(
+                    companion: companionPanel,
+                    context: context,
+                    model: model,
+                    appModel: appModel,
+                    discussionWorkTIDs: discussionWorkTIDs,
+                    annotationSegment: annotationSegmentBinding,
+                    initialTab: initialReaderLibraryTab,
+                    dismissesAfterNavigation: true,
+                    onOpenBookmark: { item in Task { await openBookmark(item) } },
+                    onOpenLikeAnchor: { anchor in Task { await openLikedAnchor(anchor) } },
+                    onDismiss: { self.companionPanel = nil }
                 )
-            } else {
-                MangaDirectoryUnavailableSheet()
             }
-        }
-        .sheet(isPresented: $isChapterCommentsPresented) {
-            ReaderChapterCommentsSheet(
-                target: model.currentChapterCommentTarget,
-                state: model.chapterCommentsState,
-                isLoadingMore: model.isLoadingMoreChapterComments,
-                loadMoreError: model.chapterCommentsLoadMoreError,
-                loadMoreErrorDetails: model.chapterCommentsLoadMoreErrorDetails,
-                refreshError: model.chapterCommentsRefreshError,
-                refreshErrorDetails: model.chapterCommentsRefreshErrorDetails,
-                failureEventID: model.chapterCommentsFailureEventID,
-                clearFailure: model.clearChapterCommentsFailure,
-                loadInitial: model.loadChapterComments(for:),
-                refresh: model.refreshChapterComments(for:),
-                loadNext: model.loadNextChapterCommentsPage,
-                forumDependencies: appModel.appContext.forumDependencies,
-                appModel: appModel,
-                discussionWorkTIDs: discussionWorkTIDs
-            )
-        }
+        })
         .fullScreenCover(item: $forumThreadOverlayItem) { item in
             ForumThreadOverlayScreen(
                 item: item,
@@ -347,99 +310,6 @@ public struct MangaReaderView: View {
                 )
             } else {
                 MangaDirectoryUnavailableSheet()
-            }
-        }
-        .sheet(isPresented: $isAnnotationsPresented) {
-            if let annotationSheetContext = model.annotationSheetContext {
-                NavigationStack {
-                    if context.isSmartModeEnabled {
-                        if case let .loaded(loaded) = model.presentation.state {
-                            ReaderAnnotationPanel(
-                                work: annotationSheetContext.workKey,
-                                workTitle: context.displayTitle,
-                                like: annotationSheetContext.like,
-                                annotationSegment: annotationSegmentBinding,
-                                initialTab: initialReaderLibraryTab,
-                                onOpenBookmark: { item in
-                                    Task { await openBookmark(item) }
-                                },
-                                onOpenLikeAnchor: { anchor in
-                                    isAnnotationsPresented = false
-                                    Task {
-                                        await openLikedAnchor(anchor)
-                                    }
-                                },
-                                onDismiss: { isAnnotationsPresented = false }
-                            ) { isActive, onNavigationStateChange in
-                                MangaDirectorySheet(
-                                    panel: loaded.directoryPanel,
-                                    onClearFailure: model.clearDirectoryFailure,
-                                    onSortOrderChange: { sortOrder in
-                                        var settings = model.presentation.settings
-                                        settings.directorySortOrder = sortOrder
-                                        model.applySettings(settings)
-                                    },
-                                    onUpdateDirectory: {
-                                        Task { await model.updateDirectoryFromPanel() }
-                                    },
-                                    onResetDirectory: {
-                                        Task { await model.resetDirectory() }
-                                    },
-                                    onSaveCorrection: { draft in
-                                        Task { await model.renameDirectory(with: draft) }
-                                    },
-                                    onDeleteChapters: { selectedTIDs in
-                                        Task { await model.deleteDirectoryChapters(tids: selectedTIDs) }
-                                    },
-                                    onSelectChapter: { chapter in
-                                        isAnnotationsPresented = false
-                                        Task { await model.jumpToChapter(chapter) }
-                                    },
-                                    isEmbeddedInReaderPanel: true,
-                                    isActive: isActive,
-                                    onNavigationStateChange: onNavigationStateChange
-                                )
-                            }
-                        } else {
-                            ReaderAnnotationPanel(
-                                work: annotationSheetContext.workKey,
-                                workTitle: context.displayTitle,
-                                like: annotationSheetContext.like,
-                                annotationSegment: annotationSegmentBinding,
-                                initialTab: initialReaderLibraryTab,
-                                onOpenBookmark: { item in
-                                    Task { await openBookmark(item) }
-                                },
-                                onOpenLikeAnchor: { anchor in
-                                    isAnnotationsPresented = false
-                                    Task {
-                                        await openLikedAnchor(anchor)
-                                    }
-                                },
-                                onDismiss: { isAnnotationsPresented = false }
-                            ) { _, _ in
-                                MangaDirectoryUnavailableContent()
-                            }
-                        }
-                    } else {
-                        ReaderAnnotationPanel(
-                            work: annotationSheetContext.workKey,
-                            workTitle: context.displayTitle,
-                            like: annotationSheetContext.like,
-                            annotationSegment: annotationSegmentBinding,
-                            onOpenBookmark: { item in
-                                Task { await openBookmark(item) }
-                            },
-                            onOpenLikeAnchor: { anchor in
-                                isAnnotationsPresented = false
-                                Task {
-                                    await openLikedAnchor(anchor)
-                                }
-                            },
-                            onDismiss: { isAnnotationsPresented = false }
-                        )
-                    }
-                }
             }
         }
         .sheet(item: $noteEditTarget) { item in
@@ -581,11 +451,9 @@ public struct MangaReaderView: View {
             isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
             isPagedReadingMode: model.presentation.settings.readingMode == .paged,
             hasReadableContent: !loaded.pages.isEmpty,
-            hasBlockingOverlay: isDirectoryPresented
-                || isChapterCommentsPresented
+            hasBlockingOverlay: companionPanel != nil
                 || isSettingsPresented
                 || isCachePresented
-                || isAnnotationsPresented
                 || noteEditTarget != nil
                 || forumThreadOverlayItem != nil,
             isDismissing: isDismissing,
@@ -594,15 +462,9 @@ public struct MangaReaderView: View {
     }
 
     private var hasControlBlockingSheet: Bool {
-        // The comments sheet is absent here on purpose: while it is up it
-        // owns the top of the control handler stack, so the reader handler
-        // never fires; every other sheet was opened by touch and stays
-        // touch-only.
-        isDirectoryPresented ||
-            isChapterCommentsPresented ||
+        companionPanel != nil ||
             isSettingsPresented ||
             isCachePresented ||
-            isAnnotationsPresented ||
             noteEditTarget != nil ||
             forumThreadOverlayItem != nil
     }
@@ -630,7 +492,7 @@ public struct MangaReaderView: View {
         case .toggleChrome:
             toggleChrome()
         case .openComments:
-            isChapterCommentsPresented = true
+            companionPanel = .comments
         case let .turnPage(delta):
             hideChromeForControlReading()
             performPageTurn(delta, usesTwoPageSpread: controlUsesTwoPageSpread)
@@ -803,7 +665,7 @@ public struct MangaReaderView: View {
     /// back to presenting a fresh reader when that fails.
     private func openBookmark(_ item: BookmarkItem) async {
         guard case let .manga(anchor) = item.anchor else { return }
-        isAnnotationsPresented = false
+        companionPanel = nil
         if await model.jumpToLikedMangaPage(tid: anchor.chapterTID, localIndex: anchor.pageLocalIndex) {
             return
         }

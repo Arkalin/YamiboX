@@ -11,6 +11,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
     let onOpenBookmark: (BookmarkItem) -> Void
     let onOpenLikeAnchor: (LikeAnchorPayload) -> Void
     let onDismiss: () -> Void
+    let dismissesAfterNavigation: Bool
     private let tabs: [ReaderLibraryPanelTab]
     private let chapterContent: (Bool, @escaping (ReaderAnnotationSegmentNavigationState) -> Void) -> ChapterContent
 
@@ -30,6 +31,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         onOpenBookmark: @escaping (BookmarkItem) -> Void,
         onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
         onDismiss: @escaping () -> Void,
+        dismissesAfterNavigation: Bool = true,
         @ViewBuilder chapterContent: @escaping (
             Bool,
             @escaping (ReaderAnnotationSegmentNavigationState) -> Void
@@ -42,6 +44,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         self.onOpenBookmark = onOpenBookmark
         self.onOpenLikeAnchor = onOpenLikeAnchor
         self.onDismiss = onDismiss
+        self.dismissesAfterNavigation = dismissesAfterNavigation
         self.tabs = ReaderLibraryPanelTab.available(includingChapters: true)
         self.chapterContent = chapterContent
         self._selectedTab = State(initialValue: initialTab)
@@ -116,7 +119,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                     work: work,
                     bookmarkStore: like.bookmarkStore,
                     onOpen: { item in
-                        onDismiss()
+                        if dismissesAfterNavigation { onDismiss() }
                         onOpenBookmark(item)
                     },
                     selectionRequest: bookmarkSelectionRequest,
@@ -147,6 +150,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         // re-adds the title and Select item, which produces a clipped frame.
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .navigationBarBackButtonHidden(activeNavigationState.isSelecting)
         .toolbar {
             if !activeNavigationState.isSelecting {
@@ -179,7 +183,8 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
         annotationSegment: Binding<ReaderAnnotationSegment>,
         onOpenBookmark: @escaping (BookmarkItem) -> Void,
         onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        dismissesAfterNavigation: Bool = true
     ) {
         self.work = work
         self.workTitle = workTitle
@@ -188,6 +193,7 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
         self.onOpenBookmark = onOpenBookmark
         self.onOpenLikeAnchor = onOpenLikeAnchor
         self.onDismiss = onDismiss
+        self.dismissesAfterNavigation = dismissesAfterNavigation
         self.tabs = ReaderLibraryPanelTab.available(includingChapters: false)
         self.chapterContent = { _, _ in EmptyView() }
         self._selectedTab = State(

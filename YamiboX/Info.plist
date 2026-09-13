@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.arkalin.YamiboX.mangaOfflineCache.continuedProcessing.*</string>
+		<string>com.arkalin.YamiboX.favoriteUpdates.refresh</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -29,31 +34,26 @@
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>用于将漫画图片保存到系统相册。</string>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+	</dict>
+	<key>UIApplicationShortcutItems</key>
 	<array>
-		<string>com.arkalin.YamiboX.mangaOfflineCache.continuedProcessing.*</string>
-		<string>com.arkalin.YamiboX.favoriteUpdates.refresh</string>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>magnifyingglass</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>搜索</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.arkalin.YamiboX.search</string>
+		</dict>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
 		<string>fetch</string>
-	</array>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-	</dict>
-	<key>UIApplicationShortcutItems</key>
-	<array>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.arkalin.YamiboX.search</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>搜索</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>magnifyingglass</string>
-		</dict>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

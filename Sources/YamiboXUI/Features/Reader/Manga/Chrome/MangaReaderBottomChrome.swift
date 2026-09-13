@@ -81,7 +81,6 @@ struct MangaReaderBottomChrome: View {
                         colorScheme: colorScheme,
                         originalPostTitle: L10n.string("reader.open_original_post"),
                         commentsTitle: L10n.string("reader.comments"),
-                        settingsTitle: L10n.string("settings.title"),
                         bookmarkTitle: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
                         bookmarkSystemName: isBookmarked ? "bookmark.fill" : "bookmark",
                         cacheTitle: L10n.string("reader.cache"),
@@ -399,7 +398,6 @@ private struct MangaReaderStaticActionControls: View {
     let colorScheme: ColorScheme
     let originalPostTitle: String
     let commentsTitle: String
-    let settingsTitle: String
     let bookmarkTitle: String
     let bookmarkSystemName: String
     let cacheTitle: String
@@ -421,7 +419,7 @@ private struct MangaReaderStaticActionControls: View {
         .readerChromeRowVisibility(isVisible, index: capsuleCount - 2, count: capsuleCount + 1)
 
         ReaderChromeCapsuleButton(
-            title: settingsTitle,
+            title: L10n.string("settings.title"),
             systemName: "gearshape",
             action: onShowSettings
         )

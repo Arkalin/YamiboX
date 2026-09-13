@@ -3,32 +3,12 @@ import SwiftUI
 #if os(iOS)
 import UIKit
 
-/// Window-level metrics shared by both reader shells — previously verbatim
-/// per-reader copies that had to be kept in sync by hand.
-enum ReaderShellMetrics {
-    /// Safe-area insets of the key window. Backstop only: it seeds the
-    /// shells' inset state for the frames before
-    /// `ReaderWindowSafeAreaInsetsProbe` has a window to read from. Being a
-    /// key-window scan it can pick the wrong window under Split View /
-    /// Stage Manager, which is why the probe's scene-local value replaces
-    /// it as soon as the reader is attached.
-    @MainActor
-    static var windowSafeAreaInsets: UIEdgeInsets {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets ?? .zero
-    }
-}
-
 /// Reports the safe-area insets of the window this view actually lives in —
-/// scene-correct under Split View / Stage Manager, unlike the key-window
-/// scan above. The reader shells sit behind `.ignoresSafeArea()`, so their
-/// own GeometryProxy insets read zero and the window is the only honest
-/// source; this probe replaces reaching for a global to find one.
+/// scene-correct under Split View / Stage Manager. The reader shells can
+/// ignore safe areas, so their own GeometryProxy insets may read zero.
+/// Nil means the probe has not attached to a window or has detached.
 struct ReaderWindowSafeAreaInsetsProbe: UIViewRepresentable {
-    @Binding var insets: UIEdgeInsets
+    @Binding var insets: UIEdgeInsets?
 
     func makeUIView(context: Context) -> ProbeView {
         let view = ProbeView()
@@ -49,8 +29,10 @@ struct ReaderWindowSafeAreaInsetsProbe: UIViewRepresentable {
     }
 
     final class ProbeView: UIView {
-        var onChange: ((UIEdgeInsets) -> Void)?
+        var onChange: ((UIEdgeInsets?) -> Void)?
         private var lastReported: UIEdgeInsets?
+        private weak var lastWindow: UIWindow?
+        private var reportGeneration = 0
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -68,15 +50,21 @@ struct ReaderWindowSafeAreaInsetsProbe: UIViewRepresentable {
         }
 
         private func report() {
-            guard let window else { return }
-            let insets = window.safeAreaInsets
-            guard insets != lastReported else { return }
+            let sampledWindow = window
+            let insets = sampledWindow?.safeAreaInsets
+            guard sampledWindow !== lastWindow || insets != lastReported else { return }
+            lastWindow = sampledWindow
             lastReported = insets
+            reportGeneration &+= 1
+            let generation = reportGeneration
             // Defer past the current layout pass — `layoutSubviews` runs
             // inside SwiftUI's render transaction, where writing @State
             // would be a state-update-during-view-update.
-            DispatchQueue.main.async { [weak self] in
-                self?.onChange?(insets)
+            DispatchQueue.main.async { [weak self, weak sampledWindow] in
+                guard let self,
+                      self.window === sampledWindow,
+                      self.reportGeneration == generation else { return }
+                self.onChange?(insets)
             }
         }
     }

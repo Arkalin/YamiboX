@@ -30,6 +30,9 @@ struct LocalFavoriteCollectionRow: View {
             rowContent
         }
         .buttonStyle(.plain)
+        .modifier(LocalFavoriteKeyboardActivation {
+            if isSelectionMode { onToggleSelection() } else { onOpen() }
+        })
         .contextMenu {
             if !isSelectionMode {
                 LocalFavoriteCollectionContextMenu(
@@ -126,6 +129,9 @@ struct LocalFavoriteCollectionGridCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(PressableCardStyle())
+        .modifier(LocalFavoriteKeyboardActivation {
+            if isSelectionMode { onToggleSelection() } else { onOpen() }
+        })
         .contextMenu {
             if !isSelectionMode {
                 LocalFavoriteCollectionContextMenu(

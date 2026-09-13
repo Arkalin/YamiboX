@@ -69,9 +69,15 @@ public final class YamiboAppModel {
     public let peripheralInput: ReaderPeripheralInputManager
     public let webSessionCoordinator: ForumWebSessionCoordinator
     public private(set) var accountGeneration = UUID()
+    public let windowID: String?
+    public var ownsWebSessionPresentation: Bool {
+        guard let windowCoordinator, let windowID else { return true }
+        return windowCoordinator.presentationWindowID == windowID
+    }
 
     @ObservationIgnored private let appContinuity: AppContinuityWorkflow
-    @ObservationIgnored private let runtime: AppRuntimeCoordinator
+    @ObservationIgnored private let runtime: AppRuntimeCoordinator?
+    @ObservationIgnored private weak var windowCoordinator: YamiboWindowCoordinator?
     @ObservationIgnored private var settingsObservationTask: Task<Void, Never>?
     private weak var currentReaderSession: ReaderSession?
 
@@ -80,7 +86,10 @@ public final class YamiboAppModel {
         initialTab: AppTab = .forum,
         webSessionCoordinator: ForumWebSessionCoordinator? = nil,
         imagePipeline: YamiboUIImagePipeline? = nil,
-        mangaReaderOpenValidator: MangaReaderOpenValidator? = nil
+        mangaReaderOpenValidator: MangaReaderOpenValidator? = nil,
+        windowCoordinator: YamiboWindowCoordinator? = nil,
+        windowID: String? = nil,
+        readerResumeRouteStore: ReaderResumeRouteStore? = nil
     ) {
         self.appContext = appContext
         self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
@@ -89,10 +98,19 @@ public final class YamiboAppModel {
             return try await loader.loadReaderProjection(request)
         }
         selectedTab = initialTab
-        let continuity = AppContinuityWorkflow(appContext: appContext)
+        self.windowCoordinator = windowCoordinator
+        self.windowID = windowID
+        let continuity = AppContinuityWorkflow(appContext: appContext, readerResumeRouteStore: readerResumeRouteStore)
         appContinuity = continuity
-        runtime = appContext.makeRuntimeCoordinator(continuity: continuity)
-        peripheralInput = ReaderPeripheralInputManager(settingsStore: appContext.settingsStore)
+        runtime = windowCoordinator == nil ? appContext.makeRuntimeCoordinator(continuity: continuity) : nil
+        peripheralInput = ReaderPeripheralInputManager(
+            settingsStore: appContext.settingsStore,
+            usesWindowKeyboardEvents: windowCoordinator != nil,
+            acceptsInput: { [weak windowCoordinator] in
+                guard let windowID else { return true }
+                return windowCoordinator?.acceptsPeripheralInput(windowID: windowID) == true
+            }
+        )
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
             sessionStore: appContext.forumDependencies.sessionStore
         )
@@ -106,15 +124,18 @@ public final class YamiboAppModel {
 
     /// Called once by the app entry point, not by a view's task or appearance.
     public func startRuntime() {
-        runtime.start()
+        if let windowCoordinator { windowCoordinator.startRuntime() } else { runtime?.start() }
     }
 
     func stopRuntime() {
-        runtime.stop()
+        runtime?.stop()
     }
 
     @discardableResult
     func scenePhaseDidChange(_ phase: ScenePhase) -> Bool {
+        if let windowCoordinator, let windowID {
+            return windowCoordinator.scenePhaseDidChange(phase, windowID: windowID)
+        }
         let runtimePhase: AppRuntimePhase
         switch phase {
         case .active: runtimePhase = .active
@@ -122,7 +143,7 @@ public final class YamiboAppModel {
         case .background: runtimePhase = .background
         @unknown default: return false
         }
-        guard runtime.transition(to: runtimePhase) else { return false }
+        guard runtime?.transition(to: runtimePhase) == true else { return false }
         webSessionCoordinator.setAppIsActive(phase == .active)
 #if os(iOS) && canImport(BackgroundTasks)
         if phase == .background {
@@ -134,22 +155,37 @@ public final class YamiboAppModel {
 
     public func bootstrapIfNeeded() async {
         guard bootstrapState == nil, !isBootstrapping else { return }
+        let generation = accountGeneration
         isBootstrapping = true
         defer {
             isBootstrapping = false
             bootstrapPhase = nil
         }
 
-        await configureAccountTransitions()
-
-        let result = await appContinuity.launchIfNeeded(
-            canRestoreReaderRoute: canRestoreReaderRoute,
-            onProgress: updateBootstrapPhase
-        )
-        appThemePreset = result.bootstrapState.settings.appearance.themePreset
-        bootstrapState = result.bootstrapState
+        let result: AppContinuityLaunchResult
+        if let windowCoordinator {
+            let shared = await windowCoordinator.bootstrap(onProgress: updateBootstrapPhase)
+            let route = await appContinuity.restoreExplicitly(
+                canRestoreReaderRoute: canRestoreReaderRoute,
+                onProgress: updateBootstrapPhase
+            )
+            let legacyRoute = windowCoordinator.claimLegacyResumeRoute(windowID: windowID)
+            result = AppContinuityLaunchResult(
+                bootstrapState: shared.bootstrapState,
+                restoredRoute: route ?? legacyRoute
+            )
+        } else {
+            await configureAccountTransitions()
+            result = await appContinuity.launchIfNeeded(
+                canRestoreReaderRoute: canRestoreReaderRoute,
+                onProgress: updateBootstrapPhase
+            )
+        }
+        let state = generation == accountGeneration ? result.bootstrapState : await appContext.bootstrap()
+        appThemePreset = state.settings.appearance.themePreset
+        bootstrapState = state
         bootstrapErrorMessage = nil
-        applyRestoredRoute(result.restoredRoute)
+        if generation == accountGeneration { applyRestoredRoute(result.restoredRoute) }
     }
 
     private func configureAccountTransitions() async {
@@ -172,19 +208,26 @@ public final class YamiboAppModel {
                 await IOSForumWebView.Coordinator.finishAccountChange(session, sessionStore: appContext.accountDependencies.sessionStore)
             },
             publish: { [weak self] in
-                guard let self else { return }
-                suspendedNovelContext = nil
-                suspendedMangaContext = nil
-                forumNavigationRequest = nil
-                forumSearchRequest = nil
-                forumContentRefresh.reset()
-                dismissPresentedReaderSession()
-                accountGeneration = UUID()
+                self?.publishAccountChange()
             }
         )
     }
 
+    func publishAccountChange() {
+        cancelMangaReaderOpen()
+        suspendedNovelContext = nil
+        suspendedMangaContext = nil
+        forumNavigationRequest = nil
+        forumSearchRequest = nil
+        clipboardForumLinkPrompt = nil
+        forumContentRefresh.reset()
+        (currentReaderSession ?? presentedReaderSession)?.close()
+        appContinuity.readerRouteDismissed()
+        accountGeneration = UUID()
+    }
+
     public func bootstrap() async {
+        let generation = accountGeneration
         isBootstrapping = true
         defer {
             isBootstrapping = false
@@ -199,7 +242,7 @@ public final class YamiboAppModel {
             canRestoreReaderRoute: canRestoreReaderRoute,
             onProgress: updateBootstrapPhase
         )
-        applyRestoredRoute(restoredRoute)
+        if generation == accountGeneration { applyRestoredRoute(restoredRoute) }
     }
 
     private func updateBootstrapPhase(_ phase: AppBootstrapPhase) async {
@@ -207,7 +250,7 @@ public final class YamiboAppModel {
     }
 
     public func synchronizeWebDAVIfNeeded() {
-        appContinuity.foregroundBecameActive()
+        synchronization.foregroundBecameActive()
     }
 
     public var hasActiveReaderPresentation: Bool {
@@ -215,15 +258,19 @@ public final class YamiboAppModel {
     }
 
     public func scheduleWebDAVUploadForLocalChange(touchesAppSettings: Bool = false) {
-        appContinuity.localDataChanged(touchesAppSettings: touchesAppSettings)
+        synchronization.localDataChanged(touchesAppSettings: touchesAppSettings)
     }
 
     public func scheduleWebDAVUploadForReadingProgressChange() {
-        appContinuity.localDataChanged()
+        synchronization.localDataChanged()
     }
 
     public func flushWebDAVSyncBeforeBackground() {
-        appContinuity.willEnterBackground()
+        synchronization.willEnterBackground()
+    }
+
+    private var synchronization: AppContinuityWorkflow {
+        windowCoordinator?.synchronization ?? appContinuity
     }
 
     public func refreshAppAppearanceSettings() async {
@@ -321,7 +368,13 @@ public final class YamiboAppModel {
         mangaProjection: MangaReaderProjection? = nil,
         bookOpeningTransition: BookOpeningTransition? = nil
     ) {
-        if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
+        let activeFullScreenSession = currentReaderSession.flatMap {
+            $0.presentation == .fullScreen ? $0 : nil
+        }
+        if currentReaderSession?.presentation == .embeddedThread {
+            currentReaderSession?.prepareForContentPresentation()
+        }
+        if let session = presentedReaderSession ?? activeFullScreenSession, !session.isClosed {
             session.present(content, mangaProjection: mangaProjection)
         } else {
             let session = makeReaderSession(content: content, bookOpeningTransition: bookOpeningTransition)
@@ -333,7 +386,8 @@ public final class YamiboAppModel {
 
     func makeReaderSession(
         content: ReaderSessionContent,
-        bookOpeningTransition: BookOpeningTransition? = nil
+        bookOpeningTransition: BookOpeningTransition? = nil,
+        presentation: ReaderSessionPresentation = .fullScreen
     ) -> ReaderSession {
         ReaderSession(
             content: content,
@@ -349,13 +403,19 @@ public final class YamiboAppModel {
                     self?.updateReaderSessionResumeRoute(route, session: session)
                 },
                 didDeactivate: { [weak self] session in self?.deactivateReaderSession(session) },
-                didClose: { [weak self] session in self?.finishReaderSession(session) }
+                didClose: { [weak self] session in self?.finishReaderSession(session) },
+                didRequestFullScreen: { [weak self] session, content, projection in
+                    guard let self, self.currentReaderSession === session else { return }
+                    self.presentReaderContent(content, mangaProjection: projection)
+                }
             ),
-            bookOpeningTransition: bookOpeningTransition
+            bookOpeningTransition: bookOpeningTransition,
+            presentation: presentation
         )
     }
 
     private func activateReaderSession(_ session: ReaderSession, previousRoute: ReaderResumeRoute?) {
+        if session.presentation == .embeddedThread, presentedReaderSession != nil { return }
         let hadReader = currentReaderSession?.resumeRoute != nil ||
             (currentReaderSession === session && previousRoute != nil)
         currentReaderSession = session
@@ -438,6 +498,7 @@ public final class YamiboAppModel {
 
     public func openForumURL(_ url: URL) {
         cancelMangaReaderOpen()
+        appContinuity.readerRouteDismissed()
         if activeNovelContext != nil {
             dismissNovelReader(openThreadInForum: url, forumNavigationSource: .external)
             return
@@ -460,6 +521,7 @@ public final class YamiboAppModel {
 
     public func openForumSearch() {
         cancelMangaReaderOpen()
+        appContinuity.readerRouteDismissed()
         if activeNovelContext != nil {
             dismissNovelReader()
         } else if activeMangaContext != nil {
@@ -489,7 +551,7 @@ public final class YamiboAppModel {
     }
 
     private var canRestoreReaderRoute: Bool {
-        !hasActiveReaderPresentation
+        !hasActiveReaderPresentation && forumNavigationRequest == nil && forumSearchRequest == nil
     }
 
     private func applyRestoredRoute(_ route: ReaderResumeRoute?) {

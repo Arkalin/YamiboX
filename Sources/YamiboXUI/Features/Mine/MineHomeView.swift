@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 public struct MineHomeView: View {
@@ -36,6 +37,45 @@ public struct MineHomeView: View {
     }
 
     public var body: some View {
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                MineSidebarView(
+                    viewModel: viewModel, navigator: navigator, appModel: appModel,
+                    settingsDependencies: settingsDependencies, likeDependencies: likeDependencies,
+                    messageUnreadWorkflow: messageUnreadWorkflow,
+                    showLogin: { showingLoginSheet = true }, checkIn: checkIn,
+                    onSignOut: signOut
+                )
+            } else {
+                mineNavigation
+            }
+        }
+        .task { await viewModel.load() }
+        .task {
+            for await _ in sessionStore.changes() {
+                guard !Task.isCancelled else { return }
+                await viewModel.reloadAccountSnapshot()
+            }
+        }
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: errorIsPresented
+        ) {
+            Button(L10n.string("common.ok")) { clearErrorMessages() }
+        }
+        .transientMessage(viewModel.checkInResultMessage) {
+            viewModel.checkInResultMessage = nil
+        }
+        .sheet(isPresented: $showingLoginSheet) {
+            MineLoginSheet(viewModel: viewModel, sessionStore: sessionStore, appModel: appModel) {
+                showingLoginSheet = false
+            }
+        }
+    }
+
+    private var mineNavigation: some View {
         ForumDestinationStackView(navigator: navigator) {
             List {
                 if viewModel.isLoggedIn {
@@ -60,15 +100,7 @@ public struct MineHomeView: View {
                     isCheckingIn: viewModel.isCheckingIn,
                     hasCheckedInToday: viewModel.hasCheckedInToday,
                     isInteractionDisabled: viewModel.isBusy,
-                    checkIn: {
-                        if viewModel.isLoggedIn {
-                            Task {
-                                await viewModel.checkIn()
-                            }
-                        } else {
-                            showingLoginSheet = true
-                        }
-                    }
+                    checkIn: checkIn
                 )
                 MineLibraryEntriesSection(
                     offlineCacheQueueCount: viewModel.offlineQueue.entryCount,
@@ -97,63 +129,15 @@ public struct MineHomeView: View {
                 )
             }
             .listStyle(.insetGrouped)
+            .messageUnreadTabAccessibility(count: messageUnreadWorkflow?.totalCount ?? 0)
             .navigationTitle(L10n.string("tab.mine"))
             .yamiboInlineNavigationTitleDisplayMode()
             .refreshable {
                 await viewModel.refreshProfile()
                 await messageUnreadWorkflow?.refresh(force: true)
             }
-            .task {
-                await viewModel.load()
-            }
-            .task {
-                for await _ in sessionStore.changes() {
-                    guard !Task.isCancelled else { return }
-                    await viewModel.reloadAccountSnapshot()
-                }
-            }
-            .failureAlert(
-                L10n.string("common.operation_failed"),
-                message: viewModel.errorMessage,
-                details: viewModel.errorDetails,
-                isPresented: errorIsPresented
-            ) {
-                Button(L10n.string("common.ok")) {
-                    clearErrorMessages()
-                }
-            }
-            .transientMessage(viewModel.checkInResultMessage) {
-                viewModel.checkInResultMessage = nil
-            }
-            .sheet(isPresented: $showingLoginSheet) {
-                MineLoginSheet(
-                    viewModel: viewModel,
-                    sessionStore: sessionStore,
-                    appModel: appModel
-                ) {
-                    showingLoginSheet = false
-                }
-            }
             .navigationDestination(isPresented: $isSettingsPushed) {
-                SettingsHomeView(
-                    dependencies: settingsDependencies,
-                    peripheralInput: appModel.peripheralInput,
-                    onSignOut: {
-                        await viewModel.signOut()
-                        let details = viewModel.errorMessage.map {
-                            viewModel.errorDetails ?? LoadFailureDetails(message: $0)
-                        }
-                        viewModel.errorMessage = nil
-                        return details
-                    },
-                    onApplicationReset: {
-                        await appModel.bootstrap()
-                    },
-                    onClose: {
-                        isSettingsPushed = false
-                    },
-                    accountSwitcher: appModel.appContext.accountSwitcher
-                )
+                settingsScreen
             }
             .navigationDestination(isPresented: $isOfflineCacheQueuePushed) {
                 OfflineCacheQueueScreen(viewModel: viewModel.offlineQueue)
@@ -174,6 +158,38 @@ public struct MineHomeView: View {
                 )
             }
         }
+    }
+
+    private var settingsScreen: some View {
+        SettingsHomeView(
+            dependencies: settingsDependencies,
+            peripheralInput: appModel.peripheralInput,
+            onSignOut: signOut,
+            onApplicationReset: {
+                await appModel.bootstrap()
+            },
+            onClose: {
+                isSettingsPushed = false
+            },
+            accountSwitcher: appModel.appContext.accountSwitcher
+        )
+    }
+
+    private func checkIn() {
+        if viewModel.isLoggedIn {
+            Task { await viewModel.checkIn() }
+        } else {
+            showingLoginSheet = true
+        }
+    }
+
+    private func signOut() async -> LoadFailureDetails? {
+        await viewModel.signOut()
+        let details = viewModel.errorMessage.map {
+            viewModel.errorDetails ?? LoadFailureDetails(message: $0)
+        }
+        viewModel.errorMessage = nil
+        return details
     }
 
     private var errorIsPresented: Binding<Bool> {

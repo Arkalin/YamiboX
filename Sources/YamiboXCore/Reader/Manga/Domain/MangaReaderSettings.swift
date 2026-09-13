@@ -70,6 +70,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
     public var pageEdgeFillStyle: MangaPageEdgeFillStyle
     public var brightness: Double
     public var zoomEnabled: Bool
+    /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var ignoresTopSafeArea: Bool
     public var directorySortOrder: MangaDirectorySortOrder
@@ -82,7 +83,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         pageEdgeFillStyle: MangaPageEdgeFillStyle = .black,
         brightness: Double = 1,
         zoomEnabled: Bool = true,
-        showsTwoPagesInLandscapeOnPad: Bool = false,
+        showsTwoPagesInLandscapeOnPad: Bool = true,
         ignoresTopSafeArea: Bool = true,
         directorySortOrder: MangaDirectorySortOrder = .ascending
     ) {

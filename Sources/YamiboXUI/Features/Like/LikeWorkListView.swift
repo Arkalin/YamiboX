@@ -1,19 +1,22 @@
 import SwiftUI
 import YamiboXCore
 
-/// First-level Like list: one row per liked work, pushed from Mine.
+/// First-level Like list: one row per liked work.
 struct LikeWorkListView: View {
     let likeDependencies: LikeDependencies
     let contentCoverStore: ContentCoverStore
     let favoriteLibraryStore: FavoriteLibraryStore
     let settingsStore: SettingsStore
     let appModel: YamiboAppModel
+    var onClose: (() -> Void)? = nil
+    var categorySelection: Binding<LikeWorkFilter>? = nil
+    var onSelectionModeChange: (Bool) -> Void = { _ in }
 
     @State private var summaries: [LikeWorkSummary] = []
     @State private var titlesByWorkKey: [LikeWorkKey: String] = [:]
     @State private var coverURLsByWorkKey: [LikeWorkKey: URL] = [:]
     @State private var searchText = ""
-    @State private var filter = LikeWorkFilter.all
+    @State private var localFilter = LikeWorkFilter.all
     @State private var hasLoaded = false
     @State private var loadGeneration = 0
     @State private var pushedWorkKey: LikeWorkKey?
@@ -26,121 +29,136 @@ struct LikeWorkListView: View {
         filter.applying(to: summaries, titles: titlesByWorkKey, searchText: searchText)
     }
 
+    private var filter: LikeWorkFilter {
+        filterBinding.wrappedValue
+    }
+
+    private var filterBinding: Binding<LikeWorkFilter> {
+        categorySelection ?? $localFilter
+    }
+
     var body: some View {
-        List(filteredSummaries, id: \.workKey) { summary in
-            Button {
-                if isSelecting {
-                    toggleSelection(summary.workKey)
-                } else {
-                    pushedWorkKey = summary.workKey
-                }
-            } label: {
-                LikeWorkRow(
-                    title: title(for: summary.workKey),
-                    coverURL: coverURLsByWorkKey[summary.workKey],
-                    kind: summary.workKey.kind,
-                    itemCount: summary.itemCount,
-                    lastLikedAt: summary.lastLikedAt,
-                    isSelecting: isSelecting,
-                    isSelected: selectedWorkKeys.contains(summary.workKey)
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("like.work.\(summary.workKey.kind.rawValue).\(summary.workKey.id)")
-            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-            .listRowSeparator(.visible, edges: .bottom)
-            .listRowBackground(Color.clear)
-        }
-        .listStyle(.plain)
-        .contentMargins(.top, 0, for: .scrollContent)
-        // Kept permanently mounted rather than swapped for an empty-state
-        // view — see the matching comment in LikeWorkItemsView.body for why
-        // that swap makes `.searchable`'s search bar ghost during a push.
-        .overlay {
-            if !hasLoaded {
-                ProgressView()
-            } else if summaries.isEmpty {
-                ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
-            } else if filteredSummaries.isEmpty {
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView {
-                        Label { Text(filter.emptyTitle) } icon: { Image(systemName: "heart") }
+        LibraryPageNavigation(
+            ownsNavigation: categorySelection == nil,
+            isCloseEnabled: !isSelecting,
+            onClose: onClose
+        ) {
+            List(filteredSummaries, id: \.workKey) { summary in
+                Button {
+                    if isSelecting {
+                        toggleSelection(summary.workKey)
+                    } else {
+                        pushedWorkKey = summary.workKey
                     }
-                } else {
-                    ContentUnavailableView.search(text: searchText)
-                }
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            LikeWorkFilterBar(selection: $filter)
-        }
-        .navigationTitle(
-            isSelecting
-                ? L10n.string("likes.selected_count", selectedWorkKeys.count)
-                : L10n.string("likes.section_title")
-        )
-        .navigationBarBackButtonHidden(isSelecting)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: L10n.string("likes.search_works_placeholder")
-        )
-        .toolbar {
-            if isSelecting {
-                ToolbarItem(placement: .cancellationAction) {
-                    SelectAllToolbarButton(
-                        isSelectionComplete: isAllVisibleSelected,
-                        isDisabled: filteredSummaries.isEmpty,
-                        toggle: toggleSelectAll
+                } label: {
+                    LikeWorkRow(
+                        title: title(for: summary.workKey),
+                        coverURL: coverURLsByWorkKey[summary.workKey],
+                        kind: summary.workKey.kind,
+                        itemCount: summary.itemCount,
+                        lastLikedAt: summary.lastLikedAt,
+                        isSelecting: isSelecting,
+                        isSelected: selectedWorkKeys.contains(summary.workKey)
                     )
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(L10n.string("common.done")) {
-                        setSelecting(false)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("like.work.\(summary.workKey.kind.rawValue).\(summary.workKey.id)")
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                .listRowSeparator(.visible, edges: .bottom)
+                .listRowBackground(Color.clear)
+            }
+            .listStyle(.plain)
+            .contentMargins(.top, 0, for: .scrollContent)
+            // Kept permanently mounted rather than swapped for an empty-state
+            // view — see the matching comment in LikeWorkItemsView.body for why
+            // that swap makes `.searchable`'s search bar ghost during a push.
+            .overlay {
+                if !hasLoaded {
+                    ProgressView()
+                } else if summaries.isEmpty {
+                    ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
+                } else if filteredSummaries.isEmpty {
+                    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView {
+                            Label { Text(filter.emptyTitle) } icon: { Image(systemName: "heart") }
+                        }
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
                     }
-                    .fontWeight(.semibold)
                 }
-                if usesSystemSelectionBottomToolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        SelectionBottomToolbar(
-                            actions: LikeSelectionActions.delete(selectedCount: selectedWorkKeys.count) {
-                                isShowingDeleteConfirmation = true
-                            }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                LikeWorkFilterBar(selection: filterBinding)
+                    .disabled(isSelecting && (categorySelection != nil || UIDevice.current.userInterfaceIdiom == .pad))
+            }
+            .navigationTitle(
+                filter.navigationTitle(
+                    usesSidebar: false,
+                    selectedCount: isSelecting ? selectedWorkKeys.count : nil
+                )
+            )
+            .navigationBarBackButtonHidden(isSelecting)
+            .searchable(
+                text: $searchText,
+                prompt: L10n.string("likes.search_works_placeholder")
+            )
+            .toolbar {
+                if isSelecting {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SelectAllToolbarButton(
+                            isSelectionComplete: isAllVisibleSelected,
+                            isDisabled: filteredSummaries.isEmpty,
+                            toggle: toggleSelectAll
                         )
                     }
-                }
-            } else {
-                ToolbarItem(placement: .primaryAction) {
-                    if !filteredSummaries.isEmpty {
-                        Button {
-                            setSelecting(true)
-                        } label: {
-                            Image(systemName: "checklist")
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(L10n.string("common.done")) {
+                            setSelecting(false)
                         }
-                        .accessibilityLabel(L10n.string("common.select"))
+                        .fontWeight(.semibold)
+                    }
+                    if usesSystemSelectionBottomToolbar {
+                        ToolbarItem(placement: .bottomBar) {
+                            SelectionBottomToolbar(
+                                actions: LikeSelectionActions.delete(selectedCount: selectedWorkKeys.count) {
+                                    isShowingDeleteConfirmation = true
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .primaryAction) {
+                        if !filteredSummaries.isEmpty {
+                            Button {
+                                setSelecting(true)
+                            } label: {
+                                Image(systemName: "checklist")
+                            }
+                            .accessibilityLabel(L10n.string("common.select"))
+                        }
                     }
                 }
             }
-        }
-        .toolbar(isSelecting ? .hidden : .automatic, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if isSelecting && !usesSystemSelectionBottomToolbar {
-                SelectionBottomToolbar(
-                    actions: LikeSelectionActions.delete(selectedCount: selectedWorkKeys.count) {
-                        isShowingDeleteConfirmation = true
-                    }
-                )
-                .selectionBottomToolbarCapsule()
+            .toolbar(isSelecting && categorySelection == nil ? .hidden : .automatic, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isSelecting && !usesSystemSelectionBottomToolbar {
+                    SelectionBottomToolbar(
+                        actions: LikeSelectionActions.delete(selectedCount: selectedWorkKeys.count) {
+                            isShowingDeleteConfirmation = true
+                        }
+                    )
+                    .selectionBottomToolbarCapsule()
+                }
             }
-        }
-        .navigationDestination(item: $pushedWorkKey) { workKey in
-            LikeWorkItemsView(
-                work: workKey,
-                workTitle: title(for: workKey),
-                like: likeDependencies,
-                onOpenAnchor: { anchor in openAnchor(anchor, work: workKey) },
-                onDismiss: nil
-            )
+            .navigationDestination(item: $pushedWorkKey) { workKey in
+                LikeWorkItemsView(
+                    work: workKey,
+                    workTitle: title(for: workKey),
+                    like: likeDependencies,
+                    onOpenAnchor: { anchor in openAnchor(anchor, work: workKey) },
+                    onDismiss: nil
+                )
+            }
         }
         .task { await load() }
         // Appearance-scoped `.task` replacing the removed `.onReceive`
@@ -166,7 +184,18 @@ struct LikeWorkListView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedWorkKeys)
-        .onChange(of: filter) { _, _ in selectedWorkKeys.removeAll() }
+        .onAppear { onSelectionModeChange(isSelecting) }
+        .onChange(of: isSelecting) { _, selecting in
+            onSelectionModeChange(selecting)
+        }
+        .onDisappear {
+            onSelectionModeChange(false)
+        }
+        .onChange(of: filter) { _, _ in
+            setSelecting(false)
+            isShowingDeleteConfirmation = false
+            pushedWorkKey = nil
+        }
         .onChange(of: searchText) { _, _ in selectedWorkKeys.removeAll() }
         .onChange(of: filteredSummaries.map(\.workKey)) { _, visibleKeys in
             selectedWorkKeys.formIntersection(visibleKeys)

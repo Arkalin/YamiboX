@@ -11,6 +11,7 @@ import YamiboXCore
 /// otherwise the enclosing stack's spacing would still open a gap on both
 /// sides of it.
 struct LocalFavoriteBrowseChrome: View {
+    @Environment(\.favoritesUsesSidebar) private var usesSidebar
     let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
     let cardsCount: Int
@@ -23,7 +24,7 @@ struct LocalFavoriteBrowseChrome: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if showsCategoryTabBar {
+            if showsCategoryTabBar && !usesSidebar {
                 LocalFavoriteCategoryTabBar(organizer: organizer, routes: routes)
             }
             if organizer.filter.hasActiveFilters {

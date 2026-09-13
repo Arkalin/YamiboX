@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumThreadReaderBodyView: View {
     @Environment(\.forumTheme) private var theme
+    @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 700
     @Namespace private var imageBrowserZoomNamespace
     @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
     @State private var ratingResultsRequest: ForumThreadRatingResultsRequest?
@@ -134,6 +135,8 @@ struct ForumThreadReaderBodyView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+                .frame(maxWidth: readableWidth + 32)
+                .frame(maxWidth: .infinity)
             }
             .id(currentPage)
             .refreshable {

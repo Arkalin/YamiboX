@@ -80,6 +80,7 @@ import YamiboXTestSupport
                 onAction: { _ in }
             )
         },
+        isBookPresented: false,
         favoriteShare: FavoriteShareFlowModel(
             service: FavoriteShareService(
                 libraryStore: libraryStore,
@@ -97,8 +98,18 @@ import YamiboXTestSupport
     _ = view
 
     await organizer.load()
+    #expect(view.browseNavigationTitle(usesSidebar: true) == FavoriteCategory.defaultCategory.displayName)
     organizer.selectedCategoryID = category.id
+    #expect(view.browseNavigationTitle(usesSidebar: true) == category.displayName)
+    #expect(view.browseNavigationTitle(usesSidebar: false) == L10n.string("favorites.title"))
 
     #expect(organizer.derived.cards.map(\.id) == [item.id])
     #expect(organizer.derived.visibleCollections.map(\.id) == [collection.id])
+
+    organizer.selection.enterSelectionMode()
+    #expect(view.browseNavigationTitle(usesSidebar: true) == L10n.string("favorites.selected_count", 0))
+    organizer.selection.exitSelectionMode()
+    #expect(view.browseNavigationTitle(usesSidebar: true) == category.displayName)
+    organizer.selectedCategoryID = FavoriteCategory.defaultID
+    #expect(view.browseNavigationTitle(usesSidebar: true) == FavoriteCategory.defaultCategory.displayName)
 }

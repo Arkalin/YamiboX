@@ -7,7 +7,6 @@ import UIKit
 struct MangaReaderSettingsSections: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
-    let isPadDevice: Bool
     let usesTwoPageSpread: Bool
     let onOpenPeripheralSettings: () -> Void
 
@@ -22,7 +21,6 @@ struct MangaReaderSettingsSections: View {
                 MangaReaderSettingsPagingSection(
                     settings: $settings,
                     palette: palette,
-                    isPadDevice: isPadDevice,
                     usesTwoPageSpread: usesTwoPageSpread
                 )
 
@@ -65,7 +63,6 @@ private struct MangaReaderSettingsDisplaySection: View {
 struct MangaReaderSettingsPagingSection: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
-    let isPadDevice: Bool
     let usesTwoPageSpread: Bool
 
     var body: some View {
@@ -84,14 +81,6 @@ struct MangaReaderSettingsPagingSection: View {
             }
 
             if settings.usesPagedMode {
-                if isPadDevice {
-                    ReaderSettingsDivider(palette: palette)
-                    ReaderSettingsToggleRow(
-                        title: L10n.string("reader.two_pages_landscape"),
-                        palette: palette,
-                        isOn: $settings.showsTwoPagesInLandscapeOnPad
-                    )
-                }
                 ReaderSettingsDivider(palette: palette)
                 ReaderSettingsDirectionPicker(
                     title: L10n.string("manga.page_turn_direction"),

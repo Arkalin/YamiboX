@@ -85,6 +85,7 @@ struct LocalFavoritesRootView: View {
             navigator: navigator,
             routes: routes,
             detailScreen: detailScreen,
+            isBookPresented: appModel.isReaderCoverVisible || isThreadCoverVisible,
             favoriteShare: favoriteShare,
             remoteSync: remoteSync,
             updateMonitor: updateMonitor,

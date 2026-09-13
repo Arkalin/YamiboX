@@ -64,9 +64,8 @@ public struct NovelReaderView: View {
     @State private var controlHandlerToken: UUID?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
     /// Scene-local window safe-area insets reported by
-    /// `ReaderWindowSafeAreaInsetsProbe`; seeded from the key-window
-    /// backstop for the frames before the reader attaches to its window.
-    @State private var windowSafeAreaInsets: UIEdgeInsets = ReaderShellMetrics.windowSafeAreaInsets
+    /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
+    @State private var windowSafeAreaInsets: UIEdgeInsets?
     private let appModel: YamiboAppModel
     private let dependencies: NovelReaderDependencies
     private let onClose: () -> Void
@@ -116,12 +115,12 @@ public struct NovelReaderView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            let rawTopInset = max(proxy.safeAreaInsets.top, windowSafeAreaInsets.top)
+            let rawTopInset = max(proxy.safeAreaInsets.top, windowSafeAreaInsets?.top ?? proxy.safeAreaInsets.top)
             let topInset = effectiveTopInset(rawTopInset)
             let contentTopInset = model.settings.readingMode == .paged
                 ? readerPagedContentTopInset(for: topInset)
                 : readerContentTopInset(for: topInset, rawTopInset: rawTopInset)
-            let bottomInset = max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets.bottom)
+            let bottomInset = max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets?.bottom ?? proxy.safeAreaInsets.bottom)
             let currentLayout = readerLayout(
                 proxy: proxy,
                 topInset: topInset,
@@ -232,6 +231,8 @@ public struct NovelReaderView: View {
                         },
                         isProgressScrubbing: isVerticalProgressScrubbing
                     )
+                    // Match the viewport's origin; the chrome already includes topInset.
+                    .ignoresSafeArea(.container, edges: .top)
                     .zIndex(2)
                 }
 
@@ -247,6 +248,8 @@ public struct NovelReaderView: View {
                 }
             }
             .disabled(hasPresentedOverlay)
+            // Hide only the reading surface's bar, not a presented panel's commands.
+            .toolbar(.hidden, for: .navigationBar)
             .transientMessage(
                 loadingOverlayPresentation.isPresented || hasPresentedOverlay
                     ? nil : model.pageBoundary?.message,
@@ -268,7 +271,6 @@ public struct NovelReaderView: View {
                 }
             }
             .modifier(readerLifecycleModifier(currentLayout: currentLayout))
-            .modifier(novelReaderPresentationModifier())
             .sheet(item: $searchPresentation) { presentation in
                 NovelReaderSearchView(
                     snapshot: presentation.snapshot,
@@ -328,6 +330,9 @@ public struct NovelReaderView: View {
                 Task { await resolveAnnotationSortKeys() }
             }
         }
+        // Inspector belongs outside the viewport geometry so a pinned panel
+        // reflows the reader rather than covering already laid-out text.
+        .modifier(novelReaderPresentationModifier())
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {
@@ -356,10 +361,6 @@ public struct NovelReaderView: View {
             },
             onLayoutChange: { newValue in
                 Task {
-                    guard !hasPresentedOverlay else {
-                        updateChromeForContentState()
-                        return
-                    }
                     await model.commitNovelTextLayout(newValue)
                     updateChromeForContentState()
                     restoreVerticalPositionIfNeeded()
@@ -464,7 +465,8 @@ public struct NovelReaderView: View {
         } else {
             verticalContent(
                 topInset: topInset,
-                bottomInset: bottomInset
+                bottomInset: bottomInset,
+                layout: layout
             )
         }
     }
@@ -522,6 +524,10 @@ public struct NovelReaderView: View {
     }
 
     private func pagedContent(topInset: CGFloat, layout: NovelReaderLayout) -> some View {
+        var displaySettings = effectivePagedSettings
+        displaySettings.horizontalPadding = layout.novelTextBoxLayout(
+            settings: model.settings, usesPadPresentation: isPadDevice
+        ).contentInsets.leading
         let pagerIdentity = ReaderPagedPagerIdentity(
             visibleView: model.visibleView,
             surfaceCount: model.novelReaderSurfaces.count,
@@ -536,7 +542,7 @@ public struct NovelReaderView: View {
                 NovelReaderPagedPageCurlViewport(
                     spreads: model.presentationSpreads,
                     surfaces: model.novelReaderSurfaces,
-                    settings: effectivePagedSettings,
+                    settings: displaySettings,
                     refererURL: model.forumURL,
                     offlineScope: model.inlineImageOfflineScope,
                     topInset: pagedTopInset,
@@ -567,7 +573,7 @@ public struct NovelReaderView: View {
                         ? .spreads(model.presentationSpreads)
                         : .surfaces,
                     surfaces: model.novelReaderSurfaces,
-                    settings: effectivePagedSettings,
+                    settings: displaySettings,
                     refererURL: model.forumURL,
                     offlineScope: model.inlineImageOfflineScope,
                     topInset: pagedTopInset,
@@ -597,10 +603,14 @@ public struct NovelReaderView: View {
         .scrollDisabled(chromeState.showsChrome)
     }
 
-    private func verticalContent(topInset: CGFloat, bottomInset: CGFloat) -> some View {
-        NovelReaderVerticalViewportScrollView(
+    private func verticalContent(topInset: CGFloat, bottomInset: CGFloat, layout: NovelReaderLayout) -> some View {
+        var displaySettings = model.settings
+        displaySettings.horizontalPadding = layout.novelTextBoxLayout(
+            settings: model.settings, usesPadPresentation: isPadDevice
+        ).contentInsets.leading
+        return NovelReaderVerticalViewportScrollView(
             surfaces: model.novelReaderSurfaces,
-            settings: model.settings,
+            settings: displaySettings,
             refererURL: model.forumURL,
             offlineScope: model.inlineImageOfflineScope,
             topInset: topInset,

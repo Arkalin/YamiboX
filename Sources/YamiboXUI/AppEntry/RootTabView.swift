@@ -15,13 +15,15 @@ public struct RootTabView: View {
 
     public var body: some View {
         ZStack {
-            ForumWebSessionWebViewHost(
-                coordinator: appModel.webSessionCoordinator,
-                placement: .hidden
-            )
-            .opacity(0.001)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+            if appModel.ownsWebSessionPresentation {
+                ForumWebSessionWebViewHost(
+                    coordinator: appModel.webSessionCoordinator,
+                    placement: .hidden
+                )
+                .opacity(0.001)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
 
             Group {
                 if isShowingBootstrapPlaceholder {
@@ -119,7 +121,6 @@ public struct RootTabView: View {
                 appModel: appModel,
                 likeDependencies: appModel.appContext.likeLibraryDependencies
             )
-                .messageUnreadTabAccessibility(count: appModel.appContext.messageUnreadWorkflow.totalCount)
                 .tag(AppTab.mine)
                 .tabItem {
                     Label(L10n.string("tab.mine"), systemImage: "person.crop.circle")
@@ -141,9 +142,9 @@ public struct RootTabView: View {
 
     private var webVerificationBinding: Binding<ForumWebSessionCoordinator.Presentation?> {
         Binding(
-            get: { appModel.webSessionCoordinator.presentation },
+            get: { appModel.ownsWebSessionPresentation ? appModel.webSessionCoordinator.presentation : nil },
             set: { presentation in
-                if presentation == nil {
+                if presentation == nil, appModel.ownsWebSessionPresentation {
                     appModel.webSessionCoordinator.dismissPresentation()
                 }
             }

@@ -128,8 +128,6 @@ struct NovelReaderDisplaySection: View {
     let settings: NovelReaderAppearanceSettings
     let palette: NovelReaderSheetPalette
     let colorScheme: ColorScheme
-    let showsTwoPageToggle: Bool
-    @Binding var showsTwoPagesInLandscapeOnPad: Bool
     let onBackgroundStyleChange: (ReaderBackgroundStyle) -> Void
     let onReadingModeChange: (ReaderReadingMode, ReaderPagedTurnStyle) -> Void
     let onPageTurnDirectionChange: (ReaderPageTurnDirection) -> Void
@@ -159,14 +157,6 @@ struct NovelReaderDisplaySection: View {
                     selection: settings.pageTurnDirection,
                     palette: palette,
                     onSelect: onPageTurnDirectionChange
-                )
-            }
-            if showsTwoPageToggle {
-                ReaderSettingsDivider(palette: palette)
-                ReaderSettingsToggleRow(
-                    title: L10n.string("reader.two_pages_landscape"),
-                    palette: palette,
-                    isOn: $showsTwoPagesInLandscapeOnPad
                 )
             }
         }

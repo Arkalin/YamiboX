@@ -16,7 +16,7 @@ struct NovelReaderLayoutReadinessTests {
         #expect(NovelReaderLayout(width: 120, height: 568).isReadyForTextLayout)
     }
 
-    @Test func checksTheTextBoxRatherThanTheWholeTwoPageSpread() {
+    @Test func narrowWindowFallsBackToAReadableSinglePage() {
         var settings = NovelReaderAppearanceSettings(readingMode: .paged)
         settings.showsTwoPagesInLandscapeOnPad = true
         let layout = NovelReaderLayout(
@@ -24,6 +24,7 @@ struct NovelReaderLayoutReadinessTests {
             contentInsets: .init(leading: 24, trailing: 24)
         )
         #expect(layout.isReadyForTextLayout)
-        #expect(!layout.novelTextBoxLayout(settings: settings, usesPadPresentation: true).isReadyForTextLayout)
+        #expect(!layout.usesTwoPageSpread(settings: settings, usesPadPresentation: true))
+        #expect(layout.novelTextBoxLayout(settings: settings, usesPadPresentation: true).isReadyForTextLayout)
     }
 }
