@@ -24,6 +24,12 @@ public final class AppContinuityWorkflow: Sendable {
         var readerRouteGeneration = UUID()
     }
 
+    private struct StartupReaderRestore {
+        let route: ReaderResumeRoute?
+        let routeGeneration: UUID
+        let accountGeneration: UUID?
+    }
+
     private let appContext: YamiboAppContext
     private let readerResumeRouteStore: ReaderResumeRouteStore
     private let state = OSAllocatedUnfairLock(initialState: MutableState())
@@ -37,12 +43,20 @@ public final class AppContinuityWorkflow: Sendable {
         canRestoreReaderRoute: Bool,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> AppContinuityLaunchResult {
+        let (route, routeGeneration) = state.withLock { mutableState in
+            (readerResumeRouteStore.loadSync(), mutableState.readerRouteGeneration)
+        }
+        let accountGeneration = try? await appContext.sessionStore.snapshot().generation
+        let startup = StartupReaderRestore(route: route, routeGeneration: routeGeneration, accountGeneration: accountGeneration)
         let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
         await onProgress(.synchronizingWebDAV)
-        let didDownloadRemoteProgress = await synchronizeWebDAVForStartup()
-        let restoredRoute = await restoreExplicitly(
+        let shouldReconcileReadingProgress = await synchronizeWebDAVForStartup(
+            route: canRestoreReaderRoute ? route : nil
+        )
+        let restoredRoute = await restoreReaderRoute(
             canRestoreReaderRoute: canRestoreReaderRoute,
-            reconcilesWithReadingProgress: didDownloadRemoteProgress,
+            reconcilesWithReadingProgress: shouldReconcileReadingProgress,
+            startup: startup,
             onProgress: onProgress
         )
         return AppContinuityLaunchResult(bootstrapState: bootstrapState, restoredRoute: restoredRoute)
@@ -53,7 +67,23 @@ public final class AppContinuityWorkflow: Sendable {
         reconcilesWithReadingProgress: Bool = false,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> ReaderResumeRoute? {
+        await restoreReaderRoute(
+            canRestoreReaderRoute: canRestoreReaderRoute,
+            reconcilesWithReadingProgress: reconcilesWithReadingProgress,
+            startup: nil,
+            onProgress: onProgress
+        )
+    }
+
+    private func restoreReaderRoute(
+        canRestoreReaderRoute: Bool,
+        reconcilesWithReadingProgress: Bool,
+        startup: StartupReaderRestore?,
+        onProgress: @Sendable (AppBootstrapPhase) async -> Void
+    ) async -> ReaderResumeRoute? {
+        guard await isCurrentAccount(for: startup) else { return nil }
         let restoreGeneration = state.withLock { mutableState -> UUID? in
+            guard isCurrentRoute(for: startup, state: mutableState) else { return nil }
             if mutableState.hasRestoredReaderResumeRoute { return nil }
             mutableState.hasRestoredReaderResumeRoute = true
             return mutableState.readerRouteGeneration
@@ -62,13 +92,16 @@ public final class AppContinuityWorkflow: Sendable {
         guard canRestoreReaderRoute else { return nil }
         await onProgress(.loadingReadingPosition)
         guard let route = await readerResumeRouteStore.load() else { return nil }
+        if let startup, route != startup.route { return nil }
 
         guard var restoredRoute = await restorableRoute(
             from: route,
             reconcilesWithReadingProgress: reconcilesWithReadingProgress
         ) else {
+            guard await isCurrentAccount(for: startup) else { return nil }
             state.withLock { mutableState in
-                if mutableState.readerRouteGeneration == restoreGeneration {
+                if mutableState.readerRouteGeneration == restoreGeneration,
+                   isCurrentRoute(for: startup, state: mutableState) {
                     readerResumeRouteStore.clearSync()
                 }
             }
@@ -80,10 +113,12 @@ public final class AppContinuityWorkflow: Sendable {
             restoredRoute = .novel(context)
         }
 
+        guard await isCurrentAccount(for: startup) else { return nil }
         let finalRoute = restoredRoute
         return state.withLock { mutableState in
             // Account changes or explicit navigation can arrive during the store awaits.
-            guard mutableState.readerRouteGeneration == restoreGeneration else { return nil }
+            guard mutableState.readerRouteGeneration == restoreGeneration,
+                  isCurrentRoute(for: startup, state: mutableState) else { return nil }
             if finalRoute != route {
                 do {
                     try readerResumeRouteStore.saveSync(finalRoute)
@@ -94,6 +129,17 @@ public final class AppContinuityWorkflow: Sendable {
             mutableState.isReaderRoutePresented = true
             return finalRoute
         }
+    }
+
+    private func isCurrentRoute(for startup: StartupReaderRestore?, state: MutableState) -> Bool {
+        guard let startup else { return true }
+        return state.readerRouteGeneration == startup.routeGeneration
+            && readerResumeRouteStore.loadSync() == startup.route
+    }
+
+    private func isCurrentAccount(for startup: StartupReaderRestore?) async -> Bool {
+        guard let generation = startup?.accountGeneration else { return true }
+        return await appContext.sessionStore.isCurrentGeneration(generation)
     }
 
     public func foregroundBecameActive() {
@@ -205,13 +251,29 @@ public final class AppContinuityWorkflow: Sendable {
         state.withLock { $0.isWebDAVSyncInProgress = false }
     }
 
-    private func synchronizeWebDAVForStartup() async -> Bool {
+    private func synchronizeWebDAVForStartup(route: ReaderResumeRoute?) async -> Bool {
         replaceForegroundSyncTask(with: nil)
+        let before = await observeReadingProgress(for: route)
         let result = await synchronizeWebDAVSilently()
-        if case .downloaded = result {
-            return true
+        let after = await observeReadingProgress(for: route)
+        // A merge commits locally before PUT, so even a failed upload can
+        // change the resume position. Unrelated datasets must not move it.
+        if case let .success(previous) = before,
+           case let .success(current?) = after,
+           let route, current.hasReadingProgress(for: route) {
+            return previous != current
         }
-        return false
+        return result == .downloaded
+    }
+
+    private func observeReadingProgress(for route: ReaderResumeRoute?) async -> Result<ReadingProgressRecord?, any Error> {
+        guard let route else { return .success(nil) }
+        do {
+            return .success(try await readingProgress(for: route))
+        } catch {
+            YamiboLog.persistence.warning("Failed to observe startup reading progress; falling back to sync direction: \(error)")
+            return .failure(error)
+        }
     }
 
     private func synchronizeWebDAVSilently() async -> WebDAVAutomaticSyncResult {
@@ -266,16 +328,32 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     private func routeReconciledWithReadingProgress(_ route: ReaderResumeRoute) async -> ReaderResumeRoute? {
+        let progress: ReadingProgressRecord
+        do {
+            guard let record = try await readingProgress(for: route), record.hasReadingProgress(for: route) else { return nil }
+            progress = record
+        } catch {
+            YamiboLog.persistence.warning("Failed to read progress while reconciling reader route: \(error)")
+            return nil
+        }
         switch route {
         case let .novel(context):
-            if let progress = await appContext.readingProgressStore.load(threadID: context.threadID),
-               progress.hasNovelReadingProgress {
-                return .novel(context.reconciledWithReadingProgress(
-                    progress,
-                    favoriteItem: await favoriteItem(forThreadID: context.threadID)
-                ))
-            }
-            return nil
+            return .novel(context.reconciledWithReadingProgress(
+                progress,
+                favoriteItem: await favoriteItem(forThreadID: context.threadID)
+            ))
+        case let .manga(context):
+            return .manga(context.reconciledWithReadingProgress(
+                progress,
+                favoriteItem: await favoriteItem(forMangaContext: context)
+            ))
+        }
+    }
+
+    private func readingProgress(for route: ReaderResumeRoute) async throws -> ReadingProgressRecord? {
+        switch route {
+        case let .novel(context):
+            return try await appContext.readingProgressStore.loadThrowing(threadID: context.threadID)
         case let .manga(context):
             // Smart Comic Mode off means this thread is treated exactly like a normal
             // thread (smart-comic-mode-design-decisions #2's 总原则): its progress lives
@@ -284,16 +362,10 @@ public final class AppContinuityWorkflow: Sendable {
             // can otherwise pick up an unrelated directory-level `.mangaTitle` row whose
             // `manga_chapter_thread_id` happens to equal this thread id, silently
             // reconciling the restored route onto a different forum thread.
-            let progress = context.isSmartModeEnabled
-                ? await appContext.readingProgressStore.load(threadID: context.originalThreadID)
-                : await appContext.readingProgressStore.load(for: .mangaThread(threadID: context.originalThreadID))
-            if let progress, progress.hasMangaReadingProgress {
-                return .manga(context.reconciledWithReadingProgress(
-                    progress,
-                    favoriteItem: await favoriteItem(forMangaContext: context)
-                ))
+            if context.isSmartModeEnabled {
+                return try await appContext.readingProgressStore.loadThrowing(threadID: context.originalThreadID)
             }
-            return nil
+            return try await appContext.readingProgressStore.loadThrowing(for: .mangaThread(threadID: context.originalThreadID))
         }
     }
 
@@ -340,6 +412,13 @@ private extension MangaLaunchContext {
 }
 
 private extension ReadingProgressRecord {
+    func hasReadingProgress(for route: ReaderResumeRoute) -> Bool {
+        switch route {
+        case .novel: hasNovelReadingProgress
+        case .manga: hasMangaReadingProgress
+        }
+    }
+
     var hasNovelReadingProgress: Bool {
         guard let novel else { return false }
         return novel.novelResumePoint != nil ||

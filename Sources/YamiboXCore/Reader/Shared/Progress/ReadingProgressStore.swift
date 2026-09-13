@@ -35,23 +35,28 @@ public actor ReadingProgressStore {
     /// kill resume. Normal-thread restore uses the precise
     /// `load(for: .normalThread(threadID:))` lookup instead.
     public func load(threadID: String) async -> ReadingProgressRecord? {
-        guard let threadID = Self.trimmedNonEmpty(threadID) else { return nil }
         do {
-            return try await database.read { db in
-                try Self.fetchRecord(
-                    in: db,
-                    sql: """
-                    SELECT * FROM reading_progress
-                    WHERE (thread_id = ? OR manga_chapter_thread_id = ?) AND kind != ?
-                    ORDER BY updated_at DESC, id ASC
-                    LIMIT 1
-                    """,
-                    arguments: [threadID, threadID, ReadingProgressKind.thread.rawValue]
-                )
-            }
+            return try await loadThrowing(threadID: threadID)
         } catch {
             YamiboLog.persistence.warning("load(threadID:) failed to read reading progress; treating as no recorded progress: \(error)")
             return nil
+        }
+    }
+
+    /// Startup observation must distinguish a missing record from a failed read.
+    func loadThrowing(threadID: String) async throws -> ReadingProgressRecord? {
+        guard let threadID = Self.trimmedNonEmpty(threadID) else { return nil }
+        return try await database.read { db in
+            try Self.fetchRecord(
+                in: db,
+                sql: """
+                SELECT * FROM reading_progress
+                WHERE (thread_id = ? OR manga_chapter_thread_id = ?) AND kind != ?
+                ORDER BY updated_at DESC, id ASC
+                LIMIT 1
+                """,
+                arguments: [threadID, threadID, ReadingProgressKind.thread.rawValue]
+            )
         }
     }
 
@@ -74,16 +79,20 @@ public actor ReadingProgressStore {
 
     public func load(for target: FavoriteContentTarget) async -> ReadingProgressRecord? {
         do {
-            return try await database.read { db in
-                try Self.fetchRecord(
-                    in: db,
-                    sql: "SELECT * FROM reading_progress WHERE id = ? LIMIT 1",
-                    arguments: [target.id]
-                )
-            }
+            return try await loadThrowing(for: target)
         } catch {
             YamiboLog.persistence.warning("load(for:) failed to read reading progress; treating as no recorded progress: \(error)")
             return nil
+        }
+    }
+
+    func loadThrowing(for target: FavoriteContentTarget) async throws -> ReadingProgressRecord? {
+        try await database.read { db in
+            try Self.fetchRecord(
+                in: db,
+                sql: "SELECT * FROM reading_progress WHERE id = ? LIMIT 1",
+                arguments: [target.id]
+            )
         }
     }
 
