@@ -76,8 +76,9 @@ struct CreditLogView: View {
                 .listStyle(.plain)
                 .environment(\.defaultMinListRowHeight, 0)
                 .scrollContentBackground(.hidden)
-                .refreshable { await model.refresh() }
-                .topRefreshIndicator(isVisible: model.isLoading && model.content != nil)
+                .refreshableWithTopIndicator(isRefreshing: model.isLoading && model.content != nil) {
+                    await model.refresh()
+                }
                 .onChange(of: model.scrollIdentity) {
                     proxy.scrollTo("credit-log-top", anchor: .top)
                 }

@@ -1,25 +1,40 @@
 import SwiftUI
 
-private struct TopRefreshIndicatorModifier: ViewModifier {
+private struct PullRefreshIndicatorModifier: ViewModifier {
     let isVisible: Bool
+    let refresh: @MainActor @Sendable () async -> Void
+
+    @State private var isPullRefreshing = false
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .top) {
-                if isVisible {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.top, 8)
-                }
+            .refreshable {
+                guard !isPullRefreshing else { return }
+                isPullRefreshing = true
+                defer { isPullRefreshing = false }
+                await refresh()
             }
+            .topRefreshIndicator(isVisible: isVisible && !isPullRefreshing)
     }
 }
 
 extension View {
-    /// The small spinner pinned to the top edge while a screen refreshes
-    /// content it is already showing (initial loads use a full placeholder
-    /// instead).
     func topRefreshIndicator(isVisible: Bool) -> some View {
-        modifier(TopRefreshIndicatorModifier(isVisible: isVisible))
+        overlay(alignment: .top) {
+            if isVisible {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    /// Uses the native spinner for pull-to-refresh and a top overlay for
+    /// refreshes started elsewhere, never displaying both at once.
+    func refreshableWithTopIndicator(
+        isRefreshing: Bool,
+        action: @escaping @MainActor @Sendable () async -> Void
+    ) -> some View {
+        modifier(PullRefreshIndicatorModifier(isVisible: isRefreshing, refresh: action))
     }
 }
