@@ -47,6 +47,7 @@ struct ReaderSessionDestinationView: View {
 private struct ReaderSessionContentView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: ReaderSession
     let navigator: ForumDestinationNavigator
     let isFullScreenRoot: Bool
@@ -55,24 +56,39 @@ private struct ReaderSessionContentView: View {
     private var isReader: Bool { session.content.resumeRoute != nil }
 
     var body: some View {
-        content
-            .readerTransitionOverlay(isPresented: session.isSwitching, title: session.switchingTitle, onCancel: session.cancelSwitch)
-            .toolbar(!isReader && keepsTabBarVisible ? .visible : .hidden, for: .tabBar)
-            .navigationBarBackButtonHidden(isReader)
-            .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !isFullScreenRoot && isReader))
-            .onAppear { session.activate() }
-            .onDisappear {
-                if !isFullScreenRoot { session.deactivate() }
-            }
-            .onChange(of: session.isClosed) { _, closed in
-                if closed && !isFullScreenRoot { dismiss() }
-            }
-            .failureToast(
-                message: session.switchFailure?.summary,
-                details: session.switchFailure
-            ) {
-                session.switchFailure = nil
-            }
+        ZStack {
+            content
+                // Only the mode surface transitions; reader layout and restored
+                // scroll positions must settle without inheriting its animation.
+                .transaction { $0.animation = nil }
+                .id(session.contentID)
+                .transition(modeTransition)
+                .zIndex(1)
+        }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: isReader)
+        .readerTransitionOverlay(isPresented: session.isSwitching, title: session.switchingTitle, onCancel: session.cancelSwitch)
+        .toolbar(!isReader && keepsTabBarVisible ? .visible : .hidden, for: .tabBar)
+        .navigationBarBackButtonHidden(isReader)
+        .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !isFullScreenRoot && isReader))
+        .onAppear { session.activate() }
+        .onDisappear {
+            if !isFullScreenRoot { session.deactivate() }
+        }
+        .onChange(of: session.isClosed) { _, closed in
+            if closed && !isFullScreenRoot { dismiss() }
+        }
+        .failureToast(
+            message: session.switchFailure?.summary,
+            details: session.switchFailure
+        ) {
+            session.switchFailure = nil
+        }
+    }
+
+    private var modeTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .offset(y: isReader ? 8 : -8))
     }
 
     @ViewBuilder
