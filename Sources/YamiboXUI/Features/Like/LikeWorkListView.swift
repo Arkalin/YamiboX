@@ -63,7 +63,7 @@ struct LikeWorkListView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("like.work.\(summary.workKey.kind.rawValue).\(summary.workKey.id)")
-                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                .libraryWorkRowInsets()
                 .listRowSeparator(.visible, edges: .bottom)
                 .listRowBackground(Color.clear)
             }

@@ -136,8 +136,7 @@ struct BrowsingHistoryView: View {
                 Section {
                     ForEach(section.entries) { entry in
                         row(for: entry)
-                            .listRowInsets(EdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 16))
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 64 }
+                            .libraryWorkRowInsets()
                     }
                 } header: {
                     Text(section.title)
@@ -359,7 +358,6 @@ struct BrowsingHistoryCategoryLinks: View {
 }
 
 private struct BrowsingHistoryRow: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.appTheme) private var appTheme
     let entry: BrowsingHistoryEntry
     /// Effective category (board configuration applied) — drives the
@@ -376,39 +374,14 @@ private struct BrowsingHistoryRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 12) {
-                    cover
-
-                    VStack(alignment: .leading, spacing: 7) {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 8) {
-                                categoryLabel
-                                visitTime
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                categoryLabel
-                                visitTime
-                            }
-                        }
-
-                        Text(entry.title)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                            .multilineTextAlignment(.leading)
-
-                        if let positionText {
-                            Text(positionText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                }
-                .frame(minHeight: 76, alignment: .center)
-                .contentShape(Rectangle())
+                LibraryWorkRowContent(
+                    title: entry.title,
+                    coverURL: coverURL,
+                    categoryTitle: Text(L10n.string("history.filter.\(category.rawValue)")),
+                    timestamp: Text(entry.lastVisitTime, format: .dateTime.hour().minute()),
+                    detail: positionText,
+                    usesForumPlaceholder: category == .normal
+                )
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("history.open.\(entry.id)")
@@ -433,37 +406,6 @@ private struct BrowsingHistoryRow: View {
                 .accessibilityIdentifier("history.favorite.\(entry.id)")
             }
         }
-    }
-
-    private var cover: some View {
-        Group {
-            if category == .normal, coverURL == nil {
-                Image(systemName: "text.bubble")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 52, height: 76)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-            } else {
-                LocalFavoriteCoverThumbnail(url: coverURL, title: entry.title)
-                    .frame(width: 52, height: 76)
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private var categoryLabel: some View {
-        Text(L10n.string("history.filter.\(category.rawValue)"))
-            .font(.caption.weight(.medium))
-            .foregroundStyle(appTheme.controlAccent)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var visitTime: some View {
-        Text(entry.lastVisitTime, format: .dateTime.hour().minute())
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var positionText: String? {

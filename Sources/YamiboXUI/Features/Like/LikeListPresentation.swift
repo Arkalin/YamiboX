@@ -201,35 +201,14 @@ struct LikeWorkRow: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            LocalFavoriteCoverThumbnail(url: coverURL, title: title)
-                .frame(width: 64, height: 88)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        Text(kind == .novel ? LikeWorkFilter.novel.title : LikeWorkFilter.manga.title)
-                        Text(L10n.string("likes.item_count_format", itemCount))
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(kind == .novel ? LikeWorkFilter.novel.title : LikeWorkFilter.manga.title)
-                        Text(L10n.string("likes.item_count_format", itemCount))
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(LocalFavoriteRelativeDate.string(from: lastLikedAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        HStack(alignment: .center, spacing: 8) {
+            LibraryWorkRowContent(
+                title: title,
+                coverURL: coverURL,
+                categoryTitle: Text(kind == .novel ? LikeWorkFilter.novel.title : LikeWorkFilter.manga.title),
+                timestamp: Text(LocalFavoriteRelativeDate.string(from: lastLikedAt)),
+                detail: L10n.string("likes.item_count_format", itemCount)
+            )
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
@@ -241,8 +220,7 @@ struct LikeWorkRow: View {
         .favoriteSelectionEmphasis(
             isSelectionMode: isSelecting,
             isSelected: isSelected,
-            cornerRadius: 8,
-            contentInset: 8
+            cornerRadius: 8
         )
     }
 }
