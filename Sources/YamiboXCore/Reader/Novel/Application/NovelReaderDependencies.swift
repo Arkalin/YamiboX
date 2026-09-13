@@ -54,6 +54,9 @@ public struct NovelReaderDependencies: Sendable {
                     },
                     loadMore: { target, view in
                         try await makeChapterCommentsRepository().loadMoreChapterComments(for: target, view: view)
+                    },
+                    loadRatings: { target, request in
+                        try await makeChapterCommentsRepository().loadRatingReasons(for: target, request: request)
                     }
                 ),
                 onChange: onChange

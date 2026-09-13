@@ -17,36 +17,18 @@ public actor ReaderChapterCommentsRepository {
         var page = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseInitialPage") {
             try ChapterCommentsHTMLParser.parseInitialPage(html: html, target: target)
         }
-        let fullRatingsURL = try LoadDiagnosticError.parsing(html: html, context: target.threadID) {
-            try ChapterCommentsHTMLParser.fullRatingReasonsURL(html: html, target: target)
-        }
-        if let fullRatingsURL {
-            let fullRatingsHTML: String?
-            do {
-                fullRatingsHTML = try await client.fetchHTML(url: fullRatingsURL, cachePolicy: .reloadIgnoringLocalCacheData)
-            } catch {
-                YamiboLog.forum.warning("loadChapterComments: failed to fetch full rating-reasons page; falling back to truncated preview ratings: \(error)")
-                fullRatingsHTML = nil
-            }
-            if let fullRatingsHTML {
-                let fullRatings = try LoadDiagnosticError.parsing(html: fullRatingsHTML, context: "ChapterCommentsHTMLParser.parseFullRatingReasonsPage") {
-                    try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(
-                        html: fullRatingsHTML,
-                        target: target
-                    )
-                }
-                if !fullRatings.isEmpty {
-                    page.comments = Self.replacingPreviewRatings(in: page.comments, with: fullRatings)
-                }
-            }
-        }
         if target.authorID != nil {
             let unfilteredHTML: String?
             do {
                 unfilteredHTML = try await loadUnfilteredChapterCommentHTML(for: target)
             } catch {
+                if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
                 YamiboLog.forum.warning("loadChapterComments: failed to fetch unfiltered chapter comment HTML; same-page replies will be omitted: \(error)")
                 unfilteredHTML = nil
+                page.isBoundaryClosed = false
+                page.nextView = nil
+                page.isThreadEndConfirmed = false
+                page.needsInitialRetry = true
             }
             if let unfilteredHTML {
                 let unfilteredView = (try? ChapterCommentsHTMLParser.currentView(
@@ -68,6 +50,23 @@ public actor ReaderChapterCommentsRepository {
         return page
     }
 
+    public func loadRatingReasons(
+        for target: ReaderChapterCommentTarget,
+        request: ChapterCommentRatingRequest
+    ) async throws -> [ChapterComment] {
+        let html = try await client.fetchHTML(url: request.url, cachePolicy: .reloadIgnoringLocalCacheData)
+        var postTarget = target
+        postTarget.ownerPostID = request.postID
+        let ratings = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseFullRatingReasonsPage") {
+            try ChapterCommentsHTMLParser.parseFullRatingReasonsPage(html: html, target: postTarget)
+        }
+        return ratings.map { rating in
+            var result = rating
+            if let uid = rating.authorUID, let authorID = target.authorID { result.isThreadAuthor = uid == authorID }
+            return result
+        }
+    }
+
     public func loadMoreChapterComments(
         for target: ReaderChapterCommentTarget,
         view: Int
@@ -83,12 +82,12 @@ public actor ReaderChapterCommentsRepository {
     }
 
     private func loadUnfilteredChapterCommentHTML(for target: ReaderChapterCommentTarget) async throws -> String {
-        if let findPostURL = YamiboRoute.findPostURL(threadID: target.threadID, postID: target.ownerPostID),
-           let html = try? await client.fetchHTML(
-               url: findPostURL,
-               cachePolicy: .reloadIgnoringLocalCacheData
-           ) {
-            return html
+        if let findPostURL = YamiboRoute.findPostURL(threadID: target.threadID, postID: target.ownerPostID) {
+            do {
+                return try await client.fetchHTML(url: findPostURL, cachePolicy: .reloadIgnoringLocalCacheData)
+            } catch {
+                if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
+            }
         }
         return try await client.fetchThreadById(
             tid: target.threadID,
@@ -97,45 +96,22 @@ public actor ReaderChapterCommentsRepository {
         )
     }
 
-    private static func replacingPreviewRatings(
-        in comments: [ChapterComment],
-        with fullRatings: [ChapterComment]
-    ) -> [ChapterComment] {
-        let insertionIndex = comments.firstIndex { $0.source == .ratingReason }
-            ?? comments.firstIndex { $0.source != .postComment }
-            ?? comments.count
-        let retainedBeforeInsertion = comments[..<insertionIndex].filter { $0.source != .ratingReason }.count
-        // The full ratings dialog can omit profile links and avatars present in the preview.
-        let previewRatings = Dictionary(grouping: comments.filter {
-            $0.source == .ratingReason && !$0.authorName.isEmpty
-        }, by: \.authorName)
-        let enrichedRatings = fullRatings.map { rating in
-            var rating = rating
-            let avatars = Set(previewRatings[rating.authorName, default: []].compactMap(\.authorAvatarURL))
-            if rating.authorAvatarURL == nil, avatars.count == 1 {
-                rating.authorAvatarURL = avatars.first
-            }
-            return rating
-        }
-        var merged = comments.filter { $0.source != .ratingReason }
-        merged.insert(contentsOf: enrichedRatings, at: retainedBeforeInsertion)
-        return merged
-    }
-
     private static func appendingSamePageReplies(
         from unfilteredPage: ChapterCommentsPage,
         to page: ChapterCommentsPage
     ) -> ChapterCommentsPage {
         let existingIDs = Set(page.comments.map(\.id))
         let replies = unfilteredPage.comments.filter { comment in
-            comment.source == .reply && !existingIDs.contains(comment.id)
+            (comment.source == .reply || comment.postID != page.target.ownerPostID) && !existingIDs.contains(comment.id)
         }
         return ChapterCommentsPage(
             target: page.target,
             comments: page.comments + replies,
             isBoundaryClosed: unfilteredPage.isBoundaryClosed,
             nextView: unfilteredPage.nextView,
-            isThreadEndConfirmed: unfilteredPage.isThreadEndConfirmed
+            isThreadEndConfirmed: unfilteredPage.isThreadEndConfirmed,
+            pendingRatings: Array(Set((page.pendingRatings ?? []) + (unfilteredPage.pendingRatings ?? []))).sorted { $0.postID < $1.postID },
+            needsInitialRetry: unfilteredPage.needsInitialRetry
         )
     }
 

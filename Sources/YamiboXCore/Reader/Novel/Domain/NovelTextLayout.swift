@@ -183,14 +183,14 @@ public enum NovelTextLayout {
     }
 
     /// Whether the segments we actually intend to display (post
-    /// `showsAuthorRepliesToOthers`/`loadsInlineImages` filtering) include
+    /// author-reply and `loadsInlineImages` filtering) include
     /// non-whitespace text. Deliberately checks `annotatedSegments`, not the
     /// document's raw, unfiltered `segments` — a page whose only text is
     /// hidden by a display setting has no displayable text at all, so a
     /// resulting image-only (or empty) render is correct, not a TextKit
     /// failure. Using the raw segments here previously made any page where
     /// every text segment was filtered out (e.g. all author replies to
-    /// others, with `showsAuthorRepliesToOthers` off) throw
+    /// others) throw
     /// `.textKitIndexing`, even though nothing was actually broken.
     private static func hasDisplayableText(in annotatedSegments: [NovelAnnotatedSegment]) -> Bool {
         annotatedSegments.contains { !$0.textContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -417,7 +417,6 @@ public enum NovelTextLayout {
             String(settings.characterSpacingScale),
             String(settings.usesJustifiedText),
             String(settings.indentsParagraphFirstLine),
-            String(settings.showsAuthorRepliesToOthers),
             settings.readingMode.rawValue,
             String(describing: layout.containerSize),
             String(describing: layout.safeAreaInsets),
@@ -681,7 +680,7 @@ public enum NovelTextLayout {
         for (index, input) in segmentInputs {
             let (segment, semanticAndSource) = input
             let (semantics, source) = semanticAndSource
-            if source?.isAuthorReplyToOther == true, !settings.showsAuthorRepliesToOthers {
+            if source?.isAuthorReplyToOther == true {
                 continue
             }
             guard let transformed = transformedSegment(

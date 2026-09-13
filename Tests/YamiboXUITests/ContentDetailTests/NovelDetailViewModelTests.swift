@@ -1090,7 +1090,7 @@ func novelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancellation
                 postID: "1002",
                 floorText: "2#",
                 author: BlogReaderUser(uid: "42", name: "楼主名", avatarURL: nil),
-                contentHTML: #"<div class="quote">发表于 1 小时前</div>作者回复<br>正文"#,
+                contentHTML: #"<div class="quote"><a href="forum.php?mod=redirect&amp;goto=findpost&amp;pid=999">读者 发表于 1 小时前</a></div>作者回复<br>正文"#,
                 contentText: "发表于 1 小时前\n作者回复\n正文"
             ),
             ForumThreadPost(
@@ -1106,7 +1106,7 @@ func novelDetailCancelledRefreshPreservesContentWithoutFailureToast(cancellation
     let sections = NovelDetailViewModel.chapterSections(
         from: [1: page],
         totalPages: 1,
-        novelReaderSettings: NovelReaderAppearanceSettings(showsAuthorRepliesToOthers: false)
+        novelReaderSettings: NovelReaderAppearanceSettings()
     )
 
     #expect(sections[0].chapters.map(\.title) == ["第一章", "第二章"])

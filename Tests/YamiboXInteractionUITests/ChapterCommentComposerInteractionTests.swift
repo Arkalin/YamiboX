@@ -42,14 +42,18 @@ final class ChapterCommentComposerInteractionTests: XCTestCase {
             XCTAssertEqual(details.frame.minX, app.frame.minX + 16, accuracy: 1)
         }
         let reply = app.buttons["chapter-comment-reply-789"]
-        if !reply.isHittable { app.swipeUp() }
+        let composeBar = app.buttons["chapter-comment-compose"]
+        for _ in 0..<4 where !reply.isHittable || reply.frame.maxY >= composeBar.frame.minY {
+            app.swipeUp()
+        }
         let details = app.staticTexts["28楼 · 2026-09-10 14:20"]
         XCTAssertTrue(reply.isHittable)
+        XCTAssertLessThan(reply.frame.maxY, composeBar.frame.minY)
         XCTAssertEqual(details.frame.minX, app.frame.minX + 16, accuracy: 1)
         XCTAssertEqual(reply.frame.maxX, app.frame.maxX - 16, accuracy: 1)
         XCTAssertGreaterThanOrEqual(reply.frame.minX, details.frame.maxX + 8)
-        XCTAssertEqual(reply.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(reply.frame.height, 44, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(reply.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(reply.frame.height, 44)
         attach(app, "chapter-comments-footer-left-right-large")
         reply.tap()
         XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 8))
@@ -103,7 +107,7 @@ final class ChapterCommentComposerInteractionTests: XCTestCase {
         app.buttons["chapter-comment-reply-789"].tap()
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 8))
-        XCTAssertFalse(warning(app).exists)
+        XCTAssertTrue(warning(app).exists)
         let target = app.descendants(matching: .any).matching(identifier: "chapter-comment-target").firstMatch
         XCTAssertTrue(target.label.contains("见微"), target.label)
         editor.tap()

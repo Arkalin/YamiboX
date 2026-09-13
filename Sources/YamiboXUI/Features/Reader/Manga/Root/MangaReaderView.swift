@@ -323,7 +323,8 @@ public struct MangaReaderView: View {
                 loadNext: model.loadNextChapterCommentsPage,
                 forumDependencies: appModel.appContext.forumDependencies,
                 appModel: appModel,
-                discussionWorkTIDs: discussionWorkTIDs
+                discussionWorkTIDs: discussionWorkTIDs,
+                cancelLoading: model.cancelChapterCommentsLoading
             )
         }
         .fullScreenCover(item: $forumThreadOverlayItem) { item in

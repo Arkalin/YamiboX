@@ -167,6 +167,11 @@ public final class MangaReaderViewModel {
                 }
                 let repository = try await self.ensureChapterCommentsRepository()
                 return try await repository.loadMoreChapterComments(for: target, view: view)
+            },
+            loadRatings: { [weak self] target, request in
+                guard let self else { throw ReaderChapterCommentsUnavailableError() }
+                let repository = try await self.ensureChapterCommentsRepository()
+                return try await repository.loadRatingReasons(for: target, request: request)
             }
         ),
         onChange: { [weak self] snapshot in
@@ -780,17 +785,19 @@ public final class MangaReaderViewModel {
     // MARK: - Chapter comments
 
     public func loadChapterComments(for target: ReaderChapterCommentTarget?) async {
-        await chapterCommentsModule.load(target)
+        await chapterCommentsModule.loadAndContinue(target)
     }
 
     public func refreshChapterComments(for target: ReaderChapterCommentTarget?) async {
         guard let target else { return }
-        await chapterCommentsModule.refresh(target)
+        await chapterCommentsModule.refreshAndContinue(target)
     }
 
     public func loadNextChapterCommentsPage() async {
-        await chapterCommentsModule.loadNextPage()
+        await chapterCommentsModule.continueLoading()
     }
+
+    func cancelChapterCommentsLoading() { chapterCommentsModule.cancelLoading() }
 
     func clearChapterCommentsFailure() {
         chapterCommentsModule.clearTransientFailure()

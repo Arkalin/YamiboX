@@ -21,7 +21,12 @@ import Testing
         authorID: "42"
     )
 
-    let page = try await repository.loadChapterComments(for: target)
+    var page = try await repository.loadChapterComments(for: target)
+    #expect(page.pendingRatings?.isEmpty == false)
+    for request in page.pendingRatings ?? [] {
+        let ratings = try await repository.loadRatingReasons(for: target, request: request)
+        page.replaceRatings(ratings, request: request)
+    }
 
     #expect(page.comments.map(\.body) == ["好萌好萌好萌", "完整评分理由"])
     #expect(page.comments.last?.authorAvatarURL?.absoluteString == "https://bbs.yamibo.com/uc_server/avatar.php?uid=77&size=small")

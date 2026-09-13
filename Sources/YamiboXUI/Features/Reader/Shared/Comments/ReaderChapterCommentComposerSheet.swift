@@ -5,6 +5,7 @@ import YamiboXCore
 struct ReaderChapterCommentComposerSheet<Destination: View>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: ReaderChapterCommentComposerModel
     @State private var showsDiscardConfirmation = false
     @State private var destinationItem: ForumThreadOverlayItem?
@@ -30,16 +31,18 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ReaderChapterCommentComposerHeader(
-                    target: model.target,
-                    author: model.authorName,
-                    mode: Binding(get: { model.mode }, set: { commitEditing(); model.selectMode($0) }),
-                    warning: replyPlacement.warning(isNovel: isNovel, isChapterOwner: model.target.isChapterOwner, mode: model.mode),
-                    disabled: model.isBusy || model.didSubmit
-                )
-                Divider()
-                ReaderChapterCommentComposerFields(model: model, onURLTap: openURL)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    // Reserve editing space above the keyboard without shrinking accessibility text.
+                    if dynamicTypeSize.isAccessibilitySize, geometry.size.height < 600 {
+                        ScrollView { header }
+                            .frame(maxHeight: geometry.size.height * 0.45)
+                    } else {
+                        header
+                    }
+                    Divider()
+                    ReaderChapterCommentComposerFields(model: model, onURLTap: openURL)
+                }
             }
             .background(Color(.systemBackground))
             .navigationTitle(L10n.string("reader.comment_composer.title"))
@@ -91,6 +94,15 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
         .task { await model.load() }
         .task(id: model.mode) { await model.loadMode() }
         .onDisappear { submissionTask?.cancel() }
+    }
+
+    private var header: some View {
+        ReaderChapterCommentComposerHeader(
+            target: model.target, author: model.authorName,
+            mode: Binding(get: { model.mode }, set: { commitEditing(); model.selectMode($0) }),
+            warning: replyPlacement.warning(isNovel: isNovel, isChapterOwner: model.target.isChapterOwner, mode: model.mode),
+            disabled: model.isBusy || model.didSubmit
+        )
     }
 
     private func commitEditing() {

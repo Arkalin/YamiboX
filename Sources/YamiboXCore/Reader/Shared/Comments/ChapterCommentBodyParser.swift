@@ -50,6 +50,35 @@ enum ChapterCommentBodyParser {
         )
     }
 
+    static func quotes(in element: Element) throws -> [ForumThreadContentBlock]? {
+        guard !([element] + element.parents()).contains(where: isHidden) else { return nil }
+        let quotes = element.selectAll(".quote, blockquote").filter { candidate in
+            !([candidate] + candidate.parents()).contains(where: isHidden)
+                && !candidate.parents().contains { $0.hasClass("quote") || $0.tagName() == "blockquote" }
+        }
+        let blocks = try quotes.enumerated().compactMap { index, quote -> ForumThreadContentBlock? in
+            let fragment = try KannaSoup.parseBodyFragment(quote.html())
+            // Drop only the Discuz wrapper; nested quoted conversations stay hidden.
+            if let wrapper = fragment.selectFirst("body > blockquote") {
+                let inner = try KannaSoup.parseBodyFragment(wrapper.html())
+                return try quoteBlock(inner.body(), index: index)
+            }
+            return try quoteBlock(fragment.body(), index: index)
+        }
+        return blocks.isEmpty ? nil : blocks
+    }
+
+    private static func quoteBlock(_ element: Element?, index: Int) throws -> ForumThreadContentBlock? {
+        let parsed = try parse(element)
+        guard !parsed.isEmpty else { return nil }
+        let content = parsed.contentBlocks ?? parsed.bodyBlocks?.enumerated().map {
+            ForumThreadContentBlock(id: "quote-\(index)-text-\($0.offset)", kind: .text($0.element))
+        } ?? [ForumThreadContentBlock(id: "quote-\(index)-text", kind: .text(ForumThreadTextBlock(text: parsed.text)))]
+        return ForumThreadContentBlock(id: "quote-\(index)", kind: .quote(content.map {
+            ForumThreadContentBlock(id: "quote-\(index)-\($0.id)", kind: $0.kind)
+        }))
+    }
+
     private static func prepare(_ body: Element) {
         body.select(".quote, blockquote, .pstatus, .lastedit, .lastedited, .editinfo, .edited, .avatar, .avt, .jammer, [hidden]").remove()
         for element in body.selectAll("[style]") where isHidden(element) { element.remove() }

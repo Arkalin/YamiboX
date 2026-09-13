@@ -176,9 +176,7 @@ struct NovelReaderDisplaySection: View {
 struct NovelReaderMiscSection: View {
     let palette: NovelReaderSheetPalette
     let loadsInlineImages: Bool
-    let showsAuthorRepliesToOthers: Bool
     let onLoadsInlineImagesChange: (Bool) -> Void
-    let onShowsAuthorRepliesToOthersChange: (Bool) -> Void
     let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
@@ -189,15 +187,6 @@ struct NovelReaderMiscSection: View {
                 isOn: Binding(
                     get: { loadsInlineImages },
                     set: { onLoadsInlineImagesChange($0) }
-                )
-            )
-            ReaderSettingsDivider(palette: palette)
-            ReaderSettingsToggleRow(
-                title: L10n.string("reader.author_replies_to_others"),
-                palette: palette,
-                isOn: Binding(
-                    get: { showsAuthorRepliesToOthers },
-                    set: { onShowsAuthorRepliesToOthersChange($0) }
                 )
             )
             ReaderSettingsDivider(palette: palette)

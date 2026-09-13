@@ -81,7 +81,8 @@ struct ChapterCommentImageTests {
         <div id='post_103'><div id='postmessage_103'><div class='quote'><img src='quote.png'></div></div></div>
         """
         let page = try ChapterCommentsHTMLParser.parseContinuationPage(html: html, target: target, view: 2)
-        #expect(page.comments.count == 1)
+        #expect(page.comments.count == 2)
+        #expect(page.comments.last?.quoteBlocks?.count == 1)
         #expect(images(try #require(page.comments.first)).map(\.url.lastPathComponent) == ["attachment.png"])
     }
 

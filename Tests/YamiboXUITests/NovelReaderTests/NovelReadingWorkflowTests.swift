@@ -92,6 +92,77 @@ private extension NovelTextViewportRuntimeOwner {
 
 @MainActor
 final class NovelReadingWorkflowTests: XCTestCase {
+    func testContinuousAuthorDiscussionPagesAreSkippedInBothDirections() async throws {
+        for backwards in [false, true] {
+            let repository = RecordingNovelReadingRepository(documents: [
+                1: makeNovelDocument(threadID: "42", view: 1, maxView: 4),
+                2: authorDiscussionDocument(view: 2),
+                3: authorDiscussionDocument(view: 3),
+                4: makeNovelDocument(threadID: "42", view: 4, maxView: 4)
+            ])
+            let workflow = discussionSkippingWorkflow(repository: repository)
+            let state = try await workflow.loadView(
+                backwards ? 3 : 2, preferredSurfaceOrdinal: backwards ? .max : 0,
+                preferredResumePoint: nil, forceRefresh: false
+            )
+            XCTAssertEqual(state.snapshot.currentView, backwards ? 1 : 4)
+            XCTAssertEqual(repository.loadRequests.map(\.view), backwards ? [3, 2, 1] : [2, 3, 4])
+            XCTAssertFalse(try XCTUnwrap(state.presentation).surfaces.isEmpty)
+            XCTAssertEqual(state.snapshot.selectedSurfaceOrdinal, backwards ? try surfaceCount(in: state) - 1 : 0)
+        }
+    }
+
+    func testLegacyDiscussionResumePrefersPreviousBodyThenFallsForward() async throws {
+        for previousBodyExists in [true, false] {
+            let hidden = authorDiscussionDocument(view: 2)
+            let repository = RecordingNovelReadingRepository(documents: [
+                1: previousBodyExists ? makeNovelDocument(threadID: "42", view: 1, maxView: 4) : authorDiscussionDocument(view: 1),
+                2: hidden,
+                3: authorDiscussionDocument(view: 3),
+                4: makeNovelDocument(threadID: "42", view: 4, maxView: 4)
+            ])
+            let resume = NovelResumePoint(
+                view: 2, textSegmentIdentity: try XCTUnwrap(hidden.semantics(forSegmentIndex: 0)?.textSegmentIdentity),
+                displayedTextOffset: 0, chapterOrdinal: 0, chapterTitle: "Discussion",
+                segmentProgress: 0, authorID: "1", readingModeHint: .paged
+            )
+            let state = try await discussionSkippingWorkflow(repository: repository).start(initial: .init(resumePoint: resume))
+            XCTAssertEqual(state.snapshot.currentView, previousBodyExists ? 1 : 4)
+            XCTAssertEqual(repository.loadRequests.map(\.view), previousBodyExists ? [2, 1] : [2, 1, 3, 4])
+            XCTAssertFalse(try XCTUnwrap(state.presentation).surfaces.isEmpty)
+        }
+    }
+
+    func testDiscussionOnlyTailStopsWithoutReplacingReadableState() async throws {
+        let repository = RecordingNovelReadingRepository(documents: [
+            1: makeNovelDocument(threadID: "42", view: 1, maxView: 4),
+            2: authorDiscussionDocument(view: 2), 3: authorDiscussionDocument(view: 3),
+            4: authorDiscussionDocument(view: 4)
+        ])
+        let workflow = discussionSkippingWorkflow(repository: repository)
+        let initial = try await workflow.start(initial: .init())
+        do {
+            try await workflow.loadView(2, preferredSurfaceOrdinal: 0, preferredResumePoint: nil, forceRefresh: false)
+            XCTFail("A discussion-only tail must not display an empty reader")
+        } catch {
+            XCTAssertEqual(workflow.state, initial)
+            XCTAssertEqual(repository.loadRequests.map(\.view), [1, 2, 3, 4])
+        }
+    }
+
+    private func discussionSkippingWorkflow(repository: RecordingNovelReadingRepository) -> NovelReadingWorkflow {
+        NovelReadingWorkflow(
+            context: .init(threadID: "42", threadTitle: "Thread", source: .favorites, authorID: "1"),
+            settings: .init(readingMode: .paged), layout: .init(width: 320, height: 568), repository: repository
+        )
+    }
+
+    private func authorDiscussionDocument(view: Int) -> NovelReaderProjection {
+        .init(threadID: "42", view: view, maxView: 4, resolvedAuthorID: "1",
+              segments: [.text("Author discussion", chapterTitle: "Discussion")],
+              segmentSources: [.init(ownerPostID: "hidden-\(view)", isAuthorReplyToOther: true)])
+    }
+
     func testInitialContentLoadsBeforeLayoutAndIsReusedForPresentation() async throws {
         let threadID = "9178"
         let repository = RecordingNovelReadingRepository(documents: [
