@@ -998,7 +998,7 @@
 "settings.app_theme.teal" = "青岚";
 "settings.app_theme.rose" = "樱墨";
 "settings.clear_content_cover_cache" = "清理封面索引";
-"settings.clear_content_cover_cache_message" = "将清除全部自动与手动封面索引及封面显示偏好。此操作会通过 WebDAV 同步到云端和其他设备，下载不会撤销清理；重新打开内容后仍可生成新的自动封面。";
+"settings.clear_content_cover_cache_message" = "将清除全部自动与手动封面索引及封面显示偏好。重新打开内容后仍可生成新的自动封面。";
 "settings.clear_image_cache" = "清理图片缓存";
 "settings.storage_usage_calculating" = "统计中";
 "settings.storage_usage_unavailable" = "无法统计";
@@ -1155,7 +1155,7 @@
 "settings.clear_reading_progress" = "清理阅读进度";
 "settings.clear_browsing_history" = "清理浏览记录";
 "settings.confirm_clear_reading_progress" = "确认清理阅读进度";
-"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度，并通过 WebDAV 同步清除云端和其他设备的旧进度，下载不会撤销清理。浏览记录、收藏和离线缓存不受影响，清理后可重新记录进度。";
+"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度。浏览记录、收藏和离线缓存不受影响，清理后可重新记录进度。";
 "settings.section.backup_sync" = "备份与同步";
 "settings.section.reset" = "重置";
 "settings.section.favorites_browsing" = "浏览与排序";
@@ -1188,6 +1188,19 @@
 "translation.title" = "简繁转换";
 "translation.traditional" = "繁体";
 "webdav.auto_sync" = "自动同步数据";
+"webdav.sync_content" = "同步内容";
+"webdav.content.favoriteLibrary" = "收藏";
+"webdav.content.likeLibrary" = "喜欢";
+"webdav.content.bookmarkLibrary" = "书签";
+"webdav.content.readingProgress" = "阅读进度";
+"webdav.content.contentCovers" = "封面";
+"webdav.content.appSettings" = "应用设置";
+"webdav.content.mangaDirectories" = "漫画目录";
+"webdav.content.browsingHistory" = "浏览记录";
+"webdav.error.no_content_selected" = "请先选择同步内容。";
+"webdav.deletion.enabled" = "下次同步将删除云端及其他设备上的对应数据，下载不会撤销清理。";
+"webdav.deletion.local_only" = "该内容的同步已关闭，仅清理本机。重新开启同步后，云端数据可能恢复到本机。";
+"webdav.deletion.pending" = "该内容的同步已关闭，本次暂不清理云端。重新开启同步后，清理将同步到云端及其他设备。";
 "webdav.account_mismatch_message" = "服务器账号与本机账号数据不一致，是否覆盖？";
 "webdav.account_mismatch_overwrite" = "覆盖";
 "webdav.account_mismatch_title" = "账号不一致";
@@ -1207,7 +1220,7 @@
 "webdav.last_synced" = "上次同步：%@";
 "webdav.operation" = "操作";
 "webdav.password" = "密码";
-"webdav.sync_note" = "操作成功后，App 将自动与服务器同步数据";
+"webdav.sync_note" = "开启自动同步后，App 将按所选内容与服务器同步数据。";
 "webdav.sync_success" = "同步完成";
 "webdav.title" = "WebDAV";
 "webdav.upload" = "上传";

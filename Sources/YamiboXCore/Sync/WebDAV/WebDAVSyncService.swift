@@ -43,6 +43,7 @@ public actor WebDAVSyncService {
     }
 
     private func performUpload(using settings: WebDAVSyncSettings, allowingAccountMismatch: Bool = false) async throws -> Date {
+        guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         if !allowingAccountMismatch {
@@ -50,7 +51,7 @@ public actor WebDAVSyncService {
         }
         let updatedAt = uploadStamp(absorbing: remotePayloads.values.map(\.info.updatedAt).max())
         let uploaded = try await uploadParticipants(
-            participants,
+            enabledParticipants(settings),
             remotePayloads: remotePayloads,
             settings: settings,
             accountUID: accountUID,
@@ -76,6 +77,7 @@ public actor WebDAVSyncService {
     }
 
     private func performDownload(using settings: WebDAVSyncSettings) async throws -> Date {
+        guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         try validateAccount(of: remotePayloads, localUID: accountUID)
@@ -101,12 +103,18 @@ public actor WebDAVSyncService {
 
     private func performAutomaticSync(bypassingMinimumInterval: Bool) async throws -> WebDAVAutomaticSyncResult {
         var settings = await settingsStore.load()
+        let disabledContentIDs = settings.disabledContentIDs
+        let selectionRevision = settings.contentSelectionRevision
+        let participants = enabledParticipants(settings)
+        guard !participants.isEmpty else { return .skipped }
         let snapshot = try await sessionStore.snapshot()
         guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return .skipped }
         let sessionState = snapshot.session
         guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
-        try await refreshDirtyState(at: .now, includeUntracked: false)
+        try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
         settings = await settingsStore.load()
+        settings.disabledContentIDs = disabledContentIDs
+        settings.contentSelectionRevision = selectionRevision
         if !bypassingMinimumInterval,
            let lastSyncedAt = settings.lastSyncedAt,
            Date.now.timeIntervalSince(lastSyncedAt) < Self.minimumAutomaticSyncInterval {
@@ -116,8 +124,10 @@ public actor WebDAVSyncService {
 
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         try validateAccount(of: remotePayloads, localUID: accountUID)
-        try await refreshDirtyState(at: .now, includeUntracked: false)
+        try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
         settings = await settingsStore.load()
+        settings.disabledContentIDs = disabledContentIDs
+        settings.contentSelectionRevision = selectionRevision
         let newestRemoteUpdatedAt = remotePayloads.values.map(\.info.updatedAt).max()
         // Per-dataset direction decision: a dataset whose remote payload and
         // local bookkeeping both carry revisions compares by revision (immune
@@ -217,12 +227,18 @@ public actor WebDAVSyncService {
         }
     }
 
-    private func refreshDirtyState(at date: Date, includeUntracked: Bool) async throws {
-        let settings = await settingsStore.load()
-        guard settings.isAutoSyncEnabled else { return }
+    private func enabledParticipants(_ settings: WebDAVSyncSettings) -> [any WebDAVSyncParticipant] {
+        participants.filter { !settings.disabledContentIDs.contains($0.datasetID) }
+    }
+
+    private func refreshDirtyState(at date: Date, includeUntracked: Bool, using snapshot: WebDAVSyncSettings? = nil) async throws {
+        let settings: WebDAVSyncSettings
+        if let snapshot { settings = snapshot } else { settings = await settingsStore.load() }
+        guard settings.isAutoSyncEnabled, !enabledParticipants(settings).isEmpty else { return }
         var changed = Set<String>()
-        for participant in participants where participant.uploadsOnlyWhenMarkedDirty {
-            guard includeUntracked || settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != nil else { continue }
+        for participant in enabledParticipants(settings) where participant.uploadsOnlyWhenMarkedDirty {
+            guard includeUntracked || settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != nil
+                || participant.uploadsUntrackedContentAutomatically else { continue }
             guard let fingerprint = try await participant.readLocalFingerprint() else { continue }
             if settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != fingerprint {
                 changed.insert(participant.datasetID)
@@ -233,7 +249,7 @@ public actor WebDAVSyncService {
         try await settingsStore.update { current in
             guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
             current.dirtyDatasetIDs.formUnion(changedIDs)
-            if !current.dirtyDatasetIDs.isEmpty { current.localUpdatedAt = date }
+            if !current.dirtyDatasetIDs.subtracting(current.disabledContentIDs).isEmpty { current.localUpdatedAt = date }
         }
     }
 
@@ -283,7 +299,7 @@ public actor WebDAVSyncService {
     /// serial loop did; the group cancels the requests still in flight.
     private func fetchRemotePayloads(settings: WebDAVSyncSettings) async throws -> [String: RemotePayload] {
         try await withThrowingTaskGroup(of: (String, RemotePayload?).self) { group in
-            for participant in participants {
+            for participant in enabledParticipants(settings) {
                 group.addTask {
                     (participant.datasetID, try await self.fetchRemotePayloadIfPresent(for: participant, settings: settings))
                 }
@@ -347,7 +363,7 @@ public actor WebDAVSyncService {
         var outcomes: [String: DatasetSyncOutcome] = [:]
         let includedIDs = Set(included.map(\.datasetID))
         try await settingsStore.update { current in
-            if current.trimmedBaseURLString.isEmpty { current = settings }
+            if current.trimmedBaseURLString.isEmpty, current.contentSelectionRevision == settings.contentSelectionRevision { current = settings }
             guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
             current.dirtyDatasetIDs.formUnion(includedIDs)
         }
@@ -522,11 +538,12 @@ public actor WebDAVSyncService {
         let fingerprints = currentFingerprints
         try Task.checkCancellation()
         try await settingsStore.update { updated in
-            if updated.trimmedBaseURLString.isEmpty { updated = settings }
+            if updated.trimmedBaseURLString.isEmpty, updated.contentSelectionRevision == settings.contentSelectionRevision { updated = settings }
             guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings) else { return }
             updated.lastSyncedAt = .now
             updated.lastRemoteUpdatedAt = max(updated.lastRemoteUpdatedAt ?? updatedAt, updatedAt)
             for (datasetID, outcome) in outcomes {
+                guard updated.contentSelectionRevision == settings.contentSelectionRevision else { continue }
                 if outcome.requiresUpload || fingerprints[datasetID] != outcome.fingerprint {
                     updated.dirtyDatasetIDs.insert(datasetID)
                 } else {
@@ -545,7 +562,7 @@ public actor WebDAVSyncService {
                         updated.lastAppliedRemoteRevisionByDatasetID[datasetID] ?? 0, appliedRemoteRevision)
                 }
             }
-            updated.localUpdatedAt = updated.dirtyDatasetIDs.isEmpty
+            updated.localUpdatedAt = updated.dirtyDatasetIDs.subtracting(updated.disabledContentIDs).isEmpty
                 ? updatedAt : max(updated.localUpdatedAt ?? updatedAt, updatedAt)
         }
     }

@@ -38,9 +38,43 @@ enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
                 table.add(column: "last_visited_thread_title", .text)
             }
         }
+        migrator.registerMigration("history.v3.webdav") { db in
+            for table in ["browsing_history_sync_state", "browsing_history_local_deletions"] {
+                if try !db.tableExists(table) {
+                    try SyncDeletionState.createTable(table, in: db)
+                }
+            }
+            let deletions = try SyncDeletionState.load(from: "browsing_history_sync_state", in: db)
+            var records = try BrowsingHistoryStore.snapshotEntries(in: db).map(BrowsingHistorySyncRecord.init)
+            // The earlier sync-facts migration used the same table names but
+            // stored complete history entries. Decode before replacing anything;
+            // GRDB rolls back the entire migration if conversion fails.
+            if try db.tableExists("browsing_history_sync_records") {
+                let columns = Set(try db.columns(in: "browsing_history_sync_records").map(\.name))
+                if columns.contains("payload") {
+                    records += try Data.fetchAll(db, sql: "SELECT payload FROM browsing_history_sync_records").map {
+                        BrowsingHistorySyncRecord(try JSONDecoder().decode(BrowsingHistoryEntry.self, from: $0))
+                    }
+                } else {
+                    records += try BrowsingHistorySyncRecord.load(in: db)
+                }
+                try db.drop(table: "browsing_history_sync_records")
+            }
+            try db.create(table: "browsing_history_sync_records") { table in
+                table.column("id", .text).primaryKey()
+                table.column("record", .blob).notNull()
+                table.column("last_visit_time", .double).notNull()
+            }
+            try db.create(index: "browsing_history_sync_visit_idx", on: "browsing_history_sync_records", columns: ["last_visit_time"])
+            let payload = try BrowsingHistoryWebDAVPayload(updatedAt: .distantPast, records: records, deletions: deletions).merging(nil)
+            try BrowsingHistorySyncRecord.save(payload.records, in: db)
+        }
     }
 
     static func erase(in db: Database) throws {
         try db.execute(sql: "DELETE FROM browsing_history")
+        try db.execute(sql: "DELETE FROM browsing_history_sync_records")
+        try db.execute(sql: "DELETE FROM browsing_history_sync_state")
+        try db.execute(sql: "DELETE FROM browsing_history_local_deletions")
     }
 }

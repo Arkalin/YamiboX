@@ -162,7 +162,7 @@ public actor BrowsingHistoryWorkflow {
                         )
                         if let existing { normalized.removeAll { $0.id == existing.id } }
                         let canonical = Self.canonical(incoming, settings: settings, directories: directories, forumIDs: forumIDs, progress: progress)
-                        guard await store.canRecord(visit, targetID: canonical.id) else {
+                        guard try await store.canRecord(visit, targetID: canonical.id) else {
                             pendingVisit = nil
                             mayCreate = false
                             continue

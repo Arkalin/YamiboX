@@ -156,7 +156,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         defer { activeAction = nil }
 
         do {
-            try await store.clearAll()
+            try await store.clearAllForSync()
             await storageUsage.refresh()
             return true
         } catch {

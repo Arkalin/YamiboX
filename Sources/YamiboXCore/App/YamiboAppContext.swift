@@ -123,7 +123,7 @@ public final class YamiboAppContext: Sendable {
         self.favoriteUpdateStore = resolvedFavoriteUpdateStore
         self.favoriteSyncRunStore = favoriteSyncRunStore ?? FavoriteSyncRunStore(databasePool: resolvedGRDBDatabasePool)
         self.readingProgressStore = readingProgressStore ?? ReadingProgressStore(databasePool: resolvedGRDBDatabasePool)
-        self.browsingHistoryStore = browsingHistoryStore ?? BrowsingHistoryStore(databasePool: resolvedGRDBDatabasePool)
+        self.browsingHistoryStore = browsingHistoryStore ?? BrowsingHistoryStore(databasePool: resolvedGRDBDatabasePool, syncSettingsStore: webDAVSyncSettingsStore)
         self.composerDraftStore = composerDraftStore ?? ForumComposerDraftStore(databasePool: resolvedGRDBDatabasePool, baseDirectory: resolvedGRDBRootDirectory.appendingPathComponent("composer-drafts", isDirectory: true))
         self.contentCoverStore = contentCoverStore ?? ContentCoverStore(databasePool: resolvedGRDBDatabasePool)
         self.novelReaderCacheStore = novelReaderCacheStore ?? NovelReaderProjectionStore(
@@ -139,6 +139,7 @@ public final class YamiboAppContext: Sendable {
         self.bookmarkStore = bookmarkStore ?? BookmarkStore(databasePool: resolvedGRDBDatabasePool)
         self.mangaDirectoryStore = mangaDirectoryStore ?? MangaDirectoryStore(
             databasePool: resolvedGRDBDatabasePool,
+            syncSettingsStore: webDAVSyncSettingsStore,
             favoriteUpdateStore: resolvedFavoriteUpdateStore,
             readingProgressStore: self.readingProgressStore
         )
@@ -542,12 +543,14 @@ public final class YamiboAppContext: Sendable {
             settingsStore: webDAVSyncSettingsStore,
             sessionStore: sessionStore,
             participants: [
+                MangaDirectoryWebDAVParticipant(store: mangaDirectoryStore),
                 FavoriteLibraryWebDAVParticipant(store: localFavoriteLibraryStore),
                 ReadingProgressWebDAVParticipant(store: readingProgressStore),
                 AppSettingsWebDAVParticipant(store: settingsStore),
                 LikeLibraryWebDAVParticipant(store: likeStore),
                 BookmarkLibraryWebDAVParticipant(store: bookmarkStore),
                 ContentCoverWebDAVParticipant(store: contentCoverStore),
+                BrowsingHistoryWebDAVParticipant(store: browsingHistoryStore),
             ],
             client: WebDAVClient(session: session)
         )

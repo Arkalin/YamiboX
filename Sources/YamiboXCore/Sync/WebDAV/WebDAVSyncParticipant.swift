@@ -83,6 +83,10 @@ protocol WebDAVSyncParticipant: Sendable {
     /// always include the dataset.
     var uploadsOnlyWhenMarkedDirty: Bool { get }
 
+    /// New datasets can seed their first automatic round without waiting for
+    /// a manual upload or another local edit after upgrading.
+    var uploadsUntrackedContentAutomatically: Bool { get }
+
     /// Decodes remote payload data just far enough to expose coordination metadata.
     /// Any decoding failure aborts synchronization; only HTTP 404 means absent.
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo
@@ -102,6 +106,7 @@ protocol WebDAVSyncParticipant: Sendable {
 
 extension WebDAVSyncParticipant {
     var uploadsOnlyWhenMarkedDirty: Bool { false }
+    var uploadsUntrackedContentAutomatically: Bool { false }
 
     func readLocalFingerprint() async throws -> String? { nil }
 

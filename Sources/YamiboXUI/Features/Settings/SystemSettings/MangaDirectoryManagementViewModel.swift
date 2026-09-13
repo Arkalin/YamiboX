@@ -10,6 +10,17 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
     var selectedMangaDirectoryIDs: Set<String> = []
     var isMangaDirectoryManagementSelectionMode = false
     var pendingMangaDirectoryManagementConfirmation: MangaDirectoryManagementConfirmation?
+    var deletionNotice = WebDAVSyncSettings().deletionNotice(for: .mangaDirectories)
+
+    func observeSyncSettings() async {
+        let store = dependencies.webDAVSync.settingsStore
+        let changes = store.changes()
+        deletionNotice = await store.load().deletionNotice(for: .mangaDirectories)
+        for await _ in changes {
+            guard !Task.isCancelled else { return }
+            deletionNotice = await store.load().deletionNotice(for: .mangaDirectories)
+        }
+    }
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity

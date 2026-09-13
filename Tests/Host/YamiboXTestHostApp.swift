@@ -9,7 +9,9 @@ import Network
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["READER_FAILURE_DETAILS_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["WEBDAV_CONTENT_FIXTURE"] == "1" {
+                WebDAVContentFixture()
+            } else if ProcessInfo.processInfo.environment["READER_FAILURE_DETAILS_FIXTURE"] == "1" {
                 ReaderFailureDetailsFixture()
             } else if ProcessInfo.processInfo.environment["SETTINGS_SIDEBAR_APPEARANCE_FIXTURE"] == "1" {
                 SettingsSidebarAppearanceFixture()
@@ -49,6 +51,72 @@ struct YamiboXTestHostApp: App {
             } else {
                 MangaLongPressFixture()
             }
+        }
+    }
+}
+
+private struct WebDAVContentFixture: View {
+    @State private var model = WebDAVContentFixtureModel()
+
+    var body: some View {
+        NavigationStack {
+            if model.isLoaded {
+                SettingsStorageView(
+                    dependencies: model.context.settingsDependencies,
+                    viewModel: model.settings.storage,
+                    offlineCacheManagement: model.settings.offlineCacheManagement,
+                    mangaDirectoryManagement: model.settings.mangaDirectoryManagement,
+                    onReset: {}
+                )
+            } else if let error = model.error {
+                Text(error)
+            } else {
+                ProgressView()
+            }
+        }
+        .task { await model.load() }
+    }
+}
+
+@MainActor @Observable
+private final class WebDAVContentFixtureModel {
+    let context: YamiboAppContext
+    let settings: SystemSettingsViewModel
+    var isLoaded = false
+    var error: String?
+
+    init() {
+        let suite = "webdav-content-fixture-\(ProcessInfo.processInfo.environment["WEBDAV_CONTENT_FIXTURE_ID"] ?? UUID().uuidString)"
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        context = YamiboAppContext(
+            sessionStore: SessionStore(defaults: UserDefaults(suiteName: suite)!),
+            settingsStore: SettingsStore(defaults: UserDefaults(suiteName: suite)!),
+            webDAVSyncSettingsStore: WebDAVSyncSettingsStore(defaults: UserDefaults(suiteName: suite)!),
+            grdbRootDirectory: root,
+            cachesRootDirectory: root.appendingPathComponent("caches"),
+            uiDefaults: UserDefaults(suiteName: suite)!,
+            clearsWebDataOnReset: false
+        )
+        settings = SystemSettingsViewModel(dependencies: context.settingsDependencies)
+    }
+
+    func load() async {
+        guard !isLoaded else { return }
+        do {
+            try await context.settingsDependencies.sessionStore.save(SessionState(
+                cookie: "\(SessionState.authenticationCookieName)=fixture",
+                isLoggedIn: true
+            ))
+            let store = context.settingsDependencies.webDAVSync.settingsStore
+            if !(await store.load()).isConfigured {
+                _ = try await store.saveConnection(
+                    baseURLString: "https://webdav.invalid/", username: "fixture",
+                    password: "fixture", isAutoSyncEnabled: true
+                )
+            }
+            isLoaded = true
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

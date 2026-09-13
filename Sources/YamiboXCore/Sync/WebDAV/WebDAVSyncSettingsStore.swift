@@ -31,6 +31,33 @@ public actor WebDAVSyncSettingsStore {
         try await save(WebDAVSyncSettings())
     }
 
+    public func saveConnection(baseURLString: String, username: String, password: String, isAutoSyncEnabled: Bool) throws -> WebDAVSyncSettings {
+        try update { settings in
+            settings.baseURLString = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+            settings.username = username.trimmingCharacters(in: .whitespacesAndNewlines)
+            settings.password = password
+            settings.isAutoSyncEnabled = isAutoSyncEnabled
+        }
+    }
+
+    @discardableResult
+    public func setContent(_ content: WebDAVSyncContent, enabled: Bool) throws -> WebDAVSyncSettings {
+        try update { settings in
+            guard settings.isEnabled(content) != enabled else { return }
+            let id = content.rawValue
+            settings.contentSelectionRevision &+= 1
+            if enabled {
+                settings.disabledContentIDs.remove(id)
+                settings.dirtyDatasetIDs.insert(id)
+                settings.lastSyncedFingerprintByDatasetID[id] = nil
+                settings.lastAppliedRemoteUpdatedAtByDatasetID[id] = nil
+                settings.lastAppliedRemoteRevisionByDatasetID[id] = nil
+            } else {
+                settings.disabledContentIDs.insert(id)
+            }
+        }
+    }
+
     @discardableResult
     func update(_ transform: @Sendable (inout WebDAVSyncSettings) -> Void) throws -> WebDAVSyncSettings {
         var settings = storage.load(default: WebDAVSyncSettings())

@@ -6,6 +6,16 @@ extension YamiboAppContext {
         AppRuntimeCoordinator(
             observations: [
                 .init(
+                    changeID: mangaDirectoryStore.changeID,
+                    changes: { [mangaDirectoryStore] in mangaDirectoryStore.changes() },
+                    onChange: { continuity.localDataChanged() }
+                ),
+                .init(
+                    changeID: browsingHistoryStore.changeID,
+                    changes: { [browsingHistoryStore] in browsingHistoryStore.changes() },
+                    onChange: { continuity.localDataChanged() }
+                ),
+                .init(
                     changeID: localFavoriteLibraryStore.changeID,
                     changes: { [localFavoriteLibraryStore] in localFavoriteLibraryStore.changes() },
                     onChange: { continuity.localDataChanged() }

@@ -37,6 +37,13 @@ final class BrowsingHistoryViewModel {
     var favoriteRemovePrompt: FavoriteRemovePrompt?
     var favoriteLocationPickerContext: FavoriteLocationPickerContext?
     var clearAllConfirmationPresented = false
+    var clearAllMessage = L10n.string("history.clear_all.message")
+
+    func prepareClearAllConfirmation() async {
+        let notice = await browsingHistoryStore?.deletionNotice() ?? ""
+        clearAllMessage = L10n.string("history.clear_all.message") + "\n\n" + notice
+        clearAllConfirmationPresented = true
+    }
 
     @ObservationIgnored private let browsingHistoryStore: BrowsingHistoryStore?
     @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
@@ -198,7 +205,7 @@ final class BrowsingHistoryViewModel {
         guard let browsingHistoryStore else { return }
         entries = []
         do {
-            try await browsingHistoryStore.clearAll()
+            try await browsingHistoryStore.clearAllForSync()
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription

@@ -175,6 +175,13 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
         migrator.registerMigration("reader.v3.sync-deletions") { db in
             try SyncDeletionState.createTable("reading_progress_sync_state", in: db)
         }
+        migrator.registerMigration("reader.v4.directory-sync") { db in
+            try db.alter(table: "manga_directories") { table in
+                table.add(column: "modified_at", .double).notNull().defaults(to: 0)
+            }
+            try db.execute(sql: "UPDATE manga_directories SET modified_at = COALESCE(last_updated_at, 0)")
+            try SyncDeletionState.createTable("manga_directory_sync_state", in: db)
+        }
     }
 
     /// Every offline-cache table, ordered so child tables are wiped before the
@@ -195,6 +202,7 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
     ]
 
     static func erase(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM manga_directory_sync_state")
         for table in offlineCacheTableNamesInDeletionOrder {
             try db.execute(sql: "DELETE FROM \(table)")
         }

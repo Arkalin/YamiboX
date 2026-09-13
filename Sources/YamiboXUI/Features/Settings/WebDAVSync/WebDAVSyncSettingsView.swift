@@ -4,6 +4,7 @@ import YamiboXCore
 enum WebDAVSyncSettingsAction: Equatable {
     case loading
     case syncing
+    case savingContent
 }
 
 @MainActor
@@ -12,6 +13,7 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
     @Published var username = ""
     @Published var password = ""
     @Published var isAutoSyncEnabled = true
+    @Published private(set) var disabledContentIDs: Set<String> = []
     @Published var direction: WebDAVSyncDirection = .upload
     @Published private(set) var activeAction: WebDAVSyncSettingsAction?
     @Published private(set) var lastSyncedAt: Date?
@@ -24,6 +26,7 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
     @Published private(set) var accountMismatchDetails: LoadFailureDetails?
 
     private let dependencies: WebDAVSyncDependencies
+    private var hasLoaded = false
 
     init(dependencies: WebDAVSyncDependencies) {
         self.dependencies = dependencies
@@ -36,10 +39,12 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
     var canContinue: Bool {
         !baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            WebDAVSyncContent.allCases.contains { !disabledContentIDs.contains($0.rawValue) } &&
             !isBusy
     }
 
     func load() async {
+        guard !hasLoaded else { return }
         activeAction = .loading
         defer { activeAction = nil }
 
@@ -48,7 +53,26 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
         username = settings.username
         password = settings.password
         isAutoSyncEnabled = settings.isAutoSyncEnabled
+        disabledContentIDs = settings.disabledContentIDs
         lastSyncedAt = settings.lastSyncedAt
+        hasLoaded = true
+    }
+
+    func setContent(_ content: WebDAVSyncContent, enabled: Bool) async {
+        guard !isBusy else { return }
+        activeAction = .savingContent
+        defer { activeAction = nil }
+        let previous = disabledContentIDs
+        if enabled { disabledContentIDs.remove(content.rawValue) }
+        else { disabledContentIDs.insert(content.rawValue) }
+        do {
+            let settings = try await dependencies.settingsStore.setContent(content, enabled: enabled)
+            disabledContentIDs = settings.disabledContentIDs
+        } catch {
+            disabledContentIDs = previous
+            errorMessage = error.localizedDescription
+            errorDetails = LoadFailureDetails(error: error)
+        }
     }
 
     func continueSync(allowingAccountMismatch: Bool = false) async -> Bool {
@@ -69,7 +93,9 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
         }
 
         do {
-            try await dependencies.settingsStore.save(settings)
+            settings = try await dependencies.settingsStore.saveConnection(
+                baseURLString: settings.baseURLString, username: settings.username,
+                password: settings.password, isAutoSyncEnabled: settings.isAutoSyncEnabled)
             let service = dependencies.makeSyncService()
             switch direction {
             case .upload:
@@ -153,6 +179,15 @@ public struct WebDAVSyncSettingsView: View {
                         Label(L10n.string("webdav.auto_sync"), systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(viewModel.isBusy)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+
+                    NavigationLink {
+                        WebDAVSyncContentView(viewModel: viewModel)
+                    } label: {
+                        Label(L10n.string("webdav.sync_content"), systemImage: "checklist")
+                    }
+                    .disabled(viewModel.isBusy)
+                    .accessibilityIdentifier("webdav.syncContent")
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
 
                     Picker(L10n.string("webdav.operation"), selection: $viewModel.direction) {
@@ -275,5 +310,24 @@ public struct WebDAVSyncSettingsView: View {
         case .download:
             L10n.string("webdav.download")
         }
+    }
+}
+
+private struct WebDAVSyncContentView: View {
+    @ObservedObject var viewModel: WebDAVSyncSettingsViewModel
+
+    var body: some View {
+        Form {
+            ForEach(WebDAVSyncContent.allCases) { content in
+                Toggle(content.title, isOn: Binding(
+                    get: { !viewModel.disabledContentIDs.contains(content.rawValue) },
+                    set: { enabled in Task { await viewModel.setContent(content, enabled: enabled) } }
+                ))
+                .disabled(viewModel.isBusy)
+                .accessibilityIdentifier("webdav.content.\(content.rawValue)")
+            }
+        }
+        .navigationTitle(L10n.string("webdav.sync_content"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

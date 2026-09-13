@@ -45,6 +45,7 @@ struct MangaDirectoryManagementView: View {
         .task {
             await viewModel.refreshMangaDirectoryManagement()
         }
+        .task { await viewModel.observeSyncSettings() }
         .refreshable {
             await viewModel.refreshMangaDirectoryManagement()
         }
