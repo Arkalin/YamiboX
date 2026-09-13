@@ -6,6 +6,10 @@ import UIKit
 
 struct NovelReaderBottomChrome: View {
     let progress: ReaderChromeProgress
+    var spreadSummaries: [ReaderChromeProgressSummary?]? = nil
+    var spreadPageNumbers: [Int?]? = nil
+    var pageNumber: Int = 1
+    var isImmersive: Bool = false
     let readingMode: ReaderReadingMode
     let backgroundStyle: ReaderBackgroundStyle
     let fillDirection: ReaderProgressFillDirection
@@ -46,8 +50,8 @@ struct NovelReaderBottomChrome: View {
                 .padding(.bottom, chromeLayout.bottomControlsAdditionalBottomOffset)
 
             progressSummary
-                .readerChromeFadeVisibility(isVisible)
-                .padding(.horizontal, 12)
+                .readerChromeFadeVisibility(information.isVisible)
+                .allowsHitTesting(false)
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
@@ -60,6 +64,12 @@ struct NovelReaderBottomChrome: View {
 
     private var chromeLayout: ReaderBottomChromeLayoutPresentation {
         ReaderBottomChromeLayoutPresentation()
+    }
+
+    private var information: ReaderPageInformationPresentation {
+        ReaderPageInformationPresentation(
+            isPaged: readingMode == .paged, isImmersive: isImmersive, isChromeVisible: isVisible
+        )
     }
 
     private var bottomControls: some View {
@@ -152,18 +162,45 @@ struct NovelReaderBottomChrome: View {
 
     @ViewBuilder
     private var progressSummary: some View {
+        if let spreadSummaries {
+            HStack(spacing: 0) {
+                ForEach(0..<2, id: \.self) { index in
+                    Group {
+                        if let summary = spreadSummaries[index] {
+                            summaryContent(summary, pageNumber: spreadPageNumbers?[index] ?? pageNumber)
+                        } else {
+                            Color.clear.frame(height: 0)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        } else {
+            singleProgressSummary.padding(.horizontal, 12)
+        }
+    }
+
+    private var singleProgressSummary: some View {
         let summary = ReaderChromeProgressSummary(
             chapterTitle: progress.title(forTargetIndex: progress.currentIndex),
             progressText: progress.secondaryText ?? ""
         )
+        return summaryContent(summary, pageNumber: pageNumber)
+    }
+
+    @ViewBuilder
+    private func summaryContent(_ summary: ReaderChromeProgressSummary, pageNumber: Int) -> some View {
 
         // Two caption2 lines with this spacing is load-bearing:
         // `NovelReaderVerticalBandsPresentation.pagedProgressSummaryHeight`
         // mirrors exactly that to reserve the paged text band above us.
         let content = VStack(spacing: chromeLayout.progressSummaryLineSpacing) {
-            Text(summary.pageProgressLine)
+            Text(information.pageNumberStyle == .compact ? String(pageNumber) : summary.pageProgressLine)
             if !summary.webProgressLine.isEmpty {
                 Text(summary.webProgressLine)
+                    .opacity(information.pageNumberStyle == .compact ? 0 : 1)
+                    .accessibilityHidden(information.pageNumberStyle == .compact)
             }
         }
         .font(.caption2.weight(.semibold))

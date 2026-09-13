@@ -79,6 +79,7 @@ public enum ReaderFontFamily: String, Codable, Hashable, CaseIterable, Sendable 
 }
 
 public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
+    public var isImmersiveModeEnabled: Bool
     public var fontScale: Double
     public var fontFamily: ReaderFontFamily
     public var lineHeightScale: Double
@@ -96,6 +97,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var translationMode: ReaderTranslationMode
 
     public init(
+        isImmersiveModeEnabled: Bool = false,
         fontScale: Double = 1.0,
         fontFamily: ReaderFontFamily = .systemSans,
         lineHeightScale: Double = 1.45,
@@ -121,9 +123,47 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         self.loadsInlineImages = loadsInlineImages
         self.showsTwoPagesInLandscapeOnPad = showsTwoPagesInLandscapeOnPad
         self.backgroundStyle = backgroundStyle
+        self.isImmersiveModeEnabled = isImmersiveModeEnabled
         self.readingMode = readingMode
         self.pagedTurnStyle = pagedTurnStyle
         self.pageTurnDirection = pageTurnDirection
         self.translationMode = translationMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isImmersiveModeEnabled
+        case fontScale
+        case fontFamily
+        case lineHeightScale
+        case characterSpacingScale
+        case horizontalPadding
+        case usesJustifiedText
+        case indentsParagraphFirstLine
+        case loadsInlineImages
+        case showsTwoPagesInLandscapeOnPad
+        case backgroundStyle
+        case readingMode
+        case pagedTurnStyle
+        case pageTurnDirection
+        case translationMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isImmersiveModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isImmersiveModeEnabled) ?? false
+        fontScale = try container.decode(Double.self, forKey: .fontScale)
+        fontFamily = try container.decode(ReaderFontFamily.self, forKey: .fontFamily)
+        lineHeightScale = try container.decode(Double.self, forKey: .lineHeightScale)
+        characterSpacingScale = try container.decode(Double.self, forKey: .characterSpacingScale)
+        horizontalPadding = try container.decode(Double.self, forKey: .horizontalPadding)
+        usesJustifiedText = try container.decode(Bool.self, forKey: .usesJustifiedText)
+        indentsParagraphFirstLine = try container.decode(Bool.self, forKey: .indentsParagraphFirstLine)
+        loadsInlineImages = try container.decode(Bool.self, forKey: .loadsInlineImages)
+        showsTwoPagesInLandscapeOnPad = try container.decode(Bool.self, forKey: .showsTwoPagesInLandscapeOnPad)
+        backgroundStyle = try container.decode(ReaderBackgroundStyle.self, forKey: .backgroundStyle)
+        readingMode = try container.decode(ReaderReadingMode.self, forKey: .readingMode)
+        pagedTurnStyle = try container.decode(ReaderPagedTurnStyle.self, forKey: .pagedTurnStyle)
+        pageTurnDirection = try container.decode(ReaderPageTurnDirection.self, forKey: .pageTurnDirection)
+        translationMode = try container.decode(ReaderTranslationMode.self, forKey: .translationMode)
     }
 }

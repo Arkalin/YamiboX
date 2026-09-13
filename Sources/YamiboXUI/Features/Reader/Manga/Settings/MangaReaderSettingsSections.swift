@@ -90,6 +90,12 @@ struct MangaReaderSettingsPagingSection: View {
                     palette: palette,
                     usesTwoPageSpread: usesTwoPageSpread
                 )
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
+                    title: L10n.string("reader.immersive_mode"),
+                    palette: palette,
+                    isOn: $settings.isImmersiveModeEnabled
+                )
             }
         }
     }

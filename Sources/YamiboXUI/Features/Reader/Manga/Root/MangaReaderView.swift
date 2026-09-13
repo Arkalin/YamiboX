@@ -174,6 +174,7 @@ public struct MangaReaderView: View {
                         }
                     ),
                     readingMode: model.presentation.settings.readingMode,
+                    isImmersive: model.presentation.settings.isImmersiveModeEnabled,
                     pageTurnDirection: model.presentation.settings.pageTurnDirection,
                     canNavigateBack: model.canNavigateBack,
                     canNavigateForward: model.canNavigateForward,
@@ -723,12 +724,13 @@ public struct MangaReaderView: View {
         let currentIndex = min(max(currentPage.localIndex, 0), itemCount - 1)
         let progressFraction = itemCount > 1 ? Double(currentIndex) / Double(maxIndex) : 0
         let percentText = "\(Int((progressFraction * 100).rounded()))%"
-        let pageLabel = MangaPagedReadingPlan(
+        let readingPlan = MangaPagedReadingPlan(
             pages: pages,
             currentPageIndex: currentPageIndex,
             pageTurnDirection: presentation.settings.pageTurnDirection,
             usesTwoPageSpread: usesTwoPageSpread
-        ).currentChapterPageLabel
+        )
+        let pageLabel = readingPlan.currentChapterPageLabel
         let pageSummary = L10n.string("manga.preview_page_label", pageLabel, itemCount)
         let rawTitle = loaded.directoryPanel.displayChapters
             .first { $0.tid == currentPage.tid }?
@@ -758,7 +760,12 @@ public struct MangaReaderView: View {
                 ticks: [],
                 iconSystemName: capsuleIconSystemName,
                 scrubTargetIndexes: Array(0 ..< itemCount)
-            )
+            ),
+            spreadPageSummaries: readingPlan.spreadPageSummaries,
+            spreadWorkTitle: usesTwoPageSpread ? loaded.directoryTitle : nil,
+            spreadPageNumbers: readingPlan.spreadPageNumbers,
+            pageNumber: currentIndex + 1,
+            remainingChapterPageCount: readingPlan.remainingChapterPageCount
         )
     }
 }

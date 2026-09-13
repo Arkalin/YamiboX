@@ -1495,7 +1495,10 @@ private extension NovelReaderAppearanceSettings {
         rhs.backgroundStyle = .system
         lhs.pagedTurnStyle = .slide
         rhs.pagedTurnStyle = .slide
+        lhs.isImmersiveModeEnabled = false
+        rhs.isImmersiveModeEnabled = false
         return lhs == rhs &&
-            (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle)
+            (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle
+                || isImmersiveModeEnabled != other.isImmersiveModeEnabled)
     }
 }

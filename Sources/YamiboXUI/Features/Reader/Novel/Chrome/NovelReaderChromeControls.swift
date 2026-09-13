@@ -30,7 +30,7 @@ struct NovelReaderChromeControls: View {
 
     var body: some View {
         ZStack {
-            if isChromeVisible {
+            if isChromeVisible || model.settings.readingMode == .paged {
                 VStack(spacing: 0) {
                     topChrome
                     Spacer(minLength: 0)
@@ -49,6 +49,7 @@ struct NovelReaderChromeControls: View {
     private var topChrome: some View {
         NovelReaderTopChrome(
             model: model,
+            isChromeVisible: isChromeVisible,
             navigation: model.navigation,
             topInset: topInset,
             onNavigateBack: onNavigateBack,
@@ -69,6 +70,10 @@ struct NovelReaderChromeControls: View {
     private var bottomChrome: some View {
         NovelReaderBottomChrome(
             progress: model.chromeProgressSnapshot.chromeProgress,
+            spreadSummaries: model.chromeProgressSnapshot.spreadSummaries,
+            spreadPageNumbers: model.chromeProgressSnapshot.spreadPageNumbers,
+            pageNumber: model.chromeProgressSnapshot.pageNumber,
+            isImmersive: model.settings.isImmersiveModeEnabled,
             readingMode: model.settings.readingMode,
             backgroundStyle: model.settings.backgroundStyle,
             fillDirection: model.settings.pageTurnDirection.progressFillDirection,

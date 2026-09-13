@@ -19,6 +19,8 @@ struct YamiboXTestHostApp: App {
                 MineSidebarFixture()
             } else if ProcessInfo.processInfo.environment["MANGA_READER_CHROME_FIXTURE"] == "1" {
                 MangaReaderChromeFixture()
+            } else if ProcessInfo.processInfo.environment["NOVEL_READER_CHROME_FIXTURE"] == "1" {
+                NovelReaderChromeFixture()
             } else if ProcessInfo.processInfo.environment["BBCODE_PASTE_FIXTURE"] == "1" {
                 ForumBBCodePasteFixture()
             } else if ProcessInfo.processInfo.environment["LIKES_FIXTURE"] == "1" {

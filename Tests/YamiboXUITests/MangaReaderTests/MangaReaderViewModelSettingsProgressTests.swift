@@ -5,6 +5,20 @@ import YamiboXTestSupport
 
 @MainActor
 final class MangaReaderViewModelSettingsProgressTests: XCTestCase {
+    func testImmersiveSettingDoesNotMoveOrReloadPages() async throws {
+        let fixture = try await makeFixture(appSettings: AppSettings(manga: MangaReaderSettings(readingMode: .paged)))
+        await fixture.model.prepare()
+        guard case let .loaded(before) = fixture.model.presentation.state else { return XCTFail("Expected loaded reader") }
+        var settings = fixture.model.presentation.settings
+        settings.isImmersiveModeEnabled = false
+        fixture.model.applySettings(settings)
+        guard case let .loaded(after) = fixture.model.presentation.state else { return XCTFail("Expected loaded reader") }
+        XCTAssertEqual(after.pages, before.pages)
+        XCTAssertEqual(after.currentPageIndex, before.currentPageIndex)
+        XCTAssertEqual(after.viewportPlacement, before.viewportPlacement)
+        try await waitFor { await fixture.settingsStore.load().manga.isImmersiveModeEnabled == false }
+    }
+
     func testPrepareExposesPersistedMangaSettingsWithClampedBrightness() async throws {
         let fixture = try await makeFixture(
             appSettings: AppSettings(

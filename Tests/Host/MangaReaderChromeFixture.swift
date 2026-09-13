@@ -43,12 +43,14 @@ private final class MangaReaderChromeFixtureModel {
             grdbRootDirectory: root, cachesRootDirectory: root.appendingPathComponent("caches"),
             uiDefaults: UserDefaults(suiteName: name)!, clearsWebDataOnReset: false
         )
-        let urls = (0..<8).map { URL(string: "https://manga-chrome-fixture.invalid/page-\($0).png")! }
+        let environment = ProcessInfo.processInfo.environment
+        let pageCount = max(1, min(Int(environment["MANGA_READER_PAGE_COUNT"] ?? "8") ?? 8, 30))
+        let urls = (0..<pageCount).map { URL(string: "https://manga-chrome-fixture.invalid/page-\($0).png")! }
         let images = Dictionary(uniqueKeysWithValues: urls.enumerated().map { ($0.element, Self.imageData(page: $0.offset)) })
         appModel = YamiboAppModel(appContext: context,
             imagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline(
                 offlineImages: MangaReaderChromeFixtureImages(images: images))))
-        projection = MangaReaderProjection(tid: "730001", chapterTitle: "Manga Geometry Fixture", imageURLs: urls)
+        projection = MangaReaderProjection(tid: "730001", chapterTitle: environment["MANGA_READER_CHAPTER_TITLE"] ?? "Manga Geometry Fixture", imageURLs: urls)
     }
 
     func prepare() async {
@@ -58,8 +60,9 @@ private final class MangaReaderChromeFixtureModel {
         let style = ReaderPagedTurnStyle(rawValue: environment["MANGA_READER_STYLE"] ?? "none") ?? .none
         let spread = environment["MANGA_READER_SPREAD"] != "0"
         try? await context.settingsStore.update {
-            $0.manga = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: style,
-                pageTurnDirection: .leftToRight, pageScaleMode: .fitHeight,
+            $0.manga = MangaReaderSettings(isImmersiveModeEnabled: environment["READER_IMMERSIVE"] == "1",
+                readingMode: .paged, pagedTurnStyle: style,
+                pageTurnDirection: environment["READER_RTL"] == "1" ? .rightToLeft : .leftToRight, pageScaleMode: .fitHeight,
                 pageEdgeFillStyle: .black, showsTwoPagesInLandscapeOnPad: spread,
                 ignoresTopSafeArea: environment["MANGA_READER_RESPECT_TOP"] != "1")
         }
@@ -67,9 +70,11 @@ private final class MangaReaderChromeFixtureModel {
     }
 
     func open() {
+        let environment = ProcessInfo.processInfo.environment
         appModel.presentMangaReader(MangaLaunchContext(originalThreadID: "730001", chapterTID: "730001",
-            displayTitle: "Manga Geometry Fixture", source: .forum, initialPage: 0,
-            directoryName: "Manga Geometry Fixture", isSmartModeEnabled: false), initialProjection: projection)
+            displayTitle: environment["MANGA_READER_WORK_TITLE"] ?? "Manga Geometry Fixture", source: .forum,
+            initialPage: Int(environment["MANGA_READER_INITIAL_PAGE"] ?? "0") ?? 0,
+            directoryName: environment["MANGA_READER_WORK_TITLE"] ?? "Manga Geometry Fixture", isSmartModeEnabled: false), initialProjection: projection)
     }
 
     private static func imageData(page: Int) -> Data {

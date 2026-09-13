@@ -5,6 +5,41 @@ import Testing
 
 @Suite("MangaReaderTests: Paged Reading Plan")
 struct MangaPagedReadingPlanTests {
+    @Test func remainingPagesExcludeBothVisiblePagesAndRespectOddChapterEnds() throws {
+        let pages = try makePagedPlanPages(pageCountsByTID: [("700", 3), ("701", 2)])
+        for direction in [MangaPageTurnDirection.leftToRight, .rightToLeft] {
+            for usesSpread in [true, false] {
+                for index in pages.indices {
+                    let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: index,
+                        pageTurnDirection: direction, usesTwoPageSpread: usesSpread)
+                    let expected = usesSpread ? [1, 1, 0, 0, 0] : [2, 1, 0, 1, 0]
+                    #expect(plan.remainingChapterPageCount == expected[index])
+                    #expect(plan.spreadPageNumbers == (usesSpread ? [plan.currentSpread?.leftPage, plan.currentSpread?.rightPage].map { $0.map { $0.localIndex + 1 } } : nil))
+                }
+            }
+        }
+        #expect(MangaPagedReadingPlan(pages: [], currentPageIndex: nil).remainingChapterPageCount == 0)
+    }
+
+    @Test func splitSummariesFollowPhysicalPagesAndChapterCounts() throws {
+        let pages = try makePagedPlanPages(pageCountsByTID: [("700", 3), ("701", 2)])
+        for direction in [MangaPageTurnDirection.leftToRight, .rightToLeft] {
+            for index in [0, 2, 3] {
+                let plan = MangaPagedReadingPlan(
+                    pages: pages, currentPageIndex: index,
+                    pageTurnDirection: direction, usesTwoPageSpread: true
+                )
+                let first = L10n.string("manga.preview_page_label", index == 2 ? "3" : "1", index == 3 ? 2 : 3)
+                let second: String? = index == 2 ? nil
+                    : L10n.string("manga.preview_page_label", "2", index == 3 ? 2 : 3)
+                let expected: [String?] = direction == .leftToRight ? [first, second] : [second, first]
+                #expect(plan.spreadPageSummaries == expected)
+            }
+        }
+        #expect(MangaPagedReadingPlan(pages: pages, currentPageIndex: 0).spreadPageSummaries == nil)
+        #expect(MangaPagedReadingPlan(pages: [], currentPageIndex: nil, usesTwoPageSpread: true).spreadPageSummaries == nil)
+    }
+
     @Test func planKeepsSinglePageIdentityForCurrentPageLookup() throws {
         let pages = try makePagedPlanPages()
         let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: 1)

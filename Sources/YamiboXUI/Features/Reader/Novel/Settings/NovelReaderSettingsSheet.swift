@@ -117,7 +117,8 @@ struct NovelReaderSettingsSheet: View {
                     colorScheme: colorScheme,
                     onBackgroundStyleChange: setBackgroundStyle,
                     onReadingModeChange: setReadingMode,
-                    onPageTurnDirectionChange: setPageTurnDirection
+                    onPageTurnDirectionChange: setPageTurnDirection,
+                    onImmersiveModeChange: { draftSettings.isImmersiveModeEnabled = $0 }
                 )
 
                 NovelReaderMiscSection(

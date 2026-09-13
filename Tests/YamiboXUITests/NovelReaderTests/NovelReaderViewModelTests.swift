@@ -1758,6 +1758,17 @@ final class NovelReaderViewModelTests: XCTestCase {
             XCTAssertEqual(presentation.committedSettings.pagedTurnStyle, style)
         }
 
+        for immersive in [true, false] {
+            let previous = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
+            updatedSettings.isImmersiveModeEnabled = immersive
+            await model.commitNovelTextAppearance(updatedSettings)
+            let presentation = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
+            XCTAssertEqual(presentation.generation, previous.generation)
+            XCTAssertEqual(presentation.surfaces, previous.surfaces)
+            XCTAssertEqual(presentation.selectedSurfaceIndex, previous.selectedSurfaceIndex)
+            XCTAssertEqual(presentation.committedSettings.isImmersiveModeEnabled, immersive)
+        }
+
         for backgroundStyle in [ReaderBackgroundStyle.quiet, .paper] {
             let previous = try await MainActor.run { try XCTUnwrap(model.novelReaderPresentation) }
             updatedSettings.backgroundStyle = backgroundStyle

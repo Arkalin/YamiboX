@@ -84,6 +84,29 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
             ?? "1"
     }
 
+    var spreadPageSummaries: [String?]? {
+        guard usesTwoPageSpread, let spread = currentSpread else { return nil }
+        return [spread.leftPage, spread.rightPage].map { page in
+            page.map {
+                L10n.string("manga.preview_page_label", String(max($0.localIndex + 1, 1)), max($0.chapterPageCount, 1))
+            }
+        }
+    }
+
+    var spreadPageNumbers: [Int?]? {
+        guard usesTwoPageSpread, let spread = currentSpread else { return nil }
+        return [spread.leftPage, spread.rightPage].map { $0.map { $0.localIndex + 1 } }
+    }
+
+    var remainingChapterPageCount: Int {
+        guard let anchor = usesTwoPageSpread ? currentSpread?.preferredPage : currentPage else { return 0 }
+        let visiblePages = usesTwoPageSpread
+            ? [currentSpread?.leftPage, currentSpread?.rightPage].compactMap { $0 }
+            : [anchor]
+        let lastVisibleIndex = visiblePages.filter { $0.tid == anchor.tid }.map(\.localIndex).max() ?? anchor.localIndex
+        return max(anchor.chapterPageCount - lastVisibleIndex - 1, 0)
+    }
+
     func page(at index: Int?) -> MangaReaderPageProjection? {
         guard let index,
               pages.indices.contains(index) else {

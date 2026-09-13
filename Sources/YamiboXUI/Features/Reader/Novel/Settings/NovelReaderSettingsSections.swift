@@ -131,6 +131,7 @@ struct NovelReaderDisplaySection: View {
     let onBackgroundStyleChange: (ReaderBackgroundStyle) -> Void
     let onReadingModeChange: (ReaderReadingMode, ReaderPagedTurnStyle) -> Void
     let onPageTurnDirectionChange: (ReaderPageTurnDirection) -> Void
+    let onImmersiveModeChange: (Bool) -> Void
 
     var body: some View {
         ReaderSettingsSection(title: L10n.string("reader.section.display"), palette: palette) {
@@ -157,6 +158,15 @@ struct NovelReaderDisplaySection: View {
                     selection: settings.pageTurnDirection,
                     palette: palette,
                     onSelect: onPageTurnDirectionChange
+                )
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
+                    title: L10n.string("reader.immersive_mode"),
+                    palette: palette,
+                    isOn: Binding(
+                        get: { settings.isImmersiveModeEnabled },
+                        set: onImmersiveModeChange
+                    )
                 )
             }
         }

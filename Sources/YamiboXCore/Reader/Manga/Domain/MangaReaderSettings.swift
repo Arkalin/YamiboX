@@ -63,6 +63,7 @@ public enum MangaDirectorySortOrder: String, Codable, Hashable, CaseIterable, Se
 }
 
 public struct MangaReaderSettings: Codable, Hashable, Sendable {
+    public var isImmersiveModeEnabled: Bool
     public var readingMode: MangaReadingMode
     public var pagedTurnStyle: ReaderPagedTurnStyle
     public var pageTurnDirection: MangaPageTurnDirection
@@ -76,6 +77,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
     public var directorySortOrder: MangaDirectorySortOrder
 
     public init(
+        isImmersiveModeEnabled: Bool = true,
         readingMode: MangaReadingMode = .vertical,
         pagedTurnStyle: ReaderPagedTurnStyle = .slide,
         pageTurnDirection: MangaPageTurnDirection = .leftToRight,
@@ -87,6 +89,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         ignoresTopSafeArea: Bool = true,
         directorySortOrder: MangaDirectorySortOrder = .ascending
     ) {
+        self.isImmersiveModeEnabled = isImmersiveModeEnabled
         self.readingMode = readingMode
         self.pagedTurnStyle = pagedTurnStyle
         self.pageTurnDirection = pageTurnDirection
@@ -97,5 +100,34 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         self.showsTwoPagesInLandscapeOnPad = showsTwoPagesInLandscapeOnPad
         self.ignoresTopSafeArea = ignoresTopSafeArea
         self.directorySortOrder = directorySortOrder
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isImmersiveModeEnabled
+        case readingMode
+        case pagedTurnStyle
+        case pageTurnDirection
+        case pageScaleMode
+        case pageEdgeFillStyle
+        case brightness
+        case zoomEnabled
+        case showsTwoPagesInLandscapeOnPad
+        case ignoresTopSafeArea
+        case directorySortOrder
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isImmersiveModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isImmersiveModeEnabled) ?? true
+        readingMode = try container.decode(MangaReadingMode.self, forKey: .readingMode)
+        pagedTurnStyle = try container.decode(ReaderPagedTurnStyle.self, forKey: .pagedTurnStyle)
+        pageTurnDirection = try container.decode(MangaPageTurnDirection.self, forKey: .pageTurnDirection)
+        pageScaleMode = try container.decode(MangaPageScaleMode.self, forKey: .pageScaleMode)
+        pageEdgeFillStyle = try container.decode(MangaPageEdgeFillStyle.self, forKey: .pageEdgeFillStyle)
+        brightness = try container.decode(Double.self, forKey: .brightness)
+        zoomEnabled = try container.decode(Bool.self, forKey: .zoomEnabled)
+        showsTwoPagesInLandscapeOnPad = try container.decode(Bool.self, forKey: .showsTwoPagesInLandscapeOnPad)
+        ignoresTopSafeArea = try container.decode(Bool.self, forKey: .ignoresTopSafeArea)
+        directorySortOrder = try container.decode(MangaDirectorySortOrder.self, forKey: .directorySortOrder)
     }
 }

@@ -951,6 +951,9 @@
 "reader.next_web_page" = "下一网页";
 "reader.no_cacheable_pages" = "当前没有可缓存的网页页码";
 "reader.page_number_compact" = "第%d页";
+"reader.immersive_mode" = "沉浸模式";
+"reader.chapter_pages_remaining" = "本章还剩 %d 页";
+"reader.chapter_last_page" = "本章最后一页";
 "reader.page_number_spaced" = "第 %d 页";
 "reader.page_turn_direction" = "翻页方向";
 "reader.page_turn_direction.left_to_right" = "从左向右";

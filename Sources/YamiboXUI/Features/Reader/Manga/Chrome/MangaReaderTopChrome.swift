@@ -4,6 +4,9 @@ import YamiboXCore
 #if os(iOS)
 struct MangaReaderTopChrome: View {
     let title: String?
+    var spreadWorkTitle: String? = nil
+    var isRightToLeft: Bool = false
+    var isChromeVisible: Bool = true
     let topInset: CGFloat
     let isPreview: Bool
     let canNavigateBack: Bool
@@ -27,38 +30,55 @@ struct MangaReaderTopChrome: View {
                 let titleSidePadding = max(leadingControlsWidth, trailingControlsWidth) + 16
 
                 ZStack {
-                    MangaReaderTopChapterTitle(title: title)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, titleSidePadding)
-
-                    HStack(spacing: buttonSpacing) {
-                        if canNavigateBack {
-                            ReaderChromeHistoryButton(
-                                direction: .back,
-                                title: L10n.string("common.back"),
-                                isGlassBacked: true,
-                                action: onNavigateBack
-                            )
+                    if let spreadWorkTitle {
+                        HStack(spacing: 0) {
+                            MangaReaderTopChapterTitle(title: isRightToLeft ? title : spreadWorkTitle)
+                                .padding(.horizontal, titleSidePadding + 16)
+                                .frame(maxWidth: .infinity)
+                            MangaReaderTopChapterTitle(title: isRightToLeft ? spreadWorkTitle : title)
+                                .padding(.horizontal, titleSidePadding + 16)
+                                .frame(maxWidth: .infinity)
                         }
+                        .padding(.horizontal, -16)
+                        .allowsHitTesting(false)
+                    } else {
+                        MangaReaderTopChapterTitle(title: title)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, titleSidePadding)
+                            .allowsHitTesting(false)
+                    }
 
-                        Spacer(minLength: 0)
+                    if isChromeVisible {
+                        HStack(spacing: buttonSpacing) {
+                            if canNavigateBack {
+                                ReaderChromeHistoryButton(
+                                    direction: .back,
+                                    title: L10n.string("common.back"),
+                                    isGlassBacked: true,
+                                    action: onNavigateBack
+                                )
+                            }
 
-                        if canNavigateForward {
-                            ReaderChromeHistoryButton(
-                                direction: .forward,
-                                title: L10n.string("common.forward"),
-                                isGlassBacked: true,
-                                action: onNavigateForward
+                            Spacer(minLength: 0)
+
+                            if canNavigateForward {
+                                ReaderChromeHistoryButton(
+                                    direction: .forward,
+                                    title: L10n.string("common.forward"),
+                                    isGlassBacked: true,
+                                    action: onNavigateForward
+                                )
+                            }
+
+                            ReaderChromeCircleButton(
+                                systemName: "xmark",
+                                title: L10n.string("common.close"),
+                                tint: appTheme.controlAccent,
+                                action: onClose
                             )
+                            .frame(width: chromeButtonSize, height: chromeButtonSize)
                         }
-
-                        ReaderChromeCircleButton(
-                            systemName: "xmark",
-                            title: L10n.string("common.close"),
-                            tint: appTheme.controlAccent,
-                            action: onClose
-                        )
-                        .frame(width: chromeButtonSize, height: chromeButtonSize)
+                        .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: chromeButtonSize)
@@ -68,6 +88,7 @@ struct MangaReaderTopChrome: View {
 
             if isPreview {
                 ReaderPreviewModeBadge()
+                    .readerChromeFadeVisibility(isChromeVisible)
             }
         }
         .padding(.top, max(topInset + 8, 20))

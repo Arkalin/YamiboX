@@ -26,6 +26,7 @@
 		CA907CED1873456DBBC80903 /* Tests/Host/MineSidebarFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */; };
 		CA907CED1873456DBBC80905 /* Tests/Host/SettingsSidebarAppearanceFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */; };
 		CA907CED1873456DBBC80907 /* Tests/Host/ReaderFailureDetailsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */; };
+		CA907CED1873456DBBC80909 /* Tests/Host/NovelReaderChromeFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */; };
 		E40F0270FCC083EAA9080652 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDA66CE60A7503624B088913 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
@@ -57,6 +58,7 @@
 		CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/MineSidebarFixture.swift; sourceTree = "<group>"; };
 		CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/SettingsSidebarAppearanceFixture.swift; sourceTree = "<group>"; };
 		CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ReaderFailureDetailsFixture.swift; sourceTree = "<group>"; };
+		CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/NovelReaderChromeFixture.swift; sourceTree = "<group>"; };
 		FDA66CE60A7503624B088913 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
@@ -120,6 +122,7 @@
 				CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */,
 				CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */,
 				CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */,
+				CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */,
 				91A000000000000000000052 /* Tests/YamiboXInteractionUITests */,
 				91A000000000000000000025 /* Tests/YamiboXCoreTests */,
 				91A000000000000000000015 /* Tests/YamiboXUITests */,
@@ -380,6 +383,7 @@
 				CA907CED1873456DBBC80903 /* Tests/Host/MineSidebarFixture.swift in Sources */,
 				CA907CED1873456DBBC80905 /* Tests/Host/SettingsSidebarAppearanceFixture.swift in Sources */,
 				CA907CED1873456DBBC80907 /* Tests/Host/ReaderFailureDetailsFixture.swift in Sources */,
+				CA907CED1873456DBBC80909 /* Tests/Host/NovelReaderChromeFixture.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

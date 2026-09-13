@@ -476,6 +476,55 @@ final class ReaderProgressScrubStateTests: XCTestCase {
         )
     }
 
+    func testSplitNovelSummariesUseEachPhysicalPagesWebAndLocalCount() {
+        let surfaces = [1, 1, 1, 2, 2].enumerated().map { index, view in
+            NovelReaderSurface(
+                identity: NovelReaderSurfaceIdentity(generation: 1, ordinal: index),
+                presentationIndex: index, kind: .text, documentView: view,
+                chapterTitle: nil, presentationSize: .zero
+            )
+        }
+        for direction in [ReaderPageTurnDirection.leftToRight, .rightToLeft] {
+            for pair in [(0, Optional(1)), (2, Optional(3)), (4, nil)] {
+                let spread = NovelReaderPresentationSpread(
+                    index: 0, leftSurfaceIndex: pair.0, leftSurfaceIdentity: surfaces[pair.0].identity,
+                    rightSurfaceIndex: pair.1, rightSurfaceIdentity: pair.1.map { surfaces[$0].identity },
+                    chapterTitle: nil
+                )
+                for mode in [ReaderReadingMode.paged, .vertical] {
+                    for usesSpread in [true, false] {
+                        let presentation = NovelReaderPresentation(
+                            generation: 1, revision: 1, surfaces: surfaces,
+                            selectedSurfaceIdentity: surfaces[pair.0].identity, spreads: [spread],
+                            committedSettings: NovelReaderAppearanceSettings(readingMode: mode, pageTurnDirection: direction),
+                            readingState: NovelReaderReadingState(
+                                currentView: 1, maxView: 2, currentChapterTitle: nil,
+                                authorID: nil, currentSurfaceIntraProgress: 0
+                            ),
+                            retainedChapterCount: 1, filteredChapterCandidateCount: 0,
+                            usesTwoPageSpread: usesSpread
+                        )
+                        let snapshot = NovelReaderChromeProgressSnapshot(presentation: presentation)
+                        guard usesSpread && mode == .paged else {
+                            XCTAssertNil(snapshot.spreadSummaries)
+                            continue
+                        }
+                        let expected: [ReaderChromeProgressSummary?] = [Optional(pair.0), pair.1].map { index in
+                            guard let index else { return nil }
+                            let web = index < 3 ? 1 : 2
+                            return ReaderChromeProgressSummary(
+                                chapterTitle: nil,
+                                progressText: L10n.string("reader.progress", String(index < 3 ? index + 1 : index - 2), web == 1 ? 3 : 2, web, 2)
+                            )
+                        }
+                        XCTAssertEqual(snapshot.spreadSummaries, expected)
+                    }
+                }
+            }
+        }
+        XCTAssertNil(NovelReaderChromeProgressSnapshot.empty.spreadSummaries)
+    }
+
     func testIntegratedProgressChromeContractsAcrossPagedAndVerticalModes() {
         let paged = ReaderProgressChromePresentation(readingMode: .paged, isChromeVisible: true)
         let verticalVisible = ReaderProgressChromePresentation(readingMode: .vertical, isChromeVisible: true)

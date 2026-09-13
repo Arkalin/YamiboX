@@ -7,6 +7,7 @@ import UIKit
 struct MangaReaderBottomChrome: View {
     let bottomInset: CGFloat
     let isVisible: Bool
+    let information: ReaderPageInformationPresentation
     let colorScheme: ColorScheme
     let imageLoader: MangaReaderPageImageLoader?
     let summary: MangaReaderChromeSummary?
@@ -113,9 +114,29 @@ struct MangaReaderBottomChrome: View {
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
 
-            if let pageSummary = summary?.pageSummary {
-                MangaReaderBottomPageSummary(text: pageSummary)
-                    .readerChromeFadeVisibility(isVisible)
+            if let summaries = summary?.spreadPageSummaries {
+                HStack(spacing: 0) {
+                    ForEach(0..<2, id: \.self) { index in
+                        Group {
+                            if let text = summaries[index] {
+                                MangaReaderBottomPageSummary(text: information.pageNumberStyle == .compact
+                                    ? String(summary?.spreadPageNumbers?[index] ?? 1) : text)
+                            } else {
+                                Color.clear.frame(height: 0)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, -12)
+                .readerChromeFadeVisibility(information.isVisible)
+                .allowsHitTesting(false)
+            } else if let pageSummary = summary?.pageSummary {
+                MangaReaderBottomPageSummary(text: information.pageNumberStyle == .compact
+                    ? String(summary?.pageNumber ?? 1) : pageSummary)
+                    .readerChromeFadeVisibility(information.isVisible)
+                    .allowsHitTesting(false)
             }
         }
         .padding(.top, layout.bottomChromeTopPadding)
@@ -124,7 +145,7 @@ struct MangaReaderBottomChrome: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeightChange)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .overlay {
-            if let preview = centerProgressPreview {
+            if isVisible, let preview = centerProgressPreview {
                 MangaReaderProgressImagePreview(
                     preview: preview,
                     page: summary?.pagePreviewTargets[preview.targetIndex],

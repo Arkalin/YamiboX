@@ -7,6 +7,11 @@ struct MangaReaderChromeSummary: Equatable, Sendable {
     let pageSummary: String
     let pagePreviewTargets: [Int: MangaReaderPageProjection]
     let progress: ReaderChromeProgress
+    var spreadPageSummaries: [String?]? = nil
+    var spreadWorkTitle: String? = nil
+    var spreadPageNumbers: [Int?]? = nil
+    var pageNumber: Int = 1
+    var remainingChapterPageCount: Int = 0
 }
 
 struct MangaReaderChromeControls: View {
@@ -17,6 +22,7 @@ struct MangaReaderChromeControls: View {
     let imageLoader: MangaReaderPageImageLoader?
     let summary: MangaReaderChromeSummary?
     let readingMode: MangaReadingMode
+    let isImmersive: Bool
     let pageTurnDirection: MangaPageTurnDirection
     let canNavigateBack: Bool
     let canNavigateForward: Bool
@@ -38,10 +44,16 @@ struct MangaReaderChromeControls: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let information = ReaderPageInformationPresentation(
+            isPaged: readingMode == .paged, isImmersive: isImmersive, isChromeVisible: isVisible
+        )
         ZStack(alignment: .top) {
-            if isVisible {
+            if isVisible || readingMode == .paged {
                 MangaReaderTopChrome(
-                    title: summary?.headerTitle,
+                    title: summary.map { information.chapterText(title: $0.headerTitle, remainingPages: $0.remainingChapterPageCount) },
+                    spreadWorkTitle: summary?.spreadWorkTitle,
+                    isRightToLeft: pageTurnDirection == .rightToLeft,
+                    isChromeVisible: isVisible,
                     topInset: topInset,
                     isPreview: isPreview,
                     canNavigateBack: canNavigateBack,
@@ -50,12 +62,14 @@ struct MangaReaderChromeControls: View {
                     onNavigateForward: onNavigateForward,
                     onClose: onClose
                 )
+                .readerChromeFadeVisibility(information.isVisible)
                 .transition(.opacity)
             }
 
             MangaReaderBottomChrome(
                 bottomInset: bottomInset,
                 isVisible: isVisible,
+                information: information,
                 colorScheme: colorScheme,
                 imageLoader: imageLoader,
                 summary: summary,

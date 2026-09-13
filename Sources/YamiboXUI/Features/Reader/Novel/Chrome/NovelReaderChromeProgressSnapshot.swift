@@ -77,6 +77,10 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     public var currentProgressPercentText: String
     public var progressChapterTicks: [NovelReaderProgressChapterTick]
     private var scrubData: NovelReaderProgressScrubData
+    var spreadSummaries: [ReaderChromeProgressSummary?]? = nil
+    var spreadPageNumbers: [Int?]? = nil
+    var pageNumber: Int = 1
+    var remainingChapterPageCount: Int = 0
 
     public static var empty: NovelReaderChromeProgressSnapshot {
         NovelReaderChromeProgressSnapshot(
@@ -172,6 +176,47 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
                 pageTurnDirection: projection.pageTurnDirection
             )
         )
+        pageNumber = projection.displayedPageIndex + 1
+        let currentIndex = projection.selectedSurfaceIndex
+        let currentSpread = projection.usesTwoPageSpread ? presentation.spreads.first {
+            $0.leftSurfaceIndex == currentIndex || $0.rightSurfaceIndex == currentIndex
+        } : nil
+        let visibleIndexes = currentSpread.map { [$0.leftSurfaceIndex, $0.rightSurfaceIndex].compactMap { $0 } }
+            ?? [currentIndex]
+        let chapterEnd = presentation.chapters.first { $0.startIndex > currentIndex }?.startIndex
+            ?? presentation.surfaces.count
+        let lastVisibleInChapter = visibleIndexes.filter { $0 < chapterEnd }.max() ?? currentIndex
+        remainingChapterPageCount = max(chapterEnd - lastVisibleInChapter - 1, 0)
+
+        if projection.readingMode == .paged, projection.usesTwoPageSpread,
+           let spread = presentation.spreads.first(where: {
+               $0.leftSurfaceIndex == projection.selectedSurfaceIndex
+                   || $0.rightSurfaceIndex == projection.selectedSurfaceIndex
+           }) {
+            let physicalIndexes = [Optional(spread.leftSurfaceIndex), spread.rightSurfaceIndex]
+            spreadPageNumbers = physicalIndexes.map { index in
+                guard let index, presentation.surfaces.indices.contains(index) else { return nil }
+                let view = presentation.surfaces[index].documentView
+                return presentation.surfaces.indices.filter {
+                    $0 <= index && presentation.surfaces[$0].documentView == view
+                }.count
+            }
+            spreadSummaries = physicalIndexes.map { index in
+                guard let index, presentation.surfaces.indices.contains(index) else { return nil }
+                let surface = presentation.surfaces[index]
+                let indexes = presentation.surfaces.indices.filter {
+                    presentation.surfaces[$0].documentView == surface.documentView
+                }
+                guard let localIndex = indexes.firstIndex(of: index) else { return nil }
+                return ReaderChromeProgressSummary(
+                    chapterTitle: surface.chapterTitle,
+                    progressText: L10n.string(
+                        "reader.progress", String(localIndex + 1), indexes.count,
+                        surface.documentView, max(presentation.readingState.maxView, 1)
+                    )
+                )
+            }
+        }
     }
 
     private init(
