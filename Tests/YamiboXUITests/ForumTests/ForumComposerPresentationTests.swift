@@ -9,6 +9,30 @@ import YamiboXTestSupport
 
 final class ForumComposerPresentationTests: XCTestCase {
     @MainActor
+    func testStandaloneFeedbackSheetsRenderEditorsAndSharedToolbar() async throws {
+        for width: CGFloat in [320, 834] {
+            let comment = await mount(AnyView(ForumThreadCommentSheet(postID: "4001", submit: { _, _ in "ok" })),
+                                      size: CGSize(width: width, height: 700))
+            let editor = try XCTUnwrap(accessibilityNodes(comment.host.view).compactMap { $0 as? UITextView }.first)
+            XCTAssertTrue(accessibilityNodes(comment.host.view).contains { identifier($0) == "forum-composer-send" })
+            XCTAssertTrue(editor.isEditable)
+            XCTAssertGreaterThan(editor.bounds.height, 100)
+            try attach(comment.host.view, name: "shared-comment-\(Int(width))")
+            comment.close()
+
+            let rating = await mount(AnyView(ForumThreadRateSheet(postID: "4001", loadOptions: { _ in
+                ForumThreadRateOptionsPage(availableScores: [1, 2], defaultReasons: ["Thanks"])
+            }, submit: { _, _, _, _ in "ok" })), size: CGSize(width: width, height: 700))
+            defer { rating.close() }
+            let score = try XCTUnwrap(accessibilityNodes(rating.host.view).compactMap { $0 as? UITextField }.first)
+            XCTAssertTrue(accessibilityNodes(rating.host.view).contains { identifier($0) == "forum-composer-send" })
+            XCTAssertTrue(score.isEnabled)
+            XCTAssertTrue(accessibilityNodes(rating.host.view).contains { $0 is UISwitch })
+            try attach(rating.host.view, name: "shared-rating-\(Int(width))")
+        }
+    }
+
+    @MainActor
     func testItalicChangesRenderedChineseGlyphsInTextKit2() throws {
         let editor = UITextView(frame: CGRect(x: 0, y: 0, width: 390, height: 100))
         editor.backgroundColor = .white
