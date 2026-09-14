@@ -3,6 +3,7 @@ import YamiboXCore
 
 /// A presentation of existing history, not a separate reading library.
 struct ReadingHomeShelf: Equatable {
+    let readingEntries: [BrowsingHistoryEntry]
     let continuing: [BrowsingHistoryEntry]
     let previous: [BrowsingHistoryEntry]
 
@@ -32,6 +33,7 @@ struct ReadingHomeShelf: Equatable {
                 previous.append(entry)
             }
         }
+        self.readingEntries = readingEntries
         self.continuing = continuing
         self.previous = previous
     }
