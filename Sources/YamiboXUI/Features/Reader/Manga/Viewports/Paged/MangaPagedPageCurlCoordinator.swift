@@ -7,6 +7,7 @@ import UIKit
 @MainActor
 final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     var parent: MangaPagedPageCurlReaderViewport
+    let informationState = ReaderAttachedInformationState()
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
     let interactionRuntime = MangaPagedInteractionRuntime()
     private var selectionResolver = MangaPagedPageCurlSelectionResolver()
@@ -37,6 +38,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
 
     init(parent: MangaPagedPageCurlReaderViewport) {
         self.parent = parent
+        informationState.update(parent.attachedInformation)
     }
 
     deinit {
@@ -49,6 +51,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         _ containerViewController: MangaPagedPageCurlContainerViewController,
         contentIdentity nextContentIdentity: MangaPagedReaderContentIdentity
     ) {
+        informationState.update(parent.attachedInformation)
         prefetchAdjacentImages()
         let pageViewController = containerViewController.pageViewController
         activeContainerViewController = containerViewController
@@ -293,6 +296,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         preserving existingSurface: MangaPagedReaderSpreadPageSurface? = nil
     ) -> MangaPagedPageCurlLeafView {
         MangaPagedPageCurlLeafView(
+            informationState: informationState,
+            informationIndex: leaf.selectionIndex,
+            informationSlot: parent.plan.usesTwoPageSpread ? leaf.index % 2 : 0,
             pageSurface: pageSurface(for: leaf, preserving: existingSurface),
             imageLoader: parent.imageLoader,
             pageScaleMode: parent.effectivePageScaleMode,

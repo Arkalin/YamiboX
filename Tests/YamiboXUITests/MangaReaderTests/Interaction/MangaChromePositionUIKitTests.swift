@@ -12,7 +12,8 @@ struct MangaChromePositionUIKitTests {
         let page = try makePipelinePage()
         let loader = try await imageLoader(page: page)
         func viewport(chrome: Bool) -> MangaPagedReaderViewport {
-            MangaPagedReaderViewport(plan: MangaPagedReadingPlan(pages: [page], currentPageIndex: 0,
+            MangaPagedReaderViewport(attachedInformation: information(pages: [page], index: 0, chrome: chrome),
+                plan: MangaPagedReadingPlan(pages: [page], currentPageIndex: 0,
                 pageTurnDirection: direction), viewportPlacement: nil,
                 settings: MangaReaderSettings(readingMode: .paged, pageTurnDirection: direction, pageScaleMode: .fitHeight),
                 imageLoader: loader, isChromeVisible: chrome, zoomEnabled: true, likedPageIDs: [],
@@ -49,6 +50,7 @@ struct MangaChromePositionUIKitTests {
             try await waitUntil { runtime.configuration.chromeVisible == chrome }
             #expect(runtime.transform == revealed)
             #expect(runtime.geometry == geometry)
+            #expect(owner.informationState.configuration.presentation.isChromeVisible == chrome)
             #expect(!runtime.hiddenEdges.contains(edge))
         }
     }
@@ -64,7 +66,8 @@ struct MangaChromePositionUIKitTests {
         let settings = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .pageCurl,
             pageTurnDirection: direction, pageScaleMode: .fitHeight)
         func viewport(index: Int, chrome: Bool) -> MangaPagedPageCurlReaderViewport {
-            MangaPagedPageCurlReaderViewport(plan: MangaPagedReadingPlan(pages: pages, currentPageIndex: index,
+            MangaPagedPageCurlReaderViewport(attachedInformation: information(pages: pages, index: index, chrome: chrome),
+                plan: MangaPagedReadingPlan(pages: pages, currentPageIndex: index,
                 pageTurnDirection: direction), viewportPlacement: nil, settings: settings,
                 imageLoader: loader, isChromeVisible: chrome, zoomEnabled: true, likedPageIDs: [],
                 controlPageTurnBridge: MangaPagedControlPageTurnBridge(), onCurrentPageChange: { _ in },
@@ -114,6 +117,8 @@ struct MangaChromePositionUIKitTests {
                 #expect(controller.rootView.pageSurface?.initialHorizontalAlignment == alignment)
                 #expect(runtime.geometry == geometry)
                 #expect(runtime.transform == transform)
+                #expect(controller.rootView.informationState === owner.informationState)
+                #expect(owner.informationState.configuration.presentation.isChromeVisible == chrome)
             }
         }
 
@@ -123,6 +128,62 @@ struct MangaChromePositionUIKitTests {
         let nextAlignment = MangaPagedImageSurfaceInitialHorizontalAlignment.enteringPage(
             pageTurnDirection: direction, pageScaleMode: .fitHeight, currentPageIndex: index, targetPageIndex: nextIndex)
         #expect(nextController.rootView.pageSurface?.initialHorizontalAlignment == nextAlignment)
+    }
+
+    @Test func spreadZoomMovesInformationToUnscaledContainerWithoutResettingZoom() async throws {
+        let first = try makePipelinePage()
+        var second = first
+        second.globalIndex = 1
+        second.localIndex = 1
+        let pages = [first, second]
+        let loader = try await imageLoader(page: first)
+        let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: 0, usesTwoPageSpread: true)
+        let settings = MangaReaderSettings(readingMode: .paged, pagedTurnStyle: .pageCurl)
+        let parent = MangaPagedPageCurlReaderViewport(attachedInformation: information(pages: pages, index: 0, chrome: false),
+            plan: plan, viewportPlacement: nil, settings: settings, imageLoader: loader, isChromeVisible: false,
+            zoomEnabled: true, likedPageIDs: [], controlPageTurnBridge: MangaPagedControlPageTurnBridge(),
+            onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in false }, onBoundaryPageTurn: { _ in },
+            onPageLongPress: { _ in }, onTap: {})
+        let owner = parent.makeCoordinator()
+        let pager = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal,
+            options: [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue])
+        let container = MangaPagedPageCurlContainerViewController(pageViewController: pager, informationState: owner.informationState)
+        let window = show(container)
+        defer {
+            MangaPagedPageCurlReaderViewport.dismantleUIViewController(container, coordinator: owner)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        let identity = MangaPagedReaderContentIdentity(spreadIDs: plan.spreads.map(\.id), pageScaleMode: .fitWidth,
+            pagedTurnStyle: .pageCurl, pageTurnDirection: settings.pageTurnDirection,
+            pageEdgeFillStyle: settings.pageEdgeFillStyle, colorScheme: .light)
+        owner.update(container, contentIdentity: identity)
+        owner.zoom.updatePageCurlSpreadZoomAvailability(in: container)
+        try await waitUntil { owner.pageSurfaceInteractions.values.allSatisfy { $0.runtime.imageLoaded } }
+        container.zoomView.zoom(factor: 2, centeredAt: CGPoint(x: 200, y: 400), animated: false)
+        try await waitUntil { owner.informationState.usesStationaryZoomInformation }
+        let snapshot = container.zoomView.snapshot
+        for chrome in [true, false] {
+            owner.parent = MangaPagedPageCurlReaderViewport(attachedInformation: information(pages: pages, index: 0, chrome: chrome),
+                plan: plan, viewportPlacement: nil, settings: settings, imageLoader: loader, isChromeVisible: chrome,
+                zoomEnabled: true, likedPageIDs: [], controlPageTurnBridge: parent.controlPageTurnBridge,
+                onCurrentPageChange: { _ in }, canBoundaryPageTurn: { _ in false }, onBoundaryPageTurn: { _ in },
+                onPageLongPress: { _ in }, onTap: {})
+            owner.update(container, contentIdentity: identity)
+            #expect(container.zoomView.snapshot.factor == snapshot.factor)
+            #expect(container.zoomView.snapshot.visibleRect == snapshot.visibleRect)
+            #expect(owner.informationState.usesStationaryZoomInformation)
+        }
+        container.zoomView.resetZoom(animated: false)
+        try await waitUntil { !owner.informationState.usesStationaryZoomInformation }
+    }
+
+    private func information(pages: [MangaReaderPageProjection], index: Int, chrome: Bool) -> ReaderAttachedInformationConfiguration {
+        let presentation = ReaderPageInformationPresentation(isPaged: true, isImmersive: false, isChromeVisible: chrome)
+        let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: index)
+        return ReaderAttachedInformationConfiguration(
+            pages: MangaAttachedPageInformation.pages(plan: plan, workTitle: "Book", information: presentation, chapterTitle: { $0.chapterTitle }),
+            presentation: presentation, selectedIndex: index, topInset: 32, bottomInset: 20)
     }
 
     private func imageLoader(page: MangaReaderPageProjection) async throws -> MangaReaderPageImageLoader {

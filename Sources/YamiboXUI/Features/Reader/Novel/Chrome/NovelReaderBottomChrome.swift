@@ -49,9 +49,15 @@ struct NovelReaderBottomChrome: View {
                 .padding(.trailing, 12)
                 .padding(.bottom, chromeLayout.bottomControlsAdditionalBottomOffset)
 
-            progressSummary
-                .readerChromeFadeVisibility(information.isVisible)
-                .allowsHitTesting(false)
+            if readingMode == .paged {
+                Color.clear.frame(height: NovelReaderVerticalBandsPresentation().pagedProgressSummaryHeight)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            } else {
+                progressSummary
+                    .modifier(ReaderInformationVisibility(isVisible: information.isVisible))
+                    .allowsHitTesting(false)
+            }
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
@@ -192,7 +198,7 @@ struct NovelReaderBottomChrome: View {
     @ViewBuilder
     private func summaryContent(_ summary: ReaderChromeProgressSummary, pageNumber: Int) -> some View {
 
-        // Two caption2 lines with this spacing is load-bearing:
+        // Two information-text lines with this spacing is load-bearing:
         // `NovelReaderVerticalBandsPresentation.pagedProgressSummaryHeight`
         // mirrors exactly that to reserve the paged text band above us.
         let content = VStack(spacing: chromeLayout.progressSummaryLineSpacing) {
@@ -203,7 +209,7 @@ struct NovelReaderBottomChrome: View {
                     .accessibilityHidden(information.pageNumberStyle == .compact)
             }
         }
-        .font(.caption2.weight(.semibold))
+        .modifier(ReaderInformationFont())
         .foregroundStyle(backgroundStyle == .quiet && readingMode == .paged
             ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
             : Color.secondary)

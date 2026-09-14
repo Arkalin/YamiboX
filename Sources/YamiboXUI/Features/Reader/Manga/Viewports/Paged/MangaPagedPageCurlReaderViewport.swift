@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
+    var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
         coordinator.invalidatePageCurlTransitions()
         coordinator.gestures.detach()
@@ -75,7 +76,8 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         pageViewController.view.isOpaque = true
         pageViewController.view.layer.speed = ReaderPagedPageCurlTransition.animationSpeed
 
-        let containerViewController = MangaPagedPageCurlContainerViewController(pageViewController: pageViewController)
+        let containerViewController = MangaPagedPageCurlContainerViewController(
+            pageViewController: pageViewController, informationState: context.coordinator.informationState)
         let coordinator = context.coordinator
         containerViewController.onLayoutSubviews = { [weak coordinator, weak containerViewController] in
             guard let containerViewController else { return }

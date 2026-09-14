@@ -33,12 +33,12 @@ struct NovelReaderVerticalBandsPresentation: Equatable, Sendable {
 
     /// Height of the two-line page/web progress summary that
     /// `NovelReaderBottomChrome.progressSummary` renders below the content
-    /// text in paged mode. Derived from caption2 font metrics so it tracks
+    /// text in paged mode. Derived from the information font metrics so it tracks
     /// Dynamic Type deterministically — pagination must never depend on a
     /// measured, after-the-fact chrome height or layout would feed back
     /// into itself.
     var pagedProgressSummaryHeight: CGFloat {
-        let lineHeight = ceil(UIFont.preferredFont(forTextStyle: .caption2).lineHeight)
+        let lineHeight = ReaderInformationTypography.lineHeight
         return lineHeight * 2 + bottomChromeLayout.progressSummaryLineSpacing
     }
 

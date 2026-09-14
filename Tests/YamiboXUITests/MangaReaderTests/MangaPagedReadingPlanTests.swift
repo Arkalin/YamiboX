@@ -5,6 +5,34 @@ import Testing
 
 @Suite("MangaReaderTests: Paged Reading Plan")
 struct MangaPagedReadingPlanTests {
+    @Test func attachedInformationIncludesAdjacentChaptersAndPhysicalBlankSlots() throws {
+        let pages = try makePagedPlanPages(pageCountsByTID: [("700", 3), ("701", 2)])
+        for direction in [MangaPageTurnDirection.leftToRight, .rightToLeft] {
+            for spread in [true, false] {
+                for immersive in [true, false] {
+                    for chrome in [true, false] {
+                        let plan = MangaPagedReadingPlan(pages: pages, currentPageIndex: 0, pageTurnDirection: direction, usesTwoPageSpread: spread)
+                        let information = ReaderPageInformationPresentation(isPaged: true, isImmersive: immersive, isChromeVisible: chrome)
+                        let attached = MangaAttachedPageInformation.pages(plan: plan, workTitle: "Book", information: information, chapterTitle: { $0.tid })
+                        for (index, group) in attached.enumerated() {
+                            let item = plan.spreads[index]
+                            let ownPlan = MangaPagedReadingPlan(pages: pages, currentPageIndex: item.preferredPageIndex, pageTurnDirection: direction, usesTwoPageSpread: spread)
+                            let chapter = information.chapterText(title: item.preferredPage.tid, remainingPages: ownPlan.remainingChapterPageCount)
+                            #expect(group.map(\.title) == information.titles(work: spread ? "Book" : nil, chapter: chapter, isRightToLeft: direction == .rightToLeft))
+                            let physicalPages = spread ? [item.leftPage, item.rightPage] : [item.preferredPage]
+                            #expect(group.map(\.pageID) == physicalPages.map { $0?.id })
+                            #expect(group.map(\.pageNumber) == physicalPages.map { $0.map { $0.localIndex + 1 } })
+                            #expect(group.allSatisfy { $0.webLine.isEmpty })
+                        }
+                    }
+                }
+            }
+        }
+        let empty = MangaPagedReadingPlan(pages: [], currentPageIndex: nil)
+        #expect(MangaAttachedPageInformation.pages(plan: empty, workTitle: "Book",
+            information: ReaderPageInformationPresentation(isPaged: true, isImmersive: false, isChromeVisible: true), chapterTitle: { $0.tid }).isEmpty)
+    }
+
     @Test func remainingPagesExcludeBothVisiblePagesAndRespectOddChapterEnds() throws {
         let pages = try makePagedPlanPages(pageCountsByTID: [("700", 3), ("701", 2)])
         for direction in [MangaPageTurnDirection.leftToRight, .rightToLeft] {

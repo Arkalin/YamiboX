@@ -30,12 +30,9 @@ struct NovelReaderChromeControls: View {
 
     var body: some View {
         ZStack {
-            if isChromeVisible || model.settings.readingMode == .paged {
-                VStack(spacing: 0) {
-                    topChrome
-                    Spacer(minLength: 0)
-                }
-                .transition(.opacity)
+            VStack(spacing: 0) {
+                topChrome
+                Spacer(minLength: 0)
             }
 
             VStack(spacing: 0) {

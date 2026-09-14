@@ -50,8 +50,11 @@ private let bottomChrome = ReaderBottomChromeLayoutPresentation()
         == 16 + height + bottomChrome.pagedProgressSummaryContentGap - 34)
 }
 
-@Test func progressSummaryHeightTracksCaptionTwoMetrics() {
-    let lineHeight = ceil(UIFont.preferredFont(forTextStyle: .caption2).lineHeight)
+@Test func progressSummaryHeightTracksInformationFontMetrics() {
+    #expect(ReaderInformationTypography.pointSize == 14)
+    let lineHeight = ceil(UIFontMetrics(forTextStyle: .caption1).scaledFont(
+        for: UIFont.systemFont(ofSize: 14, weight: .semibold)
+    ).lineHeight)
     #expect(bands.pagedProgressSummaryHeight
         == lineHeight * 2 + bottomChrome.progressSummaryLineSpacing)
     // Two readable lines can't be shorter than this on any content size.

@@ -81,21 +81,77 @@ struct ReaderPageInformationTests {
     private func makeNovelSnapshot(
         index: Int, spread: Bool, direction: ReaderPageTurnDirection, starts: [Int] = [0, 3, 5]
     ) -> NovelReaderChromeProgressSnapshot {
+        NovelReaderChromeProgressSnapshot(presentation: makeNovelPresentation(index: index, spread: spread, direction: direction, starts: starts))
+    }
+
+    @Test func attachedNovelPagesUseTheirOwnAnchorsAndWebPageNumbers() {
+        for direction in [ReaderPageTurnDirection.leftToRight, .rightToLeft] {
+            for spread in [true, false] {
+                for immersive in [true, false] {
+                    for chrome in [true, false] {
+                        let information = ReaderPageInformationPresentation(isPaged: true, isImmersive: immersive, isChromeVisible: chrome)
+                        let presentation = makeNovelPresentation(index: 0, spread: spread, direction: direction, views: [1, 1, 1, 2, 2, 2, 2])
+                        let pages = NovelAttachedPageInformation.pages(presentation: presentation, workTitle: "Book", information: information)
+                        for (groupIndex, group) in pages.enumerated() {
+                            let first = spread ? groupIndex * 2 : groupIndex
+                            let anchor = spread && direction == .leftToRight ? min(first + 1, 6) : first
+                            let end = anchor < 3 ? 3 : anchor < 5 ? 5 : 7
+                            let lastVisible = spread ? min(first + 1, 6) : first
+                            let remaining = max(end - min(lastVisible, end - 1) - 1, 0)
+                            let title = information.chapterText(title: "Chapter", remainingPages: remaining)
+                            #expect(group.map(\.title) == information.titles(work: spread ? "Book" : nil, chapter: title, isRightToLeft: direction == .rightToLeft))
+                            for (slot, page) in group.enumerated() {
+                                let index = first + slot
+                                #expect(page.pageNumber == (index < 7 ? (index < 3 ? index + 1 : index - 2) : nil))
+                                #expect((page.pageID == nil) == (index >= 7))
+                                if index < 7 { #expect(!page.webLine.isEmpty) }
+                            }
+                        }
+                        let restored = makeNovelPresentation(index: 6, spread: spread, direction: direction, views: [1, 1, 1, 2, 2, 2, 2])
+                        #expect(pages == NovelAttachedPageInformation.pages(presentation: restored, workTitle: "Book", information: information))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func informationUpdatesDoNotChangePagedContentIdentity() {
+        let state = ReaderAttachedInformationState()
+        let settings = NovelReaderAppearanceSettings(readingMode: .paged)
+        var immersiveSettings = settings
+        immersiveSettings.isImmersiveModeEnabled.toggle()
+        let url = URL(string: "https://example.com")!
+        let before = NovelReaderPagedViewportContentIdentity(surfaces: [], settings: settings, refererURL: url, topInset: 80, bottomInset: 30)
+        let after = NovelReaderPagedViewportContentIdentity(surfaces: [], settings: immersiveSettings, refererURL: url, topInset: 80, bottomInset: 30)
+        #expect(before == after)
+        var configuration = ReaderAttachedInformationConfiguration(selectedIndex: 3, topInset: 32, bottomInset: 20)
+        state.update(configuration)
+        state.usesStationaryZoomInformation = true
+        configuration.presentation = ReaderPageInformationPresentation(isPaged: true, isImmersive: false, isChromeVisible: true)
+        state.update(configuration)
+        #expect(state.configuration.selectedIndex == 3)
+        #expect(state.configuration.topInset == 32)
+        #expect(state.usesStationaryZoomInformation)
+    }
+
+    private func makeNovelPresentation(
+        index: Int, spread: Bool, direction: ReaderPageTurnDirection, starts: [Int] = [0, 3, 5], views: [Int] = Array(repeating: 1, count: 7)
+    ) -> NovelReaderPresentation {
         let surfaces = (0..<7).map { index in
             NovelReaderSurface(identity: NovelReaderSurfaceIdentity(generation: 1, ordinal: index),
-                presentationIndex: index, kind: .text, documentView: 1, chapterTitle: "Chapter", presentationSize: .zero)
+                presentationIndex: index, kind: .text, documentView: views[index], chapterTitle: "Chapter", presentationSize: .zero)
         }
         let spreads = stride(from: 0, to: 7, by: 2).map { index in
             NovelReaderPresentationSpread(index: index / 2, leftSurfaceIndex: index,
                 leftSurfaceIdentity: surfaces[index].identity, rightSurfaceIndex: index + 1 < 7 ? index + 1 : nil,
                 rightSurfaceIdentity: index + 1 < 7 ? surfaces[index + 1].identity : nil, chapterTitle: "Chapter")
         }
-        return NovelReaderChromeProgressSnapshot(presentation: NovelReaderPresentation(
+        return NovelReaderPresentation(
             generation: 1, revision: 1, surfaces: surfaces, selectedSurfaceIdentity: surfaces[index].identity,
             spreads: spreads, chapters: starts.enumerated().map { NovelReaderChapter(ordinal: $0.offset, title: "Chapter", startIndex: $0.element) },
             committedSettings: NovelReaderAppearanceSettings(readingMode: .paged, pageTurnDirection: direction),
             readingState: NovelReaderReadingState(currentView: 1, maxView: 1, currentChapterTitle: "Chapter", authorID: nil, currentSurfaceIntraProgress: 0),
             retainedChapterCount: starts.count, filteredChapterCandidateCount: 0, usesTwoPageSpread: spread
-        ))
+        )
     }
 }

@@ -3,8 +3,6 @@ import YamiboXCore
 import UIKit
 
 struct NovelReaderTopChrome: View {
-    private let pagedChapterTitleTopLift: CGFloat = 12
-
     let model: NovelReaderViewModel
     let isChromeVisible: Bool
     @ObservedObject var navigation: NovelReaderNavigationCoordinator
@@ -21,20 +19,6 @@ struct NovelReaderTopChrome: View {
             chapterTitle: model.currentChapterTitle,
             progressText: model.progressText
         )
-        let information = ReaderPageInformationPresentation(
-            isPaged: model.settings.readingMode == .paged,
-            isImmersive: model.settings.isImmersiveModeEnabled,
-            isChromeVisible: isChromeVisible
-        )
-        let titles = information.titles(
-            work: model.isTwoPageSpreadActive ? model.title : nil,
-            chapter: model.novelReaderSurfaces.isEmpty ? summary.chapterTitle : information.chapterText(
-                title: summary.chapterTitle,
-                remainingPages: model.chromeProgressSnapshot.remainingChapterPageCount
-            ),
-            isRightToLeft: model.settings.pageTurnDirection == .rightToLeft
-        )
-
         VStack(spacing: 8) {
             ReaderGlassContainer(spacing: 12) {
                 let chromeButtonSize: CGFloat = 44
@@ -49,24 +33,12 @@ struct NovelReaderTopChrome: View {
                 let titleSidePadding = max(leadingControlsWidth, trailingControlsWidth) + 16
 
                 ZStack {
-                    Group {
-                        if model.isTwoPageSpreadActive {
-                            HStack(spacing: 0) {
-                                ForEach(titles.indices, id: \.self) { index in
-                                    chapterTitleView(titles[index])
-                                        .padding(.horizontal, titleSidePadding + 16)
-                                        .frame(maxWidth: .infinity)
-                                }
-                            }
-                            .padding(.horizontal, -16)
-                        } else {
-                            chapterTitleView(titles[0])
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, titleSidePadding)
-                        }
+                    if model.settings.readingMode == .vertical {
+                        chapterTitleView(summary.chapterTitle)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, titleSidePadding)
+                            .allowsHitTesting(false)
                     }
-                    .offset(y: shouldLiftPagedChapterTitle ? -pagedChapterTitleTopLift : 0)
-                    .allowsHitTesting(false)
 
                     if isChromeVisible {
                         HStack(spacing: buttonSpacing) {
@@ -115,18 +87,19 @@ struct NovelReaderTopChrome: View {
         .padding(.top, max(topInset + 8, 20))
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
-        .readerChromeFadeVisibility(information.isVisible)
+        .modifier(ReaderInformationVisibility(isVisible: isChromeVisible))
     }
 
     @ViewBuilder
     private func chapterTitleView(_ title: String) -> some View {
         let text = Text(title)
-            .font(.callout.weight(.semibold))
+            .modifier(ReaderInformationFont())
             .lineLimit(1)
             .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.center)
             .foregroundStyle(model.settings.backgroundStyle == .quiet && model.settings.readingMode == .paged
-                ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
-                : Color.primary)
+                ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
+                : Color.secondary)
 
         if model.settings.readingMode == .vertical {
             text
@@ -143,7 +116,4 @@ struct NovelReaderTopChrome: View {
         }
     }
 
-    private var shouldLiftPagedChapterTitle: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && model.settings.readingMode == .paged
-    }
 }

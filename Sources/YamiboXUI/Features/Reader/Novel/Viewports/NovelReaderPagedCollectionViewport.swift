@@ -22,6 +22,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         coordinator.cancelSlideTransition(in: view)
     }
 
+    var attachedInformation = ReaderAttachedInformationConfiguration()
     let itemSource: NovelReaderPagedItemSource
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
@@ -140,6 +141,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         static let reuseIdentifier = "NovelReaderPagedCollectionViewportCell"
 
         var parent: NovelReaderPagedCollectionViewport
+        let informationState = ReaderAttachedInformationState()
         private let pagingDriver = ReaderPagedPagingDriver(commitsQuickFadeSelectionImmediately: true)
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
         private var imagePipeline: YamiboUIImagePipeline?
@@ -211,7 +213,10 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 NovelReaderPagedPageSurfaceContainer(settings: parent.settings) {
                     pageContent(at: itemIndex)
                 }
-                .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
+                .overlay {
+                    ReaderAttachedInformationView(state: informationState, itemIndex: itemIndex)
+                }
+                .modifier(NovelReaderPagedHostingSafeAreaModifier())
                 .environment(\.yamiboImagePipeline, parent.imagePipeline)
             }
             .margins(.all, 0)
@@ -386,6 +391,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             in collectionView: UICollectionView,
             contentIdentity nextContentIdentity: NovelReaderPagedSpreadViewportContentIdentity
         ) {
+            informationState.update(parent.attachedInformation)
             let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
             imagePipeline = parent.imagePipeline

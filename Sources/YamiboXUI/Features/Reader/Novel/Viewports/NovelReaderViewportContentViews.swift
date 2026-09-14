@@ -21,9 +21,9 @@ enum NovelReaderViewportDisplayBlock: Identifiable {
     }
 }
 
-struct NovelReaderPagedHostingTopSafeAreaModifier: ViewModifier {
+struct NovelReaderPagedHostingSafeAreaModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content.ignoresSafeArea(.container, edges: .top)
+        content.ignoresSafeArea(.container, edges: .vertical)
     }
 }
 
