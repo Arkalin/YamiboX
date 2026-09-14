@@ -7,6 +7,28 @@ import YamiboXCore
 
 @MainActor @Suite("Paged navigation completion integration")
 struct MangaNavigationLifecycleUIKitTests {
+    @Test(arguments: [MangaPageTurnDirection.leftToRight, .rightToLeft])
+    func singleCurlInstallsReadOnlyBackWithoutLoadingOrRegisteringAnotherSurface(direction: MangaPageTurnDirection) throws {
+        let plan = MangaPagedReadingPlan(pages: try curlPages(), currentPageIndex: 2, pageTurnDirection: direction)
+        let owner = curlViewport(plan: plan).makeCoordinator()
+        let controller = DeferredPageController()
+        owner.setCurrentSelection(in: controller, selectionIndex: 2, animated: false)
+        let pair = try #require(controller.viewControllers as? [MangaPagedPageCurlHostingController])
+        #expect(pair.count == 1)
+        let front = try #require(pair.first)
+        let back = try #require(owner.pageViewController(controller,
+            viewControllerAfter: front) as? MangaPagedPageCurlHostingController)
+        #expect(!front.leaf.isBack)
+        #expect(back.leaf.isBack)
+        #expect(front.leaf.pageID == back.leaf.pageID)
+        #expect(front.rootView.pageSurface != nil)
+        #expect(back.rootView.pageSurface == nil)
+        #expect(back.rootView.backContent?.image == nil)
+        #expect(back.rootView.likedPageIDs.isEmpty)
+        #expect(owner.pageSurfaceInteractions.count == 1)
+        #expect(owner.parent.sequence.selectionIndex(forLeafIndexes: [back.leaf.index]) == nil)
+    }
+
     @Test func noAnimationPlacementFallbackDoesNotStartNativeScrolling() throws {
         let plan = MangaPagedReadingPlan(pages: [try makePipelinePage()], currentPageIndex: 0)
         let parent = MangaPagedReaderViewport(plan: plan,
@@ -99,15 +121,14 @@ struct MangaNavigationLifecycleUIKitTests {
         }
     }
 
-    @Test func staleCurlCompletionCleansUpItsDisplayLink() throws {
+    @Test func staleCurlCompletionReleasesTransitionAdmission() throws {
         let owner = curlViewport(plan: MangaPagedReadingPlan(pages: [try makePipelinePage()], currentPageIndex: 0)).makeCoordinator()
         let controller = DeferredPageController()
         defer { owner.invalidatePageCurlTransitions() }
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: true)
-        #expect(owner.pageCurlBackColorDisplayLink != nil)
+        #expect(owner.isPageTurnInProgress)
         owner.interactionRuntime.reset()
         controller.complete(0)
-        #expect(owner.pageCurlBackColorDisplayLink == nil)
         #expect(!owner.isPageTurnInProgress)
     }
 
@@ -119,27 +140,23 @@ struct MangaNavigationLifecycleUIKitTests {
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: true)
         owner.interactionRuntime.reset()
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
-        #expect(owner.pageCurlBackColorDisplayLink == nil)
+        #expect(!owner.isPageTurnInProgress)
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: true)
-        let currentLink = try #require(owner.pageCurlBackColorDisplayLink)
         controller.complete(0)
         controller.complete(1)
-        #expect(owner.pageCurlBackColorDisplayLink === currentLink)
         #expect(owner.isPageTurnInProgress)
         MangaPagedPageCurlReaderViewport.dismantleUIViewController(container, coordinator: owner)
-        #expect(owner.pageCurlBackColorDisplayLink == nil)
         #expect(!owner.isPageTurnInProgress)
         controller.complete(2)
-        #expect(owner.pageCurlBackColorDisplayLink == nil)
+        #expect(!owner.isPageTurnInProgress)
     }
 
-    @Test func synchronousCurlCompletionCannotLeaveARefreshRunning() throws {
+    @Test func synchronousCurlCompletionReleasesTransitionAdmission() throws {
         let owner = curlViewport(plan: MangaPagedReadingPlan(pages: [try makePipelinePage()], currentPageIndex: 0)).makeCoordinator()
         let controller = DeferredPageController()
         controller.completesSynchronously = true
         defer { owner.invalidatePageCurlTransitions() }
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: true)
-        #expect(owner.pageCurlBackColorDisplayLink == nil)
         #expect(!owner.isPageTurnInProgress)
     }
 
@@ -157,6 +174,14 @@ struct MangaNavigationLifecycleUIKitTests {
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
 
         owner.gestures.routeControl(.forward, in: container)
+        if !twoPages {
+            let animatedControllers = try #require(controller.viewControllers as? [MangaPagedPageCurlHostingController])
+            #expect(animatedControllers.count == 2)
+            #expect(animatedControllers.first?.leaf.isBack == false)
+            #expect(animatedControllers.first?.leaf.selectionIndex == 1)
+            #expect(animatedControllers.last?.leaf.isBack == true)
+            #expect(animatedControllers.last?.leaf.selectionIndex == (direction == .leftToRight ? 0 : 1))
+        }
         for _ in 0..<10 {
             owner.gestures.routeControl(.forward, in: container)
             owner.gestures.routeControl(.backward, in: container)
@@ -174,6 +199,11 @@ struct MangaNavigationLifecycleUIKitTests {
         controller.complete(2)
         #expect(reportedPages == (twoPages ? [3, 5] : [1, 2]))
         owner.gestures.routeControl(.backward, in: container)
+        if !twoPages {
+            let animatedControllers = try #require(controller.viewControllers as? [MangaPagedPageCurlHostingController])
+            #expect(animatedControllers.first?.leaf.selectionIndex == 1)
+            #expect(animatedControllers.last?.leaf.selectionIndex == (direction == .leftToRight ? 1 : 2))
+        }
         #expect(controller.selectionCount == 4)
         #expect(boundaries.isEmpty)
         controller.complete(3)
@@ -223,7 +253,8 @@ struct MangaNavigationLifecycleUIKitTests {
         defer { owner.invalidatePageCurlTransitions() }
         owner.setCurrentSelection(in: controller, selectionIndex: 0, animated: false)
         let previous = try #require(controller.viewControllers)
-        let next = try #require(owner.pageViewController(controller, viewControllerAfter: previous[0]))
+        let back = try #require(owner.pageViewController(controller, viewControllerAfter: previous[0]))
+        let next = try #require(owner.pageViewController(controller, viewControllerAfter: back))
         owner.pageViewController(controller, willTransitionTo: [next])
         owner.animateAdjacentSelection(delta: 1, in: controller)
         #expect(controller.selectionCount == 1)
