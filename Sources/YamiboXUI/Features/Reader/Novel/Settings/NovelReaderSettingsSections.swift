@@ -165,7 +165,7 @@ struct NovelReaderDisplaySection: View {
                     palette: palette,
                     isOn: Binding(
                         get: { settings.isImmersiveModeEnabled },
-                        set: onImmersiveModeChange
+                        set: { onImmersiveModeChange($0) }
                     )
                 )
             }
