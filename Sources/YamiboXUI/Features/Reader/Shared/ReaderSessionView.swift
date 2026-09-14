@@ -24,10 +24,11 @@ struct ReaderSessionScreen: View {
             navigator.path = []
         }
         .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
+        .onAppear { session.completeFullScreenHandoff() }
     }
 }
 
-/// The thread stays in its navigation column while reading opens over the window.
+/// The navigation column relinquishes its session when reading goes full-screen.
 struct ReaderSessionDestinationView: View {
     @State private var session: ReaderSession
     let navigator: ForumDestinationNavigator
@@ -40,7 +41,13 @@ struct ReaderSessionDestinationView: View {
     }
 
     var body: some View {
-        ReaderSessionContentView(session: session, navigator: navigator, isFullScreenRoot: false)
+        Group {
+            if session.presentation == .embeddedThread {
+                ReaderSessionContentView(session: session, navigator: navigator, isFullScreenRoot: false)
+            } else {
+                Color.clear.forumPageBackground()
+            }
+        }
     }
 }
 
@@ -72,10 +79,10 @@ private struct ReaderSessionContentView: View {
         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !isFullScreenRoot && isReader))
         .onAppear { session.activate() }
         .onDisappear {
-            if !isFullScreenRoot { session.deactivate() }
+            if !isFullScreenRoot && session.presentation == .embeddedThread { session.deactivate() }
         }
         .onChange(of: session.isClosed) { _, closed in
-            if closed && !isFullScreenRoot { dismiss() }
+            if closed && !isFullScreenRoot && session.presentation == .embeddedThread { dismiss() }
         }
         .failureToast(
             message: session.switchFailure?.summary,
@@ -131,7 +138,10 @@ private struct ReaderSessionContentView: View {
                 submissionChange: appModel.forumContentRefresh.threadChange(context.thread.tid),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLTap: { navigator.route($0, source: .external) },
-                onReaderModeSwitch: { mode in Task { await session.openReader(mode, from: model) } },
+                onReaderModeSwitch: { mode in
+                    let handoff = isFullScreenRoot ? nil : navigator.readerSourceHandoff()
+                    Task { await session.openReader(mode, from: model, onFullScreenHandoff: handoff) }
+                },
                 isSwitchingReaderMode: session.isSwitching
             )
             .id(contentID)

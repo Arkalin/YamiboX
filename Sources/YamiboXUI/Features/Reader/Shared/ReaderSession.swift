@@ -41,7 +41,7 @@ struct ReaderSessionLifecycle {
 final class ReaderSession: Identifiable {
     let id = UUID()
     let bookOpeningTransition: BookOpeningTransition?
-    let presentation: ReaderSessionPresentation
+    private(set) var presentation: ReaderSessionPresentation
     private(set) var content: ReaderSessionContent
     private(set) var resumeRoute: ReaderResumeRoute?
     private(set) var contentID = UUID()
@@ -58,6 +58,7 @@ final class ReaderSession: Identifiable {
     @ObservationIgnored private var mangaContexts: [String: MangaLaunchContext] = [:]
     @ObservationIgnored private var threadModels: [String: ForumThreadReaderViewModel] = [:]
     @ObservationIgnored private var switchTask: Task<Void, Never>?
+    @ObservationIgnored private var onFullScreenHandoff: (@MainActor () -> Void)?
 
     init(
         content: ReaderSessionContent,
@@ -96,6 +97,7 @@ final class ReaderSession: Identifiable {
 
     func close() {
         guard !isClosed else { return }
+        completeFullScreenHandoff()
         cancelSwitch()
         isClosed = true
         lifecycle.didClose(self)
@@ -104,19 +106,33 @@ final class ReaderSession: Identifiable {
     func present(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
         guard !isClosed else { return }
         let previousRoute = resumeRoute
-        prepareForContentPresentation()
-        // A navigation column owns only its original thread. Reading gets a
-        // separate full-window presentation without replacing that destination.
+        // Transfer this session out of the navigation column, including its
+        // cached thread model and independently resumable reading modes.
         if presentation == .embeddedThread, content.resumeRoute != nil {
+            cancelSwitch()
             lifecycle.didRequestFullScreen(self, content, mangaProjection)
             return
         }
+        prepareForContentPresentation()
         self.content = content
         resumeRoute = content.resumeRoute
         preparedMangaProjection = mangaProjection
         contentID = UUID()
         if let route = content.resumeRoute { remember(route) }
         lifecycle.didActivate(self, previousRoute)
+    }
+
+    func promoteToFullScreen(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection?) {
+        guard !isClosed, presentation == .embeddedThread else { return }
+        presentation = .fullScreen
+        present(content, mangaProjection: mangaProjection)
+    }
+
+    func completeFullScreenHandoff() {
+        guard presentation == .fullScreen else { return }
+        let completion = onFullScreenHandoff
+        onFullScreenHandoff = nil
+        completion?()
     }
 
     func prepareForContentPresentation() {
@@ -189,10 +205,15 @@ final class ReaderSession: Identifiable {
         return !isClosed && previousID != contentID
     }
 
-    func openReader(_ mode: YamiboThreadReaderOverride, from model: ForumThreadReaderViewModel) async {
-        guard mode != .plainThread,
+    func openReader(
+        _ mode: YamiboThreadReaderOverride,
+        from model: ForumThreadReaderViewModel,
+        onFullScreenHandoff: (@MainActor () -> Void)? = nil
+    ) async {
+        guard !isSwitching, !isClosed, mode != .plainThread,
               case let .thread(context) = content,
               context.thread.tid == model.context.thread.tid else { return }
+        if presentation == .embeddedThread { self.onFullScreenHandoff = onFullScreenHandoff }
         let resolver = ReaderModeLaunchResolver(dependencies: dependencies.forum)
         let thread = model.readerSwitchThread
         let title = model.navigationTitle
