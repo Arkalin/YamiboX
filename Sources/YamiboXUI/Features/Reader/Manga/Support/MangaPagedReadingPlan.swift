@@ -282,6 +282,7 @@ struct MangaPagedPageCurlLeaf: Hashable, Sendable {
     let pageIndex: Int?
     let pageID: String?
     let selectionIndex: Int
+    var isBack: Bool = false
 
     var isBlank: Bool {
         pageIndex == nil
@@ -329,6 +330,13 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                         pageID: plan.pages[pageIndex].id,
                         selectionIndex: pageIndex
                     ),
+                    MangaPagedPageCurlLeaf(
+                        index: 0,
+                        pageIndex: pageIndex,
+                        pageID: plan.pages[pageIndex].id,
+                        selectionIndex: pageIndex,
+                        isBack: true
+                    ),
                 ]
             }
             leaves = Self.indexedLeaves(
@@ -336,12 +344,12 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                     leafGroups: pageLeaves,
                     pageTurnDirection: plan.pageTurnDirection
                 )
-            ).ifEmpty([Self.emptySingleLeaf])
+            ).ifEmpty(Self.emptySingleLeaves)
         }
     }
 
     var pageCount: Int {
-        usesTwoPageSpread ? max(leaves.count / 2, 1) : max(leaves.count, 1)
+        max(leaves.count / 2, 1)
     }
 
     func leafIndexes(forSelectionIndex selectionIndex: Int) -> [Int] {
@@ -351,14 +359,14 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
             .filter { $0.selectionIndex == clampedSelection }
             .map(\.index)
         guard !indexes.isEmpty else {
-            return usesTwoPageSpread ? [0, 1].filter { leaves.indices.contains($0) } : [0]
+            return [0, 1].filter { leaves.indices.contains($0) }
         }
         return indexes
     }
 
     func selectionIndex(forLeafIndexes leafIndexes: [Int]) -> Int? {
         leafIndexes
-            .compactMap { leaves.indices.contains($0) ? leaves[$0].selectionIndex : nil }
+            .compactMap { leaves.indices.contains($0) && !leaves[$0].isBack ? leaves[$0].selectionIndex : nil }
             .min()
     }
 
@@ -389,21 +397,22 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
 
     func leafIndex(matching leaf: MangaPagedPageCurlLeaf) -> Int? {
         if let pageID = leaf.pageID {
-            return leaves.first { $0.pageID == pageID }?.index
+            return leaves.first { $0.pageID == pageID && $0.isBack == leaf.isBack }?.index
         }
         if leaves.indices.contains(leaf.index) {
             let candidate = leaves[leaf.index]
             if candidate.pageID == nil,
+               candidate.isBack == leaf.isBack,
                candidate.selectionIndex == leaf.selectionIndex {
                 return leaf.index
             }
         }
         if let matchingBlankLeaf = leaves.first(where: { candidate in
-            candidate.pageID == nil && candidate.selectionIndex == leaf.selectionIndex
+            candidate.pageID == nil && candidate.isBack == leaf.isBack && candidate.selectionIndex == leaf.selectionIndex
         }) {
             return matchingBlankLeaf.index
         }
-        return leaves.indices.contains(leaf.index) ? leaf.index : nil
+        return nil
     }
 
     func leafIndex(before leaf: MangaPagedPageCurlLeaf) -> Int? {
@@ -444,13 +453,17 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                 index: index,
                 pageIndex: leaf.pageIndex,
                 pageID: leaf.pageID,
-                selectionIndex: leaf.selectionIndex
+                selectionIndex: leaf.selectionIndex,
+                isBack: leaf.isBack
             )
         }
     }
 
-    private static var emptySingleLeaf: MangaPagedPageCurlLeaf {
-        MangaPagedPageCurlLeaf(index: 0, pageIndex: nil, pageID: nil, selectionIndex: 0)
+    private static var emptySingleLeaves: [MangaPagedPageCurlLeaf] {
+        [
+            MangaPagedPageCurlLeaf(index: 0, pageIndex: nil, pageID: nil, selectionIndex: 0),
+            MangaPagedPageCurlLeaf(index: 1, pageIndex: nil, pageID: nil, selectionIndex: 0, isBack: true),
+        ]
     }
 
     private static var emptySpreadLeaves: [MangaPagedPageCurlLeaf] {
@@ -512,7 +525,7 @@ struct MangaPagedPageCurlSpineConfiguration: Equatable, Sendable {
 
         return MangaPagedPageCurlSpineConfiguration(
             spineLocation: .min,
-            doubleSidedUpdate: currentSpineLocation == .mid ? nil : false
+            doubleSidedUpdate: true
         )
     }
 }

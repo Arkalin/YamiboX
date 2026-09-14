@@ -100,9 +100,11 @@ final class MangaPagedPageCurlNavigationAdapter {
               pageController.gestureRecognizers.contains(where: { $0 === recognizer }) else { return false }
         let indexes = (pageController.viewControllers ?? []).compactMap { ($0 as? MangaPagedPageCurlHostingController)?.leaf }
             .compactMap(coordinator.parent.sequence.leafIndex(matching:))
+        let selection = coordinator.parent.sequence.selectionIndex(forLeafIndexes: indexes) ?? coordinator.selectionIndex
+        let pairedIndexes = coordinator.parent.sequence.leafIndexes(forSelectionIndex: selection)
         // Leaf ordering is physical; reading-order conversion has already happened in Core.
-        if edge == .left, let first = indexes.min() { return coordinator.parent.sequence.leafIndex(before: first) != nil }
-        if edge == .right, let last = indexes.max() { return coordinator.parent.sequence.leafIndex(after: last) != nil }
+        if edge == .left, let first = pairedIndexes.min() { return coordinator.parent.sequence.leafIndex(before: first) != nil }
+        if edge == .right, let last = pairedIndexes.max() { return coordinator.parent.sequence.leafIndex(after: last) != nil }
         return false
     }
 
@@ -168,6 +170,7 @@ final class MangaPagedPageCurlNavigationAdapter {
 
     private var currentPageController: MangaPagedPageCurlHostingController? {
         (coordinator?.activePageViewController?.viewControllers ?? []).compactMap { $0 as? MangaPagedPageCurlHostingController }
+            .filter { !$0.leaf.isBack }
             .min { $0.leaf.index < $1.leaf.index }
     }
 

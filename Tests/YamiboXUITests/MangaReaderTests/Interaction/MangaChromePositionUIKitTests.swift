@@ -120,6 +120,27 @@ struct MangaChromePositionUIKitTests {
                 #expect(controller.rootView.informationState === owner.informationState)
                 #expect(owner.informationState.configuration.presentation.isChromeVisible == chrome)
             }
+
+            let back = try #require(owner.pageViewController(pageController,
+                viewControllerAfter: controller) as? MangaPagedPageCurlHostingController)
+            #expect(back.leaf.isBack)
+            #expect(back.leaf.pageID == controller.leaf.pageID)
+            #expect(back.rootView.pageSurface == nil)
+            let generation = runtime.generation
+            let backWindow = show(back)
+            defer { backWindow.isHidden = true; backWindow.rootViewController = nil }
+            owner.pageViewController(pageController, willTransitionTo: [back])
+            let copy = try #require(back.rootView.backContent)
+            #expect(copy.image != nil)
+            #expect(copy.geometry == geometry)
+            #expect(copy.transform == transform)
+            #expect(copy.imageFrame(in: geometry.viewport) == geometry.nativeImageFrame(transform))
+            #expect(runtime.imageLoaded)
+            #expect(runtime.generation == generation)
+            #expect(runtime.transform == transform)
+            owner.pageViewController(pageController, didFinishAnimating: true,
+                previousViewControllers: [controller], transitionCompleted: false)
+            #expect(runtime.transform == transform)
         }
 
         let nextIndex = 1 - index
@@ -128,6 +149,58 @@ struct MangaChromePositionUIKitTests {
         let nextAlignment = MangaPagedImageSurfaceInitialHorizontalAlignment.enteringPage(
             pageTurnDirection: direction, pageScaleMode: .fitHeight, currentPageIndex: index, targetPageIndex: nextIndex)
         #expect(nextController.rootView.pageSurface?.initialHorizontalAlignment == nextAlignment)
+    }
+
+    @Test(arguments: [MangaPageEdgeFillStyle.black, .white, .system], [ColorScheme.light, .dark])
+    func curlBackRendersMirroredInkOnOpaquePaper(fill: MangaPageEdgeFillStyle, scheme: ColorScheme) throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100), format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 50, height: 100))
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 50, y: 0, width: 50, height: 100))
+        }
+        let page = try makePipelinePage()
+        let loader = MangaReaderPageImageLoader(imageSource: { _ in
+            YamiboImageSource(url: page.imageURL)
+        }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline()))
+        let content = MangaPagedPageCurlBackContent(image: image,
+            geometry: .image(size: image.size, viewport: .zero, fit: .fitWidth, alignment: .left),
+            transform: MangaSurfaceTransform())
+        for loaded in [true, false] {
+            let view = MangaPagedPageCurlLeafView(informationState: ReaderAttachedInformationState(),
+                informationIndex: 0, informationSlot: 0, pageSurface: nil, imageLoader: loader,
+                pageScaleMode: .fitWidth, pageEdgeFillStyle: fill, zoomEnabled: false,
+                isPageZoomEnabled: false, likedPageIDs: [], isBack: true, backContent: loaded ? content : nil)
+                .environment(\.colorScheme, scheme)
+                .frame(width: 100, height: 100)
+            let renderer = ImageRenderer(content: view)
+            let rendered = try #require(renderer.cgImage)
+            let left = try pixel(rendered, x: 25, y: 50)
+            let right = try pixel(rendered, x: 75, y: 50)
+            let base: Double = fill.uiColor(for: scheme) == .white ? 255 : 0
+            let faint = base * 0.82
+            let ink = faint + 255 * 0.18
+            for (actual, expected) in zip(left, loaded ? [faint, faint, ink, 255] : [base, base, base, 255]) {
+                #expect(abs(Double(actual) - expected) <= 2)
+            }
+            for (actual, expected) in zip(right, loaded ? [ink, faint, faint, 255] : [base, base, base, 255]) {
+                #expect(abs(Double(actual) - expected) <= 2)
+            }
+        }
+    }
+
+    private func pixel(_ image: CGImage, x: Int, y: Int) throws -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try #require(CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        let index = (y * image.width + x) * 4
+        return Array(bytes[index..<(index + 4)])
     }
 
     @Test func spreadZoomMovesInformationToUnscaledContainerWithoutResettingZoom() async throws {

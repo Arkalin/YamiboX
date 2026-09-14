@@ -194,18 +194,25 @@ struct MangaPagedReadingPlanTests {
         let rtlSequence = MangaPagedPageCurlSequence(plan: rtlPlan)
 
         #expect(ltrSequence.pageCount == 3)
-        #expect(ltrSequence.leaves.map(\.pageIndex) == [0, 1, 2])
-        #expect(ltrSequence.leafIndexes(forSelectionIndex: 1) == [1])
-        #expect(ltrSequence.selectionIndex(forLeafIndexes: [2]) == 2)
+        #expect(ltrSequence.leaves.map(\.pageIndex) == [0, 0, 1, 1, 2, 2])
+        #expect(ltrSequence.leaves.map(\.isBack) == [false, true, false, true, false, true])
+        #expect(ltrSequence.leafIndexes(forSelectionIndex: 1) == [2, 3])
+        #expect(ltrSequence.selectionIndex(forLeafIndexes: [4, 5]) == 2)
+        #expect(ltrSequence.selectionIndex(forLeafIndexes: [3]) == nil)
         #expect(ltrSequence.globalIndex(forSelectionIndex: 2) == 2)
         #expect(ltrSequence.leafIndex(after: 1) == 2)
 
         #expect(rtlSequence.pageCount == 3)
-        #expect(rtlSequence.leaves.map(\.pageIndex) == [2, 1, 0])
-        #expect(rtlSequence.leafIndexes(forSelectionIndex: 0) == [2])
+        #expect(rtlSequence.leaves.map(\.pageIndex) == [2, 2, 1, 1, 0, 0])
+        #expect(rtlSequence.leaves.map(\.isBack) == [false, true, false, true, false, true])
+        #expect(rtlSequence.leafIndexes(forSelectionIndex: 0) == [4, 5])
         #expect(rtlSequence.selectionIndex(forLeafIndexes: [0]) == 2)
         #expect(rtlSequence.globalIndex(forSelectionIndex: 2) == 2)
         #expect(rtlSequence.leafIndex(before: 2) == 1)
+        #expect(ltrSequence.leafIndex(before: 0) == nil)
+        #expect(ltrSequence.leafIndex(after: 5) == nil)
+        #expect(rtlSequence.leafIndexes(forSelectionIndex: -1) == [4, 5])
+        #expect(rtlSequence.leafIndexes(forSelectionIndex: 99) == [0, 1])
     }
 
     @Test func pageCurlSequenceMapsTwoPageBlankLeavesWithoutCreatingPagePositions() throws {
@@ -263,8 +270,10 @@ struct MangaPagedReadingPlanTests {
         )
 
         #expect(singlePageSequence.pageCount == 1)
-        #expect(singlePageSequence.leafIndexes(forSelectionIndex: 0) == [0])
-        #expect(singlePageSequence.leaves.map(\.pageIndex) == [nil])
+        #expect(singlePageSequence.leafIndexes(forSelectionIndex: 0) == [0, 1])
+        #expect(singlePageSequence.leaves.map(\.pageIndex) == [nil, nil])
+        #expect(singlePageSequence.leaves.map(\.isBack) == [false, true])
+        #expect(singlePageSequence.selectionIndex(forLeafIndexes: [1]) == nil)
         #expect(singlePageSequence.pageIndex(forSelectionIndex: 0) == nil)
         #expect(singlePageSequence.globalIndex(forSelectionIndex: 0) == nil)
 
@@ -298,11 +307,17 @@ struct MangaPagedReadingPlanTests {
             initialSequence.leaves.first { $0.pageID == initialPages[0].id }
         )
 
-        #expect(initialSequence.leaves.map(\.pageID) == ["700#2", "700#1", "700#0"])
-        #expect(prefetchedSequence.leaves.map(\.pageID) == ["701#1", "701#0", "700#2", "700#1", "700#0"])
-        #expect(prefetchedSequence.leafIndex(matching: visibleLeaf) == 4)
-        #expect(prefetchedSequence.leafIndex(before: visibleLeaf) == 3)
-        #expect(prefetchedSequence.leafIndex(after: visibleLeaf) == nil)
+        #expect(initialSequence.leaves.filter { !$0.isBack }.map(\.pageID) == ["700#2", "700#1", "700#0"])
+        #expect(prefetchedSequence.leaves.filter { !$0.isBack }.map(\.pageID) == ["701#1", "701#0", "700#2", "700#1", "700#0"])
+        #expect(prefetchedSequence.leafIndex(matching: visibleLeaf) == 8)
+        #expect(prefetchedSequence.leafIndex(before: visibleLeaf) == 7)
+        #expect(prefetchedSequence.leafIndex(after: visibleLeaf) == 9)
+        let back = try #require(initialSequence.leaves.first { $0.pageID == visibleLeaf.pageID && $0.isBack })
+        #expect(prefetchedSequence.leafIndex(matching: back) == 9)
+        #expect(prefetchedSequence.leafIndex(after: back) == nil)
+        let spreadSequence = MangaPagedPageCurlSequence(plan: MangaPagedReadingPlan(
+            pages: prefetchedPages, currentPageIndex: 0, pageTurnDirection: .rightToLeft, usesTwoPageSpread: true))
+        #expect(spreadSequence.leafIndex(matching: back) == nil)
     }
 
     @Test func pageCurlSpineConfigurationDoesNotDisableDoubleSidedWhileCurrentSpineIsMid() {
@@ -320,9 +335,9 @@ struct MangaPagedReadingPlanTests {
         )
 
         #expect(rotatingToSinglePage.spineLocation == .min)
-        #expect(rotatingToSinglePage.doubleSidedUpdate == nil)
+        #expect(rotatingToSinglePage.doubleSidedUpdate == true)
         #expect(stableSinglePage.spineLocation == .min)
-        #expect(stableSinglePage.doubleSidedUpdate == false)
+        #expect(stableSinglePage.doubleSidedUpdate == true)
         #expect(rotatingToTwoPage.spineLocation == .mid)
         #expect(rotatingToTwoPage.doubleSidedUpdate == true)
     }

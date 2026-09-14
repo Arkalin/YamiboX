@@ -62,6 +62,7 @@ private struct MangaCurlZoomInformation: View {
 
 final class MangaPagedPageCurlHostingController: UIHostingController<MangaPagedPageCurlLeafView> {
     let leaf: MangaPagedPageCurlLeaf
+    var onWillAppear: (() -> Void)?
 
     init(
         leaf: MangaPagedPageCurlLeaf,
@@ -76,6 +77,11 @@ final class MangaPagedPageCurlHostingController: UIHostingController<MangaPagedP
     @MainActor @preconcurrency
     required dynamic init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        onWillAppear?()
     }
 
     func applyPageBackground(_ pageBackgroundColor: UIColor) {
@@ -100,8 +106,47 @@ struct MangaPagedPageCurlLeafView: View {
     let zoomEnabled: Bool
     let isPageZoomEnabled: Bool
     let likedPageIDs: Set<String>
+    var isBack: Bool = false
+    var backContent: MangaPagedPageCurlBackContent?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        ZStack {
+            pageEdgeFillStyle.color(for: colorScheme)
+            if isBack {
+                backImage
+                    .padding(.top, informationState.configuration.contentTopInset)
+                    .overlay {
+                        ReaderAttachedInformationView(state: informationState, itemIndex: informationIndex,
+                            slot: informationSlot, isBack: true)
+                    }
+                    .scaleEffect(x: -1, y: 1)
+                    .opacity(0.18)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            } else {
+                front
+            }
+        }
+        .allowsHitTesting(!isBack)
+        .accessibilityHidden(isBack)
+        .ignoresSafeArea(.container, edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges)
+    }
+
+    private var backImage: some View {
+        GeometryReader { proxy in
+            if let backContent, let image = backContent.image {
+                let frame = backContent.imageFrame(in: proxy.size)
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+            }
+        }
+        .clipped()
+    }
+
+    private var front: some View {
         MangaPagedReaderPageSlot(
             surface: pageSurface,
             imageLoader: imageLoader,
@@ -117,90 +162,24 @@ struct MangaPagedPageCurlLeafView: View {
         .overlay {
             ReaderAttachedInformationView(state: informationState, itemIndex: informationIndex, slot: informationSlot)
         }
-        .ignoresSafeArea(
-            .container,
-            edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges
-        )
     }
 }
 
-/// Holds a weak reference to the private `pageCurl` filter(s) discovered by
-/// `MangaPageCurlPrivateBackColor`, so repeated per-frame refreshes during a single
-/// transition can skip re-walking the layer tree. The owning coordinator resets this
-/// at the start of each new transition.
-@MainActor
-final class MangaPageCurlBackColorFilterCache {
-    fileprivate var filters = NSHashTable<NSObject>.weakObjects()
+// A value snapshot avoids mounting a second native surface on the front's runtime.
+struct MangaPagedPageCurlBackContent {
+    let image: UIImage?
+    let geometry: MangaSurfaceGeometry
+    let transform: MangaSurfaceTransform
 
-    func reset() {
-        filters.removeAllObjects()
-    }
-}
-
-@MainActor
-enum MangaPageCurlPrivateBackColor {
-    private static let filtersKey = "filters"
-    private static let backgroundFiltersKey = "backgroundFilters"
-    private static let typeKey = "type"
-    private static let pageCurlType = "pageCurl"
-    private static let inputBackEnabledKey = "inputBackEnabled"
-    private static let inputBackColor0Key = "inputBackColor0"
-    private static let inputBackColor1Key = "inputBackColor1"
-
-    /// The filter's identity is stable for the rest of a transition once found; only its
-    /// back-color inputs need refreshing each frame. An empty cache (first frame of a
-    /// transition, or the cached filter was deallocated) triggers a fresh tree walk.
-    static func apply(to rootView: UIView, backColor: UIColor, cache: MangaPageCurlBackColorFilterCache) {
-        let colorComponents = backColor.mangaPageCurlPrivateColorComponents
-        let cachedFilters = cache.filters.allObjects
-        guard cachedFilters.isEmpty else {
-            for filter in cachedFilters {
-                applyColorComponents(colorComponents, to: filter)
-            }
-            return
+    func imageFrame(in viewport: CGSize) -> CGRect {
+        guard geometry.viewport.width > 0, geometry.viewport.height > 0 else {
+            return geometry.replacingNativeViewport(viewport).nativeImageFrame(transform)
         }
-
-        discoverAndApply(to: rootView.layer, colorComponents: colorComponents, cache: cache)
-    }
-
-    private static func discoverAndApply(
-        to layer: CALayer,
-        colorComponents: [NSNumber],
-        cache: MangaPageCurlBackColorFilterCache
-    ) {
-        for filterKey in [filtersKey, backgroundFiltersKey] {
-            guard let filters = layer.value(forKey: filterKey) as? [NSObject] else { continue }
-            for filter in filters where isPageCurlFilter(filter) {
-                applyColorComponents(colorComponents, to: filter)
-                cache.filters.add(filter)
-            }
-        }
-
-        layer.sublayers?.forEach { discoverAndApply(to: $0, colorComponents: colorComponents, cache: cache) }
-    }
-
-    private static func applyColorComponents(_ colorComponents: [NSNumber], to filter: NSObject) {
-        filter.setValue(NSNumber(value: true), forKey: inputBackEnabledKey)
-        filter.setValue(colorComponents, forKey: inputBackColor0Key)
-        filter.setValue(colorComponents, forKey: inputBackColor1Key)
-    }
-
-    private static func isPageCurlFilter(_ filter: NSObject) -> Bool {
-        if String(describing: filter) == pageCurlType {
-            return true
-        }
-        return (filter.value(forKey: typeKey) as? String) == pageCurlType
-    }
-}
-
-private extension UIColor {
-    var mangaPageCurlPrivateColorComponents: [NSNumber] {
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return [red, green, blue, alpha].map { NSNumber(value: Double($0)) }
+        let frame = geometry.nativeImageFrame(transform)
+        return frame.applying(CGAffineTransform(
+            scaleX: viewport.width / geometry.viewport.width,
+            y: viewport.height / geometry.viewport.height
+        ))
     }
 }
 #endif
