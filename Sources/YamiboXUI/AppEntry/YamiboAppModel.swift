@@ -330,10 +330,14 @@ public final class YamiboAppModel {
 
     @discardableResult
     func requestMangaReader(_ context: MangaLaunchContext, bookOpeningTransition: BookOpeningTransition?) -> Task<Void, Never> {
-        if let session = currentReaderSession ?? presentedReaderSession, !session.isClosed {
+        if let session = presentedReaderSession ?? currentReaderSession,
+           session.presentation == .fullScreen, !session.isClosed {
             return Task { await session.openMangaReader(context) }
         }
         if let mangaOpenTask { return mangaOpenTask }
+        if currentReaderSession?.presentation == .embeddedThread {
+            currentReaderSession?.cancelSwitch()
+        }
         let requestID = UUID()
         mangaOpenRequestID = requestID
         isOpeningMangaReader = true
@@ -405,8 +409,11 @@ public final class YamiboAppModel {
                 didDeactivate: { [weak self] session in self?.deactivateReaderSession(session) },
                 didClose: { [weak self] session in self?.finishReaderSession(session) },
                 didRequestFullScreen: { [weak self] session, content, projection in
-                    guard let self, self.currentReaderSession === session else { return }
-                    self.presentReaderContent(content, mangaProjection: projection)
+                    guard let self, self.currentReaderSession === session,
+                          self.presentedReaderSession == nil, !session.isClosed else { return }
+                    self.isReaderCoverVisible = true
+                    self.presentedReaderSession = session
+                    session.promoteToFullScreen(content, mangaProjection: projection)
                 }
             ),
             bookOpeningTransition: bookOpeningTransition,

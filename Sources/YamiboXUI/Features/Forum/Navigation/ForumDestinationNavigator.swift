@@ -9,7 +9,10 @@ import YamiboXCore
 final class ForumDestinationNavigator {
     var path: [ForumDestination] = [] {
         didSet {
-            if oldValue != path { browserOpenID = nil }
+            if oldValue != path {
+                browserOpenID = nil
+                pathRevision = UUID()
+            }
         }
     }
     private(set) var browserDetailRevision = UUID()
@@ -24,6 +27,7 @@ final class ForumDestinationNavigator {
     @ObservationIgnored let mode: ForumNavigationMode
     @ObservationIgnored let usesSplitNavigation: Bool
     @ObservationIgnored private var browserOpenID: UUID?
+    @ObservationIgnored private var pathRevision = UUID()
     /// The reader session's own thread IDs (the work plus, for smart manga,
     /// its chapter threads). Any thread opened inside the overlay that
     /// resolves to one of these is still the work's discussion companion, so
@@ -92,6 +96,18 @@ final class ForumDestinationNavigator {
         }
         path.append(destination)
         if !browserDetailPath.isEmpty { browserDetailRevision = UUID() }
+    }
+
+    func readerSourceHandoff() -> @MainActor () -> Void {
+        let sourcePath = path
+        let sourceRevision = pathRevision
+        return { [weak self] in
+            guard let self, !sourcePath.isEmpty,
+                  self.pathRevision == sourceRevision, self.path == sourcePath else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { _ = self.path.removeLast() }
+        }
     }
 
     func route(_ url: URL, source: ForumNavigationSource, title: String? = nil, fromBrowserList: Bool = false) {
