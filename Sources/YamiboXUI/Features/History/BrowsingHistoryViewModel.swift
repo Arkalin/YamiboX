@@ -125,7 +125,7 @@ final class BrowsingHistoryViewModel {
         guard generation == reloadGeneration else { return }
         boardReaderSettings = boardReader
         let scopedEntries = showsPreviousReading
-            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader, favoritedThreadIDs: homeFavoritedThreadIDs).previous
+            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader, favoritedThreadIDs: homeFavoritedThreadIDs).readingEntries
             : loadedEntries
         entries = scopedEntries.filter { entry in
             if !searchQuery.isEmpty,

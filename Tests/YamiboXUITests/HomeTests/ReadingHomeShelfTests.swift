@@ -156,7 +156,7 @@ final class ReadingHomeViewModelTests: XCTestCase {
         XCTAssertEqual(home.previous.map(\.id), [older.id])
         let previous = BrowsingHistoryViewModel(dependencies: context.libraryDependencies, showsPreviousReading: true)
         await previous.load()
-        XCTAssertEqual(previous.entries.map(\.id), [older.id])
+        XCTAssertEqual(previous.entries.map(\.id), [favorite.id, older.id])
         let allHistory = BrowsingHistoryViewModel(dependencies: context.libraryDependencies)
         await allHistory.load()
         XCTAssertEqual(allHistory.entries.count, 3)
@@ -253,23 +253,32 @@ final class ReadingHomeViewModelTests: XCTestCase {
         XCTAssertTrue(model.previous.isEmpty)
     }
 
-    func testPreviousListExcludesContinueBeforeApplyingSearch() async throws {
+    func testPreviousListIncludesContinueAndPreservesSearchAndCategoryFiltering() async throws {
         let context = try makeContext()
         let latest = BrowsingHistoryEntry(target: .novelThread(threadID: "1"), title: "Latest", lastVisitTime: Date(timeIntervalSince1970: 3))
         let older = BrowsingHistoryEntry(target: .novelThread(threadID: "2"), title: "Older", lastVisitTime: Date(timeIntervalSince1970: 1))
         let normal = BrowsingHistoryEntry(target: .normalThread(threadID: "3"), title: "Older forum post")
-        for entry in [latest, older, normal] { try await context.browsingHistoryStore.record(entry) }
+        let manga = BrowsingHistoryEntry(target: .mangaThread(threadID: "4"), title: "Latest manga", lastVisitTime: Date(timeIntervalSince1970: 2))
+        for entry in [latest, older, normal, manga] { try await context.browsingHistoryStore.record(entry) }
         let model = BrowsingHistoryViewModel(dependencies: context.libraryDependencies, showsPreviousReading: true)
-        model.searchText = "Older"
         await model.load()
+        XCTAssertEqual(model.entries, [latest, manga, older])
+        model.searchText = "Older"
+        await model.reload()
         XCTAssertEqual(model.entries, [older])
         model.searchText = "Latest"
         await model.reload()
-        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertEqual(model.entries, [latest, manga])
+        model.selectedFilter = .manga
+        await model.reload()
+        XCTAssertEqual(model.entries, [manga])
+        model.selectedFilter = .novel
+        await model.reload()
+        XCTAssertEqual(model.entries, [latest])
 
         let allHistory = BrowsingHistoryViewModel(dependencies: context.libraryDependencies)
         await allHistory.load()
-        XCTAssertEqual(Set(allHistory.entries.map(\.id)), Set([latest.id, older.id, normal.id]))
+        XCTAssertEqual(Set(allHistory.entries.map(\.id)), Set([latest.id, older.id, normal.id, manga.id]))
     }
 
     func testObservesHistoryChanges() async throws {
