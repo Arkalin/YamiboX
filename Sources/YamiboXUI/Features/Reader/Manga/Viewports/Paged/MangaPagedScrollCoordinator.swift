@@ -9,6 +9,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     static let reuseIdentifier = "MangaPagedReaderPageCell"
 
     var parent: MangaPagedReaderViewport
+    let informationState = ReaderAttachedInformationState()
     let pagingDriver = ReaderPagedPagingDriver()
     let interactionRuntime = MangaPagedInteractionRuntime()
     private var contentIdentity: MangaPagedReaderContentIdentity?
@@ -74,6 +75,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     }
 
     func updateContentIfNeeded(in collectionView: UICollectionView) {
+        informationState.update(parent.attachedInformation)
         prefetchAdjacentImages()
         let nextIdentity = MangaPagedReaderContentIdentity(
             spreadIDs: parent.plan.spreads.map(\.id),
@@ -313,6 +315,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
         let spread = parent.plan.spreads[spreadIndex]
         cell.configure(
+            informationState: informationState,
+            informationIndex: spreadIndex,
             spreadID: spread.id,
             usesTwoPageSpread: parent.plan.usesTwoPageSpread,
             leftPageSurface: pageSurface(

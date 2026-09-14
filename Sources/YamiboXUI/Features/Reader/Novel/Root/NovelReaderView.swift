@@ -144,7 +144,7 @@ public struct NovelReaderView: View {
                     bottomInset: bottomInset,
                     layout: currentLayout
                 )
-                .ignoresSafeArea(.container, edges: .top)
+                .ignoresSafeArea(.container, edges: model.settings.readingMode == .paged ? .vertical : .top)
                 .transaction { transaction in
                     if model.settings.readingMode == .paged {
                         transaction.animation = nil
@@ -460,6 +460,7 @@ public struct NovelReaderView: View {
         } else if model.settings.readingMode == .paged {
             pagedContent(
                 topInset: topInset,
+                bottomInset: bottomInset,
                 layout: layout
             )
         } else {
@@ -523,7 +524,7 @@ public struct NovelReaderView: View {
         )
     }
 
-    private func pagedContent(topInset: CGFloat, layout: NovelReaderLayout) -> some View {
+    private func pagedContent(topInset: CGFloat, bottomInset: CGFloat, layout: NovelReaderLayout) -> some View {
         var displaySettings = effectivePagedSettings
         displaySettings.horizontalPadding = layout.novelTextBoxLayout(
             settings: model.settings, usesPadPresentation: isPadDevice
@@ -536,17 +537,32 @@ public struct NovelReaderView: View {
             layout: layout
         )
         let pagedTopInset = topInset + layout.chromeInsets.top
+        // The turning sheet includes the home-indicator area; the text box
+        // still ends at its original boundary above that area.
+        let pagedBottomInset = layout.chromeInsets.bottom + bottomInset
         let bindings = pagedViewportBindings(pagerIdentity: pagerIdentity)
+        let information = ReaderPageInformationPresentation(isPaged: true,
+            isImmersive: model.settings.isImmersiveModeEnabled, isChromeVisible: bindings.isChromeVisible)
+        let attachedInformation = ReaderAttachedInformationConfiguration(
+            pages: model.novelReaderPresentation.map {
+                NovelAttachedPageInformation.pages(presentation: $0, workTitle: model.title, information: information)
+            } ?? [],
+            presentation: information, selectedIndex: model.pagedViewportSelectionIndex,
+            backgroundStyle: model.settings.backgroundStyle, topInset: topInset, bottomInset: bottomInset,
+            titleSidePadding: model.navigation.canNavigateForward ? 128 : 76,
+            titleLift: isPadDevice ? 12 : 0
+        )
         return Group {
             if effectivePagedSettings.pagedTurnStyle == .pageCurl {
                 NovelReaderPagedPageCurlViewport(
+                    attachedInformation: attachedInformation,
                     spreads: model.presentationSpreads,
                     surfaces: model.novelReaderSurfaces,
                     settings: displaySettings,
                     refererURL: model.forumURL,
                     offlineScope: model.inlineImageOfflineScope,
                     topInset: pagedTopInset,
-                    bottomInset: layout.chromeInsets.bottom,
+                    bottomInset: pagedBottomInset,
                     selectionIndex: model.pagedViewportSelectionIndex,
                     usesTwoPageSpread: model.isTwoPageSpreadActive,
                     pagerIdentity: pagerIdentity,
@@ -569,6 +585,7 @@ public struct NovelReaderView: View {
                 )
             } else {
                 NovelReaderPagedCollectionViewport(
+                    attachedInformation: attachedInformation,
                     itemSource: model.isTwoPageSpreadActive
                         ? .spreads(model.presentationSpreads)
                         : .surfaces,
@@ -577,7 +594,7 @@ public struct NovelReaderView: View {
                     refererURL: model.forumURL,
                     offlineScope: model.inlineImageOfflineScope,
                     topInset: pagedTopInset,
-                    bottomInset: layout.chromeInsets.bottom,
+                    bottomInset: pagedBottomInset,
                     selectionIndex: model.pagedViewportSelectionIndex,
                     pagerIdentity: pagerIdentity,
                     scrollAnimationRequest: pagedScrollAnimationRequest,

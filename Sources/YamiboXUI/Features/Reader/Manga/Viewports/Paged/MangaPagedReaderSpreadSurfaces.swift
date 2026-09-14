@@ -6,6 +6,8 @@ import UIKit
 
 extension ReaderPagedPageTurnCell {
     func configure(
+        informationState: ReaderAttachedInformationState,
+        informationIndex: Int,
         spreadID: String,
         usesTwoPageSpread: Bool,
         leftPageSurface: MangaPagedReaderSpreadPageSurface?,
@@ -36,6 +38,11 @@ extension ReaderPagedPageTurnCell {
                 spreadSurfaceInteraction: spreadSurfaceInteraction,
                 likedPageIDs: likedPageIDs
             )
+            .padding(.top, informationState.configuration.contentTopInset)
+            .background(.black)
+            .overlay {
+                ReaderAttachedInformationView(state: informationState, itemIndex: informationIndex)
+            }
             .ignoresSafeArea(
                 .container,
                 edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges

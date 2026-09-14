@@ -145,6 +145,7 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
 import UIKit
 
 struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
+    var attachedInformation = ReaderAttachedInformationConfiguration()
     let spreads: [NovelReaderPresentationSpread]
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
@@ -261,6 +262,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
 
     final class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
         var parent: NovelReaderPagedPageCurlViewport
+        let informationState = ReaderAttachedInformationState()
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
         private var imagePipeline: YamiboUIImagePipeline?
@@ -296,6 +298,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 needsDeferredUpdate = true
                 return
             }
+            informationState.update(parent.attachedInformation)
             let nextContentIdentity = parent.contentIdentity
             let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
@@ -563,6 +566,8 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             let controller = NovelReaderPagedPageCurlHostingController(
                 leaf: leaf,
                 rootView: NovelReaderPagedPageCurlLeafView(
+                    informationState: informationState,
+                    informationSlot: parent.usesTwoPageSpread ? leaf.index % 2 : 0,
                     leaf: leaf,
                     surfaces: parent.surfaces,
                     settings: parent.settings,
@@ -726,6 +731,8 @@ private final class NovelReaderPagedPageCurlHostingController: UIHostingControll
 }
 
 private struct NovelReaderPagedPageCurlLeafView: View {
+    let informationState: ReaderAttachedInformationState
+    let informationSlot: Int
     let leaf: NovelReaderPagedPageCurlLeaf
     let surfaces: [NovelReaderSurface]
     var settings: NovelReaderAppearanceSettings
@@ -765,6 +772,10 @@ private struct NovelReaderPagedPageCurlLeafView: View {
                 .padding(.top, topInset)
                 .padding(.bottom, bottomInset)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .overlay {
+                    ReaderAttachedInformationView(state: informationState, itemIndex: leaf.selectionIndex,
+                        slot: informationSlot, isBack: leaf.isBack)
+                }
                 // Show the ink through the paper without making the themed sheet translucent.
                 .scaleEffect(x: leaf.isBack ? -1 : 1, y: 1)
                 .opacity(leaf.isBack ? 0.18 : 1)
@@ -773,9 +784,12 @@ private struct NovelReaderPagedPageCurlLeafView: View {
             } else {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay {
+                        ReaderAttachedInformationView(state: informationState, itemIndex: leaf.selectionIndex, slot: informationSlot)
+                    }
             }
         }
-        .modifier(NovelReaderPagedHostingTopSafeAreaModifier())
+        .modifier(NovelReaderPagedHostingSafeAreaModifier())
         .environment(\.colorScheme, colorScheme)
         .environment(\.yamiboImagePipeline, imagePipeline)
     }

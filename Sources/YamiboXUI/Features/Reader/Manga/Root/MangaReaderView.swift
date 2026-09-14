@@ -46,6 +46,7 @@ public struct MangaReaderView: View {
     /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
     @State private var windowSafeAreaInsets: UIEdgeInsets?
     @State private var readingViewportInsets = MangaReadingViewportInsets()
+    @State private var visibleStatusBarTopInset: CGFloat = 0
 
     private let onClose: () -> Void
     private let onOpenOriginalPost: (URL, MangaLaunchContext) async -> Bool
@@ -91,6 +92,9 @@ public struct MangaReaderView: View {
     public var body: some View {
         GeometryReader { proxy in
             let topInset = max(proxy.safeAreaInsets.top, windowSafeAreaInsets?.top ?? proxy.safeAreaInsets.top)
+            // iPad hides the status-bar safe area before the information fade finishes.
+            let informationTopInset = UIDevice.current.userInterfaceIdiom == .pad
+                ? max(topInset, visibleStatusBarTopInset) : topInset
             let bottomInset = max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets?.bottom ?? proxy.safeAreaInsets.bottom)
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: model.presentation.settings,
@@ -103,6 +107,11 @@ public struct MangaReaderView: View {
             )
 
             MangaReaderPresentationContent(
+                informationLayout: ReaderAttachedInformationConfiguration(
+                    topInset: informationTopInset, bottomInset: bottomInset,
+                    titleSidePadding: model.canNavigateForward ? 128 : 76,
+                    contentTopInset: pagedContentTopInset
+                ),
                 presentation: model.presentation,
                 imageLoader: model.imageLoader,
                 isChromeVisible: isChromeVisible,
@@ -147,6 +156,9 @@ public struct MangaReaderView: View {
             .onChange(of: proxy.size, initial: true) { _, size in
                 readingViewportInsets.update(viewport: size, topInset: topInset)
             }
+            .onChange(of: topInset, initial: true) { _, inset in
+                if inset > 0 { visibleStatusBarTopInset = inset }
+            }
             .onChange(of: usesTwoPageSpread, initial: true) { _, newValue in
                 controlUsesTwoPageSpread = newValue
             }
@@ -161,7 +173,7 @@ public struct MangaReaderView: View {
             }
             .overlay(alignment: .top) {
                 MangaReaderChromeControls(
-                    topInset: topInset,
+                    topInset: informationTopInset,
                     bottomInset: bottomInset,
                     isVisible: isChromeVisible,
                     isPreview: context.isPreview,

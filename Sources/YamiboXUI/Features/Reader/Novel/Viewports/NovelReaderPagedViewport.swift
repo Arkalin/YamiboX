@@ -32,6 +32,7 @@ struct NovelReaderPagedViewportContentIdentity: Equatable {
     ) {
         self.surfaces = surfaces
         self.settings = settings
+        self.settings.isImmersiveModeEnabled = false
         self.refererURL = refererURL
         self.topInset = topInset
         self.bottomInset = bottomInset

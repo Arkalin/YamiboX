@@ -48,23 +48,21 @@ struct MangaReaderChromeControls: View {
             isPaged: readingMode == .paged, isImmersive: isImmersive, isChromeVisible: isVisible
         )
         ZStack(alignment: .top) {
-            if isVisible || readingMode == .paged {
-                MangaReaderTopChrome(
-                    title: summary.map { information.chapterText(title: $0.headerTitle, remainingPages: $0.remainingChapterPageCount) },
-                    spreadWorkTitle: summary?.spreadWorkTitle,
-                    isRightToLeft: pageTurnDirection == .rightToLeft,
-                    isChromeVisible: isVisible,
-                    topInset: topInset,
-                    isPreview: isPreview,
-                    canNavigateBack: canNavigateBack,
-                    canNavigateForward: canNavigateForward,
-                    onNavigateBack: onNavigateBack,
-                    onNavigateForward: onNavigateForward,
-                    onClose: onClose
-                )
-                .readerChromeFadeVisibility(information.isVisible)
-                .transition(.opacity)
-            }
+            MangaReaderTopChrome(
+                title: summary.map { information.chapterText(title: $0.headerTitle, remainingPages: $0.remainingChapterPageCount) },
+                spreadWorkTitle: summary?.spreadWorkTitle,
+                isRightToLeft: pageTurnDirection == .rightToLeft,
+                isChromeVisible: isVisible,
+                showsPageInformation: readingMode == .vertical,
+                topInset: topInset,
+                isPreview: isPreview,
+                canNavigateBack: canNavigateBack,
+                canNavigateForward: canNavigateForward,
+                onNavigateBack: onNavigateBack,
+                onNavigateForward: onNavigateForward,
+                onClose: onClose
+            )
+            .modifier(ReaderInformationVisibility(isVisible: isVisible))
 
             MangaReaderBottomChrome(
                 bottomInset: bottomInset,

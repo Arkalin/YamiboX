@@ -7,6 +7,7 @@ struct MangaReaderTopChrome: View {
     var spreadWorkTitle: String? = nil
     var isRightToLeft: Bool = false
     var isChromeVisible: Bool = true
+    var showsPageInformation: Bool = true
     let topInset: CGFloat
     let isPreview: Bool
     let canNavigateBack: Bool
@@ -30,7 +31,7 @@ struct MangaReaderTopChrome: View {
                 let titleSidePadding = max(leadingControlsWidth, trailingControlsWidth) + 16
 
                 ZStack {
-                    if let spreadWorkTitle {
+                    if showsPageInformation, let spreadWorkTitle {
                         HStack(spacing: 0) {
                             MangaReaderTopChapterTitle(title: isRightToLeft ? title : spreadWorkTitle)
                                 .padding(.horizontal, titleSidePadding + 16)
@@ -41,7 +42,7 @@ struct MangaReaderTopChrome: View {
                         }
                         .padding(.horizontal, -16)
                         .allowsHitTesting(false)
-                    } else {
+                    } else if showsPageInformation {
                         MangaReaderTopChapterTitle(title: title)
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, titleSidePadding)
@@ -104,10 +105,11 @@ private struct MangaReaderTopChapterTitle: View {
     var body: some View {
         if let title, !title.isEmpty {
             Text(title)
-                .font(.callout.weight(.semibold))
+                .modifier(ReaderInformationFont())
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))

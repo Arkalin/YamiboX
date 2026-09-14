@@ -114,28 +114,14 @@ struct MangaReaderBottomChrome: View {
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
 
-            if let summaries = summary?.spreadPageSummaries {
-                HStack(spacing: 0) {
-                    ForEach(0..<2, id: \.self) { index in
-                        Group {
-                            if let text = summaries[index] {
-                                MangaReaderBottomPageSummary(text: information.pageNumberStyle == .compact
-                                    ? String(summary?.spreadPageNumbers?[index] ?? 1) : text)
-                            } else {
-                                Color.clear.frame(height: 0)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal, -12)
-                .readerChromeFadeVisibility(information.isVisible)
-                .allowsHitTesting(false)
+            if readingMode == .paged {
+                Color.clear.frame(height: summary == nil ? 0 : ReaderInformationTypography.lineHeight + 12)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             } else if let pageSummary = summary?.pageSummary {
                 MangaReaderBottomPageSummary(text: information.pageNumberStyle == .compact
                     ? String(summary?.pageNumber ?? 1) : pageSummary)
-                    .readerChromeFadeVisibility(information.isVisible)
+                    .modifier(ReaderInformationVisibility(isVisible: information.isVisible))
                     .allowsHitTesting(false)
             }
         }
@@ -164,7 +150,7 @@ private struct MangaReaderBottomPageSummary: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
+            .modifier(ReaderInformationFont())
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)

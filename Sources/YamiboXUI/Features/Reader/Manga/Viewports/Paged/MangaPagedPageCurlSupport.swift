@@ -7,10 +7,13 @@ import UIKit
 final class MangaPagedPageCurlContainerViewController: UIViewController {
     let pageViewController: UIPageViewController
     let zoomView = MangaNativeSurfaceView()
+    let informationState: ReaderAttachedInformationState
+    private lazy var informationHost = UIHostingController(rootView: MangaCurlZoomInformation(state: informationState))
     var onLayoutSubviews: (() -> Void)?
 
-    init(pageViewController: UIPageViewController) {
+    init(pageViewController: UIPageViewController, informationState: ReaderAttachedInformationState = ReaderAttachedInformationState()) {
         self.pageViewController = pageViewController
+        self.informationState = informationState
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -29,12 +32,31 @@ final class MangaPagedPageCurlContainerViewController: UIViewController {
             self?.pageViewController.view.frame = CGRect(origin: .zero, size: size)
         }
         pageViewController.didMove(toParent: self)
+        addChild(informationHost)
+        informationHost.view.backgroundColor = .clear
+        informationHost.view.isUserInteractionEnabled = false
+        view.addSubview(informationHost.view)
+        informationHost.didMove(toParent: self)
+        zoomView.onInformationZoomChange = { [weak self] zooming in
+            guard let self, self.informationState.usesStationaryZoomInformation != zooming else { return }
+            self.informationState.usesStationaryZoomInformation = zooming
+        }
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         zoomView.frame = view.bounds
+        informationHost.view.frame = view.bounds
         onLayoutSubviews?()
+    }
+}
+
+private struct MangaCurlZoomInformation: View {
+    let state: ReaderAttachedInformationState
+
+    var body: some View {
+        ReaderAttachedInformationView(state: state, itemIndex: state.configuration.selectedIndex, stationaryZoomCopy: true)
+            .ignoresSafeArea()
     }
 }
 
@@ -68,6 +90,9 @@ final class MangaPagedPageCurlHostingController: UIHostingController<MangaPagedP
 }
 
 struct MangaPagedPageCurlLeafView: View {
+    let informationState: ReaderAttachedInformationState
+    let informationIndex: Int
+    let informationSlot: Int
     let pageSurface: MangaPagedReaderSpreadPageSurface?
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
@@ -87,6 +112,11 @@ struct MangaPagedPageCurlLeafView: View {
             isPageZoomEnabled: isPageZoomEnabled,
             likedPageIDs: likedPageIDs
         )
+        .padding(.top, informationState.configuration.contentTopInset)
+        .background(.black)
+        .overlay {
+            ReaderAttachedInformationView(state: informationState, itemIndex: informationIndex, slot: informationSlot)
+        }
         .ignoresSafeArea(
             .container,
             edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges

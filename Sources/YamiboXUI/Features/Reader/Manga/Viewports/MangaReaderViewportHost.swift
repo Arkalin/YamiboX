@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 struct MangaReaderPresentationContent: View {
+    var informationLayout = ReaderAttachedInformationConfiguration()
     let presentation: MangaReaderPresentation
     let imageLoader: MangaReaderPageImageLoader?
     let isChromeVisible: Bool
@@ -30,6 +31,7 @@ struct MangaReaderPresentationContent: View {
                 ReaderLoadStateView(status: .loading, tint: .white)
             case let .loaded(loaded):
                 MangaReaderLoadedContent(
+                    informationLayout: informationLayout,
                     loaded: loaded,
                     settings: presentation.settings,
                     imageLoader: imageLoader,
@@ -76,6 +78,7 @@ struct MangaReaderPresentationContent: View {
 }
 
 private struct MangaReaderLoadedContent: View {
+    let informationLayout: ReaderAttachedInformationConfiguration
     let loaded: MangaReaderLoadedPresentation
     let settings: MangaReaderSettings
     let imageLoader: MangaReaderPageImageLoader?
@@ -130,7 +133,7 @@ private struct MangaReaderLoadedContent: View {
                     let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                         settings: settings,
                         isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
-                        availableSize: proxy.size
+                        availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
                     )
                     let plan = MangaPagedReadingPlan(
                         pages: loaded.pages,
@@ -140,6 +143,7 @@ private struct MangaReaderLoadedContent: View {
                     )
                     if effectiveSettings.pagedTurnStyle == .pageCurl {
                         MangaPagedPageCurlReaderViewport(
+                            attachedInformation: attachedInformation(plan: plan),
                             plan: plan,
                             viewportPlacement: loaded.viewportPlacement,
                             settings: effectiveSettings,
@@ -165,6 +169,7 @@ private struct MangaReaderLoadedContent: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         MangaPagedReaderViewport(
+                            attachedInformation: attachedInformation(plan: plan),
                             plan: plan,
                             viewportPlacement: loaded.viewportPlacement,
                             settings: effectiveSettings,
@@ -189,11 +194,24 @@ private struct MangaReaderLoadedContent: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .padding(.top, pagedContentTopInset)
             }
         } else {
             ReaderLoadStateView(status: .loading, tint: .white)
         }
+    }
+
+    private func attachedInformation(plan: MangaPagedReadingPlan) -> ReaderAttachedInformationConfiguration {
+        var result = informationLayout
+        result.contentTopInset = pagedContentTopInset
+        result.presentation = ReaderPageInformationPresentation(isPaged: true,
+            isImmersive: settings.isImmersiveModeEnabled, isChromeVisible: isChromeVisible)
+        result.selectedIndex = plan.currentSpreadIndex ?? 0
+        result.pages = MangaAttachedPageInformation.pages(plan: plan, workTitle: loaded.directoryTitle,
+            information: result.presentation) { page in
+                let rawTitle = loaded.directoryPanel.displayChapters.first { $0.tid == page.tid }?.rawTitle ?? page.chapterTitle
+                return MangaChapterDisplayFormatter.readerHeaderTitle(rawTitle: rawTitle, cleanBookName: loaded.directoryTitle)
+            }
+        return result
     }
 }
 

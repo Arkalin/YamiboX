@@ -11,6 +11,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
     private var callbackRevision: UInt64 = 0
     var onLongPress: (() -> Void)?
     var onBaseSizeChange: ((CGSize) -> Void)?
+    var onInformationZoomChange: ((Bool) -> Void)?
     private(set) lazy var longPress = UILongPressGestureRecognizer(target: self, action: #selector(showMenu(_:)))
 
     override init() {
@@ -34,7 +35,10 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             guard let runtime = self?.runtime else { return false }
             return runtime.canPinch && runtime.permitsInteraction()
         }
-        onSnapshotChange = { [weak self] _ in self?.publishNativeState() }
+        onSnapshotChange = { [weak self] snapshot in
+            self?.onInformationZoomChange?(snapshot.factor > 1.001 || snapshot.isInteracting)
+            self?.publishNativeState()
+        }
         onViewportSizeChange = { [weak self] size, previous in
             guard let self else { return }
             self.updateGeometry(self.geometry.replacingNativeViewport(size), preserving: previous)
