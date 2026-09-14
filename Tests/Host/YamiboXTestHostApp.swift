@@ -897,6 +897,11 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
     private var maximumWindowOriginDrift: CGFloat = 0
     private var maximumPageFrameDrift: CGFloat = 0
     private var maximumContentOriginDrift: CGFloat = 0
+    private var maximumImageFrameDrift: CGFloat = 0
+    private var maximumAnimatedPageLayers = 0
+    private var maximumVisibleCenterExcursion: CGFloat = 0
+    private var previousVisibleCenter: CGFloat = 0
+    private var resetVisibleCenterRange: ClosedRange<CGFloat> = 0...0
     private var uncoveredZoomFrames = 0
     private var previousLayoutRevision = 0
     private var resetLayoutRevision = 0
@@ -907,27 +912,33 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
     private lazy var host = UIHostingController(rootView: viewport)
 
     init() {
+        let pageCount = ProcessInfo.processInfo.environment["MANGA_VERTICAL_PAGE_COUNT"].flatMap(Int.init) ?? 12
         let size = CGSize(width: 400, height: 600)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let data = UIGraphicsImageRenderer(size: size, format: format).pngData { context in
-            for (index, color) in [UIColor.systemTeal, .systemYellow, .systemPink].enumerated() {
-                color.setFill()
-                context.fill(CGRect(x: 0, y: index * 200, width: 400, height: 200))
-                ("Panel \(index + 1)" as NSString).draw(at: CGPoint(x: 130, y: index * 200 + 80),
-                    withAttributes: [.font: UIFont.systemFont(ofSize: 32), .foregroundColor: UIColor.black])
+        let images = (0..<pageCount).map { page in
+            UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+                for (index, color) in [UIColor.systemTeal, .systemYellow, .systemPink].enumerated() {
+                    color.setFill()
+                    context.fill(CGRect(x: 0, y: index * 200, width: 400, height: 200))
+                    ("Page \(page + 1) / Panel \(index + 1)" as NSString).draw(at: CGPoint(x: 30, y: index * 200 + 80),
+                        withAttributes: [.font: UIFont.systemFont(ofSize: 30), .foregroundColor: UIColor.black])
+                }
             }
         }
-        pages = (0..<12).map { index in
+        pages = (0..<pageCount).map { index in
             MangaReaderPageProjection(tid: "vertical-fixture", ownerPostID: "1", chapterTitle: "Offline manga",
                 imageURL: URL(fileURLWithPath: "/manga-vertical-\(index).png"),
                 sourceIdentity: MangaReaderProjectionSourceIdentity(tid: "vertical-fixture", authorID: nil, view: 1),
-                globalIndex: index, localIndex: index, chapterPageCount: 12)
+                globalIndex: index, localIndex: index, chapterPageCount: pageCount)
         }
+        let offlineImages = MangaNumberedVerticalFixtureImages(
+            images: Dictionary(uniqueKeysWithValues: zip(pages.map(\.imageURL), images))
+        )
         imageLoader = MangaReaderPageImageLoader(imageSource: {
             YamiboImageSource(url: $0.imageURL, offlineScope: YamiboImageOfflineScope(tid: "vertical-fixture"))
         }, uiImagePipeline: YamiboUIImagePipeline(core: YamiboImagePipeline(
-            offlineImages: MangaVerticalScrollFixtureImages(data: data))))
+            offlineImages: offlineImages)))
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -1001,7 +1012,8 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
         if !preparedAnimationProbe, viewport.alpha == 1,
            let factor = ProcessInfo.processInfo.environment["MANGA_VERTICAL_INITIAL_ZOOM"].flatMap(Double.init) {
             preparedAnimationProbe = true
-            viewport.zoom(factor: factor, centeredAt: CGPoint(x: viewport.bounds.width * 0.65, y: 3200), animated: false)
+            let y = ProcessInfo.processInfo.environment["MANGA_VERTICAL_INITIAL_Y"].flatMap(Double.init) ?? 3200
+            viewport.zoom(factor: factor, centeredAt: CGPoint(x: viewport.bounds.width * 0.65, y: y), animated: false)
             previousZoomFactor = factor
         }
         if injectedImageRatio, !viewport.isZoomAnimating, !viewport.isZooming {
@@ -1016,6 +1028,8 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
             "dragging": viewport.isDragging ? 1 : 0,
             "zoomFrames": Double(intermediateZoomFrames), "windowDrift": Double(maximumWindowOriginDrift),
             "pageDrift": Double(maximumPageFrameDrift), "contentDrift": Double(maximumContentOriginDrift),
+            "imageDrift": Double(maximumImageFrameDrift), "centerExcursion": Double(maximumVisibleCenterExcursion),
+            "animatedPageLayers": Double(maximumAnimatedPageLayers),
             "uncoveredZoomFrames": Double(uncoveredZoomFrames),
             "zoomLayoutChanges": Double(layoutChangesDuringZoom), "deferredLayoutApplied": deferredLayoutApplied ? 1 : 0
         ]
@@ -1031,6 +1045,7 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
         defer {
             previousZoomFactor = factor
             previousLayoutRevision = coordinator.layoutRevision
+            previousVisibleCenter = viewport.snapshot.visibleRect.midY
         }
         if previousZoomFactor > 1.1, factor == 1 {
             measuringZoomReset = true
@@ -1038,6 +1053,11 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
             maximumWindowOriginDrift = 0
             maximumPageFrameDrift = 0
             maximumContentOriginDrift = 0
+            maximumImageFrameDrift = 0
+            maximumAnimatedPageLayers = 0
+            maximumVisibleCenterExcursion = 0
+            let targetCenter = viewport.snapshot.visibleRect.midY
+            resetVisibleCenterRange = min(previousVisibleCenter, targetCenter)...max(previousVisibleCenter, targetCenter)
             uncoveredZoomFrames = 0
             resetLayoutRevision = previousLayoutRevision
             layoutChangesDuringZoom = 0
@@ -1062,14 +1082,28 @@ private final class MangaVerticalScrollFixtureController: UIViewController {
         }
         maximumWindowOriginDrift = max(maximumWindowOriginDrift, abs(collection.frame.minY - collection.bounds.minY))
         maximumContentOriginDrift = max(maximumContentOriginDrift, abs(content.frame.minY))
+        func animatedLayerCount(_ layer: CALayer) -> Int {
+            guard !layer.isHidden else { return 0 }
+            return (layer.animationKeys()?.isEmpty == false ? 1 : 0)
+                + (layer.sublayers ?? []).reduce(0) { $0 + animatedLayerCount($1) }
+        }
+        maximumAnimatedPageLayers = max(maximumAnimatedPageLayers, animatedLayerCount(viewport.collectionView.layer))
         for cell in viewport.collectionView.visibleCells {
             guard let index = viewport.collectionView.indexPath(for: cell)?.item,
                   let rendered = cell.layer.presentation() else { continue }
             let expected = viewport.logicalCollectionLayout.logicalLayout.frames[index]
             maximumPageFrameDrift = max(maximumPageFrameDrift, abs(rendered.frame.minY - expected.minY),
                                        abs(rendered.bounds.height - expected.height))
+            for image in cell.contentView.subviews.compactMap({ $0 as? UIImageView }) where !image.isHidden {
+                guard let renderedImage = image.layer.presentation() else { continue }
+                maximumImageFrameDrift = max(maximumImageFrameDrift,
+                    abs(renderedImage.frame.minY - image.frame.minY), abs(renderedImage.frame.height - image.frame.height))
+            }
         }
-        let visible = content.convert(outer.bounds, from: outer)
+        let presentedVisible = content.convert(outer.bounds, from: outer)
+        maximumVisibleCenterExcursion = max(maximumVisibleCenterExcursion,
+            resetVisibleCenterRange.lowerBound - presentedVisible.midY, presentedVisible.midY - resetVisibleCenterRange.upperBound)
+        let visible = presentedVisible
             .intersection(CGRect(origin: .zero, size: viewport.logicalCollectionLayout.logicalLayout.contentSize))
         if !collection.frame.insetBy(dx: -1, dy: -1).contains(visible) { uncoveredZoomFrames += 1 }
     }
@@ -1084,6 +1118,12 @@ private struct MangaVerticalScrollFixtureImages: YamiboOfflineImageDataProviding
     let data: Data
 
     func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? { data }
+}
+
+private struct MangaNumberedVerticalFixtureImages: YamiboOfflineImageDataProviding {
+    let images: [URL: Data]
+
+    func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? { images[url] }
 }
 
 private struct MangaNativePagedFixture: UIViewControllerRepresentable {

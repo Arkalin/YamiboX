@@ -3,10 +3,12 @@ import XCTest
 @MainActor
 final class MangaVerticalScrollInteractionTests: XCTestCase {
     func testAnimatedResetKeepsVirtualizedPageCoordinatesStable() async throws {
-        for factor in [2, 4] {
+        for (factor, y) in [(2, 3200), (4, 16000)] {
             let app = XCUIApplication()
             app.launchEnvironment["MANGA_VERTICAL_SCROLL_FIXTURE"] = "1"
             app.launchEnvironment["MANGA_VERTICAL_INITIAL_ZOOM"] = String(factor)
+            app.launchEnvironment["MANGA_VERTICAL_PAGE_COUNT"] = "60"
+            app.launchEnvironment["MANGA_VERTICAL_INITIAL_Y"] = String(y)
             app.launch()
             defer { app.terminate() }
             let diagnostics = app.staticTexts["manga-vertical-diagnostics"]
@@ -24,6 +26,9 @@ final class MangaVerticalScrollInteractionTests: XCTestCase {
             XCTAssertLessThan(try XCTUnwrap(result["windowDrift"]), 1, "\(factor)x reset: \(result)")
             XCTAssertLessThan(try XCTUnwrap(result["pageDrift"]), 1, "\(factor)x reset: \(result)")
             XCTAssertLessThan(try XCTUnwrap(result["contentDrift"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertLessThan(try XCTUnwrap(result["imageDrift"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertLessThan(try XCTUnwrap(result["centerExcursion"]), 1, "\(factor)x reset: \(result)")
+            XCTAssertEqual(result["animatedPageLayers"], 0, "\(factor)x reset: \(result)")
             XCTAssertEqual(result["uncoveredZoomFrames"], 0, "\(result)")
             XCTAssertEqual(result["zoomLayoutChanges"], 0, "\(result)")
             XCTAssertEqual(result["deferredLayoutApplied"], 1, "\(result)")

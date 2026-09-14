@@ -199,9 +199,13 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             let actual = visible.intersection(CGRect(origin: .zero, size: logicalLayout.contentSize))
             guard force || !protected.contains(actual) || current.height > desired.height * 1.5 else { return }
             isUpdatingLayout = true
-            view.collectionView.frame = desired
-            view.collectionView.contentOffset = CGPoint(x: 0, y: desired.minY)
-            view.collectionView.layoutIfNeeded()
+            // Rebase the virtual window atomically. Reused cells and their image
+            // bounds must not inherit the outer scroll view's zoom animation.
+            UIView.performWithoutAnimation {
+                view.collectionView.frame = desired
+                view.collectionView.contentOffset = CGPoint(x: 0, y: desired.minY)
+                view.collectionView.layoutIfNeeded()
+            }
             isUpdatingLayout = false
         }
 
