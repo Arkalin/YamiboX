@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CA907CED1873456DBBC8090B /* ForumNavigationFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */; };
 		0E1A4C1B3E0A4F3A8DBD0011 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0E1A4C1F3E0A4F3A8DBD0011 /* Localizable.strings */; };
 		0E1A4C1C3E0A4F3A8DBD0011 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0E1A4C203E0A4F3A8DBD0011 /* InfoPlist.strings */; };
 		3DA22816882AD532C8D1254C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 21C44A49F561B252D12E679E /* Assets.xcassets */; };
@@ -41,6 +42,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumNavigationFixture.swift; sourceTree = "<group>"; };
 		0E1A4C1E3E0A4F3A8DBD0011 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "YamiboX/zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		0E1A4C213E0A4F3A8DBD0011 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "YamiboX/zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		21C44A49F561B252D12E679E /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = YamiboX/Assets.xcassets; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 				F060C3354D06F3D3A1C25841 /* Frameworks */,
 				443671A87482B50E67142F19 /* YamiboX */,
 				91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */,
+				CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */,
 				91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */,
 				91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */,
 				91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */,
@@ -376,6 +379,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */,
+				CA907CED1873456DBBC8090B /* ForumNavigationFixture.swift in Sources */,
 				91A000000000000000000061 /* Tests/Host/ChapterCommentFilterFixture.swift in Sources */,
 				91A000000000000000000065 /* Tests/Host/ForumBBCodePasteFixture.swift in Sources */,
 				91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */,

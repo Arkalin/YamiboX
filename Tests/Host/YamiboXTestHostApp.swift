@@ -9,7 +9,9 @@ import Network
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["WEBDAV_CONTENT_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["FORUM_NAVIGATION_FIXTURE"] == "1" {
+                ForumNavigationFixture()
+            } else if ProcessInfo.processInfo.environment["WEBDAV_CONTENT_FIXTURE"] == "1" {
                 WebDAVContentFixture()
             } else if ProcessInfo.processInfo.environment["READER_FAILURE_DETAILS_FIXTURE"] == "1" {
                 ReaderFailureDetailsFixture()

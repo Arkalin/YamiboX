@@ -1,7 +1,7 @@
 import SwiftUI
 import YamiboXCore
 
-/// Both columns project the same route, so collapsing never copies navigation state.
+/// Wide columns and the compact stack project the same canonical route.
 struct ForumBrowserNavigationView<Root: View>: View {
     @Bindable var navigator: ForumDestinationNavigator
     @ViewBuilder let root: () -> Root
@@ -10,22 +10,25 @@ struct ForumBrowserNavigationView<Root: View>: View {
 
     var body: some View {
         Group {
-            if navigator.usesSplitNavigation {
+            if navigator.browserUsesSplitNavigation {
                 NavigationSplitView(preferredCompactColumn: $compactColumn) {
-                    NavigationStack(path: browsePath) {
+                    NavigationStack(path: navigator.browserPathBinding(for: .list)) {
                         root()
                             .navigationDestination(for: ForumDestination.self) { destination in
+                                // Destinations need the column's provenance explicitly.
                                 ForumDestinationScreen(destination: destination, navigator: navigator)
+                                    .environment(\.forumBrowserSourceIsList, true)
                             }
                     }
                     .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 460)
                     .environment(\.forumBrowserSourceIsList, true)
                 } detail: {
-                    NavigationStack(path: detailPath) {
+                    NavigationStack(path: navigator.browserPathBinding(for: .detail)) {
                         Group {
                             if let destination = navigator.browserDetailPath.first {
                                 ForumDestinationScreen(destination: destination, navigator: navigator)
                                     .id(destination)
+                                    .environment(\.forumBrowserSourceIsList, false)
                             } else {
                                 ContentUnavailableView(L10n.string("forum.no_selection"), systemImage: "text.bubble")
                                     .forumPageBackground()
@@ -33,6 +36,7 @@ struct ForumBrowserNavigationView<Root: View>: View {
                         }
                         .navigationDestination(for: ForumDestination.self) { destination in
                             ForumDestinationScreen(destination: destination, navigator: navigator)
+                                .environment(\.forumBrowserSourceIsList, false)
                         }
                     }
                 }
@@ -59,24 +63,15 @@ struct ForumBrowserNavigationView<Root: View>: View {
                     Button(L10n.string("common.ok")) { navigator.actionErrorMessage = nil }
                 }
             } else {
-                ForumDestinationStackView(navigator: navigator, root: root)
+                ForumDestinationStackView(
+                    navigator: navigator, path: navigator.browserPathBinding(for: .stack), root: root
+                )
+                .environment(\.forumBrowserSourceIsList, true)
             }
         }
-    }
-
-    private var browsePath: Binding<[ForumDestination]> {
-        Binding(get: { navigator.browserListPath }, set: { value in
-            if value != navigator.browserListPath { navigator.path = value }
-        })
-    }
-
-    private var detailPath: Binding<[ForumDestination]> {
-        Binding(
-            get: { Array(navigator.browserDetailPath.dropFirst()) },
-            set: { value in
-                navigator.path = navigator.browserListPath + Array(navigator.browserDetailPath.prefix(1)) + value
-            }
-        )
+        .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
+            navigator.updateBrowserLayout(isRegular: sizeClass == .regular)
+        }
     }
 }
 

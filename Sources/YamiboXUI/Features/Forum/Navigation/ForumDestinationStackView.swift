@@ -5,20 +5,24 @@ import YamiboXCore
 /// tab and every reader-overlay forum stack, so all of them resolve the same
 /// destinations identically.
 struct ForumDestinationStackView<Root: View>: View {
+    @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     private let navigator: ForumDestinationNavigator
     private let root: Root
+    private let path: Binding<[ForumDestination]>?
 
-    init(navigator: ForumDestinationNavigator, @ViewBuilder root: () -> Root) {
+    init(navigator: ForumDestinationNavigator, path: Binding<[ForumDestination]>? = nil, @ViewBuilder root: () -> Root) {
         self.navigator = navigator
+        self.path = path
         self.root = root()
     }
 
     var body: some View {
         @Bindable var navigator = navigator
-        return NavigationStack(path: $navigator.path) {
+        return NavigationStack(path: path ?? $navigator.path) {
             root
                 .navigationDestination(for: ForumDestination.self) { destination in
                     ForumDestinationScreen(destination: destination, navigator: navigator)
+                        .environment(\.forumBrowserSourceIsList, fromBrowserList)
                 }
         }
         .transientMessage(navigator.transientFeedback) { navigator.transientFeedback = nil }

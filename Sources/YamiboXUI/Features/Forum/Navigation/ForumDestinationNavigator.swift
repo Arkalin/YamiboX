@@ -16,6 +16,7 @@ final class ForumDestinationNavigator {
         }
     }
     private(set) var browserDetailRevision = UUID()
+    private(set) var browserUsesSplitNavigation: Bool
     var actionErrorMessage: String? {
         didSet { actionErrorDetails = nil }
     }
@@ -28,6 +29,7 @@ final class ForumDestinationNavigator {
     @ObservationIgnored let usesSplitNavigation: Bool
     @ObservationIgnored private var browserOpenID: UUID?
     @ObservationIgnored private var pathRevision = UUID()
+    @ObservationIgnored private var browserLayoutRevision = UUID()
     /// The reader session's own thread IDs (the work plus, for smart manga,
     /// its chapter threads). Any thread opened inside the overlay that
     /// resolves to one of these is still the work's discussion companion, so
@@ -48,6 +50,47 @@ final class ForumDestinationNavigator {
         self.mode = mode
         self.discussionWorkTIDs = discussionWorkTIDs
         self.usesSplitNavigation = usesSplitNavigation
+        self.browserUsesSplitNavigation = usesSplitNavigation
+    }
+
+    func updateBrowserLayout(isRegular: Bool) {
+        let split = usesSplitNavigation && isRegular
+        guard split != browserUsesSplitNavigation else { return }
+        // Invalidate old bindings before SwiftUI tears down either container.
+        browserLayoutRevision = UUID()
+        browserUsesSplitNavigation = split
+    }
+
+    enum BrowserPathColumn {
+        case stack, list, detail
+    }
+
+    func browserPathBinding(for column: BrowserPathColumn) -> Binding<[ForumDestination]> {
+        // Observe the route while building the binding, not only inside its getter.
+        let sourcePath = path
+        let layoutRevision = browserLayoutRevision
+        let routeRevision = pathRevision
+        return Binding(
+            get: {
+                switch column {
+                case .stack: self.path
+                case .list: self.browserListPath
+                case .detail: Array(self.browserDetailPath.dropFirst())
+                }
+            },
+            set: { value in
+                guard self.browserLayoutRevision == layoutRevision,
+                      self.pathRevision == routeRevision, self.path == sourcePath else { return }
+                switch column {
+                case .stack:
+                    self.path = value
+                case .list:
+                    if value != self.browserListPath { self.path = value }
+                case .detail:
+                    self.path = self.browserListPath + Array(self.browserDetailPath.prefix(1)) + value
+                }
+            }
+        )
     }
 
     var browserListPath: [ForumDestination] {
@@ -112,7 +155,7 @@ final class ForumDestinationNavigator {
 
     func route(_ url: URL, source: ForumNavigationSource, title: String? = nil, fromBrowserList: Bool = false) {
         browserOpenID = nil
-        if fromBrowserList && usesSplitNavigation { path = browserListPath }
+        if fromBrowserList && browserUsesSplitNavigation { path = browserListPath }
         switch ForumRouteResolver.resolve(url: url, source: source) {
         case .home:
             switch mode {
@@ -152,12 +195,12 @@ final class ForumDestinationNavigator {
     }
 
     func openBoard(_ board: ForumBoardSummary, fromBrowserList: Bool = false) {
-        if fromBrowserList && usesSplitNavigation { path = browserListPath }
+        if fromBrowserList && browserUsesSplitNavigation { path = browserListPath }
         push(.board(fid: board.fid, title: board.name, page: nil))
     }
 
     func openSearch(fid: String?, fromBrowserList: Bool = false) {
-        if fromBrowserList && usesSplitNavigation { path = browserListPath }
+        if fromBrowserList && browserUsesSplitNavigation { path = browserListPath }
         if path.last != .search(fid: fid) { push(.search(fid: fid)) }
     }
 
@@ -182,6 +225,7 @@ final class ForumDestinationNavigator {
             return nil
         }
         let sourceListPath = browserListPath
+        let replacesDetail = fromBrowserList && browserUsesSplitNavigation
         let openID = UUID()
         if fromBrowserList { browserOpenID = openID }
         return Task {
@@ -198,7 +242,7 @@ final class ForumDestinationNavigator {
                 )
                 try Task.checkCancellation()
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
-                if fromBrowserList && usesSplitNavigation { path = sourceListPath }
+                if replacesDetail { path = sourceListPath }
                 openYamiboThreadRouteTarget(target, isDiscussionView: isDiscussionView)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
@@ -227,6 +271,7 @@ final class ForumDestinationNavigator {
             return nil
         }
         let sourceListPath = browserListPath
+        let replacesDetail = fromBrowserList && browserUsesSplitNavigation
         let openID = UUID()
         if fromBrowserList { browserOpenID = openID }
         return Task {
@@ -245,7 +290,7 @@ final class ForumDestinationNavigator {
                 )
                 try Task.checkCancellation()
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
-                if fromBrowserList && usesSplitNavigation { path = browserListPath }
+                if replacesDetail { path = sourceListPath }
                 openYamiboThreadRouteTarget(target)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
