@@ -90,9 +90,8 @@ iOS 18.0 及以上，支持 iPhone 和 iPad。
 
 - [`Sources/YamiboXCore`](Sources/YamiboXCore)：数据模型、网络访问、HTML 解析、缓存、同步与本地存储
 - [`Sources/YamiboXUI`](Sources/YamiboXUI)：SwiftUI 界面、论坛容器、收藏页、小说阅读器与漫画阅读器
-- [`Sources/YamiboXTestSupport`](Sources/YamiboXTestSupport)：跨测试目标共享的测试基础设施
 - [`YamiboX`](YamiboX)：独立 iOS App 入口，对应 Xcode 工程 [`YamiboX.xcodeproj`](YamiboX.xcodeproj)
-- [`Tests/YamiboXCoreTests`](Tests/YamiboXCoreTests) / [`Tests/YamiboXUITests`](Tests/YamiboXUITests)：核心与界面测试
+- [`Tests/YamiboXInteractionUITests`](Tests/YamiboXInteractionUITests)：UI 自动化交互测试
 
 依赖：[`Kanna`](https://github.com/tid-kijyun/Kanna)、[`GRDB.swift`](https://github.com/groue/GRDB.swift)、[`Nuke`](https://github.com/kean/Nuke)
 

@@ -9,8 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "YamiboXCore", targets: ["YamiboXCore"]),
-        .library(name: "YamiboXUI", targets: ["YamiboXUI"]),
-        .library(name: "YamiboXTestSupport", targets: ["YamiboXTestSupport"])
+        .library(name: "YamiboXUI", targets: ["YamiboXUI"])
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.1"),
@@ -34,28 +33,6 @@ let package = Package(
             dependencies: [
                 "YamiboXCore",
                 .product(name: "NukeUI", package: "Nuke"),
-            ]
-        ),
-        .target(
-            name: "YamiboXTestSupport",
-            dependencies: [
-                "YamiboXCore",
-            ]
-        ),
-        .testTarget(
-            name: "YamiboXCoreTests",
-            dependencies: [
-                .product(name: "GRDB", package: "GRDB.swift"),
-                "YamiboXCore",
-                "YamiboXTestSupport",
-            ]
-        ),
-        .testTarget(
-            name: "YamiboXUITests",
-            dependencies: [
-                "YamiboXCore",
-                "YamiboXUI",
-                "YamiboXTestSupport",
             ]
         )
     ]

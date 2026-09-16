@@ -21,34 +21,6 @@
                ReferencedContainer = "container:YamiboX.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "91A00000000000000000002A"
-               BuildableName = "YamiboXCoreTests.xctest"
-               BlueprintName = "YamiboXCoreTests"
-               ReferencedContainer = "container:YamiboX.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "91A000000000000000000010"
-               BuildableName = "YamiboXUITests.xctest"
-               BlueprintName = "YamiboXUITests"
-               ReferencedContainer = "container:YamiboX.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

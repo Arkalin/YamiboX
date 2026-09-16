@@ -5,7 +5,6 @@
 - YamiboX is a Swift 6.2+ application targeting iOS 18+.
 - `Sources/YamiboXCore` owns data models, application workflows, networking, and persistence.
 - `Sources/YamiboXUI` owns the user interface and platform-specific implementations.
-- `Sources/YamiboXTestSupport` contains test utilities shared across test targets.
 - Treat `Package.swift` as the source of truth for package dependencies and target configuration.
 
 ## Testing
