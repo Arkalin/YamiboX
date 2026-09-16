@@ -17,7 +17,6 @@
 - Use `.github/workflows/swift.yml` as the reference for the build and test entry points.
 - Do not force tests for reversible, low-impact changes. When core logic, edge cases, or uncertainty warrants new unit tests, obtain explicit user approval before creating them.
 - Run tests proportionate to the change and complete the necessary checks. After those pass, expand or repeat testing only when there are new changes, new failures, or unresolved doubts; otherwise, continue to complete the task.
-- During wrap-up, remove temporary files created for this task that are no longer needed.
 
 Select an available simulator with `xcrun simctl list devices available`, then replace `<SIMULATOR_UDID>` below with its identifier:
 
