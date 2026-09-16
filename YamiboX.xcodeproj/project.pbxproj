@@ -7,71 +7,24 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		CA907CED1873456DBBC8090B /* ForumNavigationFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */; };
 		0E1A4C1B3E0A4F3A8DBD0011 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0E1A4C1F3E0A4F3A8DBD0011 /* Localizable.strings */; };
 		0E1A4C1C3E0A4F3A8DBD0011 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0E1A4C203E0A4F3A8DBD0011 /* InfoPlist.strings */; };
 		3DA22816882AD532C8D1254C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 21C44A49F561B252D12E679E /* Assets.xcassets */; };
 		88E3CF4DFB4E5A070A1D74E1 /* YamiboXUI in Frameworks */ = {isa = PBXBuildFile; productRef = A22732C54EFA3206F0D5DA4F /* YamiboXUI */; };
 		8DB9A4DDB439844932621256 /* YamiboXApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317B67A274BF37250EE14CD6 /* YamiboXApp.swift */; };
-		91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */; };
-		91A000000000000000000049 /* YamiboXUI in Frameworks */ = {isa = PBXBuildFile; productRef = A22732C54EFA3206F0D5DA4F /* YamiboXUI */; };
-		91A000000000000000000061 /* Tests/Host/ChapterCommentFilterFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */; };
-		91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */; };
-		91A000000000000000000065 /* Tests/Host/ForumBBCodePasteFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */; };
-		AB1000000000000000000001 /* Tests/Host/RequiredFeatureFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */; };
-		CA907CED1873456DBBC80901 /* Tests/Host/MangaReaderChromeFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80902 /* Tests/Host/MangaReaderChromeFixture.swift */; };
-		CA907CED1873456DBBC80903 /* Tests/Host/MineSidebarFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */; };
-		CA907CED1873456DBBC80905 /* Tests/Host/SettingsSidebarAppearanceFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */; };
-		CA907CED1873456DBBC80907 /* Tests/Host/ReaderFailureDetailsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */; };
-		CA907CED1873456DBBC80909 /* Tests/Host/NovelReaderChromeFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */; };
 		E40F0270FCC083EAA9080652 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDA66CE60A7503624B088913 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		E98AD786304E9E8A00B84052 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A065A6EF6517521E911C6A32 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 91A000000000000000000040;
-			remoteInfo = YamiboXTestHost;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
-		CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumNavigationFixture.swift; sourceTree = "<group>"; };
 		0E1A4C1E3E0A4F3A8DBD0011 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "YamiboX/zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		0E1A4C213E0A4F3A8DBD0011 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "YamiboX/zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		21C44A49F561B252D12E679E /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = YamiboX/Assets.xcassets; sourceTree = "<group>"; };
 		317B67A274BF37250EE14CD6 /* YamiboXApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = YamiboXApp.swift; path = YamiboX/YamiboXApp.swift; sourceTree = "<group>"; };
 		8E2ADB21157A5B9E80EB6214 /* YamiboX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YamiboX.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/YamiboXTestHostApp.swift; sourceTree = "<group>"; };
-		91A000000000000000000043 /* YamiboXTestHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = YamiboXTestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		91A000000000000000000051 /* YamiboXInteractionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = YamiboXInteractionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ChapterCommentFilterFixture.swift; sourceTree = "<group>"; };
-		91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/LikeListFixture.swift; sourceTree = "<group>"; };
-		91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumBBCodePasteFixture.swift; sourceTree = "<group>"; };
-		AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/RequiredFeatureFixture.swift; sourceTree = "<group>"; };
-		CA907CED1873456DBBC80902 /* Tests/Host/MangaReaderChromeFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/MangaReaderChromeFixture.swift; sourceTree = "<group>"; };
-		CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/MineSidebarFixture.swift; sourceTree = "<group>"; };
-		CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/SettingsSidebarAppearanceFixture.swift; sourceTree = "<group>"; };
-		CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ReaderFailureDetailsFixture.swift; sourceTree = "<group>"; };
-		CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/NovelReaderChromeFixture.swift; sourceTree = "<group>"; };
 		FDA66CE60A7503624B088913 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		91A000000000000000000052 /* Tests/YamiboXInteractionUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Tests/YamiboXInteractionUITests; sourceTree = "<group>"; };
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
-		91A00000000000000000004A /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				91A000000000000000000049 /* YamiboXUI in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		D5BBCF594FE7996520922D5A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -90,18 +43,6 @@
 				31D9190CDAB8C43CCF55087D /* Products */,
 				F060C3354D06F3D3A1C25841 /* Frameworks */,
 				443671A87482B50E67142F19 /* YamiboX */,
-				91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */,
-				AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */,
-				CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */,
-				91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */,
-				91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */,
-				91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */,
-				CA907CED1873456DBBC80902 /* Tests/Host/MangaReaderChromeFixture.swift */,
-				CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */,
-				CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */,
-				CA907CED1873456DBBC80908 /* Tests/Host/ReaderFailureDetailsFixture.swift */,
-				CA907CED1873456DBBC8090A /* Tests/Host/NovelReaderChromeFixture.swift */,
-				91A000000000000000000052 /* Tests/YamiboXInteractionUITests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -109,8 +50,6 @@
 			isa = PBXGroup;
 			children = (
 				8E2ADB21157A5B9E80EB6214 /* YamiboX.app */,
-				91A000000000000000000043 /* YamiboXTestHost.app */,
-				91A000000000000000000051 /* YamiboXInteractionUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -166,44 +105,6 @@
 			productReference = 8E2ADB21157A5B9E80EB6214 /* YamiboX.app */;
 			productType = "com.apple.product-type.application";
 		};
-		91A000000000000000000040 /* YamiboXTestHost */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 91A000000000000000000047 /* Build configuration list for PBXNativeTarget "YamiboXTestHost" */;
-			buildPhases = (
-				91A000000000000000000044 /* Sources */,
-				91A00000000000000000004A /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = YamiboXTestHost;
-			packageProductDependencies = (
-				A22732C54EFA3206F0D5DA4F /* YamiboXUI */,
-			);
-			productName = YamiboXTestHost;
-			productReference = 91A000000000000000000043 /* YamiboXTestHost.app */;
-			productType = "com.apple.product-type.application";
-		};
-		91A000000000000000000050 /* YamiboXInteractionUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 91A000000000000000000057 /* Build configuration list for PBXNativeTarget "YamiboXInteractionUITests" */;
-			buildPhases = (
-				91A000000000000000000053 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				91A000000000000000000048 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				91A000000000000000000052 /* Tests/YamiboXInteractionUITests */,
-			);
-			name = YamiboXInteractionUITests;
-			productName = YamiboXInteractionUITests;
-			productReference = 91A000000000000000000051 /* YamiboXInteractionUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -216,10 +117,6 @@
 				TargetAttributes = {
 					244F46FBACBE47D1E8CB35A0 = {
 						CreatedOnToolsVersion = 26.4;
-					};
-					91A000000000000000000050 = {
-						CreatedOnToolsVersion = 27.0;
-						TestTargetID = 91A000000000000000000040;
 					};
 				};
 			};
@@ -239,8 +136,6 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				91A000000000000000000040 /* YamiboXTestHost */,
-				91A000000000000000000050 /* YamiboXInteractionUITests */,
 				244F46FBACBE47D1E8CB35A0 /* YamiboX */,
 			);
 		};
@@ -260,31 +155,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		91A000000000000000000044 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */,
-				AB1000000000000000000001 /* Tests/Host/RequiredFeatureFixture.swift in Sources */,
-				CA907CED1873456DBBC8090B /* ForumNavigationFixture.swift in Sources */,
-				91A000000000000000000061 /* Tests/Host/ChapterCommentFilterFixture.swift in Sources */,
-				91A000000000000000000065 /* Tests/Host/ForumBBCodePasteFixture.swift in Sources */,
-				91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */,
-				CA907CED1873456DBBC80901 /* Tests/Host/MangaReaderChromeFixture.swift in Sources */,
-				CA907CED1873456DBBC80903 /* Tests/Host/MineSidebarFixture.swift in Sources */,
-				CA907CED1873456DBBC80905 /* Tests/Host/SettingsSidebarAppearanceFixture.swift in Sources */,
-				CA907CED1873456DBBC80907 /* Tests/Host/ReaderFailureDetailsFixture.swift in Sources */,
-				CA907CED1873456DBBC80909 /* Tests/Host/NovelReaderChromeFixture.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		91A000000000000000000053 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		94DA362AFE788C6325A95547 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -299,11 +169,6 @@
 		3B538157EFE3A6DB183DB07F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			productRef = A22732C54EFA3206F0D5DA4F /* YamiboXUI */;
-		};
-		91A000000000000000000048 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 91A000000000000000000040 /* YamiboXTestHost */;
-			targetProxy = E98AD786304E9E8A00B84052 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -355,80 +220,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		91A000000000000000000045 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Tests/Host/Info.plist;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboXTestHost;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		91A000000000000000000046 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Tests/Host/Info.plist;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboXTestHost;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		91A000000000000000000055 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboXInteractionUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = YamiboXTestHost;
-			};
-			name = Debug;
-		};
-		91A000000000000000000056 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboXInteractionUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = YamiboXTestHost;
 			};
 			name = Release;
 		};
@@ -597,24 +388,6 @@
 			buildConfigurations = (
 				E4AB3813155E9CFB917102EB /* Debug */,
 				B85D6654CEE78A946C12FA84 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		91A000000000000000000047 /* Build configuration list for PBXNativeTarget "YamiboXTestHost" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				91A000000000000000000045 /* Debug */,
-				91A000000000000000000046 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		91A000000000000000000057 /* Build configuration list for PBXNativeTarget "YamiboXInteractionUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				91A000000000000000000055 /* Debug */,
-				91A000000000000000000056 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

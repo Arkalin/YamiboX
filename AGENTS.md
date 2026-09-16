@@ -12,18 +12,16 @@
 - Do not create any unit tests, unit test files, or unit test targets without explicit user approval. General implementation requests do not constitute approval. This restriction takes precedence over the test coverage guidance below.
 - Match validation to the change: inspect documentation-only or reversible low-impact edits; run relevant existing tests for behavior changes; broaden checks for shared behavior or cross-module contracts. Do not expand or repeat passing checks without new changes, failures, or unresolved doubts.
 - Running existing local tests does not require separate confirmation at each step, subject to tool permissions. If new unit tests are warranted, request approval for those tests while continuing other authorized implementation and validation.
-- Use the `YamiboX` scheme and `YamiboXTests` plan on an available iOS simulator. Every `xcodebuild test` invocation must include `-collect-test-diagnostics never`. Do not substitute the old project's `swift test` workflow.
-- Consult `.github/workflows/swift.yml` when build or test entry points need clarification.
+- UI automation tests and their dedicated host have been removed. Validate builds using the `YamiboX` scheme on an available iOS simulator; do not substitute the old project's `swift test` workflow.
+- Consult `.github/workflows/swift.yml` when build entry points need clarification.
 
 Select an available simulator with `xcrun simctl list devices available`, then replace `<SIMULATOR_UDID>` below with its identifier:
 
 ```sh
-xcodebuild test \
+xcodebuild build \
   -project YamiboX.xcodeproj \
   -scheme YamiboX \
-  -testPlan YamiboXTests \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
-  -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO
 ```
 

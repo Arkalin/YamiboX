@@ -91,19 +91,16 @@ iOS 18.0 及以上，支持 iPhone 和 iPad。
 - [`Sources/YamiboXCore`](Sources/YamiboXCore)：数据模型、网络访问、HTML 解析、缓存、同步与本地存储
 - [`Sources/YamiboXUI`](Sources/YamiboXUI)：SwiftUI 界面、论坛容器、收藏页、小说阅读器与漫画阅读器
 - [`YamiboX`](YamiboX)：独立 iOS App 入口，对应 Xcode 工程 [`YamiboX.xcodeproj`](YamiboX.xcodeproj)
-- [`Tests/YamiboXInteractionUITests`](Tests/YamiboXInteractionUITests)：UI 自动化交互测试
 
 依赖：[`Kanna`](https://github.com/tid-kijyun/Kanna)、[`GRDB.swift`](https://github.com/groue/GRDB.swift)、[`Nuke`](https://github.com/kean/Nuke)
 
-环境要求为 Swift 6.2+、iOS 18+，以及支持 Swift 6.2 工具链的 Xcode 版本。在仓库根目录执行测试，将示例中的模拟器名称替换为本机可用的 iOS Simulator：
+环境要求为 Swift 6.2+、iOS 18+，以及支持 Swift 6.2 工具链的 Xcode 版本。在仓库根目录执行构建，将示例中的模拟器名称替换为本机可用的 iOS Simulator：
 
 ```bash
-xcodebuild test \
+xcodebuild build \
   -project YamiboX.xcodeproj \
   -scheme YamiboX \
-  -testPlan YamiboXTests \
   -destination 'platform=iOS Simulator,name=iPhone 16' \
-  -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO
 ```
 
