@@ -10,13 +10,10 @@
 ## Testing
 
 - Do not create any unit tests, unit test files, or unit test targets without explicit user approval. General implementation requests do not constitute approval. This restriction takes precedence over the test coverage guidance below.
-- Run tests using the `YamiboX` scheme and `YamiboXTests` test plan on an available local iOS simulator.
-- Every `xcodebuild test` invocation must include `-collect-test-diagnostics never` to avoid expensive diagnostic collection.
-- Do not use the old project's `swift test` workflow as a substitute for complete project validation.
-- For narrow changes, start with relevant tests. Expand coverage for changes that affect shared behavior or multiple modules, and clearly report anything not verified.
-- Use `.github/workflows/swift.yml` as the reference for the build and test entry points.
-- Do not force tests for reversible, low-impact changes. When core logic, edge cases, or uncertainty warrants new unit tests, obtain explicit user approval before creating them.
-- Run tests proportionate to the change and complete the necessary checks. After those pass, expand or repeat testing only when there are new changes, new failures, or unresolved doubts; otherwise, continue to complete the task.
+- Match validation to the change: inspect documentation-only or reversible low-impact edits; run relevant existing tests for behavior changes; broaden checks for shared behavior or cross-module contracts. Do not expand or repeat passing checks without new changes, failures, or unresolved doubts.
+- Running existing local tests does not require separate confirmation at each step, subject to tool permissions. If new unit tests are warranted, request approval for those tests while continuing other authorized implementation and validation.
+- Use the `YamiboX` scheme and `YamiboXTests` plan on an available iOS simulator. Every `xcodebuild test` invocation must include `-collect-test-diagnostics never`. Do not substitute the old project's `swift test` workflow.
+- Consult `.github/workflows/swift.yml` when build or test entry points need clarification.
 
 Select an available simulator with `xcrun simctl list devices available`, then replace `<SIMULATOR_UDID>` below with its identifier:
 
@@ -29,6 +26,12 @@ xcodebuild test \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO
 ```
+
+## Completion
+
+- For implementation requests, finish the scoped change, perform necessary validation, and fix regressions introduced by the change before reporting back. Do not stop at the first implementation unless the user requested a review checkpoint.
+- Use existing project patterns for routine choices. Ask only when missing information materially changes behavior, scope, or authorization.
+- Report the result, checks performed, and anything blocked or unverified. Do not add unrelated cleanup or broader testing just to extend the task.
 
 ## Commit Conventions
 

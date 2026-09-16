@@ -1,6 +1,6 @@
 ---
 name: changelog
-description: 扫描上次记录点以来 main 的新 commit，筛出用户可见的变更，总结成中文发布说明条目写入本地 CHANGELOG.md 的 Unreleased 段（该文件被 .gitignore 忽略，不进 git）。Use when main 有新变更后要积累发布说明，或用户说"更新 changelog""总结最近的变更""补发布说明"。
+description: "将 YamiboX main 的用户可见变更增量整理到本地 CHANGELOG.md。用于更新 changelog 或准备发布说明，不用于普通提交历史查询。"
 ---
 
 # 积累发布说明
