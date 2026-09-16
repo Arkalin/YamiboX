@@ -13,7 +13,10 @@ enum ForumThreadPollParser {
         }) else {
             return nil
         }
+        return poll(in: pollElement)
+    }
 
+    static func poll(in pollElement: Element) -> ForumThreadPoll? {
         let inputElements = pollElement.selectAll("input[type=radio], input[type=checkbox]")
         let isMultipleChoice = inputElements.contains { $0.attr("type").lowercased() == "checkbox" }
         let status: ForumThreadPollStatus = inputElements.isEmpty

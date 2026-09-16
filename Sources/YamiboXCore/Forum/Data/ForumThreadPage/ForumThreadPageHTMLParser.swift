@@ -98,6 +98,32 @@ enum ForumThreadPageHTMLParser {
         )
     }
 
+    static func parsePollVoteResult(from html: String) throws -> String {
+        try YamiboHTMLPageInspector.ensureReadable(html)
+
+        if parseMessageText(from: html) != nil {
+            return try parseThreadActionResult(
+                from: html,
+                context: L10n.string("forum.thread.poll"),
+                requiresExplicitSuccess: true
+            )
+        }
+
+        // quickforward can return the whole thread instead of a status page.
+        // Only the voted poll's acknowledgement is a result message, not body text.
+        let body = extractCData(from: html) ?? html
+        let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
+        for element in document.selectAll("#poll, .poll, .polls, .pcht") {
+            guard ForumThreadPollParser.poll(in: element)?.status == .voted,
+                  let message = HTMLTextExtractor.firstMatch(
+                      pattern: #"您(?:已经投过票|已經投過票)(?:[，,、 ]*\s*(?:谢谢您的参与|謝謝您的參與))?"#,
+                      in: element.normalizedText()
+                  )?.first else { continue }
+            return message
+        }
+        throw ForumPageError.submissionUnconfirmed
+    }
+
     static func parseThreadActionResult(
         from html: String,
         context: String = L10n.string("context.thread_page"),
@@ -123,7 +149,7 @@ enum ForumThreadPageHTMLParser {
         if requiresExplicitSuccess {
             let failures = ["未成功", "不成功", "抱歉", "无法", "不能", "无权", "没有权限", "无效", "不足", "禁止", "不允许"]
             guard !failures.contains(where: message.contains) else { throw YamiboError.underlying(message) }
-            let successes = ["评分成功", "評分成功", "点评成功", "點評成功", "评论成功", "評論成功", "操作成功", "提交成功", "等待审核", "等待審核", "进入审核"]
+            let successes = ["评分成功", "評分成功", "点评成功", "點評成功", "评论成功", "評論成功", "投票成功", "操作成功", "提交成功", "等待审核", "等待審核", "进入审核"]
             let hasSuccessCallback = html.contains("succeedhandle_") && html.contains("<script")
             guard hasSuccessCallback || successes.contains(where: message.contains) else { throw ForumPageError.submissionUnconfirmed }
         }

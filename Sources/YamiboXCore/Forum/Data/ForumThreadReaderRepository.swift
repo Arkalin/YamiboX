@@ -209,11 +209,8 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
             for: .threadPollVote(fid: normalizedForumID, tid: normalizedThreadID),
             fields: fields
         )
-        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parseThreadActionResult") {
-            try ForumThreadPageHTMLParser.parseThreadActionResult(
-                from: html,
-                context: L10n.string("forum.thread.poll")
-            )
+        return try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePollVoteResult") {
+            try ForumThreadPageHTMLParser.parsePollVoteResult(from: html)
         }
     }
 
