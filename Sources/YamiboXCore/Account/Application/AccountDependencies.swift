@@ -7,7 +7,7 @@ public struct AccountDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
     public let accountSwitcher: AccountSwitchCoordinator?
-    public let messageUnreadWorkflow: MessageUnreadWorkflow?
+    public let messageUnreadWorkflow: MessageUnreadWorkflow
     public let checkInStore: YamiboCheckInStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let offlineCacheStore: any OfflineCacheStoring
@@ -19,7 +19,7 @@ public struct AccountDependencies: Sendable {
     public init(
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
-        messageUnreadWorkflow: MessageUnreadWorkflow? = nil,
+        messageUnreadWorkflow: MessageUnreadWorkflow,
         checkInStore: YamiboCheckInStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
         offlineCacheStore: any OfflineCacheStoring,

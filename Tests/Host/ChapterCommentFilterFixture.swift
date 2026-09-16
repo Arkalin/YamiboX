@@ -194,8 +194,10 @@ struct ChapterCommentDiscussionFixture: View {
         }, comment: { [server] context, text in
             await server.add(postID: context.post.postID, text: text, source: .postComment)
             return "点评成功"
-        }, makeReplySession: { [server] url in
-            ForumPageSession(url: url, repository: ChapterCommentDiscussionComposerRepository(server: server))
+        }, makeReplySession: { [server, context] url in
+            ForumPageSession(url: url, repository: ChapterCommentDiscussionComposerRepository(server: server),
+                             sessionStore: context.forumDependencies.sessionStore,
+                             draftStore: context.forumDependencies.composerDraftStore)
         })
     }
 }

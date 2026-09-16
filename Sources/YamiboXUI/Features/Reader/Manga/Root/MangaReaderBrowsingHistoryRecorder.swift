@@ -4,7 +4,7 @@ import YamiboXCore
 @MainActor
 final class MangaReaderBrowsingHistoryRecorder {
     struct Reading {
-        var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow?
+        var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow
         var currentDirectory: @MainActor () -> MangaDirectory?
     }
 
@@ -19,8 +19,8 @@ final class MangaReaderBrowsingHistoryRecorder {
     }
 
     func syncRecordIfNeeded(presentation: MangaReaderPresentation) {
-        guard !context.isPreview, case let .loaded(loaded) = presentation.state,
-              let history = reading.makeBrowsingHistoryWorkflow() else { return }
+        guard !context.isPreview, case let .loaded(loaded) = presentation.state else { return }
+        let history = reading.makeBrowsingHistoryWorkflow()
         let page = loaded.currentPage
         let tid = page?.tid ?? context.chapterTID
         // Page positions use the progress adapter; directory metadata uses

@@ -40,13 +40,13 @@ final class BrowsingHistoryViewModel {
     var clearAllMessage = L10n.string("history.clear_all.message")
 
     func prepareClearAllConfirmation() async {
-        let notice = await browsingHistoryStore?.deletionNotice() ?? ""
+        let notice = await browsingHistoryStore.deletionNotice()
         clearAllMessage = L10n.string("history.clear_all.message") + "\n\n" + notice
         clearAllConfirmationPresented = true
     }
 
-    @ObservationIgnored private let browsingHistoryStore: BrowsingHistoryStore?
-    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    @ObservationIgnored private let browsingHistoryStore: BrowsingHistoryStore
+    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     @ObservationIgnored private let favoriteLibraryStore: FavoriteLibraryStore
     @ObservationIgnored private let contentCoverStore: ContentCoverStore
     @ObservationIgnored private let settingsStore: SettingsStore
@@ -79,7 +79,6 @@ final class BrowsingHistoryViewModel {
         openTargetResolver = BrowsingHistoryOpenTargetResolver(
             readingProgressStore: dependencies.readingProgressStore,
             mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            settingsStore: dependencies.settingsStore,
             historyWorkflow: dependencies.browsingHistoryWorkflow
         )
     }
@@ -94,10 +93,6 @@ final class BrowsingHistoryViewModel {
     }
 
     func reload() async {
-        guard let browsingHistoryStore else {
-            entries = []
-            return
-        }
         reloadGeneration += 1
         let generation = reloadGeneration
         let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,11 +103,7 @@ final class BrowsingHistoryViewModel {
                 let document = try await favoriteLibraryStore.load()
                 homeFavoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
             }
-            if let browsingHistoryWorkflow {
-                snapshot = try await browsingHistoryWorkflow.snapshot()
-            } else {
-                snapshot = await BrowsingHistorySnapshot(entries: browsingHistoryStore.entries(), boardReader: settingsStore.load().boardReader)
-            }
+            snapshot = try await browsingHistoryWorkflow.snapshot()
         } catch {
             guard generation == reloadGeneration,
                   !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
@@ -158,9 +149,6 @@ final class BrowsingHistoryViewModel {
     /// every change through the instances this page holds should refresh it,
     /// its own writes included.
     func observeHistoryChanges() async {
-        // A nil store means the history feature is disabled and nothing can
-        // ever write through it, so there is no change source to follow.
-        guard let browsingHistoryStore else { return }
         for await _ in browsingHistoryStore.changes() {
             guard !Task.isCancelled else { return }
             scheduleReload()
@@ -187,11 +175,9 @@ final class BrowsingHistoryViewModel {
     }
 
     func delete(_ entry: BrowsingHistoryEntry) async {
-        guard let browsingHistoryStore else { return }
         entries.removeAll { $0.id == entry.id }
         do {
-            if let browsingHistoryWorkflow { try await browsingHistoryWorkflow.delete(entry) }
-            else { try await browsingHistoryStore.delete(id: entry.id) }
+            try await browsingHistoryWorkflow.delete(entry)
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
@@ -202,7 +188,6 @@ final class BrowsingHistoryViewModel {
     }
 
     func clearAll() async {
-        guard let browsingHistoryStore else { return }
         entries = []
         do {
             try await browsingHistoryStore.clearAllForSync()

@@ -105,9 +105,7 @@ struct ReadingHomeView: View {
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                if let store = appModel.appContext.libraryDependencies.browsingHistoryStore {
-                    await model.observe(store.changes())
-                }
+                await model.observe(appModel.appContext.libraryDependencies.browsingHistoryStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }

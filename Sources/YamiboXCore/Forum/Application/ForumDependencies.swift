@@ -6,14 +6,13 @@ import Foundation
 public struct ForumDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
-    public let messageUnreadWorkflow: MessageUnreadWorkflow?
+    public let messageUnreadWorkflow: MessageUnreadWorkflow
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore
-    /// Optional so test/preview compositions without a history database keep
-    /// working; the app composition root always supplies one.
-    public let browsingHistoryStore: BrowsingHistoryStore?
-    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
-    public let composerDraftStore: ForumComposerDraftStore?
+    /// Shared with the other reader surfaces, including in test compositions.
+    public let browsingHistoryStore: BrowsingHistoryStore
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
+    public let composerDraftStore: ForumComposerDraftStore
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -30,12 +29,12 @@ public struct ForumDependencies: Sendable {
     public init(
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
-        messageUnreadWorkflow: MessageUnreadWorkflow? = nil,
+        messageUnreadWorkflow: MessageUnreadWorkflow,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryStore: BrowsingHistoryStore? = nil,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
-        composerDraftStore: ForumComposerDraftStore? = nil,
+        browsingHistoryStore: BrowsingHistoryStore,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
+        composerDraftStore: ForumComposerDraftStore,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,

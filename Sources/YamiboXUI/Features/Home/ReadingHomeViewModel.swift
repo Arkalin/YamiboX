@@ -20,7 +20,6 @@ final class ReadingHomeViewModel {
         resolver = ReadingOpenTargetResolver(
             readingProgressStore: dependencies.readingProgressStore,
             mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            settingsStore: dependencies.settingsStore,
             historyWorkflow: dependencies.browsingHistoryWorkflow
         )
     }
@@ -35,11 +34,7 @@ final class ReadingHomeViewModel {
                 let document = try await dependencies.localFavoriteLibraryStore.load()
                 favoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
             }
-            if let workflow = dependencies.browsingHistoryWorkflow {
-                snapshot = try await workflow.snapshot()
-            } else {
-                snapshot = await BrowsingHistorySnapshot(entries: dependencies.browsingHistoryStore?.entries() ?? [], boardReader: dependencies.settingsStore.load().boardReader)
-            }
+            snapshot = try await dependencies.browsingHistoryWorkflow.snapshot()
         } catch {
             YamiboLog.persistence.warning("Failed to load canonical reading history: \(error)")
             return

@@ -18,6 +18,7 @@
 		91A000000000000000000061 /* Tests/Host/ChapterCommentFilterFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */; };
 		91A000000000000000000063 /* Tests/Host/LikeListFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */; };
 		91A000000000000000000065 /* Tests/Host/ForumBBCodePasteFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */; };
+		AB1000000000000000000001 /* Tests/Host/RequiredFeatureFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */; };
 		CA907CED1873456DBBC80901 /* Tests/Host/MangaReaderChromeFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80902 /* Tests/Host/MangaReaderChromeFixture.swift */; };
 		CA907CED1873456DBBC80903 /* Tests/Host/MineSidebarFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */; };
 		CA907CED1873456DBBC80905 /* Tests/Host/SettingsSidebarAppearanceFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */; };
@@ -49,6 +50,7 @@
 		91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ChapterCommentFilterFixture.swift; sourceTree = "<group>"; };
 		91A000000000000000000064 /* Tests/Host/LikeListFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/LikeListFixture.swift; sourceTree = "<group>"; };
 		91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/ForumBBCodePasteFixture.swift; sourceTree = "<group>"; };
+		AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/RequiredFeatureFixture.swift; sourceTree = "<group>"; };
 		CA907CED1873456DBBC80902 /* Tests/Host/MangaReaderChromeFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/MangaReaderChromeFixture.swift; sourceTree = "<group>"; };
 		CA907CED1873456DBBC80904 /* Tests/Host/MineSidebarFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/MineSidebarFixture.swift; sourceTree = "<group>"; };
 		CA907CED1873456DBBC80906 /* Tests/Host/SettingsSidebarAppearanceFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Host/SettingsSidebarAppearanceFixture.swift; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 				F060C3354D06F3D3A1C25841 /* Frameworks */,
 				443671A87482B50E67142F19 /* YamiboX */,
 				91A000000000000000000042 /* Tests/Host/YamiboXTestHostApp.swift */,
+				AB1000000000000000000002 /* Tests/Host/RequiredFeatureFixture.swift */,
 				CA907CED1873456DBBC8090C /* ForumNavigationFixture.swift */,
 				91A000000000000000000062 /* Tests/Host/ChapterCommentFilterFixture.swift */,
 				91A000000000000000000066 /* Tests/Host/ForumBBCodePasteFixture.swift */,
@@ -262,6 +265,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				91A000000000000000000041 /* Tests/Host/YamiboXTestHostApp.swift in Sources */,
+				AB1000000000000000000001 /* Tests/Host/RequiredFeatureFixture.swift in Sources */,
 				CA907CED1873456DBBC8090B /* ForumNavigationFixture.swift in Sources */,
 				91A000000000000000000061 /* Tests/Host/ChapterCommentFilterFixture.swift in Sources */,
 				91A000000000000000000065 /* Tests/Host/ForumBBCodePasteFixture.swift in Sources */,

@@ -7,20 +7,18 @@ struct ForumComposerDraftList: View {
     var body: some View {
         NavigationStack {
             List {
-                if let coordinator = model.composerDraft {
-                    if case let .failed(message) = coordinator.status {
-                        Section { Text(message).font(.footnote).foregroundStyle(.red) }
+                if case let .failed(message) = model.composerDraft.status {
+                    Section { Text(message).font(.footnote).foregroundStyle(.red) }
+                }
+                if model.composerDraft.available.isEmpty {
+                    ContentUnavailableView(L10n.string("forum.composer.no_drafts"), systemImage: "doc")
+                }
+                ForEach(model.composerDraft.available) { draft in
+                    Button { Task { await model.restoreDraft(draft) } } label: {
+                        ForumComposerDraftRow(draft: draft)
                     }
-                    if coordinator.available.isEmpty {
-                        ContentUnavailableView(L10n.string("forum.composer.no_drafts"), systemImage: "doc")
-                    }
-                    ForEach(coordinator.available) { draft in
-                        Button { Task { await model.restoreDraft(draft) } } label: {
-                            ForumComposerDraftRow(draft: draft)
-                        }
-                        .disabled(model.isLoading)
-                        .swipeActions { Button(L10n.string("common.delete"), role: .destructive) { Task { await model.deleteDraft(draft) } } }
-                    }
+                    .disabled(model.isLoading)
+                    .swipeActions { Button(L10n.string("common.delete"), role: .destructive) { Task { await model.deleteDraft(draft) } } }
                 }
             }
             .navigationTitle(L10n.string("forum.composer.drafts"))
@@ -28,9 +26,9 @@ struct ForumComposerDraftList: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button(L10n.string("common.done")) { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { Task { _ = await model.flushLocalDraft(force: true); await model.composerDraft?.reloadList() } } label: { Image(systemName: "square.and.arrow.down") }
+                    Button { Task { _ = await model.flushLocalDraft(force: true); await model.composerDraft.reloadList() } } label: { Image(systemName: "square.and.arrow.down") }
                         .accessibilityLabel(L10n.string("forum.composer.save_current_draft"))
-                        .disabled(model.isLoading || model.composerDraft?.active != true)
+                        .disabled(model.isLoading || model.composerDraft.active != true)
                 }
             }
             .overlay { if model.isLoading { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)) } }

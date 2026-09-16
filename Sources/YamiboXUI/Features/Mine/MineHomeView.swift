@@ -15,7 +15,7 @@ public struct MineHomeView: View {
     private let sessionStore: SessionStore
     private let appModel: YamiboAppModel
     private let likeDependencies: LikeDependencies
-    private let messageUnreadWorkflow: MessageUnreadWorkflow?
+    private let messageUnreadWorkflow: MessageUnreadWorkflow
 
     public init(
         dependencies: AccountDependencies,
@@ -104,7 +104,7 @@ public struct MineHomeView: View {
                 )
                 MineLibraryEntriesSection(
                     offlineCacheQueueCount: viewModel.offlineQueue.entryCount,
-                    unreadMessageCount: messageUnreadWorkflow?.totalCount ?? 0,
+                    unreadMessageCount: messageUnreadWorkflow.totalCount,
                     showMessages: {
                         if viewModel.isLoggedIn {
                             navigator.openMessageCenter(tab: .privateMessages)
@@ -129,12 +129,12 @@ public struct MineHomeView: View {
                 )
             }
             .listStyle(.insetGrouped)
-            .messageUnreadTabAccessibility(count: messageUnreadWorkflow?.totalCount ?? 0)
+            .messageUnreadTabAccessibility(count: messageUnreadWorkflow.totalCount)
             .navigationTitle(L10n.string("tab.mine"))
             .yamiboInlineNavigationTitleDisplayMode()
             .refreshable {
                 await viewModel.refreshProfile()
-                await messageUnreadWorkflow?.refresh(force: true)
+                await messageUnreadWorkflow.refresh(force: true)
             }
             .navigationDestination(isPresented: $isSettingsPushed) {
                 settingsScreen

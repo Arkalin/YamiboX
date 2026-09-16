@@ -5,10 +5,9 @@ import Foundation
 public struct MangaReaderDependencies: Sendable {
     public let settingsStore: SettingsStore
     public let readingProgressStore: ReadingProgressStore
-    /// Optional so test/preview compositions without a history database keep
-    /// working; the app composition root always supplies one.
-    public let browsingHistoryStore: BrowsingHistoryStore?
-    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    /// Shared with the other reader surfaces, including in test compositions.
+    public let browsingHistoryStore: BrowsingHistoryStore
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
@@ -32,8 +31,8 @@ public struct MangaReaderDependencies: Sendable {
     public init(
         settingsStore: SettingsStore,
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryStore: BrowsingHistoryStore? = nil,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
+        browsingHistoryStore: BrowsingHistoryStore,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,

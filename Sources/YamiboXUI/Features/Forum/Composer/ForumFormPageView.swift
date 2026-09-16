@@ -125,7 +125,7 @@ struct ForumFormPageView: View {
         .task(id: composerForm?.id) {
             model.connectEditors(editorRegistry)
         }
-        .task { await model.composerDraft?.observeIdentity() }
+        .task { await model.composerDraft.observeIdentity() }
         .environment(\.forumComposerImageUpload, imageUploadAction)
         .sheet(isPresented: Bindable(model).showsDrafts) { ForumComposerDraftList(model: model) }
         .confirmationDialog(L10n.string("forum.native.upload"), isPresented: Binding(
@@ -147,7 +147,7 @@ struct ForumFormPageView: View {
         .confirmationDialog(L10n.string("forum.native.discard_title"), isPresented: Binding(
             get: { pendingNavigation != nil }, set: { if !$0 { pendingNavigation = nil } }
         ), titleVisibility: .visible) {
-            if composerForm?.kind == .thread, model.composerDraft?.active == true {
+            if composerForm?.kind == .thread, model.composerDraft.active == true {
                 Button(L10n.string("forum.composer.keep_draft_leave")) {
                     let navigation = pendingNavigation
                     Task {
@@ -175,7 +175,7 @@ struct ForumFormPageView: View {
                 Section {
                     Label(L10n.string("forum.composer.local_edit"), systemImage: "wifi.slash").foregroundStyle(.secondary)
                     Button(L10n.string("forum.composer.reload_form"), systemImage: "arrow.clockwise") {
-                        if let draft = model.composerDraft?.current { Task { await model.restoreDraft(draft) } }
+                        if let draft = model.composerDraft.current { Task { await model.restoreDraft(draft) } }
                     }
                 }
             }
@@ -205,8 +205,8 @@ struct ForumFormPageView: View {
                     editorRegistry: editorRegistry,
                     composerContext: model.composerContext(for: form),
                     editorDisabled: model.isLoading || model.isSubmitting || model.submissionSucceeded,
-                    onDrafts: form.kind == .thread && model.composerDraft?.active == true ? { Task { await model.openDrafts() } } : nil,
-                    draftStatus: model.composerDraft?.statusText
+                    onDrafts: form.kind == .thread && model.composerDraft.active == true ? { Task { await model.openDrafts() } } : nil,
+                    draftStatus: model.composerDraft.statusText
                 )
                 if form.kind == .thread { ForumComposerAssetSection(model: model, form: form) }
             }
@@ -270,9 +270,9 @@ struct ForumFormPageView: View {
     private var imageUploadAction: ForumComposerImageUploadAction? {
         guard let form = composerForm, form.kind == .thread, !model.isOfflineDraft,
               let configuration = document.uploads.first(where: { $0.kind == .threadImage }) else { return nil }
-        let draftID = model.composerDraft?.current?.id
+        let draftID = model.composerDraft.current?.id
         return .init(configuration: configuration, isBusy: model.isUploading || model.isSubmitting) { [weak model] image, editor in
-            guard let model, model.composerDraft?.current?.id == draftID else { return }
+            guard let model, model.composerDraft.current?.id == draftID else { return }
             await model.upload(file: image.file, mimeType: image.mimeType, configuration: configuration, form: form, editor: editor)
         }
     }

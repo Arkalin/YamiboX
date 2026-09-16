@@ -104,7 +104,7 @@ struct SettingsStorageView: View {
                         showsChevron: false
                     )
                 }
-                .disabled(viewModel.isBusy || dependencies.library.browsingHistoryStore == nil)
+                .disabled(viewModel.isBusy)
 
                 Button {
                     showingMangaDirectoryManagement = true

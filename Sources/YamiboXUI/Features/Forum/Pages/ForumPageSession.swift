@@ -32,14 +32,14 @@ final class ForumPageSession {
     private(set) var submissionResponse: ForumPageDocument?
     private(set) var submissionSucceeded = false
     private(set) var requiresLoadConfirmation: Bool
-    let composerDraft: ForumComposerDraftCoordinator?
+    let composerDraft: ForumComposerDraftCoordinator
     private(set) var isOfflineDraft = false
     var showsDrafts = false
     var draftConflict: DraftConflict?
     private(set) var composerAssets: [ForumComposerDraftAttachment] = []
     private(set) var assetFailures: [UUID: String] = [:]
     private(set) var uploadingAssetID: UUID?
-    @ObservationIgnored private let sessionStore: SessionStore?
+    @ObservationIgnored private let sessionStore: SessionStore
     @ObservationIgnored private var pageGeneration: UUID?
     @ObservationIgnored private var activeEditorURL: URL?
     @ObservationIgnored private weak var editorRegistry: ForumEditorRegistry?
@@ -75,17 +75,17 @@ final class ForumPageSession {
         self.url = url
         self.onSubmissionAccepted = onSubmissionAccepted
         sessionStore = dependencies.sessionStore
-        composerDraft = dependencies.composerDraftStore.map { ForumComposerDraftCoordinator(store: $0, sessionStore: dependencies.sessionStore) }
+        composerDraft = ForumComposerDraftCoordinator(store: dependencies.composerDraftStore, sessionStore: dependencies.sessionStore)
         requiresLoadConfirmation = ForumWebPagePolicy.requiresConfirmationToLoad(url)
         repositoryProvider = { await dependencies.makePageRepository() }
     }
 
-    init(url: URL, repository: any ForumPageLoading, sessionStore: SessionStore? = nil, draftStore: (any ForumComposerDraftPersisting)? = nil,
+    init(url: URL, repository: any ForumPageLoading, sessionStore: SessionStore, draftStore: any ForumComposerDraftPersisting,
          onSubmissionAccepted: ((ForumSubmissionChange) -> Void)? = nil) {
         self.url = url
         self.onSubmissionAccepted = onSubmissionAccepted
         self.sessionStore = sessionStore
-        composerDraft = if let sessionStore, let draftStore { ForumComposerDraftCoordinator(store: draftStore, sessionStore: sessionStore) } else { nil }
+        composerDraft = ForumComposerDraftCoordinator(store: draftStore, sessionStore: sessionStore)
         requiresLoadConfirmation = ForumWebPagePolicy.requiresConfirmationToLoad(url)
         repositoryProvider = { repository }
     }
@@ -103,7 +103,7 @@ final class ForumPageSession {
         clearError()
         defer { isLoading = false }
         do {
-            let generation = try await sessionStore?.snapshot().generation
+            let generation = try await sessionStore.snapshot().generation
             let repository = await repositoryProvider()
             let response = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: confirmedAction)
             try Task.checkCancellation()
@@ -123,15 +123,15 @@ final class ForumPageSession {
             })
             requiresLoadConfirmation = false
             if let form = result.forms.first(where: { $0.kind == .thread }) {
-                await composerDraft?.start(form: form, context: result.composerContext ?? .init())
+                await composerDraft.start(form: form, context: result.composerContext ?? .init())
                 installDraftCallbacks()
             }
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 setError(error)
-                if ForumPostEditorMode(url: url) != nil, composerDraft?.current == nil {
+                if ForumPostEditorMode(url: url) != nil, composerDraft.current == nil {
                     let placeholder = ForumForm(id: "draft-list", title: "", actionURL: url, kind: .thread)
-                    await composerDraft?.start(form: placeholder, context: .init())
+                    await composerDraft.start(form: placeholder, context: .init())
                     installDraftCallbacks()
                 }
             }
@@ -180,15 +180,15 @@ final class ForumPageSession {
                 }
             }
             pendingSubmission = Submission(form: form, buttonID: button.id, title: button.title, values: values,
-                                           files: files, attachments: attachments[form.id] ?? [], draftID: composerDraft?.current?.id,
-                                           draftChangeID: composerDraft?.changeID, accountGeneration: pageGeneration)
+                                           files: files, attachments: attachments[form.id] ?? [], draftID: composerDraft.current?.id,
+                                           draftChangeID: composerDraft.changeID, accountGeneration: pageGeneration)
             clearError()
         } catch { setError(error) }
     }
 
     /// Refresh server tokens after login without replacing the user's composer draft.
     func reloadComposerPreservingEdits() async {
-        if isOfflineDraft, let draft = composerDraft?.current {
+        if isOfflineDraft, let draft = composerDraft.current {
             await restoreDraft(draft)
             return
         }
@@ -198,7 +198,7 @@ final class ForumPageSession {
         clearError()
         defer { isLoading = false }
         do {
-            let generation = try await sessionStore?.snapshot().generation
+            let generation = try await sessionStore.snapshot().generation
             let repository = await repositoryProvider()
             let response = try await repository.fetchPage(url: activeEditorURL ?? url, confirmedAction: false)
             try Task.checkCancellation()
@@ -254,7 +254,7 @@ final class ForumPageSession {
         defer { isSubmitting = false }
         do {
             try await checkGeneration(pending.accountGeneration)
-            _ = await composerDraft?.flush()
+            _ = await composerDraft.flush()
             let repository = await repositoryProvider()
             try await checkGeneration(pending.accountGeneration)
             let response = try await repository.submit(
@@ -283,7 +283,7 @@ final class ForumPageSession {
             submissionSucceeded = result.submissionAccepted && !isServerDraft
             if result.submissionAccepted {
                 if let id = pending.draftID, let changeID = pending.draftChangeID {
-                    await composerDraft?.removeSubmitted(id: id, changeID: changeID, serverDraft: isServerDraft)
+                    await composerDraft.removeSubmitted(id: id, changeID: changeID, serverDraft: isServerDraft)
                 }
                 if !isServerDraft, let change = ForumSubmissionChange(form: pending.form, sourceURL: page.url, response: result) {
                     onSubmissionAccepted?(change)
@@ -308,7 +308,7 @@ final class ForumPageSession {
         isUploading = true
         clearError()
         let generation = pageGeneration
-        let draftID = composerDraft?.current?.id
+        let draftID = composerDraft.current?.id
         let initialAnchor = form.kind == .thread && assetID == nil ? editor?.bookmark() : nil
         var pendingID: UUID?
         defer {
@@ -329,19 +329,19 @@ final class ForumPageSession {
                 assetFiles[id] = file
                 assetFailures[id] = nil
                 if let index = composerAssets.firstIndex(where: { $0.id == id }), composerAssets[index].resourceID == nil,
-                   let composerDraft, composerDraft.active {
+                   composerDraft.active {
                     let resource = try await composerDraft.importResource(file)
                     guard let liveIndex = composerAssets.firstIndex(where: { $0.id == id }), composerDraft.current?.id == draftID else { return }
                     composerAssets[liveIndex].resourceID = resource
                 }
                 synchronizeLocalDraft()
-                _ = await composerDraft?.flush()
+                _ = await composerDraft.flush()
             }
             let repository = await repositoryProvider()
             try await checkGeneration(generation)
             let result = try await repository.upload(file: file, mimeType: mimeType, configuration: configuration, referer: page.url)
             try await checkGeneration(generation)
-            guard composerDraft?.current?.id == draftID else { return }
+            guard composerDraft.current?.id == draftID else { return }
             if let pendingID, !composerAssets.contains(where: { $0.id == pendingID }) { return }
             attachments[form.id, default: []].append(result)
             if form.kind == .thread, let pendingID, let index = composerAssets.firstIndex(where: { $0.id == pendingID }) {
@@ -369,7 +369,7 @@ final class ForumPageSession {
             values[body.id] = [text + "\n" + result.markup]
             drafts[form.id] = values
         } catch {
-            if let pendingID, composerDraft?.current?.id == draftID, composerAssets.contains(where: { $0.id == pendingID }) {
+            if let pendingID, composerDraft.current?.id == draftID, composerAssets.contains(where: { $0.id == pendingID }) {
                 assetFailures[pendingID] = error.localizedDescription
                 synchronizeLocalDraft()
             }
@@ -384,18 +384,18 @@ final class ForumPageSession {
         let editor = registry.controller(for: field.id).bbcodeSession
         editor.refererURL = page?.url ?? YamiboDomain.baseURL
         editor.onStateChange = { [weak self] _, _ in self?.synchronizeLocalDraft() }
-        if let draft = composerDraft?.current, !registry.controller(for: field.id).hasRestoredDraftState {
+        if let draft = composerDraft.current, !registry.controller(for: field.id).hasRestoredDraftState {
             registry.controller(for: field.id).hasRestoredDraftState = true
             editor.restoreState(sourceMode: draft.sourceMode, selection: draft.selection)
         }
     }
 
     private func installDraftCallbacks() {
-        composerDraft?.onCommitEditing = { [weak self] in
+        composerDraft.onCommitEditing = { [weak self] in
             self?.editorRegistry?.commitEditing()
             self?.synchronizeLocalDraft()
         }
-        composerDraft?.onInvalidated = { [weak self] in
+        composerDraft.onInvalidated = { [weak self] in
             guard let self else { return }
             suppressDraftUpdates = true
             editorRegistry?.clear()
@@ -414,14 +414,13 @@ final class ForumPageSession {
         for index in composerAssets.indices {
             if let anchor = assetAnchors[composerAssets[index].id] { composerAssets[index].anchor = editor?.bookmarkedSelection(anchor) }
         }
-        composerDraft?.update(form: form, values: drafts[form.id] ?? form.initialValues, sourceMode: editor?.sourceMode,
+        composerDraft.update(form: form, values: drafts[form.id] ?? form.initialValues, sourceMode: editor?.sourceMode,
                               selection: editor?.selection, attachments: composerAssets, retainingMissingFields: isOfflineDraft)
     }
 
     func flushLocalDraft(force: Bool = false) async -> Bool {
         editorRegistry?.commitEditing()
         synchronizeLocalDraft()
-        guard let composerDraft else { return true }
         return await composerDraft.flush(force: force)
     }
 
@@ -432,18 +431,17 @@ final class ForumPageSession {
     }
 
     func discardLocalDraft() async -> Bool {
-        guard let composerDraft, let draft = composerDraft.current else { return true }
+        guard let draft = composerDraft.current else { return true }
         return await composerDraft.delete(draft)
     }
 
     func openDrafts() async {
         _ = await flushLocalDraft()
-        await composerDraft?.reloadList()
+        await composerDraft.reloadList()
         showsDrafts = true
     }
 
     func deleteDraft(_ draft: ForumComposerDraft) async {
-        guard let composerDraft else { return }
         let isCurrent = composerDraft.current?.id == draft.id
         guard await composerDraft.delete(draft) else { return }
         if isCurrent, let page, let form = page.forms.first(where: { $0.kind == .thread }) {
@@ -459,7 +457,7 @@ final class ForumPageSession {
     }
 
     func restoreDraft(_ requested: ForumComposerDraft) async {
-        guard !isLoading, !isSubmitting, !isUploading, let composerDraft else { return }
+        guard !isLoading, !isSubmitting, !isUploading else { return }
         guard await flushLocalDraft() else { return }
         await composerDraft.reloadList()
         guard let draft = composerDraft.available.first(where: { $0.id == requested.id }), let targetURL = draft.target.editorURL else {
@@ -468,7 +466,7 @@ final class ForumPageSession {
         isLoading = true
         defer { isLoading = false }
         do {
-            let generation = try await sessionStore?.snapshot().generation
+            let generation = try await sessionStore.snapshot().generation
             let repository = await repositoryProvider()
             let response = try await repository.fetchPage(url: targetURL, confirmedAction: false)
             try await checkGeneration(generation)
@@ -506,13 +504,13 @@ final class ForumPageSession {
             selectedFiles = [:]; attachments = [:]; composerAssets = []; assetFiles = [:]; assetAnchors = [:]; assetFailures = [:]
             isOfflineDraft = false; showsDrafts = false
             suppressDraftUpdates = false
-            await composerDraft?.start(form: form, context: conflict.page.composerContext ?? .init())
+            await composerDraft.start(form: form, context: conflict.page.composerContext ?? .init())
             if let editorRegistry { connectEditors(editorRegistry) }
         }
     }
 
     private func installRestoredDraft(_ draft: ForumComposerDraft, document: ForumPageDocument, generation: UUID?, offline: Bool = false) async {
-        guard let form = document.forms.first(where: { $0.kind == .thread }), let composerDraft else { return }
+        guard let form = document.forms.first(where: { $0.kind == .thread }) else { return }
         await composerDraft.start(form: form, context: document.composerContext ?? .init(target: draft.target), restoring: draft)
         guard composerDraft.active, composerDraft.current?.id == draft.id else { return }
         if !offline {
@@ -559,7 +557,7 @@ final class ForumPageSession {
         do {
             let file: ForumAttachmentFile
             if let existing = assetFiles[id] { file = existing }
-            else if let resource = asset.resourceID, let composerDraft { file = try await composerDraft.resource(resource) }
+            else if let resource = asset.resourceID { file = try await composerDraft.resource(resource) }
             else { throw ForumComposerDraftError.missingResource }
             let editor = form.fields.first(where: { $0.name == "message" }).flatMap { editorRegistry?.controller(for: $0.id).bbcodeSession }
             await upload(file: file, mimeType: asset.mimeType, configuration: configuration, form: form, editor: editor, assetID: id)
@@ -580,31 +578,31 @@ final class ForumPageSession {
         if let uploadID = asset.uploadID { attachments[form.id]?.removeAll { $0.id == uploadID } }
         if let fieldName = asset.fieldName { selectedFiles[form.id]?.removeAll { $0.fieldName == fieldName } }
         synchronizeLocalDraft()
-        await composerDraft?.cleanResources()
+        await composerDraft.cleanResources()
     }
 
     func stageFormFile(_ file: ForumFormFile, form: ForumForm) async {
         guard page?.forms.contains(form) == true else { return }
-        let draftID = composerDraft?.current?.id
+        let draftID = composerDraft.current?.id
         let generation = pageGeneration
         do { try await checkGeneration(generation) } catch { return }
-        guard composerDraft?.current?.id == draftID, page?.forms.contains(form) == true else { return }
+        guard composerDraft.current?.id == draftID, page?.forms.contains(form) == true else { return }
         var files = selectedFiles[form.id] ?? []
         files.removeAll { $0.fieldName == file.fieldName }; files.append(file)
         selectedFiles[form.id] = files
         guard form.kind == .thread else { return }
         var asset = ForumComposerDraftAttachment(name: file.file.name, mimeType: file.mimeType, isImage: false, fieldName: file.fieldName)
         assetFiles[asset.id] = file.file
-        do { if let composerDraft, composerDraft.active { asset.resourceID = try await composerDraft.importResource(file.file) } }
+        do { if composerDraft.active { asset.resourceID = try await composerDraft.importResource(file.file) } }
         catch {
             do { try await checkGeneration(generation) } catch { return }
-            guard composerDraft?.current?.id == draftID else { return }
+            guard composerDraft.current?.id == draftID else { return }
             assetFailures[asset.id] = error.localizedDescription
         }
-        guard composerDraft?.current?.id == draftID else { return }
+        guard composerDraft.current?.id == draftID else { return }
         guard selectedFiles[form.id]?.contains(file) == true else {
             assetFiles[asset.id] = nil; assetFailures[asset.id] = nil
-            await composerDraft?.cleanResources()
+            await composerDraft.cleanResources()
             return
         }
         let replaced = composerAssets.filter { $0.fieldName == file.fieldName }
@@ -631,7 +629,7 @@ final class ForumPageSession {
     }
 
     private func checkGeneration(_ generation: UUID?) async throws {
-        guard let sessionStore, let generation else { return }
+        guard let generation else { return }
         guard await sessionStore.isCurrentGeneration(generation) else { throw CancellationError() }
     }
 

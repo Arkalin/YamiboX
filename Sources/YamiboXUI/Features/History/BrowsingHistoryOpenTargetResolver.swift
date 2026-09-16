@@ -54,8 +54,7 @@ enum ReadingOpenOrigin: Sendable {
 struct ReadingOpenTargetResolver {
     let readingProgressStore: ReadingProgressStore
     let mangaDirectoryStore: any MangaDirectoryPersisting
-    let settingsStore: SettingsStore
-    var historyWorkflow: BrowsingHistoryWorkflow? = nil
+    let historyWorkflow: BrowsingHistoryWorkflow
 
     func openTarget(
         for entry: BrowsingHistoryEntry,
@@ -66,26 +65,21 @@ struct ReadingOpenTargetResolver {
         // One settings snapshot backs both the category dispatch and the
         // manga smart bit, so a concurrent configuration change can't make
         // them disagree within a single resolve.
-        let boardReader: BoardReaderSettings
         var entry = entry
-        if let historyWorkflow {
-            guard let snapshot = try? await historyWorkflow.snapshot() else { return nil }
-            boardReader = snapshot.boardReader
-            if let current = snapshot.entries.first(where: {
-                $0.id == entry.id || (entry.lastVisitedThreadID != nil && $0.lastVisitedThreadID == entry.lastVisitedThreadID)
-            }) {
-                entry = current
-            } else if let tid = entry.lastVisitedThreadID,
-                      let directory = try? await mangaDirectoryStore.directory(containingTID: tid),
-                      let current = snapshot.entries.first(where: {
-                          $0.target == FavoriteContentTarget(mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName)
-                      }) {
-                entry = current
-            } else {
-                return nil
-            }
+        guard let snapshot = try? await historyWorkflow.snapshot() else { return nil }
+        let boardReader = snapshot.boardReader
+        if let current = snapshot.entries.first(where: {
+            $0.id == entry.id || (entry.lastVisitedThreadID != nil && $0.lastVisitedThreadID == entry.lastVisitedThreadID)
+        }) {
+            entry = current
+        } else if let tid = entry.lastVisitedThreadID,
+                  let directory = try? await mangaDirectoryStore.directory(containingTID: tid),
+                  let current = snapshot.entries.first(where: {
+                      $0.target == FavoriteContentTarget(mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName)
+                  }) {
+            entry = current
         } else {
-            boardReader = await settingsStore.load().boardReader
+            return nil
         }
 
         switch entry.category(boardReader: boardReader) {

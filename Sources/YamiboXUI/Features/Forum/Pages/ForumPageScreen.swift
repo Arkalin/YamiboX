@@ -76,7 +76,7 @@ struct ForumPageScreen: View {
                 if model.errorDetails?.requiresAuthentication == true {
                     Button(L10n.string("mine.web_login")) { onURLTap(YamiboRoute.login.url) }
                 }
-                if model.composerDraft?.active == true {
+                if model.composerDraft.active == true {
                     Button(L10n.string("forum.composer.drafts"), systemImage: "doc.on.doc") { Task { await model.openDrafts() } }
                 }
             }

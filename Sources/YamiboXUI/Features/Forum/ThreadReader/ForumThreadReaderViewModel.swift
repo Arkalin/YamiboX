@@ -78,13 +78,13 @@ final class ForumThreadReaderViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumThreadPageLoading
     @ObservationIgnored private let localFavoriteLibraryStoreProvider: @Sendable () async -> FavoriteLibraryStore?
-    @ObservationIgnored private let readingProgressStoreProvider: @Sendable () async -> ReadingProgressStore?
-    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    @ObservationIgnored private let readingProgressStoreProvider: @Sendable () async -> ReadingProgressStore
+    @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     @ObservationIgnored private let favoriteRepositoryProvider: @Sendable () async -> (any ForumThreadFavoriteRemoteOperating)?
     @ObservationIgnored private let contentCoverStoreProvider: @Sendable () async -> ContentCoverStore?
     @ObservationIgnored private let mangaDirectoryStoreProvider: @Sendable () async -> (any MangaDirectoryPersisting)?
     @ObservationIgnored private let settingsStoreProvider: @Sendable () async -> SettingsStore?
-    @ObservationIgnored private let progressSync: ProgressSyncModule?
+    @ObservationIgnored private let progressSync: ProgressSyncModule
     @ObservationIgnored private var latestVisibleAnchorPostID: String?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var handledSubmissionID: UUID?
@@ -139,8 +139,8 @@ final class ForumThreadReaderViewModel {
         context: ThreadNovelLaunchContext,
         repository: any ForumThreadPageLoading,
         localFavoriteLibraryStore: FavoriteLibraryStore? = nil,
-        readingProgressStore: ReadingProgressStore? = nil,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
+        readingProgressStore: ReadingProgressStore,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
         favoriteRepository: (any ForumThreadFavoriteRemoteOperating)? = nil,
         contentCoverStore: ContentCoverStore? = nil,
         mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
@@ -172,14 +172,12 @@ final class ForumThreadReaderViewModel {
         settingsStoreProvider = {
             settingsStore
         }
-        progressSync = readingProgressStore.map { progressStore in
-            ProgressSyncModule(
-                adapter: FavoriteLibraryProgressSyncAdapter(
-                    readingProgressStore: progressStore,
-                    browsingHistoryWorkflow: browsingHistoryWorkflow
-                )
+        progressSync = ProgressSyncModule(
+            adapter: FavoriteLibraryProgressSyncAdapter(
+                readingProgressStore: readingProgressStore,
+                browsingHistoryWorkflow: browsingHistoryWorkflow
             )
-        }
+        )
     }
 
     var navigationTitle: String {
@@ -254,8 +252,7 @@ final class ForumThreadReaderViewModel {
         // decision #8) unless the launch carries an explicit deep-link
         // target — a specific post or a specific page wins over resume.
         if context.targetPostID == nil, context.initialPage <= 1,
-           let progressStore = await readingProgressStoreProvider(),
-           let savedProgress = await progressStore.load(for: .normalThread(threadID: context.thread.tid))?.thread {
+           let savedProgress = await readingProgressStoreProvider().load(for: .normalThread(threadID: context.thread.tid))?.thread {
             initialPage = max(1, savedProgress.lastPage)
             restoredAnchorPostID = savedProgress.anchorPostID
         }
@@ -919,7 +916,7 @@ final class ForumThreadReaderViewModel {
     /// in a fresh unstructured Task so view teardown can't cancel the GRDB
     /// write mid-flight (the cancelled-Task write trap).
     func flushReadingProgress() {
-        guard persistsReadingActivity, let progressSync, page != nil, !isFilteredView else { return }
+        guard persistsReadingActivity, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             do {
@@ -942,7 +939,7 @@ final class ForumThreadReaderViewModel {
     }
 
     private func queueReadingProgressSave() {
-        guard persistsReadingActivity, let progressSync, page != nil, !isFilteredView else { return }
+        guard persistsReadingActivity, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
         Task {
             await progressSync.queue(.thread(position))
@@ -966,7 +963,8 @@ final class ForumThreadReaderViewModel {
     /// Main reader-session originals count as activity, unlike comment
     /// companions. Page turns cannot resurrect a deleted history row.
     private func recordBrowsingHistoryVisit() {
-        guard shouldRecordBrowsingHistory, page != nil, let history = browsingHistoryWorkflow else { return }
+        guard shouldRecordBrowsingHistory, page != nil else { return }
+        let history = browsingHistoryWorkflow
         let visit = BrowsingHistoryVisit(
             threadID: context.thread.tid,
             title: favoriteTitle,

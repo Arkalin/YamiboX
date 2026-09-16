@@ -12,7 +12,7 @@ struct MangaReaderViewModelDependencies {
     var makeDirectorySearchCooldownState: @Sendable () -> MangaDirectorySearchCooldownState
     var makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)?
     var makeContentCoverStore: @Sendable () -> ContentCoverStore?
-    var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow?
+    var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow
     var makeLikeDependencies: @Sendable () -> LikeDependencies?
     /// Smart Comic Mode off (design decision #16): drives the reader's
     /// auto-resolved `.thread(tid:)` cover for the chapter being read, via
@@ -35,7 +35,7 @@ struct MangaReaderViewModelDependencies {
         },
         makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)? = nil,
         makeContentCoverStore: @escaping @Sendable () -> ContentCoverStore? = { nil },
-        makeBrowsingHistoryWorkflow: @escaping @Sendable () -> BrowsingHistoryWorkflow? = { nil },
+        makeBrowsingHistoryWorkflow: @escaping @Sendable () -> BrowsingHistoryWorkflow,
         makeLikeDependencies: @escaping @Sendable () -> LikeDependencies? = { nil },
         makeThreadCoverPageRepository: @escaping @Sendable () async -> (any ThreadCoverPageResolving)? = { nil },
         directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),

@@ -195,11 +195,11 @@ public actor ProgressSyncModule {
 /// the board-configured canonical identity. Preview sessions never enqueue.
 public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
     private let readingProgressStore: ReadingProgressStore
-    private let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
 
     public init(
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow
     ) {
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
@@ -221,10 +221,10 @@ public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
         switch position {
         case let .novel(position):
             _ = try await readingProgressStore.saveNovel(position, date: activityDate, discardingOlderUpdate: true)
-            await browsingHistoryWorkflow?.refreshPosition(threadID: position.threadID, reader: .novel, date: activityDate)
+            await browsingHistoryWorkflow.refreshPosition(threadID: position.threadID, reader: .novel, date: activityDate)
         case let .manga(position):
             _ = try await readingProgressStore.saveManga(position, date: activityDate, discardingOlderUpdate: true)
-            await browsingHistoryWorkflow?.refreshPosition(threadID: position.chapterThreadID, reader: .manga, date: activityDate)
+            await browsingHistoryWorkflow.refreshPosition(threadID: position.chapterThreadID, reader: .manga, date: activityDate)
         case let .thread(position):
             _ = try await readingProgressStore.saveNormalThread(
                 threadID: position.threadID, page: position.page,
@@ -232,7 +232,7 @@ public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
                 date: activityDate, discardingOlderUpdate: true
             )
             if position.recordsBrowsingHistory {
-                await browsingHistoryWorkflow?.refreshPosition(threadID: position.threadID, reader: .normal, date: activityDate)
+                await browsingHistoryWorkflow.refreshPosition(threadID: position.threadID, reader: .normal, date: activityDate)
             }
         }
     }

@@ -1044,7 +1044,7 @@ public final class NovelReaderViewModel {
     private func recordBrowsingHistoryVisitIfNeeded() {
         guard !hasRecordedBrowsingHistoryVisit, !context.isPreview else { return }
         hasRecordedBrowsingHistoryVisit = true
-        guard let history = dependencies.browsingHistoryWorkflow else { return }
+        let history = dependencies.browsingHistoryWorkflow
         let visit = BrowsingHistoryVisit(
             threadID: context.threadID,
             title: title,

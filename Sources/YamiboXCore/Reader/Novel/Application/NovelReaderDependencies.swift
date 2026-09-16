@@ -6,10 +6,9 @@ public struct NovelReaderDependencies: Sendable {
     public let sessionStore: SessionStore
     public let settingsStore: SettingsStore
     public let readingProgressStore: ReadingProgressStore
-    /// Optional so test/preview compositions without a history database keep
-    /// working; the app composition root always supplies one.
-    public let browsingHistoryStore: BrowsingHistoryStore?
-    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow?
+    /// Shared with the other reader surfaces, including in test compositions.
+    public let browsingHistoryStore: BrowsingHistoryStore
+    public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let offlineCacheStore: any OfflineCacheStoring
     public let contentCoverStore: ContentCoverStore
     public let imagePipeline: any YamiboImageDataLoading
@@ -23,8 +22,8 @@ public struct NovelReaderDependencies: Sendable {
         sessionStore: SessionStore,
         settingsStore: SettingsStore,
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryStore: BrowsingHistoryStore? = nil,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow? = nil,
+        browsingHistoryStore: BrowsingHistoryStore,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
         offlineCacheStore: any OfflineCacheStoring,
         contentCoverStore: ContentCoverStore,
         makeNovelReaderRepository: @escaping @Sendable () async -> NovelReaderRepository,

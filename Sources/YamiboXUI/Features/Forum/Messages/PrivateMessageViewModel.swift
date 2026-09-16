@@ -29,7 +29,7 @@ final class PrivateMessageViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any PrivateMessagePageLoading
     @ObservationIgnored private let currentProfileProvider: @Sendable () async -> YamiboProfile?
-    @ObservationIgnored private let messageUnreadWorkflow: MessageUnreadWorkflow?
+    @ObservationIgnored private let messageUnreadWorkflow: MessageUnreadWorkflow
 
     init(uid: String, titleHint: String?, dependencies: ForumDependencies) {
         self.uid = uid.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,7 +48,7 @@ final class PrivateMessageViewModel {
         titleHint: String?,
         currentProfile: YamiboProfile? = nil,
         repository: any PrivateMessagePageLoading,
-        messageUnreadWorkflow: MessageUnreadWorkflow? = nil
+        messageUnreadWorkflow: MessageUnreadWorkflow
     ) {
         self.uid = uid.trimmingCharacters(in: .whitespacesAndNewlines)
         self.titleHint = titleHint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -138,7 +138,7 @@ final class PrivateMessageViewModel {
                 page: requestedPage,
                 titleHint: titleHint
             )
-            messageUnreadWorkflow?.refreshAfterReading()
+            messageUnreadWorkflow.refreshAfterReading()
             page = loadedPage
             currentPage = loadedPage.pageNavigation?.currentPage ?? requestedPage ?? 1
         } catch {

@@ -8,7 +8,7 @@ struct MineSidebarView: View {
     let navigator: ForumDestinationNavigator
     let appModel: YamiboAppModel
     let likeDependencies: LikeDependencies
-    let messageUnreadWorkflow: MessageUnreadWorkflow?
+    let messageUnreadWorkflow: MessageUnreadWorkflow
     let showLogin: () -> Void
     let checkIn: () -> Void
     @State private var navigation: MineSidebarNavigationState
@@ -20,7 +20,7 @@ struct MineSidebarView: View {
         appModel: YamiboAppModel,
         settingsDependencies: SettingsDependencies,
         likeDependencies: LikeDependencies,
-        messageUnreadWorkflow: MessageUnreadWorkflow?,
+        messageUnreadWorkflow: MessageUnreadWorkflow,
         showLogin: @escaping () -> Void,
         checkIn: @escaping () -> Void,
         onSignOut: @escaping @MainActor () async -> LoadFailureDetails?
@@ -108,7 +108,7 @@ struct MineSidebarView: View {
                     if viewModel.isLoggedIn { navigation.show(.messages) } else { showLogin() }
                 } label: {
                     Label(L10n.string("message_center.private_messages"), systemImage: "envelope.fill")
-                        .badge(messageUnreadWorkflow?.totalCount ?? 0)
+                        .badge(messageUnreadWorkflow.totalCount)
                 }
                 .tag(MineSidebarDetail.messages)
                 .accessibilityIdentifier("mine.sidebar.messages")
@@ -128,12 +128,12 @@ struct MineSidebarView: View {
         .listStyle(.sidebar)
         // Keep the native tab accessibility probe inside the column; wrapping
         // the split view changes its navigation-bar safe-area layout.
-        .messageUnreadTabAccessibility(count: messageUnreadWorkflow?.totalCount ?? 0)
+        .messageUnreadTabAccessibility(count: messageUnreadWorkflow.totalCount)
         .navigationTitle(L10n.string("tab.mine"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await viewModel.refreshProfile()
-            await messageUnreadWorkflow?.refresh(force: true)
+            await messageUnreadWorkflow.refresh(force: true)
         }
         .accessibilityIdentifier("mine.sidebar.root")
     }

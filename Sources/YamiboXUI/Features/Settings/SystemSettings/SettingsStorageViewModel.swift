@@ -151,7 +151,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     }
 
     func clearBrowsingHistory() async -> Bool {
-        guard let store = dependencies.library.browsingHistoryStore else { return false }
+        let store = dependencies.library.browsingHistoryStore
         activeAction = .clearingBrowsingHistory
         defer { activeAction = nil }
 

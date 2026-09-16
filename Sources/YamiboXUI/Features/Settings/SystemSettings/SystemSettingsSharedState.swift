@@ -162,9 +162,7 @@ final class SettingsStorageUsage {
             .init(category: .covers, bytes: contentCoverCacheBytes),
             .init(category: .progress, bytes: readingProgressBytes)
         ]
-        if dependencies.library.browsingHistoryStore != nil {
-            categories.append(.init(category: .history, bytes: browsingHistoryBytes))
-        }
+        categories.append(.init(category: .history, bytes: browsingHistoryBytes))
         categories.append(.init(category: .directories, bytes: mangaDirectoryCacheBytes))
         categories.append(.init(category: .offline, bytes: offlineCacheBytes))
         return SettingsStorageSummary(categories: categories, hasLoaded: hasLoadedAdditionalUsage)
@@ -190,7 +188,7 @@ final class SettingsStorageUsage {
                 otherBytes = dependencies.httpCache.currentDiskUsage + checkInBytes + updateBytes
             }
             progressBytes = try? await dependencies.library.readingProgressStore.estimatedDataUsageBytes()
-            historyBytes = try? await dependencies.library.browsingHistoryStore?.estimatedDataUsageBytes()
+            historyBytes = try? await dependencies.library.browsingHistoryStore.estimatedDataUsageBytes()
         }
         // A clear/reset or newer refresh must win over an older suspended read.
         guard generation == refreshGeneration, !Task.isCancelled else { return }
@@ -219,7 +217,7 @@ final class SettingsStorageUsage {
         imageCacheBytes = 0
         otherCacheBytes = 0
         readingProgressBytes = 0
-        browsingHistoryBytes = dependencies.library.browsingHistoryStore == nil ? nil : 0
+        browsingHistoryBytes = 0
         hasLoadedAdditionalUsage = true
     }
 

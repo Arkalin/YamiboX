@@ -9,7 +9,9 @@ import Network
 struct YamiboXTestHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["FORUM_NAVIGATION_FIXTURE"] == "1" {
+            if ProcessInfo.processInfo.environment["REQUIRED_FEATURE_FIXTURE"] != nil {
+                RequiredFeatureFixture()
+            } else if ProcessInfo.processInfo.environment["FORUM_NAVIGATION_FIXTURE"] == "1" {
                 ForumNavigationFixture()
             } else if ProcessInfo.processInfo.environment["WEBDAV_CONTENT_FIXTURE"] == "1" {
                 WebDAVContentFixture()
@@ -394,7 +396,12 @@ private struct CreditLogThreadFixture: View {
                 let context = ThreadNovelLaunchContext(thread: payload.thread, title: payload.title,
                     initialPage: payload.initialPage, targetPostID: payload.targetPostID)
                 let cache = ForumCacheStore(rootDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("credit-thread-\(UUID().uuidString)"))
-                model = ForumThreadReaderViewModel(context: context, repository: ForumThreadReaderRepository(client: client, cacheStore: cache))
+                let services = RequiredFeatureFixtureServices().context
+                model = ForumThreadReaderViewModel(
+                    context: context, repository: ForumThreadReaderRepository(client: client, cacheStore: cache),
+                    readingProgressStore: services.readingProgressStore,
+                    browsingHistoryWorkflow: services.browsingHistoryWorkflow
+                )
             } catch {
                 failure = error.localizedDescription
             }
@@ -629,7 +636,7 @@ private struct ChapterCommentComposerFixture: View {
                 ForumUploadConfiguration(id: "attachment", url: url, kind: .threadAttachment, values: [], maximumBytes: 5 * 1_024 * 1_024, extensions: ["txt", "pdf"])
             ]
             let page = ForumPageDocument(url: url, title: "发表回复", forms: [form], uploads: uploads)
-            return ForumPageSession(url: url, repository: ChapterCommentFixtureReplyRepository(page: page, counts: counts))
+            return RequiredFeatureFixtureServices().pageSession(url: url, repository: ChapterCommentFixtureReplyRepository(page: page, counts: counts))
         })
     }
 }
@@ -740,7 +747,7 @@ private struct ForumPhotoUploadFixture: View {
         let page = ForumPageDocument(url: url, title: parsed.title, forms: parsed.forms, uploads: configurations)
         let counts = ForumPhotoUploadCounts()
         _counts = State(wrappedValue: counts)
-        _model = State(wrappedValue: ForumPageSession(url: url, repository: ForumPhotoUploadRepository(page: page, counts: counts)))
+        _model = State(wrappedValue: RequiredFeatureFixtureServices().pageSession(url: url, repository: ForumPhotoUploadRepository(page: page, counts: counts)))
     }
 
     var body: some View {
@@ -817,7 +824,7 @@ private struct ForumSendCrashFixture: View {
         let page = try! ForumFormPageParser.parse(html: html, url: url)
         let counts = ForumSendCrashCounts()
         _counts = State(wrappedValue: counts)
-        _model = State(wrappedValue: ForumPageSession(url: url, repository: ForumSendCrashRepository(page: page, counts: counts)))
+        _model = State(wrappedValue: RequiredFeatureFixtureServices().pageSession(url: url, repository: ForumSendCrashRepository(page: page, counts: counts)))
     }
 
     var body: some View {
