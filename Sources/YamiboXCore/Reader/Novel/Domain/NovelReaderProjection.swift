@@ -145,7 +145,10 @@ extension NovelReaderProjection {
 }
 
 package extension NovelReaderProjection {
-    func previewSourceText(from position: NovelTextViewportSemanticTextPosition) -> String {
+    func previewSourceText(
+        from position: NovelTextViewportSemanticTextPosition,
+        sourceCoordinates: [Int: NovelTextCoordinateIndex]
+    ) -> String {
         guard let startSegmentIndex = segmentSemantics.firstIndex(where: {
             $0?.textSegmentIdentity == position.textSegmentIdentity
         }), segments.indices.contains(startSegmentIndex) else {
@@ -154,9 +157,15 @@ package extension NovelReaderProjection {
 
         let fragments = segments[startSegmentIndex...].enumerated().compactMap { offset, segment -> String? in
             guard case let .text(text, _) = segment else { return nil }
-            let previewText = offset == 0
-                ? String(text.dropFirst(min(max(position.displayedTextOffset, 0), text.count)))
-                : text
+            let previewText: String
+            if offset == 0, let coordinates = sourceCoordinates[startSegmentIndex] {
+                // This is the legacy Character ordinal. Never apply the
+                // displayed string's UTF-16 offset to untranslated source.
+                let start = coordinates.utf16Offset(forCharacterOffset: position.displayedTextOffset)
+                previewText = coordinates.text(in: start..<coordinates.utf16Count) ?? ""
+            } else {
+                previewText = text
+            }
             let trimmed = previewText.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         }

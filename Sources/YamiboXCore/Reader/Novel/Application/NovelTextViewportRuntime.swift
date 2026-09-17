@@ -120,10 +120,10 @@ package protocol NovelTextViewportRuntimeGraph: AnyObject {
         position: NovelResumePoint
     ) -> CGFloat?
 
-    func characterDocumentOffset(
+    func documentUTF16Offset(
         surfaceIdentity: NovelReaderSurfaceIdentity,
         referencePoint: CGPoint
-    ) -> Int?
+    ) -> NovelDocumentUTF16Offset?
 
     func selectionRects(
         for selectionRange: NovelTextSelectionRange,
@@ -325,18 +325,8 @@ package final class NovelTextViewportRuntimeOwner {
                 guard projection.segments.indices.contains(segmentIndex),
                       let semantics = projection.semantics(forSegmentIndex: segmentIndex),
                       let textSegmentIdentity = semantics.textSegmentIdentity,
-                      documentRange.endOffset <= document.text.count,
-                      let start = document.text.index(
-                          document.text.startIndex,
-                          offsetBy: documentRange.startOffset,
-                          limitedBy: document.text.endIndex
-                      ),
-                      let end = document.text.index(
-                          document.text.startIndex,
-                          offsetBy: documentRange.endOffset,
-                          limitedBy: document.text.endIndex
-                      ),
-                      start <= end else {
+                      let coordinates = document.segmentCoordinates[segmentIndex],
+                      let segmentText = document.coordinates.text(in: documentRange.startOffset.rawValue..<documentRange.endOffset.rawValue) else {
                     return nil
                 }
                 let surfaceRanges = viewportIndex.surfaces.compactMap { surface -> NovelReaderSearchSurfaceRange? in
@@ -352,7 +342,8 @@ package final class NovelTextViewportRuntimeOwner {
                     )
                 }
                 return NovelReaderSearchSegment(
-                    text: String(document.text[start..<end]),
+                    text: segmentText,
+                    coordinates: coordinates,
                     chapterIdentity: semantics.chapterIdentity,
                     textSegmentIdentity: textSegmentIdentity,
                     fallbackChapterTitle: projection.segments[segmentIndex].chapterTitle,
@@ -584,7 +575,7 @@ package final class NovelTextViewportRuntimeOwner {
         referencePoint: CGPoint
     ) -> NovelTextSelectionAnchor? {
         guard isCurrent(surfaceIdentity),
-              let documentOffset = activeGraph?.characterDocumentOffset(
+              let documentOffset = activeGraph?.documentUTF16Offset(
                   surfaceIdentity: surfaceIdentity,
                   referencePoint: referencePoint
               ) else {
@@ -614,9 +605,8 @@ package final class NovelTextViewportRuntimeOwner {
         around anchor: NovelTextSelectionAnchor
     ) -> NovelTextSelectionRange? {
         guard anchor.generation == activeGeneration,
-              let text = result?.viewportContext.document.text,
-              !text.isEmpty,
-              let characterRange = selectableCharacterRange(around: anchor.documentOffset, in: text) else {
+              let coordinates = result?.viewportContext.document.coordinates,
+              let characterRange = selectableCharacterRange(around: anchor.documentOffset, in: coordinates) else {
             return nil
         }
         return NovelTextSelectionRange(
@@ -632,35 +622,31 @@ package final class NovelTextViewportRuntimeOwner {
     ) -> NovelTextSelectionRange? {
         guard start.generation == activeGeneration,
               end.generation == activeGeneration,
-              let text = result?.viewportContext.document.text else {
+              let coordinates = result?.viewportContext.document.coordinates else {
             return nil
         }
         let lowerBound = min(start.documentOffset, end.documentOffset)
         let upperBound = max(start.documentOffset, end.documentOffset)
         return NovelTextSelectionRange(
             generation: start.generation,
-            lowerBound: min(max(lowerBound, 0), text.count),
-            upperBound: min(max(upperBound, 0), text.count)
+            lowerBound: NovelDocumentUTF16Offset(coordinates.alignedOffset(lowerBound.rawValue)),
+            upperBound: NovelDocumentUTF16Offset(coordinates.alignedOffset(upperBound.rawValue, roundingUp: lowerBound != upperBound))
         )
     }
 
     package func selectedText(for selectionRange: NovelTextSelectionRange) -> String? {
         guard selectionRange.generation == activeGeneration,
-              let text = result?.viewportContext.document.text,
-              let start = text.index(text.startIndex, offsetBy: selectionRange.lowerBound, limitedBy: text.endIndex),
-              let end = text.index(text.startIndex, offsetBy: selectionRange.upperBound, limitedBy: text.endIndex),
-              start < end else {
-            return nil
-        }
-        return String(text[start..<end])
+              let coordinates = result?.viewportContext.document.coordinates else { return nil }
+        let range = coordinates.alignedRange(selectionRange.lowerBound.rawValue..<selectionRange.upperBound.rawValue)
+        return coordinates.text(in: range)
     }
 
-    /// Resolves a document-global character offset without depending on any
+    /// Resolves a document-global UTF-16 offset without depending on any
     /// particular rendered surface. A vertical selection can span multiple
     /// surfaces, while its persisted endpoints still need their true semantic
     /// positions in the shared document.
     package func semanticTextPosition(
-        containingDocumentOffset documentOffset: Int
+        containingDocumentOffset documentOffset: NovelDocumentUTF16Offset
     ) -> NovelTextViewportSemanticTextPosition? {
         guard let projection, let document = result?.viewportContext.document else {
             return nil
@@ -685,15 +671,15 @@ package final class NovelTextViewportRuntimeOwner {
         radius: Int
     ) -> (before: String, after: String)? {
         guard selectionRange.generation == activeGeneration,
-              let text = result?.viewportContext.document.text,
-              let start = text.index(text.startIndex, offsetBy: selectionRange.lowerBound, limitedBy: text.endIndex),
-              let end = text.index(text.startIndex, offsetBy: selectionRange.upperBound, limitedBy: text.endIndex),
-              start <= end else {
-            return nil
-        }
-        let beforeStart = text.index(start, offsetBy: -radius, limitedBy: text.startIndex) ?? text.startIndex
-        let afterEnd = text.index(end, offsetBy: radius, limitedBy: text.endIndex) ?? text.endIndex
-        return (String(text[beforeStart..<start]), String(text[end..<afterEnd]))
+              let coordinates = result?.viewportContext.document.coordinates else { return nil }
+        let start = coordinates.characterOffset(forUTF16Offset: selectionRange.lowerBound.rawValue)
+        let end = coordinates.characterOffset(forUTF16Offset: selectionRange.upperBound.rawValue, roundingUp: true)
+        let before = coordinates.utf16Offset(forCharacterOffset: start - max(radius, 0))
+        let after = coordinates.utf16Offset(forCharacterOffset: end + max(radius, 0))
+        return (
+            coordinates.text(in: before..<coordinates.utf16Offset(forCharacterOffset: start)) ?? "",
+            coordinates.text(in: coordinates.utf16Offset(forCharacterOffset: end)..<after) ?? ""
+        )
     }
 
     /// Converts a persisted Like highlight's start/end into a selection range
@@ -764,40 +750,26 @@ package final class NovelTextViewportRuntimeOwner {
         lastDrawnDocumentRange = result?.viewportIndex.surfaces
             .first(where: { $0.surfaceOrdinal == surfaceIdentity.ordinal })?
             .frozenGeometry
-            .map { $0.documentStartOffset..<$0.documentEndOffset }
+            .map { $0.documentStartOffset.rawValue..<$0.documentEndOffset.rawValue }
     }
 
     private func selectableCharacterRange(
-        around documentOffset: Int,
-        in text: String
-    ) -> Range<Int>? {
-        let clampedOffset = min(max(documentOffset, 0), text.count)
-        let effectiveOffset = clampedOffset == text.count ? max(text.count - 1, 0) : clampedOffset
-        guard let index = text.index(text.startIndex, offsetBy: effectiveOffset, limitedBy: text.endIndex),
-              index < text.endIndex,
-              !text[index].isWhitespace else {
-            return nil
+        around documentOffset: NovelDocumentUTF16Offset,
+        in coordinates: NovelTextCoordinateIndex
+    ) -> Range<NovelDocumentUTF16Offset>? {
+        guard coordinates.characterCount > 0 else { return nil }
+        let ordinal = min(coordinates.characterOffset(forUTF16Offset: documentOffset.rawValue), coordinates.characterCount - 1)
+        guard let character = coordinates.character(at: ordinal), !character.isWhitespace else { return nil }
+        let wordSet = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+        func isWord(_ ordinal: Int) -> Bool {
+            coordinates.character(at: ordinal)?.unicodeScalars.allSatisfy { wordSet.contains($0) } == true
         }
-
-        let wordCharacterSet = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
-        if text[index].unicodeScalars.allSatisfy({ wordCharacterSet.contains($0) }) {
-            var start = index
-            while start > text.startIndex {
-                let previous = text.index(before: start)
-                guard text[previous].unicodeScalars.allSatisfy({ wordCharacterSet.contains($0) }) else {
-                    break
-                }
-                start = previous
-            }
-            var end = text.index(after: index)
-            while end < text.endIndex,
-                  text[end].unicodeScalars.allSatisfy({ wordCharacterSet.contains($0) }) {
-                end = text.index(after: end)
-            }
-            return text.distance(from: text.startIndex, to: start)..<text.distance(from: text.startIndex, to: end)
+        var start = ordinal
+        var end = ordinal + 1
+        if isWord(ordinal) {
+            while start > 0, isWord(start - 1) { start -= 1 }
+            while end < coordinates.characterCount, isWord(end) { end += 1 }
         }
-
-        let end = text.index(after: index)
-        return effectiveOffset..<text.distance(from: text.startIndex, to: end)
+        return NovelDocumentUTF16Offset(coordinates.utf16Offset(forCharacterOffset: start))..<NovelDocumentUTF16Offset(coordinates.utf16Offset(forCharacterOffset: end))
     }
 }

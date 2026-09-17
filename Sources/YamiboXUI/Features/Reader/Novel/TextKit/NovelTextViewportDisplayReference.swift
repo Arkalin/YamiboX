@@ -76,7 +76,7 @@ public final class NovelTextViewportDisplayReference {
     }
 
     func semanticTextPosition(
-        containingDocumentOffset documentOffset: Int
+        containingDocumentOffset documentOffset: NovelDocumentUTF16Offset
     ) -> NovelTextViewportSemanticTextPosition? {
         runtimeOwner?.semanticTextPosition(containingDocumentOffset: documentOffset)
     }

@@ -65,8 +65,20 @@ public enum NovelTextLayout {
     package static func prepareInput(
         document: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout
+        layout: NovelReaderLayout,
+        reusing previous: NovelTextLayoutPreparedInput? = nil
     ) throws -> NovelTextLayoutPreparedInput {
+        if let previous, previous.document == document,
+           previous.settings.translationMode == settings.translationMode,
+           previous.settings.loadsInlineImages == settings.loadsInlineImages {
+            var context = previous.viewportContextSeed
+            context.identity.appearance = settings
+            context.identity.layout = layout
+            return NovelTextLayoutPreparedInput(
+                document: document, settings: settings, layout: layout,
+                annotatedSegments: previous.annotatedSegments, viewportContextSeed: context
+            )
+        }
         let annotatedSegments = annotatedSegments(from: document, settings: settings)
         guard annotatedSegments.contains(where: { annotatedSegment in
             switch annotatedSegment.segment {
@@ -136,7 +148,7 @@ public enum NovelTextLayout {
 
     static func displayOffset(
         for textSegmentIdentity: NovelTextSegmentIdentity,
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         in projection: NovelReaderProjection,
         ranges: [NovelRenderedTextRange]
     ) -> Int? {
@@ -502,10 +514,14 @@ public enum NovelTextLayout {
         layout: NovelReaderLayout
     ) -> NovelTextViewportContext {
         var composedText = ""
-        var textRangesBySegment: [Int: NovelRenderedTextRange] = [:]
-        var insertedSeparatorRanges: [NovelRenderedTextRange] = []
-        var inlineTextStylesBySegment: [Int: [NovelInlineTextStyleRange]] = [:]
-        var blockTextStyles: [NovelBlockTextStyleRange] = []
+        var textRangesBySegment: [Int: NovelDocumentTextRange] = [:]
+        var insertedSeparatorRanges: [NovelDocumentTextRange] = []
+        var inlineTextStylesBySegment: [Int: [NovelRuntimeInlineTextStyle]] = [:]
+        var blockTextStyles: [NovelRuntimeBlockTextStyle] = []
+        var segmentCoordinates: [Int: NovelTextCoordinateIndex] = [:]
+        var sourceCoordinates: [Int: NovelTextCoordinateIndex] = [:]
+        var segmentIndexesByIdentity: [NovelTextSegmentIdentity: Int] = [:]
+        var offset = NovelDocumentUTF16Offset(0)
         var externalBlocks: [NovelTextViewportExternalBlock] = []
         var lastTextSegmentIndex: Int?
 
@@ -513,24 +529,32 @@ public enum NovelTextLayout {
             switch annotatedSegment.segment {
             case let .text(text, _):
                 if !composedText.isEmpty {
-                    let separatorStart = composedText.count
+                    let separatorStart = offset
                     composedText.append("\n\n")
+                    offset = offset + 2
                     if let lastTextSegmentIndex {
                         insertedSeparatorRanges.append(
-                            NovelRenderedTextRange(
+                            NovelDocumentTextRange(
                                 segmentIndex: lastTextSegmentIndex,
                                 startOffset: separatorStart,
-                                endOffset: composedText.count
+                                endOffset: offset
                             )
                         )
                     }
                 }
-                let startOffset = composedText.count
+                let startOffset = offset
                 composedText.append(text)
-                textRangesBySegment[annotatedSegment.index] = NovelRenderedTextRange(
+                let coordinates = annotatedSegment.coordinates
+                segmentCoordinates[annotatedSegment.index] = coordinates
+                sourceCoordinates[annotatedSegment.index] = annotatedSegment.sourceCoordinates
+                if let identity = annotatedSegment.semantics?.textSegmentIdentity {
+                    segmentIndexesByIdentity[identity] = annotatedSegment.index
+                }
+                offset = offset + coordinates.utf16Count
+                textRangesBySegment[annotatedSegment.index] = NovelDocumentTextRange(
                     segmentIndex: annotatedSegment.index,
                     startOffset: startOffset,
-                    endOffset: composedText.count
+                    endOffset: offset
                 )
                 if let inlineTextStyles = annotatedSegment.semantics?.inlineTextStyles,
                    !inlineTextStyles.isEmpty {
@@ -539,13 +563,13 @@ public enum NovelTextLayout {
                 blockTextStyles.append(
                     contentsOf: (annotatedSegment.semantics?.blockTextStyles ?? []).compactMap { blockStyle in
                         guard blockStyle.range.length > 0,
-                              blockStyle.range.upperBound <= text.count else {
+                              NSMaxRange(blockStyle.range) <= coordinates.utf16Count else {
                             return nil
                         }
-                        return NovelBlockTextStyleRange(
+                        return NovelRuntimeBlockTextStyle(
                             style: blockStyle.style,
-                            range: NovelCharacterRange(
-                                location: startOffset + blockStyle.range.location,
+                            range: NSRange(
+                                location: startOffset.rawValue + blockStyle.range.location,
                                 length: blockStyle.range.length
                             )
                         )
@@ -581,7 +605,10 @@ public enum NovelTextLayout {
                 textRangesBySegment: textRangesBySegment,
                 insertedSeparatorRanges: insertedSeparatorRanges,
                 inlineTextStylesBySegment: inlineTextStylesBySegment,
-                blockTextStyles: blockTextStyles
+                blockTextStyles: blockTextStyles,
+                segmentCoordinates: segmentCoordinates,
+                sourceCoordinates: sourceCoordinates,
+                segmentIndexesByIdentity: segmentIndexesByIdentity
             ),
             externalBlocks: externalBlocks,
             diagnostics: NovelTextViewportDiagnostics(indexBuildCount: 1)
@@ -727,6 +754,8 @@ public enum NovelTextLayout {
                     index: index,
                     segment: transformedSegment,
                     semantics: transformedSemantics,
+                    coordinates: transformed.coordinates,
+                    sourceCoordinates: transformed.sourceCoordinates,
                     source: source,
                     chapterOrdinal: currentChapterOrdinal,
                     chapterTitle: currentChapterTitle
@@ -741,127 +770,84 @@ public enum NovelTextLayout {
         from segment: NovelReaderSegment,
         semantics: NovelReaderSegmentSemantics?,
         settings: NovelReaderAppearanceSettings
-    ) -> (segment: NovelReaderSegment, semantics: NovelReaderSegmentSemantics?)? {
+    ) -> (segment: NovelReaderSegment, semantics: NovelRuntimeTextSemantics?, coordinates: NovelTextCoordinateIndex, sourceCoordinates: NovelTextCoordinateIndex)? {
         switch segment {
         case let .text(text, chapterTitle):
-            let transformed = transformTextAndStyles(
-                text: text,
-                inlineTextStyles: semantics?.inlineTextStyles ?? [],
-                blockTextStyles: semantics?.blockTextStyles ?? [],
-                mode: settings.translationMode
-            )
-            var transformedSemantics = semantics
-            transformedSemantics?.inlineTextStyles = transformed.inlineTextStyles
-            transformedSemantics?.blockTextStyles = transformed.blockTextStyles
-            return (.text(transformed.text, chapterTitle: chapterTitle), transformedSemantics)
+            let transformed = transformTextAndStyles(text: text, semantics: semantics, mode: settings.translationMode)
+            return (.text(transformed.text, chapterTitle: chapterTitle), transformed.semantics, transformed.coordinates, transformed.sourceCoordinates)
         case let .image(url, chapterTitle):
-            return settings.loadsInlineImages ? (.image(url, chapterTitle: chapterTitle), semantics) : nil
+            return settings.loadsInlineImages ? (
+                .image(url, chapterTitle: chapterTitle),
+                semantics.map { NovelRuntimeTextSemantics(
+                    chapterIdentity: $0.chapterIdentity, textSegmentIdentity: $0.textSegmentIdentity,
+                    chapterTitleRange: nil, inlineTextStyles: [], blockTextStyles: []
+                ) }, NovelTextCoordinateIndex(""), NovelTextCoordinateIndex("")
+            ) : nil
         }
     }
 
     private static func transformTextAndStyles(
         text: String,
-        inlineTextStyles: [NovelInlineTextStyleRange],
-        blockTextStyles: [NovelBlockTextStyleRange],
+        semantics: NovelReaderSegmentSemantics?,
         mode: ReaderTranslationMode
-    ) -> (
-        text: String,
-        inlineTextStyles: [NovelInlineTextStyleRange],
-        blockTextStyles: [NovelBlockTextStyleRange]
-    ) {
-        guard mode != .none else {
-            return (
-                NovelTextTransformer.transform(text, mode: mode),
-                inlineTextStyles,
-                blockTextStyles
-            )
-        }
-
-        guard !inlineTextStyles.isEmpty || !blockTextStyles.isEmpty else {
-            return (NovelTextTransformer.transform(text, mode: mode), inlineTextStyles, blockTextStyles)
-        }
-
-        let boundaries = styleBoundaries(
-            textCount: text.count,
-            inlineTextStyles: inlineTextStyles,
-            blockTextStyles: blockTextStyles
-        )
+    ) -> (text: String, semantics: NovelRuntimeTextSemantics?, coordinates: NovelTextCoordinateIndex, sourceCoordinates: NovelTextCoordinateIndex) {
+        let source = NovelTextCoordinateIndex(text)
+        let inline = semantics?.inlineTextStyles ?? []
+        let blocks = semantics?.blockTextStyles ?? []
+        // Keep the existing transformation runs: title styling must not change
+        // the context supplied to the transliterator.
+        let ranges = (inline.map(\.range) + blocks.map(\.range)).compactMap(source.utf16Range)
+        let boundaries = Set([0, source.utf16Count] + ranges.flatMap { [$0.location, NSMaxRange($0)] }).sorted()
         var output = ""
+        var outputLength = 0
         var transformedOffsets: [Int: Int] = [0: 0]
-
-        for index in 0..<(boundaries.count - 1) {
-            let start = boundaries[index]
-            let end = boundaries[index + 1]
-            transformedOffsets[start] = output.count
-            output += NovelTextTransformer.transform(
-                substring(in: text, range: start ..< end),
-                mode: mode
+        if mode == .none {
+            output = text
+            for boundary in boundaries { transformedOffsets[boundary] = boundary }
+        } else {
+            for (start, end) in zip(boundaries, boundaries.dropFirst()) {
+                let run = NovelTextTransformer.transform(source.text(in: start..<end) ?? "", mode: mode)
+                transformedOffsets[start] = outputLength
+                output.append(run)
+                outputLength += run.utf16.count
+                transformedOffsets[end] = outputLength
+            }
+        }
+        // Map title edges without introducing new transformation runs, which
+        // would change the transliterator's context and the displayed text.
+        if let title = semantics?.chapterTitleRange.flatMap(source.utf16Range) {
+            for edge in [title.location, NSMaxRange(title)] where transformedOffsets[edge] == nil {
+                if mode == .none {
+                    transformedOffsets[edge] = edge
+                } else if let runStart = boundaries.last(where: { $0 < edge }),
+                          let outputStart = transformedOffsets[runStart] {
+                    let prefix = source.text(in: runStart..<edge) ?? ""
+                    transformedOffsets[edge] = outputStart + NovelTextTransformer.transform(prefix, mode: mode).utf16.count
+                }
+            }
+        }
+        let coordinates = mode == .none ? source : NovelTextCoordinateIndex(output)
+        func mappedRange(_ range: NovelCharacterRange) -> NSRange? {
+            guard let original = source.utf16Range(forCharacterRange: range),
+                  let start = transformedOffsets[original.location],
+                  let end = transformedOffsets[NSMaxRange(original)] else { return nil }
+            let aligned = coordinates.alignedRange(start..<end)
+            return NSRange(location: aligned.lowerBound, length: aligned.count)
+        }
+        let runtime = semantics.map { semantics in
+            NovelRuntimeTextSemantics(
+                chapterIdentity: semantics.chapterIdentity,
+                textSegmentIdentity: semantics.textSegmentIdentity,
+                chapterTitleRange: semantics.chapterTitleRange.flatMap(mappedRange),
+                inlineTextStyles: inline.compactMap { style in
+                    mappedRange(style.range).map { NovelRuntimeInlineTextStyle(style: style.style, range: $0) }
+                },
+                blockTextStyles: blocks.compactMap { style in
+                    mappedRange(style.range).map { NovelRuntimeBlockTextStyle(style: style.style, range: $0) }
+                }
             )
-            transformedOffsets[end] = output.count
         }
-
-        return (
-            output,
-            inlineTextStyles.compactMap { transformedInlineStyle($0, transformedOffsets: transformedOffsets) },
-            blockTextStyles.compactMap { transformedBlockStyle($0, transformedOffsets: transformedOffsets) }
-        )
-    }
-
-    private static func styleBoundaries(
-        textCount: Int,
-        inlineTextStyles: [NovelInlineTextStyleRange],
-        blockTextStyles: [NovelBlockTextStyleRange]
-    ) -> [Int] {
-        var boundaries = Set([0, textCount])
-        for range in inlineTextStyles.map(\.range) + blockTextStyles.map(\.range) {
-            let start = min(max(range.location, 0), textCount)
-            let end = min(max(range.upperBound, start), textCount)
-            boundaries.insert(start)
-            boundaries.insert(end)
-        }
-        return boundaries.sorted()
-    }
-
-    private static func transformedInlineStyle(
-        _ style: NovelInlineTextStyleRange,
-        transformedOffsets: [Int: Int]
-    ) -> NovelInlineTextStyleRange? {
-        guard let transformedStart = transformedOffsets[style.range.location],
-              let transformedEnd = transformedOffsets[style.range.upperBound],
-              transformedEnd > transformedStart else {
-            return nil
-        }
-        return NovelInlineTextStyleRange(
-            style: style.style,
-            range: NovelCharacterRange(
-                location: transformedStart,
-                length: transformedEnd - transformedStart
-            )
-        )
-    }
-
-    private static func transformedBlockStyle(
-        _ style: NovelBlockTextStyleRange,
-        transformedOffsets: [Int: Int]
-    ) -> NovelBlockTextStyleRange? {
-        guard let transformedStart = transformedOffsets[style.range.location],
-              let transformedEnd = transformedOffsets[style.range.upperBound],
-              transformedEnd > transformedStart else {
-            return nil
-        }
-        return NovelBlockTextStyleRange(
-            style: style.style,
-            range: NovelCharacterRange(
-                location: transformedStart,
-                length: transformedEnd - transformedStart
-            )
-        )
-    }
-
-    private static func substring(in text: String, range: Range<Int>) -> String {
-        let lower = text.index(text.startIndex, offsetBy: range.lowerBound)
-        let upper = text.index(text.startIndex, offsetBy: range.upperBound)
-        return String(text[lower..<upper])
+        return (output, runtime, coordinates, source)
     }
 
     private static func chapterCommentTarget(
@@ -884,8 +870,8 @@ public enum NovelTextLayout {
 }
 
 package struct NovelTextViewportDocumentSurfaceRange: Hashable, Sendable {
-    package let startOffset: Int
-    package let endOffset: Int
+    package let startOffset: NovelDocumentUTF16Offset
+    package let endOffset: NovelDocumentUTF16Offset
     package let frozenGeometry: NovelTextViewportFrozenGeometry?
 
     package var isEmpty: Bool {
@@ -893,8 +879,8 @@ package struct NovelTextViewportDocumentSurfaceRange: Hashable, Sendable {
     }
 
     package init(
-        startOffset: Int,
-        endOffset: Int,
+        startOffset: NovelDocumentUTF16Offset,
+        endOffset: NovelDocumentUTF16Offset,
         frozenGeometry: NovelTextViewportFrozenGeometry? = nil
     ) {
         self.startOffset = startOffset
@@ -906,7 +892,9 @@ package struct NovelTextViewportDocumentSurfaceRange: Hashable, Sendable {
 package struct NovelAnnotatedSegment: Sendable {
     package let index: Int
     package let segment: NovelReaderSegment
-    package let semantics: NovelReaderSegmentSemantics?
+    package let semantics: NovelRuntimeTextSemantics?
+    package let coordinates: NovelTextCoordinateIndex
+    package let sourceCoordinates: NovelTextCoordinateIndex
     package let source: NovelReaderSegmentSource?
     package let chapterOrdinal: Int?
     package let chapterTitle: String?

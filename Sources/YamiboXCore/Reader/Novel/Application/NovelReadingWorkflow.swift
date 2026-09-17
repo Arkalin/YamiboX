@@ -136,6 +136,7 @@ public final class NovelReadingWorkflow {
     private var currentProjectionSurfaceCount = 0
     private var usesPadPresentation: Bool
     private let viewportRuntime: NovelTextViewportRuntimeOwner
+    private var semanticPreparationCache: NovelTextLayoutPreparedInput?
     private var pendingRuntimeUpdateTask: Task<(NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)?, Error>?
     private var prefetchInFlightView: Int?
     private var prefetchCooldown: (view: Int, until: Date)?
@@ -346,6 +347,7 @@ public final class NovelReadingWorkflow {
         pendingRuntimeUpdateTask = nil
         let requestSequence = runtimeUpdateRequestSequence
         let projection = currentProjection
+        let cachedPreparation = semanticPreparationCache
         let task = Task.detached(priority: .userInitiated) {
             () async throws -> (NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)? in
             let preparedUpdate = try await preparation(update)
@@ -358,7 +360,8 @@ public final class NovelReadingWorkflow {
             let semanticInput = try NovelTextLayout.prepareInput(
                 document: projection,
                 settings: preparedUpdate.settings,
-                layout: paginationLayout
+                layout: paginationLayout,
+                reusing: cachedPreparation
             )
             try Task.checkCancellation()
             return (preparedUpdate, semanticInput)
@@ -396,6 +399,7 @@ public final class NovelReadingWorkflow {
             return nil
         }
         let resumePoint = candidateSession.captureNovelReadingPosition()
+        semanticPreparationCache = semanticInput
         let transaction = try viewportRuntime.prepareTransaction(
             preparedInput: semanticInput
         )
@@ -725,12 +729,14 @@ public final class NovelReadingWorkflow {
     }
 
     public func handleMemoryPressure() {
+        semanticPreparationCache = nil
         viewportRuntime.handleMemoryPressure()
     }
 
     public func close() {
         supersedePendingRuntimeUpdate()
         viewportRuntime.release()
+        semanticPreparationCache = nil
         session = nil
         currentProjection = nil
         prefetchedProjection = nil
@@ -1057,12 +1063,11 @@ public final class NovelReadingWorkflow {
             settings: settings,
             usesPadPresentation: usesPadPresentation
         )
-        return try viewportRuntime.prepareTransaction(
-            preparedInput: try NovelTextLayout.prepareInput(
-                document: projection,
-                settings: settings,
-                layout: paginationLayout
-            )
+        let prepared = try NovelTextLayout.prepareInput(
+            document: projection, settings: settings, layout: paginationLayout,
+            reusing: semanticPreparationCache
         )
+        semanticPreparationCache = prepared
+        return try viewportRuntime.prepareTransaction(preparedInput: prepared)
     }
 }

@@ -2,9 +2,9 @@ import Foundation
 
 package struct NovelTextSelectionAnchor: Hashable, Sendable {
     public var generation: UInt64
-    public var documentOffset: Int
+    public var documentOffset: NovelDocumentUTF16Offset
 
-    public init(generation: UInt64, documentOffset: Int) {
+    public init(generation: UInt64, documentOffset: NovelDocumentUTF16Offset) {
         self.generation = generation
         self.documentOffset = max(0, documentOffset)
     }
@@ -12,10 +12,10 @@ package struct NovelTextSelectionAnchor: Hashable, Sendable {
 
 package struct NovelTextSelectionRange: Hashable, Sendable {
     public var generation: UInt64
-    public var lowerBound: Int
-    public var upperBound: Int
+    public var lowerBound: NovelDocumentUTF16Offset
+    public var upperBound: NovelDocumentUTF16Offset
 
-    public init?(generation: UInt64, lowerBound: Int, upperBound: Int) {
+    public init?(generation: UInt64, lowerBound: NovelDocumentUTF16Offset, upperBound: NovelDocumentUTF16Offset) {
         let normalizedLower = max(0, min(lowerBound, upperBound))
         let normalizedUpper = max(0, max(lowerBound, upperBound))
         guard normalizedUpper > normalizedLower else { return nil }
@@ -24,7 +24,7 @@ package struct NovelTextSelectionRange: Hashable, Sendable {
         self.upperBound = normalizedUpper
     }
 
-    public var range: Range<Int> {
+    public var range: Range<NovelDocumentUTF16Offset> {
         lowerBound..<upperBound
     }
 }

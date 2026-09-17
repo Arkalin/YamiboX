@@ -3,17 +3,34 @@ import Foundation
 
 package struct NovelRenderedTextRange: Hashable, Sendable {
     public var segmentIndex: Int
-    public var startOffset: Int
-    public var endOffset: Int
+    public var startOffset: NovelSegmentUTF16Offset
+    public var endOffset: NovelSegmentUTF16Offset
+    package let coordinates: NovelTextCoordinateIndex
 
-    public init(segmentIndex: Int, startOffset: Int, endOffset: Int) {
+    public init(segmentIndex: Int, startOffset: NovelSegmentUTF16Offset, endOffset: NovelSegmentUTF16Offset, coordinates: NovelTextCoordinateIndex) {
         self.segmentIndex = max(0, segmentIndex)
         self.startOffset = max(0, startOffset)
         self.endOffset = max(self.startOffset, endOffset)
+        self.coordinates = coordinates
     }
 
     public var length: Int {
         max(endOffset - startOffset, 0)
+    }
+
+    package var characterStart: Int { coordinates.characterOffset(forUTF16Offset: startOffset.rawValue) }
+    package var characterLength: Int {
+        coordinates.characterOffset(forUTF16Offset: endOffset.rawValue) - characterStart
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.segmentIndex == rhs.segmentIndex && lhs.startOffset == rhs.startOffset && lhs.endOffset == rhs.endOffset
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(segmentIndex)
+        hasher.combine(startOffset)
+        hasher.combine(endOffset)
     }
 }
 
@@ -49,16 +66,16 @@ package struct NovelTextViewportIndexSurface: Hashable, Sendable {
 }
 
 package struct NovelTextViewportFrozenGeometry: Hashable, Sendable {
-    public var documentStartOffset: Int
-    public var documentEndOffset: Int
+    public var documentStartOffset: NovelDocumentUTF16Offset
+    public var documentEndOffset: NovelDocumentUTF16Offset
     public var documentClipMinY: CGFloat
     public var documentClipMaxY: CGFloat
     public var contentHeight: CGFloat
     public var pageLocalOriginY: CGFloat
 
     public init(
-        documentStartOffset: Int,
-        documentEndOffset: Int,
+        documentStartOffset: NovelDocumentUTF16Offset,
+        documentEndOffset: NovelDocumentUTF16Offset,
         documentClipMinY: CGFloat,
         documentClipMaxY: CGFloat,
         contentHeight: CGFloat,
@@ -127,6 +144,9 @@ package struct NovelTextViewportIndexSurfacePosition: Hashable, Sendable {
     }
 }
 
+/// Compatibility DTO for persisted resume/bookmark/Like values. Unlike a
+/// viewport sample, `displayedTextOffset` here is a Character ordinal, obtained
+/// from the immutable coordinate index rather than by traversing the string.
 package struct NovelTextViewportSemanticTextPosition: Hashable, Sendable {
     public var chapterIdentity: NovelChapterIdentity?
     public var textSegmentIdentity: NovelTextSegmentIdentity
@@ -150,7 +170,7 @@ package struct NovelTextViewportSample: Hashable, Sendable {
     public var surfaceIdentity: NovelReaderSurfaceIdentity
     public var documentView: Int
     public var textSegmentIdentity: NovelTextSegmentIdentity
-    public var displayedTextOffset: Int
+    public var displayedTextOffset: NovelSegmentUTF16Offset
     /// The owning `NovelReaderProjection`'s cache-key identity (see
     /// `NovelTextLikeAnchor.resolvedAuthorID`) — carried on the sample so
     /// Like capture can round-trip the exact cache key later without
@@ -161,7 +181,7 @@ package struct NovelTextViewportSample: Hashable, Sendable {
         surfaceIdentity: NovelReaderSurfaceIdentity,
         documentView: Int,
         textSegmentIdentity: NovelTextSegmentIdentity,
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         resolvedAuthorID: String? = nil
     ) {
         self.surfaceIdentity = surfaceIdentity
@@ -192,7 +212,7 @@ package struct NovelTextViewportIndex: Hashable, Sendable {
 
     public func position(
         for textSegmentIdentity: NovelTextSegmentIdentity,
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         in projection: NovelReaderProjection
     ) -> NovelTextViewportIndexSurfacePosition? {
         guard projection.view == documentView,
@@ -267,13 +287,13 @@ package extension NovelTextViewportIndexSurface {
             return nil
         }
         let range = rangePosition.range
-        let offsetWithinSegment = range.length > 0
-            ? Int((Double(range.length) * rangePosition.progressInRange).rounded(.towardZero))
+        let offsetWithinSegment = range.characterLength > 0
+            ? Int((Double(range.characterLength) * rangePosition.progressInRange).rounded(.towardZero))
             : 0
         return NovelTextViewportSemanticTextPosition(
             chapterIdentity: semantics.chapterIdentity,
             textSegmentIdentity: textSegmentIdentity,
-            displayedTextOffset: range.startOffset + min(offsetWithinSegment, range.length),
+            displayedTextOffset: range.characterStart + min(offsetWithinSegment, range.characterLength),
             progressInTextRange: rangePosition.progressInRange
         )
     }
@@ -289,7 +309,7 @@ package extension NovelTextViewportIndexSurface {
 
     func contains(
         textSegmentIdentity: NovelTextSegmentIdentity,
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         in projection: NovelReaderProjection
     ) -> Bool {
         ranges.contains { range in
@@ -321,7 +341,7 @@ package extension NovelTextViewportIndexSurface {
     }
 
     func distance(
-        from displayedTextOffset: Int,
+        from displayedTextOffset: NovelSegmentUTF16Offset,
         textSegmentIdentity: NovelTextSegmentIdentity,
         in projection: NovelReaderProjection
     ) -> Int {
@@ -333,7 +353,7 @@ package extension NovelTextViewportIndexSurface {
     }
 
     func intraSurfaceProgress(
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         textSegmentIdentity: NovelTextSegmentIdentity,
         fallbackProgress: Double,
         in projection: NovelReaderProjection
@@ -371,7 +391,9 @@ package extension NovelTextViewportIndexSurface {
                     ),
                     documentView: projection.view,
                     textSegmentIdentity: textSegmentIdentity,
-                    displayedTextOffset: range.startOffset + min(max(normalizedOffset - runningOffset, 0), length),
+                    displayedTextOffset: NovelSegmentUTF16Offset(range.coordinates.alignedOffset(
+                        range.startOffset.rawValue + min(max(normalizedOffset - runningOffset, 0), length)
+                    )),
                     resolvedAuthorID: projection.resolvedAuthorID
                 )
             }
@@ -398,7 +420,7 @@ package extension NovelTextViewportIndexSurface {
 
     func displayOffset(
         for textSegmentIdentity: NovelTextSegmentIdentity,
-        displayedTextOffset: Int,
+        displayedTextOffset: NovelSegmentUTF16Offset,
         in projection: NovelReaderProjection
     ) -> Int? {
         guard let segmentIndex = projection.segmentSemantics.firstIndex(where: {
@@ -434,12 +456,12 @@ package extension NovelTextViewportIndexSurface {
             }
         }
 
-        let totalLength = ranges.reduce(0) { $0 + max($1.length, 1) }
+        let totalLength = ranges.reduce(0) { $0 + max($1.characterLength, 1) }
         let targetOffset = Int((Double(totalLength) * min(max(intraSurfaceProgress, 0), 1)).rounded(.towardZero))
         var runningLength = 0
 
         for range in ranges {
-            let length = max(range.length, 1)
+            let length = max(range.characterLength, 1)
             if targetOffset < runningLength + length {
                 let progressInRange = Double(targetOffset - runningLength) / Double(length)
                 return (
@@ -457,20 +479,20 @@ package extension NovelTextViewportIndexSurface {
 
     private func progress(
         matching predicate: (NovelRenderedTextRange) -> Bool,
-        offset: Int,
+        offset: NovelSegmentUTF16Offset,
         fallbackProgress: Double
     ) -> Double {
         guard !ranges.isEmpty else {
             return min(max(fallbackProgress, 0), 1)
         }
-        let totalLength = ranges.reduce(0) { $0 + max($1.length, 1) }
+        let totalLength = ranges.reduce(0) { $0 + max($1.characterLength, 1) }
         var runningLength = 0
 
         for range in ranges {
-            let length = max(range.length, 1)
+            let length = max(range.characterLength, 1)
             defer { runningLength += length }
             guard predicate(range) else { continue }
-            let localOffset = min(max(offset - range.startOffset, 0), length)
+            let localOffset = min(max(range.coordinates.characterOffset(forUTF16Offset: offset.rawValue) - range.characterStart, 0), length)
             let progress = Double(runningLength + localOffset) / Double(max(totalLength, 1))
             return min(max(progress, 0), 1)
         }
@@ -481,7 +503,7 @@ package extension NovelTextViewportIndexSurface {
 
 package extension NovelTextViewportIndexSurface {
     func nearestTextSample(
-        toDocumentOffset documentOffset: Int,
+        toDocumentOffset documentOffset: NovelDocumentUTF16Offset,
         surfaceIdentity: NovelReaderSurfaceIdentity,
         viewportDocument: NovelTextViewportDocument,
         sourceDocument: NovelReaderProjection
@@ -499,7 +521,9 @@ package extension NovelTextViewportIndexSurface {
                     surfaceIdentity: surfaceIdentity,
                     documentView: documentView,
                     textSegmentIdentity: textSegmentIdentity,
-                    displayedTextOffset: nearestOffset - documentRange.lowerBound + range.startOffset,
+                    displayedTextOffset: NovelSegmentUTF16Offset(range.coordinates.alignedOffset(
+                        range.startOffset.rawValue + (nearestOffset - documentRange.lowerBound)
+                    )),
                     resolvedAuthorID: sourceDocument.resolvedAuthorID
                 )
             )
@@ -510,14 +534,14 @@ package extension NovelTextViewportIndexSurface {
 }
 
 private extension NovelRenderedTextRange {
-    func contains(offset: Int) -> Bool {
+    func contains(offset: NovelSegmentUTF16Offset) -> Bool {
         if startOffset == endOffset {
             return offset <= startOffset
         }
         return offset >= startOffset && offset < endOffset
     }
 
-    func distance(toOffset offset: Int) -> Int {
+    func distance(toOffset offset: NovelSegmentUTF16Offset) -> Int {
         if contains(offset: offset) {
             return 0
         }

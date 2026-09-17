@@ -131,8 +131,8 @@ enum NovelAttributedTextFactory {
 
     static func makeAttributedText(
         text: String,
-        chapterTitleRange: NovelCharacterRange?,
-        inlineTextStyles: [NovelInlineTextStyleRange] = [],
+        chapterTitleRange: NSRange?,
+        inlineTextStyles: [NovelRuntimeInlineTextStyle] = [],
         startsAtParagraphBoundary: Bool = true,
         settings: NovelReaderAppearanceSettings,
         baseFontSize: Double = defaultBaseFontSize,
@@ -170,13 +170,12 @@ enum NovelAttributedTextFactory {
 
         if !startsAtParagraphBoundary {
             for range in NovelParagraphIndentPlanner.indentedParagraphRangesAfterFirst(in: text) {
-                let location = text.distance(from: text.startIndex, to: range.lowerBound)
-                let length = text.distance(from: range.lowerBound, to: range.upperBound)
-                guard length > 0 else { continue }
+                let utf16Range = NSRange(range, in: text)
+                guard utf16Range.length > 0 else { continue }
                 rendered.addAttribute(
                     .paragraphStyle,
                     value: laterBodyParagraphStyle,
-                    range: NSRange(location: location, length: length)
+                    range: utf16Range
                 )
             }
         }
@@ -226,32 +225,32 @@ enum NovelAttributedTextFactory {
         guard !startsAtParagraphBoundary else { return }
 
         for range in NovelParagraphIndentPlanner.indentedParagraphRangesAfterFirst(in: body) {
-            let location = body.distance(from: body.startIndex, to: range.lowerBound)
-            let length = body.distance(from: range.lowerBound, to: range.upperBound)
-            guard length > 0 else { continue }
+            let utf16Range = NSRange(range, in: body)
+            guard utf16Range.length > 0 else { continue }
             rendered.addAttribute(
                 .paragraphStyle,
                 value: laterParagraphStyle,
-                range: NSRange(location: bodyStartLocation + location, length: length)
+                range: NSRange(location: bodyStartLocation + utf16Range.location, length: utf16Range.length)
             )
         }
     }
 
     private static func titleRange(
-        from chapterTitleRange: NovelCharacterRange?,
+        from chapterTitleRange: NSRange?,
         in text: String
     ) -> NSRange? {
         guard let chapterTitleRange,
               chapterTitleRange.length > 0,
               chapterTitleRange.location >= 0,
-              chapterTitleRange.upperBound <= text.count else {
+              chapterTitleRange.location <= (text as NSString).length,
+              chapterTitleRange.length <= (text as NSString).length - chapterTitleRange.location else {
             return nil
         }
         return NSRange(location: chapterTitleRange.location, length: chapterTitleRange.length)
     }
 
     private static func applyInlineTextStyles(
-        _ inlineTextStyles: [NovelInlineTextStyleRange],
+        _ inlineTextStyles: [NovelRuntimeInlineTextStyle],
         to rendered: NSMutableAttributedString,
         text: String,
         settings: NovelReaderAppearanceSettings,
@@ -271,12 +270,13 @@ enum NovelAttributedTextFactory {
     }
 
     private static func textRange(
-        from range: NovelCharacterRange,
+        from range: NSRange,
         in text: String
     ) -> NSRange? {
         guard range.length > 0,
               range.location >= 0,
-              range.upperBound <= text.count else {
+              range.location <= (text as NSString).length,
+              range.length <= (text as NSString).length - range.location else {
             return nil
         }
         return NSRange(location: range.location, length: range.length)

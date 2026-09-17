@@ -518,31 +518,5 @@ enum NovelTextLikeAnchorEndpointResolver {
         )
     }
 
-    static func resolve(
-        start: NovelTextViewportSample,
-        endCharacter: NovelTextViewportSample,
-        startChapterIdentity: NovelChapterIdentity,
-        endChapterIdentity: NovelChapterIdentity
-    ) -> (
-        start: NovelTextViewportSemanticTextPosition,
-        end: NovelTextViewportSemanticTextPosition
-    ) {
-        resolve(
-            start: NovelTextViewportSemanticTextPosition(
-                chapterIdentity: startChapterIdentity,
-                textSegmentIdentity: start.textSegmentIdentity,
-                displayedTextOffset: start.displayedTextOffset,
-                progressInTextRange: 0
-            ),
-            endCharacter: NovelTextViewportSemanticTextPosition(
-                chapterIdentity: endChapterIdentity,
-                textSegmentIdentity: endCharacter.textSegmentIdentity,
-                displayedTextOffset: endCharacter.displayedTextOffset,
-                progressInTextRange: 0
-            ),
-            startChapterIdentity: startChapterIdentity,
-            endChapterIdentity: endChapterIdentity
-        )
-    }
 }
 #endif

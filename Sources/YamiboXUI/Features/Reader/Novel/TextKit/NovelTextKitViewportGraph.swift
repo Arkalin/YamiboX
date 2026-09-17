@@ -76,12 +76,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             lineOffset = 0
         }
         let utf16Offset = fragmentStart + lineOffset
-        guard let documentOffset = characterOffset(
-            in: result.viewportContext.document.text,
-            fromUTF16Offset: utf16Offset
-        ) else {
-            return nil
-        }
+        let documentOffset = NovelDocumentUTF16Offset(result.viewportContext.document.coordinates.alignedOffset(utf16Offset))
         guard let sample = result.viewportContext.document.sample(
             containingDocumentOffset: documentOffset,
             surfaceIdentity: surfaceIdentity,
@@ -110,7 +105,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
               let surfaceOriginY = surfaceOriginY(page: page),
               let location = textContentStorage.location(
                   textContentStorage.documentRange.location,
-                  offsetBy: documentOffset
+                  offsetBy: documentOffset.rawValue
               ),
               let fragment = textLayoutManager.textLayoutFragment(for: location),
               let lineFragment = fragment.textLineFragment(for: location, isUpstreamAffinity: true) else {
@@ -123,13 +118,13 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         return fragment.layoutFragmentFrame.minY + lineFragment.typographicBounds.midY - surfaceOriginY
     }
 
-    func characterDocumentOffset(
+    func documentUTF16Offset(
         surfaceIdentity: NovelReaderSurfaceIdentity,
         referencePoint: CGPoint
-    ) -> Int? {
+    ) -> NovelDocumentUTF16Offset? {
         guard let page = page(forSurfaceOrdinal: surfaceIdentity.ordinal),
               !page.ranges.isEmpty,
-              let pageCharacterRange = characterRange(for: page),
+              let pageDocumentRange = documentRange(for: page),
               let surfaceOriginY = surfaceOriginY(page: page),
               let fragment = closestLayoutFragment(
                   to: CGPoint(x: referencePoint.x, y: surfaceOriginY + referencePoint.y)
@@ -161,13 +156,8 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             lineOffset = 0
         }
         let utf16Offset = fragmentStart + lineOffset
-        guard let characterOffset = characterOffset(
-            in: result.viewportContext.document.text,
-            fromUTF16Offset: utf16Offset
-        ) else {
-            return nil
-        }
-        return min(max(characterOffset, pageCharacterRange.lowerBound), pageCharacterRange.upperBound)
+        let offset = NovelDocumentUTF16Offset(result.viewportContext.document.coordinates.alignedOffset(utf16Offset))
+        return min(max(offset, pageDocumentRange.lowerBound), pageDocumentRange.upperBound)
     }
 
     func selectionRects(
@@ -176,9 +166,9 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     ) -> [CGRect] {
         guard let page = page(forSurfaceOrdinal: surfaceIdentity.ordinal),
               !page.ranges.isEmpty,
-              let pageCharacterRange = characterRange(for: page),
-              let intersection = intersection(selectionRange.range, pageCharacterRange),
-              let utf16Range = utf16Range(in: result.viewportContext.document.text, characterRange: intersection),
+              let pageDocumentRange = documentRange(for: page),
+              let intersection = intersection(selectionRange.range, pageDocumentRange),
+              let utf16Range = utf16Range(for: intersection),
               let start = textContentStorage.location(textContentStorage.documentRange.location, offsetBy: utf16Range.location),
               let end = textContentStorage.location(start, offsetBy: utf16Range.length),
               let textRange = NSTextRange(location: start, end: end),
@@ -231,7 +221,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     ) {
         guard let page = page(forSurfaceOrdinal: surfaceIdentity.ordinal),
               let surfaceOriginY = surfaceOriginY(page: page),
-              let pageCharacterRange = characterRange(for: page) else {
+              let pageDocumentRange = documentRange(for: page) else {
             return
         }
 
@@ -257,9 +247,9 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         context.translateBy(x: bounds.minX, y: bounds.minY - surfaceOriginY)
         context.setFillColor(quoteBlockBackgroundColor().cgColor)
         for blockStyle in result.viewportContext.document.blockTextStyles where blockStyle.style == .quote {
-            let quoteRange = blockStyle.range.location..<blockStyle.range.upperBound
-            guard let visibleQuoteRange = intersection(quoteRange, pageCharacterRange),
-                  let utf16Range = utf16Range(in: result.viewportContext.document.text, characterRange: visibleQuoteRange),
+            let quoteRange = NovelDocumentUTF16Offset(blockStyle.range.location)..<NovelDocumentUTF16Offset(NSMaxRange(blockStyle.range))
+            guard let visibleQuoteRange = intersection(quoteRange, pageDocumentRange),
+                  let utf16Range = utf16Range(for: visibleQuoteRange),
                   let start = textContentStorage.location(
                     textContentStorage.documentRange.location,
                     offsetBy: utf16Range.location
@@ -318,7 +308,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             return false
         }
         let documentRange = page.frozenGeometry.map {
-            $0.documentStartOffset..<$0.documentEndOffset
+            $0.documentStartOffset.rawValue..<$0.documentEndOffset.rawValue
         }
         let clipMaxY = page.frozenGeometry.map {
             surfaceOriginY + $0.contentHeight
@@ -399,7 +389,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
               let documentOffset = result.viewportContext.document.documentOffset(forSurfaceRange: firstRange),
               let pageLocation = textContentStorage.location(
                 textContentStorage.documentRange.location,
-                offsetBy: documentOffset
+                offsetBy: documentOffset.rawValue
               ),
               let firstFragment = textLayoutManager.textLayoutFragment(for: pageLocation) else {
             return nil
@@ -438,7 +428,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         if let frozenGeometry = page.frozenGeometry {
             return textContentStorage.location(
                 textContentStorage.documentRange.location,
-                offsetBy: frozenGeometry.documentStartOffset
+                offsetBy: frozenGeometry.documentStartOffset.rawValue
             )
         }
         guard let firstRange = page.ranges.first,
@@ -447,11 +437,11 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         }
         return textContentStorage.location(
             textContentStorage.documentRange.location,
-            offsetBy: documentOffset
+            offsetBy: documentOffset.rawValue
         )
     }
 
-    private func characterRange(for page: NovelTextViewportIndexSurface) -> Range<Int>? {
+    private func documentRange(for page: NovelTextViewportIndexSurface) -> Range<NovelDocumentUTF16Offset>? {
         if let frozenGeometry = page.frozenGeometry,
            frozenGeometry.documentEndOffset > frozenGeometry.documentStartOffset {
             return frozenGeometry.documentStartOffset..<frozenGeometry.documentEndOffset
@@ -467,39 +457,18 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         return lowerBound..<upperBound
     }
 
-    private func intersection(_ lhs: Range<Int>, _ rhs: Range<Int>) -> Range<Int>? {
+    private func intersection(_ lhs: Range<NovelDocumentUTF16Offset>, _ rhs: Range<NovelDocumentUTF16Offset>) -> Range<NovelDocumentUTF16Offset>? {
         let lowerBound = max(lhs.lowerBound, rhs.lowerBound)
         let upperBound = min(lhs.upperBound, rhs.upperBound)
         guard upperBound > lowerBound else { return nil }
         return lowerBound..<upperBound
     }
 
-    private func characterOffset(in text: String, fromUTF16Offset offset: Int) -> Int? {
-        guard offset >= 0,
-              let utf16Index = text.utf16.index(
-                  text.utf16.startIndex,
-                  offsetBy: offset,
-                  limitedBy: text.utf16.endIndex
-              ),
-              let stringIndex = String.Index(utf16Index, within: text) else {
-            return nil
-        }
-        return text.distance(from: text.startIndex, to: stringIndex)
-    }
-
-    private func utf16Range(in text: String, characterRange: Range<Int>) -> NSRange? {
-        guard characterRange.lowerBound >= 0,
-              characterRange.upperBound >= characterRange.lowerBound,
-              let start = text.index(text.startIndex, offsetBy: characterRange.lowerBound, limitedBy: text.endIndex),
-              let end = text.index(text.startIndex, offsetBy: characterRange.upperBound, limitedBy: text.endIndex),
-              let utf16Start = start.samePosition(in: text.utf16),
-              let utf16End = end.samePosition(in: text.utf16) else {
-            return nil
-        }
-        return NSRange(
-            location: text.utf16.distance(from: text.utf16.startIndex, to: utf16Start),
-            length: text.utf16.distance(from: utf16Start, to: utf16End)
-        )
+    private func utf16Range(for range: Range<NovelDocumentUTF16Offset>) -> NSRange? {
+        let coordinates = result.viewportContext.document.coordinates
+        guard range.lowerBound.rawValue >= 0, range.upperBound.rawValue <= coordinates.utf16Count else { return nil }
+        let aligned = coordinates.alignedRange(range.lowerBound.rawValue..<range.upperBound.rawValue)
+        return NSRange(location: aligned.lowerBound, length: aligned.count)
     }
 
     private func quoteBlockBackgroundColor() -> UIColor {

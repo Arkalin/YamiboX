@@ -108,7 +108,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             ProcessInfo.processInfo.operatingSystemVersionString,
             platformName,
         ].joined(separator: "|")
-        result.fingerprints.textKitImplementation = "NSTextLayoutManager-TextKit2-v1"
+        result.fingerprints.textKitImplementation = "NSTextLayoutManager-TextKit2-UTF16-v2"
         let initialClipRect = surfaceRanges
             .prefix(2)
             .compactMap(\.frozenGeometry)
@@ -172,7 +172,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         contentStorage: NSTextContentStorage,
         layoutManager: NSTextLayoutManager,
         surfaceSize: CGSize,
-        semanticBreakOffsets: Set<Int> = []
+        semanticBreakOffsets: Set<NovelDocumentUTF16Offset> = []
     ) throws -> [NovelTextViewportDocumentSurfaceRange] {
         guard surfaceSize.width >= NovelReaderLayout.minimumTextLayoutWidth, surfaceSize.height > 0 else {
             throw NovelTextLayoutFailure.textKitIndexing
@@ -226,11 +226,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             return true
         }
 
-        let breakOffsets = Set(
-            semanticBreakOffsets.compactMap {
-                utf16Offset(in: attributedDocument.string, characterOffset: $0)
-            }
-        )
+        let breakOffsets = Set(semanticBreakOffsets.map(\.rawValue))
         let ranges = NovelTextSurfaceFragmentPartitioner.partition(
             segments,
             surfaceHeight: surfaceSize.height,
@@ -250,8 +246,8 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
 
     private static func semanticSurfaceBreakOffsets(
         for input: NovelTextLayoutPreparedInput
-    ) -> Set<Int> {
-        var breakOffsets = Set<Int>()
+    ) -> Set<NovelDocumentUTF16Offset> {
+        var breakOffsets = Set<NovelDocumentUTF16Offset>()
         var previousTextSegment: NovelAnnotatedSegment?
         var sawImageSincePreviousText = false
         let viewportDocument = input.viewportContextSeed.document
@@ -285,7 +281,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
 
     private static func splitSurfaceRangesAtSemanticBreaks(
         _ surfaceRanges: [NovelTextViewportDocumentSurfaceRange],
-        breakOffsets: Set<Int>,
+        breakOffsets: Set<NovelDocumentUTF16Offset>,
         attributedDocument: NSAttributedString,
         contentStorage: NSTextContentStorage,
         layoutManager: NSTextLayoutManager
@@ -306,15 +302,15 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                 let startOffset = cuts[index]
                 let endOffset = cuts[index + 1]
                 guard let clipRect = lineClipRect(
-                    startOffset: startOffset,
-                    endOffset: endOffset,
+                    startOffset: startOffset.rawValue,
+                    endOffset: endOffset.rawValue,
                     attributedDocument: attributedDocument,
                     contentStorage: contentStorage,
                     layoutManager: layoutManager
                 ),
                     let splitRange = viewportDocumentPageRange(
                         from: attributedDocument,
-                        range: NSRange(location: startOffset, length: endOffset - startOffset),
+                        range: NSRange(location: startOffset.rawValue, length: endOffset - startOffset),
                         clipRect: clipRect
                     ) else {
                     continue
@@ -397,18 +393,13 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         var deviationCount = 0
         for surfaceRange in surfaceRanges {
             guard let geometry = surfaceRange.frozenGeometry,
-                  let utf16Range = utf16Range(
-                      in: attributedDocument.string,
-                      characterStart: surfaceRange.startOffset,
-                      characterEnd: surfaceRange.endOffset
-                  ),
                   let start = contentStorage.location(
                       documentStart,
-                      offsetBy: utf16Range.location
+                      offsetBy: surfaceRange.startOffset.rawValue
                   ),
                   let end = contentStorage.location(
                       start,
-                      offsetBy: utf16Range.length
+                      offsetBy: surfaceRange.endOffset - surfaceRange.startOffset
                   ),
                   let textRange = NSTextRange(location: start, end: end) else {
                 throw NovelTextLayoutFailure.geometryValidation
@@ -434,69 +425,37 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         return deviationCount
     }
 
-    private static func utf16Range(
-        in text: String,
-        characterStart: Int,
-        characterEnd: Int
-    ) -> NSRange? {
-        guard characterStart >= 0,
-              characterEnd >= characterStart,
-              let start = text.index(text.startIndex, offsetBy: characterStart, limitedBy: text.endIndex),
-              let end = text.index(text.startIndex, offsetBy: characterEnd, limitedBy: text.endIndex) else {
-            return nil
-        }
-        return NSRange(
-            location: text.utf16.distance(from: text.utf16.startIndex, to: start.samePosition(in: text.utf16)!),
-            length: text.utf16.distance(from: start.samePosition(in: text.utf16)!, to: end.samePosition(in: text.utf16)!)
-        )
-    }
-
-    private static func utf16Offset(
-        in text: String,
-        characterOffset: Int
-    ) -> Int? {
-        guard characterOffset >= 0,
-              let index = text.index(text.startIndex, offsetBy: characterOffset, limitedBy: text.endIndex),
-              let utf16Index = index.samePosition(in: text.utf16) else {
-            return nil
-        }
-        return text.utf16.distance(from: text.utf16.startIndex, to: utf16Index)
-    }
-
     private static func viewportDocumentPageRange(
         from attributedText: NSAttributedString,
         range: NSRange,
         clipRect: CGRect
     ) -> NovelTextViewportDocumentSurfaceRange? {
         let text = attributedText.string
-        let textLength = text.utf16.count
-        let pageCharacterStart = max(0, min(range.location, textLength))
-        let nextCharacterEnd = min(range.location + range.length, textLength)
+        let textLength = attributedText.length
+        let pageUTF16Start = max(0, min(range.location, textLength))
+        let nextUTF16End = min(range.location + range.length, textLength)
         let trimmedEnd = max(
-            trimmedUTF16Boundary(in: text, from: pageCharacterStart, to: nextCharacterEnd),
-            pageCharacterStart
+            trimmedUTF16Boundary(in: text, from: pageUTF16Start, to: nextUTF16End),
+            pageUTF16Start
         )
-        guard trimmedEnd > pageCharacterStart else { return nil }
+        guard trimmedEnd > pageUTF16Start else { return nil }
 
         let candidateText = attributedText.attributedSubstring(
-            from: NSRange(location: pageCharacterStart, length: trimmedEnd - pageCharacterStart)
+            from: NSRange(location: pageUTF16Start, length: trimmedEnd - pageUTF16Start)
         ).string
         let trimmedLeadingText = trimmingLeadingPaginationWhitespace(candidateText)
         let leadingTrimmed = candidateText.utf16.count - trimmedLeadingText.utf16.count
-        let effectiveStart = pageCharacterStart + leadingTrimmed
-        guard effectiveStart < trimmedEnd,
-              let characterStart = characterOffset(in: text, fromUTF16Offset: effectiveStart),
-              let characterEnd = characterOffset(in: text, fromUTF16Offset: trimmedEnd),
-              characterEnd > characterStart else {
-            return nil
-        }
+        let effectiveStart = pageUTF16Start + leadingTrimmed
+        guard effectiveStart < trimmedEnd else { return nil }
+        let documentStart = NovelDocumentUTF16Offset(effectiveStart)
+        let documentEnd = NovelDocumentUTF16Offset(trimmedEnd)
 
         return NovelTextViewportDocumentSurfaceRange(
-            startOffset: characterStart,
-            endOffset: characterEnd,
+            startOffset: documentStart,
+            endOffset: documentEnd,
             frozenGeometry: NovelTextViewportFrozenGeometry(
-                documentStartOffset: characterStart,
-                documentEndOffset: characterEnd,
+                documentStartOffset: documentStart,
+                documentEndOffset: documentEnd,
                 documentClipMinY: clipRect.minY,
                 documentClipMaxY: clipRect.maxY,
                 contentHeight: NovelTextViewportFrozenGeometry.surfaceContentHeight(
@@ -538,19 +497,6 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             }
         }
         return end
-    }
-
-    private static func characterOffset(in text: String, fromUTF16Offset offset: Int) -> Int? {
-        guard offset >= 0, offset <= text.utf16.count,
-              let utf16Index = text.utf16.index(
-                  text.utf16.startIndex,
-                  offsetBy: offset,
-                  limitedBy: text.utf16.endIndex
-              ),
-              let stringIndex = String.Index(utf16Index, within: text) else {
-            return nil
-        }
-        return text.distance(from: text.startIndex, to: stringIndex)
     }
 
     private static func trimmingLeadingPaginationWhitespace(_ text: String) -> String {
