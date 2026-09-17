@@ -754,7 +754,7 @@ private struct ReaderChapterCommentFooter: View {
                     Text(L10n.string("reader.comments"))
                         .font(.footnote)
                         .fixedSize()
-                        .frame(minWidth: 44, minHeight: navigationAction == nil ? 44 : 0)
+                        .frame(minWidth: 44)
                         .expandedHitTarget()
                 }
                 .buttonStyle(.borderless)
