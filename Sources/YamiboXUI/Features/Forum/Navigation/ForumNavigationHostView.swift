@@ -50,7 +50,7 @@ public struct ForumNavigationHostView: View {
             await model.load()
         }
         .onChange(of: appModel.forumNavigationRequest?.id, initial: true) { _, _ in
-            guard let request = appModel.forumNavigationRequest else { return }
+            guard let request = appModel.claimForumNavigationRequest() else { return }
             navigator.route(request.url, source: request.source, title: request.title)
         }
         // `initial: true` also catches a Home Screen quick action tapped
@@ -58,7 +58,7 @@ public struct ForumNavigationHostView: View {
         // stamps the request while `RootTabView` is still bootstrapping, so
         // there's no prior value for a plain `.onChange` to transition from.
         .onChange(of: appModel.forumSearchRequest?.id, initial: true) { _, _ in
-            guard appModel.forumSearchRequest != nil else { return }
+            guard appModel.claimForumSearchRequest() != nil else { return }
             navigator.openSearch(fid: nil, fromBrowserList: true)
         }
         .forumTheme(theme)

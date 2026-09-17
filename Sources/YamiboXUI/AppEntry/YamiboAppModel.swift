@@ -60,6 +60,8 @@ public final class YamiboAppModel {
     public private(set) var suspendedMangaContext: MangaLaunchContext?
     public private(set) var forumNavigationRequest: ForumNavigationRequest?
     public private(set) var forumSearchRequest: ForumSearchRequest?
+    @ObservationIgnored private var claimedForumNavigationRequestID: UUID?
+    @ObservationIgnored private var claimedForumSearchRequestID: UUID?
     public private(set) var appThemePreset = AppThemePreset.classic
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
     let forumContentRefresh = ForumContentRefreshState()
@@ -219,6 +221,8 @@ public final class YamiboAppModel {
         suspendedMangaContext = nil
         forumNavigationRequest = nil
         forumSearchRequest = nil
+        claimedForumNavigationRequestID = nil
+        claimedForumSearchRequestID = nil
         clipboardForumLinkPrompt = nil
         forumContentRefresh.reset()
         (currentReaderSession ?? presentedReaderSession)?.close()
@@ -524,6 +528,22 @@ public final class YamiboAppModel {
     public func openNativeForumThread(url: URL, title: String?) {
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url, source: .readerOrigin, title: title)
+    }
+
+    /// Claim before starting navigation so remounting the host cannot replay
+    /// the request. Keep the payload for the startup reader-restore guard.
+    func claimForumNavigationRequest() -> ForumNavigationRequest? {
+        guard let request = forumNavigationRequest,
+              claimedForumNavigationRequestID != request.id else { return nil }
+        claimedForumNavigationRequestID = request.id
+        return request
+    }
+
+    func claimForumSearchRequest() -> ForumSearchRequest? {
+        guard let request = forumSearchRequest,
+              claimedForumSearchRequestID != request.id else { return nil }
+        claimedForumSearchRequestID = request.id
+        return request
     }
 
     public func openForumSearch() {
