@@ -130,7 +130,8 @@ final class ForumThreadReaderViewModel {
         progressSync = ProgressSyncModule(
             adapter: FavoriteLibraryProgressSyncAdapter(
                 readingProgressStore: dependencies.readingProgressStore,
-                browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
+                browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow,
+                settingsStore: dependencies.settingsStore
             )
         )
     }
@@ -175,7 +176,8 @@ final class ForumThreadReaderViewModel {
         progressSync = ProgressSyncModule(
             adapter: FavoriteLibraryProgressSyncAdapter(
                 readingProgressStore: readingProgressStore,
-                browsingHistoryWorkflow: browsingHistoryWorkflow
+                browsingHistoryWorkflow: browsingHistoryWorkflow,
+                settingsStore: settingsStore
             )
         )
     }
@@ -248,10 +250,9 @@ final class ForumThreadReaderViewModel {
         guard page == nil else { return }
         await refreshFavoriteState()
         var initialPage = context.initialPage
-        // Every entrance restores the saved position (browsing-history
-        // decision #8) unless the launch carries an explicit deep-link
-        // target — a specific post or a specific page wins over resume.
+        // Resume is opt-in. Explicit post/page links still take precedence.
         if context.targetPostID == nil, context.initialPage <= 1,
+           await settingsStoreProvider()?.load().readingProgress.savesNormalThreadProgress == true,
            let savedProgress = await readingProgressStoreProvider().load(for: .normalThread(threadID: context.thread.tid))?.thread {
             initialPage = max(1, savedProgress.lastPage)
             restoredAnchorPostID = savedProgress.anchorPostID

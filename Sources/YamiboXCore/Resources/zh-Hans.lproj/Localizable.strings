@@ -1155,6 +1155,9 @@
 "settings.section.favorites" = "收藏";
 "settings.section.reading" = "阅读";
 "settings.section.data_storage" = "数据与存储";
+"settings.reading_progress.title" = "阅读进度";
+"settings.reading_progress.save_normal_thread" = "保存普通贴阅读进度";
+"settings.reading_progress.footer" = "关闭后不显示或保存普通贴阅读进度，打开时从头阅读。已有进度保留，浏览记录不受影响。";
 "settings.clear_reading_progress" = "清理阅读进度";
 "settings.clear_browsing_history" = "清理浏览记录";
 "settings.confirm_clear_reading_progress" = "确认清理阅读进度";

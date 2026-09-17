@@ -19,6 +19,7 @@ final class BrowsingHistoryViewModel {
     var selectedCategory: BrowsingHistoryCategory?
     /// The configuration snapshot used to canonicalize the displayed rows.
     private(set) var boardReaderSettings = BoardReaderSettings()
+    private(set) var showsNormalThreadProgress = false
     var searchText = ""
     var isLoading = false
     var hasLoaded = false
@@ -96,10 +97,11 @@ final class BrowsingHistoryViewModel {
         reloadGeneration += 1
         let generation = reloadGeneration
         let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let settings = await settingsStore.load()
         let snapshot: BrowsingHistorySnapshot
         var homeFavoritedThreadIDs: Set<String>?
         do {
-            if showsPreviousReading, await settingsStore.load().system.homeShowsOnlyFavorites {
+            if showsPreviousReading, settings.system.homeShowsOnlyFavorites {
                 let document = try await favoriteLibraryStore.load()
                 homeFavoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
             }
@@ -115,6 +117,7 @@ final class BrowsingHistoryViewModel {
         let loadedEntries = snapshot.entries
         guard generation == reloadGeneration else { return }
         boardReaderSettings = boardReader
+        showsNormalThreadProgress = settings.readingProgress.savesNormalThreadProgress
         let scopedEntries = showsPreviousReading
             ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader, favoritedThreadIDs: homeFavoritedThreadIDs).readingEntries
             : loadedEntries

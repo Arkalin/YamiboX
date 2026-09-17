@@ -177,6 +177,7 @@ struct BrowsingHistoryView: View {
         BrowsingHistoryRow(
             entry: entry,
             category: model.effectiveCategory(for: entry),
+            showsNormalThreadProgress: model.showsNormalThreadProgress,
             coverURL: model.coverURLsByEntryID[entry.id],
             isFavorited: model.isFavorited(entry),
             canToggleFavorite: model.heartThreadID(for: entry) != nil,
@@ -364,6 +365,7 @@ private struct BrowsingHistoryRow: View {
     /// position-text format so the row reads like the reader it would
     /// actually open with.
     let category: BrowsingHistoryCategory
+    let showsNormalThreadProgress: Bool
     let coverURL: URL?
     let isFavorited: Bool
     let canToggleFavorite: Bool
@@ -416,6 +418,7 @@ private struct BrowsingHistoryRow: View {
         // shows its page under a now-小说 board rather than nothing.
         switch category {
         case .normal:
+            guard showsNormalThreadProgress else { return nil }
             if let pageIndex = entry.pageIndex {
                 if let pageCount = entry.pageCount, pageCount > 1 {
                     return L10n.string("history.progress.page_of_total", String(pageIndex), String(pageCount))

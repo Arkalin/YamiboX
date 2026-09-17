@@ -13,6 +13,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var boardReader: BoardReaderSettings
     public var appearance: AppAppearanceSettings
     public var chapterComments: ChapterCommentFilterSettings
+    public var readingProgress: ReadingProgressSettings
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -23,7 +24,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
         system: SystemSettings = .init(),
         boardReader: BoardReaderSettings = .init(),
         appearance: AppAppearanceSettings = .init(),
-        chapterComments: ChapterCommentFilterSettings = .init()
+        chapterComments: ChapterCommentFilterSettings = .init(),
+        readingProgress: ReadingProgressSettings = .init()
     ) {
         self.novelReader = novelReader
         self.novelOfflineCache = novelOfflineCache
@@ -34,6 +36,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.boardReader = boardReader
         self.appearance = appearance
         self.chapterComments = chapterComments
+        self.readingProgress = readingProgress
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -46,6 +49,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case boardReader
         case appearance
         case chapterComments
+        case readingProgress
     }
 
     /// Fields added after the aggregate shipped are optional so legacy payloads
@@ -62,7 +66,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
             system: try container.decode(SystemSettings.self, forKey: .system),
             boardReader: try container.decode(BoardReaderSettings.self, forKey: .boardReader),
             appearance: try container.decodeIfPresent(AppAppearanceSettings.self, forKey: .appearance) ?? .init(),
-            chapterComments: try container.decodeIfPresent(ChapterCommentFilterSettings.self, forKey: .chapterComments) ?? .init()
+            chapterComments: try container.decodeIfPresent(ChapterCommentFilterSettings.self, forKey: .chapterComments) ?? .init(),
+            readingProgress: try container.decodeIfPresent(ReadingProgressSettings.self, forKey: .readingProgress) ?? .init()
         )
     }
 

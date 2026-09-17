@@ -8,6 +8,7 @@ import YamiboXCore
 final class SettingsReadingViewModel: AppSettingsPersisting {
     var novelOfflineCache = NovelOfflineCacheSettings()
     var chapterComments = ChapterCommentFilterSettings()
+    var readingProgress = ReadingProgressSettings()
     var isEditingCommentRule = false
     private(set) var pendingCommentRuleEdits = 0
     let commentFilterEngine = ChapterCommentFilterEngine()
@@ -26,11 +27,19 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
     func applyLoadedSettings(_ settings: AppSettings) {
         novelOfflineCache = settings.novelOfflineCache
         chapterComments = settings.chapterComments
+        readingProgress = settings.readingProgress
     }
 
     func restoreDefaultsAfterApplicationReset() {
         novelOfflineCache = NovelOfflineCacheSettings()
         chapterComments = ChapterCommentFilterSettings()
+        readingProgress = ReadingProgressSettings()
+    }
+
+    func updateSavesNormalThreadProgress(_ enabled: Bool) {
+        persistSettings(\.readingProgress.savesNormalThreadProgress, to: enabled, updateSettings: updateSettings) {
+            $0.readingProgress.savesNormalThreadProgress = enabled
+        }
     }
 
     // MARK: - Novel offline cache

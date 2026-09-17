@@ -196,13 +196,16 @@ public actor ProgressSyncModule {
 public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
     private let readingProgressStore: ReadingProgressStore
     private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
+    private let settingsStore: SettingsStore?
 
     public init(
         readingProgressStore: ReadingProgressStore,
-        browsingHistoryWorkflow: BrowsingHistoryWorkflow
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
+        settingsStore: SettingsStore?
     ) {
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
+        self.settingsStore = settingsStore
     }
 
     public func saveNovelReadingPosition(_ position: NovelReadingPosition) async throws {
@@ -226,11 +229,16 @@ public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
             _ = try await readingProgressStore.saveManga(position, date: activityDate, discardingOlderUpdate: true)
             await browsingHistoryWorkflow.refreshPosition(threadID: position.chapterThreadID, reader: .manga, date: activityDate)
         case let .thread(position):
-            _ = try await readingProgressStore.saveNormalThread(
-                threadID: position.threadID, page: position.page,
-                pageCount: position.pageCount, anchorPostID: position.anchorPostID,
-                date: activityDate, discardingOlderUpdate: true
-            )
+            // Read at write time, not enqueue time: a pending debounce or
+            // exit flush must honor a setting changed while the reader is open.
+            if await settingsStore?.load().readingProgress.savesNormalThreadProgress == true {
+                _ = try await readingProgressStore.saveNormalThread(
+                    threadID: position.threadID, page: position.page,
+                    pageCount: position.pageCount, anchorPostID: position.anchorPostID,
+                    date: activityDate, discardingOlderUpdate: true
+                )
+            }
+            // Visits and activity remain independent of resume persistence.
             if position.recordsBrowsingHistory {
                 await browsingHistoryWorkflow.refreshPosition(threadID: position.threadID, reader: .normal, date: activityDate)
             }

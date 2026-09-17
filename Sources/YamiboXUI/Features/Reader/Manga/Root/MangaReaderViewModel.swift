@@ -74,7 +74,8 @@ struct MangaReaderViewModelDependencies {
             progressSync: ProgressSyncModule(
                 adapter: FavoriteLibraryProgressSyncAdapter(
                     readingProgressStore: dependencies.readingProgressStore,
-                    browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow
+                    browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow,
+                    settingsStore: dependencies.settingsStore
                 )
             )
         )

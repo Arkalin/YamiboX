@@ -8,6 +8,21 @@ struct SettingsReadingView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle(
+                    L10n.string("settings.reading_progress.save_normal_thread"),
+                    isOn: Binding(
+                        get: { viewModel.readingProgress.savesNormalThreadProgress },
+                        set: { viewModel.updateSavesNormalThreadProgress($0) }
+                    )
+                )
+                .disabled(viewModel.isBusy)
+                .accessibilityIdentifier("save-normal-thread-progress")
+            } header: {
+                Text(L10n.string("settings.reading_progress.title"))
+            } footer: {
+                Text(L10n.string("settings.reading_progress.footer"))
+            }
             Section(L10n.string("settings.chapter_comments.title")) {
                 ForEach(ChapterCommentFilterScope.allCases, id: \.self) { scope in
                     NavigationLink {
