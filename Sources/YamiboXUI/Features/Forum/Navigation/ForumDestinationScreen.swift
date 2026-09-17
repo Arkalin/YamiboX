@@ -12,6 +12,14 @@ struct ForumDestinationScreen: View {
         switch destination {
         case .home:
             ForumHomeDestination(navigator: navigator)
+        case .browsingHistory:
+            BrowsingHistoryView(
+                dependencies: navigator.appModel.appContext.libraryDependencies,
+                appModel: navigator.appModel,
+                onOpenThread: { url, title in
+                    navigator.pushThreadLink(url: url, title: title)
+                }
+            )
         case let .board(fid, title, page):
             ForumBoardView(
                 model: ForumBoardViewModel(

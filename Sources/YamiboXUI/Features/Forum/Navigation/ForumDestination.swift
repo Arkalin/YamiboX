@@ -3,6 +3,8 @@ import YamiboXCore
 
 enum ForumDestination: Hashable {
     case home
+    /// The history entry hosted by the Mine navigation stack.
+    case browsingHistory
     case board(fid: String, title: String?, page: Int?)
     case search(fid: String?)
     case userSpace(uid: String?, name: String?, section: UserSpaceSection, subPage: UserSpaceSubPage)

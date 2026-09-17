@@ -9,7 +9,6 @@ public struct MineHomeView: View {
     @State private var isSettingsPushed = false
     @State private var isOfflineCacheQueuePushed = false
     @State private var isMyLikesPushed = false
-    @State private var isHistoryPushed = false
 
     private let settingsDependencies: SettingsDependencies
     private let sessionStore: SessionStore
@@ -119,7 +118,9 @@ public struct MineHomeView: View {
                         isMyLikesPushed = true
                     },
                     showHistory: {
-                        isHistoryPushed = true
+                        // Keep history and its thread pages in the same path
+                        // so a thread push preserves the history page below it.
+                        navigator.push(.browsingHistory)
                     }
                 )
                 MineSettingsSection(
@@ -148,12 +149,6 @@ public struct MineHomeView: View {
                     contentCoverStore: settingsDependencies.library.contentCoverStore,
                     favoriteLibraryStore: settingsDependencies.library.localFavoriteLibraryStore,
                     settingsStore: settingsDependencies.settingsStore,
-                    appModel: appModel
-                )
-            }
-            .navigationDestination(isPresented: $isHistoryPushed) {
-                BrowsingHistoryView(
-                    dependencies: settingsDependencies.library,
                     appModel: appModel
                 )
             }
