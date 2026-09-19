@@ -133,9 +133,15 @@ final class ForumThreadBlockBuilder {
         let classes = element.className().lowercased()
         if classes.contains("showcollapse_box") {
             commitText()
-            let titleNode = element.select(".showcollapse_title").first()
+            // Only consume this box's controls; nested boxes keep their own titles.
+            let controls = element.select(".showcollapse_title, .showcollapse_gather").array().filter { control in
+                control.parents().first(where: { $0.hasClass("showcollapse_box") })?
+                    .isSameDOMNode(as: element) == true
+            }
+            let titleNode = controls.first(where: { $0.hasClass("showcollapse_title") })
             let title = titleNode?.text().nilIfBlank
-            titleNode?.remove()
+            // The trailing web control is rendered as a native button by the UI.
+            controls.forEach { $0.remove() }
             let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: element.html())
             appendBlock(
                 .collapse(title: title, contentBlocks: contentBlocks),

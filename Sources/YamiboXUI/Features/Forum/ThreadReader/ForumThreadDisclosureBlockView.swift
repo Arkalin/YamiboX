@@ -21,6 +21,19 @@ struct ForumThreadDisclosureBlockView: View {
                 onURLTap: onURLTap
             )
                 .padding(.top, 8)
+
+            Button {
+                withAnimation {
+                    isExpanded = false
+                }
+            } label: {
+                Text(L10n.string("common.collapse"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.primaryText)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         } label: {
             Text(title)
                 .font(.subheadline.weight(.semibold))
