@@ -54,7 +54,7 @@ struct MineSidebarView: View {
                             .navigationBarBackButtonHidden(!canNavigate)
                     }
             }
-            .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 360)
+            .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 360)
         } detail: {
             ForumDestinationStackView(navigator: navigator) {
                 detailContent
