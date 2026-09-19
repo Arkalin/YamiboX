@@ -1432,8 +1432,6 @@
 "forum.composer.insert" = "插入";
 "forum.composer.advanced" = "高级";
 "forum.composer.redo" = "重做";
-"forum.composer.capability_unknown_short" = "权限待确认";
-"forum.composer.capability_unknown" = "站点未提供明确权限，提交时由服务器校验。";
 "forum.composer.preview" = "预览";
 "forum.composer.raw_parameters" = "原始参数";
 "forum.composer.parameters" = "参数";

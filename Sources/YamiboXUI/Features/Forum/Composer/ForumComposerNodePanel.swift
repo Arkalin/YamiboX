@@ -132,9 +132,6 @@ private struct ForumComposerNodePanelContent: View {
     @Environment(\.openURL) private var openURL
     var body: some View {
         Form {
-            if session.context.capability(for: model.request.tag) == .unknown {
-                Section { Label(L10n.string("forum.composer.capability_unknown"), systemImage: "questionmark.circle").font(.footnote).foregroundStyle(.secondary) }
-            }
             ForumComposerNodeProperties(model: model, context: session.context)
             ForumComposerNodeBody(model: model, context: session.context)
             if [.url, .email, .img, .audio, .media, .flash, .swf].contains(model.request.tag),

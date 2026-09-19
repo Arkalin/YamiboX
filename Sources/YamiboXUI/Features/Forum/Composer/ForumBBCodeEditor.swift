@@ -243,7 +243,7 @@ struct ForumBBCodeToolbar: View {
     }
     private func node(_ tag: ForumComposerTag) -> some View {
         Button { session.insertNode(tag) } label: {
-            Label(ForumComposerLabels.title(tag) + (session.context.capability(for: tag) == .unknown ? " · " + L10n.string("forum.composer.capability_unknown_short") : ""), systemImage: ForumComposerLabels.symbol(tag))
+            Label(ForumComposerLabels.title(tag), systemImage: ForumComposerLabels.symbol(tag))
         }.disabled(session.context.capability(for: tag) == .denied)
     }
 }
