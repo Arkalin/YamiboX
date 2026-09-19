@@ -194,7 +194,8 @@ public final class NovelReadingWorkflow {
 
     /// Fetch content independently of the transient bounds during presentation.
     package nonisolated(nonsending) func prepareInitialLoad(
-        initial: NovelReadingInitialPosition
+        initial: NovelReadingInitialPosition,
+        forceRefresh: Bool = false
     ) async throws -> NovelReadingPreparedInitialLoad {
         let resumePoint = initial.resumePoint
         let initialView = resumePoint?.view ?? context.initialView ?? 1
@@ -204,7 +205,9 @@ public final class NovelReadingWorkflow {
             view: max(1, initialView),
             authorID: Self.normalizedAuthorID(authorID) ?? Self.normalizedAuthorID(context.authorID)
         )
-        let pageLoad = try await repository.loadPageResult(request)
+        let pageLoad = forceRefresh
+            ? try await repository.loadPageIgnoringCacheResult(request)
+            : try await repository.loadPageResult(request)
         try Task.checkCancellation()
         return NovelReadingPreparedInitialLoad(initial: initial, request: request, pageLoad: pageLoad)
     }

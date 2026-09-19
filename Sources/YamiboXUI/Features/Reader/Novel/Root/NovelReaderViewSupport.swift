@@ -14,6 +14,7 @@ struct NovelReaderLoadingOverlayPresentation: Equatable, Sendable {
     init(
         isLoading: Bool,
         hasSurfaces: Bool,
+        isPreparingInitialPresentation: Bool,
         hasInitialLoadError: Bool = false,
         isApplyingAppearanceSettings: Bool,
         isNavigatingNovelReaderProjection: Bool = false,
@@ -25,7 +26,7 @@ struct NovelReaderLoadingOverlayPresentation: Equatable, Sendable {
             reason = .verticalRestore
         } else if isNavigatingNovelReaderProjection {
             reason = .novelReaderPageDocumentNavigation
-        } else if isLoading && !hasSurfaces && !hasInitialLoadError {
+        } else if !hasInitialLoadError && (isPreparingInitialPresentation || (isLoading && !hasSurfaces)) {
             reason = .initialContentLoad
         } else {
             reason = nil

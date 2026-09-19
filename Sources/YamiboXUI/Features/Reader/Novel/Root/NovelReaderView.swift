@@ -291,6 +291,13 @@ public struct NovelReaderView: View {
             .onChange(of: model.settings.readingMode) { _, _ in
                 novelTextSelectionController.clearSelection()
             }
+            .onChange(of: model.initialPresentationPhase) { _, phase in
+                guard phase == .restoring else { return }
+                restoreVerticalPositionIfNeeded()
+            }
+            .onChange(of: verticalRestore.verticalRestoreController.shouldConcealViewportContent) { _, concealed in
+                model.completeInitialPresentationIfReady(isRestoringViewport: concealed)
+            }
             // Appearance-scoped `.task` replacing the removed `.onReceive`
             // bridge. The reader stays the visible full-screen surface for
             // its whole session — its own panels are sheets/covers presented
@@ -347,6 +354,7 @@ public struct NovelReaderView: View {
                 Task { await loadLikedNovelImageAnchors() }
                 await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
                 await model.prepare(layout: currentLayout)
+                guard !Task.isCancelled else { return }
                 // `prepare` is what makes a semantic reader position
                 // available. Refreshing earlier always reads nil and leaves
                 // an existing bookmark looking like an add action.
@@ -721,6 +729,7 @@ public struct NovelReaderView: View {
         NovelReaderLoadingOverlayPresentation(
             isLoading: model.isLoading,
             hasSurfaces: !model.novelReaderSurfaces.isEmpty,
+            isPreparingInitialPresentation: model.initialPresentationPhase.concealsContent,
             hasInitialLoadError: model.errorMessage != nil,
             isApplyingAppearanceSettings: model.isApplyingAppearanceSettings,
             isNavigatingNovelReaderProjection: model.isNavigatingNovelReaderProjection,
@@ -1409,6 +1418,9 @@ public struct NovelReaderView: View {
         verticalRestore.restoreVerticalPositionIfNeeded(
             model: model,
             scrollCoordinator: verticalScrollCoordinator
+        )
+        model.completeInitialPresentationIfReady(
+            isRestoringViewport: verticalRestore.verticalRestoreController.shouldConcealViewportContent
         )
     }
 
