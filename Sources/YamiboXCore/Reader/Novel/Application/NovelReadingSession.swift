@@ -96,6 +96,7 @@ package struct NovelReadingSession: Sendable {
     private var surfaces: [NovelTextViewportIndexSurface]
     private var chapters: [NovelReaderChapter]
     private var spreads: [NovelReadingSpread]
+    private var chapterTitlesBySurfaceOrdinal: [String?] = []
     private var usesPagedSpread: Bool
     private var pageTurnDirection: ReaderPageTurnDirection
     private var pendingResumePoint: NovelResumePoint?
@@ -459,7 +460,7 @@ package struct NovelReadingSession: Sendable {
         let target = NovelReaderResolvedSurfaceTarget(
             surfaceOrdinal: normalizedSurfaceOrdinal,
             intraSurfaceProgress: intraSurfaceProgress,
-            documentView: displayedViewCandidate(for: normalizedSurfaceOrdinal, surfaces: surfaces)
+            documentView: displayedViewCandidate(for: normalizedSurfaceOrdinal, surfaces: surfaces, spreads: spreads)
         )
         setCurrentLocation(target)
     }
@@ -472,11 +473,9 @@ package struct NovelReadingSession: Sendable {
         )
         snapshot.selectedSurfaceOrdinal = normalizedSurfaceOrdinal
         snapshot.currentSurfaceIntraProgress = min(max(target.intraSurfaceProgress, 0), 1)
-        snapshot.currentChapterTitle = chapterTitle(
-            forSurfaceOrdinal: normalizedSurfaceOrdinal,
-            surfaces: surfaces,
-            chapters: chapters
-        )
+        snapshot.currentChapterTitle = chapterTitlesBySurfaceOrdinal.indices.contains(normalizedSurfaceOrdinal)
+            ? chapterTitlesBySurfaceOrdinal[normalizedSurfaceOrdinal]
+            : chapters.last { $0.startIndex <= normalizedSurfaceOrdinal }?.title
     }
 
     private func validateCommittedLayoutResult(
@@ -498,17 +497,17 @@ package struct NovelReadingSession: Sendable {
         let viewportSurfaces = layoutResult.viewportIndex.surfaces
         let renderedChapters = layoutResult.viewportIndex.novelReaderChapters
         let surfaces = viewportSurfaces
+        let spreads = NovelReadingSpread.makeSpreads(from: surfaces)
         let fallbackTarget = NovelReaderResolvedSurfaceTarget(
             surfaceOrdinal: max(0, min(preferredSurfaceOrdinal, max(surfaces.count - 1, 0))),
             intraSurfaceProgress: 0,
-            documentView: displayedViewCandidate(for: preferredSurfaceOrdinal, surfaces: surfaces)
+            documentView: displayedViewCandidate(for: preferredSurfaceOrdinal, surfaces: surfaces, spreads: spreads)
         )
         let effectiveResumePoint = pendingResumePoint ?? preferredResumePoint
         // Restore using the incoming document's coordinate index, not the
         // previous generation (or nil on the first open).
         self.layoutResult = layoutResult
         let resolvedTarget = effectiveResumePoint.flatMap { resolveResumePoint($0, in: surfaces) } ?? fallbackTarget
-        let spreads = NovelReadingSpread.makeSpreads(from: surfaces)
         let normalizedSurfaceOrdinal = normalizedPagedSurfaceOrdinal(
             resolvedTarget.surfaceOrdinal,
             surfaces: surfaces,
@@ -517,6 +516,9 @@ package struct NovelReadingSession: Sendable {
         self.surfaces = surfaces
         self.chapters = renderedChapters
         self.spreads = spreads
+        chapterTitlesBySurfaceOrdinal = surfaces.indices.map {
+            chapterTitle(forSurfaceOrdinal: $0, surfaces: surfaces, chapters: renderedChapters)
+        }
         snapshot = NovelReadingSnapshot(
             selectedSurfaceOrdinal: normalizedSurfaceOrdinal,
             currentSurfaceIntraProgress: resolvedTarget.intraSurfaceProgress,
@@ -560,8 +562,11 @@ package struct NovelReadingSession: Sendable {
         preservedResumePoint = resumePoint
     }
 
-    private func displayedViewCandidate(for preferredSurfaceOrdinal: Int, surfaces: [NovelTextViewportIndexSurface]) -> Int {
-        let spreads = NovelReadingSpread.makeSpreads(from: surfaces)
+    private func displayedViewCandidate(
+        for preferredSurfaceOrdinal: Int,
+        surfaces: [NovelTextViewportIndexSurface],
+        spreads: [NovelReadingSpread]
+    ) -> Int {
         let normalizedIndex = normalizedPagedSurfaceOrdinal(preferredSurfaceOrdinal, surfaces: surfaces, spreads: spreads)
         guard surfaces.indices.contains(normalizedIndex) else {
             return currentProjection.view
@@ -579,13 +584,23 @@ package struct NovelReadingSession: Sendable {
         }
 
         let normalizedIndex = max(0, min(surfaceOrdinal, max(surfaces.count - 1, 0)))
-        return spreads.first(where: { spread in
-            spread.leftSurfaceIndex == normalizedIndex || spread.rightSurfaceIndex == normalizedIndex
-        })?.index ?? 0
+        // Spreads are ordered and disjoint, including odd document tails.
+        var lower = 0
+        var upper = spreads.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if (spreads[middle].rightSurfaceIndex ?? spreads[middle].leftSurfaceIndex) < normalizedIndex {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        guard spreads.indices.contains(lower), spreads[lower].leftSurfaceIndex <= normalizedIndex else { return 0 }
+        return spreads[lower].index
     }
 
     private func progressSurfaceIndex(forSpreadIndex spreadIndex: Int, spreads: [NovelReadingSpread]) -> Int {
-        guard let spread = spreads.first(where: { $0.index == spreadIndex }) ?? spreads.last else {
+        guard let spread = spreads.indices.contains(spreadIndex) ? spreads[spreadIndex] : spreads.last else {
             return 0
         }
         switch pageTurnDirection {
@@ -853,11 +868,10 @@ package struct NovelReadingSession: Sendable {
     }
 
     private func resolveViewportSample(_ sample: NovelTextViewportSample) -> NovelReaderResolvedSurfaceTarget? {
-        guard let surface = surfaces.first(where: {
-            $0.surfaceOrdinal == sample.surfaceIdentity.ordinal && $0.documentView == sample.documentView
-        }) else {
-            return nil
-        }
+        let ordinal = sample.surfaceIdentity.ordinal
+        guard surfaces.indices.contains(ordinal) else { return nil }
+        let surface = surfaces[ordinal]
+        guard surface.surfaceOrdinal == ordinal, surface.documentView == sample.documentView else { return nil }
 
         guard surface.contains(
             textSegmentIdentity: sample.textSegmentIdentity,

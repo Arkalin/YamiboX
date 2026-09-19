@@ -552,9 +552,7 @@ public struct NovelReaderView: View {
         let information = ReaderPageInformationPresentation(isPaged: true,
             isImmersive: model.settings.isImmersiveModeEnabled, isChromeVisible: bindings.isChromeVisible)
         let attachedInformation = ReaderAttachedInformationConfiguration(
-            pages: model.novelReaderPresentation.map {
-                NovelAttachedPageInformation.pages(presentation: $0, workTitle: model.title, information: information)
-            } ?? [],
+            pages: model.attachedPageInformation(workTitle: model.title, information: information),
             presentation: information, selectedIndex: model.pagedViewportSelectionIndex,
             backgroundStyle: model.settings.backgroundStyle, topInset: topInset, bottomInset: bottomInset,
             titleSidePadding: model.navigation.canNavigateForward ? 128 : 76,
@@ -564,6 +562,8 @@ public struct NovelReaderView: View {
             if effectivePagedSettings.pagedTurnStyle == .pageCurl {
                 NovelReaderPagedPageCurlViewport(
                     attachedInformation: attachedInformation,
+                    structureID: model.presentationStructure?.id,
+                    sequence: model.pageCurlSequence,
                     spreads: model.presentationSpreads,
                     surfaces: model.novelReaderSurfaces,
                     settings: displaySettings,
@@ -594,6 +594,7 @@ public struct NovelReaderView: View {
             } else {
                 NovelReaderPagedCollectionViewport(
                     attachedInformation: attachedInformation,
+                    structureID: model.presentationStructure?.id,
                     itemSource: model.isTwoPageSpreadActive
                         ? .spreads(model.presentationSpreads)
                         : .surfaces,
@@ -634,6 +635,7 @@ public struct NovelReaderView: View {
             settings: model.settings, usesPadPresentation: isPadDevice
         ).contentInsets.leading
         return NovelReaderVerticalViewportScrollView(
+            structureID: model.presentationStructure?.id,
             surfaces: model.novelReaderSurfaces,
             settings: displaySettings,
             refererURL: model.forumURL,

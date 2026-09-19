@@ -17,20 +17,20 @@ struct NovelReaderPagedPageSurfaceContainer<Content: View>: View {
 }
 
 struct NovelReaderPagedViewportContentIdentity: Equatable {
-    var surfaces: [NovelReaderSurface]
+    var structureID: UUID?
     var settings: NovelReaderAppearanceSettings
     var refererURL: URL
     var topInset: CGFloat
     var bottomInset: CGFloat
 
     init(
-        surfaces: [NovelReaderSurface],
+        structureID: UUID?,
         settings: NovelReaderAppearanceSettings,
         refererURL: URL,
         topInset: CGFloat,
         bottomInset: CGFloat
     ) {
-        self.surfaces = surfaces
+        self.structureID = structureID
         self.settings = settings
         self.settings.isImmersiveModeEnabled = false
         self.refererURL = refererURL
@@ -40,7 +40,7 @@ struct NovelReaderPagedViewportContentIdentity: Equatable {
 }
 
 struct NovelReaderPagedSpreadViewportContentIdentity: Equatable {
-    var spreads: [NovelReaderPresentationSpread]
+    var usesTwoPageSpread: Bool
     var content: NovelReaderPagedViewportContentIdentity
 }
 

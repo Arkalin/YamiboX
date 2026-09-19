@@ -26,8 +26,11 @@ struct NovelReaderPagedPageCurlLeaf: Hashable {
 }
 
 struct NovelReaderPagedPageCurlSequence: Equatable {
-    var leaves: [NovelReaderPagedPageCurlLeaf]
-    var usesTwoPageSpread: Bool
+    let leaves: [NovelReaderPagedPageCurlLeaf]
+    let usesTwoPageSpread: Bool
+    private let indexesBySelection: [Int: [Int]]
+
+    static let empty = NovelReaderPagedPageCurlSequence(surfaces: [], spreads: [], usesTwoPageSpread: false)
 
     init(
         surfaces: [NovelReaderSurface],
@@ -73,6 +76,7 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
             )
             leaves = orderedLeaves.isEmpty ? Self.emptySingleLeaves : Self.indexedLeaves(from: orderedLeaves)
         }
+        indexesBySelection = Dictionary(grouping: leaves, by: \.selectionIndex).mapValues { $0.map(\.index) }
     }
 
     private static var emptySingleLeaves: [NovelReaderPagedPageCurlLeaf] {
@@ -96,9 +100,7 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
     func leafIndexes(forSelectionIndex selectionIndex: Int) -> [Int] {
         guard !leaves.isEmpty else { return [] }
         let clampedSelection = min(max(selectionIndex, 0), max(pageCount - 1, 0))
-        let indexes = leaves
-            .filter { $0.selectionIndex == clampedSelection }
-            .map(\.index)
+        let indexes = indexesBySelection[clampedSelection] ?? []
         if indexes.isEmpty {
             return [0, 1].filter { leaves.indices.contains($0) }
         }
@@ -146,6 +148,8 @@ import UIKit
 
 struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     var attachedInformation = ReaderAttachedInformationConfiguration()
+    let structureID: UUID?
+    let sequence: NovelReaderPagedPageCurlSequence
     let spreads: [NovelReaderPresentationSpread]
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
@@ -180,20 +184,11 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         readerThemeUIColor(for: settings.backgroundStyle, colorScheme: colorScheme)
     }
 
-    private var sequence: NovelReaderPagedPageCurlSequence {
-        NovelReaderPagedPageCurlSequence(
-            surfaces: surfaces,
-            spreads: spreads,
-            usesTwoPageSpread: usesTwoPageSpread,
-            pageTurnDirection: settings.pageTurnDirection
-        )
-    }
-
     private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity {
         NovelReaderPagedSpreadViewportContentIdentity(
-            spreads: spreads,
+            usesTwoPageSpread: usesTwoPageSpread,
             content: NovelReaderPagedViewportContentIdentity(
-                surfaces: surfaces,
+                structureID: structureID,
                 settings: settings,
                 refererURL: refererURL,
                 topInset: topInset,

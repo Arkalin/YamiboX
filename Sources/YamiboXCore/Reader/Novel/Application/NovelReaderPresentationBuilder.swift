@@ -6,23 +6,14 @@ import Foundation
 /// to workflow fields means a presentation can never observe half-committed
 /// workflow state, and the mapping is testable without a live workflow.
 enum NovelReaderPresentationBuilder {
-    /// Moved verbatim from `NovelReadingWorkflow.makePresentation`. The only
-    /// signature addition is `fallbackLayout:`, which replaces what used to be
-    /// an implicit read of the workflow's committed `layout` field: it supplies
-    /// the readable size only when `layoutResult` is nil (a presentation built
-    /// before any layout pass has produced a result). Callers pass the
-    /// workflow's committed layout — never a transaction's incoming layout —
-    /// to preserve that original binding.
-    static func makePresentation(
+    /// Builds only for a new content/layout generation. Candidates remain
+    /// transaction-local until the corresponding runtime commits.
+    static func makeStructure(
         snapshot: NovelReadingSnapshot,
         layoutResult: NovelTextLayoutResult?,
         generation: UInt64,
-        revision: UInt64,
-        settings: NovelReaderAppearanceSettings,
-        fallbackLayout: NovelReaderLayout,
-        usesTwoPageSpread: Bool,
-        pageLoadSource: NovelReaderProjectionLoadSource
-    ) -> NovelReaderPresentation {
+        fallbackLayout: NovelReaderLayout
+    ) -> NovelReaderPresentationStructure {
         let readableSize = layoutResult?.viewportContext.identity.layout.readableFrame.size ?? fallbackLayout.readableFrame.size
         let indexSurfaces = (layoutResult?.viewportIndex.surfaces ?? []).sorted { lhs, rhs in
             lhs.surfaceOrdinal < rhs.surfaceOrdinal
@@ -79,7 +70,24 @@ enum NovelReaderPresentationBuilder {
                 chapterTitle: spread.chapterTitle
             )
         }
-        let selectedSurfaceIndex = surfaceIndexByOrdinal[snapshot.selectedSurfaceOrdinal]
+        return NovelReaderPresentationStructure(
+            generation: generation,
+            resolvedAuthorID: snapshot.currentAuthorID,
+            surfaces: surfaces,
+            spreads: spreads,
+            chapters: layoutResult?.viewportIndex.novelReaderChapters ?? []
+        )
+    }
+
+    static func makePresentation(
+        snapshot: NovelReadingSnapshot,
+        structure: NovelReaderPresentationStructure,
+        revision: UInt64,
+        settings: NovelReaderAppearanceSettings,
+        usesTwoPageSpread: Bool,
+        pageLoadSource: NovelReaderProjectionLoadSource
+    ) -> NovelReaderPresentation {
+        let selectedSurfaceIndex = structure.surfaceIndexByOrdinal[snapshot.selectedSurfaceOrdinal]
         let readingState = NovelReaderReadingState(
             currentView: snapshot.currentView,
             maxView: snapshot.maxView,
@@ -91,18 +99,17 @@ enum NovelReaderPresentationBuilder {
             readingMode: settings.readingMode,
             usesTwoPageSpread: usesTwoPageSpread,
             pageTurnDirection: settings.pageTurnDirection,
-            surfaces: surfaces,
+            structure: structure,
             selectedSurfaceIndex: selectedSurfaceIndex ?? 0,
-            spreads: spreads,
             readingState: readingState
         )
         return NovelReaderPresentation(
-            generation: generation,
+            generation: structure.generation,
             revision: revision,
-            surfaces: surfaces,
-            selectedSurfaceIdentity: surfaceIdentityByOrdinal[snapshot.selectedSurfaceOrdinal],
-            spreads: spreads,
-            chapters: layoutResult?.viewportIndex.novelReaderChapters ?? [],
+            surfaces: structure.surfaces,
+            selectedSurfaceIdentity: selectedSurfaceIndex.map { structure.surfaces[$0].identity },
+            spreads: structure.spreads,
+            chapters: structure.chapters,
             committedSettings: settings,
             readingState: readingState,
             pageLoadSource: pageLoadSource,

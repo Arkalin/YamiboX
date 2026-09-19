@@ -4,6 +4,7 @@ import YamiboXCore
 enum NovelReaderImagePrefetchPlan {
     static func sources(
         presentation: NovelReaderPresentation,
+        structure: NovelReaderPresentationStructure? = nil,
         usesTwoPageSpread: Bool,
         threadID: String,
         fallbackAuthorID: String?
@@ -15,7 +16,7 @@ enum NovelReaderImagePrefetchPlan {
         let offsets = [0, 1, 2, 3, -1, -2, -3]
         let surfaceIndices: [Int]
         if usesTwoPageSpread,
-           let spreadIndex = presentation.spreads.firstIndex(where: {
+           let spreadIndex = structure?.spreadIndexBySurfaceIndex[selectedIndex] ?? presentation.spreads.firstIndex(where: {
                $0.leftSurfaceIndex == selectedIndex || $0.rightSurfaceIndex == selectedIndex
            }) {
             surfaceIndices = offsets.flatMap { offset -> [Int] in

@@ -54,15 +54,18 @@ public struct NovelReadingCacheContext: Equatable, Sendable {
 
 public struct NovelReadingWorkflowState: Equatable, Sendable {
     package var snapshot: NovelReadingSnapshot
+    package var presentationStructure: NovelReaderPresentationStructure?
     public var presentation: NovelReaderPresentation?
     public var cachedViews: Set<Int>
 
     package init(
         snapshot: NovelReadingSnapshot,
+        presentationStructure: NovelReaderPresentationStructure? = nil,
         presentation: NovelReaderPresentation? = nil,
         cachedViews: Set<Int> = []
     ) {
         self.snapshot = snapshot
+        self.presentationStructure = presentationStructure
         self.presentation = presentation
         self.cachedViews = cachedViews
     }
@@ -89,6 +92,7 @@ package struct NovelReadingWorkflowDebugState: Equatable, Sendable {
     package var fingerprints: NovelTextLayoutFingerprints?
     package var runtime: NovelTextViewportRuntimeDiagnostics
     package var transactions: NovelTextViewportRuntimeTransactionDiagnostics
+    package var presentation: NovelReaderPresentationDiagnostics
 }
 
 public typealias NovelReadingWorkflowRuntimeUpdatePreparation = @Sendable (
@@ -128,6 +132,7 @@ public final class NovelReadingWorkflow {
     /// assignment must keep it in sync or `shouldRebuildPresentation`'s
     /// accumulated-progress comparison drifts.
     private var lastPublishedSnapshot: NovelReadingSnapshot?
+    private var presentationDiagnostics = NovelReaderPresentationDiagnostics()
     private var currentProjection: NovelReaderProjection?
     private var prefetchedProjection: NovelReaderProjection?
     private var currentLoadSource: NovelReaderProjectionLoadSource = .online
@@ -158,7 +163,8 @@ public final class NovelReadingWorkflow {
             viewportSurfaces: viewportRuntime.currentResult?.viewportIndex.surfaces ?? [],
             fingerprints: viewportRuntime.currentResult?.fingerprints,
             runtime: viewportRuntime.diagnostics,
-            transactions: viewportRuntime.runtimeTransactionDiagnostics
+            transactions: viewportRuntime.runtimeTransactionDiagnostics,
+            presentation: presentationDiagnostics
         )
     }
 
@@ -311,6 +317,7 @@ public final class NovelReadingWorkflow {
     public func commitSurfaceAppearance(_ settings: NovelReaderAppearanceSettings) -> NovelReadingWorkflowState? {
         guard let state,
               let session,
+              let structure = state.presentationStructure,
               state.presentation?.generation == viewportRuntime.currentGeneration else {
             self.settings = settings
             return nil
@@ -319,13 +326,12 @@ public final class NovelReadingWorkflow {
         let revision = (state.presentation?.revision ?? 0) + 1
         let nextState = NovelReadingWorkflowState(
             snapshot: session.snapshot,
+            presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: session.snapshot,
-                layoutResult: viewportRuntime.currentResult,
-                generation: viewportRuntime.currentGeneration,
+                structure: structure,
                 revision: revision,
                 settings: settings,
-                fallbackLayout: layout,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
@@ -502,21 +508,15 @@ public final class NovelReadingWorkflow {
             for: runtime,
             around: snapshot.selectedSurfaceOrdinal
         )
+        let structure = makePresentationStructure(snapshot: snapshot, result: runtime.result, generation: runtime.generation)
         let state = NovelReadingWorkflowState(
             snapshot: snapshot,
+            presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
-                layoutResult: runtime.result,
-                generation: runtime.generation,
+                structure: structure,
                 revision: 0,
                 settings: settings,
-                // Deliberately the committed field, not the transaction's
-                // (possibly new) layout: this preserves the exact binding from
-                // when makePresentation was an instance method reading
-                // `self.layout`. It only matters as the readable-size fallback
-                // when `layoutResult` is nil, which a runtime transaction's
-                // non-optional `result` never is.
-                fallbackLayout: self.layout,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
@@ -538,7 +538,7 @@ public final class NovelReadingWorkflow {
             currentLoadSource: currentLoadSource,
             prefetchedLoadSource: prefetchedLoadSource,
             currentAuthorID: currentAuthorID,
-            currentProjectionSurfaceCount: session.surfaceCount(in: snapshot.currentView)
+            currentProjectionSurfaceCount: structure.surfaceIndexesByView[snapshot.currentView]?.count ?? 0
         )
     }
 
@@ -568,7 +568,7 @@ public final class NovelReadingWorkflow {
         guard let presentation = state?.presentation,
               presentation.generation == surfaceIdentity.generation,
               presentation.revision == presentationRevision,
-              presentation.surfaces.contains(where: { $0.identity == surfaceIdentity }) else {
+              presentation.surfaceIndex(for: surfaceIdentity) != nil else {
             return nil
         }
         let previousSnapshot = session?.snapshot
@@ -600,7 +600,7 @@ public final class NovelReadingWorkflow {
         guard let presentation = state?.presentation,
               presentation.generation == surfaceIdentity.generation,
               presentation.revision == presentationRevision,
-              presentation.surfaces.contains(where: { $0.identity == surfaceIdentity }) else {
+              presentation.surfaceIndex(for: surfaceIdentity) != nil else {
             return nil
         }
         let previousSnapshot = session?.snapshot
@@ -802,9 +802,7 @@ public final class NovelReadingWorkflow {
     public nonisolated(nonsending) func prefetchIfNeeded(near surfaceIdentity: NovelReaderSurfaceIdentity) async -> NovelReadingWorkflowState? {
         guard let currentProjection else { return nil }
         guard surfaceIdentity.generation == viewportRuntime.currentGeneration,
-              viewportRuntime.currentResult?.viewportIndex.surfaces.contains(where: {
-                  $0.surfaceOrdinal == surfaceIdentity.ordinal
-              }) == true else {
+              state?.presentationStructure?.surfaceIndexByOrdinal[surfaceIdentity.ordinal] != nil else {
             return nil
         }
         guard currentProjection.view < currentProjection.maxView else { return nil }
@@ -1008,7 +1006,7 @@ public final class NovelReadingWorkflow {
             return nil
         }
         currentAuthorID = snapshot.currentAuthorID ?? currentAuthorID
-        currentProjectionSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
+        currentProjectionSurfaceCount = state?.presentationStructure?.surfaceIndexesByView[snapshot.currentView]?.count ?? 0
         let cachedViews = if refreshCachedViews {
             await repository.cachedViews(
                 for: context.threadID,
@@ -1023,25 +1021,38 @@ public final class NovelReadingWorkflow {
     }
 
     private func updateStateFromSession(cachedViews: Set<Int>) -> NovelReadingWorkflowState? {
+        NovelReaderPerformance.measure("position") {
+            makeStateFromSession(cachedViews: cachedViews)
+        }
+    }
+
+    private func makeStateFromSession(cachedViews: Set<Int>) -> NovelReadingWorkflowState? {
         guard let snapshot = session?.snapshot else {
             return nil
         }
         currentAuthorID = snapshot.currentAuthorID ?? currentAuthorID
-        currentProjectionSurfaceCount = session?.surfaceCount(in: snapshot.currentView) ?? 0
         let generation = viewportRuntime.currentGeneration
+        let structure: NovelReaderPresentationStructure
+        if let existing = state?.presentationStructure,
+           existing.generation == generation, existing.resolvedAuthorID == snapshot.currentAuthorID {
+            structure = existing
+        } else {
+            structure = makePresentationStructure(snapshot: snapshot, result: viewportRuntime.currentResult, generation: generation)
+        }
+        currentProjectionSurfaceCount = structure.surfaceIndexesByView[snapshot.currentView]?.count ?? 0
+        presentationDiagnostics.positionUpdateCount += 1
         let previousPresentation = state?.presentation
         let revision = previousPresentation?.generation == generation
             ? (previousPresentation?.revision ?? 0) + 1
             : 0
         let nextState = NovelReadingWorkflowState(
             snapshot: snapshot,
+            presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
-                layoutResult: viewportRuntime.currentResult,
-                generation: generation,
+                structure: structure,
                 revision: revision,
                 settings: settings,
-                fallbackLayout: layout,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
                     layout: layout,
@@ -1054,6 +1065,17 @@ public final class NovelReadingWorkflow {
         state = nextState
         lastPublishedSnapshot = nextState.snapshot
         return nextState
+    }
+
+    private func makePresentationStructure(
+        snapshot: NovelReadingSnapshot, result: NovelTextLayoutResult?, generation: UInt64
+    ) -> NovelReaderPresentationStructure {
+        presentationDiagnostics.structureBuildCount += 1
+        return NovelReaderPerformance.measure("structure") {
+            NovelReaderPresentationBuilder.makeStructure(
+                snapshot: snapshot, layoutResult: result, generation: generation, fallbackLayout: layout
+            )
+        }
     }
 
     private func prepareRuntimeTransaction(

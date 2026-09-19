@@ -15,6 +15,7 @@ private struct NovelReaderVerticalViewportDisplaySurface {
 
 struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     @Environment(\.yamiboImagePipeline) private var imagePipeline
+    let structureID: UUID?
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
     let refererURL: URL
@@ -42,8 +43,9 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
 
     private var contentIdentity: NovelReaderVerticalViewportContentIdentity {
         NovelReaderVerticalViewportContentIdentity(
-            surfaces: surfaces,
-            settings: settings
+            structureID: structureID,
+            settings: settings,
+            refererURL: refererURL
         )
     }
 
@@ -1343,7 +1345,8 @@ extension UIView {
 }
 
 private struct NovelReaderVerticalViewportContentIdentity: Hashable {
-    var surfaces: [NovelReaderSurface]
+    var structureID: UUID?
     var settings: NovelReaderAppearanceSettings
+    var refererURL: URL
 }
 #endif

@@ -40,16 +40,12 @@ public final class NovelReaderViewModel {
     private(set) var isNavigatingNovelReaderProjection = false
     private(set) var isApplyingAppearanceSettings = false
     private var bootstrapSettings = NovelReaderAppearanceSettings()
-    // Every `var` from here down was a plain (non-`@Published`) stored
-    // property under `ObservableObject`, so writes to it never invalidated
-    // views on their own; `@ObservationIgnored` keeps that notification
-    // surface strictly identical after the `@Observable` migration.
-    //
-    // `chromeProgressSnapshot` specifically: the chrome always repainted
-    // through the `novelReaderPresentation` write that accompanies every
-    // snapshot refresh (`syncFromWorkflowState` / `close()` co-write both),
-    // so leaving it untracked loses nothing.
-    @ObservationIgnored private(set) var chromeProgressSnapshot = NovelReaderChromeProgressSnapshot.empty
+    private var presentedSettings: NovelReaderAppearanceSettings?
+    // Chrome observes its own prepared snapshot, not the high-frequency
+    // presentation channel. Cache bookkeeping itself never invalidates views.
+    private(set) var chromeProgressSnapshot = NovelReaderChromeProgressSnapshot.empty
+    private(set) var presentationStructure: NovelReaderPresentationStructure?
+    @ObservationIgnored private let presentationCache = NovelReaderPresentationCache()
 
     public let context: NovelLaunchContext
 
@@ -234,7 +230,7 @@ public final class NovelReaderViewModel {
     }
 
     public var settings: NovelReaderAppearanceSettings {
-        novelReaderPresentation?.committedSettings ?? bootstrapSettings
+        presentedSettings ?? bootstrapSettings
     }
 
     var isTwoPageSpreadActive: Bool {
@@ -286,7 +282,23 @@ public final class NovelReaderViewModel {
     }
 
     package var novelReaderDebugState: NovelReadingWorkflowDebugState? {
-        readingWorkflow?.debugState
+        guard var state = readingWorkflow?.debugState else { return nil }
+        let ui = presentationCache.diagnostics
+        state.presentation.progressIndexBuildCount = ui.progressIndexBuildCount
+        state.presentation.attachedInformationBuildCount = ui.attachedInformationBuildCount
+        state.presentation.pageCurlSequenceBuildCount = ui.pageCurlSequenceBuildCount
+        return state
+    }
+
+    func attachedPageInformation(workTitle: String, information: ReaderPageInformationPresentation) -> [[ReaderAttachedPageInformation]] {
+        guard let presentation = novelReaderPresentation, let structure = presentationStructure else { return [] }
+        return presentationCache.pages(presentation: presentation, structure: structure,
+                                       workTitle: workTitle, information: information)
+    }
+
+    var pageCurlSequence: NovelReaderPagedPageCurlSequence {
+        guard let presentation = novelReaderPresentation, let structure = presentationStructure else { return .empty }
+        return presentationCache.pageCurlSequence(presentation: presentation, structure: structure)
     }
 
     var progressText: String {
@@ -444,6 +456,7 @@ public final class NovelReaderViewModel {
     }
 
     public func handleMemoryPressure() {
+        presentationCache.clear()
         imagePrefetchSuspendedPosition = novelReaderPresentation.map(NovelReaderImagePrefetchPosition.init)
         imagePrefetchCoordinator.cancel()
         readingWorkflow?.handleMemoryPressure()
@@ -467,11 +480,15 @@ public final class NovelReaderViewModel {
         navigation.resetHistory()
         currentStableResumePoint = nil
         chromeProgressSnapshot = .empty
+        presentationCache.clear()
+        presentationStructure = nil
+        presentedSettings = nil
         novelReaderPresentation = nil
     }
 
     var currentChapterIndex: Int? {
-        chapters.lastIndex(where: { $0.startIndex <= selectedSurfaceIndex })
+        guard let structure = presentationStructure, structure.chapterIndexes.indices.contains(selectedSurfaceIndex) else { return nil }
+        return structure.chapterIndexes[selectedSurfaceIndex]
     }
 
     var hasPreviousChapter: Bool {
@@ -910,9 +927,9 @@ public final class NovelReaderViewModel {
         case let .text(textSample):
             updateVerticalViewportPosition(sample: textSample)
         case let .image(identity):
-            guard let index = novelReaderPresentation?.surfaces.firstIndex(where: {
-                $0.identity == identity && $0.kind == .externalBlock
-            }) else { return }
+            guard let presentation = novelReaderPresentation,
+                  let index = presentation.surfaceIndex(for: identity),
+                  presentation.surfaces[index].kind == .externalBlock else { return }
             updateVerticalViewportPosition(surfaceIndex: index, intraSurfaceProgress: 0)
         }
     }
@@ -922,9 +939,7 @@ public final class NovelReaderViewModel {
         let oldProgress = currentSurfaceIntraProgress
         let oldResumePoint = currentNovelResumePoint
         guard let presentation = novelReaderPresentation,
-              presentation.surfaces.contains(where: {
-                  $0.identity == sample.surfaceIdentity
-              }) else {
+              presentation.surfaceIndex(for: sample.surfaceIdentity) != nil else {
             return
         }
         if let state = readingWorkflow?.updateVerticalViewportPosition(
@@ -1203,7 +1218,20 @@ public final class NovelReaderViewModel {
     }
 
     private func syncFromWorkflowState(_ state: NovelReadingWorkflowState) {
-        chromeProgressSnapshot = state.presentation.map(NovelReaderChromeProgressSnapshot.init) ?? .empty
+        let snapshot: NovelReaderChromeProgressSnapshot
+        if let presentation = state.presentation, let structure = state.presentationStructure {
+            snapshot = presentationCache.progress(presentation: presentation, structure: structure)
+        } else {
+            presentationCache.clear()
+            snapshot = .empty
+        }
+        // Prepare derived data before publishing any part of the new state.
+        if presentationStructure != state.presentationStructure { presentationStructure = state.presentationStructure }
+        // Keep chrome's settings dependency separate from position revisions.
+        if presentedSettings != state.presentation?.committedSettings {
+            presentedSettings = state.presentation?.committedSettings
+        }
+        if snapshot != chromeProgressSnapshot { chromeProgressSnapshot = snapshot }
         novelReaderPresentation = state.presentation
         currentStableResumePoint = readingWorkflow?.captureNovelReadingPosition()
         guard let presentation = state.presentation else {
@@ -1215,10 +1243,14 @@ public final class NovelReaderViewModel {
         imagePrefetchSuspendedPosition = nil
         imagePrefetchCoordinator.update(sources: NovelReaderImagePrefetchPlan.sources(
             presentation: presentation,
+            structure: presentationStructure,
             usesTwoPageSpread: isTwoPageSpreadActive,
             threadID: context.threadID,
             fallbackAuthorID: context.authorID
         ))
+        if NovelReaderPerformance.isEnabled, let diagnostics = novelReaderDebugState?.presentation {
+            YamiboLog.reader.info("Reader presentation counts: structures=\(diagnostics.structureBuildCount) positions=\(diagnostics.positionUpdateCount) chrome=\(diagnostics.progressIndexBuildCount) attached=\(diagnostics.attachedInformationBuildCount) curl=\(diagnostics.pageCurlSequenceBuildCount)")
+        }
     }
 
     // Internal (not private): the raw resume-point jump primitive, also used
@@ -1336,10 +1368,11 @@ public final class NovelReaderViewModel {
     }
 
     private func chapterTitle(for surfaceIndex: Int) -> String? {
-        guard novelReaderSurfaces.indices.contains(surfaceIndex) else {
+        guard let structure = presentationStructure, structure.surfaces.indices.contains(surfaceIndex) else {
             return chapters.last(where: { $0.startIndex <= surfaceIndex })?.title
         }
-        return novelReaderSurfaces[surfaceIndex].chapterTitle ?? chapters.last(where: { $0.startIndex <= surfaceIndex })?.title
+        return structure.surfaces[surfaceIndex].chapterTitle
+            ?? structure.chapterIndexes[surfaceIndex].map { structure.chapters[$0].title }
     }
 
     private var displayedPageLabel: String {
@@ -1397,20 +1430,13 @@ public final class NovelReaderViewModel {
     }
 
     private var isAtPagedDocumentEnd: Bool {
-        guard settings.readingMode == .paged else { return false }
+        guard settings.readingMode == .paged,
+              let structure = presentationStructure,
+              let lastSurfaceIndex = structure.surfaceIndexesByView[currentView]?.last else { return false }
         if isTwoPageSpreadActive {
-            let currentDocumentSpreads = presentationSpreads.filter { spread in
-                guard novelReaderSurfaces.indices.contains(spread.leftSurfaceIndex) else { return false }
-                return novelReaderSurfaces[spread.leftSurfaceIndex].documentView == currentView
-            }
-            guard let lastSpread = currentDocumentSpreads.last else { return false }
+            guard let lastSpread = structure.spread(containing: lastSurfaceIndex) else { return false }
             return pagedViewportSelectionIndex >= lastSpread.index
         }
-
-        let currentDocumentSurfaceIndexes = novelReaderSurfaces.indices.filter {
-            novelReaderSurfaces[$0].documentView == currentView
-        }
-        guard let lastSurfaceIndex = currentDocumentSurfaceIndexes.last else { return false }
         return selectedSurfaceIndex >= lastSurfaceIndex
     }
 
@@ -1459,13 +1485,12 @@ public final class NovelReaderViewModel {
         }
 
         let normalizedIndex = max(0, min(surfaceIndex, max(novelReaderSurfaces.count - 1, 0)))
-        return presentationSpreads.first(where: { spread in
-            spread.leftSurfaceIndex == normalizedIndex || spread.rightSurfaceIndex == normalizedIndex
-        })?.index ?? 0
+        return presentationStructure?.spread(containing: normalizedIndex)?.index ?? 0
     }
 
     private func progressSurfaceIndex(forSpreadIndex spreadIndex: Int) -> Int {
-        guard let spread = presentationSpreads.first(where: { $0.index == spreadIndex }) ?? presentationSpreads.last else {
+        let spreads = presentationSpreads
+        guard let spread = spreads.indices.contains(spreadIndex) ? spreads[spreadIndex] : spreads.last else {
             return 0
         }
         switch settings.pageTurnDirection {

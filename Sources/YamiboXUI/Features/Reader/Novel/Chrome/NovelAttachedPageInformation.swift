@@ -3,16 +3,18 @@ import YamiboXCore
 #if os(iOS)
 enum NovelAttachedPageInformation {
     static func pages(presentation: NovelReaderPresentation, workTitle: String,
-                      information: ReaderPageInformationPresentation) -> [[ReaderAttachedPageInformation]] {
+                      information: ReaderPageInformationPresentation,
+                      structure: NovelReaderPresentationStructure? = nil) -> [[ReaderAttachedPageInformation]] {
         let surfaces = presentation.surfaces
         let spread = presentation.progressProjection.usesTwoPageSpread
         let rtl = presentation.committedSettings.pageTurnDirection == .rightToLeft
         let groups: [[Int?]] = spread
             ? presentation.spreads.map { [$0.leftSurfaceIndex, $0.rightSurfaceIndex] }
             : surfaces.indices.map { [$0] }
-        let totals = Dictionary(grouping: surfaces, by: \.documentView).mapValues(\.count)
+        let totals = structure?.surfaceIndexesByView.mapValues(\.count)
+            ?? Dictionary(grouping: surfaces, by: \.documentView).mapValues(\.count)
         var counts: [Int: Int] = [:]
-        let numbers = surfaces.map { surface in
+        let numbers = structure?.localPageNumbers ?? surfaces.map { surface in
             counts[surface.documentView, default: 0] += 1
             return counts[surface.documentView, default: 1]
         }
@@ -20,9 +22,12 @@ enum NovelAttachedPageInformation {
             let visible = indexes.compactMap { $0 }.filter { surfaces.indices.contains($0) }
             guard let first = visible.first else { return [] }
             let anchor = spread && !rtl ? (visible.last ?? first) : first
-            let chapter = presentation.chapters.last { $0.startIndex <= anchor }
+            let chapter = structure.map { structure in
+                structure.chapterIndexes[anchor].map { structure.chapters[$0] }
+            } ?? presentation.chapters.last { $0.startIndex <= anchor }
             let chapterTitle = surfaces[anchor].chapterTitle ?? chapter?.title ?? ""
-            let end = presentation.chapters.first { $0.startIndex > anchor }?.startIndex ?? surfaces.count
+            let end = structure?.chapterEndIndexes[anchor]
+                ?? presentation.chapters.first { $0.startIndex > anchor }?.startIndex ?? surfaces.count
             let remaining = max(end - (visible.filter { $0 < end }.max() ?? anchor) - 1, 0)
             let titles = information.titles(work: spread ? workTitle : nil,
                 chapter: information.chapterText(title: chapterTitle, remainingPages: remaining), isRightToLeft: rtl)

@@ -36,6 +36,12 @@ public struct ReaderChromeProgress: Equatable, Sendable {
 
     private var scrubTargetIndexes: [Int]
 
+    /// Reader-owned immutable indexes have already been clamped and deduplicated.
+    /// Public construction keeps its defensive normalization for other consumers.
+    mutating func useValidatedScrubTargetIndexes(_ indexes: [Int]) {
+        scrubTargetIndexes = indexes
+    }
+
     public static var empty: ReaderChromeProgress {
         ReaderChromeProgress(
             itemCount: 1,

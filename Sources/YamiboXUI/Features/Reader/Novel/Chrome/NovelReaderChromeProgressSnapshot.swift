@@ -68,19 +68,21 @@ private struct NovelReaderProgressScrubData: Equatable, Sendable {
 public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     public var readingMode: ReaderReadingMode
     public var visibleView: Int
-    public var surfaceCount: Int
-    public var currentSurfaceNumber: Int
+    public var surfaceCount: Int { didSet { preparedChromeProgress = nil } }
+    public var currentSurfaceNumber: Int { didSet { preparedChromeProgress = nil } }
     public var currentChapterTitle: String?
-    public var progressText: String
-    public var currentProgressFraction: Double
+    public var progressText: String { didSet { preparedChromeProgress = nil } }
+    public var currentProgressFraction: Double { didSet { preparedChromeProgress = nil } }
     public var currentProgressPercent: Int
-    public var currentProgressPercentText: String
-    public var progressChapterTicks: [NovelReaderProgressChapterTick]
+    public var currentProgressPercentText: String { didSet { preparedChromeProgress = nil } }
+    public var progressChapterTicks: [NovelReaderProgressChapterTick] { didSet { preparedChromeProgress = nil } }
     private var scrubData: NovelReaderProgressScrubData
     var spreadSummaries: [ReaderChromeProgressSummary?]? = nil
     var spreadPageNumbers: [Int?]? = nil
     var pageNumber: Int = 1
     var remainingChapterPageCount: Int = 0
+    private var preparedChromeProgress: ReaderChromeProgress?
+    private var tickChapterIndexes: [Int] = []
 
     public static var empty: NovelReaderChromeProgressSnapshot {
         NovelReaderChromeProgressSnapshot(
@@ -109,6 +111,10 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     }
 
     public init(presentation: NovelReaderPresentation) {
+        self.init(presentation: presentation, structure: nil)
+    }
+
+    init(presentation: NovelReaderPresentation, structure: NovelReaderPresentationStructure?) {
         let projection = presentation.progressProjection
         let chapter = presentation.readingState.currentChapterTitle ?? ""
         let progressText = if chapter.isEmpty {
@@ -130,8 +136,14 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
             )
         }
         let maxIndex = max(projection.surfaceCount - 1, 0)
-        let currentChapterIndex = presentation.chapters.lastIndex {
-            $0.startIndex <= projection.selectedSurfaceIndex
+        let currentChapterIndex: Int?
+        if let structure {
+            currentChapterIndex = structure.chapterIndexes.indices.contains(projection.selectedSurfaceIndex)
+                ? structure.chapterIndexes[projection.selectedSurfaceIndex] : nil
+        } else {
+            currentChapterIndex = presentation.chapters.lastIndex {
+                $0.startIndex <= projection.selectedSurfaceIndex
+            }
         }
         let progressChapterTicks: [NovelReaderProgressChapterTick] = {
             guard projection.surfaceCount > 1, !presentation.chapters.isEmpty else { return [] }
@@ -146,7 +158,7 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
                 )
             }
         }()
-        let chapterTitlesBySurfaceIndex = Self.chapterTitlesBySurfaceIndex(
+        let chapterTitlesBySurfaceIndex = structure?.chapterTitlesBySurfaceIndex ?? Self.chapterTitlesBySurfaceIndex(
             surfaces: presentation.surfaces,
             chapters: presentation.chapters,
             maxIndex: maxIndex
@@ -176,6 +188,15 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
                 pageTurnDirection: projection.pageTurnDirection
             )
         )
+        var seenTickStarts = Set<Int>()
+        tickChapterIndexes = projection.surfaceCount > 1 ? presentation.chapters.indices.filter {
+            seenTickStarts.insert(min(max(presentation.chapters[$0].startIndex, 0), max(maxIndex, 1))).inserted
+        } : []
+        if let structure {
+            prepareChromeProgress()
+            updatePosition(presentation: presentation, structure: structure)
+            return
+        }
         pageNumber = projection.displayedPageIndex + 1
         let currentIndex = projection.selectedSurfaceIndex
         let currentSpread = projection.usesTwoPageSpread ? presentation.spreads.first {
@@ -299,6 +320,10 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     }
 
     public var chromeProgress: ReaderChromeProgress {
+        preparedChromeProgress ?? makeChromeProgress()
+    }
+
+    private func makeChromeProgress() -> ReaderChromeProgress {
         ReaderChromeProgress(
             itemCount: surfaceCount,
             currentIndex: currentSurfaceNumber - 1,
@@ -316,6 +341,86 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
             },
             scrubTargetIndexes: scrubData.scrubTargetIndexes
         )
+    }
+
+    /// Retains the static dictionaries/arrays of the previous snapshot. Only
+    /// a chapter transition materializes a new active-tick array.
+    mutating func updatePosition(
+        presentation: NovelReaderPresentation,
+        structure: NovelReaderPresentationStructure
+    ) {
+        let projection = presentation.progressProjection
+        let index = projection.selectedSurfaceIndex
+        let oldIndex = currentSurfaceNumber - 1
+        let oldChapter = structure.chapterIndexes.indices.contains(oldIndex) ? structure.chapterIndexes[oldIndex] : nil
+        let newChapter = structure.chapterIndexes.indices.contains(index) ? structure.chapterIndexes[index] : nil
+        var chrome = chromeProgress
+        if readingMode == .vertical, visibleView != projection.displayedView {
+            chrome.useValidatedScrubTargetIndexes(projection.visibleSurfaceIndexes.isEmpty
+                ? [projection.fallbackVisibleSurfaceIndex] : projection.visibleSurfaceIndexes)
+        }
+        if oldChapter != newChapter {
+            // Match the original first-tick-wins behavior for duplicate chapter starts.
+            progressChapterTicks = progressChapterTicks.enumerated().map { offset, tick in
+                var next = tick
+                next.isCurrent = tickChapterIndexes[offset] == newChapter
+                return next
+            }
+            chrome.ticks = progressChapterTicks.map {
+                ReaderChromeProgressTick(targetIndex: $0.chapter.startIndex, positionFraction: $0.position,
+                                         title: $0.chapter.title, isCurrent: $0.isCurrent)
+            }
+        }
+        visibleView = projection.displayedView
+        currentSurfaceNumber = projection.currentSurfaceNumber
+        currentChapterTitle = presentation.readingState.currentChapterTitle
+        currentProgressFraction = projection.currentProgressFraction
+        currentProgressPercent = projection.currentProgressPercent
+        currentProgressPercentText = projection.currentProgressPercentText
+        let chapter = currentChapterTitle ?? ""
+        progressText = chapter.isEmpty
+            ? L10n.string("reader.progress", projection.displayedPageLabel, projection.displayedPageCount,
+                          projection.displayedView, presentation.readingState.maxView)
+            : L10n.string("reader.progress_with_chapter", projection.displayedPageLabel, projection.displayedPageCount,
+                          projection.displayedView, presentation.readingState.maxView, chapter)
+        scrubData.currentProgressPercent = projection.currentProgressPercent
+        scrubData.visibleSurfaceIndexes = projection.visibleSurfaceIndexes
+        scrubData.fallbackVisibleSurfaceIndex = projection.fallbackVisibleSurfaceIndex
+        pageNumber = projection.displayedPageIndex + 1
+        let spread = projection.usesTwoPageSpread ? structure.spread(containing: index) : nil
+        let visible = spread.map { [$0.leftSurfaceIndex, $0.rightSurfaceIndex].compactMap { $0 } } ?? [index]
+        let end = structure.chapterEndIndexes.indices.contains(index)
+            ? structure.chapterEndIndexes[index]
+            : structure.chapters.first { $0.startIndex > index }?.startIndex ?? structure.surfaces.count
+        remainingChapterPageCount = max(end - (visible.filter { $0 < end }.max() ?? index) - 1, 0)
+        spreadSummaries = nil
+        spreadPageNumbers = nil
+        if projection.readingMode == .paged, let spread {
+            let physicalIndexes = [Optional(spread.leftSurfaceIndex), spread.rightSurfaceIndex]
+            spreadPageNumbers = physicalIndexes.map { index in
+                guard let index, structure.localPageNumbers.indices.contains(index) else { return nil }
+                return structure.localPageNumbers[index]
+            }
+            spreadSummaries = physicalIndexes.map { index in
+                guard let index, structure.surfaces.indices.contains(index) else { return nil }
+                let surface = structure.surfaces[index]
+                return ReaderChromeProgressSummary(chapterTitle: surface.chapterTitle, progressText: L10n.string(
+                    "reader.progress", String(structure.localPageNumbers[index]),
+                    structure.surfaceIndexesByView[surface.documentView]?.count ?? 1,
+                    surface.documentView, presentation.readingState.maxView
+                ))
+            }
+        }
+        chrome.currentIndex = currentSurfaceNumber - 1
+        chrome.progressFraction = currentProgressFraction
+        chrome.percentText = currentProgressPercentText
+        chrome.primaryText = L10n.string("reader.chapters") + " · \(currentProgressPercentText)"
+        chrome.secondaryText = progressText
+        preparedChromeProgress = chrome
+    }
+
+    mutating func prepareChromeProgress() {
+        preparedChromeProgress = makeChromeProgress()
     }
 
     private static func chapterTitlesBySurfaceIndex(

@@ -23,6 +23,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     }
 
     var attachedInformation = ReaderAttachedInformationConfiguration()
+    let structureID: UUID?
     let itemSource: NovelReaderPagedItemSource
     let surfaces: [NovelReaderSurface]
     let settings: NovelReaderAppearanceSettings
@@ -59,14 +60,14 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     }
 
     private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity {
-        let spreads: [NovelReaderPresentationSpread] = switch itemSource {
-        case .surfaces: []
-        case .spreads(let spreads): spreads
+        let usesTwoPageSpread: Bool = switch itemSource {
+        case .surfaces: false
+        case .spreads: true
         }
         return NovelReaderPagedSpreadViewportContentIdentity(
-            spreads: spreads,
+            usesTwoPageSpread: usesTwoPageSpread,
             content: NovelReaderPagedViewportContentIdentity(
-                surfaces: surfaces,
+                structureID: structureID,
                 settings: settings,
                 refererURL: refererURL,
                 topInset: topInset,

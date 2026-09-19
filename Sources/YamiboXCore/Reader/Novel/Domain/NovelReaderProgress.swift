@@ -136,6 +136,59 @@ public struct NovelReaderProgressProjection: Hashable, Sendable {
         )
     }
 
+    /// The structure has already normalized these arrays. Do not funnel this
+    /// through the public initializer, which defensively maps every index.
+    package init(
+        readingMode: ReaderReadingMode,
+        usesTwoPageSpread: Bool,
+        pageTurnDirection: ReaderPageTurnDirection,
+        structure: NovelReaderPresentationStructure,
+        selectedSurfaceIndex: Int,
+        readingState: NovelReaderReadingState
+    ) {
+        let surfaces = structure.surfaces
+        let count = max(surfaces.count, 1)
+        var index = min(max(selectedSurfaceIndex, 0), count - 1)
+        if usesTwoPageSpread, let spread = structure.spread(containing: index) {
+            index = pageTurnDirection == .leftToRight
+                ? spread.rightSurfaceIndex ?? spread.leftSurfaceIndex : spread.leftSurfaceIndex
+            index = min(max(index, 0), count - 1)
+        }
+        let view = surfaces.indices.contains(index) ? surfaces[index].documentView : readingState.currentView
+        let indexes = structure.surfaceIndexesByView[view] ?? []
+        let localIndex = indexes.first.map { max(index - $0, 0) } ?? index
+        let localCount = max(indexes.count, 1)
+        var label = String(localIndex + 1)
+        if usesTwoPageSpread, let spread = structure.spread(containing: index) {
+            let first = indexes.first ?? 0
+            let left = max(spread.leftSurfaceIndex - first + 1, 1)
+            label = String(left)
+            if let right = spread.rightSurfaceIndex, surfaces.indices.contains(right), surfaces[right].documentView == view {
+                label = "\(left)-\(min(max(right - first + 1, left), localCount))"
+            }
+        }
+        let fraction: Double = switch readingMode {
+        case .vertical: localCount > 1 ? Double(localIndex) / Double(localCount - 1) : 0
+        case .paged: count > 1 ? Double(index) / Double(count - 1) : 0
+        }
+        let percent = min(max(Int((fraction * 100).rounded()), 0), 100)
+        self.readingMode = readingMode
+        self.usesTwoPageSpread = usesTwoPageSpread
+        self.pageTurnDirection = pageTurnDirection
+        surfaceCount = count
+        self.selectedSurfaceIndex = index
+        currentSurfaceNumber = index + 1
+        displayedView = view
+        displayedPageIndex = max(localIndex, 0)
+        displayedPageCount = localCount
+        displayedPageLabel = label
+        currentProgressFraction = min(max(fraction, 0), 1)
+        currentProgressPercent = percent
+        currentProgressPercentText = "\(percent)%"
+        visibleSurfaceIndexes = indexes
+        fallbackVisibleSurfaceIndex = indexes.first ?? index
+    }
+
     private static func progressSurfaceIndex(
         selectedSurfaceIndex: Int,
         maxSurfaceIndex: Int,
