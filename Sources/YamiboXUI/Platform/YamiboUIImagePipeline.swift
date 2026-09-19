@@ -73,7 +73,7 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
 }
 
 /// Thin UI layer over `YamiboImagePipeline`: decodes bytes into `UIImage`
-/// with an in-memory cache, and offers prefetching. All byte loading —
+/// with an in-memory cache. All byte loading —
 /// offline lookup, session headers, disk cache — lives in the Core pipeline.
 @MainActor
 public final class YamiboUIImagePipeline {
@@ -82,7 +82,6 @@ public final class YamiboUIImagePipeline {
 
     let dataLoader: any YamiboImageDataLoading
     private let pipeline: ImagePipeline
-    private var prefetchingKeys = Set<String>()
     private let loadedImages = PassthroughSubject<(String, YamiboDisplayImage), Never>()
 
     /// Recover failed views when another consumer loads the same image, even
@@ -151,27 +150,6 @@ public final class YamiboUIImagePipeline {
             return image
         } catch {
             throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
-        }
-    }
-
-    func prefetchImages(for sources: [YamiboImageSource]) {
-        for source in sources {
-            prefetchImage(for: source)
-        }
-    }
-
-    func prefetchImage(for source: YamiboImageSource) {
-        let key = source.cacheKey
-        guard cachedImage(for: source) == nil,
-              prefetchingKeys.insert(key).inserted else {
-            return
-        }
-
-        Task { @MainActor in
-            defer {
-                self.prefetchingKeys.remove(key)
-            }
-            _ = try? await self.image(for: source)
         }
     }
 

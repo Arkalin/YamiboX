@@ -22,6 +22,10 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     private var lastReportedGlobalIndex: Int?
     private var lastAppliedPlacementRevision: Int?
     private var lastLaidOutViewportSize: CGSize?
+    private var prefetchImageLoader: MangaReaderPageImageLoader
+    private var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
+    private var lastPrefetchSources: [YamiboImageSource] = []
+    private var isImagePrefetchStopped = false
     private(set) lazy var gestures = MangaPagedScrollNavigationAdapter(coordinator: self)
 
     var callbackScheduler: SwiftUIViewUpdateCallbackScheduler {
@@ -72,6 +76,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     init(parent: MangaPagedReaderViewport) {
         self.parent = parent
+        prefetchImageLoader = parent.imageLoader
+        imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
     }
 
     func updateContentIfNeeded(in collectionView: UICollectionView) {
@@ -342,8 +348,24 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     }
 
     private func prefetchAdjacentImages() {
+        guard !isImagePrefetchStopped else { return }
+        if prefetchImageLoader !== parent.imageLoader {
+            imagePrefetchCoordinator.cancel()
+            prefetchImageLoader = parent.imageLoader
+            imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
+            lastPrefetchSources = []
+        }
         let pagesToPrefetch = MangaPagedImagePrefetchPlan.pagesToPrefetch(plan: parent.plan)
-        parent.imageLoader.prefetchImages(for: pagesToPrefetch)
+        let sources = parent.imageLoader.imageSources(for: pagesToPrefetch)
+        guard sources != lastPrefetchSources else { return }
+        lastPrefetchSources = sources
+        imagePrefetchCoordinator.update(sources: sources)
+    }
+
+    func stopImagePrefetch() {
+        isImagePrefetchStopped = true
+        imagePrefetchCoordinator.cancel()
+        lastPrefetchSources = []
     }
 
     private func pageSurface(

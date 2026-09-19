@@ -7,6 +7,7 @@ import UIKit
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
+        coordinator.stopImagePrefetch()
         coordinator.invalidatePageCurlTransitions()
         coordinator.gestures.detach()
         coordinator.interactionRuntime.reset()

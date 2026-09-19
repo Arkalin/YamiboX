@@ -18,6 +18,10 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     private var pageCurlSurfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
     private var pageCurlPageAppearanceGenerations: [String: Int] = [:]
     private var lastAppliedLikedPageIDs: Set<String> = []
+    private var prefetchImageLoader: MangaReaderPageImageLoader
+    private var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
+    private var lastPrefetchSources: [YamiboImageSource] = []
+    private var isImagePrefetchStopped = false
     weak var activeContainerViewController: MangaPagedPageCurlContainerViewController?
     weak var activePageViewController: UIPageViewController?
     private let controllers = NSHashTable<MangaPagedPageCurlHostingController>.weakObjects()
@@ -35,6 +39,8 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
 
     init(parent: MangaPagedPageCurlReaderViewport) {
         self.parent = parent
+        prefetchImageLoader = parent.imageLoader
+        imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
         informationState.update(parent.attachedInformation)
     }
 
@@ -380,8 +386,24 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     }
 
     private func prefetchAdjacentImages() {
+        guard !isImagePrefetchStopped else { return }
+        if prefetchImageLoader !== parent.imageLoader {
+            imagePrefetchCoordinator.cancel()
+            prefetchImageLoader = parent.imageLoader
+            imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
+            lastPrefetchSources = []
+        }
         let pagesToPrefetch = MangaPagedImagePrefetchPlan.pagesToPrefetch(plan: parent.plan)
-        parent.imageLoader.prefetchImages(for: pagesToPrefetch)
+        let sources = parent.imageLoader.imageSources(for: pagesToPrefetch)
+        guard sources != lastPrefetchSources else { return }
+        lastPrefetchSources = sources
+        imagePrefetchCoordinator.update(sources: sources)
+    }
+
+    func stopImagePrefetch() {
+        isImagePrefetchStopped = true
+        imagePrefetchCoordinator.cancel()
+        lastPrefetchSources = []
     }
 
     private func pageCurlPageSurfaceIdentity(

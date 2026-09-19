@@ -23,10 +23,6 @@ final class MangaReaderPageImageLoader {
         uiImagePipeline.cachedImage(for: imageSource(page))
     }
 
-    func prefetchImages(for pages: [MangaReaderPageProjection]) {
-        uiImagePipeline.prefetchImages(for: imageSources(for: pages))
-    }
-
     func imageSources(for pages: [MangaReaderPageProjection]) -> [YamiboImageSource] {
         pages.map(imageSource)
     }
