@@ -26,7 +26,7 @@ struct ForumPageNavigationBar: View {
 
                 Spacer()
 
-                Text(pageText(navigation))
+                pageSelector(navigation)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(theme.secondaryText)
 
@@ -44,6 +44,57 @@ struct ForumPageNavigationBar: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(theme.accentText)
+        }
+    }
+
+    @ViewBuilder
+    private func pageSelector(_ navigation: ForumPageNavigation) -> some View {
+        if let totalPages = navigation.totalPages, totalPages > 1 {
+            Menu {
+                if totalPages <= 50 {
+                    pageButtons(in: 1...totalPages)
+                } else {
+                    ForEach(Array(stride(from: 1, through: totalPages, by: 50)), id: \.self) { start in
+                        let end = start + min(49, totalPages - start)
+                        Menu {
+                            pageButtons(in: start...end)
+                        } label: {
+                            let title = "\(start.formatted())–\(end.formatted())"
+                            if (start...end).contains(currentPage) {
+                                Label(title, systemImage: "checkmark")
+                            } else {
+                                Text(title)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(pageText(navigation))
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(pageText(navigation))
+        } else {
+            Text(pageText(navigation))
+        }
+    }
+
+    private func pageButtons(in pages: ClosedRange<Int>) -> some View {
+        ForEach(pages, id: \.self) { page in
+            Button {
+                guard page != currentPage else { return }
+                goToPage(page)
+            } label: {
+                if page == currentPage {
+                    Label(L10n.string("forum.board.current_page", page), systemImage: "checkmark")
+                } else {
+                    Text(L10n.string("forum.board.current_page", page))
+                }
+            }
         }
     }
 
