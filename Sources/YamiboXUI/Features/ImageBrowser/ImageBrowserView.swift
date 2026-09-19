@@ -438,6 +438,7 @@ private struct ImageBrowserPageView: View {
             image: image,
             animationFrame: animationFrame,
             title: item.title,
+            isCurrentPage: pageDistance == 0,
             dismissesViaSystemZoomTransition: dismissesViaSystemZoomTransition,
             onSingleTap: onSingleTap,
             onSwipeDownProgressChange: onSwipeDownProgressChange,
@@ -577,6 +578,7 @@ private struct ImageBrowserZoomableImagePage: View {
     /// The animated payload's current frame, or `nil` for a still image.
     let animationFrame: UIImage?
     let title: String
+    let isCurrentPage: Bool
     let dismissesViaSystemZoomTransition: Bool
     let onSingleTap: () -> Void
     let onSwipeDownProgressChange: (CGFloat) -> Void
@@ -608,7 +610,11 @@ private struct ImageBrowserZoomableImagePage: View {
                 .opacity(imageOpacity)
             }
             .gesture(ImageBrowserDismissPanGesture(
-                isEnabled: !isSwipeDismissCommitted,
+                // The system zoom transition owns its entire interactive
+                // dismissal, not just the animation after finger release.
+                // Moving/fading the image ourselves gives it an already
+                // displaced page to shrink back into the thumbnail.
+                isEnabled: !dismissesViaSystemZoomTransition && !isSwipeDismissCommitted,
                 zoomFactor: zoomFactor,
                 onChanged: { dragTranslation = $0 },
                 onEnded: { translation, velocity in
@@ -620,7 +626,10 @@ private struct ImageBrowserZoomableImagePage: View {
         .onChange(of: swipeProgress) { _, newValue in
             onSwipeDownProgressChange(newValue)
         }
-        .onDisappear {
+        .onChange(of: isCurrentPage) { _, isCurrentPage in
+            guard !isCurrentPage else { return }
+            // Reset pages when paging away, not when dismissal starts:
+            // the outgoing page must keep its geometry during the transition.
             zoomProxy.resetZoom(animated: false)
             dragTranslation = .zero
         }
@@ -657,7 +666,7 @@ private struct ImageBrowserZoomableImagePage: View {
     }
 
     private func finishSwipeDismiss(translation: CGPoint, velocity: CGPoint, containerSize: CGSize) {
-        guard !isSwipeDismissCommitted else { return }
+        guard !dismissesViaSystemZoomTransition, !isSwipeDismissCommitted else { return }
         guard !isZoomedIn, ImageBrowserSwipeDismissGesture.shouldDismiss(
             translation: translation, velocity: velocity, zoomScale: zoomFactor, minimumZoomScale: 1
         ) else {
@@ -671,14 +680,6 @@ private struct ImageBrowserZoomableImagePage: View {
         isSwipeDismissCommitted = true
         committedTranslation = CGSize(width: translation.x, height: max(translation.y, 0))
         onSwipeDownCommit()
-
-        // Under the system zoom transition the dismiss animation itself flies
-        // the page back into its thumbnail; animating our own exit first
-        // would play two animations back to back.
-        guard !dismissesViaSystemZoomTransition else {
-            onSwipeDownDismiss()
-            return
-        }
 
         // Reduce Motion: no fly-away travel, dismiss as a plain cross-fade.
         guard !reduceMotion else {
