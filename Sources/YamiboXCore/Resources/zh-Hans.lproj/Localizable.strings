@@ -914,6 +914,8 @@
 "reader.switch_mode" = "切换阅读模式";
 "reader.open_as_novel" = "用小说阅读器打开";
 "reader.open_as_manga" = "用漫画阅读器打开";
+"reader.open_as_novel.recommended" = "用小说阅读器打开（推荐）";
+"reader.open_as_manga.recommended" = "用漫画阅读器打开（推荐）";
 "reader.switch_failed" = "切换阅读模式失败";
 "reader.switching" = "正在切换阅读模式…";
 "reader.switching_to_thread" = "正在切换到原帖…";

@@ -9,6 +9,7 @@ struct ForumThreadReaderActionBar: View {
     let onFavoriteLongPress: () -> Void
     var onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil
     var isSwitchingReaderMode = false
+    var recommendedReaderKind: YamiboThreadKind = .unknown
 
     var body: some View {
         HStack(spacing: 10) {
@@ -42,12 +43,22 @@ struct ForumThreadReaderActionBar: View {
                     Button {
                         onReaderModeSwitch(.novel)
                     } label: {
-                        Label(L10n.string("reader.open_as_novel"), systemImage: "book")
+                        Label(
+                            L10n.string(recommendedReaderKind == .novel
+                                ? "reader.open_as_novel.recommended"
+                                : "reader.open_as_novel"),
+                            systemImage: "book"
+                        )
                     }
                     Button {
                         onReaderModeSwitch(.manga)
                     } label: {
-                        Label(L10n.string("reader.open_as_manga"), systemImage: "photo.on.rectangle")
+                        Label(
+                            L10n.string(recommendedReaderKind == .manga
+                                ? "reader.open_as_manga.recommended"
+                                : "reader.open_as_manga"),
+                            systemImage: "photo.on.rectangle"
+                        )
                     }
                 } label: {
                     Label(L10n.string("reader.switch_mode"), systemImage: "arrow.left.arrow.right")

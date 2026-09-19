@@ -48,6 +48,7 @@ final class ForumThreadReaderViewModel {
         set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
     }
     var isFavorited = false
+    private var readerMenuSettings = BoardReaderSettings(entries: [:])
     var favoriteErrorMessage: String? {
         didSet { favoriteErrorDetails = nil }
     }
@@ -217,6 +218,23 @@ final class ForumThreadReaderViewModel {
 
     var readerSwitchThread: ThreadIdentity {
         ThreadIdentity(tid: context.thread.tid, fid: resolvedForumID)
+    }
+
+    var recommendedReaderKind: YamiboThreadKind {
+        readerMenuSettings.threadKind(forumID: resolvedForumID)
+    }
+
+    func observeBoardReaderSettings() async {
+        guard let settingsStore = await settingsStoreProvider() else {
+            readerMenuSettings = BoardReaderSettings()
+            return
+        }
+        let changes = settingsStore.changes()
+        readerMenuSettings = await settingsStore.load().boardReader
+        for await _ in changes {
+            guard !Task.isCancelled else { return }
+            readerMenuSettings = await settingsStore.load().boardReader
+        }
     }
 
     var readerSwitchAuthorID: String? { threadAuthorID ?? context.authorID }

@@ -42,6 +42,7 @@ struct ForumThreadReaderBodyView: View {
     let onURLTap: (URL) -> Void
     var onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil
     var isSwitchingReaderMode = false
+    var recommendedReaderKind: YamiboThreadKind = .unknown
 
     var body: some View {
         contentWithSheets
@@ -198,7 +199,8 @@ struct ForumThreadReaderBodyView: View {
                     onFavorite: toggleFavorite,
                     onFavoriteLongPress: presentFavoriteLocationPicker,
                     onReaderModeSwitch: onReaderModeSwitch,
-                    isSwitchingReaderMode: isSwitchingReaderMode || isLoading
+                    isSwitchingReaderMode: isSwitchingReaderMode || isLoading,
+                    recommendedReaderKind: recommendedReaderKind
                 )
             }
         }

@@ -61,7 +61,8 @@ struct ForumThreadReaderView: View {
             onUserTap: onUserTap,
             onURLTap: onURLTap,
             onReaderModeSwitch: onReaderModeSwitch,
-            isSwitchingReaderMode: isSwitchingReaderMode
+            isSwitchingReaderMode: isSwitchingReaderMode,
+            recommendedReaderKind: model.recommendedReaderKind
         )
         .navigationTitle(model.navigationTitle)
         .yamiboInlineNavigationTitleDisplayMode()
@@ -141,6 +142,9 @@ struct ForumThreadReaderView: View {
         }
         .task(id: submissionChange?.id) {
             await model.load(submissionChange: submissionChange)
+        }
+        .task {
+            await model.observeBoardReaderSettings()
         }
         .onDisappear {
             model.flushReadingProgress()
