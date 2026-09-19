@@ -265,11 +265,17 @@ private enum NovelReaderPostHTMLProjectionParser {
         let body = fragment.body() ?? fragment
         let isReplyToOther = ForumPostReplyReferenceParser.parse(in: body) != nil
         body.select("i").remove()
+        let attachmentImageURLs = NovelReaderAttachmentFilter.removeFileAttachments(from: body)
 
         let text = readableText(from: body)
         let chapterTitle = chapterTitle(from: text)
         var parsedSegments = orderedSegments(from: body, chapterTitle: chapterTitle)
-        parsedSegments.append(contentsOf: missingAttachmentImageSegments(post.images, contentHTML: post.contentHTML, chapterTitle: chapterTitle))
+        parsedSegments.append(contentsOf: missingAttachmentImageSegments(
+            post.images,
+            contentHTML: post.contentHTML,
+            excluding: attachmentImageURLs,
+            chapterTitle: chapterTitle
+        ))
 
         return NovelReaderProjectedPost(
             segments: parsedSegments.map(\.segment),
@@ -293,7 +299,8 @@ private enum NovelReaderPostHTMLProjectionParser {
             blockTextStyles.append([])
         }
         for image in post.images where !image.url.isEmpty {
-            guard let url = HTMLTextExtractor.absoluteURL(from: image.url) else { continue }
+            guard let url = HTMLTextExtractor.absoluteURL(from: image.url),
+                  !NovelReaderAttachmentFilter.isFileIcon(url) else { continue }
             segments.append(.image(url, chapterTitle: chapterTitle))
             inlineTextStyles.append([])
             blockTextStyles.append([])
@@ -699,18 +706,23 @@ private enum NovelReaderPostHTMLProjectionParser {
     }
 
     private static func imageURL(from image: Element) -> URL? {
-        YamiboImageReferenceExtractor.novelInline.url(from: image)
+        guard let url = YamiboImageReferenceExtractor.novelInline.url(from: image),
+              !NovelReaderAttachmentFilter.isFileIcon(url) else { return nil }
+        return url
     }
 
     private static func missingAttachmentImageSegments(
         _ images: [ForumThreadPostImage],
         contentHTML: String,
+        excluding attachmentImageURLs: Set<URL>,
         chapterTitle: String?
     ) -> [ParsedSegment] {
         images.compactMap { image in
             guard !image.url.isEmpty,
                   !contentHTML.contains(image.url),
-                  let url = HTMLTextExtractor.absoluteURL(from: image.url) else {
+                  let url = HTMLTextExtractor.absoluteURL(from: image.url),
+                  !attachmentImageURLs.contains(url),
+                  !NovelReaderAttachmentFilter.isFileIcon(url) else {
                 return nil
             }
             return ParsedSegment(
@@ -944,8 +956,8 @@ private enum NovelPostContentProjector {
             flush(&buffer, into: &projected, chapterTitle: chapterTitle)
             appendImage(image.url, to: &projected, chapterTitle: chapterTitle, emittedImageURLs: &emittedImageURLs)
 
-        case let .attachment(attachment):
-            buffer.appendPlain(attachment.fileName, isQuote: isQuote)
+        case .attachment:
+            break
 
         case let .quote(blocks):
             buffer.ensureLineBreak(isQuote: isQuote)
@@ -1001,6 +1013,7 @@ private enum NovelPostContentProjector {
         emittedImageURLs: inout Set<String>
     ) {
         guard !YamiboImageReferenceExtractor.isEmoticonURL(url),
+              !NovelReaderAttachmentFilter.isFileIcon(url),
               emittedImageURLs.insert(url.absoluteString).inserted else {
             return
         }
@@ -1040,8 +1053,8 @@ private enum NovelPostContentProjector {
         switch block.kind {
         case let .text(text):
             return [text.text]
-        case let .attachment(attachment):
-            return [attachment.fileName]
+        case .attachment:
+            return []
         case let .quote(blocks):
             if excludingDiscuzQuotes,
                containsDiscuzQuoteHeader(readableText(in: blocks, excludingDiscuzQuotes: false)) {
@@ -1068,5 +1081,32 @@ private enum NovelPostContentProjector {
 
     private static func containsDiscuzQuoteHeader(_ text: String) -> Bool {
         ForumPostReplyReferenceParser.parseHeader(text) != nil
+    }
+}
+
+private enum NovelReaderAttachmentFilter {
+    static func removeFileAttachments(from body: Element) -> Set<URL> {
+        // Keep image attachment blocks (`.attm`); only file cards and their
+        // download metadata should disappear from the novel projection.
+        let attachments = body.select(".post_attlist, .attach, dl.tattl:not(.attm)").array()
+        let imageURLs = Set(attachments.flatMap { attachment in
+            attachment.select("img").array().flatMap { image in
+                ["zoomfile", "file", "zsrc", "src"].compactMap { attribute -> URL? in
+                    let reference = image.attr(attribute).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !reference.isEmpty else { return nil }
+                    return HTMLTextExtractor.absoluteURL(from: reference)
+                }
+            }
+        })
+        for attachment in attachments {
+            attachment.remove()
+        }
+        // The post's image list can contain absolute URLs while the HTML uses
+        // relative ones. Exclude by resolved URL so fallback cannot restore icons.
+        return imageURLs
+    }
+
+    static func isFileIcon(_ url: URL) -> Bool {
+        url.path.lowercased().contains("static/image/filetype/")
     }
 }
