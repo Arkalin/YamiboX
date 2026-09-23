@@ -62,6 +62,32 @@ struct MineSidebarView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .task(id: appModel.mineNavigationRequest?.id) {
+            guard let request = appModel.mineNavigationRequest else { return }
+            switch request.target {
+            case .login: break // The enclosing Mine view owns the login sheet.
+            case let .settings(destination):
+                _ = appModel.claimMineNavigationRequest()
+                navigation.setSidebarPath([.settings])
+                if let destination { navigation.show(.settings(destination)) }
+            case let .page(destination):
+                if destination.requiresLogin { await viewModel.reloadAccountSnapshot() }
+                guard !Task.isCancelled, appModel.mineNavigationRequest?.id == request.id else { return }
+                _ = appModel.claimMineNavigationRequest()
+                guard !destination.requiresLogin || viewModel.isLoggedIn else {
+                    showLogin()
+                    return
+                }
+                navigation.returnToRoot()
+                switch destination {
+                case .profile: navigation.show(.profile)
+                case .messages: navigation.show(.messages)
+                case .history: navigation.show(.history(.all))
+                case .likes: navigation.show(.likes(.all))
+                case .downloads: navigation.show(.downloads)
+                }
+            }
+        }
         .ignoresSafeArea(.container, edges: horizontalSizeClass == .regular ? .top : [])
         .modifier(SettingsPresentationEffects(state: settings, isActive: navigation.section == .settings))
         .onChange(of: navigation.detail) { _, _ in

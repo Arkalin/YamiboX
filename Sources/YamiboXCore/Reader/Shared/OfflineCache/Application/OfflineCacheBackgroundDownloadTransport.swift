@@ -1,11 +1,12 @@
 import Foundation
 
 public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCacheImageTransporting, URLSessionDownloadDelegate, @unchecked Sendable {
-    public static let defaultIdentifier = "com.arkalin.YamiboX.offlineCache.backgroundDownloads"
+    public static let defaultIdentifier = YamiboForumEnvironment.current.backgroundDownloadIdentifier
 
     private let lock = NSLock()
     private let sessionFactory: @Sendable (URLSessionDelegate) -> URLSession
     private var sessionStorage: URLSession?
+    private var invalidationContinuation: CheckedContinuation<Void, Never>?
     private var pendingDownloads: [Int: PendingDownload] = [:]
     private var backgroundEventCompletionHandlers: [String: () -> Void] = [:]
     private let sessionStore: (any SessionStoring)?
@@ -38,7 +39,7 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     ) -> URLSessionConfiguration {
         #if os(iOS)
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
-        configuration.sessionSendsLaunchEvents = true
+        configuration.sessionSendsLaunchEvents = YamiboForumEnvironment.current.supportsBackgroundRelaunch
         configuration.isDiscretionary = false
         #else
         let configuration = URLSessionConfiguration.default
@@ -55,11 +56,7 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
             try await withCheckedThrowingContinuation { continuation in
                 var urlRequest = URLRequest(url: source.url)
                 if let credentials {
-                    urlRequest.setValue(credentials.userAgent, forHTTPHeaderField: "User-Agent")
-                    let cookieHeader = credentials.cookieHeader(for: source.url)
-                    if !cookieHeader.isEmpty {
-                        urlRequest.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
-                    }
+                    YamiboNetworkPolicy.applyCredentials(credentials, to: &urlRequest)
                 }
                 if let refererPageURL = source.refererPageURL {
                     urlRequest.setValue(refererPageURL.absoluteString, forHTTPHeaderField: "Referer")
@@ -82,6 +79,23 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     public func cancelAllDownloads() {
         let tasks = lock.withLock { pendingDownloads.values.compactMap(\.task) }
         tasks.forEach { $0.cancel() }
+    }
+
+    /// Used only by startup reset, before any new downloads can be submitted.
+    func invalidateRestoredDownloads() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock { invalidationContinuation = continuation }
+            session.invalidateAndCancel()
+        }
+    }
+
+    public func urlSession(_ session: URLSession, didBecomeInvalidWithError error: (any Error)?) {
+        let continuation = lock.withLock {
+            let continuation = invalidationContinuation
+            invalidationContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
     }
 
     public func setBackgroundEventsCompletionHandler(
@@ -122,6 +136,16 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     ) {
         guard let error else { return }
         complete(taskIdentifier: task.taskIdentifier, result: .failure(Self.downloadError(from: error)))
+    }
+
+    public func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url))
     }
 
     private var session: URLSession {

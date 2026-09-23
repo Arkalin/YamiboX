@@ -108,11 +108,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
         var userInfo: [ImageRequest.UserInfoKey: any Sendable] = [:]
         if let client {
-            urlRequest.setValue(client.userAgent, forHTTPHeaderField: "User-Agent")
-            let cookieHeader = client.credentials.cookieHeader(for: source.url)
-            if !cookieHeader.isEmpty {
-                urlRequest.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
-            }
+            YamiboNetworkPolicy.applyCredentials(client.credentials, to: &urlRequest, userAgent: client.userAgent)
             userInfo[.yamiboURLSession] = YamiboImageRequestSession(client.session)
         }
         if let refererPageURL = source.refererPageURL {
@@ -257,6 +253,16 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             }
             validatedResponse = response
             completionHandler(.allow)
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
+        ) {
+            completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url))
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {

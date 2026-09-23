@@ -354,12 +354,11 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         private func clearConflictingYamiboCookies(for cookies: [YamiboCookie], in webView: WKWebView) async {
             let incomingNames = Set(cookies.map(\.name))
-                .union([SessionState.authenticationCookieName])
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let storedCookies = await cookieStore.allCookies()
             for cookie in storedCookies
                 where YamiboDomain.containsYamiboDomain(cookie.domain) &&
-                incomingNames.contains(cookie.name) &&
+                (incomingNames.contains(cookie.name) || SessionState.isAuthenticationCookieName(cookie.name)) &&
                 !YamiboCookie.isWAFCookie(cookie.name) {
                 await cookieStore.deleteCookieAsync(cookie)
             }

@@ -52,8 +52,13 @@ enum HTMLTextExtractor {
         return value
     }
 
-    static func absoluteURL(from href: String, baseURL: URL = YamiboDomain.baseURL) -> URL? {
-        URL(string: decodeHTMLEntities(href), relativeTo: baseURL)?.absoluteURL
+    static func absoluteURL(
+        from href: String,
+        baseURL: URL = YamiboDomain.baseURL,
+        purpose: YamiboResourceURLPurpose = .general
+    ) -> URL? {
+        guard let url = URL(string: decodeHTMLEntities(href), relativeTo: baseURL)?.absoluteURL else { return nil }
+        return YamiboForumEnvironment.current.adaptedResourceURL(url, purpose: purpose)
     }
 
     /// Payload of the `<root><![CDATA[…]]></root>` envelope Discuz wraps AJAX

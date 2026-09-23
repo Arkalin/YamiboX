@@ -206,7 +206,7 @@ public enum ForumRouteResolver {
     }
 
     private static func isForumHomeURL(_ url: URL) -> Bool {
-        guard url.host == YamiboDomain.baseURL.host else { return false }
+        guard YamiboDomain.isForumURL(url) else { return false }
         let path = url.path.isEmpty ? "/" : url.path
         if (path == "/" || path == "/index.php") && url.query == nil {
             return true

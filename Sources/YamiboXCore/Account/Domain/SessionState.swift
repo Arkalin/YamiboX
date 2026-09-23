@@ -1,7 +1,13 @@
 import Foundation
 
 public struct SessionState: Codable, Hashable, Sendable {
-    public static let authenticationCookieName = "EeqY_2132_auth"
+    /// The production site's prefix is fixed; the local Discuz installation
+    /// generates its own prefix, so local sessions match the auth suffix.
+    public static let authenticationCookieName = YamiboForumEnvironment.productionAuthenticationCookieName
+
+    public static func isAuthenticationCookieName(_ name: String) -> Bool {
+        YamiboForumEnvironment.current.isAuthenticationCookieName(name)
+    }
 
     public var cookies: [YamiboCookie]
     /// Compatibility projection for callers that still need a Cookie header.
@@ -36,7 +42,7 @@ public struct SessionState: Codable, Hashable, Sendable {
 
     public var authenticationCookie: YamiboCookie? {
         cookies.first {
-            $0.name == Self.authenticationCookieName && !$0.isExpired()
+            Self.isAuthenticationCookieName($0.name) && !$0.isExpired()
         }
     }
 
@@ -55,7 +61,7 @@ public struct SessionState: Codable, Hashable, Sendable {
                 let pair = part.split(separator: "=", maxSplits: 1).map(String.init)
                 guard pair.count == 2 else { return nil }
                 let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                guard name == authenticationCookieName else { return nil }
+                guard isAuthenticationCookieName(name) else { return nil }
                 return normalizedAuthenticationCookieValue(pair[1])
             }
             .first

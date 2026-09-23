@@ -22,6 +22,8 @@ final class ForumDestinationNavigator {
     }
     var actionErrorDetails: LoadFailureDetails?
     var transientFeedback: TransientFeedback?
+    private(set) var isOpeningContent = false
+    @ObservationIgnored private var contentOpenTask: Task<Void, Never>?
 
     @ObservationIgnored let dependencies: ForumDependencies
     @ObservationIgnored let appModel: YamiboAppModel
@@ -400,6 +402,90 @@ final class ForumDestinationNavigator {
         if let url = components.url {
             push(.postEditor(url))
         }
+    }
+
+    /// An explicit content destination bypasses classification, not loading or permissions.
+    func openContent(_ url: URL, destination: AppContentDestination) {
+        guard !isOpeningContent,
+              let tid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "tid" })?.value else { return }
+        let revision = pathRevision
+        let generation = appModel.accountGeneration
+        isOpeningContent = true
+        contentOpenTask = Task {
+            defer {
+                isOpeningContent = false
+                contentOpenTask = nil
+            }
+            do {
+                let repository = await dependencies.makeForumThreadReaderRepository()
+                let page = try await repository.fetchThreadPage(context: ThreadNovelLaunchContext(
+                    thread: ThreadIdentity(tid: tid), title: L10n.string("forum.default_title")
+                ))
+                try Task.checkCancellation()
+                guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                let thread = ThreadIdentity(tid: tid, fid: page.forumID ?? page.thread.fid)
+                let novelContext = NovelDetailLaunchContext(thread: thread, title: page.title, authorID: page.posts.first?.author.uid)
+                let mangaContext = MangaDetailLaunchContext(
+                    thread: thread, title: MangaTitleCleaner.cleanBookName(page.title),
+                    focusedChapterTID: tid, directoryNameHint: MangaTitleCleaner.cleanBookName(page.title)
+                )
+                switch destination {
+                case .normalThread:
+                    push(.threadReader(ThreadNovelLaunchContext(thread: thread, title: page.title)))
+                case .novelDetail:
+                    push(.novelDetail(novelContext))
+                case .mangaDetail:
+                    push(.mangaDetail(mangaContext))
+                case .novelReader:
+                    let model = NovelDetailViewModel(context: novelContext, dependencies: dependencies.novelDetailDependencies)
+                    await model.load()
+                    try Task.checkCancellation()
+                    guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                    if let error = model.errorMessage {
+                        actionErrorMessage = error
+                        actionErrorDetails = model.errorDetails
+                    } else {
+                        appModel.presentNovelReader(model.continueLaunchContext())
+                    }
+                case .mangaReader:
+                    let settings = await dependencies.settingsStore.load()
+                    let context: MangaLaunchContext
+                    if settings.isSmartComicModeEnabled(forumID: thread.fid) {
+                        let model = MangaDetailViewModel(context: mangaContext, dependencies: dependencies.mangaDetailDependencies)
+                        await model.load()
+                        try Task.checkCancellation()
+                        guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                        guard let launch = model.continueLaunchContext() else {
+                            actionErrorMessage = model.errorMessage ?? L10n.string("common.operation_failed")
+                            actionErrorDetails = model.errorDetails
+                            return
+                        }
+                        context = launch
+                    } else {
+                        let progress = await dependencies.readingProgressStore.load(for: .mangaThread(threadID: tid))?.manga
+                        context = MangaLaunchContext(
+                            originalThreadID: tid, chapterTID: tid, displayTitle: page.title,
+                            source: progress == nil ? .forum : .resume,
+                            chapterView: progress?.chapterView ?? 1, initialPage: progress?.mangaPageIndex ?? 0,
+                            isSmartModeEnabled: false, forumID: thread.fid
+                        )
+                    }
+                    try Task.checkCancellation()
+                    guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                    appModel.requestMangaReader(context)
+                }
+            } catch {
+                guard !LoadDiagnosticError.isCancellation(error), revision == pathRevision,
+                      generation == appModel.accountGeneration else { return }
+                actionErrorMessage = error.localizedDescription
+                actionErrorDetails = LoadFailureDetails(error: error)
+            }
+        }
+    }
+
+    func cancelContentOpen() {
+        contentOpenTask?.cancel()
     }
 
     private func openYamiboThreadRouteTarget(_ target: YamiboThreadRouteTarget, isDiscussionView: Bool = false) {

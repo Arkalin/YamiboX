@@ -1541,3 +1541,13 @@
 "reader.comment_composer.reply_unavailable" = "暂时无法回复此楼层";
 "reader.comment_composer.reply_outside_chapter" = "回复会追加到帖子末尾，不会出现在当前章节评论区。若要留在本章，请使用点评。";
 "reader.comment_composer.reply_placement_unknown" = "回复会追加到帖子末尾，可能不会出现在当前章节评论区。";
+"test_forum.missing_url" = "缺少测试论坛地址。每次启动都需要传入参数。";
+"test_forum.duplicate_url" = "测试论坛地址参数只能提供一次。";
+"test_forum.invalid_url" = "测试论坛地址必须是 HTTP 或 HTTPS 根地址，不能包含账号、路径、查询或片段。";
+"test_forum.production_url" = "测试版本不能连接 yamibo.com 或其子域名。";
+"test_forum.configuration_title" = "测试论坛配置错误";
+"test_forum.launch_instructions" = "请通过 Xcode 的 Run → Arguments 或 simctl 传入 --forum-base-url <URL> 后重新启动。桌面启动不会沿用上次地址。";
+"test_forum.preparing" = "正在准备测试论坛数据…";
+"test_forum.reset_failed" = "测试数据清理未完成，已阻止启动。请排查错误并重新启动以重试。";
+"test_forum.background_unavailable" = "测试版本需要携带论坛地址参数在前台启动，不支持后台快捷指令。";
+"test_forum.invalid_navigation" = "页面直达参数无效。请仅提供一个 --open-page <目标> 或 --open-url <本站链接>，目标列表见 README。";

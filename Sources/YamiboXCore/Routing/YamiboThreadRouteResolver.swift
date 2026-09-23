@@ -26,6 +26,9 @@ public actor YamiboThreadRouteResolver {
     ) async throws -> YamiboThreadRouteTarget {
         let requestURL = URL(string: request.threadURL.absoluteString, relativeTo: YamiboDomain.baseURL)?.absoluteURL
             ?? request.threadURL.absoluteURL
+        if !YamiboForumEnvironment.current.allowsThreadResolution(requestURL) {
+            return .webFallback(requestURL)
+        }
         var canonicalURL = canonicalThreadURL(from: requestURL) ?? requestURL
         let targetPostID = request.targetPostID ?? postID(from: requestURL)
         var baseInitialPage = pageNumber(from: requestURL) ?? pageNumber(from: canonicalURL) ?? 1
@@ -270,7 +273,7 @@ public actor YamiboThreadRouteResolver {
         if url.host == nil {
             return YamiboThreadURLCanonicalizer.canonicalThreadURL(from: url)
         }
-        if let host = url.host, YamiboDomain.containsYamiboDomain(host) {
+        if YamiboDomain.isYamiboHost(url) {
             return YamiboThreadURLCanonicalizer.canonicalThreadURL(from: url)
         }
         return nil

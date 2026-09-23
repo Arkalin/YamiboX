@@ -103,13 +103,13 @@ public actor SessionStore: SessionStoring {
         let previousSession = session
         let previousAuthentication = session.authenticationCookie
         let incoming = canonicalCookies(webCookies.filter { !$0.isExpired() })
-        let incomingAuthentication = incoming.first { $0.name == SessionState.authenticationCookieName }
+        let incomingAuthentication = incoming.first { SessionState.isAuthenticationCookieName($0.name) }
         let preservesCurrentAuthentication = session.isLoggedIn && previousAuthentication != nil &&
             (incomingAuthentication == nil || incomingAuthentication?.value != previousAuthentication?.value)
 
         if preservesCurrentAuthentication, let previousAuthentication {
             session.cookies = canonicalCookies(
-                incoming.filter { $0.name != SessionState.authenticationCookieName } + [previousAuthentication]
+                incoming.filter { !SessionState.isAuthenticationCookieName($0.name) } + [previousAuthentication]
             )
         } else {
             session.cookies = incoming

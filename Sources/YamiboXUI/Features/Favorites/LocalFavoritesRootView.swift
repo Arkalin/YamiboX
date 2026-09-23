@@ -117,6 +117,10 @@ struct LocalFavoritesRootView: View {
         .onChange(of: appModel.isReaderCoverVisible || isThreadCoverVisible || routes.detail != nil, initial: true) { _, visible in
             organizer.setBookPresentationActive(visible)
         }
+        .onChange(of: appModel.favoriteUpdatesRequestID, initial: true) { _, _ in
+            guard appModel.claimFavoriteUpdatesRequest() else { return }
+            routes.isUpdatesPagePushed = true
+        }
         .task {
             async let organizerLoad: Void = organizer.load()
             async let remoteSyncLoad: Void = remoteSync.load()

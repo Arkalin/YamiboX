@@ -51,7 +51,11 @@ public struct ForumNavigationHostView: View {
         }
         .onChange(of: appModel.forumNavigationRequest?.id, initial: true) { _, _ in
             guard let request = appModel.claimForumNavigationRequest() else { return }
-            navigator.route(request.url, source: request.source, title: request.title)
+            if let destination = request.contentDestination {
+                navigator.openContent(request.url, destination: destination)
+            } else {
+                navigator.route(request.url, source: request.source, title: request.title)
+            }
         }
         // `initial: true` also catches a Home Screen quick action tapped
         // before this view ever mounted (cold launch): the scene delegate
@@ -62,5 +66,13 @@ public struct ForumNavigationHostView: View {
             navigator.openSearch(fid: nil, fromBrowserList: true)
         }
         .forumTheme(theme)
+        .readerTransitionOverlay(
+            isPresented: navigator.isOpeningContent,
+            title: L10n.string("common.loading"),
+            onCancel: navigator.cancelContentOpen
+        )
+        .onChange(of: appModel.selectedTab) { _, tab in
+            if tab != .forum { navigator.cancelContentOpen() }
+        }
     }
 }

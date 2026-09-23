@@ -8,11 +8,13 @@ public struct ForumNavigationRequest: Identifiable, Hashable, Sendable {
     public let url: URL
     public let source: ForumNavigationSource
     public let title: String?
+    public let contentDestination: AppContentDestination?
 
-    public init(url: URL, source: ForumNavigationSource = .external, title: String? = nil) {
+    public init(url: URL, source: ForumNavigationSource = .external, title: String? = nil, contentDestination: AppContentDestination? = nil) {
         self.url = url
         self.source = source
         self.title = title
+        self.contentDestination = contentDestination
     }
 }
 
@@ -60,6 +62,9 @@ public final class YamiboAppModel {
     public private(set) var suspendedMangaContext: MangaLaunchContext?
     public private(set) var forumNavigationRequest: ForumNavigationRequest?
     public private(set) var forumSearchRequest: ForumSearchRequest?
+    private(set) var mineNavigationRequest: MineNavigationRequest?
+    private(set) var favoriteUpdatesRequestID: UUID?
+    @ObservationIgnored private var initialNavigation: AppNavigationTarget?
     @ObservationIgnored private var claimedForumNavigationRequestID: UUID?
     @ObservationIgnored private var claimedForumSearchRequestID: UUID?
     public private(set) var appThemePreset = AppThemePreset.classic
@@ -91,9 +96,11 @@ public final class YamiboAppModel {
         mangaReaderOpenValidator: MangaReaderOpenValidator? = nil,
         windowCoordinator: YamiboWindowCoordinator? = nil,
         windowID: String? = nil,
-        readerResumeRouteStore: ReaderResumeRouteStore? = nil
+        readerResumeRouteStore: ReaderResumeRouteStore? = nil,
+        initialNavigation: AppNavigationTarget? = nil
     ) {
         self.appContext = appContext
+        self.initialNavigation = initialNavigation
         self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
         self.mangaReaderOpenValidator = mangaReaderOpenValidator ?? MangaReaderOpenValidator { request in
             let loader = await appContext.mangaReaderDependencies.makeProjectionLoader()
@@ -188,6 +195,10 @@ public final class YamiboAppModel {
         bootstrapState = state
         bootstrapErrorMessage = nil
         if generation == accountGeneration { applyRestoredRoute(result.restoredRoute) }
+        if let target = initialNavigation {
+            initialNavigation = nil
+            open(target)
+        }
     }
 
     private func configureAccountTransitions() async {
@@ -525,6 +536,33 @@ public final class YamiboAppModel {
         forumNavigationRequest = ForumNavigationRequest(url: url)
     }
 
+    private func open(_ target: AppNavigationTarget) {
+        selectedTab = target.initialTab
+        switch target {
+        case .tab: break
+        case .search: openForumSearch()
+        case .login: mineNavigationRequest = MineNavigationRequest(target: .login)
+        case let .settings(destination): mineNavigationRequest = MineNavigationRequest(target: .settings(destination))
+        case let .mine(destination): mineNavigationRequest = MineNavigationRequest(target: .page(destination))
+        case .favoriteUpdates: favoriteUpdatesRequestID = UUID()
+        case let .forumURL(url): openForumURL(url)
+        case let .content(destination, threadID):
+            let url = YamiboRoute.threadByID(tid: threadID, page: 1, authorID: nil, reverse: false).url
+            forumNavigationRequest = ForumNavigationRequest(url: url, contentDestination: destination)
+        }
+    }
+
+    func claimMineNavigationRequest() -> MineNavigationRequest? {
+        defer { mineNavigationRequest = nil }
+        return mineNavigationRequest
+    }
+
+    func claimFavoriteUpdatesRequest() -> Bool {
+        guard favoriteUpdatesRequestID != nil else { return false }
+        favoriteUpdatesRequestID = nil
+        return true
+    }
+
     public func openNativeForumThread(url: URL, title: String?) {
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url, source: .readerOrigin, title: title)
@@ -578,7 +616,7 @@ public final class YamiboAppModel {
     }
 
     private var canRestoreReaderRoute: Bool {
-        !hasActiveReaderPresentation && forumNavigationRequest == nil && forumSearchRequest == nil
+        initialNavigation == nil && !hasActiveReaderPresentation && forumNavigationRequest == nil && forumSearchRequest == nil
     }
 
     private func applyRestoredRoute(_ route: ReaderResumeRoute?) {

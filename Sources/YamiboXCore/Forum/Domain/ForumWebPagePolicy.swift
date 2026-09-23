@@ -4,9 +4,7 @@ import Foundation
 /// decision shared by URL routing and the WebKit navigation delegate.
 public enum ForumWebPagePolicy {
     public static func isForumPage(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-              url.user == nil, url.password == nil else { return false }
-        return YamiboDomain.isForumHost(url) && (url.port == nil || url.port == 80 || url.port == 443)
+        YamiboForumEnvironment.current.isForumPageURL(url)
     }
 
     public static func isLoginPage(_ url: URL) -> Bool {
@@ -22,10 +20,7 @@ public enum ForumWebPagePolicy {
     }
 
     public static func secureURL(_ url: URL) -> URL {
-        guard isForumPage(url), var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else { return url }
-        components.scheme = "https"
-        if components.port == 80 { components.port = nil }
-        return components.url ?? url
+        YamiboForumEnvironment.current.normalizedForumPageURL(url)
     }
 
     /// Discuz has state-changing GET links. Never fetch a token-bearing action

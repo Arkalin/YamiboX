@@ -25,6 +25,7 @@ public final class OfflineCacheContinuedProcessingCoordinator: OfflineCacheQueue
     }
 
     public func submitUserInitiatedRun() async {
+        guard YamiboForumEnvironment.current.supportsBackgroundRelaunch else { return }
         #if os(iOS) && canImport(BackgroundTasks)
         guard #available(iOS 26.0, *) else { return }
         let identifier = Self.makeTaskIdentifier()

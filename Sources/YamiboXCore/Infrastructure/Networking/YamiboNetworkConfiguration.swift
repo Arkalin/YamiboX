@@ -9,17 +9,24 @@ public enum YamiboNetworkConfiguration {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     public static func makeSession() -> URLSession {
-        URLSession(configuration: makeSessionConfiguration())
+        makeSession(configuration: makeSessionConfiguration())
     }
 
     public static func makeImageSession() -> URLSession {
-        URLSession(configuration: makeImageSessionConfiguration())
+        makeSession(configuration: makeImageSessionConfiguration())
     }
 
     /// A short-lived session for requests that provide an explicit, filtered
     /// Cookie header. It must not read from or write to shared cookie storage.
     static func makeCookieIsolatedSession() -> URLSession {
-        URLSession(configuration: makeCookieIsolatedSessionConfiguration())
+        makeSession(configuration: makeCookieIsolatedSessionConfiguration())
+    }
+
+    static func makeSession(configuration: URLSessionConfiguration) -> URLSession {
+        if YamiboNetworkPolicy.requiresRedirectProtection {
+            return URLSession(configuration: configuration, delegate: ForumNetworkRedirectDelegate(), delegateQueue: nil)
+        }
+        return URLSession(configuration: configuration)
     }
 
     public static func makeSessionConfiguration() -> URLSessionConfiguration {
@@ -55,5 +62,14 @@ public enum YamiboNetworkConfiguration {
             cachePolicy: cachePolicy,
             timeoutInterval: requestTimeout
         )
+    }
+}
+
+private final class ForumNetworkRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url))
     }
 }

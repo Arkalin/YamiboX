@@ -1,18 +1,18 @@
 import Foundation
 
-/// Central definition of the yamibo.com domain: canonical hosts, base URL
-/// construction, and the host / cookie-domain matching rules used across the app.
+/// Central definition of the selected forum: canonical host, base URL,
+/// and the host / cookie-domain matching rules used across the app.
 public enum YamiboDomain: Sendable {
-    /// Registrable root domain of the site.
-    public static let rootDomain = "yamibo.com"
+    /// Registrable root domain of the production site, or the local host.
+    public static var rootDomain: String {
+        YamiboForumEnvironment.current.rootDomain
+    }
 
-    /// Host of the main forum site.
-    public static let forumHost = "bbs.yamibo.com"
+    /// Host of the selected forum site.
+    public static var forumHost: String { YamiboForumEnvironment.current.forumHost }
 
-    /// Canonical base URL of the forum ("https://bbs.yamibo.com").
-    public static let baseURL = URL(string: "https://\(forumHost)")!
-
-    private static let subdomainSuffix = ".\(rootDomain)"
+    /// Canonical base URL of the selected forum, including its scheme and port.
+    public static var baseURL: URL { YamiboForumEnvironment.current.baseURL }
 
     // MARK: - URL host matching
 
@@ -21,12 +21,16 @@ public enum YamiboDomain: Sendable {
         url.host?.lowercased() == forumHost
     }
 
+    /// Test mode trusts only the configured origin, including its effective port.
+    public static func isForumURL(_ url: URL) -> Bool {
+        YamiboForumEnvironment.current.isForumURL(url)
+    }
+
     /// Whether the URL points at the forum host or any `*.yamibo.com` subdomain.
     /// The bare root domain ("yamibo.com") intentionally does not match; this is
     /// the allowlist semantic used for in-app web navigation.
     public static func isYamiboHost(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return host == forumHost || host.hasSuffix(subdomainSuffix)
+        YamiboForumEnvironment.current.isSiteURL(url)
     }
 
     // MARK: - Cookie domain matching
@@ -35,18 +39,13 @@ public enum YamiboDomain: Sendable {
     /// matches the bare root domain, the forum host, and any `*.yamibo.com`
     /// domain (including leading-dot cookie domains such as ".yamibo.com").
     public static func isYamiboCookieDomain(_ domain: String) -> Bool {
-        let normalized = domain.lowercased()
-        return normalized == rootDomain
-            || normalized == forumHost
-            || normalized.hasSuffix(subdomainSuffix)
+        YamiboForumEnvironment.current.isCookieDomain(domain)
     }
 
-    /// Broad substring check: whether the value mentions "yamibo.com" anywhere
-    /// (case-insensitive). Used for permissive matching such as cookie cleanup
-    /// and thread-URL routing, where over-matching is preferable to missing a
-    /// yamibo-affiliated host.
+    /// Production uses the existing broad substring check; test mode uses the
+    /// configured site's cookie-domain rules during cookie cleanup.
     public static func containsYamiboDomain(_ value: String) -> Bool {
-        value.lowercased().contains(rootDomain)
+        YamiboForumEnvironment.current.matchesCookieCleanupDomain(value)
     }
 
     // MARK: - URL construction
@@ -56,6 +55,6 @@ public enum YamiboDomain: Sendable {
     /// (e.g. "plugin.php?id=zqlj_sign").
     public static func url(forSitePath path: String) -> URL? {
         let normalized = path.hasPrefix("/") ? path : "/\(path)"
-        return URL(string: "https://\(forumHost)\(normalized)")
+        return URL(string: normalized, relativeTo: baseURL)?.absoluteURL
     }
 }

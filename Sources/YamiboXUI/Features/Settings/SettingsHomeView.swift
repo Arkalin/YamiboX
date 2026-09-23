@@ -18,6 +18,7 @@ public struct SettingsHomeView: View {
 
     public init(
         dependencies: SettingsDependencies,
+        initialDestination: SettingsSidebarDestination? = nil,
         peripheralInput: ReaderPeripheralInputManager? = nil,
         onSignOut: @escaping @MainActor () async -> LoadFailureDetails?,
         onApplicationReset: @escaping @MainActor () async -> Void,
@@ -33,6 +34,15 @@ public struct SettingsHomeView: View {
             accountSwitcher: accountSwitcher
         ))
         self.onClose = onClose
+        if let initialDestination {
+            _selectedDestination = State(initialValue: initialDestination)
+            _compactColumn = State(initialValue: .detail)
+            switch initialDestination {
+            case let .category(category): _pushedCategory = State(initialValue: category)
+            case .about: _isAboutPushed = State(initialValue: true)
+            case .accounts: _isAccountManagementPushed = State(initialValue: true)
+            }
+        }
     }
 
     public var body: some View {

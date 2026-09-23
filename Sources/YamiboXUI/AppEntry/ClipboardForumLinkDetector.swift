@@ -22,6 +22,7 @@ public struct ClipboardForumLinkDetector: Sendable {
         guard let text, !text.isEmpty else { return nil }
 
         let prefixes = [
+            YamiboDomain.baseURL.absoluteString,
             "https://\(YamiboDomain.forumHost)",
             "http://\(YamiboDomain.forumHost)",
             YamiboDomain.forumHost
@@ -56,7 +57,7 @@ public struct ClipboardForumLinkDetector: Sendable {
             guard let url = URL(string: rawCandidate),
                   let scheme = url.scheme?.lowercased(),
                   scheme == "http" || scheme == "https",
-                  YamiboDomain.isForumHost(url) else {
+                  YamiboDomain.isForumURL(url) else {
                 continue
             }
             return mobileForumURL(from: url)
@@ -76,7 +77,7 @@ public struct ClipboardForumLinkDetector: Sendable {
     ) -> String {
         let end = text[start...].firstIndex(where: isURLTerminator) ?? text.endIndex
         let candidate = String(text[start..<end]).trimmingTrailingURLPunctuation()
-        return hasScheme ? candidate : "https://\(candidate)"
+        return hasScheme ? candidate : "\(YamiboDomain.baseURL.scheme!)://\(candidate)"
     }
 
     private static func hasValidLeadingBoundary(before start: String.Index, in text: String) -> Bool {

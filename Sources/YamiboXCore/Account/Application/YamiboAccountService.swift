@@ -2,6 +2,7 @@ import Foundation
 
 public struct YamiboAccountService: Sendable {
     private let session: URLSession
+    private let cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext
     private let sessionStore: SessionStore
     private let profileStore: YamiboProfileStore
     private let userAgent: String
@@ -17,10 +18,12 @@ public struct YamiboAccountService: Sendable {
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext = .standard,
         coordinatedSignOut: (@Sendable () async throws -> Void)? = nil,
         coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil
     ) {
         self.session = session
+        self.cookieStorageContext = cookieStorageContext
         self.sessionStore = sessionStore
         self.profileStore = profileStore
         self.userAgent = userAgent
@@ -39,8 +42,9 @@ public struct YamiboAccountService: Sendable {
         configuration.timeoutIntervalForRequest = YamiboNetworkConfiguration.requestTimeout
         configuration.timeoutIntervalForResource = YamiboNetworkConfiguration.resourceTimeout
         return YamiboAccountService(
-            session: URLSession(configuration: configuration),
-            sessionStore: sessionStore, profileStore: profileStore, wafRecoverer: wafRecoverer
+            session: YamiboNetworkConfiguration.makeSession(configuration: configuration),
+            sessionStore: sessionStore, profileStore: profileStore, wafRecoverer: wafRecoverer,
+            cookieStorageContext: .isolatedLogin
         )
     }
 
@@ -54,7 +58,8 @@ public struct YamiboAccountService: Sendable {
         let form = try await fetchLoginForm()
         let clearance = await sessionStore.load().cookies.filter { YamiboCookie.isWAFCookie($0.name) }
         let client = YamiboClient(
-            session: session, credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent), wafRecoverer: wafRecoverer
+            session: session, credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent),
+            wafRecoverer: wafRecoverer, cookieStorageContext: cookieStorageContext
         )
         let responseHTML = try await client.submitForm(
             url: form.actionURL,
@@ -72,7 +77,7 @@ public struct YamiboAccountService: Sendable {
         }
 
         let cookies = await currentCookies()
-        guard cookies.contains(where: { $0.name == SessionState.authenticationCookieName && !$0.isExpired() }) else {
+        guard cookies.contains(where: { SessionState.isAuthenticationCookieName($0.name) && !$0.isExpired() }) else {
             throw YamiboError.loginFailed(extractLoginFailureMessage(from: responseHTML))
         }
 
@@ -175,7 +180,10 @@ public struct YamiboAccountService: Sendable {
     }
 
     private func fetchLoginForm() async throws -> YamiboLoginForm {
-        let client = YamiboClient(session: session, userAgent: userAgent, wafRecoverer: wafRecoverer)
+        let client = YamiboClient(
+            session: session, userAgent: userAgent, wafRecoverer: wafRecoverer,
+            cookieStorageContext: cookieStorageContext
+        )
         let html = try await client.fetchHTML(for: .login, cachePolicy: .reloadIgnoringLocalCacheData)
         return try LoadDiagnosticError.parsing(html: html, context: "YamiboLoginFormParser.parse") {
             try YamiboLoginFormParser.parse(html)
@@ -188,7 +196,8 @@ public struct YamiboAccountService: Sendable {
         validateSession: (@Sendable () async throws -> Void)? = nil
     ) async throws -> YamiboProfile {
         let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer,
-                                  handlesCookies: handlesCookies, validateSession: validateSession)
+                                  handlesCookies: handlesCookies, cookieStorageContext: cookieStorageContext,
+                                  validateSession: validateSession)
         let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
         return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
             try YamiboProfileParser.parse(html)

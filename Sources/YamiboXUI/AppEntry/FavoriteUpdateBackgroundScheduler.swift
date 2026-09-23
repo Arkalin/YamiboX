@@ -28,6 +28,7 @@ public enum FavoriteUpdateBackgroundScheduler {
     /// enters the background.
     @MainActor
     public static func scheduleNextIfNeeded(appContext: YamiboAppContext) {
+        guard YamiboForumEnvironment.current.supportsBackgroundRelaunch else { return }
         Task { @MainActor in
             let monitor = makeMonitor(appContext: appContext)
             await monitor.load()

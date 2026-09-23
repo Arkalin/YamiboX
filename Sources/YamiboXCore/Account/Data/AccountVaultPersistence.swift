@@ -7,7 +7,7 @@ protocol AccountVaultPersisting: Sendable {
 }
 
 struct KeychainAccountVaultPersistence: AccountVaultPersisting {
-    var service = "com.arkalin.YamiboX.accounts"
+    var service = YamiboForumEnvironment.current.accountKeychainService
 
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

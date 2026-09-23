@@ -10,6 +10,7 @@ public struct YamiboWindowRootView: View {
     @SceneStorage("yamibox.window.selectedTab") private var selectedTabName = ""
     @SceneStorage("yamibox.window.requestHandled") private var requestHandled = false
     @State private var model: YamiboAppModel?
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(coordinator: YamiboWindowCoordinator, initialTab: AppTab, request: YamiboWindowRequest?) {
         self.coordinator = coordinator
@@ -29,14 +30,19 @@ public struct YamiboWindowRootView: View {
                 ProgressView()
             }
         }
-        .task {
+        .task(id: scenePhase) {
             guard model == nil else { return }
+            guard !coordinator.hasPendingInitialNavigation || scenePhase == .active else { return }
+            let initialNavigation = coordinator.claimInitialNavigation()
             if windowID.isEmpty { windowID = UUID().uuidString }
             let model = coordinator.makeModel(
                 windowID: windowID,
-                initialTab: Self.tab(named: selectedTabName) ?? initialTab
+                initialTab: initialNavigation?.initialTab ?? Self.tab(named: selectedTabName) ?? initialTab,
+                initialNavigation: initialNavigation
             )
-            if !requestHandled, let request {
+            if initialNavigation != nil {
+                requestHandled = true
+            } else if !requestHandled, let request {
                 requestHandled = true
                 if let route = request.readerRoute {
                     switch route {

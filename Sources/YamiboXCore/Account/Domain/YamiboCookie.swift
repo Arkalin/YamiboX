@@ -66,7 +66,10 @@ public struct YamiboCookie: Codable, Hashable, Sendable {
                 let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines)
                 let value = pair[1].trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty, !value.isEmpty, !isLegacyWAFCookie(name) else { return nil }
-                return YamiboCookie(name: name, value: value, domain: YamiboDomain.forumHost, capturedAt: capturedAt)
+                return YamiboCookie(
+                    name: name, value: value, domain: YamiboDomain.forumHost,
+                    capturedAt: capturedAt, isSecure: YamiboForumEnvironment.current.legacyCookieIsSecure
+                )
             }
     }
 
@@ -100,9 +103,10 @@ public extension YamiboCookie {
             .domain: domain,
             .path: path,
             .name: name,
-            .value: value,
-            .secure: isSecure ? "TRUE" : "FALSE"
+            .value: value
         ]
+        // Foundation treats the presence of this property as Secure, even for "FALSE".
+        if isSecure { properties[.secure] = "TRUE" }
         if let expiresAt { properties[.expires] = expiresAt }
         if let sameSitePolicy { properties[.sameSitePolicy] = sameSitePolicy }
         if isHTTPOnly { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
@@ -120,15 +124,7 @@ public struct YamiboRequestCredentials: Hashable, Sendable {
     }
 
     public func cookieHeader(for url: URL, at date: Date = .now) -> String {
-        cookies
-            .filter { $0.matches(url, at: date) }
-            .sorted {
-                if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
-                if $0.name != $1.name { return $0.name < $1.name }
-                return $0.domain < $1.domain
-            }
-            .map { "\($0.name)=\($0.value)" }
-            .joined(separator: "; ")
+        YamiboNetworkPolicy.cookieHeader(for: url, credentials: self, at: date)
     }
 
     private static func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {

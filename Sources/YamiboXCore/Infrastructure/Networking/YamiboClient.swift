@@ -18,6 +18,7 @@ struct YamiboClient: Sendable {
     var userAgent: String
     var wafRecoverer: (any YamiboWAFChallengeRecovering)?
     var handlesCookies: Bool
+    var cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext
     var validateSession: (@Sendable () async throws -> Void)?
 
     var cookie: String? {
@@ -31,6 +32,7 @@ struct YamiboClient: Sendable {
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         handlesCookies: Bool = true,
+        cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext = .standard,
         validateSession: (@Sendable () async throws -> Void)? = nil
     ) {
         self.session = session
@@ -41,6 +43,7 @@ struct YamiboClient: Sendable {
         self.userAgent = userAgent
         self.wafRecoverer = wafRecoverer
         self.handlesCookies = handlesCookies
+        self.cookieStorageContext = cookieStorageContext
         self.validateSession = validateSession
     }
 
@@ -49,6 +52,7 @@ struct YamiboClient: Sendable {
         credentials: YamiboRequestCredentials,
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         handlesCookies: Bool = true,
+        cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext = .standard,
         validateSession: (@Sendable () async throws -> Void)? = nil
     ) {
         self.session = session
@@ -56,6 +60,7 @@ struct YamiboClient: Sendable {
         userAgent = credentials.userAgent
         self.wafRecoverer = wafRecoverer
         self.handlesCookies = handlesCookies
+        self.cookieStorageContext = cookieStorageContext
         self.validateSession = validateSession
     }
 
@@ -294,10 +299,10 @@ struct YamiboClient: Sendable {
         to request: inout URLRequest,
         userAgent: String
     ) {
-        request.httpShouldHandleCookies = handlesCookies
-        let cookieHeader = request.url.map { credentials.cookieHeader(for: $0) } ?? ""
-        request.setValue(cookieHeader.isEmpty ? nil : cookieHeader, forHTTPHeaderField: "Cookie")
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        YamiboNetworkPolicy.applyCredentials(
+            credentials, to: &request, userAgent: userAgent,
+            handlesCookies: handlesCookies, cookieStorageContext: cookieStorageContext
+        )
     }
 
     private func decodeHTML(from data: Data, response: URLResponse) throws -> String {
@@ -343,12 +348,7 @@ final class ForumPageRedirectDelegate: NSObject, URLSessionTaskDelegate {
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
-        guard let url = request.url, ForumWebPagePolicy.isForumPage(url), url.scheme?.lowercased() == "https",
-              !ForumWebPagePolicy.requiresConfirmationToLoad(url), request.httpMethod == "GET" else {
-            completionHandler(nil)
-            return
-        }
-        completionHandler(request)
+        completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url, context: .forumPage))
     }
 }
 

@@ -8,6 +8,9 @@ import UserNotifications
 #endif
 import YamiboXCore
 import YamiboXUI
+#if canImport(BackgroundTasks)
+import BackgroundTasks
+#endif
 
 @main
 struct YamiboXApp: App {
@@ -15,12 +18,77 @@ struct YamiboXApp: App {
     @UIApplicationDelegateAdaptor(YamiboAppDelegate.self) private var appDelegate
     #endif
 
-    @State private var windows: YamiboWindowCoordinator
-    private let initialTab: AppTab
+    @State private var startup = YamiboAppStartup()
+
+    var body: some Scene {
+        WindowGroup(for: YamiboWindowRequest.self) { request in
+            Group {
+                if let windows = startup.windows {
+                    YamiboAppWindow(windows: windows, initialTab: startup.initialTab, request: request.wrappedValue)
+                } else if let failure = startup.failure {
+                    ContentUnavailableView {
+                        Label(L10n.string("test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
+                    }
+                } else {
+                    ProgressView(L10n.string("test_forum.preparing"))
+                }
+            }
+            .task { await startup.prepare() }
+        }
+    }
+}
+
+@MainActor
+@Observable
+private final class YamiboAppStartup {
+    var windows: YamiboWindowCoordinator?
+    var initialTab: AppTab = .forum
+    var failure: String?
+    private var didStart = false
+    private var initialNavigation: AppNavigationTarget?
 
     init() {
-        let initialTab = YamiboXApp.resolveInitialTab()
-        self.initialTab = initialTab
+        switch YamiboForumEnvironment.launchConfiguration {
+        case let .failure(error): failure = error.localizedDescription
+        case let .success(environment):
+            if environment.requiresTestSitePreparation {
+                do {
+                    initialNavigation = try YamiboLaunchNavigationArguments.parse(ProcessInfo.processInfo.arguments, environment: environment)
+                } catch {
+                    failure = error.localizedDescription
+                }
+            } else {
+                startRuntime()
+            }
+        }
+    }
+
+    func prepare() async {
+        guard !didStart, windows == nil, failure == nil else { return }
+        didStart = true
+        do {
+            #if canImport(BackgroundTasks)
+            BGTaskScheduler.shared.cancelAllTaskRequests()
+            #endif
+            let didReset = try await YamiboTestSiteBootstrap.prepare(websiteDataClearer: WebKitWebsiteDataClearer())
+            #if os(iOS)
+            if didReset {
+                let center = UNUserNotificationCenter.current()
+                center.removeAllPendingNotificationRequests()
+                center.removeAllDeliveredNotifications()
+                try? await center.setBadgeCount(0)
+            }
+            #endif
+            startRuntime()
+        } catch {
+            failure = L10n.string("test_forum.reset_failed") + "\n" + error.localizedDescription
+        }
+    }
+
+    private func startRuntime() {
+        initialTab = Self.resolveInitialTab()
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let imageMemoryCache = YamiboUIImageMemoryCache()
@@ -33,29 +101,26 @@ struct YamiboXApp: App {
         #if os(iOS)
         YamiboAppDelegate.appContext = appContext
         #endif
-        Self.registerMangaOfflineCacheBackgroundTasks(appContext: appContext)
+        if YamiboForumEnvironment.current.supportsBackgroundRelaunch {
+            Self.registerMangaOfflineCacheBackgroundTasks(appContext: appContext)
         #if os(iOS) && canImport(BackgroundTasks)
-        FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
+            FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
         #endif
+        }
         let windows = YamiboWindowCoordinator(
             appContext: appContext,
             webSessionCoordinator: webSessionCoordinator,
-            imagePipeline: YamiboUIImagePipeline(core: appContext.imagePipeline, memoryCache: imageMemoryCache)
+            imagePipeline: YamiboUIImagePipeline(core: appContext.imagePipeline, memoryCache: imageMemoryCache),
+            initialNavigation: initialNavigation
         )
         windows.startRuntime()
         #if os(iOS)
         YamiboAppDelegate.windows = windows
         #endif
-        _windows = State(initialValue: windows)
+        self.windows = windows
         #if canImport(AppIntents)
         YamiboAppShortcutsProvider.updateAppShortcutParameters()
         #endif
-    }
-
-    var body: some Scene {
-        WindowGroup(for: YamiboWindowRequest.self) { request in
-            YamiboAppWindow(windows: windows, initialTab: initialTab, request: request.wrappedValue)
-        }
     }
 
     private static func resolveInitialTab() -> AppTab {
@@ -116,7 +181,11 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        Self.appContext?.offlineCacheBackgroundDownloadTransport
+        guard let appContext = Self.appContext else {
+            completionHandler()
+            return
+        }
+        appContext.offlineCacheBackgroundDownloadTransport
             .setBackgroundEventsCompletionHandler(
                 completionHandler,
                 forSessionIdentifier: identifier
@@ -174,6 +243,62 @@ private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 #endif
+
+private enum YamiboLaunchNavigationArguments {
+    private struct InvalidTarget: LocalizedError {
+        var errorDescription: String? { L10n.string("test_forum.invalid_navigation") }
+    }
+
+    static func parse(_ arguments: [String], environment: YamiboForumEnvironment) throws -> AppNavigationTarget? {
+        var entries: [(String, String)] = []
+        for (index, argument) in arguments.enumerated() {
+            for flag in ["--open-page", "--open-url"] {
+                if argument == flag {
+                    entries.append((flag, index + 1 < arguments.count ? arguments[index + 1] : ""))
+                } else if argument.hasPrefix(flag + "=") {
+                    entries.append((flag, String(argument.dropFirst(flag.count + 1))))
+                }
+            }
+        }
+        guard !entries.isEmpty else { return nil }
+        guard entries.count == 1, let (flag, value) = entries.first, !value.isEmpty else { throw InvalidTarget() }
+        if flag == "--open-url" {
+            guard value == value.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.hasPrefix("//"),
+                  let parsed = URL(string: value, encodingInvalidCharacters: false),
+                  parsed.scheme != nil || value.hasPrefix("/"),
+                  let url = URL(string: value, relativeTo: environment.baseURL)?.absoluteURL,
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  url.user == nil, url.password == nil, environment.isForumURL(url) else { throw InvalidTarget() }
+            return .forumURL(url)
+        }
+        switch value {
+        case "home": return .tab(.home)
+        case "forum": return .tab(.forum)
+        case "favorites": return .tab(.favorites)
+        case "mine": return .tab(.mine)
+        case "search": return .search
+        case "login": return .login
+        case "settings": return .settings(nil)
+        case "settings/accounts": return .settings(.accounts)
+        case "settings/about": return .settings(.about)
+        case "favorites/updates": return .favoriteUpdates
+        default: break
+        }
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { throw InvalidTarget() }
+        if parts[0] == "mine", let destination = AppMineDestination(rawValue: String(parts[1])) {
+            return .mine(destination)
+        }
+        if parts[0] == "settings", let category = SettingsCategory(rawValue: String(parts[1])) {
+            return .settings(.category(category))
+        }
+        guard let destination = AppContentDestination(rawValue: String(parts[0])),
+              !parts[1].isEmpty, parts[1].allSatisfy({ $0.isASCII && $0.isNumber }),
+              let threadID = Int(parts[1]), threadID > 0 else { throw InvalidTarget() }
+        return .content(destination, threadID: String(threadID))
+    }
+}
 
 private struct YamiboAppWindow: View {
     let windows: YamiboWindowCoordinator
@@ -271,6 +396,10 @@ struct YamiboCheckInIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard case let .success(environment) = YamiboForumEnvironment.launchConfiguration,
+              environment.supportsBackgroundRelaunch else {
+            return .result(dialog: IntentDialog(stringLiteral: L10n.string("test_forum.background_unavailable")))
+        }
         let result = await YamiboAppContext().makeCheckInService().checkInIfNeeded(force: false)
         return .result(dialog: IntentDialog(stringLiteral: result.message))
     }

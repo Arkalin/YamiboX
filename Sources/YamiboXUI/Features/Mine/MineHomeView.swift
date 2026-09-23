@@ -9,6 +9,7 @@ public struct MineHomeView: View {
     @State private var isSettingsPushed = false
     @State private var isOfflineCacheQueuePushed = false
     @State private var isMyLikesPushed = false
+    @State private var initialSettingsDestination: SettingsSidebarDestination?
 
     private let settingsDependencies: SettingsDependencies
     private let sessionStore: SessionStore
@@ -50,6 +51,35 @@ public struct MineHomeView: View {
             }
         }
         .task { await viewModel.load() }
+        .task(id: appModel.mineNavigationRequest?.id) {
+            guard let request = appModel.mineNavigationRequest else { return }
+            switch request.target {
+            case .login:
+                _ = appModel.claimMineNavigationRequest()
+                showingLoginSheet = true
+            case let .settings(destination):
+                guard UIDevice.current.userInterfaceIdiom != .pad else { return }
+                _ = appModel.claimMineNavigationRequest()
+                initialSettingsDestination = destination
+                isSettingsPushed = true
+            case let .page(destination):
+                guard UIDevice.current.userInterfaceIdiom != .pad else { return }
+                if destination.requiresLogin { await viewModel.reloadAccountSnapshot() }
+                guard !Task.isCancelled, appModel.mineNavigationRequest?.id == request.id else { return }
+                _ = appModel.claimMineNavigationRequest()
+                guard !destination.requiresLogin || viewModel.isLoggedIn else {
+                    showingLoginSheet = true
+                    return
+                }
+                switch destination {
+                case .profile: navigator.push(.userSpace(uid: nil, name: nil, section: .space, subPage: .profile))
+                case .messages: navigator.openMessageCenter(tab: .privateMessages)
+                case .history: navigator.push(.browsingHistory)
+                case .likes: isMyLikesPushed = true
+                case .downloads: isOfflineCacheQueuePushed = true
+                }
+            }
+        }
         .task {
             for await _ in sessionStore.changes() {
                 guard !Task.isCancelled else { return }
@@ -125,6 +155,7 @@ public struct MineHomeView: View {
                 )
                 MineSettingsSection(
                     showSettings: {
+                        initialSettingsDestination = nil
                         isSettingsPushed = true
                     }
                 )
@@ -158,6 +189,7 @@ public struct MineHomeView: View {
     private var settingsScreen: some View {
         SettingsHomeView(
             dependencies: settingsDependencies,
+            initialDestination: initialSettingsDestination,
             peripheralInput: appModel.peripheralInput,
             onSignOut: signOut,
             onApplicationReset: {

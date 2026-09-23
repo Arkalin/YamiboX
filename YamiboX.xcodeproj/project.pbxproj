@@ -214,6 +214,8 @@
 				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboX;
 				PRODUCT_NAME = YamiboX;
+				YAMIBOX_DISPLAY_NAME = "Yamibo X";
+				YAMIBOX_FORUM_ENVIRONMENT = production;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -373,6 +375,8 @@
 				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboX.debug;
 				PRODUCT_NAME = YamiboX;
+				YAMIBOX_DISPLAY_NAME = "Yamibo X";
+				YAMIBOX_FORUM_ENVIRONMENT = production;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -382,6 +386,72 @@
 			};
 			name = Debug;
 		};
+		A7D2E3F4B5C6012345678901 /* Debug-Local */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 9;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 67485D7YXU;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YamiboX/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arkalin.YamiboX.local;
+				PRODUCT_NAME = YamiboX;
+				SDKROOT = iphonesimulator;
+				SUPPORTED_PLATFORMS = iphonesimulator;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				YAMIBOX_DISPLAY_NAME = "Yamibo X 本地测试";
+				YAMIBOX_FORUM_ENVIRONMENT = localSimulator;
+			};
+			name = "Debug-Local";
+		};
+		A7D2E3F4B5C6012345678902 /* Debug-Local */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 67485D7YXU;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = "Debug-Local";
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -389,6 +459,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				E4AB3813155E9CFB917102EB /* Debug */,
+				A7D2E3F4B5C6012345678902 /* Debug-Local */,
 				B85D6654CEE78A946C12FA84 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -399,6 +470,7 @@
 			buildConfigurations = (
 				1EBF54778128785B62009220 /* Release */,
 				FD4C3909CCA9549C215BE663 /* Debug */,
+				A7D2E3F4B5C6012345678901 /* Debug-Local */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

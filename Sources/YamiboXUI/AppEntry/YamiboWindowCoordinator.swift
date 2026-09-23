@@ -39,6 +39,14 @@ public final class YamiboWindowCoordinator {
     @ObservationIgnored private var pendingSearchSceneID: String?
     @ObservationIgnored private var hasPendingSearch = false
     @ObservationIgnored private var pendingNotificationUserInfo: [AnyHashable: Any]?
+    private var initialNavigation: AppNavigationTarget?
+
+    var hasPendingInitialNavigation: Bool { initialNavigation != nil }
+
+    func claimInitialNavigation() -> AppNavigationTarget? {
+        defer { initialNavigation = nil }
+        return initialNavigation
+    }
 
     private static let restorationPrefix = "yamibox.window.resumeRoute."
 
@@ -46,7 +54,8 @@ public final class YamiboWindowCoordinator {
         appContext: YamiboAppContext,
         webSessionCoordinator: ForumWebSessionCoordinator? = nil,
         imagePipeline: YamiboUIImagePipeline? = nil,
-        restorationDefaults: UserDefaults = .standard
+        restorationDefaults: UserDefaults = .standard,
+        initialNavigation: AppNavigationTarget? = nil
     ) {
         self.appContext = appContext
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
@@ -54,6 +63,7 @@ public final class YamiboWindowCoordinator {
         )
         self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
         self.restorationDefaults = restorationDefaults
+        self.initialNavigation = initialNavigation
         let synchronization = AppContinuityWorkflow(appContext: appContext)
         self.synchronization = synchronization
         runtime = appContext.makeRuntimeCoordinator(continuity: synchronization)
@@ -63,7 +73,7 @@ public final class YamiboWindowCoordinator {
 
     func stopRuntime() { runtime.stop() }
 
-    public func makeModel(windowID: String, initialTab: AppTab = .forum) -> YamiboAppModel {
+    public func makeModel(windowID: String, initialTab: AppTab = .forum, initialNavigation: AppNavigationTarget? = nil) -> YamiboAppModel {
         if let model = models[windowID]?.value { return model }
         let model = YamiboAppModel(
             appContext: appContext,
@@ -72,7 +82,8 @@ public final class YamiboWindowCoordinator {
             imagePipeline: imagePipeline,
             windowCoordinator: self,
             windowID: windowID,
-            readerResumeRouteStore: resumeRouteStore(windowID: windowID)
+            readerResumeRouteStore: resumeRouteStore(windowID: windowID),
+            initialNavigation: initialNavigation
         )
         models[windowID] = WeakModel(model)
         if legacyWindowID == nil { legacyWindowID = windowID }

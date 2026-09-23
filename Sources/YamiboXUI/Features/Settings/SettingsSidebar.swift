@@ -1,7 +1,7 @@
 import SwiftUI
 import YamiboXCore
 
-enum SettingsSidebarDestination: Hashable {
+public enum SettingsSidebarDestination: Hashable, Sendable {
     case category(SettingsCategory)
     case about
     case accounts

@@ -111,10 +111,8 @@ enum YamiboProfileParser {
         let raw = HTMLTextExtractor.decodeHTMLEntities(value)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            .components(separatedBy: "?")
-            .first ?? value
         guard !raw.isEmpty else { return nil }
-        return HTMLTextExtractor.absoluteURL(from: raw)
+        return HTMLTextExtractor.absoluteURL(from: raw, purpose: .profileImage)
     }
 
     private static func firstInteger(in text: String) -> Int? {

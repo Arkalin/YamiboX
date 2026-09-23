@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import YamiboXCore
 
-enum SettingsCategory: String, CaseIterable, Identifiable {
+public enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     case general
     case home
     case forum
@@ -10,7 +10,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case reading
     case storage
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     var title: String {
         switch self {
