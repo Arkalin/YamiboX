@@ -132,8 +132,8 @@ struct ForumThreadTextBlockFormatter {
         if style.isBold {
             font = font.bold()
         }
-        // The renderer synthesizes the slant, including CJK fallback glyphs
-        // whose fonts have no italic face. Do not also italicize Latin glyphs.
+        // The view applies either a synthetic slant or native italic to the
+        // whole run. Keeping this base font upright avoids a double slant.
         return font
     }
 }

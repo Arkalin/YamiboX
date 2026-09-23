@@ -39,6 +39,10 @@ struct ForumThreadTextRenderer: TextRenderer {
 /// One Text keeps native line breaking and selection across text and smileys.
 /// Only image frames change during playback; attachment dimensions stay fixed.
 struct ForumThreadInlineTextView: View {
+    // The custom per-run renderer stops painting sufficiently tall Text views.
+    // Before text blocks were kept intact, it only ever drew at most 320 characters.
+    private static let maxSyntheticItalicCharacters = 320
+
     let attributedText: AttributedString
     let refererURL: URL
 
@@ -49,22 +53,40 @@ struct ForumThreadInlineTextView: View {
     @State private var images: [URL: Image] = [:]
 
     var body: some View {
-        Self.composedText(attributedText, images: images, imageSize: imageSize)
-            .textRenderer(ForumThreadTextRenderer())
-            .task(id: requestIdentity) {
-                images = [:]
-                guard let pipeline else { return }
-                await withTaskGroup(of: Void.self) { group in
-                    for url in imageURLs {
-                        group.addTask {
-                            await load(url, pipeline: pipeline)
-                        }
+        let useSyntheticItalics = attributedText.characters.count <= Self.maxSyntheticItalicCharacters
+            && attributedText.runs.contains(where: { $0[ForumThreadItalicKey.self] == true })
+        let text = Self.composedText(
+            attributedText,
+            images: images,
+            imageSize: imageSize,
+            useSyntheticItalics: useSyntheticItalics
+        )
+        Group {
+            if useSyntheticItalics {
+                text.textRenderer(ForumThreadTextRenderer())
+            } else {
+                text
+            }
+        }
+        .task(id: requestIdentity) {
+            images = [:]
+            guard let pipeline else { return }
+            await withTaskGroup(of: Void.self) { group in
+                for url in imageURLs {
+                    group.addTask {
+                        await load(url, pipeline: pipeline)
                     }
                 }
             }
+        }
     }
 
-    static func composedText(_ attributed: AttributedString, images: [URL: Image], imageSize: CGFloat) -> Text {
+    static func composedText(
+        _ attributed: AttributedString,
+        images: [URL: Image],
+        imageSize: CGFloat,
+        useSyntheticItalics: Bool
+    ) -> Text {
         attributed.runs.reduce(Text(verbatim: "")) { result, run in
             let part: Text
             if let inline = run[ForumThreadInlineImageKey.self] {
@@ -78,7 +100,11 @@ struct ForumThreadInlineTextView: View {
                 }
             } else {
                 let text = Text(AttributedString(attributed[run.range]))
-                part = run[ForumThreadItalicKey.self] == true ? text.customAttribute(ForumThreadItalicAttribute()) : text
+                if run[ForumThreadItalicKey.self] == true {
+                    part = useSyntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic()
+                } else {
+                    part = text
+                }
             }
             return Text("\(result)\(part)")
         }

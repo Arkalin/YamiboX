@@ -362,7 +362,7 @@ enum ForumThreadPostsParser {
         }
     }
 
-    private static func normalizedBodyText(from blocks: [ForumThreadContentBlock]) -> String {
+    static func normalizedBodyText(from blocks: [ForumThreadContentBlock]) -> String {
         let text = blocks.flatMap(\.plainTextFragments).joined(separator: "\n")
         return ForumThreadHTMLBlockParser.normalizeCommittedText(text)
     }

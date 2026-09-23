@@ -81,7 +81,39 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
         reverse: Bool = false
     ) async -> ForumThreadPage? {
         guard !reverse else { return nil }
-        return await cacheStore.loadThreadPage(thread: context.thread, page: page, authorID: authorID?.nilIfBlank)
+        guard let cached = await cacheStore.loadThreadPage(
+            thread: context.thread,
+            page: page,
+            authorID: authorID?.nilIfBlank
+        ) else { return nil }
+        return reparsedForThreadReader(cached)
+    }
+
+    /// Cached pages can contain text blocks split by older parser versions.
+    /// Reparse only the in-memory copy used by the ordinary thread reader;
+    /// leave the saved page and novel/offline projections untouched.
+    private func reparsedForThreadReader(_ cached: ForumThreadPage) -> ForumThreadPage {
+        var page = cached
+        for index in page.posts.indices {
+            let html = page.posts[index].contentHTML
+            guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                YamiboLog.forum.warning("cachedThreadPage: missing contentHTML for post \(page.posts[index].postID, privacy: .public); keeping cached content")
+                continue
+            }
+            do {
+                let blocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: html)
+                guard !blocks.isEmpty
+                    || (page.posts[index].contentBlocks.isEmpty && page.posts[index].contentText.isEmpty) else {
+                    YamiboLog.forum.warning("cachedThreadPage: empty reparse for post \(page.posts[index].postID, privacy: .public); keeping cached content")
+                    continue
+                }
+                page.posts[index].contentBlocks = blocks
+                page.posts[index].contentText = ForumThreadPostsParser.normalizedBodyText(from: blocks)
+            } catch {
+                YamiboLog.forum.warning("cachedThreadPage: failed to reparse post \(page.posts[index].postID, privacy: .public); keeping cached content: \(error)")
+            }
+        }
+        return page
     }
 
     public func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int = 1) async -> ForumThreadPage? {
