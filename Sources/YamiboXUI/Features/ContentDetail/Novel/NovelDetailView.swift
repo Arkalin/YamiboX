@@ -240,7 +240,13 @@ struct NovelDetailHeader: View {
                     progressText: summary.readingProgressText,
                     action: onReadStart
                 )
-                ContentDetailFavoriteButton(isFavorited: summary.isFavorited, action: onFavoriteTap, onLongPress: onFavoriteLongPress)
+                ContentDetailFavoriteButton(
+                    isFavorited: summary.isFavorited,
+                    isEnabled: summary.favoriteEnabled,
+                    stateKnown: summary.favoriteStateKnown,
+                    favoriteLabel: summary.favoriteLabel,
+                    action: onFavoriteTap, onLongPress: onFavoriteLongPress
+                )
             }
         } details: {
             NovelHeaderMetadata(

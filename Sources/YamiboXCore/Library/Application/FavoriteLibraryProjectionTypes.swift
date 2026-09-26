@@ -280,8 +280,13 @@ public struct FavoriteCardProjection: Equatable, Identifiable, Sendable {
         guard isModeOnMangaThread else {
             return item.resolvedDisplayTitle
         }
-        let cleaned = MangaTitleCleaner.cleanBookName(item.resolvedDisplayTitle)
-        return cleaned.isEmpty ? item.resolvedDisplayTitle : cleaned
+        return resolvedSmartMangaTitle(item.resolvedDisplayTitle, directory: nil)
+    }
+
+    public static func resolvedSmartMangaTitle(_ title: String, directory: MangaDirectory?) -> String {
+        if let directory { return directory.cleanBookName }
+        let cleaned = MangaTitleCleaner.cleanBookName(title)
+        return cleaned.isEmpty ? title : cleaned
     }
 
     /// The `content_cover` key this card's displayed cover reads AND every

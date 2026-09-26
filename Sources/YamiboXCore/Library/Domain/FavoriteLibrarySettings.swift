@@ -389,8 +389,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     /// already taken — so a conservative-but-nonzero default doesn't spring
     /// unexpected network activity on anyone who hasn't touched smart manga.
     public var smartMangaUpdateCheckInterval: SmartMangaUpdateCheckInterval
-    /// Whether a smart-comic card's long-press menu and the multi-select
-    /// toolbar are allowed to delete it — deleting a smart card means
+    /// Whether smart-comic cards, work-level stars and the multi-select
+    /// toolbar are allowed to delete a work — deleting a smart card means
     /// deleting every favorite currently archived under it, not just its
     /// representative member. On by default; turning it off restores the
     /// original behavior where only the dedicated "查看归档收藏" archive page

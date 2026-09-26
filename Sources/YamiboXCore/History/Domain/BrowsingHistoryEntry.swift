@@ -32,8 +32,8 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
     /// Novel: last-read chapter title. Manga: current chapter title.
     public var chapterTitle: String?
     /// Directory-level (`.mangaTitle`) rows only: the chapter thread the row
-    /// currently points at — the favorite heart acts on it (decision #11)
-    /// and mode-off click routing opens it (PRD implementation notes).
+    /// currently points at. Used for a new favorite's chapter anchor and
+    /// mode-off routing, not the existing work's favorite membership.
     public var chapterThreadID: String?
     public var lastVisitTime: Date
     /// Actual browsing source, independent of the canonical reader's resume position.

@@ -314,16 +314,21 @@ struct ContentDetailActionIcon: View {
 
 struct ContentDetailFavoriteButton: View {
     let isFavorited: Bool
+    var isEnabled = true
+    var stateKnown = true
+    var favoriteLabel: String? = nil
     let action: () -> Void
     let onLongPress: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ContentDetailActionIcon(systemImage: isFavorited ? "star.fill" : "star")
+            ContentDetailActionIcon(systemImage: stateKnown ? (isFavorited ? "star.fill" : "star") : "ellipsis")
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onLongPress() })
-        .accessibilityLabel(L10n.string(isFavorited ? "forum.thread.favorited" : "forum.thread.favorite"))
-        .help(L10n.string(isFavorited ? "forum.thread.favorited" : "forum.thread.favorite"))
+        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onLongPress() })
+        .disabled(!isEnabled)
+        .accessibilityLabel(favoriteLabel ?? L10n.string(isFavorited ? "forum.thread.favorited" : "forum.thread.favorite"))
+        .help(favoriteLabel ?? L10n.string(isFavorited ? "forum.thread.favorited" : "forum.thread.favorite"))
+        .accessibilityIdentifier("content-detail-favorite")
     }
 }

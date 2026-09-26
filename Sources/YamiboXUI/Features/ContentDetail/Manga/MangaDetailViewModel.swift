@@ -63,7 +63,9 @@ final class MangaDetailViewModel {
             defaultTitle: context.title,
             localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
             settingsStore: dependencies.settingsStore,
-            makeFavoriteRepository: dependencies.makeFavoriteRepository
+            makeFavoriteRepository: dependencies.makeFavoriteRepository,
+            scope: .manga(threadID: context.thread.tid, title: context.directoryNameHint ?? context.title, forumID: context.thread.fid),
+            mangaDirectoryStore: dependencies.mangaDirectoryStore
         )
         // Stamp the launching board's fid over the injected configuration
         // (mirroring MangaReaderViewModel's construction): the detail page's
@@ -214,7 +216,7 @@ final class MangaDetailViewModel {
         defer { isLoading = false }
         errorMessage = nil
         readingProgress = await loadReadingProgress()
-        await favoriteActions.refreshFavorite()
+        await refreshFavoriteMembership()
         favoriteActions.errorMessage = nil
 
         do {
@@ -248,6 +250,7 @@ final class MangaDetailViewModel {
 
             currentDocument = document
             directory = resolvedDirectory
+            await refreshFavoriteMembership()
             // Only now is `directory`'s stable identity known, so only now can
             // the precise directory-scoped query replace whatever the fuzzy
             // fetch above (before `directory` was known) happened to find.
@@ -283,7 +286,7 @@ final class MangaDetailViewModel {
     }
 
     var isFavorited: Bool {
-        favoriteActions.favorite != nil
+        favoriteActions.isFavorited
     }
 
     func continueLaunchContext() -> MangaLaunchContext? {
@@ -452,6 +455,13 @@ final class MangaDetailViewModel {
 
     // MARK: - Favorite
 
+    private func refreshFavoriteMembership() async {
+        await favoriteActions.updateScope(.manga(
+            threadID: context.thread.tid, title: context.title,
+            forumID: context.thread.fid, directoryTitle: directory?.cleanBookName
+        ))
+    }
+
     /// Title recorded when the star creates a favorite: the resolved
     /// directory's clean book name once loaded, else the launch title.
     private var favoriteTitle: String {
@@ -612,6 +622,7 @@ final class MangaDetailViewModel {
             return
         }
         directory = refreshed
+        await refreshFavoriteMembership()
         readingProgress = await loadReadingProgress()
         contentCover = await loadContentCover()
     }

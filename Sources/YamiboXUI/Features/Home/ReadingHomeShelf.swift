@@ -10,14 +10,11 @@ struct ReadingHomeShelf: Equatable {
     init(
         entries: [BrowsingHistoryEntry],
         boardReader: BoardReaderSettings,
-        favoritedThreadIDs: Set<String>? = nil
+        favorites: FavoriteMembershipSnapshot? = nil
     ) {
         let readingEntries = entries.filter { entry in
             guard entry.category(boardReader: boardReader) != .normal else { return false }
-            guard let favoritedThreadIDs else { return true }
-            // Match the history page's favorite action: smart manga uses its current chapter.
-            guard let threadID = entry.target.threadID ?? entry.chapterThreadID else { return false }
-            return favoritedThreadIDs.contains(threadID)
+            return favorites?.membership(for: entry).isFavorited ?? true
         }
             .sorted {
                 if $0.lastVisitTime != $1.lastVisitTime { return $0.lastVisitTime > $1.lastVisitTime }

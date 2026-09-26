@@ -62,6 +62,10 @@ struct ReadingHomeView: View {
                         }
                         .padding(.top, 28)
                         .padding(.bottom, 32)
+                    } else if let error = model.loadErrorMessage {
+                        LoadFailureView(message: error, details: model.loadErrorDetails) {
+                            Task { await model.reload() }
+                        }
                     } else {
                         ProgressView().frame(maxWidth: .infinity).padding(48)
                     }
@@ -118,6 +122,10 @@ struct ReadingHomeView: View {
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
                 await model.observe(appModel.appContext.libraryDependencies.localFavoriteLibraryStore.changes())
+            }
+            .task(id: isHomeVisible) {
+                guard isHomeVisible else { return }
+                await model.observe(appModel.appContext.libraryDependencies.mangaDirectoryStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }

@@ -54,6 +54,9 @@ struct NovelDetailHeaderSummary: Equatable, Sendable {
     var firstFloorPreviewText: String?
     var readingProgressText: String?
     var isFavorited: Bool
+    var favoriteEnabled: Bool
+    var favoriteStateKnown: Bool
+    var favoriteLabel: String
 }
 
 @MainActor
@@ -171,7 +174,10 @@ final class NovelDetailViewModel {
             chapterCount: chapters.count,
             firstFloorPreviewText: Self.firstFloorPreviewText(from: previewPost),
             readingProgressText: Self.readingProgressText(from: readingProgress, favorite: favoriteActions.favorite),
-            isFavorited: favoriteActions.favorite != nil
+            isFavorited: favoriteActions.isFavorited,
+            favoriteEnabled: favoriteActions.canAct,
+            favoriteStateKnown: favoriteActions.membership != nil,
+            favoriteLabel: favoriteActions.accessibilityLabel
         )
     }
 

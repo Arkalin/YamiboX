@@ -148,6 +148,9 @@ private struct MangaDetailBodyView: View {
                     isSearchMode: model.isSearchMode,
                     isForcedSearchShortcutActive: model.forcedSearchShortcutRemaining != nil,
                     isFavorited: model.isFavorited,
+                    favoriteEnabled: model.favoriteActions.canAct,
+                    favoriteStateKnown: model.favoriteActions.membership != nil,
+                    favoriteLabel: model.favoriteActions.accessibilityLabel,
                     onContinueTap: onContinueTap,
                     onUpdateDirectoryTap: onUpdateDirectoryTap,
                     onFavoriteTap: onFavoriteTap,
@@ -204,6 +207,9 @@ struct MangaDetailHeader: View {
     let isSearchMode: Bool
     let isForcedSearchShortcutActive: Bool
     let isFavorited: Bool
+    let favoriteEnabled: Bool
+    let favoriteStateKnown: Bool
+    let favoriteLabel: String
     let onContinueTap: () -> Void
     let onUpdateDirectoryTap: () -> Void
     let onFavoriteTap: () -> Void
@@ -232,6 +238,9 @@ struct MangaDetailHeader: View {
                 )
                 ContentDetailFavoriteButton(
                     isFavorited: isFavorited,
+                    isEnabled: favoriteEnabled,
+                    stateKnown: favoriteStateKnown,
+                    favoriteLabel: favoriteLabel,
                     action: onFavoriteTap,
                     onLongPress: onFavoriteLongPress
                 )

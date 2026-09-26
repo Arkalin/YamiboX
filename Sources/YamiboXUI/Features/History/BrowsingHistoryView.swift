@@ -66,25 +66,7 @@ struct BrowsingHistoryView: View {
         ) {
             Task { await model.clearAll() }
         }
-        .favoriteQuickActionDialogs(
-            addPromptPresented: Bindable(model).favoriteAddPromptPresented,
-            removePrompt: Bindable(model).favoriteRemovePrompt,
-            onConfirmAdd: { syncToRemote, remember in
-                Task { await model.confirmFavoriteAdd(syncToRemote: syncToRemote, remember: remember) }
-            },
-            onConfirmRemoval: { favorite, removeRemote, remember in
-                Task { await model.confirmFavoriteRemoval(favorite, removeRemote: removeRemote, remember: remember) }
-            }
-        )
-        .sheet(item: Bindable(model).favoriteLocationPickerContext) { context in
-            FavoriteLocationPickerSheet(
-                context: context,
-                onCancel: { model.favoriteLocationPickerContext = nil },
-                onConfirm: { locations in
-                    Task { await model.confirmFavoriteLocationSelection(locations) }
-                }
-            )
-        }
+        .favoriteActionInterface(model.favoriteActions)
         .failureAlert(
             L10n.string("common.operation_failed"),
             message: model.errorMessage,
@@ -106,6 +88,9 @@ struct BrowsingHistoryView: View {
         }
         .task {
             await model.observeSettingsChanges()
+        }
+        .task {
+            await model.observeDirectoryChanges()
         }
         .onChange(of: model.selectedCategory) {
             if let categorySelection, categorySelection.wrappedValue != model.selectedFilter {
@@ -154,6 +139,13 @@ struct BrowsingHistoryView: View {
         .overlay {
             if model.isLoading, model.entries.isEmpty {
                 ProgressView()
+            } else if model.hasLoaded, !model.favoritesReady, model.entries.isEmpty {
+                LoadFailureView(
+                    message: model.errorMessage ?? L10n.string("common.load_failed"),
+                    details: model.errorDetails
+                ) {
+                    Task { await model.load() }
+                }
             } else if model.hasLoaded, model.entries.isEmpty {
                 ContentUnavailableView {
                     Label(
@@ -180,7 +172,10 @@ struct BrowsingHistoryView: View {
             showsNormalThreadProgress: model.showsNormalThreadProgress,
             coverURL: model.coverURLsByEntryID[entry.id],
             isFavorited: model.isFavorited(entry),
-            canToggleFavorite: model.heartThreadID(for: entry) != nil,
+            canToggleFavorite: model.favoriteThreadID(for: entry) != nil,
+            favoriteStateKnown: model.favoriteSnapshot != nil,
+            favoriteActionEnabled: model.favoritesReady && model.favoriteActions?.isWorking != true,
+            favoriteLabel: model.favoriteLabel(for: entry),
             onOpen: {
                 Task { await open(entry) }
             },
@@ -369,6 +364,9 @@ private struct BrowsingHistoryRow: View {
     let coverURL: URL?
     let isFavorited: Bool
     let canToggleFavorite: Bool
+    let favoriteStateKnown: Bool
+    let favoriteActionEnabled: Bool
+    let favoriteLabel: String
     let onOpen: () -> Void
     let onToggleFavorite: () -> Void
     let onToggleFavoriteLongPress: () -> Void
@@ -390,7 +388,7 @@ private struct BrowsingHistoryRow: View {
 
             if canToggleFavorite {
                 Button(action: onToggleFavorite) {
-                    Image(systemName: isFavorited ? "star.fill" : "star")
+                    Image(systemName: favoriteStateKnown ? (isFavorited ? "star.fill" : "star") : "ellipsis")
                         .font(.body.weight(.medium))
                         .foregroundStyle(isFavorited ? appTheme.controlAccent : Color.secondary)
                         .frame(width: 44, height: 44)
@@ -400,11 +398,8 @@ private struct BrowsingHistoryRow: View {
                 .highPriorityGesture(
                     LongPressGesture(minimumDuration: 0.5).onEnded { _ in onToggleFavoriteLongPress() }
                 )
-                .accessibilityLabel(
-                    isFavorited
-                        ? L10n.string("history.favorite.remove")
-                        : L10n.string("history.favorite.add")
-                )
+                .disabled(!favoriteActionEnabled)
+                .accessibilityLabel(favoriteLabel)
                 .accessibilityIdentifier("history.favorite.\(entry.id)")
             }
         }

@@ -8,6 +8,8 @@ final class ReadingHomeViewModel {
     private(set) var continuing: [ReadingHomeBook] = []
     private(set) var previous: [ReadingHomeBook] = []
     private(set) var hasLoaded = false
+    private(set) var loadErrorMessage: String?
+    private(set) var loadErrorDetails: LoadFailureDetails?
     private(set) var isOpening = false
     var openFailed = false
 
@@ -28,23 +30,33 @@ final class ReadingHomeViewModel {
         generation += 1
         let currentGeneration = generation
         let snapshot: BrowsingHistorySnapshot
-        var favoritedThreadIDs: Set<String>?
+        var favorites: FavoriteMembershipSnapshot?
         do {
-            if await dependencies.settingsStore.load().system.homeShowsOnlyFavorites {
-                let document = try await dependencies.localFavoriteLibraryStore.load()
-                favoritedThreadIDs = Set(document.items.compactMap { $0.target.threadID })
-            }
             snapshot = try await dependencies.browsingHistoryWorkflow.snapshot()
+            if await dependencies.settingsStore.load().system.homeShowsOnlyFavorites {
+                favorites = try await FavoriteMembershipSnapshot.load(
+                    libraryStore: dependencies.localFavoriteLibraryStore,
+                    directoryStore: dependencies.mangaDirectoryStore,
+                    boardReader: snapshot.boardReader,
+                    additionalThreadIDs: snapshot.entries.map { FavoriteMembershipScope(entry: $0, boardReader: snapshot.boardReader).threadID }
+                )
+            }
         } catch {
+            guard currentGeneration == generation, !Task.isCancelled,
+                  !LoadDiagnosticError.isCancellation(error) else { return }
+            loadErrorMessage = error.localizedDescription
+            loadErrorDetails = LoadFailureDetails(error: error)
             YamiboLog.persistence.warning("Failed to load canonical reading history: \(error)")
             return
         }
         let settings = snapshot.boardReader
         let entries = snapshot.entries
-        let shelf = ReadingHomeShelf(entries: entries, boardReader: settings, favoritedThreadIDs: favoritedThreadIDs)
+        let shelf = ReadingHomeShelf(entries: entries, boardReader: settings, favorites: favorites)
         let keys = (shelf.continuing + shelf.previous).compactMap { ContentCoverKey(target: $0.target) }
         let covers = await dependencies.contentCoverStore.covers(for: keys)
         guard !Task.isCancelled, currentGeneration == generation else { return }
+        loadErrorMessage = nil
+        loadErrorDetails = nil
 
         func book(_ entry: BrowsingHistoryEntry) -> ReadingHomeBook {
             ReadingHomeBook(

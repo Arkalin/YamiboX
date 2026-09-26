@@ -72,6 +72,13 @@
 "color.red" = "红色";
 "color.yellow" = "黄色";
 "common.cancel" = "取消";
+"favorites.work.remove" = "取消作品收藏";
+"favorites.work.remove_message" = "将从所有分类和合集中移除这部作品的 %d 条章节收藏。";
+"favorites.work.changed" = "收藏范围已发生变化，请重新操作。";
+"favorites.work.empty" = "暂无归档收藏";
+"favorites.work.location_all" = "全部已选";
+"favorites.work.location_some" = "部分已选";
+"favorites.work.location_none" = "未选";
 "common.clear" = "清除";
 "common.clear_all" = "清空";
 "common.back" = "返回";
@@ -1082,7 +1089,7 @@
 "settings.favorite_remove_sync_prompt" = "移除收藏时询问是否同步删除";
 "settings.favorite_sync_behavior.footer" = "适用于所有收藏入口，包括详情页、阅读页、浏览记录，以及收藏页的“彻底删除”。关闭询问后将按默认动作静默执行；在任意询问弹窗中选择“不再询问”也会更新这里的开关。";
 "settings.favorite_smart_manga_bulk_delete" = "允许批量删除智能漫画收藏";
-"settings.favorite_smart_manga_bulk_delete.footer" = "开启后，智能漫画收藏卡片的长按菜单会新增删除按钮，多选工具栏在选中智能漫画收藏时也会显示删除；删除会移除该卡片归档下的全部收藏项，而不仅是代表项。关闭后仅能通过“查看归档收藏”页面逐项删除。";
+"settings.favorite_smart_manga_bulk_delete.footer" = "开启后，可通过收藏卡片菜单、多选工具栏，以及详情页和浏览记录中已点亮的作品星标，确认删除该作品归档下的全部收藏项。关闭后，作品星标会打开“查看归档收藏”，只能在其中逐项删除。";
 "settings.home_page" = "启动App后进入";
 "settings.gamepad" = "手柄";
 "settings.gamepad.capture_prompt" = "请按下手柄按键…";
