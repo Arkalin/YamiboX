@@ -16,9 +16,6 @@ enum NovelReaderInitialPresentationPhase {
 @MainActor
 @Observable
 public final class NovelReaderViewModel {
-    // The properties below were `@Published` before the `@Observable`
-    // migration; they stay tracked so the views keep re-rendering on the
-    // exact same writes as before.
     public private(set) var isLoading = false
     private(set) var initialPresentationPhase = NovelReaderInitialPresentationPhase.idle
     @ObservationIgnored private var initialPreparationTask: Task<Void, Never>?
@@ -34,17 +31,16 @@ public final class NovelReaderViewModel {
         return failure
     }
     var pageBoundary: ReaderPageBoundary?
-    public private(set) var novelReaderPresentation: NovelReaderPresentation?
+    public var novelReaderPresentation: NovelReaderPresentation? { publishedState.presentation }
     public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
     public var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
     private(set) var isNavigatingNovelReaderProjection = false
     private(set) var isApplyingAppearanceSettings = false
     private var bootstrapSettings = NovelReaderAppearanceSettings()
-    private var presentedSettings: NovelReaderAppearanceSettings?
-    // Chrome observes its own prepared snapshot, not the high-frequency
-    // presentation channel. Cache bookkeeping itself never invalidates views.
-    private(set) var chromeProgressSnapshot = NovelReaderChromeProgressSnapshot.empty
-    private(set) var presentationStructure: NovelReaderPresentationStructure?
+    private let publishedState = NovelReaderPublishedState()
+    private var presentedSettings: NovelReaderAppearanceSettings? { publishedState.settings }
+    var chromeProgressSnapshot: NovelReaderChromeProgressSnapshot { publishedState.progress }
+    var presentationStructure: NovelReaderPresentationStructure? { publishedState.structure }
     @ObservationIgnored private let presentationCache = NovelReaderPresentationCache()
 
     public let context: NovelLaunchContext
@@ -60,7 +56,7 @@ public final class NovelReaderViewModel {
     @ObservationIgnored private var latestRequestedLayout: NovelReaderLayout = .zero
     @ObservationIgnored private var layoutRequestSequence: UInt64 = 0
     @ObservationIgnored private var usesPadPresentation = false
-    @ObservationIgnored private var currentStableResumePoint: NovelResumePoint?
+    private var currentStableResumePoint: NovelResumePoint? { publishedState.resumePoint }
     private let runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
     // The three package hooks are test seams (assigned, never rendered),
@@ -444,6 +440,8 @@ public final class NovelReaderViewModel {
     }
 
     var currentNovelResumePoint: NovelResumePoint? {
+        // Live capture intentionally includes sub-threshold viewport samples;
+        // the published resume point belongs to the last rendered revision.
         readingWorkflow?.captureNovelReadingPosition()
     }
 
@@ -478,12 +476,7 @@ public final class NovelReaderViewModel {
         preparedInitialLoad = nil
         isLoading = false
         navigation.resetHistory()
-        currentStableResumePoint = nil
-        chromeProgressSnapshot = .empty
-        presentationCache.clear()
-        presentationStructure = nil
-        presentedSettings = nil
-        novelReaderPresentation = nil
+        publishedState.publish(nil, cache: presentationCache)
     }
 
     var currentChapterIndex: Int? {
@@ -1218,22 +1211,7 @@ public final class NovelReaderViewModel {
     }
 
     private func syncFromWorkflowState(_ state: NovelReadingWorkflowState) {
-        let snapshot: NovelReaderChromeProgressSnapshot
-        if let presentation = state.presentation, let structure = state.presentationStructure {
-            snapshot = presentationCache.progress(presentation: presentation, structure: structure)
-        } else {
-            presentationCache.clear()
-            snapshot = .empty
-        }
-        // Prepare derived data before publishing any part of the new state.
-        if presentationStructure != state.presentationStructure { presentationStructure = state.presentationStructure }
-        // Keep chrome's settings dependency separate from position revisions.
-        if presentedSettings != state.presentation?.committedSettings {
-            presentedSettings = state.presentation?.committedSettings
-        }
-        if snapshot != chromeProgressSnapshot { chromeProgressSnapshot = snapshot }
-        novelReaderPresentation = state.presentation
-        currentStableResumePoint = readingWorkflow?.captureNovelReadingPosition()
+        publishedState.publish(state, cache: presentationCache)
         guard let presentation = state.presentation else {
             imagePrefetchCoordinator.cancel()
             imagePrefetchSuspendedPosition = nil

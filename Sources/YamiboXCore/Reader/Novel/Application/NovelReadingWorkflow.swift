@@ -54,17 +54,21 @@ public struct NovelReadingCacheContext: Equatable, Sendable {
 
 public struct NovelReadingWorkflowState: Equatable, Sendable {
     package var snapshot: NovelReadingSnapshot
+    /// Captured from the same session revision as the published presentation.
+    package var resumePoint: NovelResumePoint?
     package var presentationStructure: NovelReaderPresentationStructure?
     public var presentation: NovelReaderPresentation?
     public var cachedViews: Set<Int>
 
     package init(
         snapshot: NovelReadingSnapshot,
+        resumePoint: NovelResumePoint?,
         presentationStructure: NovelReaderPresentationStructure? = nil,
         presentation: NovelReaderPresentation? = nil,
         cachedViews: Set<Int> = []
     ) {
         self.snapshot = snapshot
+        self.resumePoint = resumePoint
         self.presentationStructure = presentationStructure
         self.presentation = presentation
         self.cachedViews = cachedViews
@@ -326,6 +330,7 @@ public final class NovelReadingWorkflow {
         let revision = (state.presentation?.revision ?? 0) + 1
         let nextState = NovelReadingWorkflowState(
             snapshot: session.snapshot,
+            resumePoint: session.captureNovelReadingPosition(),
             presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: session.snapshot,
@@ -511,6 +516,7 @@ public final class NovelReadingWorkflow {
         let structure = makePresentationStructure(snapshot: snapshot, result: runtime.result, generation: runtime.generation)
         let state = NovelReadingWorkflowState(
             snapshot: snapshot,
+            resumePoint: session.captureNovelReadingPosition(),
             presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
@@ -1047,6 +1053,7 @@ public final class NovelReadingWorkflow {
             : 0
         let nextState = NovelReadingWorkflowState(
             snapshot: snapshot,
+            resumePoint: session?.captureNovelReadingPosition(),
             presentationStructure: structure,
             presentation: NovelReaderPresentationBuilder.makePresentation(
                 snapshot: snapshot,
