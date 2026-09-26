@@ -10,6 +10,26 @@ public actor ReadingProgressStore {
 
     private let database: DatabasePool
 
+    // All subscribers on this store share one query/observation. Observe
+    // committed database changes, including cross-store identity migrations,
+    // rather than relying on every writer to remember a manual notification.
+    private lazy var snapshotObservation = ValueObservation
+        .tracking { db in try Self.fetchAll(in: db) }
+        .removeDuplicates()
+        .shared(
+            in: database,
+            scheduling: .async(onQueue: DispatchQueue(label: "yamibox.readingProgress.observation")),
+            extent: .whileObserved
+        )
+
+    /// Delivers an initial snapshot followed by committed changes, without a
+    /// load-then-subscribe gap. Slow consumers receive the newest complete
+    /// snapshot, never partial deltas that could lose a deletion or rename.
+    /// Cancelling the last subscription stops the underlying database query.
+    public func snapshots() -> some AsyncSequence<[ReadingProgressRecord], any Error> & Sendable {
+        snapshotObservation.values(bufferingPolicy: .bufferingNewest(1))
+    }
+
     public init(
         defaults: UserDefaults = .standard,
         key: String = "yamibox.readingProgress.records"
@@ -63,13 +83,7 @@ public actor ReadingProgressStore {
     public func loadAll() async -> [ReadingProgressRecord] {
         do {
             return try await database.read { db in
-                try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT * FROM reading_progress
-                    ORDER BY updated_at DESC, id ASC
-                    """
-                ).compactMap(Self.record(from:))
+                try Self.fetchAll(in: db)
             }
         } catch {
             YamiboLog.persistence.warning("loadAll() failed to read reading progress list; returning empty list: \(error)")
@@ -453,6 +467,16 @@ public actor ReadingProgressStore {
     private static func fetchRecord(in db: Database, sql: String, arguments: StatementArguments) throws -> ReadingProgressRecord? {
         guard let row = try Row.fetchOne(db, sql: sql, arguments: arguments) else { return nil }
         return try record(from: row)
+    }
+
+    private static func fetchAll(in db: Database) throws -> [ReadingProgressRecord] {
+        try Row.fetchAll(
+            db,
+            sql: """
+            SELECT * FROM reading_progress
+            ORDER BY updated_at DESC, id ASC
+            """
+        ).compactMap(Self.record(from:))
     }
 
     private static func record(from row: Row) throws -> ReadingProgressRecord? {

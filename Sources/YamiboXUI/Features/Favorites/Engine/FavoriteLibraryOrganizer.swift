@@ -208,12 +208,7 @@ final class FavoriteLibraryOrganizer {
         ) { [weak self] in
             await self?.reload()
         }
-        progressUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = readingProgressStore] in store.changes() },
-            changeID: { [store = readingProgressStore] in store.changeID }
-        ) { [weak self] in
-            await self?.reloadReadingProgress()
-        }
+        observeReadingProgressIfNeeded()
         coverUpdatesTask = StoreChangeObservation.task(
             changes: { [store = contentCoverStore] in store.changes() },
             changeID: { [store = contentCoverStore] in store.changeID }
@@ -329,7 +324,7 @@ final class FavoriteLibraryOrganizer {
     // MARK: - Loading
 
     func load() async {
-        readingProgress = await readingProgressStore.loadAll()
+        observeReadingProgressIfNeeded()
         let loadedDocument: FavoriteLibraryDocument
         do {
             loadedDocument = try await libraryStore.load()
@@ -431,8 +426,29 @@ final class FavoriteLibraryOrganizer {
         scheduleMangaCoverBackfill(for: loadedDocument.items)
     }
 
-    private func reloadReadingProgress() async {
-        readingProgress = await readingProgressStore.loadAll()
+    private func observeReadingProgressIfNeeded() {
+        guard progressUpdatesTask == nil else { return }
+        progressUpdatesTask = Task { @MainActor [weak self, store = readingProgressStore] in
+            do {
+                for try await snapshot in await store.snapshots() {
+                    guard !Task.isCancelled else { return }
+                    self?.applyReadingProgress(snapshot)
+                }
+            } catch {
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    // Keep the last valid snapshot on failure. A later load
+                    // can subscribe again instead of showing empty progress.
+                    self?.errorMessage = error.localizedDescription
+                    self?.errorDetails = LoadFailureDetails(error: error)
+                }
+            }
+            self?.progressUpdatesTask = nil
+        }
+    }
+
+    private func applyReadingProgress(_ snapshot: [ReadingProgressRecord]) {
+        guard readingProgress != snapshot else { return }
+        readingProgress = snapshot
         refreshDerivedState()
     }
 
@@ -534,13 +550,9 @@ final class FavoriteLibraryOrganizer {
     /// favorite/progress/cover/settings change happened to trigger a
     /// full reload.
     ///
-    /// Also reloads `readingProgress` -- the directory identity transaction
-    /// cascades a rename into the
-    /// `reading_progress` table too (directory-level progress rows get
-    /// migrated to the new clean book name), so without this an
-    /// already-loaded `readingProgress` array would keep referencing the old
-    /// identity and show no/stale progress on a card immediately after a
-    /// rename, until some other reload happened to refresh it.
+    /// Reading progress follows its own database snapshot observation, which
+    /// also sees the directory identity transaction. Do not issue a second
+    /// progress query here or let a late manual read overwrite a newer snapshot.
     private func reloadMangaDirectories() async {
         mangaDirectoriesByTID = await resolveMangaDirectories(for: document.items, boardReaderSettings: boardReaderSettings)
         let expectedRevision = coverLookupRevision
@@ -552,7 +564,6 @@ final class FavoriteLibraryOrganizer {
             coverLookup.replaceSmartMangaSlice(with: smartCovers)
             coverLookupRevision += 1
         }
-        readingProgress = await readingProgressStore.loadAll()
         refreshDerivedState()
     }
 

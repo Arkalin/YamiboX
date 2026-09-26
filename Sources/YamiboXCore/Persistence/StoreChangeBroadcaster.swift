@@ -29,11 +29,11 @@ struct StoreChangeBroadcaster: Sendable {
 
     private let subscriptions = Subscriptions()
 
-    /// A new stream per call; every registered stream receives every
-    /// subsequent `post()`. Registration happens synchronously inside this
-    /// call and elements buffer until iteration (`AsyncStream`'s default
-    /// unbounded policy), so a consumer that obtains its stream first can
-    /// never miss a change posted before its first `await`.
+    /// A new stream per call, registered synchronously before returning.
+    /// Signals invalidate the consumer's snapshot; they are not a mutation
+    /// log. Keep at most one pending signal while it reloads current state.
+    /// A write during a reload still schedules a subsequent refresh, without
+    /// replaying an unbounded backlog of identical invalidations.
     func changes() -> AsyncStream<String> {
         subscriptions.stream()
     }
@@ -51,7 +51,7 @@ struct StoreChangeBroadcaster: Sendable {
         private var continuations: [UUID: AsyncStream<String>.Continuation] = [:]
 
         func stream() -> AsyncStream<String> {
-            AsyncStream { continuation in
+            AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
                 let id = UUID()
                 lock.withLock {
                     continuations[id] = continuation
