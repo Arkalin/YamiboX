@@ -29,6 +29,15 @@ enum ForumThreadAuthorColorAdapter {
                 background: nil
             )
         }
+        if background.alpha < 1 {
+            let light = background.composited(over: resolved(theme.pageBackground, style: .light))
+            let dark = background.composited(over: resolved(theme.surface, style: .dark))
+            let authored = RGBColor(forumThreadHex: style.foregroundHex)
+            return RunColors(
+                foreground: authored.map(Color.init) ?? Color(light: ink(on: light, theme: theme), dark: ink(on: dark, theme: theme)),
+                background: Color(background)
+            )
+        }
         // An authored background is one fixed color in both schemes, so the
         // text on it has to be fixed too — the scheme-adaptive body ink
         // resolves to near-white and vanishes on a light highlight. An
@@ -47,6 +56,14 @@ enum ForumThreadAuthorColorAdapter {
         }
         let light = resolved(theme.mutedAccent, style: .light)
         let dark = resolved(theme.mutedAccent, style: .dark)
+        if background.alpha < 1 {
+            let lightSurface = background.composited(over: resolved(theme.pageBackground, style: .light))
+            let darkSurface = background.composited(over: resolved(theme.surface, style: .dark))
+            return Color(
+                light: relit(light, on: lightSurface, fallbackInk: ink(on: lightSurface, theme: theme)),
+                dark: relit(dark, on: darkSurface, fallbackInk: ink(on: darkSurface, theme: theme))
+            )
+        }
         let readable = RGBColor.contrast(light, background) >= RGBColor.contrast(dark, background) ? light : dark
         return Color(readable)
     }
@@ -61,6 +78,8 @@ enum ForumThreadAuthorColorAdapter {
 
     private static func adaptedForeground(hex: String?, theme: ForumTheme) -> Color? {
         guard let authored = RGBColor(forumThreadHex: hex) else { return nil }
+        // Alpha is authored content, not a theme contrast preference.
+        if authored.alpha < 1 { return Color(authored) }
         let lightSurface = resolved(theme.pageBackground, style: .light)
         let darkSurface = resolved(theme.surface, style: .dark)
         let inkOnLightSurface = resolved(theme.primaryText, style: .light)
@@ -140,6 +159,7 @@ private struct RGBColor {
     var red: Double
     var green: Double
     var blue: Double
+    var alpha: Double = 1
 
     init(hex: UInt32) {
         red = Double((hex >> 16) & 0xFF) / 255
@@ -156,16 +176,26 @@ private struct RGBColor {
         self.red = Double(red)
         self.green = Double(green)
         self.blue = Double(blue)
+        self.alpha = Double(alpha)
     }
 
-    /// Parses the `#RRGGBB` spelling `ForumThreadTextStyleParser` normalizes to.
+    /// Parses normalized #RRGGBB / #RRGGBBAA without losing authored opacity.
     init?(forumThreadHex hex: String?) {
         guard let hex else { return nil }
         let normalized = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard normalized.count == 6, let value = UInt64(normalized, radix: 16) else {
+        guard [6, 8].contains(normalized.count), let value = UInt64(normalized, radix: 16) else {
             return nil
         }
-        self.init(hex: UInt32(value))
+        self.init(hex: UInt32(normalized.count == 8 ? value >> 8 : value))
+        if normalized.count == 8 { alpha = Double(value & 0xFF) / 255 }
+    }
+
+    func composited(over background: RGBColor) -> RGBColor {
+        var result = RGBColor(hex: 0)
+        result.red = red * alpha + background.red * (1 - alpha)
+        result.green = green * alpha + background.green * (1 - alpha)
+        result.blue = blue * alpha + background.blue * (1 - alpha)
+        return result
     }
 
     init(hsl: HSLColor) {
@@ -242,7 +272,7 @@ private extension UIColor {
             red: min(max(rgb.red, 0), 1),
             green: min(max(rgb.green, 0), 1),
             blue: min(max(rgb.blue, 0), 1),
-            alpha: 1
+            alpha: min(max(rgb.alpha, 0), 1)
         )
     }
 }

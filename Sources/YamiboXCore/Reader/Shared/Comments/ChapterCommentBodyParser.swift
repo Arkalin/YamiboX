@@ -106,7 +106,7 @@ enum ChapterCommentBodyParser {
         case var .image(image):
             image.linkURL = nil
             return [ForumThreadContentBlock(id: block.id, kind: .image(image))]
-        case let .collapse(_, blocks), let .locked(_, blocks):
+        case let .indent(blocks), let .collapse(_, blocks), let .locked(_, blocks):
             return blocks.flatMap(displayBlocks)
         case let .table(rows):
             return rows.flatMap { $0.flatMap { $0.blocks.flatMap(displayBlocks) } }

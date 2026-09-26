@@ -373,7 +373,7 @@ private extension ForumThreadContentBlock {
         switch kind {
         case .image, .attachment, .horizontalRule, .table:
             true
-        case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):
+        case let .quote(blocks), let .indent(blocks), let .collapse(_, blocks), let .locked(_, blocks):
             blocks.contains(where: \.isNonTextRenderable) || !plainTextFragments.isEmpty
         case let .text(block):
             !block.inlineImages.isEmpty
@@ -388,7 +388,7 @@ private extension ForumThreadContentBlock {
             [block.text.replacingOccurrences(of: "\u{FFFC}", with: "")]
         case let .attachment(block):
             [block.fileName]
-        case let .quote(blocks), let .collapse(_, blocks), let .locked(_, blocks):
+        case let .quote(blocks), let .indent(blocks), let .collapse(_, blocks), let .locked(_, blocks):
             blocks.flatMap(\.plainTextFragments)
         case let .code(text):
             [text]

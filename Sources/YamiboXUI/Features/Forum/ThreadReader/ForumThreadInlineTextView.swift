@@ -7,6 +7,11 @@ enum ForumThreadItalicKey: AttributedStringKey {
     static let name = "yamibo.forum.italic"
 }
 
+enum ForumThreadBaselineOffsetKey: AttributedStringKey {
+    typealias Value = Double
+    static let name = "yamibo.forum.baseline-offset"
+}
+
 enum ForumThreadInlineImageKey: AttributedStringKey {
     typealias Value = ForumThreadImageBlock
     static let name = "yamibo.forum.inline-image"
@@ -100,6 +105,7 @@ struct ForumThreadInlineTextView: View {
                 }
             } else {
                 let text = Text(AttributedString(attributed[run.range]))
+                    .baselineOffset(run[ForumThreadBaselineOffsetKey.self] ?? 0)
                 if run[ForumThreadItalicKey.self] == true {
                     part = useSyntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic()
                 } else {
@@ -111,6 +117,10 @@ struct ForumThreadInlineTextView: View {
     }
 
     static func sizedImage(_ image: UIImage, dimension: CGFloat) -> Image {
+        Image(uiImage: sizedUIImage(image, dimension: dimension))
+    }
+
+    static func sizedUIImage(_ image: UIImage, dimension: CGFloat) -> UIImage {
         let size = CGSize(width: dimension, height: dimension)
         let rendered = UIGraphicsImageRenderer(size: size).image { _ in
             let ratio = min(dimension / max(image.size.width, 1), dimension / max(image.size.height, 1))
@@ -118,7 +128,7 @@ struct ForumThreadInlineTextView: View {
             let height = image.size.height * ratio
             image.draw(in: CGRect(x: (dimension - width) / 2, y: (dimension - height) / 2, width: width, height: height))
         }
-        return Image(uiImage: rendered)
+        return rendered
     }
 
     private var imageURLs: [URL] {

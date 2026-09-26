@@ -6,6 +6,7 @@ enum ForumThreadTextStyleParser {
     /// Style carried by a `<font color=... size=... style=...>` element.
     static func style(fromFontElement element: Element) -> ForumThreadTextStyle {
         var result = ForumThreadTextStyle()
+        result.fontFamily = element.attr("face").nilIfBlank
         if let color = normalizedColorHex(element.attr("color")) {
             result.foregroundHex = color
         }
@@ -18,12 +19,66 @@ enum ForumThreadTextStyleParser {
     /// Style carried by CSS (color, background-color, font-size, font-style).
     static func style(fromStyleAttribute styleAttribute: String) -> ForumThreadTextStyle {
         let declarations = styleDeclarations(from: styleAttribute)
+        let decoration = declarations["text-decoration"] ?? declarations["text-decoration-line"] ?? ""
+        let weight = declarations["font-weight"]?.lowercased() ?? ""
         return ForumThreadTextStyle(
+            isBold: weight == "bold" || weight == "bolder" || (Int(weight) ?? 0) >= 600,
             isItalic: ["italic", "oblique"].contains(declarations["font-style"]?.lowercased() ?? ""),
+            isUnderline: decoration.contains("underline"),
+            isStrikethrough: decoration.contains("line-through"),
             foregroundHex: declarations["color"].flatMap(normalizedColorHex),
             backgroundHex: declarations["background-color"].flatMap(normalizedColorHex),
-            relativeFontSize: declarations["font-size"].flatMap(relativeFontSize(fromCSSFontSize:))
+            relativeFontSize: declarations["font-size"].flatMap(relativeFontSize(fromCSSFontSize:)),
+            fontFamily: declarations["font-family"],
+            baseline: declarations["vertical-align"].flatMap { value in
+                switch value.lowercased() {
+                case "super": 1
+                case "sub": -1
+                case "baseline": 0
+                default: nil
+                }
+            }
         )
+    }
+
+    static func paragraphStyle(from element: Element, inheriting inherited: ForumThreadParagraphStyle?) -> ForumThreadParagraphStyle? {
+        let declarations = styleDeclarations(from: element.attr("style"))
+        var result = inherited ?? ForumThreadParagraphStyle()
+        if let height = declarations["line-height"]?.lowercased() {
+            if height == "normal" {
+                result.lineHeight = nil
+                result.lineHeightMultiple = nil
+            } else if let value = cssPixels(height), value > 0 {
+                result.lineHeight = value
+                result.lineHeightMultiple = nil
+            } else if let value = Double(height.replacingOccurrences(of: "em", with: "").replacingOccurrences(of: "%", with: "")),
+                      value.isFinite, value > 0 {
+                result.lineHeight = nil
+                result.lineHeightMultiple = height.hasSuffix("%") ? value / 100 : value
+            }
+        }
+        if let indent = declarations["text-indent"]?.lowercased() {
+            if indent.hasSuffix("em"), let value = Double(indent.dropLast(2)), value.isFinite {
+                result.firstLineIndentEm = value
+                result.firstLineIndentPixels = nil
+            } else if let value = cssPixels(indent) {
+                result.firstLineIndentPixels = value
+                result.firstLineIndentEm = nil
+            }
+        }
+        return result == ForumThreadParagraphStyle() ? nil : result
+    }
+
+    static func cssPixels(_ value: String) -> Double? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let multiplier: Double
+        let number: String
+        if value.hasSuffix("px") { number = String(value.dropLast(2)); multiplier = 1 }
+        else if value.hasSuffix("pt") { number = String(value.dropLast(2)); multiplier = 4 / 3 }
+        else if value == "0" { return 0 }
+        else { return nil }
+        guard let parsed = Double(number), parsed.isFinite else { return nil }
+        return parsed * multiplier
     }
 
     /// Legacy HTML `size="1"..."7"` mapped to a multiplier of the base font size.
@@ -46,7 +101,7 @@ enum ForumThreadTextStyleParser {
         let pattern = #"^([0-9]+(?:\.[0-9]+)?)\s*(px|pt|em)$"#
         guard let match = HTMLTextExtractor.firstMatch(pattern: pattern, in: value).map({ Array($0.dropFirst()) }),
               match.count == 2,
-              let number = Double(match[0]) else {
+              let number = Double(match[0]), number.isFinite, number > 0 else {
             return nil
         }
         switch match[1] {
@@ -61,7 +116,7 @@ enum ForumThreadTextStyleParser {
         }
     }
 
-    /// Any CSS color spelling (#hex, #shorthand, rgb()/rgba(), named) normalized to "#RRGGBB".
+    /// CSS colors normalized to #RRGGBB, or #RRGGBBAA when translucent.
     static func normalizedColorHex(_ rawValue: String) -> String? {
         let value = rawValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,10 +129,11 @@ enum ForumThreadTextStyleParser {
         if value.hasPrefix("rgb") {
             return normalizedRGBHex(value)
         }
-        return namedColorHex[value]
+        if value == "transparent" { return "#00000000" }
+        return ForumThreadCSSNamedColors.values[value]
     }
 
-    private static func styleDeclarations(from styleAttribute: String) -> [String: String] {
+    static func styleDeclarations(from styleAttribute: String) -> [String: String] {
         var declarations: [String: String] = [:]
         for declaration in styleAttribute.split(separator: ";") {
             let parts = declaration.split(separator: ":", maxSplits: 1).map(String.init)
@@ -95,10 +151,10 @@ enum ForumThreadTextStyleParser {
         let valid = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
         guard digits.unicodeScalars.allSatisfy({ valid.contains($0) }) else { return nil }
         switch digits.count {
-        case 3:
+        case 3, 4:
             let expanded = digits.map { "\($0)\($0)" }.joined()
             return "#\(expanded.uppercased())"
-        case 6:
+        case 6, 8:
             return "#\(digits.uppercased())"
         default:
             return nil
@@ -112,48 +168,26 @@ enum ForumThreadTextStyleParser {
         let components = body.split(separator: ",").map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard components.count >= 3 else { return nil }
+        guard value.hasSuffix(")"), components.count == (value.hasPrefix("rgba(") ? 4 : 3) else { return nil }
         let channels = components.prefix(3).compactMap(rgbChannel)
         guard channels.count == 3 else { return nil }
-        return String(format: "#%02X%02X%02X", channels[0], channels[1], channels[2])
+        let rgb = String(format: "#%02X%02X%02X", channels[0], channels[1], channels[2])
+        guard components.count == 4 else { return rgb }
+        let rawAlpha = components[3]
+        guard let alpha = Double(rawAlpha.replacingOccurrences(of: "%", with: "")), alpha.isFinite else { return nil }
+        let normalized = min(max(rawAlpha.hasSuffix("%") ? alpha / 100 : alpha, 0), 1)
+        return normalized == 1 ? rgb : rgb + String(format: "%02X", Int((normalized * 255).rounded()))
     }
 
     private static func rgbChannel(_ rawValue: String) -> Int? {
         if rawValue.hasSuffix("%") {
-            guard let value = Double(rawValue.dropLast()) else { return nil }
+            guard let value = Double(rawValue.dropLast()), value.isFinite else { return nil }
             return Int((min(max(value / 100, 0), 1) * 255).rounded())
         }
-        guard let value = Double(rawValue) else { return nil }
+        guard let value = Double(rawValue), value.isFinite else { return nil }
         return Int(min(max(value, 0), 255).rounded())
     }
 
-    private static let namedColorHex: [String: String] = [
-        "red": "#FF0000",
-        "blue": "#0000FF",
-        "green": "#008000",
-        "yellow": "#FFFF00",
-        "black": "#000000",
-        "white": "#FFFFFF",
-        "grey": "#808080",
-        "gray": "#808080",
-        "darkgreen": "#006400",
-        "darkblue": "#00008B",
-        "darkred": "#8B0000",
-        "darkorange": "#FF8C00",
-        "darkgray": "#A9A9A9",
-        "darkgrey": "#A9A9A9",
-        "lightgray": "#D3D3D3",
-        "lightgrey": "#D3D3D3",
-        "lightblue": "#ADD8E6",
-        "lightgreen": "#90EE90",
-        "pink": "#FFC0CB",
-        "orange": "#FFA500",
-        "purple": "#800080",
-        "skyblue": "#87CEEB",
-        "palegreen": "#98FB98",
-        "cyan": "#00FFFF",
-        "magenta": "#FF00FF"
-    ]
 }
 
 extension ForumThreadTextStyle {
@@ -167,7 +201,9 @@ extension ForumThreadTextStyle {
             isStrikethrough: isStrikethrough || other.isStrikethrough,
             foregroundHex: other.foregroundHex ?? foregroundHex,
             backgroundHex: other.backgroundHex ?? backgroundHex,
-            relativeFontSize: other.relativeFontSize ?? relativeFontSize
+            relativeFontSize: other.relativeFontSize ?? relativeFontSize,
+            fontFamily: other.fontFamily ?? fontFamily,
+            baseline: other.baseline ?? baseline
         )
     }
 }

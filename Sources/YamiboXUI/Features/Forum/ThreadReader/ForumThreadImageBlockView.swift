@@ -37,6 +37,8 @@ struct ForumThreadImageBlockView: View {
             imageAction {
                 ForumThreadImageContentView(
                     image: image,
+                    authoredWidth: block.width,
+                    authoredHeight: block.height,
                     maxDimension: block.isEmoticon ? 40 : 520
                 )
             }
@@ -74,6 +76,8 @@ struct ForumThreadImageBlockView: View {
 private struct ForumThreadImageContentView: View {
     @Environment(\.forumTheme) private var theme
     let image: Image
+    let authoredWidth: Double?
+    let authoredHeight: Double?
     let maxDimension: CGFloat
 
     @Environment(\.yamiboRemoteImageSize) private var remoteImageSize
@@ -81,15 +85,25 @@ private struct ForumThreadImageContentView: View {
     var body: some View {
         image
             .resizable()
-            .scaledToFit()
+            .aspectRatio(displaySize.map { $0.width / max($0.height, 1) }, contentMode: .fit)
             .frame(maxWidth: maxImageWidth, maxHeight: maxDimension, alignment: .leading)
     }
 
     private var maxImageWidth: CGFloat {
         ForumThreadImageDisplaySizing.maxWidth(
-            for: remoteImageSize,
+            for: displaySize,
             maxDimension: maxDimension
         )
+    }
+
+    private var displaySize: CGSize? {
+        let ratio = (remoteImageSize?.width ?? 1) / max(remoteImageSize?.height ?? 1, 1)
+        switch (authoredWidth, authoredHeight) {
+        case let (width?, height?): return CGSize(width: width, height: height)
+        case let (width?, nil): return CGSize(width: width, height: width / ratio)
+        case let (nil, height?): return CGSize(width: height * ratio, height: height)
+        case (nil, nil): return remoteImageSize
+        }
     }
 }
 
@@ -105,7 +119,8 @@ enum ForumThreadImageDisplaySizing {
               width > 0 else {
             return maxDimension
         }
-        return min(width, maxDimension)
+        let height = imageSize?.height ?? 0
+        return min(width, maxDimension, height > maxDimension ? width * maxDimension / height : width)
     }
 }
 

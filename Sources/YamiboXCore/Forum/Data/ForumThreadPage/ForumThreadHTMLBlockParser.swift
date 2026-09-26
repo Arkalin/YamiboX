@@ -12,10 +12,17 @@ enum ForumThreadHTMLBlockParser {
         return try ForumThreadBlockBuilder().parse(nodes: (copy.body() ?? copy).getChildNodes())
     }
 
-    static func parseBlocks(fromHTML html: String) throws -> [ForumThreadContentBlock] {
+    static func parseBlocks(
+        fromHTML html: String,
+        style: ForumThreadTextStyle = ForumThreadTextStyle(),
+        alignment: ForumThreadTextAlignment = .start,
+        paragraphStyle: ForumThreadParagraphStyle? = nil,
+        linkURL: URL? = nil
+    ) throws -> [ForumThreadContentBlock] {
         let document = try KannaSoup.parseBodyFragment(html, baseURL: YamiboDomain.baseURL.absoluteString)
         sanitize(document.body() ?? document)
-        return try ForumThreadBlockBuilder().parse(nodes: (document.body() ?? document).getChildNodes())
+        return try ForumThreadBlockBuilder(style: style, alignment: alignment, paragraphStyle: paragraphStyle, linkURL: linkURL)
+            .parse(nodes: (document.body() ?? document).getChildNodes())
     }
 
     /// The whitespace/newline normalization applied to every committed text run,

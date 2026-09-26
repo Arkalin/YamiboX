@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumThreadTextBlockView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let block: ForumThreadTextBlock
     var refererURL: URL = YamiboDomain.baseURL
     let onURLTap: (URL) -> Void
@@ -11,12 +12,11 @@ struct ForumThreadTextBlockView: View {
 
     @ViewBuilder
     var body: some View {
-        if block.rubies.isEmpty {
+        if block.rubies.isEmpty, block.paragraphStyle == nil {
             plainText
         } else {
-            ForumThreadRubyTextBlockView(
-                segments: cache.rubySegments(for: block, theme: theme),
-                alignment: block.alignment,
+            ForumThreadRichTextBlockView(
+                block: block,
                 refererURL: refererURL,
                 onURLTap: onURLTap
             )
@@ -24,7 +24,7 @@ struct ForumThreadTextBlockView: View {
     }
 
     private var plainText: some View {
-        ForumThreadInlineTextView(attributedText: cache.attributedText(for: block, theme: theme), refererURL: refererURL)
+        ForumThreadInlineTextView(attributedText: cache.attributedText(for: block, theme: theme, dynamicTypeSize: dynamicTypeSize), refererURL: refererURL)
             .font(.body)
             .lineSpacing(4)
             .foregroundStyle(theme.primaryText)

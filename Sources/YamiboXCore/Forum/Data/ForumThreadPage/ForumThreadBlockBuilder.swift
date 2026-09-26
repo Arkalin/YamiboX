@@ -35,7 +35,22 @@ final class ForumThreadBlockBuilder {
     private var currentLinkURL: URL?
     private var currentStyle = ForumThreadTextStyle()
     private var currentAlignment = ForumThreadTextAlignment.start
+    private var currentParagraphStyle: ForumThreadParagraphStyle?
+    private struct ListContext {
+        var type: String
+        var nextNumber: Int
+    }
+    private var lists: [ListContext] = []
     private var blockCounter = 0
+
+    init(style: ForumThreadTextStyle = ForumThreadTextStyle(),
+         alignment: ForumThreadTextAlignment = .start,
+         paragraphStyle: ForumThreadParagraphStyle? = nil, linkURL: URL? = nil) {
+        currentStyle = style
+        currentAlignment = alignment
+        currentParagraphStyle = paragraphStyle
+        currentLinkURL = linkURL
+    }
 
     func parse(nodes: [Node]) throws -> [ForumThreadContentBlock] {
         for node in nodes {
@@ -71,15 +86,17 @@ final class ForumThreadBlockBuilder {
         case "img":
             appendImage(from: element)
         case "blockquote":
-            try appendQuote(from: element)
+            commitText()
+            appendBlock(.indent(try nestedBlocks(html: element.html())), seed: "indent")
         case "div":
             try parseDiv(element)
         case "pre":
             commitText()
-            appendBlock(.code(element.text()), seed: "code-\(element.text())")
+            let code = Self.verbatimText(in: element)
+            appendBlock(.code(code), seed: "code-\(code)")
         case "table":
             try parseTable(element)
-        case "ul":
+        case "ul", "ol":
             try parseUnorderedList(element)
         case "a":
             try parseLink(element)
@@ -99,9 +116,13 @@ final class ForumThreadBlockBuilder {
             try withTextStyle(ForumThreadTextStyle(isStrikethrough: true)) {
                 try parseChildren(of: element)
             }
+        case "sup", "sub":
+            try withTextStyle(ForumThreadTextStyle(baseline: tagName == "sup" ? 1 : -1)) {
+                try parseChildren(of: element)
+            }
         case "ruby":
             try parseRuby(element)
-        case "rt":
+        case "rt", "rp":
             return
         case "font":
             try withTextStyle(ForumThreadTextStyleParser.style(fromFontElement: element)) {
@@ -113,13 +134,13 @@ final class ForumThreadBlockBuilder {
             }
         case "p":
             try parseBlockContainer(element)
-        case "ol", "tbody", "tr", "td", "th":
+        case "tbody", "tr", "td", "th":
             appendLineBreak(maxConsecutive: 1)
             try parseChildren(of: element)
             appendLineBreak(maxConsecutive: 1)
         case "li":
             appendLineBreak(maxConsecutive: 1)
-            appendText("• ")
+            appendText(listMarker() + " ")
             try parseChildren(of: element)
             appendLineBreak(maxConsecutive: 1)
         case "script", "style":
@@ -142,7 +163,7 @@ final class ForumThreadBlockBuilder {
             let title = titleNode?.text().nilIfBlank
             // The trailing web control is rendered as a native button by the UI.
             controls.forEach { $0.remove() }
-            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: element.html())
+            let contentBlocks = try nestedBlocks(html: element.html())
             appendBlock(
                 .collapse(title: title, contentBlocks: contentBlocks),
                 seed: "collapse-\(title ?? "")"
@@ -158,7 +179,7 @@ final class ForumThreadBlockBuilder {
                 .first
                 .flatMap(Int.init)
             element.select(".locked-tip").remove()
-            let contentBlocks = try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: element.html())
+            let contentBlocks = try nestedBlocks(html: element.html())
             appendBlock(
                 .locked(cost: cost, contentBlocks: contentBlocks),
                 seed: "locked-\(costText)"
@@ -173,7 +194,18 @@ final class ForumThreadBlockBuilder {
 
         if classes.contains("blockcode") {
             commitText()
-            appendBlock(.code(element.text()), seed: "code-\(element.text())")
+            // Discuz wraps each original line in li and appends a copy control.
+            // Ignore serializer whitespace between li, not whitespace inside a line.
+            let source = element.selectFirst("ol, pre") ?? element
+            let code: String
+            if source.tagName().lowercased() == "ol" {
+                code = source.children().array().filter { $0.tagName().lowercased() == "li" }
+                    .map { $0.getChildNodes().map(Self.verbatimText(in:)).joined() }
+                    .joined(separator: "\n")
+            } else {
+                code = Self.verbatimText(in: source)
+            }
+            appendBlock(.code(code), seed: "code-\(code)")
             return
         }
 
@@ -182,6 +214,14 @@ final class ForumThreadBlockBuilder {
 
     private func parseBlockContainer(_ element: Element) throws {
         let alignment = textAlignment(from: element) ?? currentAlignment
+        let previousParagraphStyle = currentParagraphStyle
+        let paragraphStyle = ForumThreadTextStyleParser.paragraphStyle(from: element, inheriting: previousParagraphStyle)
+        if paragraphStyle != previousParagraphStyle { commitText() }
+        currentParagraphStyle = paragraphStyle
+        defer {
+            if paragraphStyle != previousParagraphStyle { commitText() }
+            currentParagraphStyle = previousParagraphStyle
+        }
         try withTextAlignment(alignment) {
             appendLineBreak(maxConsecutive: 1)
             try parseChildren(of: element)
@@ -190,26 +230,36 @@ final class ForumThreadBlockBuilder {
     }
 
     private func parseTable(_ element: Element) throws {
-        let rows = element.select("tr").array()
-        let isDataTable = rows.contains { row in
-            row.select("td, th").array().count > 1
+        let rows = element.select("tr").array().filter { row in
+            row.parents().first { $0.tagName().lowercased() == "table" }?.isSameDOMNode(as: element) == true
         }
-        guard isDataTable else {
-            appendLineBreak(maxConsecutive: 1)
+        guard !rows.isEmpty else {
             try parseChildren(of: element)
-            appendLineBreak(maxConsecutive: 1)
             return
         }
 
         commitText()
         let tableRows = try rows.map { row in
-            try row.select("td, th").array().map { cell in
+            try row.children().array().filter { ["td", "th"].contains($0.tagName().lowercased()) }.map { cell in
                 let tagName = cell.tagName().lowercased()
-                let hasStrongText = !cell.select("strong, b").array().isEmpty
-                let isHeader = tagName == "th" || hasStrongText
+                let rowStyle = currentStyle.merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: row.attr("style")))
+                let cellStyle = rowStyle
+                    .merged(with: ForumThreadTextStyle(isBold: tagName == "th"))
+                    .merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: cell.attr("style")))
+                let background = cellStyle.backgroundHex
+                    ?? ForumThreadTextStyleParser.normalizedColorHex(cell.attr("bgcolor"))
+                    ?? ForumThreadTextStyleParser.normalizedColorHex(row.attr("bgcolor"))
+                    ?? ForumThreadTextStyleParser.normalizedColorHex(element.attr("bgcolor"))
                 return ForumThreadTableCell(
-                    isHeader: isHeader,
-                    blocks: try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: cell.html())
+                    isHeader: tagName == "th",
+                    blocks: try nestedBlocks(
+                        html: cell.html(), style: cellStyle,
+                        alignment: textAlignment(from: cell) ?? textAlignment(from: row) ?? textAlignment(from: element),
+                        paragraphStyle: ForumThreadTextStyleParser.paragraphStyle(from: cell, inheriting: currentParagraphStyle)
+                    ),
+                    columnSpan: min(max(Int(cell.attr("colspan")) ?? 1, 1), 100),
+                    rowSpan: min(max(Int(cell.attr("rowspan")) ?? 1, 1), min(100, rows.count)),
+                    backgroundHex: background
                 )
             }
         }
@@ -225,9 +275,20 @@ final class ForumThreadBlockBuilder {
             return
         }
 
-        appendLineBreak(maxConsecutive: 1)
+        let isNested = !lists.isEmpty
+        commitText()
+        let blockStart = blocks.count
+        let type = element.attr("type").nilIfBlank
+            ?? (classes.contains("litype_1") ? "1" : classes.contains("litype_2") ? "a" : classes.contains("litype_3") ? "A" : element.tagName() == "ol" ? "1" : "bullet")
+        lists.append(ListContext(type: type, nextNumber: max(Int(element.attr("start")) ?? 1, 1)))
         try parseChildren(of: element)
-        appendLineBreak(maxConsecutive: 1)
+        commitText()
+        lists.removeLast()
+        if isNested {
+            let children = Array(blocks[blockStart...])
+            blocks.removeSubrange(blockStart...)
+            appendBlock(.indent(children), seed: "nested-list")
+        }
     }
 
     private func parseLink(_ element: Element) throws {
@@ -238,19 +299,8 @@ final class ForumThreadBlockBuilder {
 
         let previousLinkURL = currentLinkURL
         currentLinkURL = url
-        let start = text.count
+        defer { currentLinkURL = previousLinkURL }
         try parseChildren(of: element)
-        let end = text.count
-        if end > start {
-            links.append(PendingTextLink(start: start, length: end - start, url: url))
-        } else {
-            appendText(element.text())
-            let linkTextLength = max(element.text().count, 0)
-            if linkTextLength > 0 {
-                links.append(PendingTextLink(start: start, length: linkTextLength, url: url))
-            }
-        }
-        currentLinkURL = previousLinkURL
     }
 
     private func parseRuby(_ element: Element) throws {
@@ -260,30 +310,15 @@ final class ForumThreadBlockBuilder {
             .map { $0.text() }
             .joined()
             .nilIfBlank
-        let baseText = element.getChildNodes()
-            .filter { node in
-                guard let childElement = node as? Element else { return true }
-                return childElement.tagName().lowercased() != "rt"
-            }
-            .map { node -> String in
-                if let textNode = node as? TextNode {
-                    return textNode.text()
-                }
-                if let childElement = node as? Element {
-                    return childElement.text()
-                }
-                return ""
-            }
-            .joined()
-            .nilIfBlank
-
-        guard let baseText, let rubyText else {
+        guard let rubyText else {
             try parseChildren(of: element)
             return
         }
 
         let start = text.count
-        appendText(baseText)
+        try parseChildren(of: element)
+        guard text.count > start else { return }
+        let baseText = String(text.dropFirst(start))
         rubies.append(
             PendingRubyText(
                 start: start,
@@ -297,7 +332,7 @@ final class ForumThreadBlockBuilder {
     private func appendQuote(from element: Element) throws {
         commitText()
         appendBlock(
-            .quote(try ForumThreadHTMLBlockParser.parseBlocks(fromHTML: quoteContentHTML(from: element))),
+            .quote(try nestedBlocks(html: quoteContentHTML(from: element))),
             seed: "quote-\(element.text().prefix(32))"
         )
     }
@@ -336,7 +371,9 @@ final class ForumThreadBlockBuilder {
             url: url,
             altText: element.attr("alt"),
             linkURL: currentLinkURL,
-            isEmoticon: YamiboImageReferenceExtractor.isEmoticonURL(url)
+            isEmoticon: YamiboImageReferenceExtractor.isEmoticonURL(url),
+            width: Self.imageDimension(element.attr("width")),
+            height: Self.imageDimension(element.attr("height"))
         )
         if image.isEmoticon {
             inlineImages.append(ForumThreadInlineImage(start: text.count, image: image))
@@ -374,25 +411,33 @@ final class ForumThreadBlockBuilder {
     }
 
     private func appendText(_ value: String) {
-        let decoded = HTMLTextExtractor.decodeHTMLEntities(value)
+        // Kanna already decoded text nodes. Decoding again corrupts literal &lt; examples.
+        let decoded = value
         guard !decoded.isEmpty else { return }
         let start = text.count
         text += decoded
         appendCurrentStyleRun(start: start, length: decoded.count)
+        if let url = currentLinkURL {
+            if let last = links.last, last.url == url, last.start + last.length == start {
+                links[links.count - 1].length += decoded.count
+            } else {
+                links.append(PendingTextLink(start: start, length: decoded.count, url: url))
+            }
+        }
     }
 
     private func appendLineBreak(maxConsecutive: Int = 2, explicit: Bool = false) {
         guard !text.isEmpty || explicit else { return }
         let trailing = text.reversed().prefix(while: { $0 == "\n" }).count
         if trailing < maxConsecutive {
-            text += "\n"
+            appendText("\n")
         }
     }
 
     private func appendCollapsibleSpace() {
         guard let last = text.last else { return }
         if last != " ", last != "\n", last != "\u{3000}" {
-            text += " "
+            appendText(" ")
         }
     }
 
@@ -436,7 +481,8 @@ final class ForumThreadBlockBuilder {
                     inlineImages: inlineImages.compactMap { inline in
                         guard let range = normalizedResult.range(start: inline.start, length: 1) else { return nil }
                         return ForumThreadInlineImage(start: range.start, image: inline.image)
-                    }
+                    },
+                    paragraphStyle: currentParagraphStyle
                 )
             ),
             seed: "text-\(normalized.prefix(64))"
@@ -465,7 +511,8 @@ final class ForumThreadBlockBuilder {
     }
 
     private func textAlignment(from element: Element) -> ForumThreadTextAlignment? {
-        switch element.attr("align").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        let css = ForumThreadTextStyleParser.styleDeclarations(from: element.attr("style"))
+        switch (css["text-align"] ?? element.attr("align")).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "center":
             return .center
         case "right":
@@ -475,6 +522,50 @@ final class ForumThreadBlockBuilder {
         default:
             return nil
         }
+    }
+
+    private func nestedBlocks(html: String, style: ForumThreadTextStyle? = nil,
+                              alignment: ForumThreadTextAlignment? = nil,
+                              paragraphStyle: ForumThreadParagraphStyle? = nil) throws -> [ForumThreadContentBlock] {
+        try ForumThreadHTMLBlockParser.parseBlocks(
+            fromHTML: html, style: style ?? currentStyle, alignment: alignment ?? currentAlignment,
+            paragraphStyle: paragraphStyle ?? currentParagraphStyle, linkURL: currentLinkURL
+        )
+    }
+
+    private func listMarker() -> String {
+        guard let context = lists.last else { return "•" }
+        if context.nextNumber < Int.max { lists[lists.count - 1].nextNumber += 1 }
+        switch context.type {
+        case "1": return "\(context.nextNumber)."
+        case "a", "A":
+            var number = context.nextNumber
+            var marker = ""
+            while number > 0 {
+                number -= 1
+                marker = String(UnicodeScalar(97 + number % 26)!) + marker
+                number /= 26
+            }
+            return (context.type == "A" ? marker.uppercased() : marker) + "."
+        default: return "•"
+        }
+    }
+
+    private static func imageDimension(_ value: String) -> Double? {
+        guard let number = Double(value), number.isFinite, number > 0 else { return nil }
+        return min(number, 10_000)
+    }
+
+    private static func verbatimText(in node: Node) -> String {
+        if let text = node as? TextNode {
+            return text.getWholeText().replacingOccurrences(of: "\u{00A0}", with: " ")
+        }
+        guard let element = node as? Element else { return "" }
+        let tag = element.tagName().lowercased()
+        if tag == "br" { return "\n" }
+        if tag == "script" || tag == "style" { return "" }
+        let text = element.getChildNodes().map { verbatimText(in: $0) }.joined()
+        return tag == "li" ? text + "\n" : text
     }
 
     private func appendCurrentStyleRun(start: Int, length: Int) {

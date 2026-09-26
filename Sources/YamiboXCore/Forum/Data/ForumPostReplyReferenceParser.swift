@@ -28,7 +28,7 @@ enum ForumPostReplyReferenceParser {
                     }
                 }
                 if let reference = header ?? parse(in: children) { return reference }
-            case let .collapse(_, children), let .locked(_, children):
+            case let .collapse(_, children), let .locked(_, children), let .indent(children):
                 if let reference = parse(in: children) { return reference }
             case let .table(rows):
                 if let reference = parse(in: rows.flatMap { $0 }.flatMap(\.blocks)) { return reference }

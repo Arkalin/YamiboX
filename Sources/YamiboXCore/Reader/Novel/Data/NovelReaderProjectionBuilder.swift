@@ -964,6 +964,11 @@ private enum NovelPostContentProjector {
             append(blocks, to: &projected, buffer: &buffer, chapterTitle: chapterTitle, isQuote: true, emittedImageURLs: &emittedImageURLs)
             buffer.ensureLineBreak(isQuote: isQuote)
 
+        case let .indent(blocks):
+            buffer.ensureLineBreak(isQuote: isQuote)
+            append(blocks, to: &projected, buffer: &buffer, chapterTitle: chapterTitle, isQuote: isQuote, emittedImageURLs: &emittedImageURLs)
+            buffer.ensureLineBreak(isQuote: isQuote)
+
         case let .code(text):
             buffer.appendPlain(text, isQuote: isQuote)
 
@@ -1066,7 +1071,7 @@ private enum NovelPostContentProjector {
         case let .collapse(title, blocks):
             return [title].compactMap { $0 }
                 + blocks.flatMap { readableTextFragments(in: $0, excludingDiscuzQuotes: excludingDiscuzQuotes) }
-        case let .locked(_, blocks):
+        case let .locked(_, blocks), let .indent(blocks):
             return blocks.flatMap { readableTextFragments(in: $0, excludingDiscuzQuotes: excludingDiscuzQuotes) }
         case let .table(rows):
             return rows.flatMap { row in

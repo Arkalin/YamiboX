@@ -333,6 +333,7 @@ public indirect enum ForumThreadContentBlockKind: Codable, Equatable, Hashable, 
     case image(ForumThreadImageBlock)
     case attachment(ForumThreadAttachmentBlock)
     case quote([ForumThreadContentBlock])
+    case indent([ForumThreadContentBlock])
     case code(String)
     case horizontalRule
     case collapse(title: String?, contentBlocks: [ForumThreadContentBlock])
@@ -347,6 +348,7 @@ public struct ForumThreadTextBlock: Codable, Equatable, Hashable, Sendable {
     public var styleRuns: [ForumThreadTextStyleRun]
     public var rubies: [ForumThreadRubyText]
     public var inlineImages: [ForumThreadInlineImage]
+    public var paragraphStyle: ForumThreadParagraphStyle?
 
     public init(
         text: String,
@@ -354,7 +356,8 @@ public struct ForumThreadTextBlock: Codable, Equatable, Hashable, Sendable {
         links: [ForumThreadTextLink] = [],
         styleRuns: [ForumThreadTextStyleRun] = [],
         rubies: [ForumThreadRubyText] = [],
-        inlineImages: [ForumThreadInlineImage] = []
+        inlineImages: [ForumThreadInlineImage] = [],
+        paragraphStyle: ForumThreadParagraphStyle? = nil
     ) {
         self.text = text
         self.alignment = alignment
@@ -362,10 +365,11 @@ public struct ForumThreadTextBlock: Codable, Equatable, Hashable, Sendable {
         self.styleRuns = styleRuns
         self.rubies = rubies
         self.inlineImages = inlineImages
+        self.paragraphStyle = paragraphStyle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, alignment, links, styleRuns, rubies, inlineImages
+        case text, alignment, links, styleRuns, rubies, inlineImages, paragraphStyle
     }
 
     public init(from decoder: any Decoder) throws {
@@ -376,6 +380,23 @@ public struct ForumThreadTextBlock: Codable, Equatable, Hashable, Sendable {
         styleRuns = try container.decode([ForumThreadTextStyleRun].self, forKey: .styleRuns)
         rubies = try container.decode([ForumThreadRubyText].self, forKey: .rubies)
         inlineImages = try container.decodeIfPresent([ForumThreadInlineImage].self, forKey: .inlineImages) ?? []
+        paragraphStyle = try container.decodeIfPresent(ForumThreadParagraphStyle.self, forKey: .paragraphStyle)
+    }
+}
+
+/// Authored lengths are CSS pixels or em, independent of the device's text scale.
+public struct ForumThreadParagraphStyle: Codable, Equatable, Hashable, Sendable {
+    public var lineHeight: Double?
+    public var lineHeightMultiple: Double?
+    public var firstLineIndentEm: Double?
+    public var firstLineIndentPixels: Double?
+
+    public init(lineHeight: Double? = nil, lineHeightMultiple: Double? = nil,
+                firstLineIndentEm: Double? = nil, firstLineIndentPixels: Double? = nil) {
+        self.lineHeight = lineHeight
+        self.lineHeightMultiple = lineHeightMultiple
+        self.firstLineIndentEm = firstLineIndentEm
+        self.firstLineIndentPixels = firstLineIndentPixels
     }
 }
 
@@ -460,6 +481,9 @@ public struct ForumThreadTextStyle: Codable, Equatable, Hashable, Sendable {
     public var foregroundHex: String?
     public var backgroundHex: String?
     public var relativeFontSize: Double?
+    public var fontFamily: String?
+    /// -1 is subscript; 1 is superscript; nil inherits the surrounding baseline.
+    public var baseline: Int?
 
     public init(
         isBold: Bool = false,
@@ -468,7 +492,9 @@ public struct ForumThreadTextStyle: Codable, Equatable, Hashable, Sendable {
         isStrikethrough: Bool = false,
         foregroundHex: String? = nil,
         backgroundHex: String? = nil,
-        relativeFontSize: Double? = nil
+        relativeFontSize: Double? = nil,
+        fontFamily: String? = nil,
+        baseline: Int? = nil
     ) {
         self.isBold = isBold
         self.isItalic = isItalic
@@ -477,6 +503,8 @@ public struct ForumThreadTextStyle: Codable, Equatable, Hashable, Sendable {
         self.foregroundHex = foregroundHex?.nilIfBlank
         self.backgroundHex = backgroundHex?.nilIfBlank
         self.relativeFontSize = relativeFontSize
+        self.fontFamily = fontFamily?.nilIfBlank
+        self.baseline = baseline
     }
 
     public var isEmpty: Bool {
@@ -487,6 +515,8 @@ public struct ForumThreadTextStyle: Codable, Equatable, Hashable, Sendable {
             && foregroundHex == nil
             && backgroundHex == nil
             && relativeFontSize == nil
+            && fontFamily == nil
+            && baseline == nil
     }
 }
 
@@ -495,12 +525,17 @@ public struct ForumThreadImageBlock: Codable, Equatable, Hashable, Sendable {
     public var altText: String?
     public var linkURL: URL?
     public var isEmoticon: Bool
+    public var width: Double?
+    public var height: Double?
 
-    public init(url: URL, altText: String? = nil, linkURL: URL? = nil, isEmoticon: Bool = false) {
+    public init(url: URL, altText: String? = nil, linkURL: URL? = nil, isEmoticon: Bool = false,
+                width: Double? = nil, height: Double? = nil) {
         self.url = url
         self.altText = altText?.nilIfBlank
         self.linkURL = linkURL
         self.isEmoticon = isEmoticon
+        self.width = width
+        self.height = height
     }
 }
 
@@ -529,9 +564,16 @@ public struct ForumThreadAttachmentBlock: Codable, Equatable, Hashable, Sendable
 public struct ForumThreadTableCell: Codable, Equatable, Hashable, Sendable {
     public var isHeader: Bool
     public var blocks: [ForumThreadContentBlock]
+    public var columnSpan: Int?
+    public var rowSpan: Int?
+    public var backgroundHex: String?
 
-    public init(isHeader: Bool = false, blocks: [ForumThreadContentBlock]) {
+    public init(isHeader: Bool = false, blocks: [ForumThreadContentBlock],
+                columnSpan: Int? = nil, rowSpan: Int? = nil, backgroundHex: String? = nil) {
         self.isHeader = isHeader
         self.blocks = blocks
+        self.columnSpan = columnSpan
+        self.rowSpan = rowSpan
+        self.backgroundHex = backgroundHex
     }
 }

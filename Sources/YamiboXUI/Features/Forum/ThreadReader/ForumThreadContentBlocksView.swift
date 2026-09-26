@@ -63,6 +63,12 @@ private struct ForumThreadContentBlockView: View {
                     onURLTap: onURLTap
                 )
             }
+        case let .indent(blocks):
+            ForumThreadContentBlocksView(
+                blocks: blocks, fallbackText: "", refererURL: refererURL,
+                onImageTap: onImageTap, onURLTap: onURLTap
+            )
+            .padding(.leading, 20)
         case let .code(text):
             ForumThreadCodeBlockView(text: text)
         case .horizontalRule:

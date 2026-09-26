@@ -65,7 +65,7 @@ struct ForumThreadImageBrowserGallery: Equatable {
                     title: title(from: imageBlock.altText, defaultTitle: defaultTitle),
                 )
             ]
-        case let .quote(blocks):
+        case let .quote(blocks), let .indent(blocks):
             return items(in: blocks, refererURL: refererURL, defaultTitle: defaultTitle)
         case let .collapse(_, blocks):
             return items(in: blocks, refererURL: refererURL, defaultTitle: defaultTitle)
