@@ -26,7 +26,7 @@ struct MangaOfflineCacheWorkProcessingStrategy: OfflineCacheWorkProcessingStrate
 
         let tid = work.entryID.entryKey
         let snapshot = try await readerProjectionLoader.loadReaderProjectionSnapshot(
-            MangaReaderProjectionRequest(threadID: tid)
+            MangaReaderProjectionRequest(threadID: tid, offlineOwnerName: work.entryID.ownerKey)
         )
         let targetImageURLs = snapshot.projection.imageURLs
         guard !targetImageURLs.isEmpty else {

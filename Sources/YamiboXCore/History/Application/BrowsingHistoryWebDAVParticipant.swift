@@ -40,8 +40,10 @@ struct BrowsingHistorySyncRecord: Codable, Equatable, Sendable {
     }
 
     func save(in db: Database) throws {
+        var record = self
+        record.target = try MangaDirectoryIdentityDatabase.canonicalTarget(target, in: db)
         try db.execute(sql: "INSERT OR REPLACE INTO browsing_history_sync_records (id, record, last_visit_time) VALUES (?, ?, ?)",
-            arguments: [id, try JSONEncoder().encode(self), lastVisitTime.timeIntervalSince1970])
+            arguments: [record.id, try JSONEncoder().encode(record), record.lastVisitTime.timeIntervalSince1970])
     }
 }
 
@@ -103,6 +105,8 @@ struct BrowsingHistoryWebDAVParticipant: WebDAVSyncParticipant {
     let uploadsUntrackedContentAutomatically = true
     let store: BrowsingHistoryStore
 
+    func readLocalDeletionState() async throws -> SyncDeletionState? { try await store.syncSnapshot().deletions }
+
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try BrowsingHistoryWebDAVPayload.decode(data)
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, accountUID: payload.accountUID, revision: payload.syncRevision)
@@ -128,7 +132,11 @@ struct BrowsingHistoryWebDAVParticipant: WebDAVSyncParticipant {
 
     private func merge(remoteData: Data?, at date: Date) async throws -> BrowsingHistoryWebDAVPayload {
         let remote = try remoteData.map(BrowsingHistoryWebDAVPayload.decode)
-        return try await store.updateSyncSnapshot { snapshot in
+        let remoteSnapshot = remote.map { SyncRecordSnapshot(records: $0.records, deletions: $0.deletions) }
+        return try await store.updateSyncSnapshot(merging: remoteSnapshot) { snapshot, remoteSnapshot in
+            let remote = remoteSnapshot.map {
+                BrowsingHistoryWebDAVPayload(updatedAt: date, records: $0.records, deletions: $0.deletions)
+            }
             let merged = try BrowsingHistoryWebDAVPayload(updatedAt: date, records: snapshot.records, deletions: snapshot.deletions).merging(remote)
             snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
             return merged

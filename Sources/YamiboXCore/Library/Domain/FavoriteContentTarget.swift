@@ -54,6 +54,10 @@ public enum FavoriteContentTarget: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
     public var kind: FavoriteContentTargetKind {
         switch self {
         case .normalThread:
@@ -101,16 +105,12 @@ public enum FavoriteContentTarget: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    public init(mangaCleanBookName: String) {
-        let normalizedName = mangaCleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self = .mangaTitle(mangaID: normalizedName, cleanBookName: normalizedName)
-    }
-
     public init(mangaID: String, mangaCleanBookName: String) {
         let normalizedName = mangaCleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedID = mangaID.trimmingCharacters(in: .whitespacesAndNewlines)
+        precondition(!normalizedID.isEmpty, "A manga target requires a persisted directory ID")
         self = .mangaTitle(
-            mangaID: normalizedID.isEmpty ? normalizedName : normalizedID,
+            mangaID: normalizedID,
             cleanBookName: normalizedName
         )
     }

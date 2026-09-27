@@ -15,7 +15,7 @@ extension OfflineCacheStore {
         await ensureQueueRecoveredBestEffort()
         do {
             return try await database.read { db in
-                try Self.allRawWorks(in: db).map(Self.queueWorkProjection(from:))
+                try Self.allRawWorks(in: db).map { try Self.queueWorkProjection(from: $0, in: db) }
             }
         } catch {
             YamiboLog.offlineCache.error("Failed to read offline cache queue works: \(error)")
@@ -95,7 +95,7 @@ extension OfflineCacheStore {
                         title: title
                     )
                     try Self.save(updatedWork, replacing: work, in: db)
-                    return .alreadyQueued(Self.queueWorkProjection(from: updatedWork))
+                    return .alreadyQueued(try Self.queueWorkProjection(from: updatedWork, in: db))
                 }
                 let work = OfflineCacheRawWork(
                     readerKind: .novel,
@@ -115,7 +115,7 @@ extension OfflineCacheStore {
                     updatedAt: Date()
                 )
                 try Self.save(work, in: db)
-                return .enqueued(Self.queueWorkProjection(from: work))
+                return .enqueued(try Self.queueWorkProjection(from: work, in: db))
             }
             if result.enqueuedWork != nil {
                 notifyOfflineCacheDidChange()
@@ -284,6 +284,7 @@ extension OfflineCacheStore {
         guard let ownerKey = ownerKey.mangaReaderTrimmedNonEmpty else { return }
         do {
             try await database.write { db in
+                let ownerKey = readerKind == .manga ? try Self.canonicalMangaOwnerKey(ownerKey, in: db) : ownerKey
                 let canceled = try Self.rawWorks(readerKind: readerKind, ownerKey: ownerKey, in: db)
                 try db.execute(
                     sql: "DELETE FROM offline_cache_works WHERE reader_kind = ? AND owner_name = ?",
@@ -308,6 +309,11 @@ extension OfflineCacheStore {
     /// plain INSERT OR REPLACE would additionally cascade-delete both image lists
     /// on every tick (REPLACE deletes the conflicting parent row first).
     static func save(_ work: OfflineCacheRawWork, replacing previous: OfflineCacheRawWork? = nil, in db: Database) throws {
+        var work = work
+        if work.readerKind == .manga {
+            work.ownerKey = try canonicalMangaOwnerKey(work.ownerKey, in: db)
+            work.ownerTitle = try String.fetchOne(db, sql: "SELECT name FROM manga_identities WHERE id = ?", arguments: [work.ownerKey]) ?? work.ownerTitle
+        }
         try db.execute(
             sql: """
             INSERT INTO offline_cache_works
@@ -421,6 +427,7 @@ extension OfflineCacheStore {
         entryKey: String,
         in db: Database
     ) throws -> OfflineCacheRawWork? {
+        let ownerKey = readerKind == .manga ? try canonicalMangaOwnerKey(ownerKey, in: db) : ownerKey
         guard let ownerKey = ownerKey.mangaReaderTrimmedNonEmpty,
               let entryKey = entryKey.mangaReaderTrimmedNonEmpty,
               let row = try Row.fetchOne(
@@ -442,7 +449,8 @@ extension OfflineCacheStore {
         ownerKey: String,
         in db: Database
     ) throws -> [OfflineCacheRawWork] {
-        try Row.fetchAll(
+        let ownerKey = readerKind == .manga ? try canonicalMangaOwnerKey(ownerKey, in: db) : ownerKey
+        return try Row.fetchAll(
             db,
             sql: """
             SELECT \(workColumnList)
@@ -490,14 +498,19 @@ extension OfflineCacheStore {
         return nil
     }
 
-    static func queueWorkProjection(from work: OfflineCacheRawWork) -> OfflineCacheQueueWorkProjection {
+    static func queueWorkProjection(from work: OfflineCacheRawWork, in db: Database) throws -> OfflineCacheQueueWorkProjection {
         let groupID = OfflineCacheGroupID(readerKind: work.readerKind, ownerKey: work.ownerKey)
         let entryID = OfflineCacheEntryID(readerKind: work.readerKind, ownerKey: work.ownerKey, entryKey: work.entryKey)
+        // Paused and failed work may never be saved again after a rename.
+        // Resolve its display name even when the rebuildable directory is gone.
+        let ownerTitle = work.readerKind == .manga
+            ? try mangaOwnerTitle(work.ownerKey, fallback: work.ownerTitle, in: db)
+            : work.ownerTitle
         return OfflineCacheQueueWorkProjection(
             id: OfflineCacheWorkID(readerKind: work.readerKind, rawValue: work.workID),
             groupID: groupID,
             entryID: entryID,
-            ownerTitle: work.ownerTitle,
+            ownerTitle: ownerTitle,
             title: offlineCacheEntryTitle(chapterTitle: work.title, entryKey: work.entryKey),
             progress: OfflineCacheProgress(
                 completedUnitCount: work.completedImageURLs.count,

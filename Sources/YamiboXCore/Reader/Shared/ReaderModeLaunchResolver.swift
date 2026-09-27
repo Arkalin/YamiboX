@@ -57,6 +57,7 @@ public struct ReaderModeLaunchResolver: Sendable {
             chapterView: progress?.chapterView ?? 1,
             initialPage: progress?.mangaPageIndex ?? 0,
             directoryName: directoryName,
+            directoryID: directory?.id,
             isPreview: isPreview,
             isSmartModeEnabled: smartMode,
             forumID: thread.fid

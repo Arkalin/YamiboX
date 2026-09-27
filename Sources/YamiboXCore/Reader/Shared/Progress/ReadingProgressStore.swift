@@ -102,38 +102,12 @@ public actor ReadingProgressStore {
 
     func loadThrowing(for target: FavoriteContentTarget) async throws -> ReadingProgressRecord? {
         try await database.read { db in
-            try Self.fetchRecord(
+            let target = try Self.canonicalTarget(target, in: db)
+            return try Self.fetchRecord(
                 in: db,
                 sql: "SELECT * FROM reading_progress WHERE id = ? LIMIT 1",
                 arguments: [target.id]
             )
-        }
-    }
-
-    public func migrateMangaTitleKey(from oldCleanBookName: String, to newCleanBookName: String, date: Date = .now) async throws {
-        try await updateSyncSnapshot { snapshot in
-            var recordsByKey = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
-            let oldTarget = FavoriteContentTarget(mangaCleanBookName: oldCleanBookName)
-            let newTarget = FavoriteContentTarget(mangaCleanBookName: newCleanBookName)
-            if var record = recordsByKey.removeValue(forKey: oldTarget.id) {
-                if oldTarget.id != newTarget.id { snapshot.deletions.recordDeletion(of: oldTarget.id, at: date) }
-                record.contentTarget = newTarget
-                record.updatedAt = max(record.updatedAt, date)
-                recordsByKey[newTarget.id] = record
-                snapshot.records = Array(recordsByKey.values)
-                return
-            }
-            guard let existing = recordsByKey.first(where: { _, record in
-                record.contentTarget?.mangaCleanBookName == oldCleanBookName
-            }) else { return }
-            var record = existing.value
-            recordsByKey.removeValue(forKey: existing.key)
-            let renamedTarget = record.contentTarget?.renamedMangaTitle(to: newCleanBookName) ?? newTarget
-            record.contentTarget = renamedTarget
-            if existing.key != renamedTarget.id { snapshot.deletions.recordDeletion(of: existing.key, at: date) }
-            record.updatedAt = max(record.updatedAt, date)
-            recordsByKey[renamedTarget.id] = record
-            snapshot.records = Array(recordsByKey.values)
         }
     }
 
@@ -158,7 +132,10 @@ public actor ReadingProgressStore {
                 try db.execute(sql: "DELETE FROM reading_progress")
                 var recordsByKey: [String: ReadingProgressRecord] = [:]
                 for record in records {
-                    let normalized = Self.normalizedRecord(record)
+                    var normalized = Self.normalizedRecord(record)
+                    if let target = normalized.contentTarget {
+                        normalized.contentTarget = try Self.canonicalTarget(target, in: db)
+                    }
                     if let existing = recordsByKey[normalized.id], existing.updatedAt >= normalized.updatedAt {
                         continue
                     }
@@ -226,18 +203,50 @@ public actor ReadingProgressStore {
 
     @discardableResult
     func updateSyncSnapshot<T: Sendable>(
-        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ReadingProgressRecord>) throws -> T
+        merging remote: SyncRecordSnapshot<ReadingProgressRecord>?,
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ReadingProgressRecord>, SyncRecordSnapshot<ReadingProgressRecord>?) throws -> T
     ) async throws -> T {
         let result = try await database.write { db in
-            var snapshot = try Self.syncSnapshot(in: db)
-            let result = try transform(&snapshot)
+            // A directory merge can commit after WebDAV payload normalization.
+            // Resolve records and tombstones together under the write lock,
+            // before conflict resolution can admit a deleted record's old ID.
+            let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
+            var snapshot = try Self.canonicalSnapshot(Self.syncSnapshot(in: db), identities: identities)
+            let remote = try remote.map { try Self.canonicalSnapshot($0, identities: identities) }
+            let result = try transform(&snapshot, remote)
             try db.execute(sql: "DELETE FROM reading_progress")
-            for record in snapshot.records { try Self.upsert(Self.normalizedRecord(record), in: db) }
+            for record in snapshot.records {
+                try Self.upsert(Self.normalizedRecord(record), in: db)
+            }
             try snapshot.deletions.save(to: "reading_progress_sync_state", in: db)
             return result
         }
         postChangeNotification()
         return result
+    }
+
+    private static func canonicalSnapshot(
+        _ snapshot: SyncRecordSnapshot<ReadingProgressRecord>,
+        identities: MangaDirectoryIdentitySnapshot
+    ) throws -> SyncRecordSnapshot<ReadingProgressRecord> {
+        let records = snapshot.records.map { record in
+            var record = record
+            if case let .mangaTitle(id, title) = record.contentTarget {
+                let canonical = identities.canonicalID(id)
+                record.contentTarget = .mangaTitle(
+                    mangaID: canonical,
+                    cleanBookName: identities.titles[canonical] ?? title
+                )
+            }
+            return record
+        }
+        // Preserve unresolved legacy deletion markers and their import rules.
+        let deletions = try MangaDirectoryIdentityJSON.normalize(
+            JSONEncoder().encode(snapshot.deletions), identities: identities,
+            legacy: false, datasetID: "readingProgress"
+        )
+        return SyncRecordSnapshot(records: records,
+            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
     }
 
     private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<ReadingProgressRecord> {
@@ -405,7 +414,10 @@ public actor ReadingProgressStore {
         date: Date = .now,
         discardingOlderUpdate: Bool = false
     ) async throws -> ReadingProgressRecord {
-        let target = FavoriteContentTarget(mangaID: mangaID ?? cleanBookName, mangaCleanBookName: cleanBookName)
+        guard let mangaID = Self.trimmedNonEmpty(mangaID) else {
+            throw YamiboPersistenceError(context: "Manga reading progress requires a stable directory ID")
+        }
+        let target = FavoriteContentTarget(mangaID: mangaID, mangaCleanBookName: cleanBookName)
         let chapterTID = Self.trimmedNonEmpty(chapterThreadID)
         guard let chapterTID else {
             throw YamiboPersistenceError(context: "Manga reading progress requires a chapter tid")
@@ -427,20 +439,10 @@ public actor ReadingProgressStore {
             )
         )
         let changed = try await database.write { db in
-            let candidateIDs = Self.mangaProgressRetargetCandidateIDs(
-                target: target,
-                cleanBookName: cleanBookName,
-                chapterTID: chapterTID
-            )
+            let target = try Self.canonicalTarget(target, in: db)
             if discardingOlderUpdate {
-                for id in [target.id] + Array(candidateIDs) {
-                    if let updatedAt = try Double.fetchOne(db, sql: "SELECT updated_at FROM reading_progress WHERE id = ?", arguments: [id]),
-                       updatedAt > date.timeIntervalSince1970 { return false }
-                }
-            }
-            for candidateID in candidateIDs {
-                try Self.recordSyncDeletion(id: candidateID, at: date, in: db)
-                try db.execute(sql: "DELETE FROM reading_progress WHERE id = ?", arguments: [candidateID])
+                if let updatedAt = try Double.fetchOne(db, sql: "SELECT updated_at FROM reading_progress WHERE id = ?", arguments: [target.id]),
+                   updatedAt > date.timeIntervalSince1970 { return false }
             }
             try Self.upsert(Self.normalizedRecord(record), in: db)
             return true
@@ -452,6 +454,10 @@ public actor ReadingProgressStore {
     private func save(_ record: ReadingProgressRecord, discardingOlderUpdate: Bool = false) async throws {
         do {
             let changed = try await database.write { db in
+                var record = record
+                if let target = record.contentTarget {
+                    record.contentTarget = try Self.canonicalTarget(target, in: db)
+                }
                 if discardingOlderUpdate,
                    let updatedAt = try Double.fetchOne(db, sql: "SELECT updated_at FROM reading_progress WHERE id = ?", arguments: [record.id]),
                    updatedAt > record.updatedAt.timeIntervalSince1970 { return false }
@@ -577,6 +583,8 @@ public actor ReadingProgressStore {
     }
 
     private static func upsert(_ record: ReadingProgressRecord, in db: Database) throws {
+        var record = record
+        if let target = record.contentTarget { record.contentTarget = try canonicalTarget(target, in: db) }
         let columns = targetColumns(for: record.contentTarget)
         let novelResumePointJSON: String?
         if let resumePoint = record.novel?.novelResumePoint {
@@ -709,24 +717,16 @@ public actor ReadingProgressStore {
         value.map(Date.init(timeIntervalSince1970:))
     }
 
-    private static func mangaProgressRetargetCandidateIDs(
-        target: FavoriteContentTarget,
-        cleanBookName: String,
-        chapterTID: String?
-    ) -> Set<String> {
-        guard target.kind == .mangaTitle else { return [] }
-        var candidateIDs = Set<String>()
-        candidateIDs.insert(FavoriteContentTarget(mangaCleanBookName: cleanBookName).id)
-        if let chapterTID = chapterTID?.trimmingCharacters(in: .whitespacesAndNewlines), !chapterTID.isEmpty {
-            candidateIDs.insert(FavoriteContentTarget(mangaID: "chapter:\(chapterTID)", mangaCleanBookName: cleanBookName).id)
-            candidateIDs.insert(FavoriteContentTarget(mangaID: "thread:\(chapterTID)", mangaCleanBookName: cleanBookName).id)
-        }
-        candidateIDs.remove(target.id)
-        return candidateIDs
-    }
-
     private static func trimmedNonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func canonicalTarget(_ target: FavoriteContentTarget, in db: Database) throws -> FavoriteContentTarget {
+        guard case let .mangaTitle(id, title) = target,
+              try db.tableExists("manga_identities") else { return target }
+        let canonical = try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: id), in: db)
+        let name = try String.fetchOne(db, sql: "SELECT name FROM manga_identities WHERE id = ?", arguments: [canonical.rawValue]) ?? title
+        return .mangaTitle(mangaID: canonical.rawValue, cleanBookName: name)
     }
 }

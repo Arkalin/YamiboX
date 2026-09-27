@@ -85,6 +85,11 @@ struct MangaReaderViewModelDependencies {
 @MainActor
 @Observable
 public final class MangaReaderViewModel {
+    var currentDirectoryID: MangaDirectoryID? {
+        guard case let .loaded(loaded) = presentation.state else { return nil }
+        return loaded.directoryID
+    }
+    @ObservationIgnored private var directoryObservationTask: Task<Void, Never>?
     // The properties below were `@Published` before the `@Observable`
     // migration; they stay tracked so the views keep re-rendering on the
     // exact same writes as before.
@@ -208,7 +213,7 @@ public final class MangaReaderViewModel {
         reading: MangaReaderLikeModule.Reading(
             isSmartModeEnabled: context.isSmartModeEnabled,
             forumID: context.forumID,
-            currentDirectoryCleanBookName: { [weak self] in self?.workflow?.currentDirectoryCleanBookName() },
+            currentDirectoryID: { [weak self] in self?.workflow?.currentDirectoryID() },
             makeLikeDependencies: dependencies.makeLikeDependencies,
             imageData: { [imagePipeline = dependencies.imagePipeline] in try await imagePipeline.data(for: $0) },
             imageSource: { [weak self] page in
@@ -231,7 +236,7 @@ public final class MangaReaderViewModel {
             isSmartModeEnabled: context.isSmartModeEnabled,
             chapterTID: context.chapterTID,
             displayTitle: context.displayTitle,
-            currentDirectoryCleanBookName: { [weak self] in self?.workflow?.currentDirectoryCleanBookName() },
+            currentDirectoryID: { [weak self] in self?.workflow?.currentDirectoryID() },
             makeContentCoverStore: dependencies.makeContentCoverStore,
             makeThreadCoverPageRepository: dependencies.makeThreadCoverPageRepository,
             imageSource: { [weak self] page in
@@ -280,6 +285,7 @@ public final class MangaReaderViewModel {
     )
 
     deinit {
+        directoryObservationTask?.cancel()
         // Only the handles this view model still owns; the extracted
         // modules (directory lane, like, cover) cancel their own task
         // handles in their own deinits. Both handles must stay
@@ -388,6 +394,7 @@ public final class MangaReaderViewModel {
         likeModule.observeLikeChangesIfNeeded()
         await refreshAnnotationState()
         observeBookmarkChangesIfNeeded()
+        observeDirectoryChanges()
         coverModule.startAutoThreadCoverResolutionIfNeeded()
         browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
     }
@@ -1006,6 +1013,8 @@ public final class MangaReaderViewModel {
     }
 
     private func cancelReaderTasks() {
+        directoryObservationTask?.cancel()
+        directoryObservationTask = nil
         directoryLane.cancelTasks()
         chapterJumpTask?.cancel()
         chapterJumpTask = nil
@@ -1016,6 +1025,26 @@ public final class MangaReaderViewModel {
         bookmarkChangeObservationTask = nil
         coverModule.cancelAutoThreadCoverResolution()
         readerContentGeneration += 1
+    }
+
+    private func observeDirectoryChanges() {
+        guard directoryObservationTask == nil else { return }
+        let changes = dependencies.makeDirectoryStore().changes()
+        directoryObservationTask = Task { [weak self] in
+            for await _ in changes {
+                guard !Task.isCancelled else { return }
+                guard let self, !isClosed, let workflow else { return }
+                let previous = progressSnapshot(from: presentation)
+                do {
+                    if let updated = try await workflow.refreshPersistedDirectory(), !Task.isCancelled {
+                        publishPresentation(updated, previousProgressSnapshot: previous)
+                        await likeModule.refreshLikedPageIDs()
+                    }
+                } catch {
+                    YamiboLog.reader.warning("Could not refresh changed manga directory: \(error)")
+                }
+            }
+        }
     }
 
     func publishPresentation(
@@ -1061,7 +1090,7 @@ public final class MangaReaderViewModel {
             offlineCacheOwnerName = nil
             return
         }
-        offlineCacheOwnerName = Self.normalizedDirectoryName(loaded.directoryTitle)
+        offlineCacheOwnerName = loaded.directoryID?.rawValue
     }
 
     private func currentPageIndex(in presentation: MangaReaderPresentation) -> Int? {
@@ -1133,6 +1162,7 @@ public final class MangaReaderViewModel {
             chapterView: currentPage.sourceIdentity.view,
             initialPage: currentPage.localIndex,
             directoryName: directoryName,
+            directoryID: loaded.directoryID,
             offlineCacheFavoriteID: context.offlineCacheFavoriteID,
             isPreview: context.isPreview,
             isSmartModeEnabled: context.isSmartModeEnabled,

@@ -48,7 +48,7 @@ public struct LikeDependencies: Sendable {
             if let mangaDirectory {
                 directory = mangaDirectory
             } else if scopedItems.contains(where: { $0.chapterTitle == nil }) {
-                directory = try? await mangaDirectoryStore.directory(named: work.id)
+                directory = try? await mangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: work.id))
             } else {
                 directory = nil
             }

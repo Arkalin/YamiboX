@@ -141,7 +141,7 @@ extension FavoriteLibraryOrganizer {
         // Same batching as `loadContentCovers(for:)` above — one read
         // transaction for every directory's `.smartManga` key instead of one
         // actor round-trip per directory.
-        let keys = directories.map { ContentCoverKey.smartManga(cleanBookName: $0.cleanBookName) }
+        let keys = directories.map { ContentCoverKey.smartManga(directoryID: $0.id) }
         let covers = await contentCoverStore.covers(for: keys)
         var lookup = ContentCoverLookup()
         for key in keys {
@@ -178,7 +178,7 @@ extension FavoriteLibraryOrganizer {
             boardReaderSettings: boardReaderSettings
         )
         let missing = groups.filter { group in
-            let key = ContentCoverKey.smartManga(cleanBookName: group.directory.cleanBookName)
+            let key = ContentCoverKey.smartManga(directoryID: group.directory.id)
             return coverLookup.urlsByKey[key] == nil
                 // A text-cover-forced group resolves no URL above, but it is
                 // a deliberate "no image", not a missing cover — resolving
@@ -193,7 +193,7 @@ extension FavoriteLibraryOrganizer {
         // progress change) while this batch is still in flight doesn't
         // re-attempt the same groups.
         attemptedMangaCoverTargetIDs.formUnion(
-            missing.map { ContentCoverKey.smartManga(cleanBookName: $0.directory.cleanBookName).targetID }
+            missing.map { ContentCoverKey.smartManga(directoryID: $0.directory.id).targetID }
         )
         mangaCoverBackfillTask = Task { [weak self, contentCoverStore] in
             defer { self?.mangaCoverBackfillTask = nil }
@@ -201,7 +201,7 @@ extension FavoriteLibraryOrganizer {
             let resolver = ThreadCoverResolver()
             for group in missing {
                 if Task.isCancelled { return }
-                let key = ContentCoverKey.smartManga(cleanBookName: group.directory.cleanBookName)
+                let key = ContentCoverKey.smartManga(directoryID: group.directory.id)
                 // `resolvedURL` alone is not enough here: a text-cover-forced
                 // row resolves nil even when a URL is stored, and overwriting
                 // its automatic URL for a cover the flag suppresses anyway

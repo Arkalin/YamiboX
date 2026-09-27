@@ -7,7 +7,7 @@ extension FavoriteLibraryOrganizer {
 
     /// True only while browsing the unscoped root list — false while either
     /// a pushed collection detail (`selectedCollectionID`) or a merged smart
-    /// card's "查看归档收藏" archive detail (`selectedMergedGroupCleanBookName`)
+    /// card's "查看归档收藏" archive detail (`selectedMergedGroupKey`)
     /// is open. Collections never appear inside either scoped detail page
     /// (no nested collections in the domain model), so every call site
     /// deciding whether to fold `derived.visibleCollections` into scope or
@@ -17,7 +17,7 @@ extension FavoriteLibraryOrganizer {
     /// "select all", since opening it directly from the root list (the
     /// common path) leaves `selectedCollectionID` `nil`.
     var isBrowsingUnscopedRoot: Bool {
-        selectedCollectionID == nil && selectedMergedGroupCleanBookName == nil
+        selectedCollectionID == nil && selectedMergedGroupKey == nil
     }
 
     func toggleCollectionSelection(id: String) {
@@ -48,11 +48,13 @@ extension FavoriteLibraryOrganizer {
     /// filter entirely.
     ///
     /// Always `false` while the "查看归档收藏" archive page is open
-    /// (`selectedMergedGroupCleanBookName != nil`), matching
+    /// (`selectedMergedGroupKey != nil`), matching
     /// `cards(in:query:...)`'s own member-scoped computation: every card
     /// there is deliberately an ordinary per-item card, never a smart card.
     private func isSmartCardFavoriteID(_ id: String) -> Bool {
-        guard selectedMergedGroupCleanBookName == nil,
+        guard selectedMergedGroupKey == nil else { return false }
+        if mangaDirectoriesByTID.values.contains(where: { $0.id.rawValue == id }) { return true }
+        guard
               let item = document.items.first(where: { $0.id == id }) else { return false }
         return item.target.kind == .mangaThread && boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID)
     }
@@ -85,33 +87,42 @@ extension FavoriteLibraryOrganizer {
     /// off case, which intentionally keeps requiring the dedicated archive
     /// page for per-item-visible deletion instead).
     func expandedSelectionFavoriteIDs(_ favoriteIDs: Set<String>) -> Set<String> {
-        guard selectedMergedGroupCleanBookName == nil else { return favoriteIDs }
+        guard selectedMergedGroupKey == nil else { return favoriteIDs }
         // Built once for every id in this one call, instead of calling
         // `archivedItems(matching:...)` (a full O(N) scan of `document.items`)
         // once per selected id — an O(S x N) shape for S selected ids that
         // this single O(N) precomputation plus O(1) lookups per id replaces.
         // Still always freshly computed from the CURRENT `document.items`
         // here at the top of this call, never cached across separate calls.
-        let itemsByEffectiveTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByEffectiveTitle(
+        let itemsByEffectiveTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: document.items,
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
         )
         var expanded = favoriteIDs
         for id in favoriteIDs {
+            if let members = itemsByEffectiveTitle[id] {
+                expanded.remove(id)
+                expanded.formUnion(members.map(\.id))
+                continue
+            }
             guard let item = document.items.first(where: { $0.id == id }),
                   item.target.kind == .mangaThread,
                   boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID) else { continue }
             let directory = mangaDirectoriesByTID[item.target.threadID ?? ""]
-            let effectiveTitle = FavoriteCardProjection.resolvedTitle(
-                item: item,
-                mangaDirectory: directory,
-                isModeOnMangaThread: true
-            )
+            let effectiveTitle = FavoriteCardProjection.groupKey(item: item, mangaDirectory: directory)
             let archived = itemsByEffectiveTitle[effectiveTitle] ?? []
             expanded.formUnion(archived.map(\.id))
         }
         return expanded
+    }
+
+    func selectionID(for item: FavoriteItem) -> String {
+        guard selectedMergedGroupKey == nil,
+              item.target.kind == .mangaThread,
+              boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID),
+              let directory = mangaDirectoriesByTID[item.target.threadID ?? ""] else { return item.id }
+        return directory.id.rawValue
     }
 
     /// Every card currently visible, including smart cards — selecting or
@@ -279,7 +290,7 @@ extension FavoriteLibraryOrganizer {
     }
 
     func removeSelectionFromCurrentLocation() async {
-        let favoriteIDs = selection.selectedFavoriteIDs
+        let favoriteIDs = expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs)
         let source = selectionSourceLocation
         guard !favoriteIDs.isEmpty else { return }
         let committed: Void? = await commit { document in

@@ -35,9 +35,15 @@ struct WebDAVClient: Sendable {
 
     /// Ensures the remote sync directory exists. Callers batch this to once
     /// per sync round rather than once per uploaded dataset.
-    func ensureDirectoryExists(settings: WebDAVSyncSettings) async throws {
+    func ensureDirectoryExists(settings: WebDAVSyncSettings, namespace: String? = nil) async throws {
         let config = try configuration(from: settings, fileName: "")
         try await createDirectoryIfNeeded(configuration: config)
+        if let namespace {
+            let nested = Configuration(directoryURL: config.directoryURL.appendingPathComponent(namespace, isDirectory: true),
+                fileURL: config.directoryURL.appendingPathComponent(namespace, isDirectory: true),
+                username: config.username, password: config.password)
+            try await createDirectoryIfNeeded(configuration: nested)
+        }
     }
 
     func uploadPayloadData(_ data: Data, settings: WebDAVSyncSettings, fileName: String, condition: WebDAVWriteCondition) async throws {

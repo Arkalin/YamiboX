@@ -163,6 +163,12 @@ struct LikeWorkListView: View {
             }
         }
         .task { await load() }
+        .task {
+            for await _ in likeDependencies.mangaDirectoryStore.changes() {
+                guard !Task.isCancelled else { return }
+                await load()
+            }
+        }
         // Appearance-scoped `.task` replacing the removed `.onReceive`
         // bridge: while this list is visible the reaction is identical, and
         // a change landing while it's covered (a pushed LikeWorkItemsView)
@@ -273,8 +279,8 @@ struct LikeWorkListView: View {
                 titles[key] = document.items.first(where: { $0.target.threadID == key.id })?.resolvedDisplayTitle
                 covers[key] = await contentCoverStore.cover(for: .thread(tid: key.id))?.resolvedURL
             case .manga:
-                titles[key] = key.id
-                covers[key] = await contentCoverStore.cover(for: .smartManga(cleanBookName: key.id))?.resolvedURL
+                titles[key] = try? await likeDependencies.mangaDirectoryStore.identityName(id: MangaDirectoryID(rawValue: key.id))
+                covers[key] = await contentCoverStore.cover(for: .smartManga(directoryID: MangaDirectoryID(rawValue: key.id)))?.resolvedURL
             }
         }
         guard generation == loadGeneration, !Task.isCancelled else { return }

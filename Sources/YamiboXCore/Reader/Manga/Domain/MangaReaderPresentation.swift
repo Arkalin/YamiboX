@@ -28,6 +28,7 @@ public struct MangaReaderLoadingPresentation: Hashable, Sendable {
 }
 
 public struct MangaReaderLoadedPresentation: Hashable, Sendable {
+    public var directoryID: MangaDirectoryID?
     public var title: String
     public var directoryTitle: String
     public var pages: [MangaReaderPageProjection]
@@ -40,6 +41,7 @@ public struct MangaReaderLoadedPresentation: Hashable, Sendable {
     public init(
         title: String,
         directoryTitle: String,
+        directoryID: MangaDirectoryID? = nil,
         pages: [MangaReaderPageProjection],
         currentPage: MangaReaderPageProjection?,
         currentPageIndex: Int?,
@@ -49,6 +51,7 @@ public struct MangaReaderLoadedPresentation: Hashable, Sendable {
     ) {
         self.title = title
         self.directoryTitle = directoryTitle
+        self.directoryID = directoryID
         self.pages = pages
         self.currentPage = currentPage
         self.currentPageIndex = currentPageIndex
@@ -84,6 +87,7 @@ public struct MangaDirectoryPanelCommandState: Hashable, Sendable {
 }
 
 public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
+    public var directoryID: MangaDirectoryID?
     public var directoryTitle: String
     public var displayChapters: [MangaChapter]
     public var currentChapterTID: String?
@@ -101,6 +105,7 @@ public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
 
     public init(
         directoryTitle: String = "",
+        directoryID: MangaDirectoryID? = nil,
         displayChapters: [MangaChapter] = [],
         currentChapterTID: String? = nil,
         latestChapterText: String? = nil,
@@ -116,6 +121,7 @@ public struct MangaDirectoryPanelPresentation: Hashable, Sendable {
         failureEventID: UUID? = nil
     ) {
         self.directoryTitle = directoryTitle
+        self.directoryID = directoryID
         self.displayChapters = displayChapters
         self.currentChapterTID = currentChapterTID
         self.latestChapterText = latestChapterText

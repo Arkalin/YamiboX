@@ -13,7 +13,7 @@ final class MangaReaderCoverModule {
         var isSmartModeEnabled: Bool
         var chapterTID: String
         var displayTitle: String
-        var currentDirectoryCleanBookName: @MainActor () -> String?
+        var currentDirectoryID: @MainActor () -> MangaDirectoryID?
         var makeContentCoverStore: @Sendable () -> ContentCoverStore?
         var makeThreadCoverPageRepository: @Sendable () async -> (any ThreadCoverPageResolving)?
         var imageSource: @MainActor (MangaReaderPageProjection) -> YamiboImageSource
@@ -51,12 +51,8 @@ final class MangaReaderCoverModule {
         guard reading.isSmartModeEnabled else {
             return .thread(tid: reading.chapterTID)
         }
-        guard let cleanBookName = reading.currentDirectoryCleanBookName()?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !cleanBookName.isEmpty else {
-            return nil
-        }
-        return .smartManga(cleanBookName: cleanBookName)
+        guard let id = reading.currentDirectoryID() else { return nil }
+        return .smartManga(directoryID: id)
     }
 
     var canSetMangaCover: Bool {

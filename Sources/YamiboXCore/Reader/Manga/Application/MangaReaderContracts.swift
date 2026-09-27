@@ -17,6 +17,7 @@ public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
     public var source: MangaLaunchSource
     public var initialPage: Int
     public var directoryName: String?
+    public var directoryID: MangaDirectoryID?
     public var offlineCacheFavoriteID: String?
     /// When true, this reader session must not persist reading progress,
     /// resume route, or Favorite Library recency. See Reader Preview Mode in
@@ -57,6 +58,7 @@ public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
         chapterView: Int = 1,
         initialPage: Int = 0,
         directoryName: String? = nil,
+        directoryID: MangaDirectoryID? = nil,
         offlineCacheFavoriteID: String? = nil,
         isPreview: Bool = false,
         isSmartModeEnabled: Bool = true,
@@ -69,6 +71,7 @@ public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
         self.source = source
         self.initialPage = max(0, initialPage)
         self.directoryName = directoryName
+        self.directoryID = directoryID
         self.offlineCacheFavoriteID = offlineCacheFavoriteID?.mangaReaderTrimmedNonEmpty
         self.isPreview = isPreview
         self.isSmartModeEnabled = isSmartModeEnabled
@@ -91,6 +94,7 @@ extension MangaLaunchContext: Codable {
         case source
         case initialPage
         case directoryName
+        case directoryID
         case offlineCacheFavoriteID
         case isPreview
         case isSmartModeEnabled
@@ -106,6 +110,7 @@ extension MangaLaunchContext: Codable {
         try container.encode(source, forKey: .source)
         try container.encode(initialPage, forKey: .initialPage)
         try container.encodeIfPresent(directoryName, forKey: .directoryName)
+        try container.encodeIfPresent(directoryID, forKey: .directoryID)
         try container.encodeIfPresent(offlineCacheFavoriteID, forKey: .offlineCacheFavoriteID)
         try container.encode(isPreview, forKey: .isPreview)
         try container.encode(isSmartModeEnabled, forKey: .isSmartModeEnabled)
@@ -122,6 +127,7 @@ extension MangaLaunchContext: Codable {
             chapterView: try container.decodeIfPresent(Int.self, forKey: .chapterView) ?? 1,
             initialPage: try container.decodeIfPresent(Int.self, forKey: .initialPage) ?? 0,
             directoryName: try container.decodeIfPresent(String.self, forKey: .directoryName),
+            directoryID: try container.decodeIfPresent(MangaDirectoryID.self, forKey: .directoryID),
             offlineCacheFavoriteID: try container.decodeIfPresent(String.self, forKey: .offlineCacheFavoriteID),
             isPreview: try container.decodeIfPresent(Bool.self, forKey: .isPreview) ?? false,
             // Existing persisted routes (reader-resume route store) predate

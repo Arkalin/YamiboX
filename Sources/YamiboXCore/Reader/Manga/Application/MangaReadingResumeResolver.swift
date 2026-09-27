@@ -4,19 +4,22 @@ public struct MangaReadingResumeResolution: Hashable, Sendable {
     public let chapterView: Int
     public let initialPage: Int
     public let directoryName: String?
+    public let directoryID: MangaDirectoryID?
 
     public init(
         chapterTID: String,
         displayTitle: String,
         chapterView: Int,
         initialPage: Int,
-        directoryName: String?
+        directoryName: String?,
+        directoryID: MangaDirectoryID? = nil
     ) {
         self.chapterTID = chapterTID
         self.displayTitle = displayTitle
         self.chapterView = chapterView
         self.initialPage = initialPage
         self.directoryName = directoryName
+        self.directoryID = directoryID
     }
 }
 
@@ -77,7 +80,8 @@ public struct MangaReadingResumeResolver: Sendable {
             displayTitle: directory.cleanBookName,
             chapterView: directoryProgress?.chapterView ?? firstChapter.view,
             initialPage: directoryProgress?.mangaPageIndex ?? 0,
-            directoryName: directory.cleanBookName
+            directoryName: directory.cleanBookName,
+            directoryID: directory.id
         )
     }
 }

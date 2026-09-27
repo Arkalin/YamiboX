@@ -18,12 +18,16 @@ public actor WebDAVSyncService {
         settingsStore: WebDAVSyncSettingsStore,
         sessionStore: SessionStore,
         participants: [any WebDAVSyncParticipant],
+        mangaDirectoryStore: MangaDirectoryStore,
         client: WebDAVClient = WebDAVClient(),
         policyModule: WebDAVSyncPolicyModule = WebDAVSyncPolicyModule()
     ) {
         self.settingsStore = settingsStore
         self.sessionStore = sessionStore
-        self.participants = participants
+        self.participants = participants.map { participant in
+            guard participant.datasetID != WebDAVSyncContent.appSettings.rawValue else { return participant }
+            return MangaIdentityWebDAVParticipant(base: participant, directoryStore: mangaDirectoryStore)
+        }
         self.client = client
         self.policyModule = policyModule
     }
@@ -45,6 +49,8 @@ public actor WebDAVSyncService {
     private func performUpload(using settings: WebDAVSyncSettings, allowingAccountMismatch: Bool = false) async throws -> Date {
         guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
+        let settings = try await upgradeMangaIdentityDatasets(settings: settings, accountUID: accountUID,
+            allowingAccountMismatch: allowingAccountMismatch)
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         if !allowingAccountMismatch {
             try validateAccount(of: remotePayloads, localUID: accountUID)
@@ -79,6 +85,7 @@ public actor WebDAVSyncService {
     private func performDownload(using settings: WebDAVSyncSettings) async throws -> Date {
         guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
+        let settings = try await upgradeMangaIdentityDatasets(settings: settings, accountUID: accountUID)
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         try validateAccount(of: remotePayloads, localUID: accountUID)
         let applied = try await applyRemotePayloads(remotePayloads)
@@ -112,7 +119,7 @@ public actor WebDAVSyncService {
         let sessionState = snapshot.session
         guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
         try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
-        settings = await settingsStore.load()
+        settings = try await reloadSettings(for: settings)
         settings.disabledContentIDs = disabledContentIDs
         settings.contentSelectionRevision = selectionRevision
         if !bypassingMinimumInterval,
@@ -122,10 +129,12 @@ public actor WebDAVSyncService {
         }
         guard let accountUID = try? currentAccountUID(from: sessionState) else { return .skipped }
 
+        settings = try await upgradeMangaIdentityDatasets(settings: settings, accountUID: accountUID)
+
         let remotePayloads = try await fetchRemotePayloads(settings: settings)
         try validateAccount(of: remotePayloads, localUID: accountUID)
         try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
-        settings = await settingsStore.load()
+        settings = try await reloadSettings(for: settings)
         settings.disabledContentIDs = disabledContentIDs
         settings.contentSelectionRevision = selectionRevision
         let newestRemoteUpdatedAt = remotePayloads.values.map(\.info.updatedAt).max()
@@ -290,6 +299,118 @@ public actor WebDAVSyncService {
         var etag: String?
     }
 
+    /// Imports legacy resources before any new-format merge. Completion is
+    /// recorded only after a conditional upload succeeds; a failed import or
+    /// upload remains retryable and never advances the migration marker.
+    private func upgradeMangaIdentityDatasets(
+        settings: WebDAVSyncSettings,
+        accountUID: String,
+        allowingAccountMismatch: Bool = false
+    ) async throws -> WebDAVSyncSettings {
+        struct ImportScope: Encodable {
+            var location: String
+            var username: String
+            var accountUID: String
+            var datasetID: String
+            var format = MangaIdentityWebDAVParticipant.namespace
+        }
+        let selected = enabledParticipants(settings)
+        var importScopes: [String: String] = [:]
+        for participant in selected where participant.legacyRemoteFileName != nil {
+            importScopes[participant.datasetID] = try WebDAVSyncFingerprint.make(ImportScope(location: settings.trimmedBaseURLString,
+                username: settings.trimmedUsername, accountUID: accountUID, datasetID: participant.datasetID))
+        }
+        let pendingImports = selected.filter { participant in
+            guard let key = importScopes[participant.datasetID] else { return false }
+            return !settings.completedMangaIdentityImports.contains(key)
+        }
+        var remotePayloads: [String: RemotePayload] = [:]
+        var legacyPayloads: [String: RemotePayload] = [:]
+        let needsPreflight = !pendingImports.isEmpty || importScopes.contains {
+            settings.mangaIdentityBaselineScopeByDatasetID[$0.key] != $0.value
+        }
+        if needsPreflight {
+            // Preflight the entire selected backup before touching local
+            // identities, migration bookkeeping, or any remote resource.
+            // Completed imports must not reread their legacy snapshots.
+            remotePayloads = try await fetchRemotePayloads(settings: settings)
+            for participant in pendingImports {
+                guard let legacyName = participant.legacyRemoteFileName else { continue }
+                let file: WebDAVRemoteFile
+                do { file = try await client.fetchPayload(settings: settings, fileName: legacyName) }
+                catch WebDAVSyncError.notFound { continue }
+                legacyPayloads[participant.datasetID] = RemotePayload(
+                    data: file.data, info: try participant.inspectRemote(file.data), etag: file.etag
+                )
+            }
+            if !allowingAccountMismatch {
+                try validateAccount(of: remotePayloads, localUID: accountUID)
+                try validateAccount(of: legacyPayloads, localUID: accountUID)
+            }
+            try Task.checkCancellation()
+        }
+
+        var effective = settings
+        for participant in selected {
+            guard let key = importScopes[participant.datasetID] else { continue }
+            let id = participant.datasetID
+            // Neither old-format history nor another remote/account's
+            // baseline may suppress this namespace's first export.
+            if effective.mangaIdentityBaselineScopeByDatasetID[id] != key {
+                effective.lastSyncedFingerprintByDatasetID[id] = nil
+                effective.lastAppliedRemoteUpdatedAtByDatasetID[id] = nil
+                effective.lastAppliedRemoteRevisionByDatasetID[id] = nil
+                effective.localRevisionByDatasetID[id] = nil
+                effective.dirtyDatasetIDs.insert(id)
+                effective.mangaIdentityBaselineScopeByDatasetID[id] = key
+                try await settingsStore.update { current in
+                    if current.trimmedBaseURLString.isEmpty,
+                       current.contentSelectionRevision == settings.contentSelectionRevision { current = settings }
+                    guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+                    current.lastSyncedFingerprintByDatasetID[id] = nil
+                    current.lastAppliedRemoteUpdatedAtByDatasetID[id] = nil
+                    current.lastAppliedRemoteRevisionByDatasetID[id] = nil
+                    current.localRevisionByDatasetID[id] = nil
+                    current.dirtyDatasetIDs.insert(id)
+                    current.mangaIdentityBaselineScopeByDatasetID[id] = key
+                }
+            }
+            guard !effective.completedMangaIdentityImports.contains(key) else { continue }
+            let remote = remotePayloads[id]
+            if let legacy = legacyPayloads[id] {
+                _ = try await participant.mergeAndExportSnapshot(remoteData: legacy.data,
+                    updatedAt: uploadStamp(absorbing: legacy.info.updatedAt), accountUID: accountUID)
+            }
+            let payloads = remote.map { [id: $0] } ?? [:]
+            _ = try await uploadParticipants([participant], remotePayloads: payloads, settings: effective,
+                accountUID: accountUID, updatedAt: uploadStamp(absorbing: remote?.info.updatedAt),
+                allowingAccountMismatch: allowingAccountMismatch)
+            try Task.checkCancellation()
+            let updated = try await settingsStore.update { current in
+                guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+                current.completedMangaIdentityImports.insert(key)
+            }
+            // A settings write can change the destination while an upload is
+            // suspended. Never pair this round's fetched payloads with that
+            // new connection, even when its migration bookkeeping was skipped.
+            guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings) else {
+                throw CancellationError()
+            }
+            effective = updated
+            effective.disabledContentIDs = settings.disabledContentIDs
+            effective.contentSelectionRevision = settings.contentSelectionRevision
+        }
+        return effective
+    }
+
+    private func reloadSettings(for snapshot: WebDAVSyncSettings) async throws -> WebDAVSyncSettings {
+        let current = await settingsStore.load()
+        guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(snapshot) else {
+            throw CancellationError()
+        }
+        return current
+    }
+
     /// Per-dataset GETs run concurrently: every sync round starts with this
     /// fetch, and the startup round sits on the app-launch critical path (the
     /// bootstrap placeholder stays up until it finishes), so the round's fetch
@@ -368,6 +489,9 @@ public actor WebDAVSyncService {
             current.dirtyDatasetIDs.formUnion(includedIDs)
         }
         try await client.ensureDirectoryExists(settings: settings)
+        if included.contains(where: { $0.legacyRemoteFileName != nil }) {
+            try await client.ensureDirectoryExists(settings: settings, namespace: MangaIdentityWebDAVParticipant.namespace)
+        }
         let connection = WebDAVConnectionIdentity(settings)
         if !(await settingsStore.syncCoordinator.hasVerified(connection)) {
             try await client.verifyConditionalWrites(settings: settings)

@@ -75,7 +75,7 @@ struct ReadingOpenTargetResolver {
         } else if let tid = entry.lastVisitedThreadID,
                   let directory = try? await mangaDirectoryStore.directory(containingTID: tid),
                   let current = snapshot.entries.first(where: {
-                      $0.target == FavoriteContentTarget(mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName)
+                      $0.target.mangaID == directory.id.rawValue
                   }) {
             entry = current
         } else {
@@ -106,8 +106,9 @@ struct ReadingOpenTargetResolver {
 
         case .manga:
             let smartModeEnabled = boardReader.isSmartComicModeEnabled(forumID: entry.forumID)
-            if case let .mangaTitle(_, cleanBookName) = entry.target {
+            if case let .mangaTitle(mangaID, cleanBookName) = entry.target {
                 return await mangaTitleTarget(
+                    directoryID: MangaDirectoryID(rawValue: mangaID),
                     cleanBookName: cleanBookName,
                     entry: entry,
                     smartModeEnabled: smartModeEnabled,
@@ -157,6 +158,7 @@ struct ReadingOpenTargetResolver {
                 chapterView: resume.chapterView,
                 initialPage: resume.initialPage,
                 directoryName: resume.directoryName,
+                directoryID: resume.directoryID,
                 isSmartModeEnabled: smartModeEnabled,
                 forumID: entry.forumID
             )
@@ -165,6 +167,7 @@ struct ReadingOpenTargetResolver {
 
     /// Directory-level (`.mangaTitle`) row open.
     private func mangaTitleTarget(
+        directoryID: MangaDirectoryID,
         cleanBookName: String,
         entry: BrowsingHistoryEntry,
         smartModeEnabled: Bool,
@@ -215,6 +218,7 @@ struct ReadingOpenTargetResolver {
                 chapterView: directoryProgress?.chapterView ?? fallbackChapterView,
                 initialPage: directoryProgress?.mangaPageIndex ?? 0,
                 directoryName: cleanBookName,
+                directoryID: directoryID,
                 isSmartModeEnabled: true,
                 forumID: entry.forumID
             )

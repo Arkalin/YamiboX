@@ -23,7 +23,7 @@ struct LocalFavoritesOrganizationView: View {
     /// the open target must be re-derived fresh rather than looked up in
     /// `organizer.favoriteItems` the way `onOpen` above resolves a
     /// per-favorite event.
-    let onOpenMangaDirectory: (String) async -> Void
+    let onOpenMangaDirectory: (MangaDirectoryID) async -> Void
     /// Feeds the pushed board-favorite page, which manages remote board
     /// favorites purely over the network (no local store involved).
     let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
@@ -40,7 +40,7 @@ struct LocalFavoritesOrganizationView: View {
         updateMonitor: FavoriteUpdateMonitor,
         makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
         onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void,
-        onOpenMangaDirectory: @escaping (String) async -> Void,
+        onOpenMangaDirectory: @escaping (MangaDirectoryID) async -> Void,
         onOpenBoard: @escaping (BoardFavorite) -> Void
     ) {
         self.organizer = organizer
@@ -196,8 +196,8 @@ struct LocalFavoritesOrganizationView: View {
                             return
                         }
                         await onOpen(item, .resume, .boardDefault, nil)
-                    case let .mangaDirectory(cleanBookName):
-                        await onOpenMangaDirectory(cleanBookName)
+                    case let .mangaDirectory(directoryID):
+                        await onOpenMangaDirectory(directoryID)
                     }
                 }
             )
@@ -243,7 +243,7 @@ struct LocalFavoritesOrganizationView: View {
         .modifier(LocalFavoriteBrowseSearch(
             organizer: organizer,
             isActive: keyboardCommandsEnabled && organizer.selectedCollectionID != nil
-                && organizer.selectedMergedGroupCleanBookName == nil
+                && organizer.selectedMergedGroupKey == nil
         ))
         .navigationTitle(
             selection.isSelectionMode
@@ -328,7 +328,7 @@ struct LocalFavoritesOrganizationView: View {
     /// was opened — per-item management (delete/move/tag/etc.) happens here
     /// through the same single-item card UI every other favorite uses, since
     /// `LocalFavoriteLibraryProjection.cards(in:query:...)`'s
-    /// `memberScopeCleanBookName` scoping deliberately builds each member as
+    /// `memberScopeGroupKey` scoping deliberately builds each member as
     /// a genuinely standalone (non-merged) `FavoriteCardProjection`. Mirrors
     /// `collectionDetail` body-for-body, including reusing
     /// `isCollectionDetail: true` on `content(...)`/`emptyStateOverlay(...)`
@@ -341,12 +341,12 @@ struct LocalFavoritesOrganizationView: View {
         }
         .modifier(LocalFavoriteBrowseSearch(
             organizer: organizer,
-            isActive: keyboardCommandsEnabled && organizer.selectedMergedGroupCleanBookName != nil
+            isActive: keyboardCommandsEnabled && organizer.selectedMergedGroupKey != nil
         ))
         .navigationTitle(
             selection.isSelectionMode
                 ? L10n.string("favorites.selected_count", selection.selectedEntryCount)
-                : (organizer.selectedMergedGroupCleanBookName ?? "")
+                : (organizer.selectedMergedGroupTitle ?? "")
         )
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(selection.isSelectionMode)

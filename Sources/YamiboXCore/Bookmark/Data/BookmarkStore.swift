@@ -57,7 +57,7 @@ public actor BookmarkStore {
             try Int.fetchOne(
                 db,
                 sql: "SELECT COUNT(*) FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-                arguments: [workKey.kind.rawValue, workKey.id]
+                arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
             )
         }
         return fetched.flatMap { $0 } ?? 0
@@ -169,7 +169,7 @@ public actor BookmarkStore {
             try await database.write { db in
                 let ids = try String.fetchAll(db,
                     sql: "SELECT id FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-                    arguments: [workKey.kind.rawValue, workKey.id]
+                    arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
                 )
                 for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
             }
@@ -197,16 +197,6 @@ public actor BookmarkStore {
         } catch {
             throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
-    }
-
-    /// Renames manga-title bookmarks alongside `LikeStore.renameMangaTitleLikes`,
-    /// so a directory rename does not orphan a work's bookmarks.
-    static func renameMangaTitleBookmarks(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
-        guard oldName != newName else { return }
-        try db.execute(
-            sql: "UPDATE bookmarks SET work_id = ?, updated_at = MAX(updated_at, ?) WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-            arguments: [newName, date.timeIntervalSince1970, LikeWorkKind.manga.rawValue, oldName]
-        )
     }
 
     func syncSnapshot() async throws -> SyncRecordSnapshot<BookmarkItem> {
@@ -238,6 +228,8 @@ public actor BookmarkStore {
         return result
     }
 
+    public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
+
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()
     }
@@ -252,7 +244,7 @@ public actor BookmarkStore {
             db,
             sql: selectColumns
                 + " WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL ORDER BY sort_key ASC, created_at ASC, id ASC",
-            arguments: [workKey.kind.rawValue, workKey.id]
+            arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
         ).compactMap { try Self.item(from: $0) }
     }
 
@@ -282,7 +274,7 @@ public actor BookmarkStore {
             arguments: [
                 item.id,
                 item.workKey.kind.rawValue,
-                item.workKey.id,
+                try MangaDirectoryIdentityDatabase.canonicalWorkID(item.workKey, in: db),
                 anchorJSON,
                 item.excerptText,
                 item.sortKey,

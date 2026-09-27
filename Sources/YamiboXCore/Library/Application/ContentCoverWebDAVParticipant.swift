@@ -27,6 +27,8 @@ struct ContentCoverWebDAVParticipant: WebDAVSyncParticipant {
         self.store = store
     }
 
+    func readLocalDeletionState() async throws -> SyncDeletionState? { try await store.syncSnapshot().deletions }
+
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(ContentCoverWebDAVPayload.self, from: data)
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
@@ -46,8 +48,12 @@ struct ContentCoverWebDAVParticipant: WebDAVSyncParticipant {
     }
 
     private func merge(remote: ContentCoverWebDAVPayload?, at date: Date) async throws -> ContentCoverWebDAVPayload {
-        try await store.updateSyncSnapshot { snapshot in
+        let remoteSnapshot = remote.map { SyncRecordSnapshot(records: $0.covers, deletions: $0.deletions) }
+        return try await store.updateSyncSnapshot(merging: remoteSnapshot) { snapshot, remoteSnapshot in
             let local = ContentCoverWebDAVPayload(updatedAt: date, covers: snapshot.records, deletions: snapshot.deletions)
+            let remote = remoteSnapshot.map {
+                ContentCoverWebDAVPayload(updatedAt: date, covers: $0.records, deletions: $0.deletions)
+            }
             let merged = ContentCoverWebDAVMerger().merge(local: local, remote: remote, updatedAt: date)
             snapshot = SyncRecordSnapshot(records: merged.covers, deletions: merged.deletions)
             return merged

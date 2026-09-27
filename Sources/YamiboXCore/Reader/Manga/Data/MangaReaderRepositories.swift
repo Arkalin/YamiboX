@@ -83,7 +83,27 @@ public protocol MangaDirectoryRepository: Sendable {
     func searchDirectory(keyword: String, forumID: String) async throws -> [MangaChapter]
 }
 
+/// Captured with directory content before an asynchronous network refresh.
+/// Source IDs are provenance, not aliases, and must not follow redirects.
+public struct MangaDirectoryRefreshSnapshot: Sendable {
+    public let directory: MangaDirectory
+    public let contentIdentityIDs: Set<String>
+
+    public init(directory: MangaDirectory, contentIdentityIDs: Set<String>) {
+        self.directory = directory
+        self.contentIdentityIDs = contentIdentityIDs
+    }
+}
+
 public protocol MangaDirectoryPersisting: MangaDirectoryRenaming {
+    func directory(id: MangaDirectoryID) async throws -> MangaDirectory?
+    func directoryRefreshSnapshot(id: MangaDirectoryID) async throws -> MangaDirectoryRefreshSnapshot?
+    func saveRefreshedDirectory(_ directory: MangaDirectory, from snapshot: MangaDirectoryRefreshSnapshot) async throws -> MangaDirectory
+    /// Atomically adopts an existing discovery identity or persists a new seed.
+    func resolveOrCreateDirectory(_ seed: MangaDirectory) async throws -> MangaDirectory
+    func resolveDirectoryID(legacyName: String?, legacyIdentity: String?, chapterTID: String?) async throws -> MangaDirectoryID?
+    func registerIdentity(id: MangaDirectoryID, name: String) async throws
+    func identityName(id: MangaDirectoryID) async throws -> String?
     func directory(named name: String) async throws -> MangaDirectory?
     func directory(containingTID tid: String) async throws -> MangaDirectory?
     /// Bulk tid → owning-directory lookup (smart-comic-mode Phase E): tids
@@ -99,7 +119,7 @@ public protocol MangaDirectoryPersisting: MangaDirectoryRenaming {
     /// against in the shipping app.
     func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory]
     func saveDirectory(_ directory: MangaDirectory) async throws
-    func deleteDirectory(named name: String) async throws
+    func deleteDirectory(id: MangaDirectoryID) async throws
     /// Instance identity carried by every element of `changes()`, kept so
     /// listeners can hold on to their existing "is this change from the
     /// exact instance I observe?" guard — mirrors `ContentCoverStore`/
@@ -144,8 +164,6 @@ public extension MangaDirectoryPersisting {
 /// Replaces a directory identity and its persisted references atomically.
 /// A failed rename must leave both identities unchanged.
 public protocol MangaDirectoryRenaming: Sendable {
-    func renameDirectory(
-        from oldName: String,
-        to newDirectory: MangaDirectory
-    ) async throws
+    func renameDirectory(id: MangaDirectoryID, cleanBookName: String, searchKeyword: String?) async throws -> MangaDirectory
+    func mergeDirectories(sourceID: MangaDirectoryID, targetID: MangaDirectoryID, cleanBookName: String, searchKeyword: String?) async throws -> MangaDirectory
 }

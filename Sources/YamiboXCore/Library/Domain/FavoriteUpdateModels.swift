@@ -43,16 +43,46 @@ public enum FavoriteUpdateTargetMode: String, Codable, Hashable, Sendable {
 /// smart-manga update-check plan).
 public enum FavoriteUpdateTargetKey: Codable, Hashable, Sendable {
     case favorite(FavoriteItemTarget)
-    case mangaDirectory(cleanBookName: String)
+    case mangaDirectory(directoryID: MangaDirectoryID)
 
     private static let mangaDirectoryIDPrefix = "manga-directory:"
+
+    private enum CodingKeys: String, CodingKey { case favorite, mangaDirectory }
+    private enum PayloadKeys: String, CodingKey { case _0, directoryID, cleanBookName }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.favorite) {
+            let payload = try container.nestedContainer(keyedBy: PayloadKeys.self, forKey: .favorite)
+            self = .favorite(try payload.decode(FavoriteItemTarget.self, forKey: ._0))
+        } else {
+            let payload = try container.nestedContainer(keyedBy: PayloadKeys.self, forKey: .mangaDirectory)
+            if let id = try payload.decodeIfPresent(MangaDirectoryID.self, forKey: .directoryID) {
+                self = .mangaDirectory(directoryID: id)
+            } else {
+                self = .mangaDirectory(directoryID: .legacy(name: try payload.decode(String.self, forKey: .cleanBookName)))
+            }
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .favorite(target):
+            var payload = container.nestedContainer(keyedBy: PayloadKeys.self, forKey: .favorite)
+            try payload.encode(target, forKey: ._0)
+        case let .mangaDirectory(id):
+            var payload = container.nestedContainer(keyedBy: PayloadKeys.self, forKey: .mangaDirectory)
+            try payload.encode(id, forKey: .directoryID)
+        }
+    }
 
     public var id: String {
         switch self {
         case let .favorite(target):
             target.id
-        case let .mangaDirectory(cleanBookName):
-            "\(Self.mangaDirectoryIDPrefix)\(cleanBookName)"
+        case let .mangaDirectory(directoryID):
+            "\(Self.mangaDirectoryIDPrefix)\(directoryID.rawValue)"
         }
     }
 
@@ -60,9 +90,9 @@ public enum FavoriteUpdateTargetKey: Codable, Hashable, Sendable {
     /// notification tap-routing) that only have the persisted id string, not
     /// the original enum case. Returns nil for a `.favorite` id, never
     /// guesses — the single source of truth for the prefix stays `id` above.
-    public static func mangaDirectoryCleanBookName(fromID id: String) -> String? {
+    public static func mangaDirectoryID(fromID id: String) -> MangaDirectoryID? {
         guard id.hasPrefix(mangaDirectoryIDPrefix) else { return nil }
-        return String(id.dropFirst(mangaDirectoryIDPrefix.count))
+        return MangaDirectoryID(rawValue: String(id.dropFirst(mangaDirectoryIDPrefix.count)))
     }
 }
 

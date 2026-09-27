@@ -263,26 +263,10 @@ final class MangaReaderDirectoryLane {
 
         setDirectoryPanelCommandState(isUpdating: true, errorMessage: nil)
         do {
-            let oldOwnerName = reader.offlineCacheOwnerName()
-            let updated = try await workflow.renameDirectory(cleanBookName: cleanBookName, searchKeyword: searchKeyword)
-            let cacheRenameError: Error?
-            if let oldOwnerName,
-               oldOwnerName != updated.cleanBookName,
-               let offlineCacheStore = dependencies.makeOfflineCacheStore() {
-                do {
-                    try await offlineCacheStore.renameMangaOfflineCacheOwner(from: oldOwnerName, to: updated.cleanBookName)
-                    cacheRenameError = nil
-                } catch {
-                    YamiboLog.offlineCache.error("Failed to rename offline cache owner directory after manga rename: \(error.localizedDescription)")
-                    cacheRenameError = error
-                }
-            } else {
-                cacheRenameError = nil
-            }
+            _ = try await workflow.renameDirectory(cleanBookName: cleanBookName, searchKeyword: searchKeyword)
             guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
             reader.publishPresentation(workflow.presentation, previousProgressSnapshot)
-            refreshDirectoryPanelTiming(errorMessage: cacheRenameError?.localizedDescription,
-                                        details: cacheRenameError.map { LoadFailureDetails(error: $0) })
+            refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
             guard directoryMutationGeneration == mutationGeneration else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)

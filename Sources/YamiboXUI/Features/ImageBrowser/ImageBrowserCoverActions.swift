@@ -53,7 +53,7 @@ enum ImageBrowserThreadCoverActions {
                     if let directory = try await directoryStore.directory(containingTID: trimmedTID) {
                         let cleanBookName = directory.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !cleanBookName.isEmpty {
-                            let key = ContentCoverKey.smartManga(cleanBookName: cleanBookName)
+                            let key = ContentCoverKey.smartManga(directoryID: directory.id)
                             mangaKey = key
                             mangaBookName = cleanBookName
                             actions.append(setAction(

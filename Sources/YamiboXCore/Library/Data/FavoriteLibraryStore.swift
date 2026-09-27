@@ -124,7 +124,11 @@ public actor FavoriteLibraryStore {
     private static func save(_ document: FavoriteLibraryDocument, in db: Database) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let json = String(decoding: try encoder.encode(canonicalized(document)), as: UTF8.self)
+        var data = try encoder.encode(canonicalized(document))
+        if try db.tableExists("manga_identities") {
+            data = try MangaDirectoryIdentityJSON.normalize(data, identities: MangaDirectoryIdentityDatabase.snapshot(in: db), legacy: false)
+        }
+        let json = String(decoding: data, as: UTF8.self)
         try db.execute(
             sql: """
             INSERT INTO favorite_library_document (id, document_json, updated_at)

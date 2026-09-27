@@ -37,6 +37,8 @@ public final class MangaReaderWorkflow {
     private let context: MangaLaunchContext
     private let projectionLoader: any MangaReaderProjectionLoading
     private let directoryWorkflow: MangaDirectoryWorkflow
+    private let directoryStore: any MangaDirectoryPersisting
+    private var resolvedDirectoryID: MangaDirectoryID?
     private let offlineCacheStore: (any MangaOfflineCacheStoring)?
     private let adjacentPrefetchPolicy: MangaAdjacentChapterPrefetchPolicy
     private var window: MangaChapterWindow?
@@ -59,6 +61,7 @@ public final class MangaReaderWorkflow {
         self.context = context
         self.projectionLoader = projectionLoader
         self.offlineCacheStore = offlineCacheStore
+        self.directoryStore = directoryStore
         self.adjacentPrefetchPolicy = adjacentPrefetchPolicy
         self.directoryWorkflow = MangaDirectoryWorkflow(
             repository: directoryRepository,
@@ -84,6 +87,14 @@ public final class MangaReaderWorkflow {
         )
 
         do {
+            if let id = context.directoryID {
+                resolvedDirectoryID = try await directoryStore.directory(id: id)?.id ?? id
+            } else {
+                resolvedDirectoryID = try await directoryStore.resolveDirectoryID(
+                    legacyName: context.directoryName ?? context.displayTitle,
+                    legacyIdentity: nil, chapterTID: context.chapterTID
+                )
+            }
             let document: MangaReaderProjection
             if let initialProjection,
                initialProjection.tid == context.chapterTID,
@@ -94,7 +105,7 @@ public final class MangaReaderWorkflow {
                 document = try await projectionLoader.loadReaderProjection(MangaReaderProjectionRequest(
                     threadID: context.chapterTID,
                     view: context.chapterView,
-                    offlineOwnerName: context.directoryName
+                    offlineOwnerName: resolvedDirectoryID?.rawValue
                 ))
             }
             let resolution: MangaDirectoryResolutionResult
@@ -124,11 +135,14 @@ public final class MangaReaderWorkflow {
                 // siblings and no auto-update, matching the "totally
                 // standalone" reading behavior mode-off documents.
                 resolution = MangaDirectoryResolutionResult(
-                    directory: Self.standaloneDirectory(for: document, context: context),
+                    directory: Self.standaloneDirectory(for: document, context: context)
+                        .reidentified(as: resolvedDirectoryID ?? MangaDirectoryID(rawValue: "manga-thread:" + document.tid)),
                     shouldAutoUpdateAfterInitialLoad: false
                 )
             }
             let directory = resolution.directory
+            try await directoryStore.registerIdentity(id: directory.id, name: directory.cleanBookName)
+            resolvedDirectoryID = directory.id
             let requestedPosition = MangaReadingPosition(
                 tid: document.tid,
                 localIndex: context.initialPage
@@ -195,8 +209,8 @@ public final class MangaReaderWorkflow {
 
     private nonisolated(nonsending) func offlineReadableCurrentChapterDirectory(for document: MangaReaderProjection) async -> MangaDirectory? {
         guard let offlineCacheStore,
-              let ownerName = context.directoryName?.mangaReaderTrimmedNonEmpty,
-              let membership = await offlineCacheStore.mangaOfflineCacheMembership(ownerName: ownerName, tid: document.tid),
+              let directoryID = resolvedDirectoryID,
+              let membership = await offlineCacheStore.mangaOfflineCacheMembership(ownerName: directoryID.rawValue, tid: document.tid),
               membership.imageURLs.map(\.absoluteString) == document.imageURLs.map(\.absoluteString),
               !membership.imageURLs.isEmpty
         else {
@@ -212,8 +226,9 @@ public final class MangaReaderWorkflow {
             }
         }
 
-        let title = ownerName
+        let title = context.directoryName ?? context.displayTitle
         return MangaDirectory(
+            id: directoryID,
             cleanBookName: title,
             strategy: .pendingSearch,
             sourceKey: title,
@@ -272,7 +287,7 @@ public final class MangaReaderWorkflow {
             let document: MangaReaderProjection
             do {
                 document = try await projectionLoader.loadReaderProjection(
-                    MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.cleanBookName)
+                    MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
                 )
             } catch {
                 guard !Task.isCancelled else { return nil }
@@ -429,7 +444,7 @@ public final class MangaReaderWorkflow {
         }
 
         let document = try await projectionLoader.loadReaderProjection(
-            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.cleanBookName)
+            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
         )
         try Task.checkCancellation()
 
@@ -472,7 +487,7 @@ public final class MangaReaderWorkflow {
         }
 
         let document = try await projectionLoader.loadReaderProjection(
-            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.cleanBookName)
+            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
         )
         try Task.checkCancellation()
 
@@ -530,7 +545,7 @@ public final class MangaReaderWorkflow {
         }
 
         let document = try await projectionLoader.loadReaderProjection(
-            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: initialWindow.directory.cleanBookName)
+            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: initialWindow.directory.id.rawValue)
         )
         try Task.checkCancellation()
         guard !document.imageURLs.isEmpty else {
@@ -575,6 +590,21 @@ public final class MangaReaderWorkflow {
         window?.directory.favoriteIdentity
     }
 
+    public func currentDirectoryID() -> MangaDirectoryID? { window?.directory.id }
+
+    /// Other windows can rename or merge this identity while a chapter is open.
+    /// Resolve the latest metadata without discarding the loaded image pages.
+    public nonisolated(nonsending) func refreshPersistedDirectory() async throws -> MangaReaderPresentation? {
+        guard context.isSmartModeEnabled, let id = window?.directory.id,
+              let latest = try await directoryStore.directory(id: id),
+              var current = window, current.directory.id == id,
+              current.directory != latest else { return nil }
+        _ = current.updateDirectory(latest, preserving: current.resolvedPosition)
+        window = current
+        presentation = loadedPresentation(from: current)
+        return presentation
+    }
+
     public func currentHistoryDirectory() -> MangaDirectory? {
         context.isSmartModeEnabled ? window?.directory : nil
     }
@@ -602,6 +632,7 @@ public final class MangaReaderWorkflow {
                 MangaReaderLoadedPresentation(
                     title: Self.presentationTitle(for: context),
                     directoryTitle: window.directory.cleanBookName,
+                    directoryID: window.directory.id,
                     pages: pages,
                     currentPage: currentPage,
                     currentPageIndex: currentPageIndex,
@@ -683,6 +714,7 @@ public final class MangaReaderWorkflow {
 
         return MangaDirectoryPanelPresentation(
             directoryTitle: window.directory.cleanBookName,
+            directoryID: window.directory.id,
             displayChapters: displayChapters,
             currentChapterTID: window.resolvedPosition?.tid,
             latestChapterText: latestChapterText,

@@ -110,7 +110,7 @@ public struct LocalFavoriteLibraryQuery: Equatable, Sendable {
     /// (re-resolved fresh on every call), not a frozen snapshot of member
     /// ids, so a newly-favorited chapter of the same manga appears
     /// immediately without reopening the page.
-    public var memberScopeCleanBookName: String?
+    public var memberScopeGroupKey: String?
 
     public init(
         categoryID: String? = nil,
@@ -120,7 +120,7 @@ public struct LocalFavoriteLibraryQuery: Equatable, Sendable {
         sortOrder: LocalFavoriteLibrarySortOrder = .organization,
         sortsDescending: Bool = false,
         searchText: String = "",
-        memberScopeCleanBookName: String? = nil
+        memberScopeGroupKey: String? = nil
     ) {
         self.categoryID = categoryID
         self.collectionID = collectionID
@@ -129,7 +129,7 @@ public struct LocalFavoriteLibraryQuery: Equatable, Sendable {
         self.sortOrder = sortOrder
         self.sortsDescending = sortsDescending
         self.searchText = searchText
-        self.memberScopeCleanBookName = memberScopeCleanBookName
+        self.memberScopeGroupKey = memberScopeGroupKey
     }
 }
 
@@ -289,6 +289,15 @@ public struct FavoriteCardProjection: Equatable, Identifiable, Sendable {
         return cleaned.isEmpty ? title : cleaned
     }
 
+    /// Resolved groups use persisted identity. Guessed names only group the
+    /// current presentation and never become persisted directory identities.
+    public static func groupKey(item: FavoriteItem, mangaDirectory: MangaDirectory?) -> String {
+        if let mangaDirectory { return mangaDirectory.id.rawValue }
+        return "unresolved-title:" + resolvedTitle(item: item, mangaDirectory: nil, isModeOnMangaThread: true)
+    }
+
+    public var mangaGroupKey: String { Self.groupKey(item: item, mangaDirectory: mangaDirectory) }
+
     /// The `content_cover` key this card's displayed cover reads AND every
     /// card-level cover action writes — the single authority keeping the two
     /// sides on the same row. A resolved-directory card (merged or a lone
@@ -304,27 +313,14 @@ public struct FavoriteCardProjection: Equatable, Identifiable, Sendable {
     /// text-cover toggle once wrote a row its own display never read.
     public var contentCoverKey: ContentCoverKey? {
         if let mangaDirectory {
-            return .smartManga(cleanBookName: mangaDirectory.cleanBookName)
+            return .smartManga(directoryID: mangaDirectory.id)
         }
         return ContentCoverKey(target: item.target)
     }
 
-    /// Deliberately still `item.id` — the representative member's own real
-    /// id — even for a merged card, *not* a synthetic directory-based id.
-    /// The existing (unmodified by this phase) selection/bulk-action UI
-    /// already reads `card.id` as a real `FavoriteItem.id` to look items up
-    /// in `document.items` (`LocalFavoriteGridCard`/`LocalFavoriteListContent`
-    /// pass `card.id` straight into `selection.toggleFavoriteSelection`,
-    /// and `FavoriteLibraryOrganizer`'s bulk actions filter
-    /// `document.items` by `favoriteIDs.contains($0.id)`) — a made-up id
-    /// with no matching item would make a merged card's selection silently
-    /// unpickable (pruned by `LocalFavoriteBrowseSession.prune` on the very
-    /// next derive, since it'd never appear in `validFavoriteIDs`) with no
-    /// corresponding Phase F work having happened yet to handle that. The
-    /// cost is that this id can change if a new, earlier-chapter favorite
-    /// later joins the group and displaces the current representative
-    /// member — an occasional SwiftUI identity churn, not a correctness bug.
-    public var id: String { item.id }
+    /// Directory cards remain selected when their representative chapter
+    /// changes. Bulk operations expand this ID into the current member IDs.
+    public var id: String { mangaDirectory?.id.rawValue ?? item.id }
 }
 
 /// One `MangaDirectory` with every mode-on `.mangaThread` favorite currently

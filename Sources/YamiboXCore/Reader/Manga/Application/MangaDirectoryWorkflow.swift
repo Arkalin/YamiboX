@@ -126,15 +126,22 @@ public struct MangaDirectoryWorkflow: Sendable {
         context: MangaLaunchContext,
         projection: MangaReaderProjection
     ) async throws -> MangaDirectoryResolutionResult {
-        if let directoryName = normalizedNonEmpty(context.directoryName),
-           let existing = try await store.directory(named: directoryName) {
+        let resolvedID: MangaDirectoryID?
+        if let id = context.directoryID {
+            resolvedID = id
+        } else {
+            resolvedID = try await store.resolveDirectoryID(
+                legacyName: context.directoryName, legacyIdentity: nil, chapterTID: projection.tid
+            )
+        }
+        if let resolvedID, let existing = try await store.directory(id: resolvedID) {
             return MangaDirectoryResolutionResult(
                 directory: existing,
                 shouldAutoUpdateAfterInitialLoad: shouldAutoUpdate(existing)
             )
         }
 
-        if let existing = try await store.directory(containingTID: projection.tid) {
+        if resolvedID == nil, let existing = try await store.directory(containingTID: projection.tid) {
             return MangaDirectoryResolutionResult(
                 directory: existing,
                 shouldAutoUpdateAfterInitialLoad: shouldAutoUpdate(existing)
@@ -142,8 +149,18 @@ public struct MangaDirectoryWorkflow: Sendable {
         }
 
         let seed = try await repository.loadDirectorySeed(for: context.chapterTID)
-        let directory = MangaDirectoryInitialization.directory(from: seed)
-        try await store.saveDirectory(directory)
+        var directory = MangaDirectoryInitialization.directory(from: seed)
+        if let resolvedID {
+            directory = directory.reidentified(as: resolvedID)
+            directory.cleanBookName = try await store.identityName(id: resolvedID) ?? context.directoryName ?? directory.cleanBookName
+            if let existing = try await store.directory(named: directory.cleanBookName), existing.id != resolvedID {
+                directory = try await store.mergeDirectories(
+                    sourceID: resolvedID, targetID: existing.id,
+                    cleanBookName: existing.cleanBookName, searchKeyword: existing.searchKeyword
+                )
+            }
+        }
+        directory = try await store.resolveOrCreateDirectory(directory)
         return MangaDirectoryResolutionResult(
             directory: directory,
             shouldAutoUpdateAfterInitialLoad: shouldAutoUpdate(directory)
@@ -158,7 +175,9 @@ public struct MangaDirectoryWorkflow: Sendable {
         try Task.checkCancellation()
 
         let now = configuration.now()
-        let latest = try await store.directory(named: currentDirectory.cleanBookName) ?? currentDirectory
+        let refreshSnapshot = try await store.directoryRefreshSnapshot(id: currentDirectory.id)
+            ?? MangaDirectoryRefreshSnapshot(directory: currentDirectory, contentIdentityIDs: [])
+        let latest = refreshSnapshot.directory
         let keyword = searchKeyword(for: latest, currentTID: currentTID)
         // No fallback here: `searchForumID` is non-optional and already
         // resolved upstream (MangaReaderViewModel stamps it per launch,
@@ -206,7 +225,7 @@ public struct MangaDirectoryWorkflow: Sendable {
         if updated.strategy != .tag {
             updated.strategy = .searched
         }
-        try await store.saveDirectory(updated)
+        updated = try await store.saveRefreshedDirectory(updated, from: refreshSnapshot)
 
         return MangaDirectoryUpdateResult(
             directory: updated,
@@ -222,10 +241,8 @@ public struct MangaDirectoryWorkflow: Sendable {
     /// `seedTID`'s thread page, saves that minimal seed, then immediately
     /// runs a full `updateDirectory` pass so tag/search-derived chapters are
     /// fetched too (respecting the same cooldown gate any other update
-    /// would). `cleanBookName` — the identity favorites/reading-progress/
-    /// covers key off — is preserved even if the source page now derives a
-    /// different name, so a reset never orphans data owned by other
-    /// subsystems.
+    /// would). The persisted ID and corrected display name survive the reset,
+    /// even when the source page now derives a different name.
     public func resetDirectory(
         _ currentDirectory: MangaDirectory,
         seedTID: String
@@ -235,12 +252,14 @@ public struct MangaDirectoryWorkflow: Sendable {
             throw YamiboPersistenceError(context: "Directory reset requires a chapter to reseed from")
         }
 
+        let refreshSnapshot = try await store.directoryRefreshSnapshot(id: currentDirectory.id)
+            ?? MangaDirectoryRefreshSnapshot(directory: currentDirectory, contentIdentityIDs: [])
         let seed = try await repository.loadDirectorySeed(for: resolvedSeedTID)
         try Task.checkCancellation()
 
-        var seeded = MangaDirectoryInitialization.directory(from: seed)
-        seeded.cleanBookName = currentDirectory.cleanBookName
-        try await store.saveDirectory(seeded)
+        var seeded = MangaDirectoryInitialization.directory(from: seed).reidentified(as: refreshSnapshot.directory.id)
+        seeded.cleanBookName = refreshSnapshot.directory.cleanBookName
+        seeded = try await store.saveRefreshedDirectory(seeded, from: refreshSnapshot)
 
         return try await updateDirectory(seeded, currentTID: resolvedSeedTID, isForcedSearch: false)
     }
@@ -254,29 +273,16 @@ public struct MangaDirectoryWorkflow: Sendable {
             throw YamiboPersistenceError(context: "Directory name is empty")
         }
         let resolvedKeyword = normalizedNonEmpty(searchKeyword)
-        let now = configuration.now()
-        let latest = try await store.directory(named: currentDirectory.cleanBookName) ?? currentDirectory
-
-        if latest.cleanBookName == resolvedName {
-            var updated = latest
-            updated.searchKeyword = resolvedKeyword
-            updated.lastUpdatedAt = now
-            try await store.saveDirectory(updated)
-            return updated
+        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
+        if let target = try await store.directory(named: resolvedName), target.id != latest.id {
+            return try await store.mergeDirectories(
+                sourceID: latest.id, targetID: target.id,
+                cleanBookName: resolvedName, searchKeyword: resolvedKeyword
+            )
         }
-
-        let target = try await store.directory(named: resolvedName)
-        let merged = MangaDirectory(
-            cleanBookName: resolvedName,
-            strategy: target?.strategy ?? latest.strategy,
-            sourceKey: target?.sourceKey ?? (latest.strategy == .tag ? latest.sourceKey : resolvedName),
-            chapters: MangaDirectoryMerge.mergeAndSort(target?.chapters ?? [], latest.chapters),
-            lastUpdatedAt: now,
-            searchKeyword: resolvedKeyword
+        return try await store.renameDirectory(
+            id: latest.id, cleanBookName: resolvedName, searchKeyword: resolvedKeyword
         )
-
-        try await store.renameDirectory(from: latest.cleanBookName, to: merged)
-        return merged
     }
 
     public func deleteChapters(
@@ -286,7 +292,7 @@ public struct MangaDirectoryWorkflow: Sendable {
         let targetTIDs = Set(tids.compactMap { normalizedNonEmpty($0) })
         guard !targetTIDs.isEmpty else { return currentDirectory }
 
-        let latest = try await store.directory(named: currentDirectory.cleanBookName) ?? currentDirectory
+        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
         let remainingChapters = latest.chapters.filter { !targetTIDs.contains($0.tid) }
         guard remainingChapters.count != latest.chapters.count else {
             return latest
@@ -296,7 +302,7 @@ public struct MangaDirectoryWorkflow: Sendable {
         updated.chapters = remainingChapters
         updated.lastUpdatedAt = configuration.now()
         try await store.saveDirectory(updated)
-        return updated
+        return try await store.directory(id: updated.id) ?? updated
     }
 
     public func editDraft(

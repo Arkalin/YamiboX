@@ -50,19 +50,19 @@ extension FavoriteUpdateCheckEngine {
         }
         guard !resolved.isEmpty else { return [] }
 
-        var groupsByName: [String: MangaDirectoryCandidate] = [:]
+        var groupsByID: [MangaDirectoryID: MangaDirectoryCandidate] = [:]
         for (item, forumID) in eligibleItems.sorted(by: { $0.item.target.id < $1.item.target.id }) {
             guard let tid = item.target.threadID, let directory = resolved[tid] else { continue }
-            var group = groupsByName[directory.cleanBookName] ?? MangaDirectoryCandidate(
+            var group = groupsByID[directory.id] ?? MangaDirectoryCandidate(
                 directory: directory,
                 forumID: forumID,
                 forumName: item.forumName,
                 categoryIDs: []
             )
             group.categoryIDs.formUnion(item.locations.compactMap(\.categoryID))
-            groupsByName[directory.cleanBookName] = group
+            groupsByID[directory.id] = group
         }
-        return groupsByName.values.sorted { $0.directory.cleanBookName < $1.directory.cleanBookName }
+        return groupsByID.values.sorted { $0.directory.cleanBookName < $1.directory.cleanBookName }
     }
 
     /// Seeds, then (for already-tracked, due groups) refreshes and diffs
@@ -82,14 +82,14 @@ extension FavoriteUpdateCheckEngine {
         events: inout [FavoriteUpdateEvent]
     ) async {
         guard !groups.isEmpty else { return }
-        let existingByCleanBookName: [String: FavoriteUpdateTrackedTarget] = Dictionary(
+        let existingByDirectoryID: [MangaDirectoryID: FavoriteUpdateTrackedTarget] = Dictionary(
             uniqueKeysWithValues: trackedTargets.values.compactMap { target in
-                guard case let .mangaDirectory(cleanBookName) = target.target else { return nil }
-                return (cleanBookName, target)
+                guard case let .mangaDirectory(directoryID) = target.target else { return nil }
+                return (directoryID, target)
             }
         )
 
-        let newGroups = groups.filter { existingByCleanBookName[$0.directory.cleanBookName] == nil }
+        let newGroups = groups.filter { existingByDirectoryID[$0.directory.id] == nil }
         for group in newGroups {
             guard !Task.isCancelled else { return }
             seedMangaDirectoryBaseline(group, trackedTargets: &trackedTargets)
@@ -105,7 +105,7 @@ extension FavoriteUpdateCheckEngine {
         }
 
         let dueExisting: [(group: MangaDirectoryCandidate, existing: FavoriteUpdateTrackedTarget)] = groups.compactMap { group in
-            guard let existing = existingByCleanBookName[group.directory.cleanBookName] else { return nil }
+            guard let existing = existingByDirectoryID[group.directory.id] else { return nil }
             if let lastCheckedAt = existing.lastCheckedAt, Date.now.timeIntervalSince(lastCheckedAt) < delay {
                 return nil
             }
@@ -164,7 +164,7 @@ extension FavoriteUpdateCheckEngine {
         trackedTargets: inout [String: FavoriteUpdateTrackedTarget]
     ) {
         let target = FavoriteUpdateTrackedTarget(
-            target: .mangaDirectory(cleanBookName: group.directory.cleanBookName),
+            target: .mangaDirectory(directoryID: group.directory.id),
             title: group.directory.cleanBookName,
             mode: .mangaDirectory,
             categoryIDs: group.categoryIDs,
@@ -247,7 +247,7 @@ extension FavoriteUpdateCheckEngine {
                 return .checked(detected: 0)
             }
 
-            let key = FavoriteUpdateTargetKey.mangaDirectory(cleanBookName: group.directory.cleanBookName)
+            let key = FavoriteUpdateTargetKey.mangaDirectory(directoryID: group.directory.id)
             let existingEvent = events.first { $0.target == key && $0.dismissedAt == nil }
             let summary = Self.mergedSummary(
                 existing: existingEvent?.summary,

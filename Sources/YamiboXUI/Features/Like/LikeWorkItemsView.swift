@@ -20,6 +20,7 @@ struct LikeWorkItemsView: View {
 
     @State private var items: [LikeItem] = []
     @State private var hasLoaded = false
+    @State private var currentWorkTitle: String?
     @State private var chapterInfoByItemID: [String: String] = [:]
     @State private var searchText = ""
     @State private var filter = LikeContentFilter.all
@@ -109,7 +110,7 @@ struct LikeWorkItemsView: View {
             isManagedByAnnotationPanel: onAnnotationNavigationStateChange != nil,
             isSelecting: isSelecting,
             selectedItemCount: selectedItemIDs.count,
-            workTitle: workTitle
+            workTitle: currentWorkTitle ?? workTitle
         )
         .likeWorkItemsSearchable(
             isEnabled: isAnnotationSegmentActive,
@@ -177,7 +178,7 @@ struct LikeWorkItemsView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
-        .task {
+        .task(id: work) {
             publishAnnotationNavigationState()
             await load()
         }
@@ -186,13 +187,19 @@ struct LikeWorkItemsView: View {
         // deletions made in them still refresh live, and anything missed
         // while genuinely covered is caught by the sibling
         // `.task { await load() }` re-running on reappear.
-        .task {
+        .task(id: work) {
             for await changeID in like.likeStore.changes() {
                 // Per-instance stream: the guard is kept as the explicit
                 // "only this exact store instance" contract.
                 guard changeID == like.likeStore.changeID else {
                     continue
                 }
+                await load()
+            }
+        }
+        .task(id: work) {
+            for await _ in like.mangaDirectoryStore.changes() {
+                guard !Task.isCancelled else { return }
                 await load()
             }
         }
@@ -267,7 +274,7 @@ struct LikeWorkItemsView: View {
     private func imageBrowserItem(for item: LikeItem) -> ImageBrowserItem? {
         LikeImageBrowserItemFactory.make(
             item: item,
-            title: chapterInfoByItemID[item.id] ?? workTitle,
+            title: chapterInfoByItemID[item.id] ?? currentWorkTitle ?? workTitle,
             likeImageStore: like.likeImageStore
         )
     }
@@ -293,7 +300,16 @@ struct LikeWorkItemsView: View {
     private func load() async {
         loadGeneration += 1
         let generation = loadGeneration
-        let fetched = await like.likeStore.likes(for: work)
+        var currentWork = work
+        var resolvedTitle: String?
+        if work.kind == .manga {
+            let directoryID = MangaDirectoryID(rawValue: work.id)
+            if let canonicalID = try? await like.mangaDirectoryStore.canonicalDirectoryID(directoryID) {
+                currentWork = .mangaTitle(directoryID: canonicalID)
+            }
+            resolvedTitle = try? await like.mangaDirectoryStore.identityName(id: directoryID)
+        }
+        let fetched = await like.likeStore.likes(for: currentWork)
         let sorted: [LikeItem]
         let chapterInfo: [String: String]
         switch work.kind {
@@ -304,12 +320,13 @@ struct LikeWorkItemsView: View {
             // Manga Like Items never store a chapter ordinal (see
             // implementation-design.md §11): chapter order is always resolved
             // live against the directory's current chapter array.
-            let directory = try? await like.mangaDirectoryStore.directory(named: work.id)
+            let directory = try? await like.mangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: work.id))
             sorted = Self.sortedMangaItems(fetched, chapterOrder: Self.chapterOrder(for: directory))
-            chapterInfo = await like.resolveChapterInfo(for: sorted, work: work, mangaDirectory: directory)
+            chapterInfo = await like.resolveChapterInfo(for: sorted, work: currentWork, mangaDirectory: directory)
         }
         guard generation == loadGeneration, !Task.isCancelled else { return }
         items = sorted
+        currentWorkTitle = resolvedTitle
         chapterInfoByItemID = chapterInfo
         selectedItemIDs.formIntersection(filteredItems.map(\.id))
         hasLoaded = true

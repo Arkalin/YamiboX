@@ -108,86 +108,13 @@ public actor FavoriteUpdateStore {
 
     public func insertEvent(_ event: FavoriteUpdateEvent) async throws {
         try await write { db in
+            let event = try Self.canonicalEvent(event, in: db)
             try db.execute(
                 sql: "DELETE FROM favorite_update_events WHERE target_id = ? AND dismissed_at IS NULL",
                 arguments: [event.target.id]
             )
             try Self.insertEventRow(event, in: db)
             return true
-        }
-    }
-
-    /// Migrates a `.mangaDirectory` tracked target and its events from
-    /// `oldCleanBookName` to `newCleanBookName` when `MangaDirectoryStore`
-    /// renames/merges a directory. `MangaDirectoryStore` runs the static
-    /// variant inside its own rename transaction; this instance method exists
-    /// for callers outside that cascade.
-    public func renameMangaDirectoryTracking(from oldCleanBookName: String, to newCleanBookName: String) async throws {
-        guard oldCleanBookName != newCleanBookName else { return }
-        try await write { db in
-            try Self.renameMangaDirectoryTracking(from: oldCleanBookName, to: newCleanBookName, in: db)
-            return true
-        }
-    }
-
-    /// A rename that merges into an ALREADY-tracked `newCleanBookName`
-    /// unions the two known-chapter-tid baselines (never shrinks either
-    /// side) and keeps only the more recently detected of any two
-    /// now-colliding undismissed events for the merged target.
-    public static func renameMangaDirectoryTracking(
-        from oldCleanBookName: String,
-        to newCleanBookName: String,
-        in db: Database
-    ) throws {
-        guard oldCleanBookName != newCleanBookName else { return }
-        let oldKey = FavoriteUpdateTargetKey.mangaDirectory(cleanBookName: oldCleanBookName)
-        let newKey = FavoriteUpdateTargetKey.mangaDirectory(cleanBookName: newCleanBookName)
-
-        if let oldTarget = try trackedTarget(id: oldKey.id, in: db) {
-            try db.execute(
-                sql: "DELETE FROM favorite_update_tracked_targets WHERE target_id = ?",
-                arguments: [oldKey.id]
-            )
-            if var merged = try trackedTarget(id: newKey.id, in: db) {
-                merged.knownChapterTIDs = (merged.knownChapterTIDs ?? []).union(oldTarget.knownChapterTIDs ?? [])
-                merged.categoryIDs.formUnion(oldTarget.categoryIDs)
-                try upsertTrackedTarget(merged, in: db)
-            } else {
-                var renamed = oldTarget
-                renamed.target = newKey
-                renamed.title = newCleanBookName
-                try upsertTrackedTarget(renamed, in: db)
-            }
-        }
-
-        let oldEventRows = try Row.fetchAll(
-            db,
-            sql: "SELECT id, event_json FROM favorite_update_events WHERE target_id = ?",
-            arguments: [oldKey.id]
-        )
-        for row in oldEventRows {
-            var event = try decode(FavoriteUpdateEvent.self, from: row["event_json"] as String)
-            event.target = newKey
-            event.title = newCleanBookName
-            try db.execute(
-                sql: "UPDATE favorite_update_events SET target_id = ?, event_json = ? WHERE id = ?",
-                arguments: [newKey.id, try encode(event), row["id"] as String]
-            )
-        }
-
-        // The one-undismissed-event-per-target invariant can only break for
-        // the merged target; keep the most recently detected event.
-        let collidingIDs = try String.fetchAll(
-            db,
-            sql: """
-            SELECT id FROM favorite_update_events
-            WHERE target_id = ? AND dismissed_at IS NULL
-            ORDER BY detected_at DESC, id DESC
-            """,
-            arguments: [newKey.id]
-        )
-        for id in collidingIDs.dropFirst() {
-            try db.execute(sql: "DELETE FROM favorite_update_events WHERE id = ?", arguments: [id])
         }
     }
 
@@ -211,7 +138,7 @@ public actor FavoriteUpdateStore {
             for target in trackedTargets {
                 try Self.upsertTrackedTarget(target, in: db)
             }
-            let merged = Self.mergingRunEvents(events, intoStored: try Self.events(in: db))
+            let merged = try Self.mergingRunEvents(events, in: db)
             try db.execute(sql: "DELETE FROM favorite_update_events")
             for event in merged {
                 try Self.insertEventRow(event, in: db)
@@ -227,10 +154,23 @@ public actor FavoriteUpdateStore {
     /// detections, while the run's snapshot is missing read/dismiss marks the
     /// user applied since the run started.
     public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async -> Int {
-        let storedEvents = (try? await database.read { db in try Self.events(in: db) }) ?? []
-        return Self.mergingRunEvents(runEvents, intoStored: storedEvents)
+        let merged = (try? await database.read { db in
+            try Self.mergingRunEvents(runEvents, in: db)
+        }) ?? Self.mergingRunEvents(runEvents, intoStored: [])
+        return merged
             .filter { $0.readAt == nil && $0.dismissedAt == nil }
             .count
+    }
+
+    private static func mergingRunEvents(
+        _ runEvents: [FavoriteUpdateEvent],
+        in db: Database
+    ) throws -> [FavoriteUpdateEvent] {
+        // A running check can still hold pre-merge IDs. Resolve both sides in
+        // the same transaction before comparing targets or dismissal markers.
+        let canonicalRunEvents = try runEvents.map { try canonicalEvent($0, in: db) }
+        let canonicalStoredEvents = try events(in: db).map { try canonicalEvent($0, in: db) }
+        return mergingRunEvents(canonicalRunEvents, intoStored: canonicalStoredEvents)
     }
 
     /// Three-way merge of a check run's in-memory event list over the current
@@ -511,6 +451,17 @@ public actor FavoriteUpdateStore {
     }
 
     private static func upsertTrackedTarget(_ target: FavoriteUpdateTrackedTarget, in db: Database) throws {
+        var target = target
+        if case let .mangaDirectory(id) = target.target {
+            let canonical = try MangaDirectoryIdentityDatabase.canonicalID(id, in: db)
+            target.target = .mangaDirectory(directoryID: canonical)
+            // A running check can hold a pre-merge snapshot of the surviving
+            // ID too. Preserve the stored union regardless of write order.
+            if let existing = try trackedTarget(id: target.id, in: db) {
+                target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(existing.knownChapterTIDs ?? [])
+                target.categoryIDs.formUnion(existing.categoryIDs)
+            }
+        }
         try db.execute(
             sql: """
             INSERT INTO favorite_update_tracked_targets (target_id, target_json)
@@ -521,7 +472,16 @@ public actor FavoriteUpdateStore {
         )
     }
 
+    private static func canonicalEvent(_ event: FavoriteUpdateEvent, in db: Database) throws -> FavoriteUpdateEvent {
+        var event = event
+        if case let .mangaDirectory(id) = event.target {
+            event.target = .mangaDirectory(directoryID: try MangaDirectoryIdentityDatabase.canonicalID(id, in: db))
+        }
+        return event
+    }
+
     private static func insertEventRow(_ event: FavoriteUpdateEvent, in db: Database) throws {
+        let event = try canonicalEvent(event, in: db)
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO favorite_update_events (id, target_id, detected_at, dismissed_at, event_json)

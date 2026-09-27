@@ -44,6 +44,10 @@ final class LocalFavoriteBrowseSession: ObservableObject {
         selectedCollectionIDs.removeAll()
     }
 
+    func replaceFavoriteSelection(with ids: Set<String>) {
+        selectedFavoriteIDs = ids
+    }
+
     func toggleFavoriteSelection(id: String) {
         isSelectionMode = true
         if selectedFavoriteIDs.contains(id) {

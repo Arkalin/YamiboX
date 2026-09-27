@@ -298,7 +298,7 @@ public actor LikeStore {
             try await database.write { db in
                 let ids = try String.fetchAll(db,
                     sql: "SELECT id FROM like_items WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-                    arguments: [workKey.kind.rawValue, workKey.id]
+                    arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
                 )
                 for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
             }
@@ -450,6 +450,8 @@ public actor LikeStore {
         return result
     }
 
+    public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
+
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()
     }
@@ -470,7 +472,7 @@ public actor LikeStore {
             db,
             sql: Self.selectColumns
                 + " WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL ORDER BY sort_key ASC, created_at ASC, id ASC",
-            arguments: [workKey.kind.rawValue, workKey.id]
+            arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
         ).compactMap { try Self.item(from: $0) }
     }
 
@@ -479,7 +481,7 @@ public actor LikeStore {
             db,
             sql: Self.selectColumns
                 + " WHERE work_kind = ? AND work_id = ? AND kind = ? AND deleted_at IS NULL ORDER BY created_at ASC, id ASC",
-            arguments: [workKey.kind.rawValue, workKey.id, kind.rawValue]
+            arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db), kind.rawValue]
         ).compactMap { try Self.item(from: $0) }
     }
 
@@ -529,7 +531,7 @@ public actor LikeStore {
             arguments: [
                 item.id,
                 item.workKey.kind.rawValue,
-                item.workKey.id,
+                try MangaDirectoryIdentityDatabase.canonicalWorkID(item.workKey, in: db),
                 item.kind.rawValue,
                 item.excerptText,
                 item.excerptPrefix,
@@ -562,14 +564,6 @@ public actor LikeStore {
         try db.execute(
             sql: "UPDATE like_items SET deleted_at = ?, updated_at = ? WHERE id = ?",
             arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
-        )
-    }
-
-    static func renameMangaTitleLikes(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
-        guard oldName != newName else { return }
-        try db.execute(
-            sql: "UPDATE like_items SET work_id = ?, updated_at = MAX(updated_at, ?) WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-            arguments: [newName, date.timeIntervalSince1970, LikeWorkKind.manga.rawValue, oldName]
         )
     }
 

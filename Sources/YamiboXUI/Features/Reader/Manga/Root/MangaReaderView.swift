@@ -690,6 +690,7 @@ public struct MangaReaderView: View {
                 source: .like,
                 initialPage: anchor.pageLocalIndex,
                 directoryName: context.directoryName,
+                directoryID: model.currentDirectoryID,
                 offlineCacheFavoriteID: context.offlineCacheFavoriteID,
                 isSmartModeEnabled: context.isSmartModeEnabled,
                 forumID: anchor.forumID ?? context.forumID
@@ -710,6 +711,7 @@ public struct MangaReaderView: View {
                 source: .like,
                 initialPage: mangaAnchor.pageLocalIndex,
                 directoryName: context.directoryName,
+                directoryID: model.currentDirectoryID,
                 offlineCacheFavoriteID: context.offlineCacheFavoriteID,
                 isSmartModeEnabled: context.isSmartModeEnabled,
                 forumID: context.forumID

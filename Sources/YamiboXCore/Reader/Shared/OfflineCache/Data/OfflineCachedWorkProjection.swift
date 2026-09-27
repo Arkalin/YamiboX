@@ -32,9 +32,13 @@ extension OfflineCacheStore {
                     !activeEntryIDs.contains(entry.id)
                 }
 
+                let ownerNames = try Dictionary(uniqueKeysWithValues: Set(mangaMemberships.map(\.ownerName)).map {
+                    ($0, try Self.mangaOwnerTitle($0, in: db))
+                })
                 return Self.cachedWorks(
                     mangaMemberships: mangaMemberships,
-                    novelEntries: novelEntries
+                    novelEntries: novelEntries,
+                    mangaOwnerNames: ownerNames
                 )
             }
         } catch {
@@ -45,7 +49,8 @@ extension OfflineCacheStore {
 
     private static func cachedWorks(
         mangaMemberships: [MangaOfflineCacheMembership],
-        novelEntries: [NovelOfflineCacheEntry]
+        novelEntries: [NovelOfflineCacheEntry],
+        mangaOwnerNames: [String: String]
     ) -> [OfflineCachedWork] {
         var works: [OfflineCachedWork] = []
 
@@ -73,7 +78,7 @@ extension OfflineCacheStore {
             works.append(
                 OfflineCachedWork(
                     id: OfflineCacheGroupID(readerKind: .manga, ownerKey: representative.ownerName),
-                    title: representative.ownerName,
+                    title: mangaOwnerNames[representative.ownerName] ?? representative.ownerName,
                     cachedEntryCount: entries.count,
                     updatedAt: representative.createdAt,
                     launchTarget: .manga(

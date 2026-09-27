@@ -176,6 +176,7 @@ actor OfflineCacheStore {
         guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return }
         do {
             try await database.write { db in
+                let ownerName = try Self.canonicalMangaOwnerKey(ownerName, in: db)
                 let candidateSourceFiles = try Self.mangaSourcePageFileNames(ownerName: ownerName, in: db)
                 let removedImageURLs = try Self.mangaEntryImageURLs(ownerName: ownerName, in: db)
                 let canceled = try Self.rawWorks(readerKind: .manga, ownerKey: ownerName, in: db)
@@ -203,96 +204,6 @@ actor OfflineCacheStore {
         }
     }
 
-    func renameMangaOfflineCacheOwner(from oldOwnerName: String, to newOwnerName: String) async throws {
-        try await ensureQueueRecovered()
-        guard let oldOwnerName = oldOwnerName.mangaReaderTrimmedNonEmpty,
-              let newOwnerName = newOwnerName.mangaReaderTrimmedNonEmpty,
-              oldOwnerName != newOwnerName else {
-            return
-        }
-        var writtenPayloads: [MangaSourcePagePayload] = []
-        do {
-            let (memberships, works) = try await database.read { db in
-                try (
-                    Self.memberships(
-                        ownerName: oldOwnerName,
-                        fileManager: fileManager,
-                        mangaSourcePagesDirectory: mangaSourcePagesDirectory,
-                        sourcePageCache: sourcePageCache,
-                        in: db
-                    ),
-                    Self.rawWorks(readerKind: .manga, ownerKey: oldOwnerName, in: db)
-                )
-            }
-            guard !memberships.isEmpty || !works.isEmpty else { return }
-            let renamedMemberships = try memberships.map { membership -> (membership: MangaOfflineCacheMembership, payload: MangaSourcePagePayload) in
-                let renamed = MangaOfflineCacheMembership(
-                    ownerName: newOwnerName,
-                    tid: membership.tid,
-                    chapterTitle: membership.chapterTitle,
-                    imageURLs: membership.imageURLs,
-                    sourcePage: membership.sourcePage,
-                    createdAt: membership.createdAt
-                )
-                let payload = try writeMangaSourcePagePayload(for: renamed)
-                writtenPayloads.append(payload)
-                return (renamed, payload)
-            }
-            try await database.write { db in
-                let candidateSourceFiles = try Self.mangaSourcePageFileNames(ownerName: oldOwnerName, in: db)
-                try db.execute(sql: "DELETE FROM offline_cache_manga_entries WHERE owner_name = ?", arguments: [oldOwnerName])
-                try db.execute(
-                    sql: "DELETE FROM offline_cache_works WHERE reader_kind = ? AND owner_name = ?",
-                    arguments: [Self.mangaReaderKind, oldOwnerName]
-                )
-
-                for renamed in renamedMemberships {
-                    try Self.save(
-                        renamed.membership,
-                        sourceFileName: renamed.payload.fileName,
-                        sourceFingerprint: renamed.payload.fingerprint,
-                        sourceByteCount: renamed.payload.byteCount,
-                        in: db
-                    )
-                }
-                for work in works {
-                    try Self.save(OfflineCacheRawWork(
-                        readerKind: .manga,
-                        workID: work.workID,
-                        ownerKey: newOwnerName,
-                        ownerTitle: newOwnerName,
-                        entryKey: work.entryKey,
-                        title: work.title,
-                        targetImageURLs: work.targetImageURLs,
-                        completedImageURLs: work.completedImageURLs,
-                        retainsInlineImages: work.retainsInlineImages,
-                        state: work.state,
-                        failureMessage: work.failureMessage,
-                        currentBytesPerSecond: work.currentBytesPerSecond,
-                        insertionIndex: work.insertionIndex,
-                        createdAt: work.createdAt,
-                        updatedAt: work.updatedAt
-                    ), in: db)
-                }
-                try Self.removeUnreferencedMangaSourcePageFiles(
-                    candidateFileNames: candidateSourceFiles,
-                    fileManager: fileManager,
-                    mangaSourcePagesDirectory: mangaSourcePagesDirectory,
-                    in: db
-                )
-            }
-            notifyOfflineCacheDidChange()
-        } catch {
-            for payload in writtenPayloads where !payload.fileExistedBeforeWrite {
-                do {
-                    try fileManager.removeItem(at: mangaSourcePagesDirectory.appendingPathComponent(payload.fileName, isDirectory: false))
-                } catch {
-                    YamiboLog.offlineCache.warning("Failed to roll back manga source page file \(payload.fileName) after rename failure: \(error)")
-                }
-            }
-            throw offlineCachePersistenceError(from: error)
-        }
-    }
 
     func enqueueMangaOfflineCacheWork(_ request: MangaOfflineCacheWorkRequest) async throws -> MangaOfflineCacheEnqueueResult {
         try await ensureQueueRecovered()
@@ -305,7 +216,7 @@ actor OfflineCacheStore {
                     throw YamiboPersistenceError(context: "Chapter tid is empty")
                 }
                 let normalizedRequest = MangaOfflineCacheWorkRequest(
-                    ownerName: request.ownerName,
+                    ownerName: try Self.canonicalMangaOwnerKey(request.ownerName, in: db),
                     tid: request.tid,
                     chapterTitle: request.chapterTitle,
                     targetImageURLs: request.targetImageURLs
@@ -322,13 +233,13 @@ actor OfflineCacheStore {
                     return .alreadyCached(membership)
                 }
                 if let work = try Self.rawWork(readerKind: .manga, ownerKey: normalizedRequest.ownerName, entryKey: normalizedRequest.tid, in: db) {
-                    return .alreadyQueued(Self.queueWorkProjection(from: work))
+                    return .alreadyQueued(try Self.queueWorkProjection(from: work, in: db))
                 }
                 let work = OfflineCacheRawWork(
                     readerKind: .manga,
                     workID: UUID().uuidString,
                     ownerKey: normalizedRequest.ownerName,
-                    ownerTitle: normalizedRequest.ownerName,
+                    ownerTitle: try Self.mangaOwnerTitle(normalizedRequest.ownerName, in: db),
                     entryKey: normalizedRequest.tid,
                     title: normalizedRequest.chapterTitle,
                     targetImageURLs: normalizedRequest.targetImageURLs,
@@ -342,7 +253,7 @@ actor OfflineCacheStore {
                     updatedAt: Date()
                 )
                 try Self.save(work, in: db)
-                return .enqueued(Self.queueWorkProjection(from: work))
+                return .enqueued(try Self.queueWorkProjection(from: work, in: db))
             }
             if result.enqueuedWork != nil {
                 notifyOfflineCacheDidChange()
@@ -511,7 +422,7 @@ actor OfflineCacheStore {
         return MangaOfflineCacheMembershipID(ownerName: ownerName, tid: tid)
     }
 
-    func notifyOfflineCacheDidChange() {
+    nonisolated func notifyOfflineCacheDidChange() {
         updateNotifier.notify()
     }
 
@@ -600,6 +511,8 @@ actor OfflineCacheStore {
         sourceByteCount: Int,
         in db: Database
     ) throws {
+        var membership = membership
+        membership.ownerName = try canonicalMangaOwnerKey(membership.ownerName, in: db)
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO offline_cache_manga_entries
@@ -685,6 +598,7 @@ actor OfflineCacheStore {
         sourcePageCache: NSCache<NSString, SourcePageCacheEntry>,
         in db: Database
     ) throws -> MangaOfflineCacheMembership? {
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
         guard let row = try Row.fetchOne(
             db,
             sql: """
@@ -712,7 +626,8 @@ actor OfflineCacheStore {
         sourcePageCache: NSCache<NSString, SourcePageCacheEntry>,
         in db: Database
     ) throws -> [MangaOfflineCacheMembership] {
-        try Row.fetchAll(
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
+        return try Row.fetchAll(
             db,
             sql: """
             SELECT owner_name, tid, chapter_title, source_page_file_name, source_page_schema_version, source_page_fingerprint, byte_count, created_at
@@ -798,6 +713,8 @@ actor OfflineCacheStore {
         tid: String,
         in db: Database
     ) throws -> [URL] {
+        let ownerName = readerKind == "manga" || table == "offline_cache_manga_entry_images"
+            ? try canonicalMangaOwnerKey(ownerName, in: db) : ownerName
         if let readerKind {
             return try String.fetchAll(
                 db,
@@ -824,7 +741,8 @@ actor OfflineCacheStore {
     }
 
     static func mangaEntryImageURLs(ownerName: String, in db: Database) throws -> [URL] {
-        try String.fetchAll(
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
+        return try String.fetchAll(
             db,
             sql: """
             SELECT image_url
@@ -837,7 +755,8 @@ actor OfflineCacheStore {
     }
 
     static func mangaEntryByteCount(ownerName: String, tid: String, in db: Database) throws -> Int {
-        try Int.fetchOne(
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
+        return try Int.fetchOne(
             db,
             sql: "SELECT byte_count FROM offline_cache_manga_entries WHERE owner_name = ? AND tid = ?",
             arguments: [ownerName, tid]
@@ -845,6 +764,7 @@ actor OfflineCacheStore {
     }
 
     private static func deleteMembership(ownerName: String, tid: String, in db: Database) throws {
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
         try db.execute(
             sql: "DELETE FROM offline_cache_manga_entries WHERE owner_name = ? AND tid = ?",
             arguments: [ownerName, tid]
@@ -856,6 +776,7 @@ actor OfflineCacheStore {
     }
 
     static func deleteWork(readerKind: String, ownerName: String, tid: String, in db: Database) throws {
+        let ownerName = readerKind == "manga" ? try canonicalMangaOwnerKey(ownerName, in: db) : ownerName
         try db.execute(
             sql: "DELETE FROM offline_cache_works WHERE reader_kind = ? AND owner_name = ? AND tid = ?",
             arguments: [readerKind, ownerName, tid]
@@ -926,6 +847,7 @@ actor OfflineCacheStore {
     }
 
     static func mangaSourcePageFileNames(ownerName: String, tid: String, in db: Database) throws -> Set<String> {
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
         let fileNames = try String.fetchAll(
             db,
             sql: """
@@ -939,6 +861,7 @@ actor OfflineCacheStore {
     }
 
     static func mangaSourcePageFileNames(ownerName: String, in db: Database) throws -> Set<String> {
+        let ownerName = try canonicalMangaOwnerKey(ownerName, in: db)
         let fileNames = try String.fetchAll(
             db,
             sql: """

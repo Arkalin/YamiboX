@@ -189,7 +189,7 @@ struct MangaDirectoryManagementRow: Hashable, Identifiable {
     var chapterCount: Int
 
     init(summary: MangaDirectorySummary) {
-        id = summary.cleanBookName
+        id = summary.id.rawValue
         title = summary.cleanBookName
         chapterCount = summary.chapterCount
     }

@@ -53,11 +53,14 @@ actor OfflineCacheImageAcquirer: OfflineCacheImageAcquiring {
 }
 
 public actor OfflineCacheQueueExecutor {
+    private var identityChangeDepth = 0
+    private var resumeAfterIdentityChange = false
     private let store: any OfflineCacheQueueStoring & OfflineCacheImageAssetStoring
     private let runObserver: (any OfflineCacheQueueRunObserving)?
     private let mangaWorkProcessor: OfflineCacheWorkProcessor<MangaOfflineCacheWorkProcessingStrategy>
     private let novelWorkProcessor: OfflineCacheWorkProcessor<NovelOfflineCacheWorkProcessingStrategy>?
     private var runTask: Task<Void, Never>?
+    private var retiringRuns: [Int: Task<Void, Never>] = [:]
     private var runGeneration = 0
     private var isInvalidated = false
     private let isSessionCurrent: @Sendable () async -> Bool
@@ -108,14 +111,21 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func continueQueue(submitsUserInitiatedRun: Bool) async throws {
+        if identityChangeDepth > 0 {
+            resumeAfterIdentityChange = true
+            return
+        }
         guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
+        guard !deferRunForIdentityChange() else { return }
         try await store.retryFailedOfflineCacheWorks()
         guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
+        guard !deferRunForIdentityChange() else { return }
         try await store.setOfflineCacheQueueRunState(.running)
         guard !isInvalidated, await isSessionCurrent() else {
             try await store.setOfflineCacheQueueRunState(.paused)
             throw CancellationError()
         }
+        guard !deferRunForIdentityChange() else { return }
         if let runTask, !runTask.isCancelled {
             return
         }
@@ -124,6 +134,9 @@ public actor OfflineCacheQueueExecutor {
             await runObserver?.submitUserInitiatedRun()
         }
         guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
+        guard !deferRunForIdentityChange() else { return }
+        // Another continuation may have installed a worker during the awaits.
+        guard runTask == nil || runTask?.isCancelled == true else { return }
         runGeneration += 1
         let generation = runGeneration
         runTask = Task { [weak self] in
@@ -131,27 +144,84 @@ public actor OfflineCacheQueueExecutor {
         }
     }
 
+    private func deferRunForIdentityChange() -> Bool {
+        guard identityChangeDepth > 0 else { return false }
+        resumeAfterIdentityChange = true
+        return true
+    }
+
     public func pauseQueue() async throws {
+        resumeAfterIdentityChange = false
+        cancelActiveRun()
+        do {
+            try await store.setOfflineCacheQueueRunState(.paused)
+            await runObserver?.queueRunDidCancel()
+            await joinRetiringRuns()
+        } catch {
+            await joinRetiringRuns()
+            throw error
+        }
+    }
+
+    private func cancelActiveRun() {
+        if let running = runTask {
+            running.cancel()
+            retiringRuns[runGeneration] = running
+        }
         runGeneration += 1
-        runTask?.cancel()
         runTask = nil
-        try await store.setOfflineCacheQueueRunState(.paused)
-        await runObserver?.queueRunDidCancel()
+    }
+
+    private func joinRetiringRuns() async {
+        let runs = retiringRuns
+        for (generation, task) in runs {
+            await task.value
+            retiringRuns.removeValue(forKey: generation)
+        }
+    }
+
+    /// Cancel and join the worker before any identity references are moved.
+    /// Merely clearing runTask would leave a suspended writer alive.
+    func suspendForIdentityChange() async throws {
+        identityChangeDepth += 1
+        guard identityChangeDepth == 1 else { return }
+        let hadRunningTask = runTask != nil
+        cancelActiveRun()
+        do {
+            let wasRunning = await store.offlineCacheQueueRunState() == .running
+            resumeAfterIdentityChange = resumeAfterIdentityChange || wasRunning || hadRunningTask
+            try await store.setOfflineCacheQueueRunState(.paused)
+            await runObserver?.queueRunDidCancel()
+            await joinRetiringRuns()
+        } catch {
+            await joinRetiringRuns()
+            identityChangeDepth = 0
+            throw error
+        }
+    }
+
+    func finishIdentityChange() async {
+        guard identityChangeDepth > 0 else { return }
+        identityChangeDepth -= 1
+        guard identityChangeDepth == 0, resumeAfterIdentityChange else { return }
+        resumeAfterIdentityChange = false
+        do {
+            try await continueQueue(submitsUserInitiatedRun: false)
+        } catch {
+            YamiboLog.offlineCache.error("Could not resume queue after directory identity change: \(error)")
+        }
     }
 
     func invalidateForAccountChange() async throws {
         isInvalidated = true
-        let running = runTask
         try await pauseQueue()
-        await running?.value
     }
 
     public func cancelChapter(ownerName: String, tid: String) async throws {
         let wasRunning = await store.offlineCacheQueueRunState() == .running
-        runGeneration += 1
-        runTask?.cancel()
-        runTask = nil
+        cancelActiveRun()
         await runObserver?.queueRunDidCancel()
+        await joinRetiringRuns()
         try await store.cancelOfflineCacheEntry(
             OfflineCacheEntryID(readerKind: .manga, ownerKey: ownerName, entryKey: tid)
         )
@@ -162,10 +232,9 @@ public actor OfflineCacheQueueExecutor {
 
     public func cancelOwnerGroup(ownerName: String) async throws {
         let wasRunning = await store.offlineCacheQueueRunState() == .running
-        runGeneration += 1
-        runTask?.cancel()
-        runTask = nil
+        cancelActiveRun()
         await runObserver?.queueRunDidCancel()
+        await joinRetiringRuns()
         try await store.cancelOfflineCacheGroup(
             OfflineCacheGroupID(readerKind: .manga, ownerKey: ownerName)
         )
@@ -176,10 +245,9 @@ public actor OfflineCacheQueueExecutor {
 
     public func cancelWork(id: OfflineCacheWorkID) async throws {
         let wasRunning = await store.offlineCacheQueueRunState() == .running
-        runGeneration += 1
-        runTask?.cancel()
-        runTask = nil
+        cancelActiveRun()
         await runObserver?.queueRunDidCancel()
+        await joinRetiringRuns()
         try await store.cancelOfflineCacheWork(id: id)
         if wasRunning {
             try await continueQueue()
@@ -188,10 +256,9 @@ public actor OfflineCacheQueueExecutor {
 
     public func cancelGroup(id: OfflineCacheGroupID) async throws {
         let wasRunning = await store.offlineCacheQueueRunState() == .running
-        runGeneration += 1
-        runTask?.cancel()
-        runTask = nil
+        cancelActiveRun()
         await runObserver?.queueRunDidCancel()
+        await joinRetiringRuns()
         try await store.cancelOfflineCacheGroup(id)
         if wasRunning {
             try await continueQueue()
@@ -201,6 +268,7 @@ public actor OfflineCacheQueueExecutor {
     public func waitForIdle() async {
         let task = runTask
         await task?.value
+        await joinRetiringRuns()
     }
 
     private func runQueue(generation: Int) async {
@@ -250,6 +318,7 @@ public actor OfflineCacheQueueExecutor {
                 YamiboLog.offlineCache.error("Failed to persist paused offline cache queue run state: \(error)")
             }
         }
+        guard runGeneration == generation else { return }
         runTask = nil
     }
 

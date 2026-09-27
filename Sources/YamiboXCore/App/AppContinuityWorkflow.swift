@@ -94,8 +94,30 @@ public final class AppContinuityWorkflow: Sendable {
         guard let route = await readerResumeRouteStore.load() else { return nil }
         if let startup, route != startup.route { return nil }
 
+        var identityResolvedRoute = route
+        if case var .manga(context) = route, context.isSmartModeEnabled {
+            do {
+                let id: MangaDirectoryID?
+                if let current = context.directoryID {
+                    id = try await appContext.mangaDirectoryStore.canonicalDirectoryID(current)
+                } else {
+                    id = try await appContext.mangaDirectoryStore.resolveDirectoryID(
+                        legacyName: context.directoryName, legacyIdentity: nil, chapterTID: context.chapterTID
+                    )
+                }
+                // Do not destroy an ambiguous old route or guess from a title.
+                guard let id else { return nil }
+                context.directoryID = id
+                context.directoryName = try await appContext.mangaDirectoryStore.identityName(id: id) ?? context.directoryName
+                identityResolvedRoute = .manga(context)
+            } catch {
+                YamiboLog.persistence.warning("Failed to resolve saved manga identity: \(error)")
+                return nil
+            }
+        }
+
         guard var restoredRoute = await restorableRoute(
-            from: route,
+            from: identityResolvedRoute,
             reconcilesWithReadingProgress: reconcilesWithReadingProgress
         ) else {
             guard await isCurrentAccount(for: startup) else { return nil }
@@ -363,6 +385,11 @@ public final class AppContinuityWorkflow: Sendable {
             // `manga_chapter_thread_id` happens to equal this thread id, silently
             // reconciling the restored route onto a different forum thread.
             if context.isSmartModeEnabled {
+                if let directoryID = context.directoryID {
+                    return try await appContext.readingProgressStore.loadThrowing(for: .mangaTitle(
+                        mangaID: directoryID.rawValue, cleanBookName: context.directoryName ?? context.displayTitle
+                    ))
+                }
                 return try await appContext.readingProgressStore.loadThrowing(threadID: context.originalThreadID)
             }
             return try await appContext.readingProgressStore.loadThrowing(for: .mangaThread(threadID: context.originalThreadID))
@@ -468,6 +495,7 @@ private extension MangaLaunchContext {
             chapterView: manga.chapterView,
             initialPage: manga.mangaPageIndex,
             directoryName: directoryName,
+            directoryID: directoryID,
             offlineCacheFavoriteID: favoriteItem?.id ?? offlineCacheFavoriteID,
             isPreview: isPreview,
             isSmartModeEnabled: isSmartModeEnabled,

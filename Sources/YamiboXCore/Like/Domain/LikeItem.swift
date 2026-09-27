@@ -20,8 +20,8 @@ public struct LikeWorkKey: Codable, Hashable, Sendable {
         LikeWorkKey(kind: .novel, id: threadID)
     }
 
-    public static func mangaTitle(cleanBookName: String) -> LikeWorkKey {
-        LikeWorkKey(kind: .manga, id: cleanBookName)
+    public static func mangaTitle(directoryID: MangaDirectoryID) -> LikeWorkKey {
+        LikeWorkKey(kind: .manga, id: directoryID.rawValue)
     }
 
     /// Normal forum threads are not capture sources, so they have no Like
@@ -33,8 +33,8 @@ public struct LikeWorkKey: Codable, Hashable, Sendable {
         switch target {
         case let .novelThread(threadID):
             self = .novel(threadID: threadID)
-        case let .mangaTitle(_, cleanBookName):
-            self = .mangaTitle(cleanBookName: cleanBookName)
+        case let .mangaTitle(mangaID, _):
+            self = .mangaTitle(directoryID: MangaDirectoryID(rawValue: mangaID))
         case .normalThread, .mangaThread:
             return nil
         }

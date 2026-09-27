@@ -16,6 +16,8 @@ struct ReadingProgressWebDAVParticipant: WebDAVSyncParticipant {
         self.store = store
     }
 
+    func readLocalDeletionState() async throws -> SyncDeletionState? { try await store.syncSnapshot().deletions }
+
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try decoder.decode(ReadingProgressWebDAVPayload.self, from: data)
         return WebDAVRemotePayloadInfo(updatedAt: payload.updatedAt, revision: payload.syncRevision)
@@ -35,8 +37,12 @@ struct ReadingProgressWebDAVParticipant: WebDAVSyncParticipant {
     }
 
     private func merge(remote: ReadingProgressWebDAVPayload?, at date: Date) async throws -> ReadingProgressWebDAVPayload {
-        try await store.updateSyncSnapshot { snapshot in
+        let remoteSnapshot = remote.map { SyncRecordSnapshot(records: $0.records, deletions: $0.deletions) }
+        return try await store.updateSyncSnapshot(merging: remoteSnapshot) { snapshot, remoteSnapshot in
             let local = ReadingProgressWebDAVPayload(updatedAt: date, records: snapshot.records, deletions: snapshot.deletions)
+            let remote = remoteSnapshot.map {
+                ReadingProgressWebDAVPayload(updatedAt: date, records: $0.records, deletions: $0.deletions)
+            }
             let merged = ReadingProgressWebDAVMerger().merge(local: local, remote: remote, updatedAt: date)
             snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
             return merged

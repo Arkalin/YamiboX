@@ -27,7 +27,7 @@ struct LocalFavoritesNavigation {
         get {
             var result: [LocalFavoritesDestination] = []
             if let id = organizer.selectedCollectionID { result.append(.collection(id)) }
-            if let name = organizer.selectedMergedGroupCleanBookName { result.append(.mergedGroup(name)) }
+            if let name = organizer.selectedMergedGroupKey { result.append(.mergedGroup(name)) }
             if routes.isUpdatesPagePushed { result.append(.updates) }
             if routes.isBoardFavoritesPushed { result.append(.boardFavorites) }
             if routes.isSyncProgressPushed { result.append(.syncProgress) }
@@ -38,7 +38,7 @@ struct LocalFavoritesNavigation {
             if let id = organizer.selectedCollectionID, !newValue.contains(.collection(id)) {
                 organizer.closeCollection()
             }
-            if let name = organizer.selectedMergedGroupCleanBookName, !newValue.contains(.mergedGroup(name)) {
+            if let name = organizer.selectedMergedGroupKey, !newValue.contains(.mergedGroup(name)) {
                 organizer.closeMergedGroup()
             }
             routes.isUpdatesPagePushed = newValue.contains(.updates)

@@ -45,7 +45,7 @@ public struct FavoriteMembershipSnapshot: Sendable {
         self.directories = directories
         self.boardReader = boardReader
         itemsByThread = Dictionary(grouping: document.items, by: { $0.target.threadID ?? "" })
-        archivedItemsByTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByEffectiveTitle(
+        archivedItemsByTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: document.items, mangaDirectoriesByTID: directories, boardReaderSettings: boardReader
         )
     }
@@ -82,7 +82,8 @@ public struct FavoriteMembershipSnapshot: Sendable {
         } else {
             effectiveTitle = FavoriteCardProjection.resolvedSmartMangaTitle(title, directory: directory)
         }
-        let members = archivedItemsByTitle[effectiveTitle] ?? []
+        let groupKey = directory?.id.rawValue ?? "unresolved-title:" + effectiveTitle
+        let members = archivedItemsByTitle[groupKey] ?? []
         // Older, explicitly per-thread favorites must retain their direct
         // match even when their board's reader configuration has changed.
         if members.isEmpty, !direct.isEmpty {

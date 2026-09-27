@@ -131,6 +131,7 @@ struct LocalFavoriteOpenTargetResolver {
                     chapterView: resume.chapterView,
                     initialPage: resume.initialPage,
                     directoryName: resume.directoryName,
+                    directoryID: resume.directoryID,
                     offlineCacheFavoriteID: latestItem.id,
                     isSmartModeEnabled: smartModeEnabled,
                     forumID: latestItem.forumID
@@ -149,8 +150,8 @@ struct LocalFavoriteOpenTargetResolver {
     /// Returns nil (never throws for this specific case) when no such
     /// favorite exists any more — the caller falls back to whatever it
     /// already does for a deleted favorite.
-    func openTarget(forMangaDirectoryCleanBookName cleanBookName: String) async throws -> LocalFavoriteOpenTarget? {
-        guard let directory = try await mangaDirectoryStore.directory(named: cleanBookName) else { return nil }
+    func openTarget(forMangaDirectoryID directoryID: MangaDirectoryID) async throws -> LocalFavoriteOpenTarget? {
+        guard let directory = try await mangaDirectoryStore.directory(id: directoryID) else { return nil }
         let chapterTIDs = Set(directory.chapters.map(\.tid))
         let document = try await libraryStore.load()
         guard let item = document.items.first(where: {

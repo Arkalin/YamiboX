@@ -29,11 +29,11 @@ public enum FavoriteUpdateNotificationRouting {
         )
         do {
             let target: LocalFavoriteOpenTarget?
-            if let cleanBookName = FavoriteUpdateTargetKey.mangaDirectoryCleanBookName(fromID: targetID) {
+            if let directoryID = FavoriteUpdateTargetKey.mangaDirectoryID(fromID: targetID) {
                 // A directory-mode event's notification carries no pointer to
                 // one specific favorite — re-derive fresh, same as the
                 // in-app updates page's tap handler.
-                target = try await resolver.openTarget(forMangaDirectoryCleanBookName: cleanBookName)
+                target = try await resolver.openTarget(forMangaDirectoryID: directoryID)
             } else {
                 let document = try? await dependencies.localFavoriteLibraryStore.load()
                 guard let item = document?.items.first(where: { $0.target.id == targetID }) else {

@@ -215,8 +215,7 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     }
 
     private var offlineCacheOwnerName: String? {
-        let ownerName = panel.directoryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ownerName.isEmpty ? nil : ownerName
+        panel.directoryID?.rawValue
     }
 
     private func localFavoriteItem() async -> FavoriteItem? {

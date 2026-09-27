@@ -28,8 +28,8 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
         ContentCoverKey(targetType: .thread, targetID: tid)
     }
 
-    public static func smartManga(cleanBookName: String) -> ContentCoverKey {
-        ContentCoverKey(targetType: .smartManga, targetID: cleanBookName)
+    public static func smartManga(directoryID: MangaDirectoryID) -> ContentCoverKey {
+        ContentCoverKey(targetType: .smartManga, targetID: directoryID.rawValue)
     }
 
     /// Canonical cover key for a reading-progress target. Normal and novel
@@ -41,8 +41,8 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
             guard let threadID = target.threadID else { return nil }
             self = .thread(tid: threadID)
         case .mangaTitle:
-            guard let cleanBookName = target.mangaCleanBookName else { return nil }
-            self = .smartManga(cleanBookName: cleanBookName)
+            guard let mangaID = target.mangaID else { return nil }
+            self = .smartManga(directoryID: MangaDirectoryID(rawValue: mangaID))
         }
     }
 
@@ -148,7 +148,10 @@ public actor ContentCoverStore {
                 for chunk in stride(from: 0, to: validKeys.count, by: 200).map({ Array(validKeys[$0..<min($0 + 200, validKeys.count)]) }) {
                     let condition = Array(repeating: "(target_type = ? AND target_id = ?)", count: chunk.count)
                         .joined(separator: " OR ")
-                    let arguments = chunk.flatMap { [$0.targetType.rawValue, $0.targetID] }
+                    let arguments = try chunk.flatMap { key in
+                        let canonical = try Self.canonicalKey(key, in: db)
+                        return [canonical.targetType.rawValue, canonical.targetID]
+                    }
                     let rows = try Row.fetchAll(
                         db,
                         sql: """
@@ -170,6 +173,9 @@ public actor ContentCoverStore {
                             updatedAt: Date(timeIntervalSince1970: row["updated_at"])
                         )
                     }
+                }
+                for key in validKeys {
+                    if let cover = covers[try Self.canonicalKey(key, in: db)] { covers[key] = cover }
                 }
                 return covers
             }
@@ -335,12 +341,21 @@ public actor ContentCoverStore {
 
     @discardableResult
     func updateSyncSnapshot<T: Sendable>(
-        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ContentCover>) throws -> T
+        merging remote: SyncRecordSnapshot<ContentCover>?,
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ContentCover>, SyncRecordSnapshot<ContentCover>?) throws -> T
     ) async throws -> T {
         let result = try await database.write { db in
-            var snapshot = SyncRecordSnapshot(records: try Self.allCovers(in: db),
-                deletions: try SyncDeletionState.load(from: "content_cover_sync_state", in: db))
-            let result = try transform(&snapshot)
+            // A directory merge can commit after the WebDAV wrapper normalizes
+            // the payload. Resolve both sides again while holding the write
+            // transaction, before comparing records or deletion timestamps.
+            let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
+            var snapshot = try Self.canonicalSnapshot(
+                SyncRecordSnapshot(records: try Self.allCovers(in: db),
+                    deletions: try SyncDeletionState.load(from: "content_cover_sync_state", in: db)),
+                identities: identities
+            )
+            let remote = try remote.map { try Self.canonicalSnapshot($0, identities: identities) }
+            let result = try transform(&snapshot, remote)
             try db.execute(sql: "DELETE FROM content_cover")
             for cover in snapshot.records { try Self.upsert(cover, in: db) }
             try snapshot.deletions.save(to: "content_cover_sync_state", in: db)
@@ -348,6 +363,27 @@ public actor ContentCoverStore {
         }
         postChangeNotification()
         return result
+    }
+
+    private static func canonicalSnapshot(
+        _ snapshot: SyncRecordSnapshot<ContentCover>,
+        identities: MangaDirectoryIdentitySnapshot
+    ) throws -> SyncRecordSnapshot<ContentCover> {
+        let records = snapshot.records.map { cover in
+            var cover = cover
+            if cover.key.targetType == .smartManga {
+                cover.key.targetID = identities.canonicalID(cover.key.targetID)
+            }
+            return cover
+        }
+        // Use the shared tombstone normalizer so unresolved legacy deletion
+        // markers retain their import-filtering semantics as well.
+        let deletions = try MangaDirectoryIdentityJSON.normalize(
+            JSONEncoder().encode(snapshot.deletions), identities: identities,
+            legacy: false, datasetID: "contentCovers"
+        )
+        return SyncRecordSnapshot(records: records,
+            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
     }
 
     public func totalDiskUsageBytes() async -> Int {
@@ -395,30 +431,8 @@ public actor ContentCoverStore {
         return YamiboDomain.url(forSitePath: value)
     }
 
-    /// Moves a smart-manga cover row to a renamed directory inside the
-    /// caller's transaction, so directory renames keep their cover atomically.
-    static func renameSmartMangaCover(from oldName: String, to newName: String, date: Date = .now, in db: Database) throws {
-        let oldKey = ContentCoverKey.smartManga(cleanBookName: oldName)
-        let newKey = ContentCoverKey.smartManga(cleanBookName: newName)
-        guard !oldKey.targetID.isEmpty, !newKey.targetID.isEmpty, oldKey != newKey else { return }
-        guard var cover = try fetchCover(for: oldKey, in: db) else { return }
-        // The renamed directory may already have a row; the moved row wins only
-        // if the destination is empty.
-        if try fetchCover(for: newKey, in: db) == nil {
-            cover.key = newKey
-            cover.updatedAt = max(cover.updatedAt, date)
-            try upsert(cover, in: db)
-        }
-        var deletions = try SyncDeletionState.load(from: "content_cover_sync_state", in: db)
-        deletions.recordDeletion(of: oldKey.syncID, at: max(cover.updatedAt, date))
-        try deletions.save(to: "content_cover_sync_state", in: db)
-        try db.execute(
-            sql: "DELETE FROM content_cover WHERE target_type = ? AND target_id = ?",
-            arguments: [oldKey.targetType.rawValue, oldKey.targetID]
-        )
-    }
-
     private static func fetchCover(for key: ContentCoverKey, in db: Database) throws -> ContentCover? {
+        let key = try canonicalKey(key, in: db)
         guard let row = try Row.fetchOne(
             db,
             sql: """
@@ -441,6 +455,7 @@ public actor ContentCoverStore {
     }
 
     private static func upsert(_ cover: ContentCover, in db: Database) throws {
+        let key = try canonicalKey(cover.key, in: db)
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO content_cover
@@ -448,8 +463,8 @@ public actor ContentCoverStore {
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
-                cover.key.targetType.rawValue,
-                cover.key.targetID,
+                key.targetType.rawValue,
+                key.targetID,
                 cover.automaticCoverURL?.absoluteString,
                 cover.manualCoverURL?.absoluteString,
                 cover.dynamicEnabled,
@@ -458,6 +473,13 @@ public actor ContentCoverStore {
             ]
         )
     }
+
+    private static func canonicalKey(_ key: ContentCoverKey, in db: Database) throws -> ContentCoverKey {
+        guard key.targetType == .smartManga else { return key }
+        return .smartManga(directoryID: try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: key.targetID), in: db))
+    }
+
+    public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
 
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()

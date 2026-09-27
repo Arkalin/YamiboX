@@ -37,7 +37,8 @@ enum LikeMangaOpenTargetPolicy {
             initialPage: anchor.pageLocalIndex,
             // Mode-off launches never carry a directory name (mirroring the
             // favorites resolver's single-thread track).
-            directoryName: isSmartModeEnabled ? workID : nil,
+            directoryName: isSmartModeEnabled ? workTitle : nil,
+            directoryID: isSmartModeEnabled ? MangaDirectoryID(rawValue: workID) : nil,
             isPreview: true,
             isSmartModeEnabled: isSmartModeEnabled,
             forumID: anchor.forumID

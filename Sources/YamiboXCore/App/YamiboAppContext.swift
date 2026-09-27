@@ -46,7 +46,7 @@ public final class YamiboAppContext: Sendable {
     /// The single pool for `yamibox.sqlite`; every GRDB-backed store receives this instance.
     let databasePool: DatabasePool
     let session: URLSession
-    private let offlineCacheQueueExecutorBox = OfflineCacheQueueExecutorBox()
+    private let offlineCacheQueueExecutorBox: OfflineCacheQueueExecutorBox
     private nonisolated(unsafe) let uiDefaults: UserDefaults
     private let clearsWebDataOnReset: Bool
     private let websiteDataClearer: (any WebsiteDataClearing)?
@@ -91,6 +91,8 @@ public final class YamiboAppContext: Sendable {
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         httpCache: URLCache = .shared
     ) {
+        let queueExecutors = OfflineCacheQueueExecutorBox()
+        self.offlineCacheQueueExecutorBox = queueExecutors
         nonisolated(unsafe) let profileDefaults = uiDefaults
         let profileStore = profileStore ?? sessionStore.accountStore.map { YamiboProfileStore(accountStore: $0) }
             ?? YamiboProfileStore(defaults: profileDefaults)
@@ -141,7 +143,16 @@ public final class YamiboAppContext: Sendable {
             databasePool: resolvedGRDBDatabasePool,
             syncSettingsStore: webDAVSyncSettingsStore,
             favoriteUpdateStore: resolvedFavoriteUpdateStore,
-            readingProgressStore: self.readingProgressStore
+            readingProgressStore: self.readingProgressStore,
+            prepareIdentityChange: { [weak queueExecutors] in try await queueExecutors?.prepareIdentityChange() },
+            finishIdentityChange: { [weak queueExecutors] in await queueExecutors?.finishIdentityChange() },
+            identityChangeCommitted: { [likes = self.likeStore, bookmarks = self.bookmarkStore, covers = self.contentCoverStore, history = self.browsingHistoryStore] in
+                likes.notifyIdentityMigrationCommitted()
+                bookmarks.notifyIdentityMigrationCommitted()
+                covers.notifyIdentityMigrationCommitted()
+                history.notifyIdentityMigrationCommitted()
+                (resolvedOfflineCacheStore as? OfflineCacheStore)?.notifyOfflineCacheDidChange()
+            }
         )
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.mangaReaderProjectionStore = mangaReaderProjectionStore ?? MangaReaderProjectionStore(diskCacheStore: diskCacheStore)
@@ -552,6 +563,7 @@ public final class YamiboAppContext: Sendable {
                 ContentCoverWebDAVParticipant(store: contentCoverStore),
                 BrowsingHistoryWebDAVParticipant(store: browsingHistoryStore),
             ],
+            mangaDirectoryStore: mangaDirectoryStore,
             client: WebDAVClient(session: session)
         )
     }
@@ -692,20 +704,51 @@ public final class YamiboAppContext: Sendable {
 
 private actor OfflineCacheQueueExecutorBox {
     private var values: [UUID: OfflineCacheQueueExecutor] = [:]
+    private var identityChangeDepth = 0
+
+    func prepareIdentityChange() async throws {
+        identityChangeDepth += 1
+        guard identityChangeDepth == 1 else { return }
+        do {
+            for executor in Array(values.values) { try await executor.suspendForIdentityChange() }
+        } catch {
+            identityChangeDepth = 0
+            for executor in Array(values.values) { await executor.finishIdentityChange() }
+            throw error
+        }
+    }
+
+    func finishIdentityChange() async {
+        guard identityChangeDepth > 0 else { return }
+        identityChangeDepth -= 1
+        guard identityChangeDepth == 0 else { return }
+        for executor in Array(values.values) { await executor.finishIdentityChange() }
+    }
 
     func value(for generation: UUID) -> OfflineCacheQueueExecutor? { values[generation] }
 
     func invalidate() async throws {
-        let executors = Array(values.values)
-        values.removeAll()
-        for executor in executors { try await executor.invalidateForAccountChange() }
+        let executors = values
+        var failure: (any Error)?
+        // Keep retiring executors visible until their writers have joined, so
+        // a concurrent identity migration cannot overlook an old account run.
+        for (generation, executor) in executors {
+            do { try await executor.invalidateForAccountChange() }
+            catch { if failure == nil { failure = error } }
+            values.removeValue(forKey: generation)
+        }
+        if let failure { throw failure }
     }
 
-    func setIfEmpty(_ executor: OfflineCacheQueueExecutor, generation: UUID) -> OfflineCacheQueueExecutor {
+    func setIfEmpty(_ executor: OfflineCacheQueueExecutor, generation: UUID) async -> OfflineCacheQueueExecutor {
         if let value = values[generation] {
             return value
         }
         values[generation] = executor
+        if identityChangeDepth > 0 {
+            do { try await executor.suspendForIdentityChange() }
+            catch { YamiboLog.offlineCache.error("Could not suspend new queue executor: \(error)") }
+        }
         return executor
     }
 }

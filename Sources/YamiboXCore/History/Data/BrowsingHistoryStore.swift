@@ -49,6 +49,8 @@ public actor BrowsingHistoryStore {
     ) async throws {
         do {
             try await database.write { db in
+                var entry = entry
+                entry.target = try MangaDirectoryIdentityDatabase.canonicalTarget(entry.target, in: db)
                 let deletions = try SyncDeletionState.load(from: "browsing_history_local_deletions", in: db)
                     .merging(SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
                 let record = BrowsingHistorySyncRecord(entry)
@@ -180,6 +182,7 @@ public actor BrowsingHistoryStore {
     public func entry(forID id: String) async -> BrowsingHistoryEntry? {
         do {
             return try await database.read { db in
+                let id = try Self.canonicalEntryID(id, in: db)
                 guard let row = try Row.fetchOne(
                     db,
                     sql: "SELECT * FROM browsing_history WHERE id = ? LIMIT 1",
@@ -198,10 +201,12 @@ public actor BrowsingHistoryStore {
         let synchronizesDeletion = await syncSettingsStore.load().isEnabled(.browsingHistory)
         do {
             let deletedSourceIDs = try await database.write { db in
+                let id = try Self.canonicalEntryID(id, in: db)
                 let entry = try Row.fetchOne(db, sql: "SELECT * FROM browsing_history WHERE id = ?", arguments: [id]).flatMap(Self.entry(from:))
                 var tids = Set([entry?.lastVisitedThreadID, entry?.chapterThreadID].compactMap { $0 })
-                if let name = entry?.target.mangaCleanBookName {
-                    tids.formUnion(try String.fetchAll(db, sql: "SELECT tid FROM manga_directory_chapters WHERE directory_name = ?", arguments: [name]))
+                if let directoryID = entry?.target.mangaID {
+                    let canonical = try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: directoryID), in: db)
+                    tids.formUnion(try String.fetchAll(db, sql: "SELECT tid FROM manga_directory_chapters WHERE directory_id = ?", arguments: [canonical.rawValue]))
                 }
                 let records = try BrowsingHistorySyncRecord.load(in: db)
                 let deleted = records.filter { $0.target.id == id || $0.threadID.map(tids.contains) == true }
@@ -349,8 +354,15 @@ public actor BrowsingHistoryStore {
             }
     }
 
+    private static func canonicalEntryID(_ id: String, in db: Database) throws -> String {
+        let prefix = "manga-title:"
+        guard id.hasPrefix(prefix) else { return id }
+        return prefix + (try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: String(id.dropFirst(prefix.count))), in: db)).rawValue
+    }
+
     private static func recordSyncVisit(_ entry: BrowsingHistoryEntry, in db: Database) throws {
-        let incoming = BrowsingHistorySyncRecord(entry)
+        var incoming = BrowsingHistorySyncRecord(entry)
+        incoming.target = try MangaDirectoryIdentityDatabase.canonicalTarget(incoming.target, in: db)
         let existing = try Data.fetchOne(db, sql: "SELECT record FROM browsing_history_sync_records WHERE id = ?", arguments: [incoming.id])
             .map { try JSONDecoder().decode(BrowsingHistorySyncRecord.self, from: $0) }
         let payload = try BrowsingHistoryWebDAVPayload(updatedAt: .distantPast,
@@ -371,13 +383,19 @@ public actor BrowsingHistoryStore {
     }
 
     func updateSyncSnapshot<T: Sendable>(
-        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<BrowsingHistorySyncRecord>) throws -> T
+        merging remote: SyncRecordSnapshot<BrowsingHistorySyncRecord>?,
+        _ transform: @escaping @Sendable (inout SyncRecordSnapshot<BrowsingHistorySyncRecord>, SyncRecordSnapshot<BrowsingHistorySyncRecord>?) throws -> T
     ) async throws -> T {
         let result = try await database.write { db in
-            var snapshot = SyncRecordSnapshot(records: try BrowsingHistorySyncRecord.load(in: db),
+            let previous = SyncRecordSnapshot(records: try BrowsingHistorySyncRecord.load(in: db),
                 deletions: try SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
-            let previous = snapshot
-            let result = try transform(&snapshot)
+            // A directory merge can commit after WebDAV payload normalization.
+            // Resolve both sides and their tombstones under the write lock,
+            // before conflict resolution or history projection groups by ID.
+            let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
+            var snapshot = try Self.canonicalSnapshot(previous, identities: identities)
+            let remote = try remote.map { try Self.canonicalSnapshot($0, identities: identities) }
+            let result = try transform(&snapshot, remote)
             snapshot.records.sort { $0.id < $1.id }
             guard snapshot != previous else { return (result, false) }
             try BrowsingHistorySyncRecord.save(snapshot.records, in: db)
@@ -395,6 +413,7 @@ public actor BrowsingHistoryStore {
                     entry.chapterTitle = local.chapterTitle
                     entry.chapterThreadID = local.chapterThreadID
                 }
+                entry.target = try MangaDirectoryIdentityDatabase.canonicalTarget(entry.target, in: db)
                 if let old = byID[entry.id], !Self.newestFirst(entry, old) { continue }
                 byID[entry.id] = entry
             }
@@ -408,12 +427,36 @@ public actor BrowsingHistoryStore {
         return result.0
     }
 
+    private static func canonicalSnapshot(
+        _ snapshot: SyncRecordSnapshot<BrowsingHistorySyncRecord>,
+        identities: MangaDirectoryIdentitySnapshot
+    ) throws -> SyncRecordSnapshot<BrowsingHistorySyncRecord> {
+        let records = snapshot.records.map { record in
+            var record = record
+            if case let .mangaTitle(id, title) = record.target {
+                let canonical = identities.canonicalID(id)
+                record.target = .mangaTitle(
+                    mangaID: canonical,
+                    cleanBookName: identities.titles[canonical] ?? title
+                )
+            }
+            return record
+        }
+        // Preserve unresolved legacy deletion markers and their import rules.
+        let deletions = try MangaDirectoryIdentityJSON.normalize(
+            JSONEncoder().encode(snapshot.deletions), identities: identities,
+            legacy: false, datasetID: "browsingHistory"
+        )
+        return SyncRecordSnapshot(records: records,
+            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
+    }
+
     static func newestFirst(_ lhs: BrowsingHistoryEntry, _ rhs: BrowsingHistoryEntry) -> Bool {
         lhs.lastVisitTime == rhs.lastVisitTime ? lhs.id < rhs.id : lhs.lastVisitTime > rhs.lastVisitTime
     }
 
     private static func upsert(_ entry: BrowsingHistoryEntry, in db: Database) throws {
-        let target = entry.target
+        let target = try MangaDirectoryIdentityDatabase.canonicalTarget(entry.target, in: db)
         try db.execute(
             sql: """
             INSERT INTO browsing_history
@@ -425,7 +468,7 @@ public actor BrowsingHistoryStore {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
-                entry.id,
+                target.id,
                 target.kind.rawValue,
                 target.threadID,
                 target.mangaID,
@@ -508,6 +551,8 @@ public actor BrowsingHistoryStore {
             Array(values[$0..<min($0 + size, values.count)])
         }
     }
+
+    public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
 
     private nonisolated func postChangeNotification() {
         changeBroadcaster.post()

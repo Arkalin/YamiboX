@@ -22,6 +22,13 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
     }
 
+    func observeDirectoryChanges() async {
+        for await _ in dependencies.mangaDirectoryStore.changes() {
+            guard !Task.isCancelled else { return }
+            await refreshMangaDirectoryManagementRows()
+        }
+    }
+
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
 
@@ -148,7 +155,7 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         var deletionError: Error?
         for id in normalizedIDs {
             do {
-                try await dependencies.mangaDirectoryStore.deleteDirectory(named: id)
+                try await dependencies.mangaDirectoryStore.deleteDirectory(id: MangaDirectoryID(rawValue: id))
             } catch {
                 deletionError = error
                 break

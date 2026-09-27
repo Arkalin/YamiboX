@@ -3,7 +3,31 @@ import Foundation
 struct MangaDirectorySyncRecord: Codable, Equatable, Sendable {
     var directory: MangaDirectory
     var modifiedAt: Date
-    var id: String { directory.cleanBookName }
+    /// Content lineage, independent of identity redirects imported by other datasets.
+    var contentIdentityIDs: Set<String>
+    var id: String { directory.id.rawValue }
+
+    init(directory: MangaDirectory, modifiedAt: Date, contentIdentityIDs: Set<String>? = nil) {
+        self.directory = directory
+        self.modifiedAt = modifiedAt
+        self.contentIdentityIDs = contentIdentityIDs ?? [directory.id.rawValue]
+    }
+
+    private enum CodingKeys: CodingKey { case directory, modifiedAt, contentIdentityIDs }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let directory = try values.decode(MangaDirectory.self, forKey: .directory)
+        self.init(directory: directory, modifiedAt: try values.decode(Date.self, forKey: .modifiedAt),
+            contentIdentityIDs: try values.decodeIfPresent(Set<String>.self, forKey: .contentIdentityIDs))
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(directory, forKey: .directory)
+        try values.encode(modifiedAt, forKey: .modifiedAt)
+        try values.encode(contentIdentityIDs.sorted(), forKey: .contentIdentityIDs)
+    }
 }
 
 struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
@@ -20,7 +44,11 @@ struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
         for record in payload.records {
             guard !record.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   record.id == record.id.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !record.directory.cleanBookName.isEmpty,
+                  record.directory.cleanBookName == record.directory.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines),
                   record.directory.chapters.allSatisfy({ !$0.tid.isEmpty && $0.tid == $0.tid.trimmingCharacters(in: .whitespacesAndNewlines) }),
+                  !record.contentIdentityIDs.isEmpty,
+                  record.contentIdentityIDs.allSatisfy({ !$0.isEmpty && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
                   Set(record.directory.chapters.map(\.tid)).count == record.directory.chapters.count else {
                 throw YamiboPersistenceError(context: "Invalid synchronized manga directory")
             }
@@ -37,10 +65,26 @@ struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
         result.deletions = deletions.merging(remote?.deletions ?? .init())
         var byID: [String: MangaDirectorySyncRecord] = [:]
         for record in records + (remote?.records ?? []) {
+            // A content union must not advance a deleted snapshot past its tombstone.
+            guard !result.deletions.containsDeletion(of: record.id, updatedAt: record.modifiedAt) else { continue }
             if let existing = byID[record.id] {
-                if existing.modifiedAt > record.modifiedAt { continue }
-                if existing.modifiedAt == record.modifiedAt,
-                   try WebDAVSyncFingerprint.make(existing) >= WebDAVSyncFingerprint.make(record) { continue }
+                let prefersExisting: Bool
+                if existing.modifiedAt == record.modifiedAt {
+                    prefersExisting = try WebDAVSyncFingerprint.make(existing) >= WebDAVSyncFingerprint.make(record)
+                } else {
+                    prefersExisting = existing.modifiedAt > record.modifiedAt
+                }
+                var winner = prefersExisting ? existing : record
+                let other = prefersExisting ? record : existing
+                if !winner.contentIdentityIDs.isSuperset(of: other.contentIdentityIDs) {
+                    winner.directory.chapters = MangaDirectoryMerge.mergeAndSort(other.directory.chapters, winner.directory.chapters)
+                    winner.contentIdentityIDs.formUnion(other.contentIdentityIDs)
+                    winner.modifiedAt = max(existing.modifiedAt, record.modifiedAt).addingTimeInterval(0.001)
+                }
+                // Once the winning content includes both origins, normal LWW
+                // refreshes (including deliberate chapter removals) remain intact.
+                byID[record.id] = winner
+                continue
             }
             byID[record.id] = record
         }
@@ -57,6 +101,8 @@ struct MangaDirectoryWebDAVParticipant: WebDAVSyncParticipant {
     let uploadsOnlyWhenMarkedDirty = true
     let uploadsUntrackedContentAutomatically = true
     let store: MangaDirectoryStore
+
+    func readLocalDeletionState() async throws -> SyncDeletionState? { try await store.syncSnapshot().deletions }
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         let payload = try MangaDirectoryWebDAVPayload.decode(data)
@@ -83,7 +129,11 @@ struct MangaDirectoryWebDAVParticipant: WebDAVSyncParticipant {
 
     private func merge(remoteData: Data?, at date: Date) async throws -> MangaDirectoryWebDAVPayload {
         let remote = try remoteData.map(MangaDirectoryWebDAVPayload.decode)
-        return try await store.updateSyncSnapshot { snapshot in
+        let remoteSnapshot = remote.map { SyncRecordSnapshot(records: $0.records, deletions: $0.deletions) }
+        return try await store.updateSyncSnapshot(merging: remoteSnapshot) { snapshot, remoteSnapshot in
+            let remote = remoteSnapshot.map {
+                MangaDirectoryWebDAVPayload(updatedAt: date, records: $0.records, deletions: $0.deletions)
+            }
             let merged = try MangaDirectoryWebDAVPayload(updatedAt: date, records: snapshot.records, deletions: snapshot.deletions).merging(remote)
             snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
             return merged

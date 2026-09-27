@@ -39,7 +39,7 @@ struct FavoriteLibraryDisplayState: Equatable {
 /// (`LocalFavoriteLibraryProjection.rawGroupedFavorites`), never on a
 /// same-guess coincidence alone, and this mosaic must not summarize the
 /// collection as more merged than its own card list actually shows.
-/// `LocalFavoriteLibraryDerivation.collectionPreviewTiles(_:mangaThreadItemsByEffectiveTitle:)`
+/// `LocalFavoriteLibraryDerivation.collectionPreviewTiles(_:mangaThreadItemsByGroupKey:)`
 /// is what performs the resolved-directory collapsing.
 struct LocalFavoriteCollectionPreviewTile: Equatable {
     let coverURL: URL?
@@ -99,12 +99,14 @@ enum LocalFavoriteLibraryDerivation {
         var boardReaderSettings: BoardReaderSettings = BoardReaderSettings()
         /// Non-nil only while a merged smart-comic card's "查看归档收藏" detail
         /// page is open — threaded straight into the `cards` query as
-        /// `LocalFavoriteLibraryQuery.memberScopeCleanBookName`. Deliberately
+        /// `LocalFavoriteLibraryQuery.memberScopeGroupKey`. Deliberately
         /// left `nil` for `rootDerived`'s own `Inputs` (see
         /// `FavoriteLibraryOrganizer.refreshDerivedState()`), the same way
         /// `rootDerived` already forces `selectedCollectionID` to `nil`, so
         /// the root screen never narrows to this scope.
-        var memberScopeCleanBookName: String? = nil
+        var memberScopeGroupKey: String? = nil
+        /// Temporary anchors for an archive opened before directory resolution.
+        var memberScopeThreadIDs: Set<String>? = nil
     }
 
     static func derive(_ inputs: Inputs) -> LocalFavoriteDerivedState {
@@ -121,11 +123,17 @@ enum LocalFavoriteLibraryDerivation {
         // CURRENT `inputs.document.items` — never hoisted up into
         // `FavoriteLibraryOrganizer` or cached across separate `derive(_:)`
         // calls, since `document.items` can change on every commit.
-        let mangaThreadItemsByEffectiveTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByEffectiveTitle(
+        var mangaThreadItemsByGroupKey = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: inputs.document.items,
             mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
             boardReaderSettings: inputs.boardReaderSettings
         )
+        if let key = inputs.memberScopeGroupKey, let threadIDs = inputs.memberScopeThreadIDs {
+            mangaThreadItemsByGroupKey[key] = inputs.document.items.filter {
+                $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID ?? "") &&
+                    inputs.boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
+            }
+        }
         let cards = resolvedCards(
             in: inputs.document,
             query: LocalFavoriteLibraryQuery(
@@ -136,10 +144,10 @@ enum LocalFavoriteLibraryDerivation {
                 sortOrder: inputs.filter.sortOrder,
                 sortsDescending: inputs.filter.sortDescending,
                 searchText: inputs.filter.searchText,
-                memberScopeCleanBookName: inputs.memberScopeCleanBookName
+                memberScopeGroupKey: inputs.memberScopeGroupKey
             ),
             inputs: inputs,
-            mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
         )
         // Every category's and every collection's entry count/aggregate
         // needs the exact same (grouped + tag-unioned + source/tag/search-
@@ -165,7 +173,7 @@ enum LocalFavoriteLibraryDerivation {
             readingProgress: inputs.readingProgress,
             mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
             boardReaderSettings: inputs.boardReaderSettings,
-            mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
         )
         let aggregates = collectionAggregates(inputs, allCardsAcrossScopes: allCardsAcrossScopes)
         let collectionCounts = aggregates.mapValues(\.entryCount)
@@ -188,7 +196,7 @@ enum LocalFavoriteLibraryDerivation {
                 // list (where `selectedCollectionID` stays `nil`), which let
                 // the current category's collections leak into the archive
                 // page's content.
-                collections: (inputs.selectedCollectionID == nil && inputs.memberScopeCleanBookName == nil)
+                collections: (inputs.selectedCollectionID == nil && inputs.memberScopeGroupKey == nil)
                     ? collections
                     : [],
                 collectionSummaries: aggregates.mapValues(\.sortSummary),
@@ -201,8 +209,8 @@ enum LocalFavoriteLibraryDerivation {
                 allCardsAcrossScopes: allCardsAcrossScopes
             ),
             collectionEntryCounts: collectionCounts,
-            sourceFilterEntryCounts: sourceFilterEntryCounts(inputs, mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle),
-            collectionPreviewTiles: collectionPreviewTiles(inputs, mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle)
+            sourceFilterEntryCounts: sourceFilterEntryCounts(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey),
+            collectionPreviewTiles: collectionPreviewTiles(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey)
         )
     }
 
@@ -212,7 +220,7 @@ enum LocalFavoriteLibraryDerivation {
         in document: FavoriteLibraryDocument,
         query: LocalFavoriteLibraryQuery,
         inputs: Inputs,
-        mangaThreadItemsByEffectiveTitle: [String: [FavoriteItem]]
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
     ) -> [FavoriteCardProjection] {
         LocalFavoriteLibraryProjection.cards(
             in: document,
@@ -220,7 +228,7 @@ enum LocalFavoriteLibraryDerivation {
             readingProgress: inputs.readingProgress,
             mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
             boardReaderSettings: inputs.boardReaderSettings,
-            mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
         )
         .map { card in
             var card = card
@@ -313,7 +321,7 @@ enum LocalFavoriteLibraryDerivation {
 
     private static func collectionPreviewTiles(
         _ inputs: Inputs,
-        mangaThreadItemsByEffectiveTitle: [String: [FavoriteItem]]
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
     ) -> [String: [LocalFavoriteCollectionPreviewTile]] {
         Dictionary(uniqueKeysWithValues: inputs.document.collections.map { collection in
             let location = FavoriteLocation.collection(categoryID: collection.categoryID, collectionID: collection.id)
@@ -375,7 +383,7 @@ enum LocalFavoriteLibraryDerivation {
                 // A second/third member of the same resolved-directory group
                 // already produced this group's one tile — skip, rather than
                 // adding another.
-                guard seenEffectiveTitles.insert(effectiveTitle).inserted else { continue }
+                guard seenEffectiveTitles.insert(mangaDirectory.id.rawValue).inserted else { continue }
 
                 // The group's full membership (possibly reaching beyond this
                 // collection — decision #5: a merged group is global) decides
@@ -383,9 +391,9 @@ enum LocalFavoriteLibraryDerivation {
                 // which collection it's viewed from — mirrors `card(for:)`'s
                 // own "freshest of any member" logic, just keyed on
                 // `updatedAt` since that's what this function sorts by.
-                let groupMembers = mangaThreadItemsByEffectiveTitle[effectiveTitle] ?? [item]
+                let groupMembers = mangaThreadItemsByGroupKey[mangaDirectory.id.rawValue] ?? [item]
                 let sortDate = groupMembers.map(\.updatedAt).max() ?? item.updatedAt
-                let coverURL = inputs.coverURLsByKey[.smartManga(cleanBookName: mangaDirectory.cleanBookName)]
+                let coverURL = inputs.coverURLsByKey[.smartManga(directoryID: mangaDirectory.id)]
                 candidates.append(CollectionPreviewCandidate(sortDate: sortDate, coverURL: coverURL, title: effectiveTitle))
             }
 
@@ -399,7 +407,7 @@ enum LocalFavoriteLibraryDerivation {
 
     private static func sourceFilterEntryCounts(
         _ inputs: Inputs,
-        mangaThreadItemsByEffectiveTitle: [String: [FavoriteItem]]
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
     ) -> [LocalFavoriteSourceFilter: Int] {
         let allCards = resolvedCards(
             in: inputs.document,
@@ -412,7 +420,7 @@ enum LocalFavoriteLibraryDerivation {
                 searchText: inputs.filter.searchText
             ),
             inputs: inputs,
-            mangaThreadItemsByEffectiveTitle: mangaThreadItemsByEffectiveTitle
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
         )
         return Dictionary(grouping: allCards) { card in
             LocalFavoriteSourceFilter.key(for: card.item)

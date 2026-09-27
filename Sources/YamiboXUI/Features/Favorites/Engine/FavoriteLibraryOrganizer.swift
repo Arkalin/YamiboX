@@ -61,22 +61,16 @@ final class FavoriteLibraryOrganizer {
             persistNavigationState()
         }
     }
-    /// Non-nil while a smart-comic card's "查看归档收藏" detail page is open —
-    /// the effective title (`FavoriteCardProjection.resolvedTitle`) every
-    /// member on that page currently resolves to. Despite the property's
-    /// name this is not always an actually-resolved `MangaDirectory`'s
-    /// `cleanBookName` — it can equally be a locally-guessed clean title for
-    /// a still-unresolved favorite (see `resolvedTitle`'s doc comment).
+    /// The open archive's stable directory ID, or a transient display-group
+    /// key while its original member threads have not resolved together.
     /// Mirrors `selectedCollectionID`'s own navigation-state shape but is
     /// deliberately not persisted through `SettingsStore` (see
     /// `persistNavigationState()`): this scope is a live identity, not
     /// durable navigation state worth restoring across launches.
-    private(set) var selectedMergedGroupCleanBookName: String? = nil {
-        didSet {
-            selection.clearSelection()
-            refreshDerivedState()
-        }
-    }
+    private(set) var selectedMergedGroupKey: String? = nil
+    /// Only a transient, unresolved archive needs chapter anchors. Keep its
+    /// original members visible until all surviving members resolve together.
+    private var unresolvedMergedGroupThreadIDs: Set<String>?
     var filter = LocalFavoriteFilterState() {
         didSet {
             guard filter != oldValue else { return }
@@ -312,9 +306,8 @@ final class FavoriteLibraryOrganizer {
 
     /// Tag IDs shared by every selected favorite; seed for bulk tag editing.
     var commonTagIDsForSelection: Set<String> {
-        let selectedItems = derived.cards
-            .map(\.item)
-            .filter { selection.selectedFavoriteIDs.contains($0.id) }
+        let selectedIDs = expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs)
+        let selectedItems = document.items.filter { selectedIDs.contains($0.id) }
         guard let first = selectedItems.first else { return [] }
         return selectedItems.dropFirst().reduce(Set(first.tagIDs)) { partialResult, item in
             partialResult.intersection(Set(item.tagIDs))
@@ -554,6 +547,22 @@ final class FavoriteLibraryOrganizer {
     /// also sees the directory identity transaction. Do not issue a second
     /// progress query here or let a late manual read overwrite a newer snapshot.
     private func reloadMangaDirectories() async {
+        if let store = mangaDirectoryStore {
+            if let key = selectedMergedGroupKey,
+               let directory = try? await store.directory(id: MangaDirectoryID(rawValue: key)),
+               directory.id.rawValue != key {
+                selectedMergedGroupKey = directory.id.rawValue
+            }
+            var normalizedSelection = selection.selectedFavoriteIDs
+            for key in selection.selectedFavoriteIDs {
+                if let directory = try? await store.directory(id: MangaDirectoryID(rawValue: key)),
+                   directory.id.rawValue != key {
+                    normalizedSelection.remove(key)
+                    normalizedSelection.insert(directory.id.rawValue)
+                }
+            }
+            selection.replaceFavoriteSelection(with: normalizedSelection)
+        }
         mangaDirectoriesByTID = await resolveMangaDirectories(for: document.items, boardReaderSettings: boardReaderSettings)
         let expectedRevision = coverLookupRevision
         let smartCovers = await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
@@ -709,13 +718,56 @@ final class FavoriteLibraryOrganizer {
     /// title (`FavoriteCardProjection.resolvedTitle`) currently matches
     /// `cleanBookName` — one item for a still-solitary smart card, 2+ for an
     /// actually merged one. Mirrors `openCollection(id:)` exactly.
-    func openMergedGroup(cleanBookName: String) {
-        selectedMergedGroupCleanBookName = cleanBookName
+    var selectedMergedGroupTitle: String? {
+        guard let key = selectedMergedGroupKey else { return nil }
+        return mangaDirectoriesByTID.values.first(where: { $0.id.rawValue == key })?.cleanBookName
+            ?? (key.hasPrefix("unresolved-title:") ? String(key.dropFirst("unresolved-title:".count)) : nil)
+    }
+
+    func openMergedGroup(key: String) {
+        unresolvedMergedGroupThreadIDs = key.hasPrefix("unresolved-title:")
+            ? Set(LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
+                in: document.items,
+                mangaDirectoriesByTID: mangaDirectoriesByTID,
+                boardReaderSettings: boardReaderSettings
+            )[key, default: []].compactMap { $0.target.threadID })
+            : nil
+        selectedMergedGroupKey = key
+        selection.clearSelection()
+        refreshDerivedState()
     }
 
     /// Mirrors `closeCollection()` exactly.
     func closeMergedGroup() {
-        selectedMergedGroupCleanBookName = nil
+        selectedMergedGroupKey = nil
+        unresolvedMergedGroupThreadIDs = nil
+        selection.clearSelection()
+        refreshDerivedState()
+    }
+
+    private func resolveUnresolvedMergedGroupScope() {
+        guard var threadIDs = unresolvedMergedGroupThreadIDs, let key = selectedMergedGroupKey else { return }
+        // Keep the unresolved page live for newly favorited chapters, while
+        // retaining its previous members after their display grouping changes.
+        let currentMembers = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
+            in: document.items,
+            mangaDirectoriesByTID: mangaDirectoriesByTID,
+            boardReaderSettings: boardReaderSettings
+        )[key, default: []]
+        threadIDs.formUnion(currentMembers.compactMap { $0.target.threadID })
+        unresolvedMergedGroupThreadIDs = threadIDs
+        let survivingMembers = document.items.filter {
+            $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID ?? "") &&
+                boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
+        }
+        guard !survivingMembers.isEmpty else { return }
+        let directories = survivingMembers.compactMap { mangaDirectoriesByTID[$0.target.threadID ?? ""] }
+        let ids = Set(directories.map(\.id))
+        // A guessed title can cover several real works. Neither partially
+        // resolved members nor conflicting IDs justify selecting one of them.
+        guard directories.count == survivingMembers.count, ids.count == 1, let id = ids.first else { return }
+        selectedMergedGroupKey = id.rawValue
+        unresolvedMergedGroupThreadIDs = nil
     }
 
     // MARK: - Tags
@@ -923,6 +975,7 @@ final class FavoriteLibraryOrganizer {
             needsCoalescedDerivedRefresh = true
             return
         }
+        resolveUnresolvedMergedGroupScope()
         derived = LocalFavoriteLibraryDerivation.derive(
             LocalFavoriteLibraryDerivation.Inputs(
                 document: document,
@@ -934,13 +987,14 @@ final class FavoriteLibraryOrganizer {
                 textCoverForcedKeys: coverLookup.forcedKeys,
                 mangaDirectoriesByTID: mangaDirectoriesByTID,
                 boardReaderSettings: boardReaderSettings,
-                memberScopeCleanBookName: selectedMergedGroupCleanBookName
+                memberScopeGroupKey: selectedMergedGroupKey,
+                memberScopeThreadIDs: unresolvedMergedGroupThreadIDs
             )
         )
         // `derived` can now be scoped by an open merged group even while no
         // collection is open, so the old `selectedCollectionID == nil`
         // shortcut alone is no longer sufficient — it must also gate on
-        // `selectedMergedGroupCleanBookName` (see `isBrowsingUnscopedRoot`),
+        // `selectedMergedGroupKey` (see `isBrowsingUnscopedRoot`),
         // or `rootDerived` would silently inherit the merged-group scope in
         // that case (opening a merged group's detail page directly from the
         // root, not from inside a collection) and defeat the whole point of
@@ -958,12 +1012,12 @@ final class FavoriteLibraryOrganizer {
                     textCoverForcedKeys: coverLookup.forcedKeys,
                     mangaDirectoriesByTID: mangaDirectoriesByTID,
                     boardReaderSettings: boardReaderSettings
-                    // `memberScopeCleanBookName` intentionally omitted (nil
+                    // `memberScopeGroupKey` intentionally omitted (nil
                     // default): `rootDerived` must never narrow to this scope.
                 )
             )
         selection.prune(
-            validFavoriteIDs: Set(document.items.map(\.id)),
+            validFavoriteIDs: Set(document.items.map(\.id)).union(document.items.map { selectionID(for: $0) }),
             validCollectionIDs: Set(document.collections.map(\.id))
         )
     }

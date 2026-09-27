@@ -93,8 +93,8 @@ struct LocalFavoritesRootView: View {
             onOpen: { item, mode, mangaScope, transition in
                 await open(item, mode: mode, mangaScope: mangaScope, transition: transition)
             },
-            onOpenMangaDirectory: { cleanBookName in
-                await openMangaDirectoryEvent(cleanBookName: cleanBookName)
+            onOpenMangaDirectory: { directoryID in
+                await openMangaDirectoryEvent(directoryID: directoryID)
             },
             onOpenBoard: { board in
                 appModel.openForumURL(
@@ -160,15 +160,15 @@ struct LocalFavoritesRootView: View {
     /// Re-derives and opens a smart-manga update event's target from its
     /// `cleanBookName` alone (a directory-mode event carries no pointer to
     /// one specific favorite — see `FavoriteUpdateTargetKey.mangaDirectory`).
-    private func openMangaDirectoryEvent(cleanBookName: String) async {
+    private func openMangaDirectoryEvent(directoryID: MangaDirectoryID) async {
         do {
-            guard let target = try await openTargetResolver.openTarget(forMangaDirectoryCleanBookName: cleanBookName) else {
+            guard let target = try await openTargetResolver.openTarget(forMangaDirectoryID: directoryID) else {
                 organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                 return
             }
             await present(target)
         } catch {
-            YamiboLog.library.error("Failed to resolve open target for manga directory update \(cleanBookName): \(error.localizedDescription)")
+            YamiboLog.library.error("Failed to resolve open target for manga directory update \(directoryID.rawValue): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 organizer.errorMessage = error.localizedDescription
                 organizer.errorDetails = LoadFailureDetails(error: error)

@@ -303,6 +303,7 @@ final class MangaDetailViewModel {
             chapterView: manga?.chapterView ?? fallbackChapterView,
             initialPage: manga?.mangaPageIndex ?? 0,
             directoryName: directory.cleanBookName,
+            directoryID: directory.id,
             // See the comment in `reload()`: this view model only exists
             // for mode-on boards.
             isSmartModeEnabled: true,
@@ -318,6 +319,7 @@ final class MangaDetailViewModel {
             source: .forum,
             chapterView: chapter.view,
             directoryName: directory?.cleanBookName ?? context.directoryNameHint,
+            directoryID: directory?.id,
             // See the comment in `reload()`: this view model only exists
             // for mode-on boards.
             isSmartModeEnabled: true,
@@ -483,35 +485,16 @@ final class MangaDetailViewModel {
 
         do {
             let workflow = makeDirectoryWorkflow()
-            let oldName = directory.cleanBookName
             let updated = try await workflow.renameDirectory(
                 directory,
                 cleanBookName: draft.cleanBookName,
                 searchKeyword: MangaDirectoryWorkflow.searchKeyword(from: draft)
             )
-            var cacheRenameError: Error?
-            if oldName != updated.cleanBookName {
-                // Database identities have committed together; the separate
-                // offline filesystem migration remains best effort.
-                if let offlineCacheStore = dependencies.mangaOfflineCacheStore {
-                    do {
-                        try await offlineCacheStore.renameMangaOfflineCacheOwner(from: oldName, to: updated.cleanBookName)
-                    } catch {
-                        YamiboLog.offlineCache.error("Failed to rename offline cache owner directory after manga rename: \(error.localizedDescription)")
-                        cacheRenameError = error
-                    }
-                }
-            }
             guard !Task.isCancelled else { return }
             self.directory = updated
             readingProgress = await loadReadingProgress()
             contentCover = await loadContentCover()
             startAutomaticCoverResolutionIfNeeded()
-            directoryActionErrorMessage = cacheRenameError?.localizedDescription
-            if let cacheRenameError, !LoadDiagnosticError.isCancellation(cacheRenameError) {
-                directoryActionErrorDetails = LoadFailureDetails(error: cacheRenameError)
-                favoriteActions.transientFeedback = .failure(cacheRenameError)
-            }
         } catch is CancellationError {
         } catch {
             guard !Task.isCancelled else { return }
@@ -600,11 +583,8 @@ final class MangaDetailViewModel {
     }
 
     private func loadContentCover() async -> ContentCover? {
-        guard let cleanBookName = directory?.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines),
-              !cleanBookName.isEmpty else {
-            return nil
-        }
-        return await dependencies.contentCoverStore.cover(for: .smartManga(cleanBookName: cleanBookName))
+        guard let directory else { return nil }
+        return await dependencies.contentCoverStore.cover(for: .smartManga(directoryID: directory.id))
     }
 
     /// Re-resolves `directory` (and its derived `contentCover`/
@@ -639,7 +619,7 @@ final class MangaDetailViewModel {
         let cleanBookName = directory.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanBookName.isEmpty,
               let firstChapter = directory.chapters.first,
-              !attemptedAutomaticCoverBookNames.contains(cleanBookName) else {
+              !attemptedAutomaticCoverBookNames.contains(directory.id.rawValue) else {
             return
         }
         // Same missing-check as the favorites backfill: a text-cover-forced
@@ -648,15 +628,15 @@ final class MangaDetailViewModel {
         if let contentCover, contentCover.textCoverForced || contentCover.resolvedURL != nil {
             return
         }
-        attemptedAutomaticCoverBookNames.insert(cleanBookName)
+        attemptedAutomaticCoverBookNames.insert(directory.id.rawValue)
         automaticCoverResolutionTask = Task { @MainActor [weak self] in
-            await self?.performAutomaticCoverResolution(cleanBookName: cleanBookName, chapterTID: firstChapter.tid)
+            await self?.performAutomaticCoverResolution(directoryID: directory.id, cleanBookName: cleanBookName, chapterTID: firstChapter.tid)
             self?.automaticCoverResolutionTask = nil
         }
     }
 
-    private func performAutomaticCoverResolution(cleanBookName: String, chapterTID: String) async {
-        let key = ContentCoverKey.smartManga(cleanBookName: cleanBookName)
+    private func performAutomaticCoverResolution(directoryID: MangaDirectoryID, cleanBookName: String, chapterTID: String) async {
+        let key = ContentCoverKey.smartManga(directoryID: directoryID)
         let store = dependencies.contentCoverStore
         // Re-check right before resolving: the favorites backfill or a
         // manual cover action may have raced a cover in since this page

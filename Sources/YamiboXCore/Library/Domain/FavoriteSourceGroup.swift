@@ -2,10 +2,8 @@ import Foundation
 
 public enum FavoriteSourceGroup: Codable, Hashable, Sendable {
     case forumBoard(id: String, label: String)
-    /// Renamed from `.mangaTitle` (smart-comic-mode design decision #9): the
-    /// favorites-page display/sort grouping label for manga. No behavior
-    /// change, pure rename (including its wire format — no shipped user data
-    /// exists yet, see [[yamiboreader-no-data-compat]]).
+    /// A resolved directory group, identified by its persisted directory ID.
+    /// The name is a display snapshot and is not part of identity equality.
     case smartManga(mangaID: String, cleanBookName: String)
     case unknown
 
@@ -122,12 +120,5 @@ public enum FavoriteSourceGroup: Codable, Hashable, Sendable {
             }
             return (.forumBoard(id: trimmedForumID, label: trimmedForumName ?? trimmedForumID), trimmedForumID, trimmedForumName)
         }
-    }
-}
-
-public extension FavoriteSourceGroup {
-    static func smartManga(cleanBookName: String) -> FavoriteSourceGroup {
-        let normalizedName = cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .smartManga(mangaID: normalizedName, cleanBookName: normalizedName)
     }
 }

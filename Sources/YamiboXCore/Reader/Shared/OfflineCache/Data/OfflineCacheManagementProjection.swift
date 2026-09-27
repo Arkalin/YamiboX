@@ -50,7 +50,8 @@ extension OfflineCacheStore {
             builder.imageURLStrings.formUnion(membership.imageURLs.map(\.absoluteString))
             builder.updatedAt = max(builder.updatedAt, membership.createdAt)
             builders[entryID] = builder
-            recordGroupTitle(membership.ownerName, updatedAt: membership.createdAt, groupID: entryID.groupID, in: &groupTitles)
+            let ownerTitle = try mangaOwnerTitle(membership.ownerName, in: db)
+            recordGroupTitle(ownerTitle, updatedAt: membership.createdAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
         for entry in try allNovelEntries(in: db) {
@@ -87,7 +88,8 @@ extension OfflineCacheStore {
             builder.workID = OfflineCacheWorkID(readerKind: work.readerKind, rawValue: work.workID)
             builder.imageURLStrings.formUnion((work.targetImageURLs + work.completedImageURLs).map(\.absoluteString))
             builders[entryID] = builder
-            recordGroupTitle(work.ownerTitle, updatedAt: work.updatedAt, groupID: entryID.groupID, in: &groupTitles)
+            let ownerTitle = work.readerKind == .manga ? try mangaOwnerTitle(work.ownerKey, fallback: work.ownerTitle, in: db) : work.ownerTitle
+            recordGroupTitle(ownerTitle, updatedAt: work.updatedAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
         let entries = try builders.values.map { builder in

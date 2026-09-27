@@ -309,11 +309,11 @@ struct ReaderBookmarkListView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
-        .task {
+        .task(id: work) {
             publishNavigationState()
             await load()
         }
-        .task {
+        .task(id: work) {
             // Same appearance-scoped observation pattern the reader uses for
             // the Like store: one stream, torn down with the view.
             for await _ in bookmarkStore.changes() {

@@ -37,6 +37,7 @@ final class OfflineCacheQueueViewModel {
     private let dependencies: AccountDependencies
     @ObservationIgnored private var controller: (any OfflineCacheQueueControlling)?
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var directoryUpdatesTask: Task<Void, Never>?
 
     init(
         dependencies: AccountDependencies,
@@ -48,6 +49,7 @@ final class OfflineCacheQueueViewModel {
 
     deinit {
         updatesTask?.cancel()
+        directoryUpdatesTask?.cancel()
     }
 
     var isEmpty: Bool {
@@ -234,6 +236,13 @@ final class OfflineCacheQueueViewModel {
                 await self?.refresh()
             }
         }
+        let directoryUpdates = dependencies.mangaDirectoryStore.changes()
+        directoryUpdatesTask = Task { @MainActor [weak self] in
+            for await _ in directoryUpdates {
+                guard !Task.isCancelled else { return }
+                await self?.refresh()
+            }
+        }
     }
 
     private func directoriesByOwnerName(
@@ -244,7 +253,7 @@ final class OfflineCacheQueueViewModel {
             guard work.groupID.readerKind == .manga else { continue }
             guard directoriesByOwnerName[work.groupID.ownerKey] == nil else { continue }
             do {
-                if let directory = try await dependencies.mangaDirectoryStore.directory(named: work.groupID.ownerKey) {
+                if let directory = try await dependencies.mangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: work.groupID.ownerKey)) {
                     directoriesByOwnerName[work.groupID.ownerKey] = directory
                 }
             } catch {

@@ -78,6 +78,9 @@ protocol WebDAVSyncParticipant: Sendable {
     /// File name of this dataset inside the remote WebDAV sync directory.
     var remoteFileName: String { get }
 
+    /// A format upgrade reads this resource once, but never writes to it.
+    var legacyRemoteFileName: String? { get }
+
     /// When true, automatic sync uploads this dataset only after it has been
     /// marked dirty through fingerprint-based change detection. Manual uploads
     /// always include the dataset.
@@ -102,13 +105,19 @@ protocol WebDAVSyncParticipant: Sendable {
     /// Stable fingerprint of the locally stored dataset, or nil when the dataset
     /// does not use fingerprint-based change detection.
     func readLocalFingerprint() async throws -> String?
+
+    /// Historical name deletions are applied before a legacy payload's keys
+    /// are upgraded, not to the surviving identity of a renamed directory.
+    func readLocalDeletionState() async throws -> SyncDeletionState?
 }
 
 extension WebDAVSyncParticipant {
+    var legacyRemoteFileName: String? { nil }
     var uploadsOnlyWhenMarkedDirty: Bool { false }
     var uploadsUntrackedContentAutomatically: Bool { false }
 
     func readLocalFingerprint() async throws -> String? { nil }
+    func readLocalDeletionState() async throws -> SyncDeletionState? { nil }
 
     func localFingerprint() async -> String? { try? await readLocalFingerprint() }
 

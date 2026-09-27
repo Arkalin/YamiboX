@@ -100,6 +100,7 @@ enum YamiboDatabase {
         for module in schemaModules {
             module.registerMigrations(in: &migrator)
         }
+        MangaDirectoryIdentityDatabase.registerMigration(in: &migrator)
         try migrator.migrate(writer)
     }
 
@@ -112,6 +113,7 @@ enum YamiboDatabase {
             for module in schemaModules {
                 try module.erase(in: db)
             }
+            try db.execute(sql: "DELETE FROM manga_identity_aliases; DELETE FROM manga_identity_redirects; DELETE FROM manga_identities")
         }
         let cacheDirectory = cacheDirectoryURL(rootDirectory: rootDirectory, fileManager: fileManager)
         if fileManager.fileExists(atPath: cacheDirectory.path) {

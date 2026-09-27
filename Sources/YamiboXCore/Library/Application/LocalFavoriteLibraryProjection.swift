@@ -17,7 +17,7 @@ public enum LocalFavoriteLibraryProjection {
         // consulting `boardReaderSettings`.
         mangaDirectoriesByTID: [String: MangaDirectory] = [:],
         boardReaderSettings: BoardReaderSettings = BoardReaderSettings(),
-        // Precomputed `mangaThreadItemsByEffectiveTitle(in:mangaDirectoriesByTID:
+        // Precomputed `mangaThreadItemsByGroupKey(in:mangaDirectoriesByTID:
         // boardReaderSettings:)` result, when a caller that needs it for
         // several keys within one derivation (`LocalFavoriteLibraryDerivation`)
         // has already built it once. `nil` (the default, so every existing
@@ -25,12 +25,12 @@ public enum LocalFavoriteLibraryProjection {
         // from `document.items` itself — still always freshly computed from
         // the CURRENT items, never cached across separate `cards(...)` calls,
         // just no longer rebuilt once per smart card WITHIN this one call.
-        mangaThreadItemsByEffectiveTitle: [String: [FavoriteItem]]? = nil
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil
     ) -> [FavoriteCardProjection] {
         let categoryID = query.categoryID ?? document.defaultCategory.id
         let progressByKey = readingProgressLookup(readingProgress)
         let trimmedSearch = query.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedMangaThreadItemsByEffectiveTitle = mangaThreadItemsByEffectiveTitle ?? Self.mangaThreadItemsByEffectiveTitle(
+        let resolvedMangaThreadItemsByEffectiveTitle = mangaThreadItemsByGroupKey ?? Self.mangaThreadItemsByGroupKey(
             in: document.items,
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
@@ -40,7 +40,7 @@ public enum LocalFavoriteLibraryProjection {
         // identity instead of the usual category/collection membership:
         // every mode-on `.mangaThread` favorite whose own
         // `FavoriteCardProjection.resolvedTitle(item:mangaDirectory:
-        // isModeOnMangaThread:)` currently matches `memberScopeCleanBookName`
+        // isModeOnMangaThread:)` currently matches `memberScopeGroupKey`
         // — not just favorites with an actually-resolved directory, so a
         // favorite still on the local-clean fallback (no directory resolved
         // locally yet) also participates whenever its independently-computed
@@ -63,9 +63,9 @@ public enum LocalFavoriteLibraryProjection {
         // collection/source/tag filters apply, to the resulting entries'
         // *union* locations/tags rather than any one member's own.
         let entries: [GroupedFavoriteEntry]
-        let isMemberScoped = query.memberScopeCleanBookName != nil
-        if let memberScopeCleanBookName = query.memberScopeCleanBookName {
-            entries = (resolvedMangaThreadItemsByEffectiveTitle[memberScopeCleanBookName] ?? [])
+        let isMemberScoped = query.memberScopeGroupKey != nil
+        if let memberScopeGroupKey = query.memberScopeGroupKey {
+            entries = (resolvedMangaThreadItemsByEffectiveTitle[memberScopeGroupKey] ?? [])
                 .map { GroupedFavoriteEntry(representativeItem: $0, members: nil, mangaDirectory: nil) }
         } else {
             entries = groupedCardEntries(
@@ -121,7 +121,7 @@ public enum LocalFavoriteLibraryProjection {
     /// equivalent to calling `cards(in:query:...)` once per id and
     /// concatenating, just O(N) instead of O(ids × N).
     ///
-    /// Never valid for a member-scoped query (`memberScopeCleanBookName`) —
+    /// Never valid for a member-scoped query (`memberScopeGroupKey`) —
     /// that scope already ignores category/collection entirely, so there is
     /// nothing here to bucket by; callers needing per-category/collection
     /// buckets never set it.
@@ -131,11 +131,11 @@ public enum LocalFavoriteLibraryProjection {
         readingProgress: [ReadingProgressRecord] = [],
         mangaDirectoriesByTID: [String: MangaDirectory] = [:],
         boardReaderSettings: BoardReaderSettings = BoardReaderSettings(),
-        mangaThreadItemsByEffectiveTitle: [String: [FavoriteItem]]? = nil
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil
     ) -> [FavoriteCardProjection] {
         let progressByKey = readingProgressLookup(readingProgress)
         let trimmedSearch = query.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedMangaThreadItemsByEffectiveTitle = mangaThreadItemsByEffectiveTitle ?? Self.mangaThreadItemsByEffectiveTitle(
+        let resolvedMangaThreadItemsByEffectiveTitle = mangaThreadItemsByGroupKey ?? Self.mangaThreadItemsByGroupKey(
             in: document.items,
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
@@ -224,14 +224,10 @@ public enum LocalFavoriteLibraryProjection {
                     // bulk-operation expansion) keeps all three permanently
                     // in sync: this exact feature has already hit the "two
                     // semantics for the same card" class of bug twice today
-                    // (see `LocalFavoriteLibraryQuery.memberScopeCleanBookName`
+                    // (see `LocalFavoriteLibraryQuery.memberScopeGroupKey`
                     // and this function's own doc comments above), and this
                     // is the fix for a third instance of it.
-                    let effectiveTitle = FavoriteCardProjection.resolvedTitle(
-                        item: entry.representativeItem,
-                        mangaDirectory: entry.mangaDirectory,
-                        isModeOnMangaThread: true
-                    )
+                    let effectiveTitle = FavoriteCardProjection.groupKey(item: entry.representativeItem, mangaDirectory: entry.mangaDirectory)
                     let archived = resolvedMangaThreadItemsByEffectiveTitle[effectiveTitle] ?? []
                     var unionTagIDs: [String] = []
                     var seenTagIDs: Set<String> = []
@@ -254,7 +250,7 @@ public enum LocalFavoriteLibraryProjection {
 
     /// Every individual favorite currently "archived" under a smart card
     /// showing `cleanBookName` as its `resolvedTitle` — the exact predicate
-    /// `cards(in:query:...)`'s `memberScopeCleanBookName` branch uses to
+    /// `cards(in:query:...)`'s `memberScopeGroupKey` branch uses to
     /// build the "查看归档收藏" detail page, extracted here so other callers
     /// (the tag-union computation above, and
     /// `FavoriteLibraryOrganizer.expandedSelectionFavoriteIDs` for bulk
@@ -262,7 +258,7 @@ public enum LocalFavoriteLibraryProjection {
     /// same membership without duplicating or drifting from it. One
     /// solitary favorite with no directory at all, or no siblings, still
     /// correctly matches only itself. See the member-scope doc comment on
-    /// `LocalFavoriteLibraryQuery.memberScopeCleanBookName` for the full
+    /// `LocalFavoriteLibraryQuery.memberScopeGroupKey` for the full
     /// rationale of matching on `resolvedTitle` rather than an actually-
     /// resolved `MangaDirectory` alone.
     public static func archivedItems(
@@ -271,7 +267,7 @@ public enum LocalFavoriteLibraryProjection {
         mangaDirectoriesByTID: [String: MangaDirectory],
         boardReaderSettings: BoardReaderSettings
     ) -> [FavoriteItem] {
-        mangaThreadItemsByEffectiveTitle(
+        mangaThreadItemsByGroupKey(
             in: items,
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
@@ -292,7 +288,7 @@ public enum LocalFavoriteLibraryProjection {
     /// `items` on every call that needs it (never cached across separate
     /// derivations) — only the redundant re-scanning *within* one such call
     /// is what this removes.
-    public static func mangaThreadItemsByEffectiveTitle(
+    public static func mangaThreadItemsByGroupKey(
         in items: [FavoriteItem],
         mangaDirectoriesByTID: [String: MangaDirectory],
         boardReaderSettings: BoardReaderSettings
@@ -317,11 +313,7 @@ public enum LocalFavoriteLibraryProjection {
             // fallback (no directory resolved yet) also joins this scope
             // whenever its own independently-computed guess happens to
             // match.
-            let effectiveTitle = FavoriteCardProjection.resolvedTitle(
-                item: item,
-                mangaDirectory: directory,
-                isModeOnMangaThread: true
-            )
+            let effectiveTitle = FavoriteCardProjection.groupKey(item: item, mangaDirectory: directory)
             itemsByEffectiveTitle[effectiveTitle, default: []].append(item)
         }
         return itemsByEffectiveTitle
@@ -437,8 +429,8 @@ public enum LocalFavoriteLibraryProjection {
         }
 
         var standalone: [FavoriteItem] = []
-        var membersByDirectoryID: [String: [FavoriteItem]] = [:]
-        var directoryByID: [String: MangaDirectory] = [:]
+        var membersByDirectoryID: [MangaDirectoryID: [FavoriteItem]] = [:]
+        var directoryByID: [MangaDirectoryID: MangaDirectory] = [:]
 
         for item in items {
             guard item.target.kind == .mangaThread,

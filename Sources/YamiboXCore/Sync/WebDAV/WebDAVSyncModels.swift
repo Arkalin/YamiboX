@@ -54,6 +54,10 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     /// dataset. Revision-bearing counterpart of
     /// `lastAppliedRemoteUpdatedAtByDatasetID`.
     public var lastAppliedRemoteRevisionByDatasetID: [String: UInt64]
+    /// Successful one-way imports, scoped to remote location, account and dataset.
+    public var completedMangaIdentityImports: Set<String>
+    /// Scope of the active new-format baseline, independent of import history.
+    public var mangaIdentityBaselineScopeByDatasetID: [String: String]
 
     public init(
         baseURLString: String = "",
@@ -69,7 +73,9 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         lastSyncedFingerprintByDatasetID: [String: String] = [:],
         lastAppliedRemoteUpdatedAtByDatasetID: [String: Date] = [:],
         localRevisionByDatasetID: [String: UInt64] = [:],
-        lastAppliedRemoteRevisionByDatasetID: [String: UInt64] = [:]
+        lastAppliedRemoteRevisionByDatasetID: [String: UInt64] = [:],
+        completedMangaIdentityImports: Set<String> = [],
+        mangaIdentityBaselineScopeByDatasetID: [String: String] = [:]
     ) {
         self.baseURLString = baseURLString
         self.username = username
@@ -85,6 +91,8 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         self.lastAppliedRemoteUpdatedAtByDatasetID = lastAppliedRemoteUpdatedAtByDatasetID
         self.localRevisionByDatasetID = localRevisionByDatasetID
         self.lastAppliedRemoteRevisionByDatasetID = lastAppliedRemoteRevisionByDatasetID
+        self.completedMangaIdentityImports = completedMangaIdentityImports
+        self.mangaIdentityBaselineScopeByDatasetID = mangaIdentityBaselineScopeByDatasetID
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -101,6 +109,8 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         case lastAppliedRemoteUpdatedAtByDatasetID
         case localRevisionByDatasetID
         case lastAppliedRemoteRevisionByDatasetID
+        case completedMangaIdentityImports
+        case mangaIdentityBaselineScopeByDatasetID
     }
 
     /// Every field decodes with `decodeIfPresent ?? default` (the same
@@ -124,7 +134,9 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
             lastSyncedFingerprintByDatasetID: try container.decodeIfPresent([String: String].self, forKey: .lastSyncedFingerprintByDatasetID) ?? [:],
             lastAppliedRemoteUpdatedAtByDatasetID: try container.decodeIfPresent([String: Date].self, forKey: .lastAppliedRemoteUpdatedAtByDatasetID) ?? [:],
             localRevisionByDatasetID: try container.decodeIfPresent([String: UInt64].self, forKey: .localRevisionByDatasetID) ?? [:],
-            lastAppliedRemoteRevisionByDatasetID: try container.decodeIfPresent([String: UInt64].self, forKey: .lastAppliedRemoteRevisionByDatasetID) ?? [:]
+            lastAppliedRemoteRevisionByDatasetID: try container.decodeIfPresent([String: UInt64].self, forKey: .lastAppliedRemoteRevisionByDatasetID) ?? [:],
+            completedMangaIdentityImports: try container.decodeIfPresent(Set<String>.self, forKey: .completedMangaIdentityImports) ?? [],
+            mangaIdentityBaselineScopeByDatasetID: try container.decodeIfPresent([String: String].self, forKey: .mangaIdentityBaselineScopeByDatasetID) ?? [:]
         )
     }
 

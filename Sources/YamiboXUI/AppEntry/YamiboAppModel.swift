@@ -102,7 +102,14 @@ public final class YamiboAppModel {
         self.appContext = appContext
         self.initialNavigation = initialNavigation
         self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
-        self.mangaReaderOpenValidator = mangaReaderOpenValidator ?? MangaReaderOpenValidator { request in
+        self.mangaReaderOpenValidator = mangaReaderOpenValidator ?? MangaReaderOpenValidator(resolveDirectoryID: { context in
+            if let id = context.directoryID {
+                return id
+            }
+            return try await appContext.mangaReaderDependencies.mangaDirectoryStore.resolveDirectoryID(
+                legacyName: context.directoryName, legacyIdentity: nil, chapterTID: context.chapterTID
+            )
+        }) { request in
             let loader = await appContext.mangaReaderDependencies.makeProjectionLoader()
             return try await loader.loadReaderProjection(request)
         }

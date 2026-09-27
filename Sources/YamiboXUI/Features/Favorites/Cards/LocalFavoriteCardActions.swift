@@ -58,7 +58,7 @@ struct LocalFavoriteCardActions {
     ) -> LocalFavoriteCardActions {
         let deleteArchivedFavorites: ((FavoriteItem) -> Void)? = organizer.smartMangaBulkDeleteEnabled
             ? { item in
-                selection.toggleFavoriteSelection(id: item.id)
+                selection.toggleFavoriteSelection(id: organizer.selectionID(for: item))
                 routes.dialog = .deleteSelection
             }
             : nil
@@ -76,10 +76,10 @@ struct LocalFavoriteCardActions {
                 Task { await onOpen(card.item, mode, mangaScope, transition) }
             },
             select: { item in
-                selection.toggleFavoriteSelection(id: item.id)
+                selection.toggleFavoriteSelection(id: organizer.selectionID(for: item))
             },
             move: { item in
-                selection.toggleFavoriteSelection(id: item.id)
+                selection.toggleFavoriteSelection(id: organizer.selectionID(for: item))
                 routes.sheet = .selectionMove
             },
             editTags: { item in
@@ -101,7 +101,7 @@ struct LocalFavoriteCardActions {
                 // computation `cards(in:query:...)`'s member-scope filter
                 // groups by (see `FavoriteCardProjection.resolvedTitle`'s
                 // doc comment), so no `mangaDirectory` fallback is needed.
-                organizer.openMergedGroup(cleanBookName: card.resolvedTitle)
+                organizer.openMergedGroup(key: card.mangaGroupKey)
             },
             deleteArchivedFavorites: deleteArchivedFavorites
         )

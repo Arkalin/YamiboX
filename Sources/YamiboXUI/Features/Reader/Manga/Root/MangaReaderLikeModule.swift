@@ -15,7 +15,7 @@ final class MangaReaderLikeModule {
     struct Reading {
         var isSmartModeEnabled: Bool
         var forumID: String?
-        var currentDirectoryCleanBookName: @MainActor () -> String?
+        var currentDirectoryID: @MainActor () -> MangaDirectoryID?
         var makeLikeDependencies: @Sendable () -> LikeDependencies?
         var imageData: @Sendable (YamiboImageSource) async throws -> Data
         var imageSource: @MainActor (MangaReaderPageProjection) -> YamiboImageSource
@@ -43,12 +43,8 @@ final class MangaReaderLikeModule {
         // state is a synthesized single-chapter stand-in (MangaReaderWorkflow.standaloneDirectory),
         // not a real MangaDirectory, so it must not be usable as a manga-title Like identity.
         guard reading.isSmartModeEnabled else { return nil }
-        guard let cleanBookName = reading.currentDirectoryCleanBookName()?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !cleanBookName.isEmpty else {
-            return nil
-        }
-        return .mangaTitle(cleanBookName: cleanBookName)
+        guard let id = reading.currentDirectoryID() else { return nil }
+        return .mangaTitle(directoryID: id)
     }
 
     var canShowLikes: Bool {
