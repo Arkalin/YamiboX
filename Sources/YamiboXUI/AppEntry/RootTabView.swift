@@ -90,7 +90,13 @@ public struct RootTabView: View {
 
     private var content: some View {
         TabView(selection: selectedTabBinding) {
-            ReadingHomeView(appModel: appModel)
+            ReadingHomeView(
+                libraryDependencies: appModel.appContext.libraryDependencies,
+                accountDependencies: appModel.appContext.accountDependencies,
+                accountSwitcher: appModel.appContext.accountSwitcher,
+                forumDependencies: appModel.appContext.forumNavigationDependencies,
+                appModel: appModel
+            )
                 .id(appModel.accountGeneration)
                 .tag(AppTab.home)
                 .tabItem {
@@ -98,7 +104,7 @@ public struct RootTabView: View {
                 }
 
             ForumNavigationHostView(
-                dependencies: appModel.appContext.forumDependencies,
+                dependencies: appModel.appContext.forumNavigationDependencies,
                 appModel: appModel,
                 theme: AppTheme.theme(for: appModel.appThemePreset).forumTheme
             )
@@ -108,7 +114,11 @@ public struct RootTabView: View {
                     Label(L10n.string("tab.forum"), systemImage: "text.bubble")
                 }
 
-            FavoritesNavigationHostView(dependencies: appModel.appContext.libraryDependencies, appModel: appModel)
+            FavoritesNavigationHostView(
+                dependencies: appModel.appContext.libraryDependencies,
+                forumDependencies: appModel.appContext.forumNavigationDependencies,
+                appModel: appModel
+            )
                 .id(appModel.accountGeneration)
                 .tag(AppTab.favorites)
                 .tabItem {
@@ -117,6 +127,8 @@ public struct RootTabView: View {
 
             MineHomeView(
                 dependencies: appModel.appContext.accountDependencies,
+                forumDependencies: appModel.appContext.forumNavigationDependencies,
+                accountSwitcher: appModel.appContext.accountSwitcher,
                 settingsDependencies: appModel.appContext.settingsDependencies,
                 appModel: appModel,
                 likeDependencies: appModel.appContext.likeLibraryDependencies
@@ -252,7 +264,11 @@ private struct ReaderPresentationModifier: ViewModifier {
                 set: { if $0 == nil { appModel.dismissPresentedReaderSession() } }
             ), onDismiss: appModel.readerCoverDidDismiss) { session in
                 BookOpeningDestination(source: session.bookOpeningTransition) {
-                    ReaderSessionScreen(session: session, appModel: appModel)
+                    ReaderSessionScreen(
+                        session: session,
+                        dependencies: appModel.appContext.forumNavigationDependencies,
+                        appModel: appModel
+                    )
                         .appTheme(AppTheme.theme(for: appModel.appThemePreset))
                         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
                 }

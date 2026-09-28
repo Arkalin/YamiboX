@@ -78,19 +78,24 @@ final class ReadingHomeViewModel {
         }
     }
 
-    func open(_ entry: BrowsingHistoryEntry, using appModel: YamiboAppModel, bookOpeningTransition: BookOpeningTransition? = nil) async {
+    func open(
+        _ entry: BrowsingHistoryEntry,
+        navigate: @MainActor (BrowsingHistoryOpenTarget) async -> Void
+    ) async {
         guard !isOpening else { return }
         isOpening = true
         defer { isOpening = false }
-        guard let target = await resolver.openTarget(for: entry, origin: .home) else {
+        do {
+            guard let target = try await resolver.openTarget(for: entry, origin: .home) else {
+                openFailed = true
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await navigate(target)
+        } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            YamiboLog.persistence.warning("Failed to resolve reading position: \(error)")
             openFailed = true
-            return
-        }
-        guard !Task.isCancelled else { return }
-        switch target {
-        case let .novelReader(context): appModel.presentNovelReader(context, bookOpeningTransition: bookOpeningTransition)
-        case let .mangaReader(context): await appModel.requestMangaReader(context, bookOpeningTransition: bookOpeningTransition).value
-        case let .nativeThread(url, title): appModel.openNativeForumThread(url: url, title: title)
         }
     }
 }

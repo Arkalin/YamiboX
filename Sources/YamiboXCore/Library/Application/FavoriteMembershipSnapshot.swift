@@ -52,7 +52,7 @@ public struct FavoriteMembershipSnapshot: Sendable {
 
     public static func load(
         libraryStore: FavoriteLibraryStore,
-        directoryStore: (any MangaDirectoryPersisting)?,
+        directoryStore: (any MangaDirectoryBatchReading)?,
         boardReader: BoardReaderSettings,
         additionalThreadIDs: [String] = []
     ) async throws -> Self {

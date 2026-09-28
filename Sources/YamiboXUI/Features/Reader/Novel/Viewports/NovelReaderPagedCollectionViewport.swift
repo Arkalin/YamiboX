@@ -352,40 +352,22 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         }
 
         private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {
-            if parent.isChromeVisible {
-                let onChromeVisibleImageTap = parent.onChromeVisibleImageTap
-                callbackScheduler.publish {
-                    onChromeVisibleImageTap()
-                }
-                return
-            }
-
-            guard let payload = imageView.imageTapPayloadIfHit(at: location) else { return }
-            let onImageTap = parent.onImageTap
-            callbackScheduler.publish {
-                onImageTap(payload.url, payload.title)
-            }
+            NovelReaderImageInteraction.tap(
+                imageView: imageView, at: location,
+                isChromeVisible: parent.isChromeVisible,
+                scheduler: callbackScheduler,
+                onChromeVisibleTap: parent.onChromeVisibleImageTap,
+                onImageTap: parent.onImageTap
+            )
         }
 
         @objc
         func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-            guard recognizer.state == .began,
-                  let collectionView = recognizer.view as? UICollectionView else {
-                return
-            }
-            let location = recognizer.location(in: collectionView)
-            guard let imageView = collectionView.firstDescendant(
-                ofType: NovelReaderVerticalViewportImageView.self,
-                containing: location
-            ), let payload = imageView.imageTapPayloadIfHit(
-                at: collectionView.convert(location, to: imageView)
-            ), let anchor = novelImageLikeAnchor(forImageURL: payload.url, in: parent.surfaces) else {
-                return
-            }
-            let onImageLongPress = parent.onImageLongPress
-            callbackScheduler.publish {
-                onImageLongPress(anchor, payload.url, payload.title)
-            }
+            NovelReaderImageInteraction.longPress(
+                recognizer, surfaces: parent.surfaces,
+                scheduler: callbackScheduler,
+                onImageLongPress: parent.onImageLongPress
+            )
         }
 
         func updateContentAndRequestSelectionScroll(

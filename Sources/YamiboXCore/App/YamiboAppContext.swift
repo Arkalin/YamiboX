@@ -7,8 +7,6 @@
 /// `AppContinuityWorkflow`). Feature views and view models receive their
 /// `*Dependencies` package instead of this context.
 public final class YamiboAppContext: Sendable {
-    private static let resettableUserDefaultsKeys = YamiboAppStorageKey.resettable
-
     let sessionStore: SessionStore
     let profileStore: YamiboProfileStore
     let checkInStore: YamiboCheckInStore
@@ -42,13 +40,13 @@ public final class YamiboAppContext: Sendable {
     private let ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)?
     let httpCache: URLCache
     public let offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport
-    public let offlineCacheContinuedProcessingCoordinator: OfflineCacheContinuedProcessingCoordinator
+    private let offlineCacheRunObserver: (any OfflineCacheQueueRunObserving)?
     /// The single pool for `yamibox.sqlite`; every GRDB-backed store receives this instance.
     let databasePool: DatabasePool
     let session: URLSession
     private let offlineCacheQueueExecutorBox: OfflineCacheQueueExecutorBox
-    private nonisolated(unsafe) let uiDefaults: UserDefaults
-    private let clearsWebDataOnReset: Bool
+    private let accountTransitionWorkflow: AccountTransitionWorkflow
+    private let dataResetWorkflow: AppDataResetWorkflow
     private let websiteDataClearer: (any WebsiteDataClearing)?
     private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
     public let accountTransitionLifecycle = AccountTransitionLifecycle()
@@ -79,7 +77,7 @@ public final class YamiboAppContext: Sendable {
         forumCacheStore: ForumCacheStore? = nil,
         ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)? = nil,
         offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport? = nil,
-        offlineCacheContinuedProcessingCoordinator: OfflineCacheContinuedProcessingCoordinator = OfflineCacheContinuedProcessingCoordinator(),
+        offlineCacheRunObserver: (any OfflineCacheQueueRunObserving)? = nil,
         databasePool: DatabasePool? = nil,
         grdbRootDirectory: URL? = nil,
         cachesRootDirectory: URL? = nil,
@@ -104,8 +102,6 @@ public final class YamiboAppContext: Sendable {
             writer: resolvedGRDBDatabasePool,
             rootDirectory: resolvedCachesRootDirectory
         )
-        self.uiDefaults = uiDefaults
-        self.clearsWebDataOnReset = clearsWebDataOnReset
         self.websiteDataClearer = websiteDataClearer
         self.sessionStore = sessionStore
         self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { state in
@@ -151,7 +147,7 @@ public final class YamiboAppContext: Sendable {
                 bookmarks.notifyIdentityMigrationCommitted()
                 covers.notifyIdentityMigrationCommitted()
                 history.notifyIdentityMigrationCommitted()
-                (resolvedOfflineCacheStore as? OfflineCacheStore)?.notifyOfflineCacheDidChange()
+                resolvedOfflineCacheStore.notifyIdentityMigrationCommitted()
             }
         )
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
@@ -190,9 +186,56 @@ public final class YamiboAppContext: Sendable {
         self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
         self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
-        self.offlineCacheContinuedProcessingCoordinator = offlineCacheContinuedProcessingCoordinator
+        self.offlineCacheRunObserver = offlineCacheRunObserver
         self.session = session
         self.wafRecoverer = wafRecoverer
+        let webDataCleaner = AccountWebDataCleaner(session: session, httpCache: httpCache, websiteDataClearer: websiteDataClearer)
+        let accountTransitionWorkflow = AccountTransitionWorkflow(
+            sessionStore: sessionStore,
+            syncCoordinator: webDAVSyncSettingsStore.syncCoordinator,
+            lifecycle: accountTransitionLifecycle,
+            unread: messageUnreadWorkflow,
+            stopOfflineCache: { try await queueExecutors.invalidate() },
+            clearAccountCaches: { [store = self.forumCacheStore] in try await store.clearAccountCaches() },
+            clearWebData: { await webDataCleaner.clear($0) }
+        )
+        self.accountTransitionWorkflow = accountTransitionWorkflow
+        self.dataResetWorkflow = AppDataResetWorkflow(
+            sessionStore: sessionStore,
+            profileStore: profileStore,
+            transition: accountTransitionWorkflow,
+            webDataCleanup: clearsWebDataOnReset ? .all : .none,
+            steps: [
+                .init("checkIn") { await checkInStore.clearAll() },
+                .init("settings") { try await settingsStore.reset() },
+                .init("webDAVSettings") { try await webDAVSyncSettingsStore.reset() },
+                .init("readerResume") { await readerResumeRouteStore.clear() },
+                .init("favorites") { [store = self.localFavoriteLibraryStore] in try await store.clearAll() },
+                .init("favoriteUpdates") { [store = self.favoriteUpdateStore] in try await store.clearAll() },
+                .init("favoriteSyncRuns") { [store = self.favoriteSyncRunStore] in try await store.clearAll() },
+                .init("readingProgress") { [store = self.readingProgressStore] in try await store.clearAll() },
+                .init("browsingHistory") { [store = self.browsingHistoryStore] in try await store.clearAll() },
+                .init("composerDrafts") { [store = self.composerDraftStore] in try await store.clearAll() },
+                .init("contentCovers") { [store = self.contentCoverStore] in try await store.clearAll() },
+                .init("novelProjections") { [store = self.novelReaderCacheStore] in try await store.clearAll() },
+                .init("mangaDirectories") { [store = self.mangaDirectoryStore] in try await store.clearAll() },
+                .init("mangaSearchCooldown") { await mangaDirectorySearchCooldownState.clear() },
+                .init("mangaProjections") { [store = self.mangaReaderProjectionStore] in try await store.clearAll() },
+                .init("offlineCache") { try await resolvedOfflineCacheStore.clearAll() },
+                .init("forumCache") { [store = self.forumCacheStore] in try await store.clearAll() },
+                .init("favoriteBackgrounds") { [store = self.favoriteBackgroundImageStore] in try await store.deleteAll() },
+                .init("ordinaryImageCache") { [pipeline = self.imagePipeline] in
+                    await pipeline.clearCache()
+                    await ordinaryImageCache?.removeAllCachedData()
+                },
+                .init("localUIState") {
+                    YamiboAppStorageKey.resettable.forEach { profileDefaults.removeObject(forKey: $0) }
+                },
+                .init("likes") { [store = self.likeStore] in try await store.clearAll() },
+                .init("likeImages") { [store = self.likeImageStore] in try await store.deleteAll() },
+                .init("bookmarks") { [store = self.bookmarkStore] in try await store.clearAll() },
+            ]
+        )
     }
 
     // MARK: - Feature dependency packages
@@ -238,14 +281,27 @@ public final class YamiboAppContext: Sendable {
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            novelDetailDependencies: novelDetailDependencies,
-            mangaDetailDependencies: mangaDetailDependencies,
-            makeForumRepository: { [self] in await makeForumRepository() },
+            makeHomeRepository: { [self] in await makeForumRepository() },
+            makeBoardRepository: { [self] in await makeForumRepository() },
+            makeSearchRepository: { [self] in await makeForumRepository() },
+            makePageRepository: { [self] in await makeForumRepository().pageRepository() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
             makeUserSpaceRepository: { [self] in await makeUserSpaceRepository() },
             makeBlogReaderRepository: { [self] in await makeBlogReaderRepository() },
             makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
             makeThreadRouteResolver: { [self] in await makeThreadRouteResolver() }
+        )
+    }
+
+    public var forumNavigationDependencies: ForumNavigationDependencies {
+        ForumNavigationDependencies(
+            forum: forumDependencies,
+            destinations: ForumDestinationDependencies(
+                novelDetail: novelDetailDependencies,
+                mangaDetail: mangaDetailDependencies,
+                novelReader: novelReaderDependencies,
+                mangaReader: mangaReaderDependencies
+            )
         )
     }
 
@@ -285,7 +341,7 @@ public final class YamiboAppContext: Sendable {
             makeChapterCommentsRepository: { [self] in await makeReaderChapterCommentsRepository() },
             makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
-            account: accountDependencies,
+            cacheQueue: offlineCacheQueueDependencies,
             like: likeLibraryDependencies,
             imagePipeline: imagePipeline
         )
@@ -303,9 +359,17 @@ public final class YamiboAppContext: Sendable {
             makeNovelReaderRepository: { [self] in await makeNovelReaderRepository() },
             makeChapterCommentsRepository: { [self] in await makeReaderChapterCommentsRepository() },
             makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
-            account: accountDependencies,
+            cacheQueue: offlineCacheQueueDependencies,
             like: likeLibraryDependencies,
             imagePipeline: imagePipeline
+        )
+    }
+
+    public var offlineCacheQueueDependencies: OfflineCacheQueueDependencies {
+        OfflineCacheQueueDependencies(
+            offlineCacheStore: offlineCacheStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() }
         )
     }
 
@@ -404,7 +468,7 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
-    func makeReaderChapterCommentsRepository() async -> ReaderChapterCommentsRepository {
+    func makeReaderChapterCommentsRepository() async -> any ReaderChapterCommentsLoading {
         ReaderChapterCommentsRepository(client: await makeClient())
     }
 
@@ -459,7 +523,7 @@ public final class YamiboAppContext: Sendable {
                 imagePipeline: imagePipeline,
                 backgroundTransport: offlineCacheBackgroundDownloadTransport
             ),
-            runObserver: offlineCacheContinuedProcessingCoordinator,
+            runObserver: offlineCacheRunObserver,
             isSessionCurrent: { [sessionStore] in
                 await sessionStore.isCurrentGeneration(generation)
             }
@@ -496,74 +560,62 @@ public final class YamiboAppContext: Sendable {
             sessionStore: sessionStore,
             profileStore: profileStore,
             makeService: { [self] in makeAccountService() },
-            transition: { [self] commit in try await transitionAccount(commit) }
+            transition: { [accountTransitionWorkflow] commit in try await accountTransitionWorkflow.run(commit) }
         )
     }
 
-    private enum AccountWebDataCleanup: Sendable { case session, all, none }
-
-    private func transitionAccount(webDataCleanup: AccountWebDataCleanup = .session, _ commit: @escaping @Sendable (UUID) async throws -> Void) async throws {
-        // A failed durable save must leave the old identity and its UI intact.
-        try await accountTransitionLifecycle.willBegin()
-        let token = try await sessionStore.beginIdentityTransition()
-        do {
-            try await webDAVSyncSettingsStore.syncCoordinator.reset { [self] in
-                do {
-                    await messageUnreadWorkflow.prepareForAccountChange()
-                    try await offlineCacheQueueExecutorBox.invalidate()
-                    try await accountTransitionLifecycle.willChange()
-                    try await forumCacheStore.clearAccountCaches()
-                    try Task.checkCancellation()
-                    try await commit(token)
-                } catch {
-                    await finishAccountTransition(token, webDataCleanup: webDataCleanup)
-                    throw error
-                }
-                await finishAccountTransition(token, webDataCleanup: webDataCleanup)
-            }
-        } catch {
-            await sessionStore.endIdentityTransition(token)
-            throw error
-        }
-    }
-
-    private func finishAccountTransition(_ token: UUID, webDataCleanup: AccountWebDataCleanup) async {
-        let state = await sessionStore.load()
-        switch webDataCleanup {
-        case .all:
-            await clearWebData()
-        case .session:
-            for storage in [session.configuration.httpCookieStorage, HTTPCookieStorage.shared].compactMap({ $0 }) {
-                for cookie in storage.cookies ?? [] where YamiboDomain.containsYamiboDomain(cookie.domain) {
-                    storage.deleteCookie(cookie)
-                }
-            }
-            httpCache.removeAllCachedResponses()
-            await websiteDataClearer?.clearYamiboCookies()
-        case .none:
-            break
-        }
-        await accountTransitionLifecycle.didChange(state)
-        await sessionStore.endIdentityTransition(token)
-        await messageUnreadWorkflow.finishAccountChange()
-        await accountTransitionLifecycle.didPublish()
+    /// A dataset cannot join synchronization without registering its local change source.
+    var webDAVDatasets: [AppWebDAVDataset] {
+        [
+            .init(
+                participant: MangaDirectoryWebDAVParticipant(store: mangaDirectoryStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: mangaDirectoryStore.changeID,
+                changes: { [mangaDirectoryStore] in mangaDirectoryStore.changes() }
+            ),
+            .init(
+                participant: FavoriteLibraryWebDAVParticipant(store: localFavoriteLibraryStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: localFavoriteLibraryStore.changeID,
+                changes: { [localFavoriteLibraryStore] in localFavoriteLibraryStore.changes() }
+            ),
+            .init(
+                participant: ReadingProgressWebDAVParticipant(store: readingProgressStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: readingProgressStore.changeID,
+                changes: { [readingProgressStore] in readingProgressStore.changes() }
+            ),
+            .init(
+                participant: AppSettingsWebDAVParticipant(store: settingsStore),
+                changeID: settingsStore.changeID,
+                changes: { [settingsStore] in settingsStore.changes() }
+            ),
+            .init(
+                participant: LikeLibraryWebDAVParticipant(store: likeStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: likeStore.changeID,
+                changes: { [likeStore] in likeStore.changes() }
+            ),
+            .init(
+                participant: BookmarkLibraryWebDAVParticipant(store: bookmarkStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: bookmarkStore.changeID,
+                changes: { [bookmarkStore] in bookmarkStore.changes() }
+            ),
+            .init(
+                participant: ContentCoverWebDAVParticipant(store: contentCoverStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: contentCoverStore.changeID,
+                changes: { [contentCoverStore] in contentCoverStore.changes() }
+            ),
+            .init(
+                participant: BrowsingHistoryWebDAVParticipant(store: browsingHistoryStore).applyingMangaIdentity(using: mangaDirectoryStore),
+                changeID: browsingHistoryStore.changeID,
+                changes: { [browsingHistoryStore] in browsingHistoryStore.changes() }
+            ),
+        ]
     }
 
     func makeWebDAVSyncService() -> WebDAVSyncService {
         WebDAVSyncService(
             settingsStore: webDAVSyncSettingsStore,
             sessionStore: sessionStore,
-            participants: [
-                MangaDirectoryWebDAVParticipant(store: mangaDirectoryStore),
-                FavoriteLibraryWebDAVParticipant(store: localFavoriteLibraryStore),
-                ReadingProgressWebDAVParticipant(store: readingProgressStore),
-                AppSettingsWebDAVParticipant(store: settingsStore),
-                LikeLibraryWebDAVParticipant(store: likeStore),
-                BookmarkLibraryWebDAVParticipant(store: bookmarkStore),
-                ContentCoverWebDAVParticipant(store: contentCoverStore),
-                BrowsingHistoryWebDAVParticipant(store: browsingHistoryStore),
-            ],
-            mangaDirectoryStore: mangaDirectoryStore,
+            participants: webDAVDatasets.map(\.participant),
+            migrations: [MangaIdentityWebDAVMigration(settingsStore: webDAVSyncSettingsStore)],
             client: WebDAVClient(session: session)
         )
     }
@@ -602,56 +654,7 @@ public final class YamiboAppContext: Sendable {
     }
 
     func resetApplicationData() async throws {
-        try await sessionStore.accountOperations.run { [self] in
-            try await transitionAccount(webDataCleanup: clearsWebDataOnReset ? .all : .none) { [self] token in
-                try await sessionStore.resetAllAccounts(token: token)
-                if sessionStore.accountStore == nil { await profileStore.clear() }
-                try await resetLocalApplicationData()
-            }
-        }
-    }
-
-    private func resetLocalApplicationData() async throws {
-        for participant in AppDataResetParticipant.allCases {
-            if participant == .sessionStore || participant == .profileStore || participant == .webData { continue }
-            try await reset(participant)
-        }
-    }
-
-    private func reset(_ participant: AppDataResetParticipant) async throws {
-        switch participant {
-        case .sessionStore: try await sessionStore.reset()
-        case .profileStore: await profileStore.clear()
-        case .checkInStore: await checkInStore.clearAll()
-        case .settingsStore: try await settingsStore.reset()
-        case .webDAVSyncSettingsStore: try await webDAVSyncSettingsStore.reset()
-        case .readerResumeRouteStore: await readerResumeRouteStore.clear()
-        case .localFavoriteLibraryStore: try await localFavoriteLibraryStore.clearAll()
-        case .favoriteUpdateStore: try await favoriteUpdateStore.clearAll()
-        case .favoriteSyncRunStore: try await favoriteSyncRunStore.clearAll()
-        case .readingProgressStore: try await readingProgressStore.clearAll()
-        case .browsingHistoryStore: try await browsingHistoryStore.clearAll()
-        case .composerDraftStore: try await composerDraftStore.clearAll()
-        case .contentCoverStore: try await contentCoverStore.clearAll()
-        case .novelReaderCacheStore: try await novelReaderCacheStore.clearAll()
-        case .mangaDirectoryStore: try await mangaDirectoryStore.clearAll()
-        case .mangaDirectorySearchCooldownState: await mangaDirectorySearchCooldownState.clear()
-        case .mangaReaderProjectionStore: try await mangaReaderProjectionStore.clearAll()
-        case .offlineCacheStore: try await offlineCacheStore.clearAll()
-        case .forumCacheStore: try await forumCacheStore.clearAll()
-        case .favoriteBackgroundImageStore: try await favoriteBackgroundImageStore.deleteAll()
-        case .ordinaryImageCache: await clearOrdinaryImageCache()
-        case .localUIState: clearLocalUIState()
-        case .webData:
-            if clearsWebDataOnReset { await clearWebData() }
-        case .likeStore: try await likeStore.clearAll()
-        case .likeImageStore: try await likeImageStore.deleteAll()
-        case .bookmarkStore: try await bookmarkStore.clearAll()
-        }
-    }
-
-    private func clearLocalUIState() {
-        Self.resettableUserDefaultsKeys.forEach { uiDefaults.removeObject(forKey: $0) }
+        try await dataResetWorkflow.run()
     }
 
     private static func openGRDBDatabase(rootDirectory: URL) -> DatabasePool {
@@ -694,12 +697,6 @@ public final class YamiboAppContext: Sendable {
         rootDirectory.appendingPathComponent("offline-cache", isDirectory: true)
     }
 
-    @MainActor
-    private func clearWebData() async {
-        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
-        httpCache.removeAllCachedResponses()
-        await websiteDataClearer?.clearAllWebsiteData()
-    }
 }
 
 private actor OfflineCacheQueueExecutorBox {

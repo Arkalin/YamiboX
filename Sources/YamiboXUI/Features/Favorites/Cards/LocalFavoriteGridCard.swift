@@ -93,7 +93,7 @@ struct LocalFavoriteGridCover: View {
         Color.clear
             .aspectRatio(3 / 4, contentMode: .fit)
             .overlay {
-                LocalFavoriteCoverThumbnail(url: url, title: title)
+                BookCoverThumbnail(url: url, title: title)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .frame(maxWidth: .infinity)

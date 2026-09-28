@@ -5,8 +5,11 @@ struct ForumDestinationScreen: View {
     @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     let destination: ForumDestination
     let navigator: ForumDestinationNavigator
+    // Application presentation stays at the destination assembly boundary,
+    // never on the path-owning navigator or in its routing effects.
+    let appModel: YamiboAppModel
 
-    private var dependencies: ForumDependencies { navigator.dependencies }
+    private var dependencies: ForumDependencies { navigator.dependencies.forum }
 
     var body: some View {
         switch destination {
@@ -14,8 +17,8 @@ struct ForumDestinationScreen: View {
             ForumHomeDestination(navigator: navigator)
         case .browsingHistory:
             BrowsingHistoryView(
-                dependencies: navigator.appModel.appContext.libraryDependencies,
-                appModel: navigator.appModel,
+                dependencies: dependencies.history,
+                appModel: appModel,
                 onOpenThread: { url, title in
                     navigator.pushThreadLink(url: url, title: title)
                 }
@@ -28,7 +31,7 @@ struct ForumDestinationScreen: View {
                     initialPage: page ?? 1,
                     dependencies: dependencies
                 ),
-                refreshRevision: navigator.appModel.forumContentRefresh.boardRevision(fid),
+                refreshRevision: appModel.forumContentRefresh.boardRevision(fid),
                 onSubBoardTap: { navigator.openBoard($0, fromBrowserList: fromBrowserList) },
                 onPinnedTap: { navigator.openPinnedItem($0, containingFid: fid, fromBrowserList: fromBrowserList) },
                 onThreadTap: { navigator.openThread($0, containingFid: fid, fromBrowserList: fromBrowserList) },
@@ -62,7 +65,7 @@ struct ForumDestinationScreen: View {
                     initialSubPage: subPage,
                     dependencies: dependencies
                 ),
-                refreshRevision: navigator.appModel.forumContentRefresh.userSpaceRevision,
+                refreshRevision: appModel.forumContentRefresh.userSpaceRevision,
                 onThreadTap: { navigator.openThread($0, title: $1, containingFid: nil) },
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onSectionTap: { navigator.openUserSpaceSection(uid: $0, name: $1, section: $2, subPage: $3) },
@@ -80,7 +83,7 @@ struct ForumDestinationScreen: View {
                 model: CreditLogViewModel(dependencies: dependencies),
                 onURLTap: { navigator.route($0, source: .external) }
             )
-            .id(navigator.appModel.accountGeneration)
+            .id(appModel.accountGeneration)
             .forumNavigationBarStyle()
         case let .messageCenter(tab):
             MessageCenterView(
@@ -102,7 +105,7 @@ struct ForumDestinationScreen: View {
         case let .blog(blogID, uid, title):
             BlogReaderView(
                 model: BlogReaderViewModel(blogID: blogID, uid: uid, titleHint: title, dependencies: dependencies),
-                refreshRevision: navigator.appModel.forumContentRefresh.blogRevision(blogID),
+                refreshRevision: appModel.forumContentRefresh.blogRevision(blogID),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onWebTap: {
                     navigator.route($0, source: .external)
@@ -114,7 +117,7 @@ struct ForumDestinationScreen: View {
         case let .mangaDetail(context):
             detailScreen(.manga(context))
         case let .threadReader(context):
-            ForumThreadDestinationView(context: context, navigator: navigator)
+            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel)
             .forumNavigationBarStyle()
         case let .threadLink(url, title, containingFid, authorID, isDiscussionView):
             ForumThreadLinkScreen(
@@ -123,14 +126,15 @@ struct ForumDestinationScreen: View {
                 containingFid: containingFid,
                 authorID: authorID,
                 isDiscussionView: isDiscussionView,
-                navigator: navigator
+                navigator: navigator,
+                appModel: appModel
             )
             .forumNavigationBarStyle()
         case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url):
-            ForumURLDestinationView(url: url, navigator: navigator)
+            ForumURLDestinationView(url: url, navigator: navigator, appModel: appModel)
             .forumNavigationBarStyle()
         case let .webFallback(url):
-            ForumURLDestinationView(url: url, navigator: navigator, fallback: true)
+            ForumURLDestinationView(url: url, navigator: navigator, appModel: appModel, fallback: true)
                 .forumNavigationBarStyle()
         }
     }
@@ -138,12 +142,12 @@ struct ForumDestinationScreen: View {
     private func detailScreen(_ destination: ContentDetailDestination) -> some View {
         ContentDetailScreen(
             destination: destination,
-            novelDependencies: dependencies.novelDetailDependencies,
-            mangaDependencies: dependencies.mangaDetailDependencies
+            novelDependencies: navigator.dependencies.destinations.novelDetail,
+            mangaDependencies: navigator.dependencies.destinations.mangaDetail
         ) { action in
             switch action {
-            case let .readNovel(context, transition): navigator.appModel.presentNovelReader(context, bookOpeningTransition: transition)
-            case let .readManga(context, transition): navigator.appModel.requestMangaReader(context, bookOpeningTransition: transition)
+            case let .readNovel(context, transition): appModel.presentNovelReader(context, bookOpeningTransition: transition)
+            case let .readManga(context, transition): appModel.requestMangaReader(context, bookOpeningTransition: transition)
             case let .author(uid, name): navigator.openUserSpace(uid: uid, name: name)
             case let .discussion(context): navigator.push(.threadReader(context))
             }
@@ -162,6 +166,7 @@ struct ForumThreadLinkScreen: View {
     let authorID: String?
     let isDiscussionView: Bool
     let navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
 
     @State private var resolution: Resolution = .resolving
 
@@ -190,9 +195,9 @@ struct ForumThreadLinkScreen: View {
             .navigationTitle(title ?? L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
         case let .thread(context):
-            ForumThreadDestinationView(context: context, navigator: navigator)
+            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel)
         case let .web(webURL):
-            ForumURLDestinationView(url: webURL, navigator: navigator, fallback: true)
+            ForumURLDestinationView(url: webURL, navigator: navigator, appModel: appModel, fallback: true)
         case let .failed(details):
             LoadFailureView(message: details.summary, details: details, prominentRetry: true) {
                 resolution = .resolving
@@ -207,7 +212,7 @@ struct ForumThreadLinkScreen: View {
 
     private func resolveIfNeeded() async {
         guard case .resolving = resolution else { return }
-        let resolver = await navigator.dependencies.makeThreadRouteResolver()
+        let resolver = await navigator.dependencies.forum.makeThreadRouteResolver()
         do {
             let target = try await resolver.resolve(
                 YamiboThreadRouteRequest(
@@ -244,7 +249,7 @@ private struct ForumHomeDestination: View {
 
     init(navigator: ForumDestinationNavigator) {
         self.navigator = navigator
-        _model = State(wrappedValue: ForumHomeViewModel(dependencies: navigator.dependencies))
+        _model = State(wrappedValue: ForumHomeViewModel(dependencies: navigator.dependencies.forum))
     }
 
     var body: some View {
@@ -263,6 +268,7 @@ private struct ForumHomeDestination: View {
 private struct ForumURLDestinationView: View {
     let url: URL
     let navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
     var fallback = false
     @State private var fallbackURL: URL?
 
@@ -274,18 +280,18 @@ private struct ForumURLDestinationView: View {
     }
 
     var body: some View {
-        let accountGeneration = navigator.appModel.accountGeneration
+        let accountGeneration = appModel.accountGeneration
         if isNativeForm, !fallback, fallbackURL == nil {
             ForumPageScreen(model: ForumPageSession(
-                url: url, dependencies: navigator.dependencies,
+                url: url, dependencies: navigator.dependencies.forum,
                 onSubmissionAccepted: { change in
-                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
-                    navigator.appModel.forumContentRefresh.record(change)
+                    guard accountGeneration == appModel.accountGeneration else { return }
+                    appModel.forumContentRefresh.record(change)
                 }
             ),
                 onSubmissionSucceeded: { navigator.transientFeedback = $0 },
                 onNavigationResult: { result in
-                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
+                    guard accountGeneration == appModel.accountGeneration else { return }
                     switch result {
                     case let .webFallback(url): fallbackURL = url
                     case let .nativeRedirect(url):
@@ -299,15 +305,15 @@ private struct ForumURLDestinationView: View {
             .id(accountGeneration)
         } else {
             ForumBrowserView(
-                url: fallbackURL ?? url, sessionStore: navigator.dependencies.sessionStore,
-                appModel: navigator.appModel, listensToForumNavigationRequest: false,
+                url: fallbackURL ?? url, sessionStore: navigator.dependencies.forum.sessionStore,
+                appModel: appModel, listensToForumNavigationRequest: false,
                 nativeFallback: fallback || fallbackURL != nil,
                 onNativeNavigation: {
-                    guard accountGeneration == navigator.appModel.accountGeneration else { return }
+                    guard accountGeneration == appModel.accountGeneration else { return }
                     navigator.route($0, source: .external)
                 }
             )
-            .id(navigator.appModel.accountGeneration)
+            .id(appModel.accountGeneration)
         }
     }
 }
@@ -315,17 +321,18 @@ private struct ForumURLDestinationView: View {
 private struct ForumThreadDestinationView: View {
     let context: ThreadNovelLaunchContext
     let navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
 
     var body: some View {
         if navigator.mode == .readerOverlay {
             ForumThreadReaderView(
-                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies),
-                submissionChange: navigator.appModel.forumContentRefresh.threadChange(context.thread.tid),
+                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies.forum),
+                submissionChange: appModel.forumContentRefresh.threadChange(context.thread.tid),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLTap: { navigator.route($0, source: .external) }
             )
         } else {
-            ReaderSessionDestinationView(context: context, navigator: navigator)
+            ReaderSessionDestinationView(context: context, navigator: navigator, appModel: appModel)
         }
     }
 }

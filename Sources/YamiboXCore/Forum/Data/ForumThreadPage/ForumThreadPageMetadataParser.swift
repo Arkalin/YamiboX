@@ -5,19 +5,7 @@ import Foundation
 /// actions comes from the shared `DiscuzFormHashParser`.
 enum ForumThreadPageMetadataParser {
     static func pageNavigation(in document: Document) -> ForumPageNavigation? {
-        guard let pager = document.selectFirst(".pg") else { return nil }
-        let currentPage = pager.firstText("strong").flatMap(Int.init) ?? 1
-        let pagerText = pager.normalizedText()
-        let totalPages = HTMLTextExtractor.firstMatch(pattern: #"/\s*(\d+)\s*页"#, in: pagerText)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
-            ?? HTMLTextExtractor.firstMatch(pattern: #"\.\.\s*(\d+)"#, in: pagerText)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
-
-        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages)
+        ForumPageNavigationParser.parse(in: document)
     }
 
     static func threadStats(in document: Document) -> (totalViews: Int?, totalReplies: Int?) {

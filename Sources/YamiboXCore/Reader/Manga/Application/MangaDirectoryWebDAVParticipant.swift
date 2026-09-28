@@ -95,7 +95,24 @@ struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
     }
 }
 
-struct MangaDirectoryWebDAVParticipant: WebDAVSyncParticipant {
+struct MangaDirectoryWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(
+            legacyRecordDeletion: { record in
+                MangaIdentityLegacyDeletion(
+                    keys: ((record["directory"] as? [String: Any])?["cleanBookName"] as? String).map { [$0] } ?? [],
+                    date: record["modifiedAt"] as? Double
+                )
+            },
+            prepareForNormalization: { data in
+                // Capture old content lineage before rewriting directory IDs.
+                try JSONEncoder().encode(MangaDirectoryWebDAVPayload.decode(data))
+            },
+            contentFingerprint: { try MangaDirectoryWebDAVPayload.decode($0).contentFingerprint() },
+            normalizePayload: MangaDirectoryWebDAVPayload.normalizingMangaIdentities
+        )
+    }
+
     let datasetID = WebDAVSyncContent.mangaDirectories.rawValue
     let remoteFileName = "yamibox-manga-directories-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -138,5 +155,22 @@ struct MangaDirectoryWebDAVParticipant: WebDAVSyncParticipant {
             snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
             return merged
         }
+    }
+}
+
+private extension MangaDirectoryWebDAVPayload {
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try decode(data)
+        for index in payload.records.indices {
+            let directory = payload.records[index].directory
+            let id = identities.resolve(directory.id.rawValue, name: directory.cleanBookName, legacy: false)
+            payload.records[index].directory = directory.reidentified(as: MangaDirectoryID(rawValue: id))
+            if let title = identities.titles[id], title != id {
+                payload.records[index].directory.cleanBookName = title
+            }
+        }
+        payload.deletions = MangaIdentityDeletionRemapping.normalize(payload.deletions,
+            identities: identities, directoryKeys: true)
+        return try JSONEncoder().encode(payload)
     }
 }

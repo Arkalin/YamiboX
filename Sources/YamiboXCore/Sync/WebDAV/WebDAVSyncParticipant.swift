@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 struct WebDAVExportSnapshot: Sendable {
     let data: Data
@@ -11,14 +10,7 @@ struct WebDAVApplySnapshot: Sendable {
     let requiresUpload: Bool
 }
 
-enum WebDAVSyncFingerprint {
-    static func make(_ value: some Encodable) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .secondsSince1970
-        return SHA256.hash(data: try encoder.encode(value)).map { String(format: "%02x", $0) }.joined()
-    }
-}
+typealias WebDAVSyncFingerprint = SyncContentFingerprint
 
 /// Coordination metadata the sync flow needs from a remote payload without
 /// understanding the payload's domain content.
@@ -78,6 +70,9 @@ protocol WebDAVSyncParticipant: Sendable {
     /// File name of this dataset inside the remote WebDAV sync directory.
     var remoteFileName: String { get }
 
+    /// Relative directories required by this participant, created before upload.
+    var remoteDirectories: [String] { get }
+
     /// A format upgrade reads this resource once, but never writes to it.
     var legacyRemoteFileName: String? { get }
 
@@ -112,6 +107,7 @@ protocol WebDAVSyncParticipant: Sendable {
 }
 
 extension WebDAVSyncParticipant {
+    var remoteDirectories: [String] { [] }
     var legacyRemoteFileName: String? { nil }
     var uploadsOnlyWhenMarkedDirty: Bool { false }
     var uploadsUntrackedContentAutomatically: Bool { false }

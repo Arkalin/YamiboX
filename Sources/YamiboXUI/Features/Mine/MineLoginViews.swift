@@ -3,12 +3,11 @@ import YamiboXCore
 
 struct MineLoginSheet: View {
     let viewModel: MineHomeViewModel
-    let sessionStore: SessionStore
-    let appModel: YamiboAppModel
+    let accountSwitcher: AccountSwitchCoordinator
     let close: () -> Void
 
     var body: some View {
-        AccountLoginSheet(switcher: appModel.appContext.accountSwitcher) {
+        AccountLoginSheet(switcher: accountSwitcher) {
             Task {
                 await viewModel.reloadAccountSnapshot()
                 close()

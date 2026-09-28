@@ -2,21 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol NovelDetailDocumentLoading: Sendable {
-    func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection
-}
-
-extension NovelReaderRepository: NovelDetailDocumentLoading {}
-
-protocol NovelDetailThreadPageLoading: Sendable {
-    func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage?
-    func fetchNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async throws -> ForumThreadPage
-    func clearCachedThreadPages(thread: ThreadIdentity) async throws
-    func storeNovelThreadPage(_ page: ForumThreadPage, context: NovelDetailLaunchContext, pageNumber: Int) async throws
-}
-
-extension ForumThreadReaderRepository: NovelDetailThreadPageLoading {}
-
 struct NovelChapterSummary: Identifiable, Hashable, Sendable {
     var id: String
     var title: String
@@ -94,14 +79,10 @@ final class NovelDetailViewModel {
     @ObservationIgnored private var novelReaderSettings = NovelReaderAppearanceSettings()
     @ObservationIgnored private var documentPreloadTask: Task<Void, Never>?
     @ObservationIgnored private var readingProgressUpdatesTask: Task<Void, Never>?
-    @ObservationIgnored private let novelRepositoryProvider: @Sendable () async -> any NovelDetailDocumentLoading
-    @ObservationIgnored private let threadRepositoryProvider: @Sendable () async -> any NovelDetailThreadPageLoading
 
     init(
         context: NovelDetailLaunchContext,
-        dependencies: NovelDetailDependencies,
-        novelRepositoryProvider: (@Sendable () async -> any NovelDetailDocumentLoading)? = nil,
-        threadRepositoryProvider: (@Sendable () async -> any NovelDetailThreadPageLoading)? = nil
+        dependencies: NovelDetailDependencies
     ) {
         self.context = context
         self.dependencies = dependencies
@@ -113,12 +94,6 @@ final class NovelDetailViewModel {
             settingsStore: dependencies.settingsStore,
             makeFavoriteRepository: dependencies.makeFavoriteRepository
         )
-        self.novelRepositoryProvider = novelRepositoryProvider ?? {
-            await dependencies.makeNovelReaderRepository()
-        }
-        self.threadRepositoryProvider = threadRepositoryProvider ?? {
-            await dependencies.makeForumThreadReaderRepository()
-        }
         readingProgressUpdatesTask = StoreChangeObservation.task(
             changes: { [store = dependencies.readingProgressStore] in store.changes() },
             changeID: { [store = dependencies.readingProgressStore] in store.changeID }
@@ -160,8 +135,8 @@ final class NovelDetailViewModel {
         return NovelDetailHeaderSummary(
             title: displayTitle(threadPage?.title ?? context.title),
             threadID: context.thread.tid,
-            authorID: resolvedAuthorID ?? Self.trimmedNonEmpty(firstPost?.author.uid) ?? context.authorID,
-            authorName: Self.trimmedNonEmpty(firstPost?.author.name),
+            authorID: resolvedAuthorID ?? firstPost?.author.uid?.nilIfBlank ?? context.authorID,
+            authorName: firstPost?.author.name.nilIfBlank,
             postedAtText: firstPost?.postedAtText,
             lastUpdatedText: Self.lastUpdatedText(
                 editedText: firstPost?.lastEditedText,
@@ -219,11 +194,11 @@ final class NovelDetailViewModel {
 
         do {
             await favoriteActions.refreshFavorite()
-            readingProgress = await dependencies.readingProgressStore.load(threadID: context.thread.tid)
+            readingProgress = try await dependencies.readingProgressStore.load(threadID: context.thread.tid)
             contentCover = await loadContentCover()
             novelReaderSettings = await dependencies.settingsStore.load().novelReader
             favoriteActions.errorMessage = nil
-            let threadRepository = await threadRepositoryProvider()
+            let threadRepository = await dependencies.makeForumThreadReaderRepository()
             try Task.checkCancellation()
             let initialPages = try await loadInitialPages(repository: threadRepository, preferCache: preferCache)
             let headerPage = initialPages.headerPage
@@ -257,7 +232,7 @@ final class NovelDetailViewModel {
                 document = previousDocument
                 return
             }
-            readingProgress = await dependencies.readingProgressStore.load(threadID: context.thread.tid)
+            // Retain the last known progress; a failed read is not an empty record.
             contentCover = await loadContentCover()
             if preservesCurrentContentOnFailure {
                 document = nil
@@ -285,7 +260,7 @@ final class NovelDetailViewModel {
         repository: any NovelDetailThreadPageLoading,
         preferCache: Bool
     ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext) {
-        if let authorID = Self.trimmedNonEmpty(context.authorID) {
+        if let authorID = context.authorID?.nilIfBlank {
             let scopedContext = authorScopedContext(authorID: authorID)
             let page = try await loadNovelThreadPage(context: scopedContext, page: 1, preferCache: preferCache, repository: repository)
             return (page, page, authorID, scopedContext)
@@ -317,7 +292,7 @@ final class NovelDetailViewModel {
             view: 1,
             authorID: resolvedAuthorID ?? context.authorID
         )
-        let provider = novelRepositoryProvider
+        let provider = dependencies.makeNovelReaderRepository
         documentPreloadTask = Task { [weak self] in
             do {
                 let repository = await provider()
@@ -347,15 +322,17 @@ final class NovelDetailViewModel {
 
     func continueLaunchContext() -> NovelLaunchContext {
         let novelProgress = readingProgress?.novel
-        let resumePoint = novelProgress?.novelResumePoint
+        let position = NovelReadingResumeResolver.resolve(
+            progress: novelProgress, fallbackView: 1, fallbackAuthorID: resolvedAuthorID ?? context.authorID
+        )
         let hasProgress = Self.hasReadingProgress(readingProgress, favorite: favoriteActions.favorite)
         return NovelLaunchContext(
             threadID: context.thread.tid,
             threadTitle: favoriteActions.favorite?.resolvedDisplayTitle ?? context.title,
             source: hasProgress ? .resume : .forum,
-            initialView: resumePoint?.view ?? novelProgress?.lastView ?? 1,
-            authorID: resumePoint?.authorID ?? novelProgress?.authorID ?? resolvedAuthorID ?? context.authorID,
-            initialResumePoint: resumePoint,
+            initialView: position.view,
+            authorID: position.authorID,
+            initialResumePoint: position.resumePoint,
             forumID: threadPage?.forumID ?? threadPage?.thread.fid ?? context.thread.fid
         )
     }
@@ -391,7 +368,7 @@ final class NovelDetailViewModel {
         }
 
         do {
-            let repository = await threadRepositoryProvider()
+            let repository = await dependencies.makeForumThreadReaderRepository()
             let authorID = try Self.resolveAuthorID(context: context, page: threadPage)
             resolvedAuthorID = authorID
             let contentContext = authorScopedContext(authorID: authorID)
@@ -412,8 +389,13 @@ final class NovelDetailViewModel {
     }
 
     private func refreshReadingProgress(from readingProgressStore: ReadingProgressStore) async {
-        readingProgress = await readingProgressStore.load(threadID: context.thread.tid)
-        rebuildChapterDirectory()
+        do {
+            readingProgress = try await readingProgressStore.load(threadID: context.thread.tid)
+            rebuildChapterDirectory()
+        } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            favoriteActions.transientFeedback = .failure(error)
+        }
     }
 
     static func chapterSections(
@@ -497,7 +479,7 @@ final class NovelDetailViewModel {
         novelReaderSettings: NovelReaderAppearanceSettings,
         authorID: String?
     ) -> [NovelChapterSummary] {
-        let resolvedAuthorID = trimmedNonEmpty(authorID) ?? trimmedNonEmpty(page.posts.first?.author.uid)
+        let resolvedAuthorID = authorID?.nilIfBlank ?? page.posts.first?.author.uid?.nilIfBlank
         guard let resolvedAuthorID else { return [] }
         let request = NovelPageRequest(
             threadID: page.thread.tid,
@@ -513,7 +495,7 @@ final class NovelDetailViewModel {
             return []
         }
         let floorTextByPostID = page.posts.reduce(into: [String: String]()) { partial, post in
-            guard let postID = trimmedNonEmpty(post.postID),
+            guard let postID = post.postID.nilIfBlank,
                   let floorText = post.floorText else {
                 return
             }
@@ -539,11 +521,11 @@ final class NovelDetailViewModel {
     }
 
     private var forumName: String? {
-        if let forumName = Self.trimmedNonEmpty(threadPage?.forumName) {
+        if let forumName = threadPage?.forumName?.nilIfBlank {
             return forumName
         }
-        guard let fid = Self.trimmedNonEmpty(threadPage?.thread.fid)
-            ?? Self.trimmedNonEmpty(context.thread.fid) else {
+        guard let fid = threadPage?.thread.fid?.nilIfBlank
+            ?? context.thread.fid?.nilIfBlank else {
             return nil
         }
         return fid
@@ -575,10 +557,10 @@ final class NovelDetailViewModel {
     }
 
     private static func resolveAuthorID(context: NovelDetailLaunchContext, page: ForumThreadPage?) throws -> String {
-        if let authorID = trimmedNonEmpty(context.authorID) {
+        if let authorID = context.authorID?.nilIfBlank {
             return authorID
         }
-        if let authorID = trimmedNonEmpty(page?.posts.first?.author.uid) {
+        if let authorID = page?.posts.first?.author.uid?.nilIfBlank {
             return authorID
         }
         throw YamiboError.parsingFailed(context: L10n.string("parsing_context.novel_author_scope"))
@@ -591,7 +573,7 @@ final class NovelDetailViewModel {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        return trimmedNonEmpty(text)
+        return text.nilIfBlank
     }
 
     private static func readingProgressText(from readingProgress: ReadingProgressRecord?, favorite: Favorite?) -> String? {
@@ -603,8 +585,8 @@ final class NovelDetailViewModel {
     }
 
     private static func readingProgressText(from novel: NovelReadingProgressRecord) -> String {
-        if let chapterTitle = trimmedNonEmpty(novel.novelResumePoint?.chapterTitle)
-            ?? trimmedNonEmpty(novel.lastChapter) {
+        if let chapterTitle = novel.novelResumePoint?.chapterTitle?.nilIfBlank
+            ?? novel.lastChapter?.nilIfBlank {
             return chapterTitle
         }
         if let percent = novel.novelDocumentSurfaceProgressPercent {
@@ -659,11 +641,11 @@ final class NovelDetailViewModel {
         }
 
         guard let lastView = novel?.lastView,
-              let lastChapter = trimmedNonEmpty(novel?.lastChapter) else {
+              let lastChapter = novel?.lastChapter?.nilIfBlank else {
             return nil
         }
         return chapters.firstIndex { chapter in
-            lastView == chapter.view && trimmedNonEmpty(chapter.title) == lastChapter
+            lastView == chapter.view && chapter.title.nilIfBlank == lastChapter
         }
     }
 
@@ -671,8 +653,8 @@ final class NovelDetailViewModel {
         if let novel = readingProgress?.novel {
             return novel.novelResumePoint != nil
                 || novel.lastView > 1
-                || trimmedNonEmpty(novel.lastChapter) != nil
-                || trimmedNonEmpty(novel.authorID) != nil
+                || novel.lastChapter?.nilIfBlank != nil
+                || novel.authorID?.nilIfBlank != nil
                 || novel.novelMaxView != nil
                 || novel.novelDocumentSurfaceProgressPercent != nil
         }
@@ -692,8 +674,8 @@ final class NovelDetailViewModel {
     }
 
     private static func lastUpdatedText(editedText: String?, postedAtText: String?) -> String? {
-        guard let editedText = trimmedNonEmpty(editedText) else {
-            return trimmedNonEmpty(postedAtText)
+        guard let editedText = editedText?.nilIfBlank else {
+            return postedAtText?.nilIfBlank
         }
         return extractedEditTime(from: editedText) ?? editedText
     }
@@ -709,16 +691,11 @@ final class NovelDetailViewModel {
             guard let match = regex.firstMatch(in: text, range: searchRange),
                   match.numberOfRanges > 1,
                   let range = Range(match.range(at: 1), in: text),
-                  let value = trimmedNonEmpty(String(text[range])) else {
+                  let value = String(text[range]).nilIfBlank else {
                 continue
             }
             return value
         }
         return nil
-    }
-
-    private static func trimmedNonEmpty(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 }

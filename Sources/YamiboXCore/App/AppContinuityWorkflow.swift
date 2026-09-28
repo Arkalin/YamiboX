@@ -375,7 +375,7 @@ public final class AppContinuityWorkflow: Sendable {
     private func readingProgress(for route: ReaderResumeRoute) async throws -> ReadingProgressRecord? {
         switch route {
         case let .novel(context):
-            return try await appContext.readingProgressStore.loadThrowing(threadID: context.threadID)
+            return try await appContext.readingProgressStore.load(threadID: context.threadID)
         case let .manga(context):
             // Smart Comic Mode off means this thread is treated exactly like a normal
             // thread (smart-comic-mode-design-decisions #2's 总原则): its progress lives
@@ -386,13 +386,13 @@ public final class AppContinuityWorkflow: Sendable {
             // reconciling the restored route onto a different forum thread.
             if context.isSmartModeEnabled {
                 if let directoryID = context.directoryID {
-                    return try await appContext.readingProgressStore.loadThrowing(for: .mangaTitle(
+                    return try await appContext.readingProgressStore.load(for: .mangaTitle(
                         mangaID: directoryID.rawValue, cleanBookName: context.directoryName ?? context.displayTitle
                     ))
                 }
-                return try await appContext.readingProgressStore.loadThrowing(threadID: context.originalThreadID)
+                return try await appContext.readingProgressStore.load(threadID: context.originalThreadID)
             }
-            return try await appContext.readingProgressStore.loadThrowing(for: .mangaThread(threadID: context.originalThreadID))
+            return try await appContext.readingProgressStore.load(for: .mangaThread(threadID: context.originalThreadID))
         }
     }
 
@@ -466,15 +466,17 @@ private extension NovelLaunchContext {
         _ progress: ReadingProgressRecord,
         favoriteItem: FavoriteItem?
     ) -> NovelLaunchContext {
-        let novel = progress.novel
-        let resumePoint = novel?.novelResumePoint ?? initialResumePoint
+        let position = NovelReadingResumeResolver.resolve(
+            progress: progress.novel, fallbackView: initialView,
+            fallbackAuthorID: authorID, fallbackResumePoint: initialResumePoint
+        )
         return NovelLaunchContext(
             threadID: threadID,
             threadTitle: favoriteItem?.resolvedDisplayTitle ?? threadTitle,
             source: .resume,
-            initialView: resumePoint?.view ?? novel?.lastView ?? initialView,
-            authorID: resumePoint?.authorID ?? novel?.authorID ?? authorID,
-            initialResumePoint: resumePoint,
+            initialView: position.view,
+            authorID: position.authorID,
+            initialResumePoint: position.resumePoint,
             isPreview: isPreview,
             forumID: forumID
         )

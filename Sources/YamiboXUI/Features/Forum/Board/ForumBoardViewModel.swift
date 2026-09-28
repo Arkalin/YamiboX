@@ -2,30 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumBoardPageLoading: Sendable {
-    func cachedForumBoard(
-        fid: String,
-        page: Int,
-        filterID: String?,
-        orderFilter: String?,
-        orderBy: String?,
-        allowExpired: Bool
-    ) async -> ForumBoardPage?
-
-    func fetchForumBoard(
-        fid: String,
-        title: String?,
-        page: Int,
-        filterID: String?,
-        orderFilter: String?,
-        orderBy: String?,
-        preferCache: Bool
-    ) async throws -> ForumBoardPage
-
-    func addBoardFavorite(fid: String, formHash: String?) async throws -> String
-}
-
-extension ForumRepository: ForumBoardPageLoading {}
 
 @MainActor
 @Observable
@@ -75,7 +51,7 @@ final class ForumBoardViewModel {
         currentPage = max(1, initialPage)
         settingsStore = dependencies.settingsStore
         repositoryProvider = {
-            await dependencies.makeForumRepository()
+            await dependencies.makeBoardRepository()
         }
     }
 

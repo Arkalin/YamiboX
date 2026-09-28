@@ -2,26 +2,28 @@ import Observation
 import SwiftUI
 import YamiboXCore
 
-enum NovelReaderInitialPresentationPhase {
-    case idle, preparing, waitingForLayout, layingOut, restoring, ready, failed, cancelled
-
-    var concealsContent: Bool {
-        switch self {
-        case .idle, .preparing, .waitingForLayout, .layingOut, .restoring: true
-        case .ready, .failed, .cancelled: false
-        }
-    }
-}
-
 @MainActor
 @Observable
 public final class NovelReaderViewModel {
-    public private(set) var isLoading = false
-    private(set) var initialPresentationPhase = NovelReaderInitialPresentationPhase.idle
-    @ObservationIgnored private var initialPreparationTask: Task<Void, Never>?
-    @ObservationIgnored private var initialPreparationSequence: UInt64 = 0
-    @ObservationIgnored private var hasStartedPreparation = false
-    @ObservationIgnored private var forceRefreshInitialLoad = false
+    public var isLoading: Bool { loading.isLoading }
+    private var preparation: NovelReaderPreparationCoordinator { runtimeUpdates.preparation }
+    @ObservationIgnored private lazy var runtimeUpdates = NovelReaderRuntimeUpdateCoordinator(
+        reading: .init(
+            settings: { [weak self] in self?.settings ?? NovelReaderAppearanceSettings() },
+            workflow: { [weak self] in self?.readingWorkflow },
+            prepareInitialPresentation: { [weak self] in await self?.performInitialLoadIfNeeded() },
+            updatePreparation: { [weak self] in self?.runtimeUpdatePreparation ?? { $0 } },
+            publish: { [weak self] in self?.syncFromWorkflowState($0) },
+            persist: { [weak self] settings, pencil in
+                self?.persistSettings(novelReaderSettings: settings, applePencilPageTurnSettings: pencil)
+            },
+            reportFailure: { [weak self] error in
+                self?.errorMessage = error.localizedDescription
+                self?.errorDetails = LoadFailureDetails(error: error)
+            }
+        )
+    )
+    var initialPresentationPhase: NovelReaderInitialPresentationPhase { preparation.phase }
     public private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -33,10 +35,16 @@ public final class NovelReaderViewModel {
     var pageBoundary: ReaderPageBoundary?
     public var novelReaderPresentation: NovelReaderPresentation? { publishedState.presentation }
     public private(set) var chapterComments = ReaderChapterCommentsSnapshot()
-    public var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
+    public var applePencilPageTurnSettings: ApplePencilPageTurnSettings {
+        get { runtimeUpdates.applePencilPageTurnSettings }
+        set { runtimeUpdates.applePencilPageTurnSettings = newValue }
+    }
     private(set) var isNavigatingNovelReaderProjection = false
-    private(set) var isApplyingAppearanceSettings = false
-    private var bootstrapSettings = NovelReaderAppearanceSettings()
+    var isApplyingAppearanceSettings: Bool { runtimeUpdates.isApplyingAppearanceSettings }
+    private var bootstrapSettings: NovelReaderAppearanceSettings {
+        get { runtimeUpdates.bootstrapSettings }
+        set { runtimeUpdates.bootstrapSettings = newValue }
+    }
     private let publishedState = NovelReaderPublishedState()
     private var presentedSettings: NovelReaderAppearanceSettings? { publishedState.settings }
     var chromeProgressSnapshot: NovelReaderChromeProgressSnapshot { publishedState.progress }
@@ -46,16 +54,31 @@ public final class NovelReaderViewModel {
     public let context: NovelLaunchContext
 
     private let dependencies: NovelReaderDependencies
-    @ObservationIgnored private var repository: NovelReaderRepository?
-    @ObservationIgnored private var readingWorkflow: NovelReadingWorkflow?
-    @ObservationIgnored private var preparedInitialLoad: NovelReadingPreparedInitialLoad?
+    private var readingWorkflow: NovelReadingWorkflow? { loading.workflow }
+    @ObservationIgnored private lazy var loading = NovelReaderLoadingCoordinator(
+        context: context,
+        makeRepository: dependencies.makeNovelReaderRepository,
+        settingsStore: dependencies.settingsStore,
+        progressStore: dependencies.readingProgressStore,
+        history: dependencies.browsingHistoryWorkflow,
+        runtime: runtimeUpdates,
+        runtimeAdapter: runtimeAdapter ?? DefaultNovelTextLayoutRuntimeAdapter(),
+        presentation: .init(
+            settings: { [weak self] in self?.settings ?? NovelReaderAppearanceSettings() },
+            publish: { [weak self] in self?.syncFromWorkflowState($0) },
+            clearFailure: { [weak self] in self?.errorMessage = nil },
+            reportFailure: { [weak self] error in
+                self?.errorMessage = error.localizedDescription
+                self?.errorDetails = LoadFailureDetails(error: error)
+            },
+            refreshCache: { [weak self] in await self?.cache.refresh() },
+            prefetchAnchor: { [weak self] in self?.selectedSurface?.identity }
+        )
+    )
     @ObservationIgnored var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
     @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
-    @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
-    @ObservationIgnored private var layout: NovelReaderLayout = .zero
-    @ObservationIgnored private var latestRequestedLayout: NovelReaderLayout = .zero
-    @ObservationIgnored private var layoutRequestSequence: UInt64 = 0
-    @ObservationIgnored private var usesPadPresentation = false
+    private var layout: NovelReaderLayout { preparation.layout }
+    private var usesPadPresentation: Bool { runtimeUpdates.usesPadPresentation }
     private var currentStableResumePoint: NovelResumePoint? { publishedState.resumePoint }
     private let runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
@@ -68,7 +91,6 @@ public final class NovelReaderViewModel {
     }
     @ObservationIgnored package var novelReaderPageDocumentNavigationStateDidChange: (@MainActor (Bool) -> Void)?
     private let progressSync: ProgressSyncModule
-    @ObservationIgnored private var hasRecordedBrowsingHistoryVisit = false
     // The chapter-comments module is built by the composition root
     // (`NovelReaderDependencies`); the view model only sinks its snapshots.
     // It is driven exclusively from this main-actor view model, so its
@@ -88,7 +110,7 @@ public final class NovelReaderViewModel {
         operationModule: dependencies.makeCacheOperationModule(),
         repository: dependencies.makeCacheOperationRepository(),
         offlineCacheStore: dependencies.offlineCacheStore,
-        accountDependencies: dependencies.account,
+        queueDependencies: dependencies.cacheQueue,
         reading: NovelReaderCacheCoordinator.Reading(
             maxView: { [weak self] in self?.maxView ?? 0 },
             displayedView: { [weak self] in self?.visibleView ?? 1 },
@@ -374,28 +396,7 @@ public final class NovelReaderViewModel {
     }
 
     public func commitNovelTextPresentationEnvironment(isPad: Bool) async {
-        guard usesPadPresentation != isPad else { return }
-        let previousUsesPadPresentation = usesPadPresentation
-        guard settings.readingMode == .paged,
-              readingWorkflow?.state != nil else {
-            usesPadPresentation = isPad
-            return
-        }
-        do {
-            guard let state = try await requestRuntimeUpdate(
-                settings: settings,
-                layout: layout,
-                usesPadPresentation: isPad
-            ) else { return }
-            usesPadPresentation = isPad
-            syncFromWorkflowState(state)
-        } catch {
-            usesPadPresentation = previousUsesPadPresentation
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-        }
+        await runtimeUpdates.commitNovelTextPresentationEnvironment(isPad: isPad)
     }
 
     func selectPagedViewportIndex(_ selectionIndex: Int) {
@@ -449,8 +450,8 @@ public final class NovelReaderViewModel {
         readingWorkflow?.currentChapterOrdinalsByIdentity() ?? [:]
     }
 
-    func resolveLikeChapterTitles() async {
-        await readingWorkflow?.resolveLikeChapterTitles(using: dependencies.like.likeStore)
+    var loadedProjectionSnapshots: [NovelReaderProjection] {
+        readingWorkflow?.loadedProjectionSnapshots ?? []
     }
 
     public func handleMemoryPressure() {
@@ -461,20 +462,10 @@ public final class NovelReaderViewModel {
     }
 
     public func close() {
-        initialPreparationSequence &+= 1
-        initialPreparationTask?.cancel()
-        initialPreparationTask = nil
-        initialPresentationPhase = .cancelled
+        runtimeUpdates.close()
         imagePrefetchCoordinator.cancel()
         imagePrefetchSuspendedPosition = nil
-        appearanceSettingsApplicationSequence &+= 1
-        layoutRequestSequence &+= 1
-        latestRequestedLayout = layout
-        isApplyingAppearanceSettings = false
-        readingWorkflow?.close()
-        readingWorkflow = nil
-        preparedInitialLoad = nil
-        isLoading = false
+        loading.close()
         navigation.resetHistory()
         publishedState.publish(nil, cache: presentationCache)
     }
@@ -531,218 +522,37 @@ public final class NovelReaderViewModel {
     }
 
     public func prepare(layout: NovelReaderLayout) async {
-        guard initialPresentationPhase != .cancelled,
-              initialPresentationPhase != .failed else { return }
-        if !hasStartedPreparation {
-            hasStartedPreparation = true
-            // A geometry callback can precede the appearance task.
-            if latestRequestedLayout == .zero {
-                self.layout = layout
-                latestRequestedLayout = layout
-                layoutRequestSequence &+= 1
-            }
-        } else if initialPresentationPhase == .ready {
-            await commitNovelTextLayout(layout)
-            return
+        switch preparation.prepare(layout: layout) {
+        case .ignore: return
+        case .load: await performInitialLoadIfNeeded()
+        case .updateLayout: await commitNovelTextLayout(layout)
         }
-        await performInitialLoadIfNeeded()
     }
 
     // MARK: - Loading
 
     private func performInitialLoadIfNeeded() async {
-        guard initialPresentationPhase != .cancelled,
-              initialPresentationPhase != .ready,
-              initialPresentationPhase != .restoring else { return }
-        if let task = initialPreparationTask {
-            await task.value
-            return
-        }
-        initialPreparationSequence &+= 1
-        let sequence = initialPreparationSequence
-        initialPresentationPhase = .preparing
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.prepareInitialPresentation(sequence: sequence)
-        }
-        initialPreparationTask = task
-        await task.value
-        if initialPreparationSequence == sequence { initialPreparationTask = nil }
-    }
-
-    private func prepareInitialPresentation(sequence: UInt64) async {
-        isLoading = true
-        errorMessage = nil
-        defer {
-            if initialPreparationSequence == sequence {
-                isLoading = false
-                initialPreparationTask = nil
-            }
-        }
-        do {
-            if repository == nil {
-                let repository = await dependencies.makeNovelReaderRepository()
-                try Task.checkCancellation()
-                guard initialPreparationSequence == sequence else { return }
-                let appSettings = await dependencies.settingsStore.load()
-                try Task.checkCancellation()
-                guard initialPreparationSequence == sequence else { return }
-                self.repository = repository
-                bootstrapSettings = appSettings.novelReader
-                applePencilPageTurnSettings = appSettings.system.applePencilPageTurn
-            }
-            guard let repository else { return }
-            if readingWorkflow == nil { readingWorkflow = makeReadingWorkflow(repository: repository) }
-            guard let workflow = readingWorkflow else { return }
-            if preparedInitialLoad == nil, workflow.state == nil {
-                let progress = await dependencies.readingProgressStore.load(threadID: context.threadID)
-                try Task.checkCancellation()
-                guard initialPreparationSequence == sequence else { return }
-                let prepared = try await workflow.prepareInitialLoad(initial: NovelReadingInitialPosition(
-                    resumePoint: context.initialResumePoint ?? progress?.novel?.novelResumePoint,
-                    favoriteAuthorID: progress?.novel?.authorID
-                ), forceRefresh: forceRefreshInitialLoad)
-                try Task.checkCancellation()
-                guard initialPreparationSequence == sequence, readingWorkflow === workflow else { return }
-                preparedInitialLoad = prepared
-                forceRefreshInitialLoad = false
-            }
-            // Only this task drains geometry changes until the first presentation
-            // is published. Intermediate generations remain behind the overlay.
-            while initialPreparationSequence == sequence {
-                try Task.checkCancellation()
-                let targetLayout = latestRequestedLayout
-                guard isReadyForTextLayout(targetLayout) else {
-                    initialPresentationPhase = .waitingForLayout
-                    return
-                }
-                let requestSequence = layoutRequestSequence
-                initialPresentationPhase = .layingOut
-                if workflow.state == nil, let preparedInitialLoad {
-                    _ = try await workflow.start(prepared: preparedInitialLoad, layout: targetLayout)
-                } else {
-                    _ = try await requestRuntimeUpdate(
-                        settings: settings, layout: targetLayout, usesPadPresentation: usesPadPresentation
-                    )
-                }
-                try Task.checkCancellation()
-                guard initialPreparationSequence == sequence, readingWorkflow === workflow else { return }
-                guard requestSequence == layoutRequestSequence else { continue }
-                guard let state = workflow.state else { return }
-                self.layout = targetLayout
-                self.preparedInitialLoad = nil
-                initialPresentationPhase = .restoring
-                syncFromWorkflowState(state)
-                recordBrowsingHistoryVisitIfNeeded()
-                Task { [weak self] in
-                    guard let self, self.readingWorkflow === workflow else { return }
-                    await self.cache.refresh()
-                    guard self.readingWorkflow === workflow else { return }
-                    await self.prefetchIfNeeded(for: self.selectedSurfaceIndex)
-                }
-                return
-            }
-        } catch {
-            guard initialPreparationSequence == sequence else { return }
-            if Task.isCancelled {
-                initialPresentationPhase = .cancelled
-            } else {
-                initialPresentationPhase = .failed
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-        }
+        await loading.prepareInitialIfNeeded()
     }
 
     /// Called after the view has initiated restoration, and again when the
     /// existing vertical restore controller stops concealing the viewport.
     func completeInitialPresentationIfReady(isRestoringViewport: Bool) {
-        guard initialPresentationPhase == .restoring, !isRestoringViewport,
-              novelReaderPresentation != nil else { return }
-        initialPresentationPhase = .ready
+        preparation.completeRestoration(
+            hasPresentation: novelReaderPresentation != nil,
+            isRestoringViewport: isRestoringViewport
+        )
     }
 
     public func commitNovelTextLayout(_ layout: NovelReaderLayout) async {
-        guard initialPresentationPhase != .cancelled else { return }
-        if initialPresentationPhase != .ready {
-            if initialPresentationPhase == .restoring, latestRequestedLayout == layout { return }
-            if latestRequestedLayout != layout {
-                latestRequestedLayout = layout
-                layoutRequestSequence &+= 1
-            }
-            self.layout = layout
-            guard hasStartedPreparation, initialPresentationPhase != .failed else { return }
-            if initialPresentationPhase == .restoring {
-                initialPresentationPhase = .waitingForLayout
-            }
-            await performInitialLoadIfNeeded()
-            return
-        }
-        guard isReadyForTextLayout(layout) else { return }
-        guard latestRequestedLayout != layout else { return }
-        latestRequestedLayout = layout
-        layoutRequestSequence &+= 1
-        let requestSequence = layoutRequestSequence
-        guard readingWorkflow?.state != nil else {
-            self.layout = layout
-            // The initial view task owns settings/repository bootstrap.
-            // Geometry may arrive while that task is still suspended.
-            if readingWorkflow != nil {
-                await performInitialLoadIfNeeded()
-            }
-            return
-        }
-        do {
-            guard let state = try await requestRuntimeUpdate(
-                settings: settings,
-                layout: layout,
-                usesPadPresentation: usesPadPresentation
-            ) else {
-                if layoutRequestSequence == requestSequence {
-                    latestRequestedLayout = self.layout
-                }
-                return
-            }
-            guard layoutRequestSequence == requestSequence else { return }
-            self.layout = layout
-            syncFromWorkflowState(state)
-        } catch is CancellationError {
-            if layoutRequestSequence == requestSequence {
-                latestRequestedLayout = self.layout
-            }
-        } catch {
-            guard layoutRequestSequence == requestSequence else { return }
-            latestRequestedLayout = self.layout
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-        }
-    }
-
-    private func isReadyForTextLayout(_ layout: NovelReaderLayout) -> Bool {
-        layout.novelTextBoxLayout(settings: settings, usesPadPresentation: usesPadPresentation)
-            .isReadyForTextLayout
+        await runtimeUpdates.commitNovelTextLayout(layout)
     }
 
     public func loadCurrent(forceRefresh: Bool) async {
         guard initialPresentationPhase != .cancelled else { return }
         if novelReaderSurfaces.isEmpty {
             if forceRefresh {
-                initialPreparationSequence &+= 1
-                let sequence = initialPreparationSequence
-                let previousTask = initialPreparationTask
-                previousTask?.cancel()
-                await previousTask?.value
-                guard initialPreparationSequence == sequence,
-                      initialPresentationPhase != .cancelled else { return }
-                initialPreparationTask = nil
-                preparedInitialLoad = nil
-                forceRefreshInitialLoad = true
-                if let repository {
-                    readingWorkflow?.close()
-                    readingWorkflow = makeReadingWorkflow(repository: repository)
-                }
+                guard await loading.invalidateInitialForRefresh() else { return }
             }
             await performInitialLoadIfNeeded()
             return
@@ -783,69 +593,11 @@ public final class NovelReaderViewModel {
 
     public func commitNovelTextAppearance(
         _ newSettings: NovelReaderAppearanceSettings,
-        applePencilPageTurnSettings requestedApplePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
+        applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
     ) async {
-        let newApplePencilPageTurnSettings = requestedApplePencilPageTurnSettings ?? applePencilPageTurnSettings
-        let oldSettings = settings
-        let oldApplePencilPageTurnSettings = applePencilPageTurnSettings
-        let novelReaderSettingsChanged = oldSettings != newSettings
-        let applePencilSettingsChanged = oldApplePencilPageTurnSettings != newApplePencilPageTurnSettings
-        guard novelReaderSettingsChanged else {
-            guard applePencilSettingsChanged else { return }
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            persistSettings(applePencilPageTurnSettings: newApplePencilPageTurnSettings)
-            return
-        }
-
-        if oldSettings.isSurfaceOnlyAppearanceChange(to: newSettings) {
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            if let state = readingWorkflow?.commitSurfaceAppearance(newSettings) {
-                syncFromWorkflowState(state)
-            }
-            bootstrapSettings = newSettings
-            persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
-            )
-            return
-        }
-
-        guard readingWorkflow?.state != nil else {
-            bootstrapSettings = newSettings
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
-            )
-            return
-        }
-
-        let applicationSequence = beginApplyingAppearanceSettings()
-        defer { finishApplyingAppearanceSettings(applicationSequence) }
-
-        do {
-            guard let state = try await requestRuntimeUpdate(
-                settings: newSettings,
-                layout: layout,
-                usesPadPresentation: usesPadPresentation
-            ) else { return }
-            guard appearanceSettingsApplicationSequence == applicationSequence else { return }
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            syncFromWorkflowState(state)
-            bootstrapSettings = newSettings
-            persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
-            )
-        } catch is CancellationError {
-        } catch {
-            guard appearanceSettingsApplicationSequence == applicationSequence else { return }
-            applePencilPageTurnSettings = oldApplePencilPageTurnSettings
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-        }
+        await runtimeUpdates.commitNovelTextAppearance(
+            newSettings, applePencilPageTurnSettings: applePencilPageTurnSettings
+        )
     }
 
     public func applyApplePencilPageTurnSettings(_ newSettings: ApplePencilPageTurnSettings) {
@@ -1100,7 +852,7 @@ public final class NovelReaderViewModel {
         showsNovelReaderProjectionNavigationOverlay: Bool = false,
         reportsError: Bool = true
     ) async -> Bool {
-        guard let workflow = await ensureReadingWorkflow() else { return false }
+        guard await ensureReadingWorkflow() != nil else { return false }
         if showsNovelReaderProjectionNavigationOverlay {
             await beginNovelReaderProjectionNavigation()
         }
@@ -1109,105 +861,15 @@ public final class NovelReaderViewModel {
                 setNovelReaderProjectionNavigation(false)
             }
         }
-        isLoading = true
-        errorMessage = nil
-        do {
-            let state = try await workflow.loadView(
-                view,
-                preferredSurfaceOrdinal: preferredSurfaceOrdinal,
-                preferredResumePoint: preferredResumePoint,
-                forceRefresh: forceRefresh
-            )
-            syncFromWorkflowState(state)
-            isLoading = false
-            recordBrowsingHistoryVisitIfNeeded()
-            await cache.refresh()
-
-            Task {
-                await prefetchIfNeeded(for: selectedSurfaceIndex)
-            }
-            return true
-        } catch {
-            if reportsError {
-                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                    errorMessage = error.localizedDescription
-                    errorDetails = LoadFailureDetails(error: error)
-                }
-            } else {
-                YamiboLog.reader.warning("load(view:) failed on a non-reporting fallback path (reportsError=false); error dropped without surfacing to UI: \(error)")
-            }
-            isLoading = false
-            return false
-        }
-    }
-
-    /// One-shot browsing-history record for this reader session, fired on
-    /// the first successful content load (browsing-history decision #5's
-    /// "打开即记"). Position/chapter refreshes then ride the debounced
-    /// progress saves via `FavoriteLibraryProgressSyncAdapter`. Preview
-    /// sessions never record (Reader Preview Mode exemption).
-    private func recordBrowsingHistoryVisitIfNeeded() {
-        guard !hasRecordedBrowsingHistoryVisit, !context.isPreview else { return }
-        hasRecordedBrowsingHistoryVisit = true
-        let history = dependencies.browsingHistoryWorkflow
-        let visit = BrowsingHistoryVisit(
-            threadID: context.threadID,
-            title: title,
-            forumID: context.forumID,
-            reader: .novel,
-            authorID: context.authorID
+        return await loading.load(
+            view: view, preferredSurfaceOrdinal: preferredSurfaceOrdinal,
+            preferredResumePoint: preferredResumePoint, forceRefresh: forceRefresh,
+            reportsError: reportsError
         )
-        Task {
-            do {
-                try await history.recordVisit(visit)
-            } catch {
-                YamiboLog.reader.warning("Failed to record novel browsing-history visit for thread \(self.context.threadID, privacy: .public): \(error)")
-            }
-        }
-    }
-
-    private func ensureNovelReaderRepository() async -> NovelReaderRepository {
-        if repository == nil {
-            repository = await dependencies.makeNovelReaderRepository()
-        }
-        guard let repository else {
-            preconditionFailure("Reader repository should be initialized")
-        }
-        return repository
     }
 
     private func ensureReadingWorkflow() async -> NovelReadingWorkflow? {
-        let repository = await ensureNovelReaderRepository()
-        if readingWorkflow == nil {
-            readingWorkflow = makeReadingWorkflow(repository: repository)
-        }
-        return readingWorkflow
-    }
-
-    private func makeReadingWorkflow(repository: NovelReaderRepository) -> NovelReadingWorkflow {
-        NovelReadingWorkflow(
-            context: context,
-            settings: settings,
-            layout: layout,
-            repository: repository,
-            usesPadPresentation: usesPadPresentation,
-            runtimeAdapter: runtimeAdapter ?? DefaultNovelTextLayoutRuntimeAdapter()
-        )
-    }
-
-    private func requestRuntimeUpdate(
-        settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout,
-        usesPadPresentation: Bool
-    ) async throws -> NovelReadingWorkflowState? {
-        try await readingWorkflow?.requestRuntimeUpdate(
-            NovelReadingWorkflowRuntimeUpdate(
-                settings: settings,
-                layout: layout,
-                usesPadPresentation: usesPadPresentation
-            ),
-            preparation: runtimeUpdatePreparation
-        )
+        await loading.ensureWorkflow()
     }
 
     private func syncFromWorkflowState(_ state: NovelReadingWorkflowState) {
@@ -1299,24 +961,10 @@ public final class NovelReaderViewModel {
     /// catalog; returns nil when the reading workflow is unavailable so the
     /// navigation coordinator can fall back to a plain view load.
     private func openChapterAnchor(_ anchor: NovelChapterAnchor) async -> Bool? {
-        guard let workflow = await ensureReadingWorkflow() else { return nil }
+        guard await ensureReadingWorkflow() != nil else { return nil }
         await beginNovelReaderProjectionNavigation()
         defer { setNovelReaderProjectionNavigation(false) }
-        isLoading = true
-        errorMessage = nil
-        do {
-            let state = try await workflow.loadChapter(anchor)
-            syncFromWorkflowState(state)
-            isLoading = false
-            return true
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
-            }
-            isLoading = false
-            return false
-        }
+        return await loading.loadChapter(anchor)
     }
 
     private var currentLinearReadingPageKey: NovelReaderLinearReadingPageKey? {
@@ -1336,13 +984,9 @@ public final class NovelReaderViewModel {
     }
 
     private func prefetchIfNeeded(for surfaceIndex: Int) async {
-        guard let workflow = await ensureReadingWorkflow(),
-              let presentation = novelReaderPresentation,
-              presentation.surfaces.indices.contains(surfaceIndex),
-              let state = await workflow.prefetchIfNeeded(near: presentation.surfaces[surfaceIndex].identity) else {
-            return
-        }
-        syncFromWorkflowState(state)
+        guard let presentation = novelReaderPresentation,
+              presentation.surfaces.indices.contains(surfaceIndex) else { return }
+        await loading.prefetch(near: presentation.surfaces[surfaceIndex].identity)
     }
 
     private func chapterTitle(for surfaceIndex: Int) -> String? {
@@ -1419,7 +1063,7 @@ public final class NovelReaderViewModel {
     }
 
     private func scheduleProgressSync() {
-        guard !context.isPreview else { return }
+        guard !context.isPreview, novelReaderPresentation != nil else { return }
         let snapshot = currentProgressSnapshot()
         Task { [weak self, progressSync] in
             await self?.persistNovelResumeRoute(snapshot)
@@ -1428,6 +1072,8 @@ public final class NovelReaderViewModel {
     }
 
     private func flushProgress() async -> NovelLaunchContext {
+        // Closing a failed/unprepared reader must not persist its fallback page 1.
+        guard novelReaderPresentation != nil else { return context }
         let snapshot = currentProgressSnapshot()
         let resumeContext = resumeContext(for: snapshot)
         guard !context.isPreview else { return resumeContext }
@@ -1567,38 +1213,5 @@ public final class NovelReaderViewModel {
                 }
             }
         }
-    }
-
-    private func beginApplyingAppearanceSettings() -> UInt64 {
-        appearanceSettingsApplicationSequence &+= 1
-        isApplyingAppearanceSettings = true
-        return appearanceSettingsApplicationSequence
-    }
-
-    private func finishApplyingAppearanceSettings(_ sequence: UInt64) {
-        guard appearanceSettingsApplicationSequence == sequence else { return }
-        isApplyingAppearanceSettings = false
-    }
-}
-
-private extension NovelReaderAppearanceSettings {
-    func isSurfaceOnlyAppearanceChange(to other: NovelReaderAppearanceSettings) -> Bool {
-        // Quiet changes the attributed glyph color, not just the page background.
-        // Rebuild on entry and exit so the live TextKit graph cannot retain old text colors.
-        if backgroundStyle != other.backgroundStyle,
-           backgroundStyle == .quiet || other.backgroundStyle == .quiet {
-            return false
-        }
-        var lhs = self
-        var rhs = other
-        lhs.backgroundStyle = .system
-        rhs.backgroundStyle = .system
-        lhs.pagedTurnStyle = .slide
-        rhs.pagedTurnStyle = .slide
-        lhs.isImmersiveModeEnabled = false
-        rhs.isImmersiveModeEnabled = false
-        return lhs == rhs &&
-            (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle
-                || isImmersiveModeEnabled != other.isImmersiveModeEnabled)
     }
 }

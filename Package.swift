@@ -32,7 +32,7 @@ let package = Package(
             name: "YamiboXUI",
             dependencies: [
                 "YamiboXCore",
-                .product(name: "NukeUI", package: "Nuke"),
+                .product(name: "Nuke", package: "Nuke"),
             ]
         )
     ]

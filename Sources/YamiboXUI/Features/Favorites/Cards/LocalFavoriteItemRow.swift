@@ -75,7 +75,7 @@ struct LocalFavoriteItemRow: View {
         HStack(spacing: 12) {
             if showsCover {
                 // Android row cards use a 92dp-wide 0.72-ratio cover.
-                LocalFavoriteCoverThumbnail(url: card.coverURL, title: card.resolvedTitle)
+                BookCoverThumbnail(url: card.coverURL, title: card.resolvedTitle)
                     .frame(width: 92, height: 128)
                     .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace)
             }

@@ -212,16 +212,18 @@ struct ReaderChapterCommentComposerDestination: View {
     @Environment(\.dismiss) private var dismiss
     @State private var navigator: ForumDestinationNavigator
     let url: URL
+    let appModel: YamiboAppModel
 
-    init(url: URL, dependencies: ForumDependencies, appModel: YamiboAppModel, discussionWorkTIDs: Set<String>) {
+    init(url: URL, dependencies: ForumNavigationDependencies, appModel: YamiboAppModel, discussionWorkTIDs: Set<String>) {
         self.url = url
-        _navigator = State(wrappedValue: ForumDestinationNavigator(dependencies: dependencies, appModel: appModel,
+        self.appModel = appModel
+        _navigator = State(wrappedValue: ForumDestinationNavigator(dependencies: dependencies, actions: appModel.forumNavigationActions,
                                                                    mode: .readerOverlay, discussionWorkTIDs: discussionWorkTIDs))
     }
 
     var body: some View {
-        ForumDestinationStackView(navigator: navigator) {
-            ForumDestinationScreen(destination: .web(url), navigator: navigator)
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
+            ForumDestinationScreen(destination: .web(url), navigator: navigator, appModel: appModel)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button { dismiss() } label: { Image(systemName: "xmark") }

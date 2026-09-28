@@ -42,22 +42,8 @@ public struct NovelReaderView: View {
     @State private var topChromeHeight: CGFloat = 0
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
-    @State private var novelTextSelectionController = NovelTextSelectionController()
-    @State private var likeHighlightController = NovelLikeHighlightController()
+    @State private var annotations: NovelReaderAnnotationCoordinator
     @State private var searchHighlightController = NovelReaderSearchHighlightController()
-    @State private var likedNovelImageAnchors: Set<NovelImageLikeAnchor> = []
-    @State private var likeFeedbackGenerator = UINotificationFeedbackGenerator()
-    /// Drives the 书签与喜欢 capsule (visibility + count) and the bookmark
-    /// button's filled/outline state. Refreshed from the two stores rather
-    /// than derived, because the capsule must also reflect changes made in
-    /// another scene or synced in from another device.
-    @State private var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
-    /// Whether the bookmark action at the viewport's current position removes
-    /// an existing bookmark rather than adding a new one.
-    @State private var isCurrentPositionBookmarked = false
-    /// Remembered for the reader session so reopening the panel returns to the
-    /// segment the user last looked at; nil means "not chosen yet".
-    @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
     /// The directory entry always lands on Chapters, while the annotation
     /// entry preserves its bookmarks-or-likes destination.
     @State private var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
@@ -68,12 +54,14 @@ public struct NovelReaderView: View {
     @State private var windowSafeAreaInsets: UIEdgeInsets?
     private let appModel: YamiboAppModel
     private let dependencies: NovelReaderDependencies
+    private let forumDependencies: ForumNavigationDependencies
     private let onClose: () -> Void
     private let onOpenOriginalPost: (URL, NovelLaunchContext) async -> Bool
 
     public init(
         context: NovelLaunchContext,
         dependencies: NovelReaderDependencies,
+        forumDependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         onClose: (() -> Void)? = nil,
         onOpenOriginalPost: ((URL, NovelLaunchContext) async -> Bool)? = nil,
@@ -85,7 +73,7 @@ public struct NovelReaderView: View {
         // built — and, past the first init, discarded — on each parent
         // render. Accepted deliberately, mirroring `LocalFavoritesRootView`:
         // the init is side-effect-free, so the extra constructions are inert.
-        _model = State(initialValue: NovelReaderViewModel(
+        let model = NovelReaderViewModel(
             context: context,
             dependencies: dependencies,
             initialSettings: initialSettings,
@@ -97,12 +85,17 @@ public struct NovelReaderView: View {
                     appModel.updateReaderResumeRoute(route)
                 }
             }
+        )
+        _model = State(initialValue: model)
+        _annotations = State(initialValue: NovelReaderAnnotationCoordinator(
+            model: model, dependencies: dependencies.like, imagePipeline: dependencies.imagePipeline
         ))
         _chromeState = State(initialValue: NovelReaderChromeState(
             showsChrome: initialSettings?.readingMode != .vertical
         ))
         self.appModel = appModel
         self.dependencies = dependencies
+        self.forumDependencies = forumDependencies
         self.onClose = onClose ?? { appModel.dismissNovelReader() }
         self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
             await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .novel(context))
@@ -212,8 +205,8 @@ public struct NovelReaderView: View {
                         onShowSearch: openSearch,
                         onToggleBookmark: toggleBookmarkAtCurrentPosition,
                         onShowAnnotations: openAnnotations,
-                        isBookmarked: isCurrentPositionBookmarked,
-                        annotationCapsule: annotationCapsule,
+                        isBookmarked: annotations.isCurrentPositionBookmarked,
+                        annotationCapsule: annotations.capsule,
                         onJumpChapter: { delta in
                             jumpAdjacentChapter(delta)
                         },
@@ -285,11 +278,11 @@ public struct NovelReaderView: View {
             .modifier(readerStateObserverModifier())
             .modifier(readerChromeHeightObserverModifier())
             .onChange(of: model.novelReaderPresentation?.generation) { _, _ in
-                novelTextSelectionController.clearSelection()
+                annotations.selectionController.clearSelection()
                 searchHighlightController.clear()
             }
             .onChange(of: model.settings.readingMode) { _, _ in
-                novelTextSelectionController.clearSelection()
+                annotations.selectionController.clearSelection()
             }
             .onChange(of: model.initialPresentationPhase) { _, phase in
                 guard phase == .restoring else { return }
@@ -298,72 +291,47 @@ public struct NovelReaderView: View {
             .onChange(of: verticalRestore.verticalRestoreController.shouldConcealViewportContent) { _, concealed in
                 model.completeInitialPresentationIfReady(isRestoringViewport: concealed)
             }
-            // Appearance-scoped `.task` replacing the removed `.onReceive`
-            // bridge. The reader stays the visible full-screen surface for
-            // its whole session — its own panels are sheets/covers presented
-            // *from* it, which don't cancel this task — so like changes made
-            // anywhere in the session keep refreshing the anchors live,
-            // exactly as the Combine subscription did.
-            .task {
-                for await changeID in dependencies.like.likeStore.changes() {
-                    // Per-instance stream: the guard is kept as the explicit
-                    // "only this exact store instance" contract.
-                    guard changeID == dependencies.like.likeStore.changeID else {
-                        continue
-                    }
-                    Task { await loadLikedNovelImageAnchors() }
-                    Task { await refreshAnnotationState() }
-                    Task { await model.resolveLikeChapterTitles() }
-                }
-            }
-            // Bookmarks live in their own store, so they need their own
-            // stream: the capsule count and the toggle glyph must also follow
-            // deletions made in the panel and rows synced in from another
-            // device.
-            .task {
-                for await _ in dependencies.like.bookmarkStore.changes() {
-                    await refreshAnnotationState()
-                }
+            .task { await annotations.observeChanges() }
+            .onChange(of: annotations.noteToEdit?.id) { _, _ in
+                guard let item = annotations.noteToEdit else { return }
+                presentedSheet = .note(item)
+                annotations.noteToEdit = nil
             }
             // The bookmark glyph is only readable while the chrome is up, so
             // that is when it is worth re-deriving from the current position.
             .onChange(of: chromeState.showsChrome) { _, showsChrome in
                 guard showsChrome else { return }
-                Task { await refreshAnnotationState() }
+                Task { await annotations.refresh() }
             }
             // The ordinals are scoped to the forum page currently laid out, so
             // moving to another page reveals a fresh set.
             .onChange(of: model.visibleView) { _, _ in
-                Task { await resolveAnnotationSortKeys() }
+                Task { await annotations.resolveSortKeys() }
             }
         }
         // Inspector belongs outside the viewport geometry so a pinned panel
         // reflows the reader rather than covering already laid-out text.
         .modifier(novelReaderPresentationModifier())
+        .annotationOperationFeedback(annotations.operations)
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {
         NovelReaderLifecycleModifier(
             currentLayout: currentLayout,
             onInitialTask: {
-                configureLikeCapture()
-                likeHighlightController.configure(
-                    workKey: .novel(threadID: model.context.threadID),
-                    likeStore: dependencies.like.likeStore
-                )
-                Task { await loadLikedNovelImageAnchors() }
+                annotations.configure()
                 await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
                 await model.prepare(layout: currentLayout)
                 guard !Task.isCancelled else { return }
                 // `prepare` is what makes a semantic reader position
                 // available. Refreshing earlier always reads nil and leaves
                 // an existing bookmark looking like an add action.
-                await refreshAnnotationState()
+                await annotations.refresh()
                 // Strictly after `prepare`: it is what creates the reading
                 // workflow, and the ordinals come off the laid-out projection.
                 // Spawned before it, this read always saw a nil workflow and
                 // silently no-opped, leaving every chapter ordinal unresolved.
-                await resolveAnnotationSortKeys()
+                await annotations.resolveSortKeys()
                 updateChromeForContentState()
                 restoreVerticalPositionIfNeeded()
             },
@@ -404,6 +372,8 @@ public struct NovelReaderView: View {
             chapterCommentsTarget: chapterCommentsTarget,
             chapterCommentsHasLaterChapter: chapterCommentsHasLaterChapter,
             likeDependencies: dependencies.like,
+            settingsStore: dependencies.settingsStore,
+            forumDependencies: forumDependencies,
             appModel: appModel,
             onJumpToChapterDirectoryChapter: { chapter in
                 Task { await jumpToChapterDirectoryChapter(chapter) }
@@ -418,9 +388,7 @@ public struct NovelReaderView: View {
                 handleBookmarkOpen(item)
             },
             onSaveNote: { item, note in
-                Task {
-                    _ = try? await dependencies.like.likeStore.updateNote(id: item.id, note: note)
-                }
+                Task { await annotations.saveNote(for: item, note: note) }
             },
             annotationSegment: annotationSegmentBinding,
             initialReaderLibraryTab: initialReaderLibraryTab
@@ -466,43 +434,46 @@ public struct NovelReaderView: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.settings.readingMode == .paged {
-            pagedContent(
+            NovelReaderPagedContent(
+                model: model,
+                layout: layout,
                 topInset: topInset,
                 bottomInset: bottomInset,
-                layout: layout
+                isPadDevice: isPadDevice,
+                pagedScrollAnimationRequest: pagedScrollAnimationRequest,
+                makeBindings: pagedViewportBindings
             )
         } else {
-            verticalContent(
+            NovelReaderVerticalContent(
+                model: model,
+                layout: layout,
                 topInset: topInset,
                 bottomInset: bottomInset,
-                layout: layout
+                isPadDevice: isPadDevice,
+                isChromeVisible: chromeState.showsChrome,
+                verticalRestore: verticalRestore,
+                verticalScrollCoordinator: verticalScrollCoordinator,
+                annotations: annotations,
+                searchHighlightController: searchHighlightController,
+                verticalTapSuppressionUntil: $verticalTapSuppressionUntil,
+                handleVerticalBoundaryPullRelease: handleVerticalBoundaryPullRelease,
+                updateVerticalBoundaryPullState: updateVerticalBoundaryPullState,
+                handleVerticalTap: handleVerticalTap,
+                enterImmersiveMode: enterImmersiveMode,
+                handleImageTap: handleImageTap
             )
         }
     }
-
-    /// Reduce Motion downgrades the 3D page-curl transition to the already
-    /// available quick-fade style; direct-manipulation slide stays as is.
-    private var effectivePagedSettings: NovelReaderAppearanceSettings {
-        guard reduceMotion, model.settings.pagedTurnStyle == .pageCurl else { return model.settings }
-        var adjusted = model.settings
-        adjusted.pagedTurnStyle = .quickFade
-        return adjusted
-    }
-
-
-    /// Shared bindings for the three paged viewport branches; see
-    /// `NovelReaderPagedViewportBindings`.
-    // MARK: - Content viewports
 
     private func pagedViewportBindings(pagerIdentity: ReaderPagedPagerIdentity) -> NovelReaderPagedViewportBindings {
         NovelReaderPagedViewportBindings(
             displayReferenceProvider: { surfaceIdentity in
                 model.novelTextViewportDisplayReference(for: surfaceIdentity)
             },
-            selectionController: novelTextSelectionController,
-            likeHighlightController: likeHighlightController,
+            selectionController: annotations.selectionController,
+            likeHighlightController: annotations.highlightController,
             searchHighlightController: searchHighlightController,
-            likedImageAnchors: likedNovelImageAnchors,
+            likedImageAnchors: annotations.likedImageAnchors,
             isChromeVisible: chromeState.showsChrome,
             canBoundaryPageTurn: { delta in
                 canNavigatePagedBoundary(delta: delta)
@@ -527,200 +498,9 @@ public struct NovelReaderView: View {
                 handleImageTap(url: url, title: title)
             },
             onImageLongPress: { anchor, imageURL, chapterTitle in
-                handleImageLongPress(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
+                annotations.toggleImage(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
             }
         )
-    }
-
-    private func pagedContent(topInset: CGFloat, bottomInset: CGFloat, layout: NovelReaderLayout) -> some View {
-        var displaySettings = effectivePagedSettings
-        displaySettings.horizontalPadding = layout.novelTextBoxLayout(
-            settings: model.settings, usesPadPresentation: isPadDevice
-        ).contentInsets.leading
-        let pagerIdentity = ReaderPagedPagerIdentity(
-            visibleView: model.visibleView,
-            surfaceCount: model.novelReaderSurfaces.count,
-            spreadCount: model.presentationSpreads.count,
-            usesTwoPageSpread: model.isTwoPageSpreadActive,
-            layout: layout
-        )
-        let pagedTopInset = topInset + layout.chromeInsets.top
-        // The turning sheet includes the home-indicator area; the text box
-        // still ends at its original boundary above that area.
-        let pagedBottomInset = layout.chromeInsets.bottom + bottomInset
-        let bindings = pagedViewportBindings(pagerIdentity: pagerIdentity)
-        let information = ReaderPageInformationPresentation(isPaged: true,
-            isImmersive: model.settings.isImmersiveModeEnabled, isChromeVisible: bindings.isChromeVisible)
-        let attachedInformation = ReaderAttachedInformationConfiguration(
-            pages: model.attachedPageInformation(workTitle: model.title, information: information),
-            presentation: information, selectedIndex: model.pagedViewportSelectionIndex,
-            backgroundStyle: model.settings.backgroundStyle, topInset: topInset, bottomInset: bottomInset,
-            titleSidePadding: model.navigation.canNavigateForward ? 128 : 76,
-            titleLift: isPadDevice ? 12 : 0
-        )
-        return Group {
-            if effectivePagedSettings.pagedTurnStyle == .pageCurl {
-                NovelReaderPagedPageCurlViewport(
-                    attachedInformation: attachedInformation,
-                    structureID: model.presentationStructure?.id,
-                    sequence: model.pageCurlSequence,
-                    spreads: model.presentationSpreads,
-                    surfaces: model.novelReaderSurfaces,
-                    settings: displaySettings,
-                    refererURL: model.forumURL,
-                    offlineScope: model.inlineImageOfflineScope,
-                    topInset: pagedTopInset,
-                    bottomInset: pagedBottomInset,
-                    selectionIndex: model.pagedViewportSelectionIndex,
-                    usesTwoPageSpread: model.isTwoPageSpreadActive,
-                    pagerIdentity: pagerIdentity,
-                    scrollAnimationRequest: pagedScrollAnimationRequest,
-                    displayReferenceProvider: bindings.displayReferenceProvider,
-                    selectionController: bindings.selectionController,
-                    likeHighlightController: bindings.likeHighlightController,
-                    searchHighlightController: bindings.searchHighlightController,
-                    likedImageAnchors: bindings.likedImageAnchors,
-                    isChromeVisible: bindings.isChromeVisible,
-                    canBoundaryPageTurn: bindings.canBoundaryPageTurn,
-                    onSelectionChange: bindings.onSelectionChange,
-                    onBoundaryPageTurn: bindings.onBoundaryPageTurn,
-                    onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
-                    onPageTapZone: bindings.onPageTapZone,
-                    onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
-                    onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
-                    onImageTap: bindings.onImageTap,
-                    onImageLongPress: bindings.onImageLongPress
-                )
-            } else {
-                NovelReaderPagedCollectionViewport(
-                    attachedInformation: attachedInformation,
-                    structureID: model.presentationStructure?.id,
-                    itemSource: model.isTwoPageSpreadActive
-                        ? .spreads(model.presentationSpreads)
-                        : .surfaces,
-                    surfaces: model.novelReaderSurfaces,
-                    settings: displaySettings,
-                    refererURL: model.forumURL,
-                    offlineScope: model.inlineImageOfflineScope,
-                    topInset: pagedTopInset,
-                    bottomInset: pagedBottomInset,
-                    selectionIndex: model.pagedViewportSelectionIndex,
-                    pagerIdentity: pagerIdentity,
-                    scrollAnimationRequest: pagedScrollAnimationRequest,
-                    displayReferenceProvider: bindings.displayReferenceProvider,
-                    selectionController: bindings.selectionController,
-                    likeHighlightController: bindings.likeHighlightController,
-                    searchHighlightController: bindings.searchHighlightController,
-                    likedImageAnchors: bindings.likedImageAnchors,
-                    isChromeVisible: bindings.isChromeVisible,
-                    canBoundaryPageTurn: bindings.canBoundaryPageTurn,
-                    onSelectionChange: bindings.onSelectionChange,
-                    onBoundaryPageTurn: bindings.onBoundaryPageTurn,
-                    onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
-                    onPageTapZone: bindings.onPageTapZone,
-                    onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
-                    onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
-                    onImageTap: bindings.onImageTap,
-                    onImageLongPress: bindings.onImageLongPress
-                )
-            }
-        }
-        .id(pagerIdentity)
-        .scrollDisabled(chromeState.showsChrome)
-    }
-
-    private func verticalContent(topInset: CGFloat, bottomInset: CGFloat, layout: NovelReaderLayout) -> some View {
-        var displaySettings = model.settings
-        displaySettings.horizontalPadding = layout.novelTextBoxLayout(
-            settings: model.settings, usesPadPresentation: isPadDevice
-        ).contentInsets.leading
-        return NovelReaderVerticalViewportScrollView(
-            structureID: model.presentationStructure?.id,
-            surfaces: model.novelReaderSurfaces,
-            settings: displaySettings,
-            refererURL: model.forumURL,
-            offlineScope: model.inlineImageOfflineScope,
-            topInset: topInset,
-            bottomInset: bottomInset,
-            scrollRequest: verticalRestore.verticalScrollRequest,
-            displayReferenceProvider: { surfaceIdentity in
-                model.novelTextViewportDisplayReference(for: surfaceIdentity)
-            },
-            selectionController: novelTextSelectionController,
-            likeHighlightController: likeHighlightController,
-            searchHighlightController: searchHighlightController,
-            likedImageAnchors: likedNovelImageAnchors,
-            isChromeVisible: chromeState.showsChrome,
-            onVisibleSurfaceIdentitiesChange: { surfaceIdentities in
-                model.updateNovelTextViewportVisibleSurfaceIdentities(surfaceIdentities)
-            },
-            onScrollRequestHandled: { request in
-                verticalRestore.handleScrollRequestHandled(
-                    request,
-                    model: model,
-                    scrollCoordinator: verticalScrollCoordinator
-                )
-            },
-            onScrollViewReady: { scrollView in
-                verticalScrollCoordinator.attach(scrollView: scrollView)
-                verticalScrollCoordinator.onBoundaryPullRelease = { direction in
-                    Task { @MainActor in
-                        await handleVerticalBoundaryPullRelease(direction)
-                    }
-                }
-                verticalScrollCoordinator.onViewportMetricsChange = {
-                    Task { @MainActor in
-                        verticalRestore.tryAdvanceVerticalRestore(
-                            model: model,
-                            scrollCoordinator: verticalScrollCoordinator
-                        )
-                        verticalRestore.applyVerticalViewportPositionUpdate(
-                            for: .viewportGeometryChanged,
-                            model: model
-                        )
-                    }
-                }
-                verticalScrollCoordinator.onBoundaryPullStateChange = { state in
-                    Task { @MainActor in
-                        updateVerticalBoundaryPullState(state)
-                    }
-                }
-            },
-            onSurfaceFramesChange: { frames in
-                verticalRestore.handleSurfaceFramesChange(
-                    frames,
-                    model: model,
-                    scrollCoordinator: verticalScrollCoordinator
-                )
-            },
-            onViewportSampleChange: { sample in
-                verticalRestore.handleViewportSampleChange(sample, model: model)
-            },
-            onViewportChange: {
-                verticalRestore.applyVerticalViewportPositionUpdate(
-                    for: .viewportGeometryChanged,
-                    model: model
-                )
-            },
-            onScrollSettled: {
-                verticalRestore.updateVerticalViewportPosition(model: model)
-                Task { await self.refreshCurrentPositionBookmarkState() }
-            },
-            onTap: {
-                handleVerticalTap()
-            },
-            onChromeVisibleImageTap: {
-                enterImmersiveMode()
-            },
-            onImageTap: { url, title in
-                handleImageTap(url: url, title: title)
-            },
-            onImageLongPress: { anchor, imageURL, chapterTitle in
-                handleImageLongPress(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
-            }
-        )
-        .contentShape(Rectangle())
-        .simultaneousGesture(verticalScrollSuppressionGesture)
     }
 
     private var backgroundColor: Color {
@@ -912,13 +692,14 @@ public struct NovelReaderView: View {
     private func handleSearchResult(_ match: NovelReaderSearchMatch) {
         searchPresentation = nil
         Task {
-            guard await model.jumpToSearchResult(match.startResumePoint) else { return }
-            searchHighlightController.highlight(
-                from: match.startResumePoint,
-                to: match.endResumePoint
-            )
-            restoreVerticalPositionIfNeeded()
-            await refreshCurrentPositionBookmarkState()
+            await navigationPresentation.performAsync {
+                guard await model.jumpToSearchResult(match.startResumePoint) else { return false }
+                searchHighlightController.highlight(
+                    from: match.startResumePoint,
+                    to: match.endResumePoint
+                )
+                return true
+            }
         }
     }
 
@@ -1088,17 +869,6 @@ public struct NovelReaderView: View {
         toggleChrome()
     }
 
-    private var verticalScrollSuppressionGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { _ in
-                cancelVerticalRestoreForUserScroll()
-                verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
-            }
-            .onEnded { _ in
-                verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
-            }
-    }
-
     private func openChapterDrawer() {
         initialReaderLibraryTab = .chapters
         presentedSheet = .annotations
@@ -1130,265 +900,42 @@ public struct NovelReaderView: View {
         presentedSheet = .annotations
     }
 
-    // MARK: - Bookmarks
+    // MARK: - Annotation presentation and viewport events
 
     private var annotationSegmentBinding: Binding<ReaderAnnotationSegment> {
         Binding(
-            get: { rememberedAnnotationSegment ?? annotationCapsule.initialSegment(remembering: nil) },
-            set: { rememberedAnnotationSegment = $0 }
+            get: { annotations.selectedSegment },
+            set: { annotations.selectedSegment = $0 }
         )
     }
 
-    /// The position the bookmark button marks: whatever the viewport is
-    /// showing right now. Returns nil on content the reader cannot give a
-    /// semantic position to (the same A3 gate that hides 加入喜欢), in which
-    /// case the button is a no-op rather than writing a bookmark that could
-    /// never be resolved back.
-    private func currentBookmarkAnchor() -> NovelBookmarkAnchor? {
-        guard let resumePoint = model.currentNovelResumePoint else { return nil }
-        return NovelBookmarkAnchor(
-            chapterIdentity: resumePoint.chapterIdentity,
-            textSegmentIdentity: resumePoint.textSegmentIdentity,
-            displayedTextOffset: resumePoint.displayedTextOffset,
-            view: resumePoint.view,
-            chapterOrdinal: resumePoint.chapterOrdinal,
-            chapterTitle: resumePoint.chapterTitle,
-            resolvedAuthorID: resumePoint.authorID
-        )
-    }
-
-    /// Paged swipes update the reader model outside the button actions, so
-    /// the glyph must follow that new viewport position too.
     private func handlePagedViewportSelection(_ selectionIndex: Int) {
         model.selectPagedViewportIndex(selectionIndex)
-        Task { await self.refreshCurrentPositionBookmarkState() }
+        Task { await annotations.refreshPosition() }
     }
 
     private func toggleBookmarkAtCurrentPosition() {
-        // In vertical mode the committed viewport sample lags the scroll by up
-        // to ~100 ms; without this the bookmark can land a screen behind.
+        // The vertical sample can lag a gesture; synchronize before capturing.
         syncVerticalViewportBeforeSave()
-        guard let anchor = currentBookmarkAnchor() else { return }
-        let snapshot = model.previewText(
-            translationMode: model.settings.translationMode,
-            characterCount: Self.bookmarkExcerptCharacterCount,
-            fallback: ""
-        )
-        likeFeedbackGenerator.prepare()
-        Task {
-            guard let outcome = try? await dependencies.like.bookmarkStore.toggle(
-                workKey: .novel(threadID: model.context.threadID),
-                anchor: .novel(anchor),
-                excerptText: snapshot.isEmpty ? nil : snapshot
-            ) else {
-                return
-            }
-            if currentBookmarkAnchor() == anchor {
-                isCurrentPositionBookmarked = outcome.isBookmarked
-            }
-            likeFeedbackGenerator.notificationOccurred(.success)
-            await refreshAnnotationState()
-        }
-    }
-
-    private static let bookmarkExcerptCharacterCount = 40
-
-    /// Sharpens stored annotations' book-order keys with the chapter positions
-    /// this page's layout just revealed.
-    ///
-    /// Lazy rather than eager: the key is derived from the anchor, and the only
-    /// part the anchor cannot carry — where a post sits on its forum page — is
-    /// knowable exactly when the reader lays that page out. Rows the user never
-    /// revisits keep their approximate key, which is already correct except
-    /// among several posts sharing one page.
-    private func resolveAnnotationSortKeys() async {
-        await model.resolveLikeChapterTitles()
-        let ordinals = model.currentChapterOrdinalsByIdentity
-        guard !ordinals.isEmpty else { return }
-        await dependencies.like.likeStore.resolveChapterOrdinals(
-            ordinals,
-            for: .novel(threadID: model.context.threadID)
-        )
-    }
-
-    private func refreshAnnotationState() async {
-        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
-        let bookmarkCount = await dependencies.like.bookmarkStore.count(for: workKey)
-        let likeCount = await dependencies.like.likeStore.likes(for: workKey).count
-        annotationCapsule = ReaderAnnotationCapsulePresentation(
-            bookmarkCount: bookmarkCount,
-            likeCount: likeCount
-        )
-        await refreshCurrentPositionBookmarkState()
-    }
-
-    /// Refreshes only the position-specific glyph. A location change can
-    /// happen while the store query is suspended (for example, while paging),
-    /// so verify the anchor before applying the answer from the old query.
-    private func refreshCurrentPositionBookmarkState() async {
-        guard let anchor = currentBookmarkAnchor() else {
-            isCurrentPositionBookmarked = false
-            return
-        }
-        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
-        let isBookmarked = await dependencies.like.bookmarkStore
-            .bookmark(marking: .novel(anchor), in: workKey) != nil
-        guard currentBookmarkAnchor() == anchor else { return }
-        isCurrentPositionBookmarked = isBookmarked
+        annotations.toggleBookmark()
     }
 
     private func handleBookmarkOpen(_ item: BookmarkItem) {
-        guard case let .novel(anchor) = item.anchor else { return }
-        Task { await jumpToAnnotationAnchor(resumePoint(forBookmarkAnchor: anchor)) }
-    }
-
-    private func resumePoint(forBookmarkAnchor anchor: NovelBookmarkAnchor) -> NovelResumePoint {
-        NovelResumePoint(
-            view: anchor.view,
-            chapterIdentity: anchor.chapterIdentity,
-            textSegmentIdentity: anchor.textSegmentIdentity,
-            displayedTextOffset: anchor.displayedTextOffset,
-            chapterOrdinal: anchor.chapterOrdinal,
-            chapterTitle: anchor.chapterTitle,
-            segmentProgress: 0,
-            authorID: anchor.resolvedAuthorID,
-            readingModeHint: model.settings.readingMode
-        )
-    }
-
-    // MARK: - Like capture
-
-    private func configureLikeCapture() {
-        novelTextSelectionController.configureNoteEditor { item in
-            presentedSheet = .note(item)
-        }
-        novelTextSelectionController.configureLikeCapture(
-            workKey: .novel(threadID: model.context.threadID),
-            service: NovelTextLikeCaptureService(likeStore: dependencies.like.likeStore),
-            onLikeActionVisible: {
-                likeFeedbackGenerator.prepare()
-            },
-            onCaptured: { outcome in
-                // Paint the highlight and fire the haptic on the same tick.
-                switch outcome {
-                case .added(let item), .merged(let item), .alreadyLiked(let item):
-                    likeHighlightController.applyCapturedItem(item)
-                    // Nothing pops up afterwards on purpose: the style row is
-                    // now the way in to capturing at all, so the colour was
-                    // already chosen on the way here and there is nothing left
-                    // to ask. Tapping the annotation reopens the menu.
-                }
-                likeFeedbackGenerator.notificationOccurred(.success)
-                Task { await refreshAnnotationState() }
-            }
-        )
-    }
-
-    private func handleImageLongPress(_ anchor: NovelImageLikeAnchor, imageURL: URL, chapterTitle: String?) {
-        // The async capture below gives the Taptic Engine time to spin up
-        // before the success haptic fires.
-        likeFeedbackGenerator.prepare()
-        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
-        let likeStore = dependencies.like.likeStore
-        let likeImageStore = dependencies.like.likeImageStore
-        let refererURL = model.forumURL
-        let offlineScope = model.inlineImageOfflineScope
-        Task {
-            let existing = await likeStore.likes(for: workKey)
-            if let liked = existing.first(where: { $0.kind == .image && $0.anchor == .novelImage(anchor) }) {
-                try? await likeStore.delete(id: liked.id)
-                try? await likeImageStore.delete(id: liked.id)
-                likeFeedbackGenerator.notificationOccurred(.success)
-                return
-            }
-            let service = NovelImageLikeCaptureService(likeStore: likeStore, likeImageStore: likeImageStore)
-            guard (try? await service.like(
-                workKey: workKey,
-                anchor: anchor,
-                sourceImageURL: imageURL,
-                chapterTitle: chapterTitle,
-                imageData: {
-                    try await dependencies.imagePipeline.data(for: YamiboImageSource(
-                        url: imageURL,
-                        refererPageURL: refererURL,
-                        offlineScope: offlineScope
-                    ))
-                }
-            )) != nil else {
-                return
-            }
-            likeFeedbackGenerator.notificationOccurred(.success)
-        }
-    }
-
-    private func loadLikedNovelImageAnchors() async {
-        let workKey = LikeWorkKey.novel(threadID: model.context.threadID)
-        let items = await dependencies.like.likeStore.likes(for: workKey)
-        likedNovelImageAnchors = Set(items.compactMap { item -> NovelImageLikeAnchor? in
-            guard item.kind == .image, case let .novelImage(anchor) = item.anchor else { return nil }
-            return anchor
-        })
+        guard let point = annotations.resumePoint(for: item) else { return }
+        Task { await jumpToAnnotationAnchor(point) }
     }
 
     private func handleLikeAnchorOpen(_ payload: LikeAnchorPayload) {
-        // Was `showingLikes = false`, which could only ever dismiss the likes
-        // sheet; the guard keeps that per-sheet scoping now that a single
-        // enum drives all boolean-style sheets.
-        if presentedSheet == .annotations {
-            presentedSheet = nil
-        }
-        switch payload {
-        case let .novelText(anchor):
-            Task { await jumpToAnnotationAnchor(resumePoint(forTextLikeAnchor: anchor)) }
-        case let .novelImage(anchor):
-            Task { await jumpToAnnotationAnchor(resumePoint(forImageLikeAnchor: anchor)) }
-        case .mangaImage:
-            break
-        }
+        if presentedSheet == .annotations { presentedSheet = nil }
+        guard let point = annotations.resumePoint(for: payload) else { return }
+        Task { await jumpToAnnotationAnchor(point) }
     }
 
-    /// Same-document annotation jumps keep their layout generation. The
-    /// vertical UIKit viewport needs an explicit scroll request for that
-    /// path; paged mode simply no-ops here.
+    /// Same-document annotation jumps need an explicit vertical scroll request.
     private func jumpToAnnotationAnchor(_ resumePoint: NovelResumePoint) async {
-        let didJump = await NovelReaderAnnotationJump(
-            model: model,
-            requestVerticalRestore: { restoreVerticalPositionIfNeeded() }
-        ).perform(resumePoint)
-        if didJump {
-            await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.jumpToLikeAnchor(resumePoint)
         }
-    }
-
-    // NovelTextLikeAnchor/NovelImageLikeAnchor carry `view` (the forum page
-    // the excerpt/image came from) directly, but not the other cosmetic
-    // resume-point fields (chapterOrdinal/segmentProgress/readingModeHint);
-    // this synthesizes a best-effort resume point from what the anchor does
-    // carry.
-    private func resumePoint(forTextLikeAnchor anchor: NovelTextLikeAnchor) -> NovelResumePoint {
-        NovelResumePoint(
-            view: anchor.view,
-            chapterIdentity: anchor.chapterIdentity,
-            textSegmentIdentity: anchor.startSegmentIdentity,
-            displayedTextOffset: anchor.start.offset,
-            chapterOrdinal: 0,
-            segmentProgress: 0,
-            authorID: anchor.resolvedAuthorID,
-            readingModeHint: model.settings.readingMode
-        )
-    }
-
-    private func resumePoint(forImageLikeAnchor anchor: NovelImageLikeAnchor) -> NovelResumePoint {
-        NovelResumePoint(
-            view: anchor.view,
-            chapterIdentity: anchor.chapterIdentity,
-            textSegmentIdentity: NovelTextSegmentIdentity(rawValue: anchor.imageSegmentIdentity),
-            displayedTextOffset: 0,
-            chapterOrdinal: 0,
-            segmentProgress: 0,
-            authorID: anchor.resolvedAuthorID,
-            readingModeHint: model.settings.readingMode
-        )
     }
 
     private func updateChromeForContentState() {
@@ -1427,29 +974,31 @@ public struct NovelReaderView: View {
     }
 
     private func commitProgressSlider(_ targetIndex: Int) {
-        model.jumpToSurface(targetIndex)
-        restoreVerticalPositionIfNeeded()
-        Task { await refreshCurrentPositionBookmarkState() }
+        navigationPresentation.perform { model.jumpToSurface(targetIndex) }
     }
 
     private func jumpAdjacentChapter(_ delta: Int) {
-        model.jumpToAdjacentChapter(delta)
-        restoreVerticalPositionIfNeeded()
-        Task { await refreshCurrentPositionBookmarkState() }
+        navigationPresentation.perform { model.jumpToAdjacentChapter(delta) }
     }
 
     // MARK: - Navigation intents
 
+    private var navigationPresentation: NovelReaderNavigationCoordinator.Presentation {
+        .init(
+            restoreViewport: restoreVerticalPositionIfNeeded,
+            refreshAnnotations: { await annotations.refreshPosition() }
+        )
+    }
+
     private func jumpToChapter(_ chapter: NovelReaderChapter) {
-        model.jumpToChapter(chapter)
-        restoreVerticalPositionIfNeeded()
-        Task { await refreshCurrentPositionBookmarkState() }
+        navigationPresentation.perform { model.jumpToChapter(chapter) }
     }
 
     private func jumpToChapterDirectoryChapter(_ chapter: NovelReaderChapter) async {
-        await model.navigation.jumpToChapterDirectoryChapter(chapter)
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.navigation.jumpToChapterDirectoryChapter(chapter)
+            return true
+        }
     }
 
     private func jumpToWebView(_ view: Int) async {
@@ -1458,28 +1007,32 @@ public struct NovelReaderView: View {
 
     private func jumpToWebView(_ view: Int, preferredSurfaceOrdinal: Int) async {
         chromeState.showChrome()
-        await model.jumpToWebView(view, preferredSurfaceOrdinal: preferredSurfaceOrdinal)
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.jumpToWebView(view, preferredSurfaceOrdinal: preferredSurfaceOrdinal)
+            return true
+        }
     }
 
     private func navigateBackFromChrome() async {
-        await model.navigation.navigateBack()
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.navigation.navigateBack()
+            return true
+        }
     }
 
     private func navigateForwardFromChrome() async {
-        await model.navigation.navigateForward()
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.navigation.navigateForward()
+            return true
+        }
     }
 
     private func goRelativePage(_ delta: Int) async {
         pagedScrollAnimationRequest = nil
-        await model.jumpRelativeSurface(delta)
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
+        await navigationPresentation.performAsync {
+            await model.jumpRelativeSurface(delta)
+            return true
+        }
     }
 
     private func goRelativePage(_ delta: Int, pagerIdentity: ReaderPagedPagerIdentity?) async {
@@ -1487,13 +1040,14 @@ public struct NovelReaderView: View {
             makePagedScrollAnimationRequest(delta: delta, pagerIdentity: $0)
         }
         pagedScrollAnimationRequest = animationRequest
-        await model.jumpRelativeSurface(delta)
-        if let request = pagedScrollAnimationRequest,
-           request.selectionIndex != model.pagedViewportSelectionIndex {
-            pagedScrollAnimationRequest = nil
+        await navigationPresentation.performAsync {
+            await model.jumpRelativeSurface(delta)
+            if let request = pagedScrollAnimationRequest,
+               request.selectionIndex != model.pagedViewportSelectionIndex {
+                pagedScrollAnimationRequest = nil
+            }
+            return true
         }
-        restoreVerticalPositionIfNeeded()
-        await refreshCurrentPositionBookmarkState()
     }
 
     private func makePagedScrollAnimationRequest(
@@ -1608,9 +1162,7 @@ public struct NovelReaderView: View {
     }
 
     private func commitVerticalProgressScrub(_ target: Int) {
-        model.jumpToSurface(target)
-        restoreVerticalPositionIfNeeded()
-        Task { await refreshCurrentPositionBookmarkState() }
+        navigationPresentation.perform { model.jumpToSurface(target) }
         verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
     }
 

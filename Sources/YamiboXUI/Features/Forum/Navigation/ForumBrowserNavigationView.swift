@@ -4,6 +4,7 @@ import YamiboXCore
 /// Wide columns and the compact stack project the same canonical route.
 struct ForumBrowserNavigationView<Root: View>: View {
     @Bindable var navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
     @ViewBuilder let root: () -> Root
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -16,7 +17,7 @@ struct ForumBrowserNavigationView<Root: View>: View {
                         root()
                             .navigationDestination(for: ForumDestination.self) { destination in
                                 // Destinations need the column's provenance explicitly.
-                                ForumDestinationScreen(destination: destination, navigator: navigator)
+                                ForumDestinationScreen(destination: destination, navigator: navigator, appModel: appModel)
                                     .environment(\.forumBrowserSourceIsList, true)
                             }
                     }
@@ -26,7 +27,7 @@ struct ForumBrowserNavigationView<Root: View>: View {
                     NavigationStack(path: navigator.browserPathBinding(for: .detail)) {
                         Group {
                             if let destination = navigator.browserDetailPath.first {
-                                ForumDestinationScreen(destination: destination, navigator: navigator)
+                                ForumDestinationScreen(destination: destination, navigator: navigator, appModel: appModel)
                                     .id(destination)
                                     .environment(\.forumBrowserSourceIsList, false)
                             } else {
@@ -35,7 +36,7 @@ struct ForumBrowserNavigationView<Root: View>: View {
                             }
                         }
                         .navigationDestination(for: ForumDestination.self) { destination in
-                            ForumDestinationScreen(destination: destination, navigator: navigator)
+                            ForumDestinationScreen(destination: destination, navigator: navigator, appModel: appModel)
                                 .environment(\.forumBrowserSourceIsList, false)
                         }
                     }
@@ -64,7 +65,7 @@ struct ForumBrowserNavigationView<Root: View>: View {
                 }
             } else {
                 ForumDestinationStackView(
-                    navigator: navigator, path: navigator.browserPathBinding(for: .stack), root: root
+                    navigator: navigator, appModel: appModel, path: navigator.browserPathBinding(for: .stack), root: root
                 )
                 .environment(\.forumBrowserSourceIsList, true)
             }

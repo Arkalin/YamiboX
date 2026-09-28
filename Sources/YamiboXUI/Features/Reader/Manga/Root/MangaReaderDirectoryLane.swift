@@ -35,8 +35,7 @@ final class MangaReaderDirectoryLane {
     private let dependencies: MangaReaderViewModelDependencies
     private let reader: Reader
 
-    private var directoryCooldownExpiresAt: Date?
-    private var forcedSearchShortcutExpiresAt: Date?
+    private var directoryTiming = MangaDirectoryCommandTiming()
     private var directoryTickTask: Task<Void, Never>?
     private var directoryMutationTask: Task<Void, Never>?
     private var automaticDirectoryUpdateTask: Task<Void, Never>?
@@ -109,7 +108,7 @@ final class MangaReaderDirectoryLane {
 
     func deleteDirectoryChapters(tids: Set<String>) async {
         guard case let .loaded(loaded) = reader.presentation().state else { return }
-        let targetTIDs = Set(tids.compactMap(MangaReaderViewModel.normalizedNonEmpty))
+        let targetTIDs = Set(tids.compactMap { $0.nilIfBlank })
         guard !targetTIDs.isEmpty else { return }
         if let currentChapterTID = loaded.directoryPanel.currentChapterTID,
            targetTIDs.contains(currentChapterTID) {
@@ -141,13 +140,14 @@ final class MangaReaderDirectoryLane {
     /// Reader-session teardown (retryInitialLoad): drop the transient
     /// cooldown deadlines so the fresh session starts with a clean panel.
     func resetCooldownState() {
-        directoryCooldownExpiresAt = nil
-        forcedSearchShortcutExpiresAt = nil
+        directoryTiming = MangaDirectoryCommandTiming()
     }
 
     /// Reader-session teardown (retryInitialLoad): stop every in-flight
     /// lane task; the fresh session schedules its own.
     func cancelTasks() {
+        // Cancelled operations may still unwind through their catch/defer paths.
+        directoryMutationGeneration += 1
         directoryTickTask?.cancel()
         directoryTickTask = nil
         directoryMutationTask?.cancel()
@@ -340,20 +340,12 @@ final class MangaReaderDirectoryLane {
             directoryErrorDetails = nil
             directoryFailureEventID = nil
         }
-        let now = dependencies.directoryWorkflowConfiguration.now()
-        let cooldownRemaining = remainingSecondsValue(until: directoryCooldownExpiresAt, now: now)
-        let forcedRemaining = remainingSeconds(until: forcedSearchShortcutExpiresAt, now: now)
-        if cooldownRemaining == 0 {
-            directoryCooldownExpiresAt = nil
-        }
-        if forcedRemaining == nil {
-            forcedSearchShortcutExpiresAt = nil
-        }
+        let timing = directoryTiming.refresh(at: dependencies.directoryWorkflowConfiguration.now())
         reader.setPresentation(workflow.updateDirectoryPanelCommandState(
             MangaDirectoryPanelCommandState(
                 isUpdating: isUpdating,
-                cooldownRemaining: cooldownRemaining,
-                forcedSearchShortcutRemaining: forcedRemaining,
+                cooldownRemaining: timing.cooldownRemaining,
+                forcedSearchShortcutRemaining: timing.forcedSearchShortcutRemaining,
                 errorMessage: errorMessage,
                 errorDetails: directoryErrorDetails,
                 failureEventID: directoryFailureEventID
@@ -362,8 +354,7 @@ final class MangaReaderDirectoryLane {
     }
 
     private func updateDirectoryTickTask() {
-        let hasActiveDeadline = directoryCooldownExpiresAt != nil || forcedSearchShortcutExpiresAt != nil
-        guard hasActiveDeadline else {
+        guard directoryTiming.hasActiveDeadline else {
             directoryTickTask?.cancel()
             directoryTickTask = nil
             return
@@ -376,7 +367,7 @@ final class MangaReaderDirectoryLane {
                     isUpdating: false,
                     errorMessage: self?.currentDirectoryPanelErrorMessage
                 )
-                guard self?.directoryCooldownExpiresAt != nil || self?.forcedSearchShortcutExpiresAt != nil else {
+                guard self?.directoryTiming.hasActiveDeadline == true else {
                     self?.directoryTickTask = nil
                     return
                 }
@@ -385,45 +376,22 @@ final class MangaReaderDirectoryLane {
         }
     }
 
-    private func remainingSeconds(until deadline: Date?, now: Date) -> Int? {
-        guard let deadline else { return nil }
-        let remaining = deadline.timeIntervalSince(now)
-        guard remaining > 0 else { return nil }
-        return max(1, Int(ceil(remaining)))
-    }
-
-    private func remainingSecondsValue(until deadline: Date?, now: Date) -> Int {
-        remainingSeconds(until: deadline, now: now) ?? 0
-    }
-
     /// Applies a successful update/reset command's cooldown outcome: an
     /// active cooldown wins, otherwise a short forced-search shortcut window
     /// may open, otherwise both clear.
     private func applyDirectoryCommandCooldown(_ result: MangaDirectoryUpdateResult) {
-        if let cooldownExpiresAt = result.cooldownExpiresAt {
-            directoryCooldownExpiresAt = cooldownExpiresAt
-            forcedSearchShortcutExpiresAt = nil
-        } else if result.shouldOfferForcedSearch {
-            directoryCooldownExpiresAt = nil
-            forcedSearchShortcutExpiresAt = dependencies.directoryWorkflowConfiguration.now()
-                .addingTimeInterval(dependencies.directoryWorkflowConfiguration.forcedSearchShortcutDuration)
-        } else {
-            directoryCooldownExpiresAt = nil
-            forcedSearchShortcutExpiresAt = nil
-        }
+        directoryTiming.apply(result, configuration: dependencies.directoryWorkflowConfiguration)
     }
 
     /// Applies a failed command's cooldown: a server-reported search
     /// cooldown wins, else whatever cooldown the workflow currently tracks.
     private func applyDirectoryFailureCooldown(_ error: Error, workflow: MangaReaderWorkflow) async {
-        if case let YamiboError.searchCooldown(seconds) = error {
-            directoryCooldownExpiresAt = dependencies.directoryWorkflowConfiguration.now()
-                .addingTimeInterval(TimeInterval(seconds))
-            forcedSearchShortcutExpiresAt = nil
-        } else if let cooldown = await workflow.currentDirectorySearchCooldownExpiresAt() {
-            directoryCooldownExpiresAt = cooldown
-            forcedSearchShortcutExpiresAt = nil
-        }
+        let deadline = await MangaDirectoryCommandTiming.failureCooldownExpiresAt(
+            for: error,
+            now: dependencies.directoryWorkflowConfiguration.now,
+            fallback: { await workflow.currentDirectorySearchCooldownExpiresAt() }
+        )
+        directoryTiming.applyCooldown(until: deadline)
     }
 }
 

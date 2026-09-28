@@ -12,7 +12,7 @@ struct BrowsingHistoryView: View {
     private let onOpenThread: ((URL, String?) -> Void)?
 
     init(
-        dependencies: LibraryDependencies,
+        dependencies: BrowsingHistoryDependencies,
         appModel: YamiboAppModel,
         showsPreviousReading: Bool = false,
         onClose: (() -> Void)? = nil,

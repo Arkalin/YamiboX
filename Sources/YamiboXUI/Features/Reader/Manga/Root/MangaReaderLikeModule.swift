@@ -20,12 +20,14 @@ final class MangaReaderLikeModule {
         var imageData: @Sendable (YamiboImageSource) async throws -> Data
         var imageSource: @MainActor (MangaReaderPageProjection) -> YamiboImageSource
         var setLikedPageIDs: @MainActor (Set<String>) -> Void
+        var onFailure: @MainActor (any Error) -> Void
     }
 
     private let reading: Reading
     private(set) var failureDetails: LoadFailureDetails?
     private(set) var actionWasCancelled = false
     private var likeChangeObservationTask: Task<Void, Never>?
+    private var observationGeneration = 0
 
     init(reading: Reading) {
         self.reading = reading
@@ -37,7 +39,7 @@ final class MangaReaderLikeModule {
         likeChangeObservationTask?.cancel()
     }
 
-    private var likeWorkKey: LikeWorkKey? {
+    private var likeWorkKey: ReadingWorkKey? {
         // Smart Comic Mode off means this chapter is treated exactly like a normal thread
         // (see smart-comic-mode-design-decisions #2's 总原则) — the reader's directory in that
         // state is a synthesized single-chapter stand-in (MangaReaderWorkflow.standaloneDirectory),
@@ -51,7 +53,7 @@ final class MangaReaderLikeModule {
         likeWorkKey != nil && reading.makeLikeDependencies() != nil
     }
 
-    var likeSheetContext: (workKey: LikeWorkKey, like: LikeDependencies)? {
+    var likeSheetContext: (workKey: ReadingWorkKey, like: LikeDependencies)? {
         guard let workKey = likeWorkKey, let like = reading.makeLikeDependencies() else { return nil }
         return (workKey, like)
     }
@@ -83,9 +85,9 @@ final class MangaReaderLikeModule {
 
     // Returns the existing Like Item for this page, if any, so the long-press
     // action sheet can offer "remove like" instead of "add to likes".
-    func isPageLiked(_ page: MangaReaderPageProjection) async -> LikeItem? {
+    func isPageLiked(_ page: MangaReaderPageProjection) async throws -> LikeItem? {
         guard let workKey = likeWorkKey, let like = reading.makeLikeDependencies() else { return nil }
-        let items = await like.likeStore.likes(for: workKey)
+        let items = try await like.likeStore.likes(for: workKey)
         return items.first { item in
             guard case let .mangaImage(anchor) = item.anchor else { return false }
             return anchor.chapterTID == page.tid && anchor.pageLocalIndex == page.localIndex
@@ -97,12 +99,7 @@ final class MangaReaderLikeModule {
         actionWasCancelled = false
         guard let like = reading.makeLikeDependencies() else { return false }
         do {
-            // Terminal write: shield against the long-press confirmation dialog's
-            // Task being cancelled mid-delete (e.g. the user closes the reader).
-            try await Task {
-                try await like.likeStore.delete(id: item.id)
-                try await like.likeImageStore.delete(id: item.id)
-            }.value
+            try await like.annotations.removeLikes([item])
         } catch {
             actionWasCancelled = Task.isCancelled || LoadDiagnosticError.isCancellation(error)
             if !actionWasCancelled { failureDetails = LoadFailureDetails(error: error) }
@@ -113,12 +110,24 @@ final class MangaReaderLikeModule {
     }
 
     func refreshLikedPageIDs() async {
+        guard !Task.isCancelled else { return }
+        let generation = observationGeneration
         guard let workKey = likeWorkKey, let like = reading.makeLikeDependencies() else {
             reading.setLikedPageIDs([])
             return
         }
-        let items = await like.likeStore.likes(for: workKey)
+        let items: [LikeItem]
+        do { items = try await like.likeStore.likes(for: workKey) }
+        catch {
+            if !Task.isCancelled, observationGeneration == generation,
+               !LoadDiagnosticError.isCancellation(error) {
+                reading.onFailure(error)
+            }
+            return
+        }
+        guard !Task.isCancelled, observationGeneration == generation, likeWorkKey == workKey else { return }
         _ = await like.resolveChapterInfo(for: items, work: workKey)
+        guard !Task.isCancelled, observationGeneration == generation, likeWorkKey == workKey else { return }
         reading.setLikedPageIDs(Set(items.compactMap { item -> String? in
             guard case let .mangaImage(anchor) = item.anchor else { return nil }
             return "\(anchor.chapterTID)#\(anchor.pageLocalIndex)"
@@ -131,6 +140,7 @@ final class MangaReaderLikeModule {
         let changeID = likeStore.changeID
         likeChangeObservationTask = Task { [weak self] in
             for await receivedChangeID in likeStore.changes() {
+                guard !Task.isCancelled else { return }
                 // Per-instance stream: the guard is kept as the explicit
                 // "only this exact store instance" contract.
                 guard receivedChangeID == changeID else {
@@ -144,6 +154,7 @@ final class MangaReaderLikeModule {
     /// Reader-session teardown (retryInitialLoad): stop observing so the
     /// fresh session's `observeLikeChangesIfNeeded` can re-arm cleanly.
     func cancelObservation() {
+        observationGeneration += 1
         likeChangeObservationTask?.cancel()
         likeChangeObservationTask = nil
     }

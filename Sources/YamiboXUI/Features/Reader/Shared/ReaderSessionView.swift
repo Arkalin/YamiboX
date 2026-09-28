@@ -6,19 +6,19 @@ struct ReaderSessionScreen: View {
     let appModel: YamiboAppModel
     @State private var navigator: ForumDestinationNavigator
 
-    init(session: ReaderSession, appModel: YamiboAppModel) {
+    init(session: ReaderSession, dependencies: ForumNavigationDependencies, appModel: YamiboAppModel) {
         self.session = session
         self.appModel = appModel
         _navigator = State(initialValue: ForumDestinationNavigator(
-            dependencies: appModel.appContext.forumDependencies,
-            appModel: appModel,
+            dependencies: dependencies,
+            actions: appModel.forumNavigationActions,
             mode: .contentBrowser
         ))
     }
 
     var body: some View {
-        ForumDestinationStackView(navigator: navigator) {
-            ReaderSessionContentView(session: session, navigator: navigator, isFullScreenRoot: true)
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
+            ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: true)
         }
         .onChange(of: session.contentID) { _, _ in
             navigator.path = []
@@ -32,10 +32,12 @@ struct ReaderSessionScreen: View {
 struct ReaderSessionDestinationView: View {
     @State private var session: ReaderSession
     let navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
 
-    init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator) {
+    init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator, appModel: YamiboAppModel) {
         self.navigator = navigator
-        _session = State(initialValue: navigator.appModel.makeReaderSession(
+        self.appModel = appModel
+        _session = State(initialValue: appModel.makeReaderSession(
             content: .thread(context), presentation: .embeddedThread
         ))
     }
@@ -43,7 +45,7 @@ struct ReaderSessionDestinationView: View {
     var body: some View {
         Group {
             if session.presentation == .embeddedThread {
-                ReaderSessionContentView(session: session, navigator: navigator, isFullScreenRoot: false)
+                ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: false)
             } else {
                 Color.clear.forumPageBackground()
             }
@@ -57,9 +59,9 @@ private struct ReaderSessionContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: ReaderSession
     let navigator: ForumDestinationNavigator
+    let appModel: YamiboAppModel
     let isFullScreenRoot: Bool
 
-    private var appModel: YamiboAppModel { navigator.appModel }
     private var isReader: Bool { session.content.resumeRoute != nil }
 
     var body: some View {
@@ -105,7 +107,8 @@ private struct ReaderSessionContentView: View {
         case let .novel(context):
             NovelReaderView(
                 context: context,
-                dependencies: appModel.appContext.novelReaderDependencies,
+                dependencies: navigator.dependencies.destinations.novelReader,
+                forumDependencies: navigator.dependencies,
                 appModel: appModel,
                 onClose: { session.close() },
                 onOpenOriginalPost: { url, context in
@@ -119,7 +122,8 @@ private struct ReaderSessionContentView: View {
         case let .manga(context):
             MangaReaderView(
                 context: context,
-                dependencies: appModel.appContext.mangaReaderDependencies,
+                dependencies: navigator.dependencies.destinations.mangaReader,
+                forumDependencies: navigator.dependencies,
                 appModel: appModel,
                 initialProjection: session.preparedMangaProjection,
                 onClose: { session.close() },
@@ -132,7 +136,7 @@ private struct ReaderSessionContentView: View {
             .id(contentID)
             .ignoresSafeArea()
         case let .thread(context):
-            let model = session.threadModel(for: context, dependencies: navigator.dependencies)
+            let model = session.threadModel(for: context, dependencies: navigator.dependencies.forum)
             ForumThreadReaderView(
                 model: model,
                 submissionChange: appModel.forumContentRefresh.threadChange(context.thread.tid),

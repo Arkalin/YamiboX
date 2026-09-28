@@ -2,12 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumSearchPageLoading: Sendable {
-    func searchForum(query: String, forumID: String?, formHash: String?) async throws -> ForumSearchPage
-    func searchForumPage(query: String, searchID: String, page: Int) async throws -> ForumSearchPage
-}
-
-extension ForumRepository: ForumSearchPageLoading {}
 
 @MainActor
 @Observable
@@ -31,7 +25,7 @@ final class ForumSearchViewModel {
     init(forumID: String?, dependencies: ForumDependencies) {
         self.forumID = forumID
         repositoryProvider = {
-            await dependencies.makeForumRepository()
+            await dependencies.makeSearchRepository()
         }
         formHashProvider = {
             await dependencies.profileStore.load()?.formHash

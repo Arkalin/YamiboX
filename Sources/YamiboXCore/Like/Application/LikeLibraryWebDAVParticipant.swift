@@ -10,7 +10,11 @@ import Foundation
 /// local-file field to strip (`LikeImageStore` resolves bytes purely by
 /// `LikeItem.id`, so other devices re-fetch via `sourceImageURL` through the
 /// existing `LikeWorkItemsView` fallback, no new code needed here).
-struct LikeLibraryWebDAVParticipant: WebDAVSyncParticipant {
+struct LikeLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(normalizePayload: LikeLibraryWebDAVPayload.normalizingMangaIdentities)
+    }
+
     let datasetID = "likeLibrary"
     let remoteFileName = "yamibox-like-library-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -111,38 +115,15 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         })
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case version
-        case updatedAt
-        case syncRevision
-        case items
-        case tombstones
-    }
-
     init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        guard let version = try container.decodeIfPresent(Int.self, forKey: .version) else {
-            throw WebDAVSyncError.unsupportedPayloadVersion(0)
-        }
-        guard version == 1 || version == Self.currentVersion else {
-            throw WebDAVSyncError.unsupportedPayloadVersion(version)
-        }
-        self.version = version
-        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
-        self.syncRevision = try container.decodeIfPresent(UInt64.self, forKey: .syncRevision)
-        self.items = try container.decode([LikeItem].self, forKey: .items)
-        self.tombstones = version == 1
-            ? try container.decodeIfPresent([String: Date].self, forKey: .tombstones) ?? [:]
-            : try container.decode([String: Date].self, forKey: .tombstones)
+        let fields = try WebDAVItemPayloadFields<LikeItem>(from: decoder, currentVersion: Self.currentVersion)
+        self.init(version: fields.version, updatedAt: fields.updatedAt,
+            syncRevision: fields.syncRevision, items: fields.items, tombstones: fields.tombstones)
     }
 
     func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(version, forKey: .version)
-        try container.encode(updatedAt, forKey: .updatedAt)
-        try container.encodeIfPresent(syncRevision, forKey: .syncRevision)
-        try container.encode(items, forKey: .items)
-        try container.encode(tombstones, forKey: .tombstones)
+        try WebDAVItemPayloadFields(version: version, updatedAt: updatedAt,
+            syncRevision: syncRevision, items: items, tombstones: tombstones).encode(to: encoder)
     }
 
     func contentFingerprint() throws -> String {
@@ -180,22 +161,13 @@ struct LikeLibraryWebDAVMerger: Sendable {
             byID[remoteItem.id] = byID[remoteItem.id].map { remoteItem.fillingChapterTitle(from: $0) } ?? remoteItem
         }
 
-        let rowTombstones = Dictionary(localSnapshot.compactMap { item in
-            item.deletedAt.map { (item.id, $0) }
-        }, uniquingKeysWith: max)
-        let mergedTombstones = maxDateDictionary(maxDateDictionary(localTombstones, rowTombstones), remote?.tombstones ?? [:])
+        let rowTombstones = SyncSoftDeletionRules.tombstones(in: localSnapshot, id: \.id, deletedAt: \.deletedAt)
+        let mergedTombstones = SyncDeletionState.mergingTombstones(SyncDeletionState.mergingTombstones(localTombstones, rowTombstones), remote?.tombstones ?? [:])
 
         // Bare tombstones are persisted separately from the optional content.
-        let storageSnapshot: [LikeItem] = byID.values.map { item in
-            var resolved = item
-            if let deletedAt = mergedTombstones[item.id], deletedAt >= item.updatedAt {
-                resolved.deletedAt = deletedAt
-                resolved.updatedAt = max(item.updatedAt, deletedAt)
-            } else {
-                resolved.deletedAt = nil
-            }
-            return resolved
-        }
+        let storageSnapshot = SyncSoftDeletionRules.applying(
+            mergedTombstones, to: byID.values, id: \.id, updatedAt: \.updatedAt, deletedAt: \.deletedAt
+        )
 
         let payload = LikeLibraryWebDAVPayload(
             updatedAt: updatedAt,
@@ -206,13 +178,15 @@ struct LikeLibraryWebDAVMerger: Sendable {
     }
 }
 
-private func maxDateDictionary(_ lhs: [String: Date], _ rhs: [String: Date]) -> [String: Date] {
-    var result = lhs
-    for (key, value) in rhs {
-        if let existing = result[key], existing >= value {
-            continue
+private extension LikeLibraryWebDAVPayload {
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try JSONDecoder().decode(Self.self, from: data)
+        for index in payload.items.indices {
+            payload.items[index].workKey = ReadingWorkIdentityRemapping.normalize(
+                payload.items[index].workKey, identities: identities, legacy: false)
         }
-        result[key] = value
+        payload.tombstones = MangaIdentityDeletionRemapping.normalize(
+            SyncDeletionState(tombstones: payload.tombstones), identities: identities).tombstones
+        return try JSONEncoder().encode(payload)
     }
-    return result
 }

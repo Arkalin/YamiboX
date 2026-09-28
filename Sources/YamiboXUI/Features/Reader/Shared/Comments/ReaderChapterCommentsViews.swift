@@ -200,7 +200,7 @@ struct ReaderChapterCommentsSheet: View {
     let cancelLoading: () -> Void
     private let composerActions: ReaderChapterCommentComposeActions?
 
-    private let forumDependencies: ForumDependencies
+    private let forumDependencies: ForumNavigationDependencies
     private let appModel: YamiboAppModel
     private let discussionWorkTIDs: Set<String>
 
@@ -233,7 +233,7 @@ struct ReaderChapterCommentsSheet: View {
         loadInitial: @escaping (ReaderChapterCommentTarget?) async -> Void,
         refresh: @escaping (ReaderChapterCommentTarget?) async -> Void,
         loadNext: @escaping () async -> Void,
-        forumDependencies: ForumDependencies,
+        forumDependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         discussionWorkTIDs: Set<String>,
         isNovel: Bool = false,
@@ -264,9 +264,9 @@ struct ReaderChapterCommentsSheet: View {
         self.cancelLoading = cancelLoading
         self.composerActions = composerActions
         _filterModel = State(initialValue: ChapterCommentFilterModel(
-            settingsStore: forumDependencies.settingsStore,
-            sessionStore: forumDependencies.sessionStore,
-            profileStore: forumDependencies.profileStore
+            settingsStore: forumDependencies.forum.settingsStore,
+            sessionStore: forumDependencies.forum.sessionStore,
+            profileStore: forumDependencies.forum.profileStore
         ))
     }
 
@@ -310,7 +310,7 @@ struct ReaderChapterCommentsSheet: View {
             ReaderChapterCommentComposerSheet(
                 model: ReaderChapterCommentComposerModel(
                     target: composeTarget,
-                    actions: composerActions ?? ReaderChapterCommentComposeActions(dependencies: forumDependencies) { change in
+                    actions: composerActions ?? ReaderChapterCommentComposeActions(dependencies: forumDependencies.forum) { change in
                         guard accountGeneration == appModel.accountGeneration else { return }
                         appModel.forumContentRefresh.record(change)
                     }
@@ -357,17 +357,17 @@ struct ReaderChapterCommentsSheet: View {
         .onChange(of: state, initial: true) { _, state in filterModel.update(state) }
         .onChange(of: filterModel.discussions) { _, _ in pruneCompletedNavigation() }
         .task {
-            let changes = forumDependencies.settingsStore.changes()
+            let changes = forumDependencies.forum.settingsStore.changes()
             filterModel.refresh()
             for await _ in changes { filterModel.refresh() }
         }
         .task {
-            let changes = forumDependencies.sessionStore.changes()
+            let changes = forumDependencies.forum.sessionStore.changes()
             filterModel.refresh()
             for await _ in changes { filterModel.refresh() }
         }
         .task {
-            let changes = forumDependencies.profileStore.changes()
+            let changes = forumDependencies.forum.profileStore.changes()
             filterModel.refresh()
             for await _ in changes { filterModel.refresh() }
         }

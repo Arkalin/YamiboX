@@ -4,7 +4,7 @@ import YamiboXCore
 /// The shared reader-library panel, with an optional chapters tab followed by
 /// the persisted bookmarks and likes tabs.
 struct ReaderAnnotationPanel<ChapterContent: View>: View {
-    let work: LikeWorkKey
+    let work: ReadingWorkKey
     let workTitle: String
     let like: LikeDependencies
     @Binding private var annotationSegment: ReaderAnnotationSegment
@@ -23,7 +23,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
     @State private var likeSelectionRequest = 0
 
     init(
-        work: LikeWorkKey,
+        work: ReadingWorkKey,
         workTitle: String,
         like: LikeDependencies,
         annotationSegment: Binding<ReaderAnnotationSegment>,
@@ -118,6 +118,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                 ReaderBookmarkListView(
                     work: work,
                     bookmarkStore: like.bookmarkStore,
+                    annotations: like.annotations,
                     onOpen: { item in
                         if dismissesAfterNavigation { onDismiss() }
                         onOpenBookmark(item)
@@ -177,7 +178,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
 
 extension ReaderAnnotationPanel where ChapterContent == EmptyView {
     init(
-        work: LikeWorkKey,
+        work: ReadingWorkKey,
         workTitle: String,
         like: LikeDependencies,
         annotationSegment: Binding<ReaderAnnotationSegment>,
@@ -202,31 +203,24 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
     }
 }
 
-/// State each segment reports to the panel-owned navigation item.
-///
-/// Keeping this compact value at the panel boundary prevents a segment swap
-/// from temporarily owning an incomplete navigation bar during layout.
-struct ReaderAnnotationSegmentNavigationState: Equatable {
-    var itemCount = 0
-    var isSelecting = false
-    var selectedItemCount = 0
-    var selectionTitle: String?
-}
-
 /// The bookmark segment: book-ordered rows, tap to jump, swipe to delete.
 ///
 /// Rows read from the persisted snapshot only — never from a live projection —
 /// so a bookmark synced from another device renders correctly on a device that
 /// has never opened that chapter.
 struct ReaderBookmarkListView: View {
-    let work: LikeWorkKey
+    let work: ReadingWorkKey
     let bookmarkStore: BookmarkStore
+    let annotations: ReaderAnnotationService
     let onOpen: (BookmarkItem) -> Void
     let selectionRequest: Int
     let onNavigationStateChange: (ReaderAnnotationSegmentNavigationState) -> Void
 
     @State private var items: [BookmarkItem] = []
     @State private var hasLoaded = false
+    @State private var loadFailure: LoadFailureDetails?
+    @State private var loadGeneration = 0
+    @State private var annotationOperations = AnnotationOperationState()
     @State private var isSelecting = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isShowingDeleteConfirmation = false
@@ -264,7 +258,13 @@ struct ReaderBookmarkListView: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .overlay {
             if !hasLoaded {
-                ProgressView()
+                if let loadFailure {
+                    LoadFailureView(message: loadFailure.summary, details: loadFailure) {
+                        Task { await load() }
+                    }
+                } else {
+                    ProgressView()
+                }
             } else if items.isEmpty {
                 ContentUnavailableView {
                     Label(L10n.string("annotations.bookmark.empty_state"), systemImage: "bookmark")
@@ -309,6 +309,7 @@ struct ReaderBookmarkListView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
+        .annotationOperationFeedback(annotationOperations)
         .task(id: work) {
             publishNavigationState()
             await load()
@@ -363,7 +364,19 @@ struct ReaderBookmarkListView: View {
     }
 
     private func load() async {
-        items = await bookmarkStore.bookmarks(for: work)
+        loadGeneration += 1
+        let generation = loadGeneration
+        loadFailure = nil
+        do {
+            let fetched = try await bookmarkStore.bookmarks(for: work)
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            items = fetched
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            loadFailure = LoadFailureDetails(error: error)
+            annotationOperations.report(error)
+            return
+        }
         // A bookmark deleted on another device disappears mid-selection;
         // dropping the stale ids keeps the count honest.
         selectedItemIDs.formIntersection(Set(items.map(\.id)))
@@ -373,17 +386,17 @@ struct ReaderBookmarkListView: View {
 
     private func delete(_ item: BookmarkItem) {
         Task {
-            try? await bookmarkStore.delete(id: item.id)
+            await annotationOperations.perform { try await annotations.removeBookmarks(ids: [item.id]) }
             await load()
         }
     }
 
     private func deleteSelection() async {
-        for id in selectedItemIDs {
-            try? await bookmarkStore.delete(id: id)
-        }
+        let succeeded = await annotationOperations.perform {
+            try await annotations.removeBookmarks(ids: Array(selectedItemIDs))
+        } != nil
         await load()
-        setSelecting(false)
+        if succeeded { setSelecting(false) }
     }
 
     private func publishNavigationState() {

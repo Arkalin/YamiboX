@@ -11,40 +11,37 @@ extension OfflineCacheStore {
     /// apart.
     private static let workOrderClause = "ORDER BY insertion_index ASC, reader_kind ASC, owner_name ASC, tid ASC"
 
-    func offlineCacheQueueWorks() async -> [OfflineCacheQueueWorkProjection] {
-        await ensureQueueRecoveredBestEffort()
+    func offlineCacheQueueWorks() async throws -> [OfflineCacheQueueWorkProjection] {
+        try await ensureQueueRecovered()
         do {
             return try await database.read { db in
                 try Self.allRawWorks(in: db).map { try Self.queueWorkProjection(from: $0, in: db) }
             }
         } catch {
-            YamiboLog.offlineCache.error("Failed to read offline cache queue works: \(error)")
-            return []
+            throw offlineCachePersistenceError(from: error)
         }
     }
 
-    func nextOfflineCacheProcessingWork() async -> OfflineCacheProcessingWork? {
-        await ensureQueueRecoveredBestEffort()
+    func nextOfflineCacheProcessingWork() async throws -> OfflineCacheProcessingWork? {
+        try await ensureQueueRecovered()
         do {
             return try await database.read { db in
                 try Self.firstRawWork(in: db).map(Self.processingWork(from:))
             }
         } catch {
-            YamiboLog.offlineCache.error("Failed to read next offline cache processing work: \(error)")
-            return nil
+            throw offlineCachePersistenceError(from: error)
         }
     }
 
-    func offlineCacheProcessingWork(id: OfflineCacheWorkID) async -> OfflineCacheProcessingWork? {
-        await ensureQueueRecoveredBestEffort()
+    func offlineCacheProcessingWork(id: OfflineCacheWorkID) async throws -> OfflineCacheProcessingWork? {
+        try await ensureQueueRecovered()
         do {
             return try await database.read { db in
                 try Self.rawWork(workID: id.rawValue, readerKind: id.readerKind, in: db)
                     .map(Self.processingWork(from:))
             }
         } catch {
-            YamiboLog.offlineCache.error("Failed to read offline cache processing work \(id.rawValue): \(error)")
-            return nil
+            throw offlineCachePersistenceError(from: error)
         }
     }
 
@@ -97,25 +94,16 @@ extension OfflineCacheStore {
                     try Self.save(updatedWork, replacing: work, in: db)
                     return .alreadyQueued(try Self.queueWorkProjection(from: updatedWork, in: db))
                 }
-                let work = OfflineCacheRawWork(
+                return .enqueued(try Self.enqueueNewWork(
                     readerKind: .novel,
-                    workID: UUID().uuidString,
                     ownerKey: normalizedRequest.groupKey,
                     ownerTitle: normalizedRequest.ownerTitle,
                     entryKey: normalizedRequest.entryKey,
                     title: title,
                     targetImageURLs: normalizedRequest.targetImageURLs,
-                    completedImageURLs: [],
                     retainsInlineImages: normalizedRequest.retainsInlineImages,
-                    state: .queued,
-                    failureMessage: nil,
-                    currentBytesPerSecond: 0,
-                    insertionIndex: try Self.nextQueueInsertionIndex(in: db),
-                    createdAt: Date(),
-                    updatedAt: Date()
-                )
-                try Self.save(work, in: db)
-                return .enqueued(try Self.queueWorkProjection(from: work, in: db))
+                    in: db
+                ))
             }
             if result.enqueuedWork != nil {
                 notifyOfflineCacheDidChange()
@@ -224,36 +212,25 @@ extension OfflineCacheStore {
     }
 
     func cancelOfflineCacheWork(id: OfflineCacheWorkID) async throws {
-        try await ensureQueueRecovered()
-        do {
-            try await database.write { db in
-                guard let canceled = try Self.rawWork(workID: id.rawValue, readerKind: id.readerKind, in: db) else {
-                    return
-                }
-                try Self.deleteWork(
-                    readerKind: canceled.readerKind.rawValue,
-                    ownerName: canceled.ownerKey,
-                    tid: canceled.entryKey,
-                    in: db
-                )
-                try Self.removeUnreferencedImages(
-                    candidateImageURLs: canceled.targetImageURLs + canceled.completedImageURLs,
-                    fileManager: fileManager,
-                    imagesDirectory: imagesDirectory,
-                    in: db
-                )
-            }
-            notifyOfflineCacheDidChange()
-        } catch {
-            throw offlineCachePersistenceError(from: error)
+        try await cancelOfflineCacheWork { db in
+            try Self.rawWork(workID: id.rawValue, readerKind: id.readerKind, in: db)
         }
     }
 
     func cancelOfflineCacheEntry(_ id: OfflineCacheEntryID) async throws {
+        try await cancelOfflineCacheWork { db in
+            try Self.rawWork(readerKind: id.readerKind, ownerKey: id.ownerKey, entryKey: id.entryKey, in: db)
+        }
+    }
+
+    /// Lookup and deletion stay in one transaction, including identity canonicalization.
+    private func cancelOfflineCacheWork(
+        matching findWork: @escaping @Sendable (Database) throws -> OfflineCacheRawWork?
+    ) async throws {
         try await ensureQueueRecovered()
         do {
             try await database.write { db in
-                guard let canceled = try Self.rawWork(readerKind: id.readerKind, ownerKey: id.ownerKey, entryKey: id.entryKey, in: db) else {
+                guard let canceled = try findWork(db) else {
                     return
                 }
                 try Self.deleteWork(
@@ -281,7 +258,7 @@ extension OfflineCacheStore {
 
     private func cancelOfflineCacheWorks(readerKind: OfflineCacheReaderKind, ownerKey: String) async throws {
         try await ensureQueueRecovered()
-        guard let ownerKey = ownerKey.mangaReaderTrimmedNonEmpty else { return }
+        guard let ownerKey = ownerKey.nilIfBlank else { return }
         do {
             try await database.write { db in
                 let ownerKey = readerKind == .manga ? try Self.canonicalMangaOwnerKey(ownerKey, in: db) : ownerKey
@@ -301,6 +278,41 @@ extension OfflineCacheStore {
         } catch {
             throw offlineCachePersistenceError(from: error)
         }
+    }
+
+    /// Called after reader-specific checks, inside the caller's write transaction.
+    /// The caller publishes invalidation only after that transaction commits.
+    static func enqueueNewWork(
+        readerKind: OfflineCacheReaderKind,
+        ownerKey: String,
+        ownerTitle: String,
+        entryKey: String,
+        title: String,
+        targetImageURLs: [URL],
+        retainsInlineImages: Bool,
+        in db: Database
+    ) throws -> OfflineCacheQueueWorkProjection {
+        let insertionIndex = try nextQueueInsertionIndex(in: db)
+        let now = Date()
+        let work = OfflineCacheRawWork(
+            readerKind: readerKind,
+            workID: UUID().uuidString,
+            ownerKey: ownerKey,
+            ownerTitle: ownerTitle,
+            entryKey: entryKey,
+            title: title,
+            targetImageURLs: targetImageURLs,
+            completedImageURLs: [],
+            retainsInlineImages: retainsInlineImages,
+            state: .queued,
+            failureMessage: nil,
+            currentBytesPerSecond: 0,
+            insertionIndex: insertionIndex,
+            createdAt: now,
+            updatedAt: now
+        )
+        try save(work, in: db)
+        return try queueWorkProjection(from: work, in: db)
     }
 
     /// Upserts the work row and its two image lists. Pass `previous` (the row the
@@ -406,7 +418,7 @@ extension OfflineCacheStore {
         readerKind: OfflineCacheReaderKind,
         in db: Database
     ) throws -> OfflineCacheRawWork? {
-        guard let workID = workID.mangaReaderTrimmedNonEmpty,
+        guard let workID = workID.nilIfBlank,
               let row = try Row.fetchOne(
                 db,
                 sql: """
@@ -428,8 +440,8 @@ extension OfflineCacheStore {
         in db: Database
     ) throws -> OfflineCacheRawWork? {
         let ownerKey = readerKind == .manga ? try canonicalMangaOwnerKey(ownerKey, in: db) : ownerKey
-        guard let ownerKey = ownerKey.mangaReaderTrimmedNonEmpty,
-              let entryKey = entryKey.mangaReaderTrimmedNonEmpty,
+        guard let ownerKey = ownerKey.nilIfBlank,
+              let entryKey = entryKey.nilIfBlank,
               let row = try Row.fetchOne(
                 db,
                 sql: """
@@ -542,7 +554,7 @@ extension OfflineCacheStore {
     }
 
     static func offlineCacheEntryTitle(chapterTitle: String, entryKey: String) -> String {
-        chapterTitle.mangaReaderTrimmedNonEmpty ?? entryKey
+        chapterTitle.nilIfBlank ?? entryKey
     }
 
     private func updateRawWork(

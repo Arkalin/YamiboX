@@ -10,6 +10,7 @@ final class SettingsForumViewModel: AppSettingsPersisting {
     var enhancedCheckInEnabled = false
 
     let dependencies: SettingsDependencies
+    var settingsStore: SettingsStore { dependencies.settingsStore }
     let activity: SystemSettingsActivity
 
     init(dependencies: SettingsDependencies, activity: SystemSettingsActivity) {

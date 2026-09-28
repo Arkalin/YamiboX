@@ -1,32 +1,12 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// What `toggle(...)` did, so the reader can pick the right haptic and the
-/// right button state without re-reading the store.
-public enum BookmarkToggleOutcome: Hashable, Sendable {
-    case added(BookmarkItem)
-    case removed(BookmarkItem)
-
-    public var isBookmarked: Bool {
-        switch self {
-        case .added: true
-        case .removed: false
-        }
-    }
-
-    public var item: BookmarkItem {
-        switch self {
-        case let .added(item), let .removed(item): item
-        }
-    }
-}
-
 /// Persists the local-first Bookmark Library: user-placed position markers,
 /// independent of both the Favorite Library and the Like Library.
 ///
 /// Bookmarks are pure navigation: no content, no image bytes, and no relation
 /// to the automatically saved reading position.
-public actor BookmarkStore {
+public actor BookmarkStore: ReaderBookmarkMutating {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
     /// Multicast change feed; each element is the `changeID` of the store
@@ -48,27 +28,27 @@ public actor BookmarkStore {
     }
 
     /// Every live bookmark for one work, in book order.
-    public func bookmarks(for workKey: LikeWorkKey) async -> [BookmarkItem] {
-        (try? await database.read { db in try Self.fetchBookmarks(workKey: workKey, in: db) }) ?? []
+    public func bookmarks(for workKey: ReadingWorkKey) async throws -> [BookmarkItem] {
+        try await database.read { db in try Self.fetchBookmarks(workKey: workKey, in: db) }
     }
 
-    public func count(for workKey: LikeWorkKey) async -> Int {
-        let fetched = try? await database.read { db -> Int? in
+    public func count(for workKey: ReadingWorkKey) async throws -> Int {
+        let fetched = try await database.read { db -> Int? in
             try Int.fetchOne(
                 db,
                 sql: "SELECT COUNT(*) FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
                 arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
             )
         }
-        return fetched.flatMap { $0 } ?? 0
+        return fetched ?? 0
     }
 
     /// The live bookmark that already marks the place `anchor` points at, if
     /// any. This is the whole of the toggle's "is the current position already
     /// bookmarked" test — see `NovelBookmarkAnchor.neighborhoodCharacterRadius`
     /// for why the novel neighborhood is deliberately narrow.
-    public func bookmark(marking anchor: BookmarkAnchorPayload, in workKey: LikeWorkKey) async -> BookmarkItem? {
-        await bookmarks(for: workKey).first { $0.anchor.marksSamePlace(as: anchor) }
+    public func bookmark(marking anchor: BookmarkAnchorPayload, in workKey: ReadingWorkKey) async throws -> BookmarkItem? {
+        try await bookmarks(for: workKey).first { $0.anchor.marksSamePlace(as: anchor) }
     }
 
     /// Adds a bookmark at `anchor`, or removes the one already marking that
@@ -76,40 +56,30 @@ public actor BookmarkStore {
     /// pressing the button twice always returns to the starting state.
     @discardableResult
     public func toggle(
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         anchor: BookmarkAnchorPayload,
         excerptText: String? = nil,
         date: Date = .now
     ) async throws -> BookmarkToggleOutcome {
-        do {
-            let outcome = try await database.write { db -> BookmarkToggleOutcome in
-                let existing = try Self.fetchBookmarks(workKey: workKey, in: db)
-                if let match = existing.first(where: { $0.anchor.marksSamePlace(as: anchor) }) {
-                    try Self.softDeleteRow(id: match.id, date: date, in: db)
-                    var removed = match
-                    removed.deletedAt = date
-                    removed.updatedAt = date
-                    return .removed(removed)
-                }
-                let item = BookmarkItem(
-                    workKey: workKey,
-                    anchor: anchor,
-                    excerptText: excerptText,
-                    sortKey: ReaderAnnotationSortKey.of(anchor),
-                    createdAt: date,
-                    updatedAt: date
-                )
-                try Self.upsertRow(item, in: db)
-                return .added(item)
+        return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db -> BookmarkToggleOutcome in
+            let existing = try Self.fetchBookmarks(workKey: workKey, in: db)
+            if let match = existing.first(where: { $0.anchor.marksSamePlace(as: anchor) }) {
+                try Self.softDeleteRow(id: match.id, date: date, in: db)
+                var removed = match
+                removed.deletedAt = date
+                removed.updatedAt = date
+                return .removed(removed)
             }
-            postChangeNotification()
-            return outcome
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+            let item = BookmarkItem(
+                workKey: workKey,
+                anchor: anchor,
+                excerptText: excerptText,
+                sortKey: ReaderAnnotationSortKey.of(anchor),
+                createdAt: date,
+                updatedAt: date
+            )
+            try Self.upsertRow(item, in: db)
+            return .added(item)
         }
     }
 
@@ -121,25 +91,16 @@ public actor BookmarkStore {
 
     public func delete(ids: [String], date: Date = .now) async throws {
         guard !ids.isEmpty else { return }
-        do {
-            try await database.write { db in
-                for id in ids {
-                    try Self.softDeleteRow(id: id, date: date, in: db)
-                }
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            for id in ids {
+                try Self.softDeleteRow(id: id, date: date, in: db)
             }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
     /// Every bookmark including soft-deleted rows, for WebDAV export.
-    public func allIncludingDeleted() async -> [BookmarkItem] {
-        (try? await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }) ?? []
+    public func allIncludingDeleted() async throws -> [BookmarkItem] {
+        try await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }
     }
 
     /// Replaces the entire local Bookmark Library with a WebDAV-merged
@@ -147,55 +108,28 @@ public actor BookmarkStore {
     /// their known data; the merge logic lives in
     /// `BookmarkLibraryWebDAVParticipant`, not here.
     public func replaceAll(_ items: [BookmarkItem]) async throws {
-        do {
-            try await database.write { db in
-                try db.execute(sql: "DELETE FROM bookmarks")
-                for item in items {
-                    try Self.upsertRow(item, in: db)
-                }
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            try db.execute(sql: "DELETE FROM bookmarks")
+            for item in items {
+                try Self.upsertRow(item, in: db)
             }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
-    public func deleteAll(workKey: LikeWorkKey, date: Date = .now) async throws {
-        do {
-            try await database.write { db in
-                let ids = try String.fetchAll(db,
-                    sql: "SELECT id FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-                    arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
-                )
-                for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
-            }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+    public func deleteAll(workKey: ReadingWorkKey, date: Date = .now) async throws {
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            let ids = try String.fetchAll(db,
+                sql: "SELECT id FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
+                arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
+            )
+            for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
         }
     }
 
     public func clearAll() async throws {
-        do {
-            try await database.write { db in
-                try db.execute(sql: "DELETE FROM bookmarks")
-                try db.execute(sql: "DELETE FROM bookmark_sync_state")
-            }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            try db.execute(sql: "DELETE FROM bookmarks")
+            try db.execute(sql: "DELETE FROM bookmark_sync_state")
         }
     }
 
@@ -239,7 +173,7 @@ public actor BookmarkStore {
     FROM bookmarks
     """
 
-    private static func fetchBookmarks(workKey: LikeWorkKey, in db: Database) throws -> [BookmarkItem] {
+    private static func fetchBookmarks(workKey: ReadingWorkKey, in db: Database) throws -> [BookmarkItem] {
         try Row.fetchAll(
             db,
             sql: selectColumns
@@ -298,12 +232,12 @@ public actor BookmarkStore {
     private static func item(from row: Row) throws -> BookmarkItem? {
         guard let anchorData = (row["anchor_json"] as String).data(using: .utf8),
               let anchor = try? JSONDecoder().decode(BookmarkAnchorPayload.self, from: anchorData),
-              let workKind = LikeWorkKind(rawValue: row["work_kind"] as String) else {
+              let workKind = ReadingWorkKind(rawValue: row["work_kind"] as String) else {
             return nil
         }
         return BookmarkItem(
             id: row["id"],
-            workKey: LikeWorkKey(kind: workKind, id: row["work_id"]),
+            workKey: ReadingWorkKey(kind: workKind, id: row["work_id"]),
             anchor: anchor,
             excerptText: row["excerpt_text"],
             sortKey: row["sort_key"],

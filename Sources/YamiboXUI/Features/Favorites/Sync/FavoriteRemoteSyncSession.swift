@@ -31,17 +31,14 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     private let contentCoverStore: ContentCoverStore
     /// Backs the sync-time "imported into an already-favorited manga
     /// directory" warning (smart-comic-mode Phase G, design decision #8's
-    /// remote-sync half). Concrete type, not the `MangaDirectoryPersisting`
-    /// existential — mirrors `FavoriteLibraryOrganizer`'s equivalent
-    /// property so production code can never accidentally fall onto the
-    /// protocol's naive per-tid default implementation. `nil` (as in most
-    /// existing tests, which don't exercise this feature) just disables it.
-    private let mangaDirectoryStore: MangaDirectoryStore?
+    /// remote-sync half). Only explicit batched reads are required;
+    /// `nil` disables the warning.
+    private let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
     /// Backs the per-item Smart Comic Mode board check the same warning
     /// needs.
     private let settingsStore: SettingsStore?
-    private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
-    private let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
+    private let makeFavoriteRepository: @Sendable () async -> any FavoriteRemoteSyncOperating
+    private let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
     private let makeThreadRouteResolver: @Sendable () async -> YamiboThreadRouteResolver
     private let runnerOverride: EngineRunner?
     private let interruptionReasonBox = FavoriteSyncInterruptionReasonBox()
@@ -80,10 +77,10 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         libraryStore: FavoriteLibraryStore,
         runStore: FavoriteSyncRunStore,
         contentCoverStore: ContentCoverStore,
-        mangaDirectoryStore: MangaDirectoryStore? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         settingsStore: SettingsStore? = nil,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
+        makeFavoriteRepository: @escaping @Sendable () async -> any FavoriteRemoteSyncOperating,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ThreadCoverPageResolving,
         makeThreadRouteResolver: @escaping @Sendable () async -> YamiboThreadRouteResolver,
         runnerOverride: EngineRunner? = nil
     ) {

@@ -65,9 +65,10 @@ final class FavoriteActionController {
     private var scope: FavoriteMembershipScope
     @ObservationIgnored private let libraryStore: FavoriteLibraryStore
     @ObservationIgnored private let settingsStore: SettingsStore
-    @ObservationIgnored private let directoryStore: (any MangaDirectoryPersisting)?
-    @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
+    @ObservationIgnored private let directoryStore: (any MangaDirectoryBatchReading & MangaDirectoryChangeObserving)?
+    @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     @ObservationIgnored var makeAddMetadata: (@MainActor () async -> AddMetadata)?
+    @ObservationIgnored var didAddFavorite: (@MainActor (FavoriteCommands.AddResult) async -> TransientFeedback)?
     @ObservationIgnored var onFavoriteDidChange: (@MainActor () -> Void)?
     @ObservationIgnored private var pendingLocations: [FavoriteLocation]?
     @ObservationIgnored private var updates: [Task<Void, Never>] = []
@@ -79,9 +80,9 @@ final class FavoriteActionController {
         threadID: String, type: FavoriteType, defaultTitle: String,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         settingsStore: SettingsStore,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
         scope: FavoriteMembershipScope? = nil,
-        mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading & MangaDirectoryChangeObserving)? = nil,
         allowsAdd: Bool = true
     ) {
         self.threadID = threadID
@@ -343,14 +344,20 @@ final class FavoriteActionController {
                 localFavoriteLibraryStore: libraryStore, remoteRepository: await makeFavoriteRepository()
             )
             await refreshFavorite()
-            transientFeedback = result.feedback
+            transientFeedback = await didAddFavorite?(result) ?? result.feedback
         } catch { report(error); await refreshFavorite() }
     }
 
     private func performRemoval(_ favorite: Favorite, removeRemote: Bool) async {
+        guard await refreshFavorite() else { return }
+        guard let currentFavorite = self.favorite, currentFavorite.id == favorite.id,
+              membership?.isSmartManga == false else {
+            transientMessage = L10n.string("favorites.work.changed")
+            return
+        }
         do {
             try await FavoriteCommands.removeFavorite(
-                favorite, removeRemote: removeRemote, boardReaderSettings: await settingsStore.load().boardReader,
+                currentFavorite, removeRemote: removeRemote, boardReaderSettings: await settingsStore.load().boardReader,
                 localFavoriteLibraryStore: libraryStore,
                 remoteRepository: removeRemote ? await makeFavoriteRepository() : nil
             )

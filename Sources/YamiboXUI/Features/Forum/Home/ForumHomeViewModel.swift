@@ -2,12 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumHomePageLoading: Sendable {
-    func cachedForumHome(allowExpired: Bool) async -> ForumHomePage?
-    func fetchForumHome(preferCache: Bool) async throws -> ForumHomePage
-}
-
-extension ForumRepository: ForumHomePageLoading {}
 
 @MainActor
 @Observable
@@ -31,7 +25,7 @@ final class ForumHomeViewModel {
 
     init(dependencies: ForumDependencies) {
         repositoryProvider = {
-            await dependencies.makeForumRepository()
+            await dependencies.makeHomeRepository()
         }
     }
 

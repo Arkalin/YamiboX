@@ -3,13 +3,6 @@ import Observation
 import UIKit
 import YamiboXCore
 
-protocol ForumPageLoading: Sendable {
-    func fetchPage(url: URL, confirmedAction: Bool) async throws -> ForumPageLoadResult
-    func submit(form: ForumForm, values: [String: [String]], buttonID: String, referer: URL, files: [ForumFormFile], attachments: [ForumUploadedAttachment]) async throws -> ForumPageLoadResult
-    func upload(file: ForumAttachmentFile, mimeType: String, configuration: ForumUploadConfiguration, referer: URL) async throws -> ForumUploadedAttachment
-}
-
-extension ForumPageRepository: ForumPageLoading {}
 
 @MainActor
 @Observable

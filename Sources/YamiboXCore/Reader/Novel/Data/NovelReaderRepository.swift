@@ -1,6 +1,6 @@
 import Foundation
 
-public actor NovelReaderRepository {
+public actor NovelReaderRepository: NovelDetailDocumentLoading {
     private let client: YamiboClient
     private let cacheStore: NovelReaderProjectionStore
     private let forumCacheStore: ForumCacheStore

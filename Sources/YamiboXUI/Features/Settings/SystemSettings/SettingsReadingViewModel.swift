@@ -15,6 +15,7 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
     private let updateSettings: AtomicSettingsUpdater?
 
     let dependencies: SettingsDependencies
+    var settingsStore: SettingsStore { dependencies.settingsStore }
     let activity: SystemSettingsActivity
 
     init(dependencies: SettingsDependencies, activity: SystemSettingsActivity,

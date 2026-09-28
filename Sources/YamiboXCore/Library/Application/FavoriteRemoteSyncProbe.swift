@@ -4,9 +4,9 @@ import Foundation
 /// while classification, metadata, covers and add-token reuse stay in Core.
 public extension FavoriteYamiboSyncClient {
     init(
-        repository: FavoriteRepository,
+        repository: any FavoriteRemoteSyncOperating,
         resolver: YamiboThreadRouteResolver,
-        coverRepository: ForumThreadReaderRepository,
+        coverRepository: any ThreadCoverPageResolving,
         contentCoverStore: ContentCoverStore
     ) {
         let probe = FavoriteRemoteSyncProbe(
@@ -132,7 +132,7 @@ struct FavoriteRemoteSyncProbe: Sendable {
 private actor FavoriteSyncFormHashStore {
     private var cached: String?
 
-    func value(repository: FavoriteRepository) async throws -> String {
+    func value(repository: any FavoriteRemoteSyncOperating) async throws -> String {
         if let cached { return cached }
         let value = try await repository.currentFormHash()
         cached = value

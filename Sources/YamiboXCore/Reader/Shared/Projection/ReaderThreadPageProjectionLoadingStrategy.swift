@@ -158,18 +158,8 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
     }
 
     private func fetchThreadHTML(threadID: String, view: Int, authorID: String?) async throws -> String {
-        do {
-            return try await adapter.client.fetchThreadById(tid: threadID, authorID: authorID, page: view)
-        } catch {
-            let source = LoadDiagnosticError.classificationError(error)
-            guard let urlError = source as? URLError else { throw error }
-            if LoadDiagnosticError.isCancellation(error) { throw error }
-            switch urlError.code {
-            case .notConnectedToInternet, .networkConnectionLost:
-                throw LoadDiagnosticError.mapping(error, to: YamiboError.offline)
-            default:
-                throw LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
-            }
+        try await YamiboNetworkErrorPolicy.mappingErrors {
+            try await adapter.client.fetchThreadById(tid: threadID, authorID: authorID, page: view)
         }
     }
 

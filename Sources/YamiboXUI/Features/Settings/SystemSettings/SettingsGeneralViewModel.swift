@@ -10,6 +10,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     var themePreset = AppThemePreset.classic
 
     let dependencies: SettingsDependencies
+    var settingsStore: SettingsStore { dependencies.settingsStore }
     let activity: SystemSettingsActivity
     private let updateSettings: AtomicSettingsUpdater
 

@@ -66,8 +66,10 @@ enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
                 table.column("last_visit_time", .double).notNull()
             }
             try db.create(index: "browsing_history_sync_visit_idx", on: "browsing_history_sync_records", columns: ["last_visit_time"])
-            let payload = try BrowsingHistoryWebDAVPayload(updatedAt: .distantPast, records: records, deletions: deletions).merging(nil)
-            try BrowsingHistorySyncRecord.save(payload.records, in: db)
+            let snapshot = try BrowsingHistorySyncMergeV1.merge(
+                SyncRecordSnapshot(records: records, deletions: deletions)
+            )
+            try BrowsingHistorySyncRecord.save(snapshot.records, in: db)
         }
     }
 

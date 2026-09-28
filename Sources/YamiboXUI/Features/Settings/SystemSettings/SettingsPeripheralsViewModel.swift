@@ -11,11 +11,11 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     var gamepad = GamepadSettings()
     var keyboard = KeyboardSettings()
 
-    let dependencies: SettingsDependencies
+    let settingsStore: SettingsStore
     let activity: SystemSettingsActivity
 
-    init(dependencies: SettingsDependencies, activity: SystemSettingsActivity) {
-        self.dependencies = dependencies
+    init(settingsStore: SettingsStore, activity: SystemSettingsActivity) {
+        self.settingsStore = settingsStore
         self.activity = activity
     }
 
@@ -32,7 +32,7 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     func load() async {
         activeAction = .loading
         defer { activeAction = nil }
-        applyLoadedSettings(await dependencies.settingsStore.load())
+        applyLoadedSettings(await settingsStore.load())
     }
 
     func restoreDefaultsAfterApplicationReset() {

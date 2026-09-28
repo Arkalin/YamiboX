@@ -22,6 +22,7 @@ struct ForumThreadReaderBodyView: View {
     let errorMessage: String?
     var errorDetails: LoadFailureDetails? = nil
     let isFavorited: Bool
+    let isFavoriteWorking: Bool
     /// 倒序浏览: page 1 opens on the newest replies, so no post on it carries
     /// the thread's title and counters.
     let isReverseOrder: Bool
@@ -193,6 +194,7 @@ struct ForumThreadReaderBodyView: View {
             if let page {
                 ForumThreadReaderActionBar(
                     isFavorited: isFavorited,
+                    isFavoriteWorking: isFavoriteWorking,
                     onReply: {
                         onURLTap(YamiboRoute.threadReply(tid: page.thread.tid, page: currentPage).url)
                     },

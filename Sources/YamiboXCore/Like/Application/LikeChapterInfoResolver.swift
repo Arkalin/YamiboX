@@ -49,16 +49,7 @@ enum LikeChapterInfoResolver {
         case .mangaImage:
             return nil
         }
-        return novelChapterTitle(forSegmentIdentity: segmentIdentity, in: projection)
-    }
-
-    static func novelChapterTitle(forSegmentIdentity identity: String, in projection: NovelReaderProjection) -> String? {
-        for (segment, semantics) in zip(projection.segments, projection.segmentSemantics) {
-            if semantics?.textSegmentIdentity?.rawValue == identity {
-                return LikeItem.normalizedChapterTitle(segment.chapterTitle)
-            }
-        }
-        return nil
+        return projection.chapterTitle(forSegmentIdentity: segmentIdentity)
     }
 
     /// Resolves chapter titles for a batch of novel Like items, caching one
@@ -68,7 +59,7 @@ enum LikeChapterInfoResolver {
     static func novelChapterInfo(
         for items: [LikeItem],
         threadID: String,
-        cacheStore: NovelReaderProjectionStore
+        cacheStore: any NovelReaderProjectionReading
     ) async -> [String: String] {
         var projectionsByContext: [NovelCacheContext: NovelReaderProjection] = [:]
         var attemptedContexts: Set<NovelCacheContext> = []
@@ -118,8 +109,14 @@ enum LikeChapterInfoResolver {
     }
 
     static func backfillNovelChapterTitles(in projection: NovelReaderProjection, store: LikeStore) async {
-        let work = LikeWorkKey.novel(threadID: projection.threadID)
-        let items = await store.likes(for: work)
+        let work = ReadingWorkKey.novel(threadID: projection.threadID)
+        let items: [LikeItem]
+        do { items = try await store.likes(for: work) }
+        catch {
+            // Metadata backfill is optional; leave existing annotations untouched.
+            YamiboLog.persistence.warning("Failed to read likes for chapter-title backfill: \(error)")
+            return
+        }
         let snapshots = items.compactMap { item -> LikeItem? in
             guard item.chapterTitle == nil,
                   let context = cacheContext(for: item.anchor),

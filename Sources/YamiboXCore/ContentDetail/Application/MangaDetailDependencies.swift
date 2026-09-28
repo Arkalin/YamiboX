@@ -10,8 +10,8 @@ public struct MangaDetailDependencies: Sendable {
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     /// Directory corrections also rename the offline-cache owner when present.
     public let mangaOfflineCacheStore: (any MangaOfflineCacheStoring)?
-    public let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
-    public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
+    public let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
+    public let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
     public let makeMangaReaderProjectionLoader: @Sendable () async -> any MangaReaderProjectionSnapshotLoading
     public let makeMangaDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
 
@@ -23,8 +23,8 @@ public struct MangaDetailDependencies: Sendable {
         mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,
         mangaOfflineCacheStore: (any MangaOfflineCacheStoring)? = nil,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ThreadCoverPageResolving,
         makeMangaReaderProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionSnapshotLoading,
         makeMangaDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository
     ) {

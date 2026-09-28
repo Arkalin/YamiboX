@@ -320,19 +320,7 @@ enum ForumHTMLParser {
     }
 
     private static func parsePageNavigation(in document: Document) -> ForumPageNavigation? {
-        guard let pager = document.selectFirst(".pg") else { return nil }
-        let currentPage = pager.firstText("strong").flatMap(Int.init) ?? 1
-        let pagerText = pager.normalizedText()
-        let totalPages = HTMLTextExtractor.firstMatch(pattern: #"/\s*(\d+)\s*页"#, in: pagerText)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
-            ?? HTMLTextExtractor.firstMatch(pattern: #"\.\.\s*(\d+)"#, in: pagerText)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
-
-        return ForumPageNavigation(currentPage: currentPage, totalPages: totalPages)
+        ForumPageNavigationParser.parse(in: document)
     }
 
     private static func parseSearchID(in document: Document, html: String) -> String? {

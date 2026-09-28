@@ -2,35 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumThreadPageLoading: Sendable {
-    func cachedThreadPage(
-        context: ThreadNovelLaunchContext,
-        page: Int,
-        authorID: String?,
-        reverse: Bool
-    ) async -> ForumThreadPage?
-    func fetchThreadPage(
-        context: ThreadNovelLaunchContext,
-        page: Int,
-        authorID: String?,
-        reverse: Bool
-    ) async throws -> ForumThreadPage
-    func fetchRatingResults(threadID: String, postID: String) async throws -> ForumThreadRatingResultsPage
-    func fetchRateOptions(threadID: String, postID: String) async throws -> ForumThreadRateOptionsPage
-    func fetchPollVoters(threadID: String, optionID: String?, page: Int) async throws -> ForumThreadPollVotersPage
-    func votePoll(forumID: String, threadID: String, optionIDs: [String], formHash: String) async throws -> String
-    func ratePost(
-        threadID: String,
-        postID: String,
-        score: Int,
-        reason: String,
-        formHash: String,
-        noticeAuthor: Bool
-    ) async throws -> String
-    func commentPost(threadID: String, postID: String, message: String, formHash: String, page: Int) async throws -> String
-}
-
-extension ForumThreadReaderRepository: ForumThreadPageLoading {}
 
 @MainActor
 @Observable
@@ -47,16 +18,9 @@ final class ForumThreadReaderViewModel {
         get { transientFeedback?.message }
         set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
     }
-    var isFavorited = false
+    let favoriteActions: FavoriteActionController
+    var isFavorited: Bool { favoriteActions.isFavorited }
     private var readerMenuSettings = BoardReaderSettings(entries: [:])
-    var favoriteErrorMessage: String? {
-        didSet { favoriteErrorDetails = nil }
-    }
-    var favoriteErrorDetails: LoadFailureDetails?
-    var favoriteAddPromptPresented = false
-    var favoriteRemovePrompt: FavoriteRemovePrompt?
-    var favoriteLocationPickerContext: FavoriteLocationPickerContext?
-    @ObservationIgnored private var pendingFavoriteLocations: [FavoriteLocation]?
     /// Floor anchor loaded from saved reading progress, pending its one
     /// restore scroll (browsing-history decision #8). The body view scrolls
     /// to it once the page renders, then calls `consumeRestoredAnchor()`.
@@ -81,7 +45,6 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private let localFavoriteLibraryStoreProvider: @Sendable () async -> FavoriteLibraryStore?
     @ObservationIgnored private let readingProgressStoreProvider: @Sendable () async -> ReadingProgressStore
     @ObservationIgnored private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
-    @ObservationIgnored private let favoriteRepositoryProvider: @Sendable () async -> (any ForumThreadFavoriteRemoteOperating)?
     @ObservationIgnored private let contentCoverStoreProvider: @Sendable () async -> ContentCoverStore?
     @ObservationIgnored private let mangaDirectoryStoreProvider: @Sendable () async -> (any MangaDirectoryPersisting)?
     @ObservationIgnored private let settingsStoreProvider: @Sendable () async -> SettingsStore?
@@ -96,65 +59,75 @@ final class ForumThreadReaderViewModel {
     /// page (a resumed session opens deep into the thread).
     @ObservationIgnored private var threadAuthorID: String?
 
-    init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies) {
-        self.context = context
-        threadAuthorID = context.authorID
-        resolveReplyTarget = { url in
-            let resolver = await dependencies.makeThreadRouteResolver()
-            if case let .thread(payload) = try? await resolver.resolve(
-                YamiboThreadRouteRequest(threadURL: url, intent: .nativeThreadReader)
-            ) { return payload }
-            return nil
-        }
-        repositoryProvider = {
-            await dependencies.makeForumThreadReaderRepository()
-        }
-        localFavoriteLibraryStoreProvider = {
-            dependencies.localFavoriteLibraryStore
-        }
-        readingProgressStoreProvider = {
-            dependencies.readingProgressStore
-        }
-        browsingHistoryWorkflow = dependencies.browsingHistoryWorkflow
-        favoriteRepositoryProvider = {
-            await dependencies.makeFavoriteRepository()
-        }
-        contentCoverStoreProvider = {
-            dependencies.contentCoverStore
-        }
-        mangaDirectoryStoreProvider = {
-            dependencies.mangaDirectoryStore
-        }
-        settingsStoreProvider = {
-            dependencies.settingsStore
-        }
-        progressSync = ProgressSyncModule(
-            adapter: FavoriteLibraryProgressSyncAdapter(
-                readingProgressStore: dependencies.readingProgressStore,
-                browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow,
-                settingsStore: dependencies.settingsStore
-            )
+    convenience init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies) {
+        self.init(
+            context: context,
+            repositoryProvider: dependencies.makeForumThreadReaderRepository,
+            localFavoriteLibraryStore: dependencies.localFavoriteLibraryStore,
+            readingProgressStore: dependencies.readingProgressStore,
+            browsingHistoryWorkflow: dependencies.browsingHistoryWorkflow,
+            makeFavoriteRepository: dependencies.makeFavoriteRepository,
+            contentCoverStore: dependencies.contentCoverStore,
+            mangaDirectoryStore: dependencies.mangaDirectoryStore,
+            settingsStore: dependencies.settingsStore,
+            resolveReplyTarget: { [makeResolver = dependencies.makeThreadRouteResolver] url in
+                let resolver = await makeResolver()
+                if case let .thread(payload) = try? await resolver.resolve(
+                    YamiboThreadRouteRequest(threadURL: url, intent: .nativeThreadReader)
+                ) { return payload }
+                return nil
+            }
         )
     }
 
-    init(
+    convenience init(
         context: ThreadNovelLaunchContext,
         repository: any ForumThreadPageLoading,
-        localFavoriteLibraryStore: FavoriteLibraryStore? = nil,
+        localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
         browsingHistoryWorkflow: BrowsingHistoryWorkflow,
-        favoriteRepository: (any ForumThreadFavoriteRemoteOperating)? = nil,
+        favoriteRepository: any ForumThreadFavoriteRemoteOperating,
         contentCoverStore: ContentCoverStore? = nil,
         mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
-        settingsStore: SettingsStore? = nil,
+        settingsStore: SettingsStore,
         resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRoutePayload? = { _ in nil }
     ) {
+        self.init(
+            context: context,
+            repositoryProvider: { repository },
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            readingProgressStore: readingProgressStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
+            makeFavoriteRepository: { favoriteRepository },
+            contentCoverStore: contentCoverStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            settingsStore: settingsStore,
+            resolveReplyTarget: resolveReplyTarget
+        )
+    }
+
+    private init(
+        context: ThreadNovelLaunchContext,
+        repositoryProvider: @escaping @Sendable () async -> any ForumThreadPageLoading,
+        localFavoriteLibraryStore: FavoriteLibraryStore,
+        readingProgressStore: ReadingProgressStore,
+        browsingHistoryWorkflow: BrowsingHistoryWorkflow,
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
+        contentCoverStore: ContentCoverStore?,
+        mangaDirectoryStore: (any MangaDirectoryPersisting)?,
+        settingsStore: SettingsStore,
+        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRoutePayload?
+    ) {
         self.context = context
+        favoriteActions = FavoriteActionController(
+            threadID: context.thread.tid, type: .other, defaultTitle: context.title,
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            settingsStore: settingsStore, makeFavoriteRepository: makeFavoriteRepository,
+            scope: .thread(context.thread.tid)
+        )
         self.resolveReplyTarget = resolveReplyTarget
         threadAuthorID = context.authorID
-        repositoryProvider = {
-            repository
-        }
+        self.repositoryProvider = repositoryProvider
         localFavoriteLibraryStoreProvider = {
             localFavoriteLibraryStore
         }
@@ -162,9 +135,6 @@ final class ForumThreadReaderViewModel {
             readingProgressStore
         }
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
-        favoriteRepositoryProvider = {
-            favoriteRepository
-        }
         contentCoverStoreProvider = {
             contentCoverStore
         }
@@ -181,6 +151,7 @@ final class ForumThreadReaderViewModel {
                 settingsStore: settingsStore
             )
         )
+        configureFavoriteActions()
     }
 
     var navigationTitle: String {
@@ -266,14 +237,22 @@ final class ForumThreadReaderViewModel {
             return
         }
         guard page == nil else { return }
-        await refreshFavoriteState()
+        await favoriteActions.refreshFavorite()
         var initialPage = context.initialPage
         // Resume is opt-in. Explicit post/page links still take precedence.
-        if context.targetPostID == nil, context.initialPage <= 1,
-           await settingsStoreProvider()?.load().readingProgress.savesNormalThreadProgress == true,
-           let savedProgress = await readingProgressStoreProvider().load(for: .normalThread(threadID: context.thread.tid))?.thread {
-            initialPage = max(1, savedProgress.lastPage)
-            restoredAnchorPostID = savedProgress.anchorPostID
+        do {
+            if context.targetPostID == nil, context.initialPage <= 1,
+               await settingsStoreProvider()?.load().readingProgress.savesNormalThreadProgress == true,
+               let savedProgress = try await readingProgressStoreProvider().load(for: .normalThread(threadID: context.thread.tid))?.thread {
+                initialPage = max(1, savedProgress.lastPage)
+                restoredAnchorPostID = savedProgress.anchorPostID
+            }
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+            return
         }
         if await loadPage(initialPage, preferCache: change == nil), !Task.isCancelled {
             handledSubmissionID = change?.id
@@ -379,196 +358,45 @@ final class ForumThreadReaderViewModel {
         await reloadAfterViewModeChange()
     }
 
-    func clearFavoriteError() {
-        favoriteErrorMessage = nil
-    }
-
     func clearTransientMessage() {
         transientMessage = nil
+        favoriteActions.clearTransientMessage()
     }
 
-    /// Routes the star button through the remembered add/remove sync choices:
-    /// either performs the action silently or raises the matching prompt.
-    func toggleFavorite() async {
-        let settings = await favoriteSettings()
-        if let favoriteItem = await localFavoriteItem(forThreadID: context.thread.tid) {
-            let favorite = favoriteItem.favorite(type: .other)
-            let canRemoveRemote = await favoriteRepositoryProvider() != nil
-                && favorite.remoteFavoriteID?.isEmpty == false
-            switch FavoriteRemoveRemoteDecision.resolve(settings: settings, canRemoveRemote: canRemoveRemote) {
-            case .prompt:
-                favoriteRemovePrompt = FavoriteRemovePrompt(favorite: favorite)
-            case let .silent(removeRemote):
-                await performFavoriteRemoval(favorite, removeRemote: removeRemote)
-            }
-            return
-        }
-
-        let canSyncRemote = await favoriteRepositoryProvider() != nil
-        switch FavoriteAddSyncDecision.resolve(settings: settings, canSyncRemote: canSyncRemote) {
-        case .prompt:
-            favoriteAddPromptPresented = true
-        case let .silent(syncToRemote):
-            await performFavoriteAdd(syncToRemote: syncToRemote)
-        }
-    }
-
-    func confirmFavoriteAdd(syncToRemote: Bool, remember: Bool) async {
-        favoriteAddPromptPresented = false
-        if remember {
-            await rememberAddSyncChoice(syncToRemote)
-        }
-        await performFavoriteAdd(syncToRemote: syncToRemote)
-    }
-
-    func confirmFavoriteRemoval(_ favorite: Favorite, removeRemote: Bool, remember: Bool) async {
-        favoriteRemovePrompt = nil
-        if remember {
-            await rememberRemoveRemoteChoice(removeRemote)
-        }
-        await performFavoriteRemoval(favorite, removeRemote: removeRemote)
-    }
-
-    /// Star button long-press: opens the location picker pre-filled with
-    /// this item's current locations (empty if not yet favorited).
-    func presentFavoriteLocationPicker() async {
-        guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else { return }
-        let document = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
-        let currentLocations = await localFavoriteItem(forThreadID: context.thread.tid)?.locations ?? []
-        favoriteLocationPickerContext = FavoriteLocationPickerContext(
-            document: document,
-            initialSelection: Set(currentLocations),
-            isFavorited: isFavorited,
-            localFavoriteLibraryStore: localFavoriteLibraryStore
-        )
-    }
-
-    /// Routes the picker's confirmed selection: not-yet-favorited creates
-    /// with those locations (still subject to the add-sync prompt); already
-    /// favorited with a non-empty selection re-pins locally; already
-    /// favorited with everything cleared is treated as unfavoriting, through
-    /// the normal remove-sync decision — mirroring Android.
-    func confirmFavoriteLocationSelection(_ locations: Set<FavoriteLocation>) async {
-        favoriteLocationPickerContext = nil
-        guard let favoriteItem = await localFavoriteItem(forThreadID: context.thread.tid) else {
-            guard !locations.isEmpty else { return }
-            pendingFavoriteLocations = Array(locations)
-            let settings = await favoriteSettings()
-            let canSyncRemote = await favoriteRepositoryProvider() != nil
-            switch FavoriteAddSyncDecision.resolve(settings: settings, canSyncRemote: canSyncRemote) {
-            case .prompt:
-                favoriteAddPromptPresented = true
-            case let .silent(syncToRemote):
-                await performFavoriteAdd(syncToRemote: syncToRemote)
-            }
-            return
-        }
-        let favorite = favoriteItem.favorite(type: .other)
-        guard !locations.isEmpty else {
-            let settings = await favoriteSettings()
-            let canRemoveRemote = await favoriteRepositoryProvider() != nil
-                && favorite.remoteFavoriteID?.isEmpty == false
-            switch FavoriteRemoveRemoteDecision.resolve(settings: settings, canRemoveRemote: canRemoveRemote) {
-            case .prompt:
-                favoriteRemovePrompt = FavoriteRemovePrompt(favorite: favorite)
-            case let .silent(removeRemote):
-                await performFavoriteRemoval(favorite, removeRemote: removeRemote)
-            }
-            return
-        }
-        await performFavoriteRelocate(Array(locations))
-    }
-
-    private func performFavoriteAdd(syncToRemote: Bool) async {
-        let locations = pendingFavoriteLocations
-        pendingFavoriteLocations = nil
-        do {
-            guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
-            }
-            let result = try await FavoriteCommands.addFavorite(
-                threadID: context.thread.tid,
-                title: favoriteTitle,
-                type: .other,
-                authorID: nil,
-                forumID: resolvedForumID,
-                forumName: page?.forumName,
-                contentUpdatedAt: Self.contentUpdatedAt(from: page),
-                locations: locations,
-                formHash: page?.formHash,
-                syncToRemote: syncToRemote,
-                boardReaderSettings: await boardReaderSettings(),
-                localFavoriteLibraryStore: localFavoriteLibraryStore,
-                remoteRepository: await favoriteRepositoryProvider()
+    private func configureFavoriteActions() {
+        let defaultTitle = context.title
+        favoriteActions.makeAddMetadata = { [weak self] in
+            guard let self else { return .init(title: defaultTitle) }
+            return .init(
+                title: favoriteTitle, forumID: resolvedForumID, forumName: page?.forumName,
+                contentUpdatedAt: Self.contentUpdatedAt(from: page), formHash: page?.formHash
             )
-            if let coverCandidate = ThreadCoverResolver.findThreadCoverCandidate(in: page),
-               let coverStore = await contentCoverStoreProvider() {
-                do {
-                    _ = try await coverStore.setAutomaticCover(coverCandidate, for: .thread(tid: context.thread.tid))
-                } catch {
-                    YamiboLog.library.error("Failed to set automatic cover for thread \(self.context.thread.tid) during favorite add: \(error)")
-                }
-            }
-            isFavorited = true
-            if let directoryTitle = await autoAttributionDirectoryTitle(localFavoriteLibraryStore: localFavoriteLibraryStore) {
-                transientFeedback = TransientFeedback(
-                    message: L10n.string("favorites.quick.auto_attributed", result.remote.addFeedbackMessage, directoryTitle),
-                    details: result.failureDetails
-                )
-            } else {
-                transientFeedback = result.feedback
-            }
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                favoriteErrorMessage = error.localizedDescription
-                favoriteErrorDetails = LoadFailureDetails(error: error)
-            }
-            await refreshFavoriteState()
+        }
+        favoriteActions.didAddFavorite = { [weak self] result in
+            guard let self else { return result.feedback }
+            return await favoriteAddedFeedback(result)
         }
     }
 
-    private func performFavoriteRemoval(_ favorite: Favorite, removeRemote: Bool) async {
-        do {
-            guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
-            }
-            try await FavoriteCommands.removeFavorite(
-                favorite,
-                removeRemote: removeRemote,
-                boardReaderSettings: await boardReaderSettings(),
-                localFavoriteLibraryStore: localFavoriteLibraryStore,
-                remoteRepository: await favoriteRepositoryProvider()
-            )
-            isFavorited = false
-            transientMessage = removeRemote
-                ? L10n.string("favorites.quick.removed_with_remote")
-                : L10n.string("favorites.quick.removed")
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                favoriteErrorMessage = error.localizedDescription
-                favoriteErrorDetails = LoadFailureDetails(error: error)
-            }
-            await refreshFavoriteState()
-        }
-    }
-
-    private func performFavoriteRelocate(_ locations: [FavoriteLocation]) async {
-        do {
-            guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else {
-                throw YamiboPersistenceError(context: "Local favorite library store is unavailable")
-            }
-            try await FavoriteCommands.relocateFavorite(
-                threadID: context.thread.tid,
-                locations: locations,
-                localFavoriteLibraryStore: localFavoriteLibraryStore
-            )
-            transientMessage = L10n.string("favorites.quick.relocated")
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                favoriteErrorMessage = error.localizedDescription
-                favoriteErrorDetails = LoadFailureDetails(error: error)
+    /// Keep thread-only enrichment here; decisions, mutations and operation
+    /// admission are shared with every other favorite entry point.
+    private func favoriteAddedFeedback(_ result: FavoriteCommands.AddResult) async -> TransientFeedback {
+        if let coverCandidate = ThreadCoverResolver.findThreadCoverCandidate(in: page),
+           let coverStore = await contentCoverStoreProvider() {
+            do {
+                _ = try await coverStore.setAutomaticCover(coverCandidate, for: .thread(tid: context.thread.tid))
+            } catch {
+                YamiboLog.library.error("Failed to set automatic cover for thread \(self.context.thread.tid) during favorite add: \(error)")
             }
         }
+        if let libraryStore = await localFavoriteLibraryStoreProvider(),
+           let directoryTitle = await autoAttributionDirectoryTitle(localFavoriteLibraryStore: libraryStore) {
+            return TransientFeedback(
+                message: L10n.string("favorites.quick.auto_attributed", result.remote.addFeedbackMessage, directoryTitle),
+                details: result.failureDetails
+            )
+        }
+        return result.feedback
     }
 
     /// Local half of decision #8's "auto-attribution" feedback (the
@@ -616,30 +444,6 @@ final class ForumThreadReaderViewModel {
         }
         guard hasOtherFavoriteInDirectory else { return nil }
         return directory.cleanBookName
-    }
-
-    private func favoriteSettings() async -> FavoriteLibrarySettings {
-        guard let settingsStore = await settingsStoreProvider() else {
-            return FavoriteLibrarySettings()
-        }
-        return await settingsStore.load().favorites
-    }
-
-    private func boardReaderSettings() async -> BoardReaderSettings {
-        guard let settingsStore = await settingsStoreProvider() else {
-            return BoardReaderSettings()
-        }
-        return await settingsStore.load().boardReader
-    }
-
-    private func rememberAddSyncChoice(_ syncToRemote: Bool) async {
-        guard let settingsStore = await settingsStoreProvider() else { return }
-        await FavoriteCommands.rememberAddSyncChoice(syncToRemote, settingsStore: settingsStore)
-    }
-
-    private func rememberRemoveRemoteChoice(_ removeRemote: Bool) async {
-        guard let settingsStore = await settingsStoreProvider() else { return }
-        await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
     }
 
     func loadRatingResults(postID: String) async throws -> ForumThreadRatingResultsPage {
@@ -1019,15 +823,4 @@ final class ForumThreadReaderViewModel {
         )
     }
 
-    private func refreshFavoriteState() async {
-        isFavorited = await localFavoriteItem(forThreadID: context.thread.tid) != nil
-    }
-
-    private func localFavoriteItem(forThreadID threadID: String) async -> FavoriteItem? {
-        guard let localFavoriteLibraryStore = await localFavoriteLibraryStoreProvider() else { return nil }
-        let target = FavoriteItemTarget.normalThread(threadID: threadID)
-        return (try? await localFavoriteLibraryStore.load())?.items.first { item in
-            item.target.id == target.id || item.target.threadID == target.threadID
-        }
-    }
 }

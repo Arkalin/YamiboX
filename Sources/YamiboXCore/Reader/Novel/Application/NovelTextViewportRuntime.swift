@@ -659,7 +659,7 @@ package final class NovelTextViewportRuntimeOwner {
 
     package func chapterTitle(for segmentIdentity: NovelTextSegmentIdentity) -> String? {
         guard let projection else { return nil }
-        return LikeChapterInfoResolver.novelChapterTitle(forSegmentIdentity: segmentIdentity.rawValue, in: projection)
+        return projection.chapterTitle(forSegmentIdentity: segmentIdentity.rawValue)
     }
 
     /// The document text on either side of a selection, each side capped at

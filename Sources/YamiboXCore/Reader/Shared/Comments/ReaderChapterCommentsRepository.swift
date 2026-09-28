@@ -1,6 +1,6 @@
 import Foundation
 
-public actor ReaderChapterCommentsRepository {
+public actor ReaderChapterCommentsRepository: ReaderChapterCommentsLoading {
     private let client: YamiboClient
 
     init(client: YamiboClient) {

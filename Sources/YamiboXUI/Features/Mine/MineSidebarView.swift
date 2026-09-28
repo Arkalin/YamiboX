@@ -18,6 +18,7 @@ struct MineSidebarView: View {
         viewModel: MineHomeViewModel,
         navigator: ForumDestinationNavigator,
         appModel: YamiboAppModel,
+        accountSwitcher: AccountSwitchCoordinator,
         settingsDependencies: SettingsDependencies,
         likeDependencies: LikeDependencies,
         messageUnreadWorkflow: MessageUnreadWorkflow,
@@ -40,7 +41,7 @@ struct MineSidebarView: View {
             onSignOut: onSignOut,
             onApplicationReset: { await appModel.bootstrap() },
             onClose: { navigation.returnToRoot() },
-            accountSwitcher: appModel.appContext.accountSwitcher
+            accountSwitcher: accountSwitcher
         ))
     }
 
@@ -56,7 +57,7 @@ struct MineSidebarView: View {
             }
             .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 360)
         } detail: {
-            ForumDestinationStackView(navigator: navigator) {
+            ForumDestinationStackView(navigator: navigator, appModel: appModel) {
                 detailContent
                     .id(navigation.detail?.identity)
             }
@@ -261,13 +262,13 @@ struct MineSidebarView: View {
             Color(uiColor: .systemBackground)
                 .accessibilityIdentifier("mine.detail.empty")
         case .profile:
-            ForumDestinationScreen(destination: .userSpace(uid: nil, name: nil, section: .space, subPage: .profile), navigator: navigator)
+            ForumDestinationScreen(destination: .userSpace(uid: nil, name: nil, section: .space, subPage: .profile), navigator: navigator, appModel: appModel)
         case .messages:
-            ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator)
+            ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator, appModel: appModel)
         case .downloads:
             OfflineCacheQueueScreen(viewModel: viewModel.offlineQueue)
         case .history:
-            BrowsingHistoryView(dependencies: settings.dependencies.library, appModel: appModel,
+            BrowsingHistoryView(dependencies: settings.dependencies.library.history, appModel: appModel,
                 categorySelection: Binding { historyFilter } set: { navigation.show(.history($0)) },
                 onOpenThread: { url, title in navigator.pushThreadLink(url: url, title: title) })
         case .likes:

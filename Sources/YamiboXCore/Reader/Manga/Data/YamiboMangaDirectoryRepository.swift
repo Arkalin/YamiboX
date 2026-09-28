@@ -8,19 +8,19 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
     }
 
     func loadDirectorySeed(for threadID: String) async throws -> MangaDirectorySeed {
-        return try await MangaReaderDataSupport.mapNetworkErrors {
-            guard let tid = threadID.mangaReaderTrimmedNonEmpty else {
+        return try await YamiboNetworkErrorPolicy.mappingErrors {
+            guard let tid = threadID.nilIfBlank else {
                 throw MangaReaderDataSupport.mangaDirectoryParsingFailure()
             }
             let normalizedURL = YamiboRoute.threadByID(tid: tid, page: 1, authorID: nil, reverse: false).url
             let html = try await client.fetchThreadById(tid: tid)
             try MangaReaderDataSupport.validateReadableMangaHTML(html)
 
-            let rawTitle = MangaHTMLParser.extractThreadTitle(from: html)?.mangaReaderTrimmedNonEmpty ?? tid
-            let cleanedThreadTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).mangaReaderTrimmedNonEmpty
-                ?? rawTitle.mangaReaderTrimmedNonEmpty
+            let rawTitle = MangaHTMLParser.extractThreadTitle(from: html)?.nilIfBlank ?? tid
+            let cleanedThreadTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).nilIfBlank
+                ?? rawTitle.nilIfBlank
                 ?? tid
-            let cleanBookName = MangaTitleCleaner.cleanBookName(rawTitle).mangaReaderTrimmedNonEmpty
+            let cleanBookName = MangaTitleCleaner.cleanBookName(rawTitle).nilIfBlank
                 ?? cleanedThreadTitle
 
             let currentChapter = MangaChapter(
@@ -51,7 +51,7 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
         guard !normalizedTagIDs.isEmpty else { return [] }
         let allowedForumIDs = Set([allowedForumID])
 
-        return try await MangaReaderDataSupport.mapNetworkErrors {
+        return try await YamiboNetworkErrorPolicy.mappingErrors {
             var chapters: [MangaChapter] = []
             for (groupIndex, tagID) in normalizedTagIDs.enumerated() {
                 try Task.checkCancellation()
@@ -90,10 +90,10 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
     }
 
     func searchDirectory(keyword: String, forumID: String) async throws -> [MangaChapter] {
-        guard let normalizedKeyword = keyword.mangaReaderTrimmedNonEmpty else { return [] }
-        let normalizedForumID = forumID.mangaReaderTrimmedNonEmpty ?? "30"
+        guard let normalizedKeyword = keyword.nilIfBlank else { return [] }
+        let normalizedForumID = forumID.nilIfBlank ?? "30"
 
-        return try await MangaReaderDataSupport.mapNetworkErrors {
+        return try await YamiboNetworkErrorPolicy.mappingErrors {
             try Task.checkCancellation()
             let firstHTML = try await client.fetchHTML(
                 for: .search(keyword: normalizedKeyword, forumID: normalizedForumID)
@@ -101,7 +101,7 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
             try MangaReaderDataSupport.validateReadableMangaHTML(firstHTML)
             var chapters = MangaHTMLParser.parseListHTML(firstHTML)
 
-            guard let searchID = MangaHTMLParser.extractSearchID(from: firstHTML)?.mangaReaderTrimmedNonEmpty else {
+            guard let searchID = MangaHTMLParser.extractSearchID(from: firstHTML)?.nilIfBlank else {
                 return chapters
             }
 
@@ -124,7 +124,7 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
         var seen = Set<String>()
         var normalized: [String] = []
         for value in values {
-            guard let trimmed = value.mangaReaderTrimmedNonEmpty,
+            guard let trimmed = value.nilIfBlank,
                   seen.insert(trimmed).inserted else {
                 continue
             }

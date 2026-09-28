@@ -3,7 +3,11 @@ import Foundation
 
 /// WebDAV sync participant for the local favorite library. Owns the payload
 /// format and CRDT-style merge semantics for favorites.
-struct FavoriteLibraryWebDAVParticipant: WebDAVSyncParticipant {
+struct FavoriteLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(normalizePayload: FavoriteLibraryWebDAVPayload.normalizingMangaIdentities)
+    }
+
     let datasetID = "favoriteLibrary"
     let remoteFileName = "yamibox-favorite-library-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -179,7 +183,7 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         // crash every future sync round.
         let localByID = Dictionary(local.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
         let remoteByID = Dictionary(remote.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
-        var deletedItemIDs = maxDateDictionary(local.deletedItemIDs, remote.deletedItemIDs)
+        var deletedItemIDs = SyncDeletionState.mergingTombstones(local.deletedItemIDs, remote.deletedItemIDs)
 
         let items = Set(localByID.keys).union(remoteByID.keys).compactMap { targetID -> FavoriteItem? in
             guard var item = localByID[targetID] ?? remoteByID[targetID] else { return nil }
@@ -258,7 +262,7 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         local: FavoriteLibraryDocument,
         remote: FavoriteLibraryDocument
     ) -> (categories: [FavoriteCategory], deletedIDs: [String: Date]) {
-        let deletedIDs = maxDateDictionary(local.deletedCategoryIDs, remote.deletedCategoryIDs)
+        let deletedIDs = SyncDeletionState.mergingTombstones(local.deletedCategoryIDs, remote.deletedCategoryIDs)
         let categories = newestByID(
             local: local.categories,
             remote: remote.categories,
@@ -278,7 +282,7 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         remote: FavoriteLibraryDocument,
         validCategoryIDs: Set<String>
     ) -> (collections: [LocalFavoriteCollection], deletedIDs: [String: Date]) {
-        let deletedIDs = maxDateDictionary(local.deletedCollectionIDs, remote.deletedCollectionIDs)
+        let deletedIDs = SyncDeletionState.mergingTombstones(local.deletedCollectionIDs, remote.deletedCollectionIDs)
         let collections = newestByID(
             local: local.collections,
             remote: remote.collections,
@@ -303,7 +307,7 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         local: FavoriteLibraryDocument,
         remote: FavoriteLibraryDocument
     ) -> (tags: [FavoriteTag], deletedIDs: [String: Date]) {
-        let deletedIDs = maxDateDictionary(local.deletedTagIDs, remote.deletedTagIDs)
+        let deletedIDs = SyncDeletionState.mergingTombstones(local.deletedTagIDs, remote.deletedTagIDs)
         let tags = newestByID(
             local: local.tags,
             remote: remote.tags,
@@ -316,17 +320,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             }
         return (tags, deletedIDs)
     }
-}
-
-private func maxDateDictionary(_ lhs: [String: Date], _ rhs: [String: Date]) -> [String: Date] {
-    var result = lhs
-    for (key, value) in rhs {
-        if let existing = result[key], existing >= value {
-            continue
-        }
-        result[key] = value
-    }
-    return result
 }
 
 private func newestByID<Value: Identifiable>(
@@ -349,4 +342,12 @@ private func newestByID<Value: Identifiable>(
         }
     }
     return Array(byID.values)
+}
+
+private extension FavoriteLibraryWebDAVPayload {
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try JSONDecoder().decode(Self.self, from: data)
+        payload.library = FavoriteLibraryIdentityRemapping.normalize(payload.library, identities: identities, legacy: false)
+        return try JSONEncoder().encode(payload)
+    }
 }

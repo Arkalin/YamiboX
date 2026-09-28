@@ -74,12 +74,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     /// Backs the batched tid → directory lookup phase 3 uses for the
     /// "imported into an already-favorited manga directory" warning
     /// (smart-comic-mode Phase G, design decision #8's remote-sync half).
-    /// Concrete type, not the `MangaDirectoryPersisting` existential — same
-    /// reasoning as `FavoriteLibraryOrganizer`'s equivalent property: it
-    /// rules out ever accidentally running the protocol's naive per-tid
-    /// default implementation in production. `nil` (e.g. in engine tests that
-    /// don't exercise this feature) simply disables the warning.
-    private let mangaDirectoryStore: MangaDirectoryStore?
+    /// Requires explicit batched reads, not directory mutation or observation.
+    /// `nil` disables the warning.
+    private let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
     /// Backs the per-item "is Smart Comic Mode on for this board" check the
     /// same warning needs. `nil` falls back to the factory-default
     /// `BoardReaderSettings()` (not an empty configuration), so the
@@ -89,7 +86,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     public init(
         libraryStore: FavoriteLibraryStore,
         client: FavoriteYamiboSyncClient,
-        mangaDirectoryStore: MangaDirectoryStore? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         settingsStore: SettingsStore? = nil
     ) {
         self.init(
@@ -102,7 +99,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     init(
         libraryStore: FavoriteLibraryStore,
         client: FavoriteYamiboSyncClient,
-        mangaDirectoryStore: MangaDirectoryStore? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         settingsStore: SettingsStore? = nil,
         retryPolicy: FavoriteRemoteSyncRetryPolicy
     ) {

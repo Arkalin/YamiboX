@@ -7,6 +7,7 @@ import UIKit
 public struct MangaReaderView: View {
     private let context: MangaLaunchContext
     private let dependencies: MangaReaderDependencies
+    private let forumDependencies: ForumNavigationDependencies
     private let appModel: YamiboAppModel
     /// `@State` (not `@StateObject`) because the view model is `@Observable`.
     /// SwiftUI keeps the first instance for the view's lifetime; the
@@ -54,6 +55,7 @@ public struct MangaReaderView: View {
     public init(
         context: MangaLaunchContext,
         dependencies: MangaReaderDependencies,
+        forumDependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         initialProjection: MangaReaderProjection? = nil,
         onClose: (() -> Void)? = nil,
@@ -62,6 +64,7 @@ public struct MangaReaderView: View {
     ) {
         self.context = context
         self.dependencies = dependencies
+        self.forumDependencies = forumDependencies
         self.appModel = appModel
         self.onClose = onClose ?? { appModel.dismissMangaReader() }
         self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
@@ -143,7 +146,11 @@ public struct MangaReaderView: View {
                     guard !isSavingImage else { return }
                     Task {
                         canRestoreMangaCover = await model.hasManualMangaCover()
-                        likedItemForActionTarget = await model.isPageLiked(page)
+                        do { likedItemForActionTarget = try await model.isPageLiked(page) }
+                        catch {
+                            model.annotationOperations.report(error)
+                            return
+                        }
                         imageSavePresentation.presentActions(for: page)
                     }
                 },
@@ -291,6 +298,7 @@ public struct MangaReaderView: View {
                     companion: companionPanel,
                     context: context,
                     model: model,
+                    forumDependencies: forumDependencies,
                     appModel: appModel,
                     discussionWorkTIDs: discussionWorkTIDs,
                     annotationSegment: annotationSegmentBinding,
@@ -305,14 +313,19 @@ public struct MangaReaderView: View {
         .fullScreenCover(item: $forumThreadOverlayItem) { item in
             ForumThreadOverlayScreen(
                 item: item,
-                dependencies: appModel.appContext.forumDependencies,
+                dependencies: forumDependencies,
                 appModel: appModel,
                 rootIsDiscussionView: true,
                 discussionWorkTIDs: discussionWorkTIDs
             )
         }
         .sheet(isPresented: $isSettingsPresented) {
-            MangaReaderSettingsSheet(model: model, appModel: appModel)
+            MangaReaderSettingsSheet(
+                model: model,
+                settingsStore: dependencies.settingsStore,
+                peripheralInput: appModel.peripheralInput,
+                controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent
+            )
         }
         .sheet(isPresented: $isCachePresented) {
             if case let .loaded(loaded) = model.presentation.state {
@@ -329,7 +342,9 @@ public struct MangaReaderView: View {
             LikeNoteEditorSheet(item: item) { note in
                 Task {
                     guard let annotation = model.annotationSheetContext else { return }
-                    _ = try? await annotation.like.likeStore.updateNote(id: item.id, note: note)
+                    await model.annotationOperations.perform {
+                        try await annotation.like.annotations.updateNote(id: item.id, note: note)
+                    }
                 }
             }
         }
@@ -419,10 +434,11 @@ public struct MangaReaderView: View {
                 nil
             }
         }
+        .annotationOperationFeedback(model.annotationOperations)
         .failureAlert(
             L10n.string("image.save_photo_permission_denied_title"),
             message: L10n.string("image.save_photo_permission_denied"),
-            details: LoadFailureDetails(error: MangaImagePhotoSaveError.authorizationDenied),
+            details: LoadFailureDetails(error: ImagePhotoSaveError.authorizationDenied),
             isPresented: $isPhotoPermissionAlertPresented
         ) {
             Button(L10n.string("favorites.updates.notifications_open_settings")) {
@@ -576,10 +592,10 @@ public struct MangaReaderView: View {
 
         do {
             let data = try await dependencies.imagePipeline.data(for: model.imageSource(for: page))
-            let photoSaver = MangaImagePhotoSaver()
+            let photoSaver = ImagePhotoSaver()
             try await photoSaver.saveImageData(data)
             imageSavePresentation.finishSave(with: .success)
-        } catch MangaImagePhotoSaveError.authorizationDenied {
+        } catch ImagePhotoSaveError.authorizationDenied {
             guard !Task.isCancelled else { return }
             YamiboLog.reader.warning("Manga page image save denied: Photos authorization was not granted")
             isPhotoPermissionAlertPresented = true

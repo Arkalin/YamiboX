@@ -7,6 +7,19 @@ import Foundation
 /// only the stores it uses; this struct just carries them from the app
 /// composition root to those call sites.
 public struct LibraryDependencies: Sendable {
+    public var history: BrowsingHistoryDependencies {
+        BrowsingHistoryDependencies(
+            browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            readingProgressStore: readingProgressStore,
+            settingsStore: settingsStore,
+            contentCoverStore: contentCoverStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            makeFavoriteRepository: makeFavoriteRepository
+        )
+    }
+
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let favoriteUpdateStore: FavoriteUpdateStore
     public let favoriteSyncRunStore: FavoriteSyncRunStore
@@ -16,7 +29,7 @@ public struct LibraryDependencies: Sendable {
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
-    public let mangaDirectoryStore: MangaDirectoryStore
+    public let mangaDirectoryStore: any MangaDirectoryPersisting
     /// Shared, single-instance cooldown state for the manga-directory search
     /// flow (mirrors `ForumDependencies`' own copy) — the smart-manga update
     /// check lane's `MangaDirectoryWorkflow` must share the same instance the
@@ -24,8 +37,8 @@ public struct LibraryDependencies: Sendable {
     /// forum search is still safe to repeat.
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
-    public let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
-    public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
+    public let makeFavoriteRepository: @Sendable () async -> any FavoriteLibraryRemoteOperating
+    public let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageFetching & ThreadCoverPageResolving
     public let makeThreadRouteResolver: @Sendable () async -> YamiboThreadRouteResolver
     public let makeMangaDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
 
@@ -38,11 +51,11 @@ public struct LibraryDependencies: Sendable {
         browsingHistoryWorkflow: BrowsingHistoryWorkflow,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
-        mangaDirectoryStore: MangaDirectoryStore,
+        mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
+        makeFavoriteRepository: @escaping @Sendable () async -> any FavoriteLibraryRemoteOperating,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageFetching & ThreadCoverPageResolving,
         makeThreadRouteResolver: @escaping @Sendable () async -> YamiboThreadRouteResolver,
         makeMangaDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository
     ) {

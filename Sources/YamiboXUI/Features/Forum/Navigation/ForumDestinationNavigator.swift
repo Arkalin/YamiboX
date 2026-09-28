@@ -2,8 +2,8 @@ import SwiftUI
 import YamiboXCore
 
 /// Path owner + route helpers shared by the forum tab and reader-overlay
-/// forum stacks. Owns everything `ForumDestinationScreen` needs to wire its
-/// destination views, so hosts only decide the root content and the mode.
+/// forum stacks. Receives explicit service packages and narrow navigation
+/// actions; application-backed view assembly remains in destination hosts.
 @MainActor
 @Observable
 final class ForumDestinationNavigator {
@@ -25,8 +25,8 @@ final class ForumDestinationNavigator {
     private(set) var isOpeningContent = false
     @ObservationIgnored private var contentOpenTask: Task<Void, Never>?
 
-    @ObservationIgnored let dependencies: ForumDependencies
-    @ObservationIgnored let appModel: YamiboAppModel
+    @ObservationIgnored let dependencies: ForumNavigationDependencies
+    @ObservationIgnored private let actions: ForumNavigationActions
     @ObservationIgnored let mode: ForumNavigationMode
     @ObservationIgnored let usesSplitNavigation: Bool
     @ObservationIgnored private var browserOpenID: UUID?
@@ -41,14 +41,14 @@ final class ForumDestinationNavigator {
     @ObservationIgnored let discussionWorkTIDs: Set<String>
 
     init(
-        dependencies: ForumDependencies,
-        appModel: YamiboAppModel,
+        dependencies: ForumNavigationDependencies,
+        actions: ForumNavigationActions,
         mode: ForumNavigationMode,
         discussionWorkTIDs: Set<String> = [],
         usesSplitNavigation: Bool = false
     ) {
         self.dependencies = dependencies
-        self.appModel = appModel
+        self.actions = actions
         self.mode = mode
         self.discussionWorkTIDs = discussionWorkTIDs
         self.usesSplitNavigation = usesSplitNavigation
@@ -232,7 +232,7 @@ final class ForumDestinationNavigator {
         if fromBrowserList { browserOpenID = openID }
         return Task {
             do {
-                let resolver = await dependencies.makeThreadRouteResolver()
+                let resolver = await dependencies.forum.makeThreadRouteResolver()
                 let target = try await resolver.resolve(
                     YamiboThreadRouteRequest(
                         threadURL: url,
@@ -278,7 +278,7 @@ final class ForumDestinationNavigator {
         if fromBrowserList { browserOpenID = openID }
         return Task {
             do {
-                let resolver = await dependencies.makeThreadRouteResolver()
+                let resolver = await dependencies.forum.makeThreadRouteResolver()
                 let target = try await resolver.resolve(
                     YamiboThreadRouteRequest(
                         threadURL: thread.url,
@@ -410,7 +410,7 @@ final class ForumDestinationNavigator {
               let tid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "tid" })?.value else { return }
         let revision = pathRevision
-        let generation = appModel.accountGeneration
+        let generation = actions.accountGeneration()
         isOpeningContent = true
         contentOpenTask = Task {
             defer {
@@ -418,12 +418,12 @@ final class ForumDestinationNavigator {
                 contentOpenTask = nil
             }
             do {
-                let repository = await dependencies.makeForumThreadReaderRepository()
+                let repository = await dependencies.forum.makeForumThreadReaderRepository()
                 let page = try await repository.fetchThreadPage(context: ThreadNovelLaunchContext(
                     thread: ThreadIdentity(tid: tid), title: L10n.string("forum.default_title")
-                ))
+                ), page: 1, authorID: nil, reverse: false)
                 try Task.checkCancellation()
-                guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                guard revision == pathRevision, generation == actions.accountGeneration() else { return }
                 let thread = ThreadIdentity(tid: tid, fid: page.forumID ?? page.thread.fid)
                 let novelContext = NovelDetailLaunchContext(thread: thread, title: page.title, authorID: page.posts.first?.author.uid)
                 let mangaContext = MangaDetailLaunchContext(
@@ -438,24 +438,24 @@ final class ForumDestinationNavigator {
                 case .mangaDetail:
                     push(.mangaDetail(mangaContext))
                 case .novelReader:
-                    let model = NovelDetailViewModel(context: novelContext, dependencies: dependencies.novelDetailDependencies)
+                    let model = NovelDetailViewModel(context: novelContext, dependencies: dependencies.destinations.novelDetail)
                     await model.load()
                     try Task.checkCancellation()
-                    guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                    guard revision == pathRevision, generation == actions.accountGeneration() else { return }
                     if let error = model.errorMessage {
                         actionErrorMessage = error
                         actionErrorDetails = model.errorDetails
                     } else {
-                        appModel.presentNovelReader(model.continueLaunchContext())
+                        actions.presentNovel(model.continueLaunchContext())
                     }
                 case .mangaReader:
-                    let settings = await dependencies.settingsStore.load()
+                    let settings = await dependencies.forum.settingsStore.load()
                     let context: MangaLaunchContext
                     if settings.isSmartComicModeEnabled(forumID: thread.fid) {
-                        let model = MangaDetailViewModel(context: mangaContext, dependencies: dependencies.mangaDetailDependencies)
+                        let model = MangaDetailViewModel(context: mangaContext, dependencies: dependencies.destinations.mangaDetail)
                         await model.load()
                         try Task.checkCancellation()
-                        guard revision == pathRevision, generation == appModel.accountGeneration else { return }
+                        guard revision == pathRevision, generation == actions.accountGeneration() else { return }
                         guard let launch = model.continueLaunchContext() else {
                             actionErrorMessage = model.errorMessage ?? L10n.string("common.operation_failed")
                             actionErrorDetails = model.errorDetails
@@ -463,7 +463,7 @@ final class ForumDestinationNavigator {
                         }
                         context = launch
                     } else {
-                        let progress = await dependencies.readingProgressStore.load(for: .mangaThread(threadID: tid))?.manga
+                        let progress = try await dependencies.forum.readingProgressStore.load(for: .mangaThread(threadID: tid))?.manga
                         context = MangaLaunchContext(
                             originalThreadID: tid, chapterTID: tid, displayTitle: page.title,
                             source: progress == nil ? .forum : .resume,
@@ -472,12 +472,12 @@ final class ForumDestinationNavigator {
                         )
                     }
                     try Task.checkCancellation()
-                    guard revision == pathRevision, generation == appModel.accountGeneration else { return }
-                    appModel.requestMangaReader(context)
+                    guard revision == pathRevision, generation == actions.accountGeneration() else { return }
+                    actions.requestManga(context)
                 }
             } catch {
                 guard !LoadDiagnosticError.isCancellation(error), revision == pathRevision,
-                      generation == appModel.accountGeneration else { return }
+                      generation == actions.accountGeneration() else { return }
                 actionErrorMessage = error.localizedDescription
                 actionErrorDetails = LoadFailureDetails(error: error)
             }
@@ -527,7 +527,7 @@ final class ForumDestinationNavigator {
                 isSmartModeEnabled: false,
                 forumID: payload.thread.fid
             )
-            appModel.requestMangaReader(context)
+            actions.requestManga(context)
         case let .thread(payload):
             let context = ThreadNovelLaunchContext(
                 thread: payload.thread,

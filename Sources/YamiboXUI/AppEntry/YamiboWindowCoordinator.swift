@@ -90,7 +90,7 @@ public final class YamiboWindowCoordinator {
         if presentationWindowID == nil { presentationWindowID = windowID }
         if let userInfo = pendingNotificationUserInfo {
             pendingNotificationUserInfo = nil
-            Task { await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, appModel: model) }
+            Task { await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, dependencies: model.appContext.libraryDependencies, appModel: model) }
         }
         return model
     }
@@ -220,7 +220,7 @@ public final class YamiboWindowCoordinator {
 
     public func openNotification(userInfo: [AnyHashable: Any]) async {
         if let windowID = focusedWindowID ?? presentationWindowID, let model = models[windowID]?.value {
-            await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, appModel: model)
+            await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, dependencies: model.appContext.libraryDependencies, appModel: model)
         } else {
             pendingNotificationUserInfo = userInfo
         }

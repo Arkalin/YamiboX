@@ -1,6 +1,6 @@
 import Foundation
 
-public actor ForumThreadReaderRepository: ThreadCoverPageResolving {
+public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailThreadPageLoading {
     private let client: YamiboClient
     private let cacheStore: ForumCacheStore
 

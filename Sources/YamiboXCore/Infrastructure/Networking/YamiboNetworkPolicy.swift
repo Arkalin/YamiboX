@@ -1,16 +1,11 @@
 import Foundation
 
-/// The single enforcement point shared by session- and task-level transports.
+/// Shared credential scoping and transport-level origin protection.
 enum YamiboNetworkPolicy {
     enum CookieStorageContext: Sendable {
         case standard
         /// A private, ephemeral jar used only for the current forum's login flow.
         case isolatedLogin
-    }
-
-    enum RedirectContext {
-        case standard
-        case forumPage
     }
 
     static var requiresRedirectProtection: Bool {
@@ -55,21 +50,13 @@ enum YamiboNetworkPolicy {
 
     static func redirectedRequest(
         _ request: URLRequest,
-        from originalURL: URL?,
-        context: RedirectContext = .standard
+        from originalURL: URL?
     ) -> URLRequest? {
         let environment = YamiboForumEnvironment.current
         if environment.restrictsRequestsToForumOrigin,
            let originalURL, environment.isForumURL(originalURL),
            request.url.map(environment.isForumURL) != true {
             return nil
-        }
-        if context == .forumPage {
-            guard let url = request.url, ForumWebPagePolicy.isForumPage(url),
-                  url.scheme?.lowercased() == environment.baseURL.scheme,
-                  !ForumWebPagePolicy.requiresConfirmationToLoad(url), request.httpMethod == "GET" else {
-                return nil
-            }
         }
         return request
     }

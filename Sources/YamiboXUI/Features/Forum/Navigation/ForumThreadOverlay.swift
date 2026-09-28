@@ -37,7 +37,7 @@ struct ForumThreadOverlayScreen: View {
     ///     view. Empty when no reader is underneath.
     init(
         item: ForumThreadOverlayItem,
-        dependencies: ForumDependencies,
+        dependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         rootIsDiscussionView: Bool,
         discussionWorkTIDs: Set<String> = []
@@ -47,21 +47,22 @@ struct ForumThreadOverlayScreen: View {
         self.rootIsDiscussionView = rootIsDiscussionView
         _navigator = State(wrappedValue: ForumDestinationNavigator(
             dependencies: dependencies,
-            appModel: appModel,
+            actions: appModel.forumNavigationActions,
             mode: .readerOverlay,
             discussionWorkTIDs: discussionWorkTIDs
         ))
     }
 
     var body: some View {
-        ForumDestinationStackView(navigator: navigator) {
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
             ForumThreadLinkScreen(
                 url: item.url,
                 title: item.title,
                 containingFid: nil,
                 authorID: nil,
                 isDiscussionView: rootIsDiscussionView,
-                navigator: navigator
+                navigator: navigator,
+                appModel: appModel
             )
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

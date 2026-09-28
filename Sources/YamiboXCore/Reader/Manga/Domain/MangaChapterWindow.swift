@@ -107,7 +107,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         withTIDs tids: Set<String>,
         preserving position: MangaReadingPosition?
     ) -> MangaChapterWindowSnapshot {
-        let targetTIDs = Set(tids.compactMap(Self.trimmedNonEmpty))
+        let targetTIDs = Set(tids.compactMap { $0.nilIfBlank })
         guard !targetTIDs.isEmpty else { return snapshot }
 
         let currentPosition = self.position
@@ -295,10 +295,5 @@ public struct MangaChapterWindow: Hashable, Sendable {
             guard tids.insert(document.tid).inserted else { return false }
         }
         return true
-    }
-
-    private static func trimmedNonEmpty(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }

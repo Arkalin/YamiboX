@@ -514,30 +514,4 @@ private extension WKUserScript {
     }
 }
 
-private extension WKHTTPCookieStore {
-    func setCookieAsync(_ cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            setCookie(cookie) {
-                continuation.resume()
-            }
-        }
-    }
-
-    func allCookies() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            getAllCookies { cookies in
-                continuation.resume(returning: cookies)
-            }
-        }
-    }
-
-    func deleteCookieAsync(_ cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            delete(cookie) {
-                continuation.resume()
-            }
-        }
-    }
-}
-
 #endif

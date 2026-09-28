@@ -9,23 +9,23 @@ public struct ForumNavigationHostView: View {
     private let theme: ForumTheme
 
     public init(
-        dependencies: ForumDependencies,
+        dependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         theme: ForumTheme = .classic
     ) {
         self.appModel = appModel
         self.theme = theme
-        _model = State(wrappedValue: ForumHomeViewModel(dependencies: dependencies))
+        _model = State(wrappedValue: ForumHomeViewModel(dependencies: dependencies.forum))
         _navigator = State(wrappedValue: ForumDestinationNavigator(
             dependencies: dependencies,
-            appModel: appModel,
+            actions: appModel.forumNavigationActions,
             mode: .forumTab,
             usesSplitNavigation: UIDevice.current.userInterfaceIdiom == .pad
         ))
     }
 
     public var body: some View {
-        ForumBrowserNavigationView(navigator: navigator) {
+        ForumBrowserNavigationView(navigator: navigator, appModel: appModel) {
             ForumHomeView(
                 model: model,
                 onBoardTap: { navigator.openBoard($0, fromBrowserList: true) },

@@ -17,13 +17,15 @@ struct LocalFavoritesRootView: View {
     @StateObject private var routes = LocalFavoritesRoutes()
 
     private let openTargetResolver: LocalFavoriteOpenTargetResolver
-    private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
+    private let makeFavoriteRepository: @Sendable () async -> any BoardFavoriteManaging
+    private let forumDependencies: ForumNavigationDependencies
     let appModel: YamiboAppModel
 
-    init(dependencies: LibraryDependencies, appModel: YamiboAppModel) {
+    init(dependencies: LibraryDependencies, forumDependencies: ForumNavigationDependencies, appModel: YamiboAppModel) {
+        self.forumDependencies = forumDependencies
         _navigator = State(initialValue: ForumDestinationNavigator(
-            dependencies: appModel.appContext.forumDependencies,
-            appModel: appModel,
+            dependencies: forumDependencies,
+            actions: appModel.forumNavigationActions,
             mode: .contentBrowser
         ))
         _organizer = State(initialValue: FavoriteLibraryOrganizer(
@@ -53,22 +55,7 @@ struct LocalFavoritesRootView: View {
             makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
             makeThreadRouteResolver: dependencies.makeThreadRouteResolver
         ))
-        _updateMonitor = StateObject(wrappedValue: FavoriteUpdateMonitor(
-            updateStore: dependencies.favoriteUpdateStore,
-            libraryStore: dependencies.localFavoriteLibraryStore,
-            makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
-            settingsStore: dependencies.settingsStore,
-            notifier: UserNotificationFavoriteUpdateNotifier(),
-            mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            makeMangaDirectoryWorkflow: { searchForumID in
-                MangaDirectoryWorkflow(
-                    repository: await dependencies.makeMangaDirectoryRepository(),
-                    store: dependencies.mangaDirectoryStore,
-                    configuration: MangaDirectoryWorkflowConfiguration(searchForumID: searchForumID),
-                    searchCooldownState: dependencies.mangaDirectorySearchCooldownState
-                )
-            }
-        ))
+        _updateMonitor = StateObject(wrappedValue: FavoriteUpdateMonitor.makeForLibrary(dependencies))
         openTargetResolver = LocalFavoriteOpenTargetResolver(
             libraryStore: dependencies.localFavoriteLibraryStore,
             readingProgressStore: dependencies.readingProgressStore,
@@ -83,6 +70,7 @@ struct LocalFavoritesRootView: View {
         LocalFavoritesOrganizationView(
             organizer: organizer,
             navigator: navigator,
+            forumScreen: { ForumDestinationScreen(destination: $0, navigator: navigator, appModel: appModel) },
             routes: routes,
             detailScreen: detailScreen,
             isBookPresented: appModel.isReaderCoverVisible || isThreadCoverVisible,
@@ -106,7 +94,7 @@ struct LocalFavoritesRootView: View {
             BookOpeningDestination(source: threadOpeningTransition) {
                 ForumThreadOverlayScreen(
                     item: item,
-                    dependencies: appModel.appContext.forumDependencies,
+                    dependencies: forumDependencies,
                     appModel: appModel,
                     // Opening a favorite is a real visit, not a discussion
                     // companion of a running reader; it records history.
@@ -199,8 +187,8 @@ struct LocalFavoritesRootView: View {
     private func detailScreen(_ destination: ContentDetailDestination) -> ContentDetailScreen {
         ContentDetailScreen(
             destination: destination,
-            novelDependencies: appModel.appContext.novelDetailDependencies,
-            mangaDependencies: appModel.appContext.mangaDetailDependencies
+            novelDependencies: forumDependencies.destinations.novelDetail,
+            mangaDependencies: forumDependencies.destinations.mangaDetail
         ) { action in
             switch action {
             case let .readNovel(context, transition): appModel.presentNovelReader(context, bookOpeningTransition: transition)

@@ -117,21 +117,6 @@ extension Optional where Wrapped == NovelReaderPresentedSheet {
     }
 }
 
-/// Performs an in-session annotation jump and restores the imperative
-/// vertical viewport when the jump succeeds.
-@MainActor
-struct NovelReaderAnnotationJump {
-    let model: NovelReaderViewModel
-    let requestVerticalRestore: () -> Void
-
-    @discardableResult
-    func perform(_ resumePoint: NovelResumePoint) async -> Bool {
-        guard await model.jumpToLikeAnchor(resumePoint) else { return false }
-        requestVerticalRestore()
-        return true
-    }
-}
-
 struct NovelReaderPresentationModifier: ViewModifier {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
@@ -143,6 +128,8 @@ struct NovelReaderPresentationModifier: ViewModifier {
     let chapterCommentsTarget: ReaderChapterCommentTarget?
     let chapterCommentsHasLaterChapter: Bool
     let likeDependencies: LikeDependencies
+    let settingsStore: SettingsStore
+    let forumDependencies: ForumNavigationDependencies
     let appModel: YamiboAppModel
     let onJumpToChapterDirectoryChapter: (NovelReaderChapter) -> Void
     let onPreviewChapterDirectoryWebView: (Int) -> Void
@@ -165,7 +152,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
             .fullScreenCover(item: $forumThreadOverlayItem) { item in
                 ForumThreadOverlayScreen(
                     item: item,
-                    dependencies: appModel.appContext.forumDependencies,
+                    dependencies: forumDependencies,
                     appModel: appModel,
                     rootIsDiscussionView: true,
                     discussionWorkTIDs: [model.context.threadID]
@@ -187,7 +174,12 @@ struct NovelReaderPresentationModifier: ViewModifier {
     private func auxiliaryContent(_ sheet: NovelReaderPresentedSheet) -> some View {
         switch sheet {
         case .settings:
-            NovelReaderSettingsSheet(model: model, appModel: appModel)
+            NovelReaderSettingsSheet(
+                model: model,
+                settingsStore: settingsStore,
+                peripheralInput: appModel.peripheralInput,
+                controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent
+            )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(.clear)
@@ -205,7 +197,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
                 loadInitial: model.loadChapterComments(for:),
                 refresh: model.refreshChapterComments(for:),
                 loadNext: model.loadNextChapterCommentsPage,
-                forumDependencies: appModel.appContext.forumDependencies,
+                forumDependencies: forumDependencies,
                 appModel: appModel,
                 discussionWorkTIDs: [model.context.threadID],
                 isNovel: true,

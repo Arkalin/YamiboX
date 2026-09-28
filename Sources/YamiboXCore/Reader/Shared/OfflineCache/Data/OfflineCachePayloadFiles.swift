@@ -153,7 +153,7 @@ extension OfflineCacheStore {
         ),
               (row["owner_title"] as String?) == ownerTitle,
               (row["title"] as String?) == title,
-              let fileName = (row["source_page_file_name"] as String?)?.mangaReaderTrimmedNonEmpty,
+              let fileName = (row["source_page_file_name"] as String?)?.nilIfBlank,
               (row["source_page_fingerprint"] as String?) == sourceFingerprint,
               payloadFileExists(fileName: fileName, directory: novelSourcePagesDirectory, fileManager: fileManager) else {
             return false
@@ -211,7 +211,7 @@ extension OfflineCacheStore {
         await ensureQueueRecoveredBestEffort()
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedThreadID.isEmpty else { return nil }
-        let normalizedAuthorID = authorID?.mangaReaderTrimmedNonEmpty
+        let normalizedAuthorID = authorID?.nilIfBlank
         let entryKey = NovelOfflineCacheEntry.entryKey(
             threadID: normalizedThreadID,
             view: view,
@@ -274,7 +274,7 @@ extension OfflineCacheStore {
             view: max(1, view),
             authorID: authorID
         )
-        let normalizedAuthorID = authorID?.mangaReaderTrimmedNonEmpty
+        let normalizedAuthorID = authorID?.nilIfBlank
         return NovelEntryLookup(
             ownerTitle: Self.novelDisplayOwnerTitle(ownerTitle: ownerTitle, threadID: normalizedThreadID),
             groupKey: NovelOfflineCacheEntry.groupKey(
@@ -388,7 +388,7 @@ extension OfflineCacheStore {
         request: NovelOfflineCacheWorkRequest
     ) throws -> NovelReaderProjection {
         let authorID = request.authorID
-            ?? sourcePage.posts.first?.author.uid?.mangaReaderTrimmedNonEmpty
+            ?? sourcePage.posts.first?.author.uid?.nilIfBlank
             ?? "offline"
         return try NovelReaderProjectionBuilder.build(
             from: sourcePage,
@@ -405,7 +405,7 @@ extension OfflineCacheStore {
 
     static func syntheticSourcePage(from projection: NovelReaderProjection) -> ForumThreadPage {
         let thread = ThreadIdentity(tid: projection.threadID)
-        let authorID = projection.resolvedAuthorID?.mangaReaderTrimmedNonEmpty ?? "offline"
+        let authorID = projection.resolvedAuthorID?.nilIfBlank ?? "offline"
         let posts = projection.segments.enumerated().map { index, segment in
             ForumThreadPost(
                 postID: projection.segmentSources.indices.contains(index)

@@ -44,7 +44,7 @@ final class BrowsingHistoryViewModel {
     @ObservationIgnored private let mangaDirectoryStore: any MangaDirectoryPersisting
     @ObservationIgnored private let contentCoverStore: ContentCoverStore
     @ObservationIgnored private let settingsStore: SettingsStore
-    @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
+    @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     @ObservationIgnored private let openTargetResolver: BrowsingHistoryOpenTargetResolver
     /// Debounces the reload storms this page is exposed to: store change
     /// signals fire every ~350ms while a reader opened from here keeps
@@ -53,7 +53,7 @@ final class BrowsingHistoryViewModel {
     /// Drops stale reload results when a newer reload has since started.
     @ObservationIgnored private var reloadGeneration = 0
 
-    init(dependencies: LibraryDependencies, showsPreviousReading: Bool = false) {
+    init(dependencies: BrowsingHistoryDependencies, showsPreviousReading: Bool = false) {
         self.showsPreviousReading = showsPreviousReading
         browsingHistoryStore = dependencies.browsingHistoryStore
         browsingHistoryWorkflow = dependencies.browsingHistoryWorkflow
@@ -191,7 +191,15 @@ final class BrowsingHistoryViewModel {
     }
 
     func openTarget(for entry: BrowsingHistoryEntry) async -> BrowsingHistoryOpenTarget? {
-        await openTargetResolver.openTarget(for: entry)
+        do {
+            return try await openTargetResolver.openTarget(for: entry)
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+            return nil
+        }
     }
 
     // MARK: - Favorite actions

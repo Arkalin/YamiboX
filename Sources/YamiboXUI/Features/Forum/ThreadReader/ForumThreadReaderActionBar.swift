@@ -4,6 +4,7 @@ import YamiboXCore
 struct ForumThreadReaderActionBar: View {
     @Environment(\.forumTheme) private var theme
     let isFavorited: Bool
+    let isFavoriteWorking: Bool
     let onReply: () -> Void
     let onFavorite: () -> Void
     let onFavoriteLongPress: () -> Void
@@ -34,6 +35,7 @@ struct ForumThreadReaderActionBar: View {
             .buttonStyle(.bordered)
             .tint(theme.accentText)
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in onFavoriteLongPress() })
+            .disabled(isFavoriteWorking)
             .accessibilityLabel(
                 isFavorited ? L10n.string("forum.thread.favorited") : L10n.string("forum.thread.favorite")
             )

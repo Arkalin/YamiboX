@@ -44,16 +44,11 @@ final class MangaDetailViewModel {
     @ObservationIgnored private var attemptedAutomaticCoverBookNames: Set<String> = []
     @ObservationIgnored private var directoryTickTask: Task<Void, Never>?
     @ObservationIgnored private let workflowConfiguration: MangaDirectoryWorkflowConfiguration
-    @ObservationIgnored private let makeThreadCoverPageRepository: @Sendable () async -> any ThreadCoverPageResolving
 
     init(
         context: MangaDetailLaunchContext,
         dependencies: MangaDetailDependencies,
-        workflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
-        // Test seam mirroring `MangaReaderDependencies.makeThreadCoverPageRepository`:
-        // the default resolves covers through the real forum thread reader
-        // repository, which tests must not reach over the network.
-        makeThreadCoverPageRepository: (@Sendable () async -> any ThreadCoverPageResolving)? = nil
+        workflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration()
     ) {
         self.context = context
         self.dependencies = dependencies
@@ -79,16 +74,12 @@ final class MangaDetailViewModel {
             configuration.searchForumID = fid
         }
         self.workflowConfiguration = configuration
-        self.makeThreadCoverPageRepository = makeThreadCoverPageRepository
-            ?? { [makeForumThreadReaderRepository = dependencies.makeForumThreadReaderRepository] in
-                await makeForumThreadReaderRepository()
-            }
         readingProgressUpdatesTask = StoreChangeObservation.task(
             changes: { [store = dependencies.readingProgressStore] in store.changes() },
             changeID: { [store = dependencies.readingProgressStore] in store.changeID }
         ) { [weak self] in
             guard let self else { return }
-            readingProgress = await self.loadReadingProgress()
+            await self.refreshReadingProgress()
         }
         contentCoverUpdatesTask = StoreChangeObservation.task(
             changes: { [store = dependencies.contentCoverStore] in store.changes() },
@@ -164,34 +155,24 @@ final class MangaDetailViewModel {
         return L10n.string("favorites.progress.page", manga.mangaPageIndex + 1)
     }
 
-    /// Same title state machine as the reader directory sheet's update button
-    /// (`MangaReaderWorkflow.directoryPanelPresentation`): busy → cooldown
-    /// countdown → forced-search shortcut countdown → strategy-dependent
-    /// default.
+    private var directoryCommandState: MangaDirectoryPanelCommandState {
+        MangaDirectoryPanelCommandState(
+            isUpdating: isDirectoryActionRunning,
+            cooldownRemaining: directoryCooldownRemaining,
+            forcedSearchShortcutRemaining: forcedSearchShortcutRemaining
+        )
+    }
+
     var updateButtonTitle: String {
-        if isDirectoryActionRunning {
-            return L10n.string("common.updating")
-        }
-        if directoryCooldownRemaining > 0 {
-            return "\(directoryCooldownRemaining)s"
-        }
-        if let forcedSearchShortcutRemaining {
-            return forcedSearchShortcutRemaining > 0
-                ? L10n.string("manga.global_search_countdown", forcedSearchShortcutRemaining)
-                : L10n.string("manga.global_search")
-        }
-        if let directory, directory.strategy != .tag {
-            return L10n.string("manga.global_search")
-        }
-        return L10n.string("reader.cache_action.update")
+        directoryCommandState.updateButtonTitle(strategy: directory?.strategy)
     }
 
     var isUpdateButtonEnabled: Bool {
-        directory != nil && !isDirectoryActionRunning && directoryCooldownRemaining <= 0
+        directory != nil && directoryCommandState.isUpdateButtonEnabled
     }
 
     var isSearchMode: Bool {
-        forcedSearchShortcutRemaining != nil || (directory.map { $0.strategy != .tag } ?? false)
+        directoryCommandState.isSearchMode(strategy: directory?.strategy)
     }
 
     var editDraft: MangaDirectoryEditDraft? {
@@ -215,11 +196,11 @@ final class MangaDetailViewModel {
         isLoading = true
         defer { isLoading = false }
         errorMessage = nil
-        readingProgress = await loadReadingProgress()
         await refreshFavoriteMembership()
         favoriteActions.errorMessage = nil
 
         do {
+            readingProgress = try await loadReadingProgress()
             try Task.checkCancellation()
             let loader = await dependencies.makeMangaReaderProjectionLoader()
             let document = try await loader.loadReaderProjection(
@@ -254,7 +235,7 @@ final class MangaDetailViewModel {
             // Only now is `directory`'s stable identity known, so only now can
             // the precise directory-scoped query replace whatever the fuzzy
             // fetch above (before `directory` was known) happened to find.
-            readingProgress = await loadReadingProgress()
+            readingProgress = try await loadReadingProgress()
             contentCover = await loadContentCover()
             if resolution.shouldAutoUpdateAfterInitialLoad {
                 // The imminent directory update may rewrite the chapter
@@ -272,7 +253,6 @@ final class MangaDetailViewModel {
                   !(networkError.domain == NSURLErrorDomain && networkError.code == NSURLErrorCancelled) else { return }
             currentDocument = nil
             directory = nil
-            readingProgress = await loadReadingProgress()
             contentCover = nil
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
@@ -332,7 +312,7 @@ final class MangaDetailViewModel {
     func updateDirectoryFromDetail() async {
         automaticDirectoryUpdateTask?.cancel()
         automaticDirectoryUpdateTask = nil
-        await performDirectoryUpdate(isForcedSearch: forcedSearchShortcutRemaining != nil)
+        await performDirectoryUpdate(isForcedSearch: directoryCommandState.shouldForceSearchOnUpdate)
     }
 
     /// Discards the locally cached directory (including manual corrections)
@@ -375,29 +355,12 @@ final class MangaDetailViewModel {
             guard !Task.isCancelled else { return }
             self.directory = result.directory
             startAutomaticCoverResolutionIfNeeded()
-            if let cooldownExpiresAt = result.cooldownExpiresAt {
-                directoryCooldownExpiresAt = cooldownExpiresAt
-                forcedSearchShortcutExpiresAt = nil
-            } else if result.shouldOfferForcedSearch {
-                directoryCooldownExpiresAt = nil
-                forcedSearchShortcutExpiresAt = workflowConfiguration.now()
-                    .addingTimeInterval(workflowConfiguration.forcedSearchShortcutDuration)
-            } else {
-                directoryCooldownExpiresAt = nil
-                forcedSearchShortcutExpiresAt = nil
-            }
+            directoryTiming.apply(result, configuration: workflowConfiguration)
         } catch is CancellationError {
         } catch {
             guard !Task.isCancelled else { return }
             YamiboLog.forum.error("Manga detail directory update failed: \(error.localizedDescription)")
-            if case let YamiboError.searchCooldown(seconds) = error {
-                directoryCooldownExpiresAt = workflowConfiguration.now()
-                    .addingTimeInterval(TimeInterval(seconds))
-                forcedSearchShortcutExpiresAt = nil
-            } else if let cooldown = await workflow.cooldownExpiresAt() {
-                directoryCooldownExpiresAt = cooldown
-                forcedSearchShortcutExpiresAt = nil
-            }
+            await applyDirectoryFailureCooldown(error, workflow: workflow)
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 directoryActionErrorMessage = error.localizedDescription
                 directoryActionErrorDetails = LoadFailureDetails(error: error)
@@ -424,29 +387,12 @@ final class MangaDetailViewModel {
             guard !Task.isCancelled else { return }
             self.directory = result.directory
             startAutomaticCoverResolutionIfNeeded()
-            if let cooldownExpiresAt = result.cooldownExpiresAt {
-                directoryCooldownExpiresAt = cooldownExpiresAt
-                forcedSearchShortcutExpiresAt = nil
-            } else if result.shouldOfferForcedSearch {
-                directoryCooldownExpiresAt = nil
-                forcedSearchShortcutExpiresAt = workflowConfiguration.now()
-                    .addingTimeInterval(workflowConfiguration.forcedSearchShortcutDuration)
-            } else {
-                directoryCooldownExpiresAt = nil
-                forcedSearchShortcutExpiresAt = nil
-            }
+            directoryTiming.apply(result, configuration: workflowConfiguration)
         } catch is CancellationError {
         } catch {
             guard !Task.isCancelled else { return }
             YamiboLog.forum.error("Manga detail directory reset failed: \(error.localizedDescription)")
-            if case let YamiboError.searchCooldown(seconds) = error {
-                directoryCooldownExpiresAt = workflowConfiguration.now()
-                    .addingTimeInterval(TimeInterval(seconds))
-                forcedSearchShortcutExpiresAt = nil
-            } else if let cooldown = await workflow.cooldownExpiresAt() {
-                directoryCooldownExpiresAt = cooldown
-                forcedSearchShortcutExpiresAt = nil
-            }
+            await applyDirectoryFailureCooldown(error, workflow: workflow)
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 directoryActionErrorMessage = error.localizedDescription
                 directoryActionErrorDetails = LoadFailureDetails(error: error)
@@ -492,7 +438,7 @@ final class MangaDetailViewModel {
             )
             guard !Task.isCancelled else { return }
             self.directory = updated
-            readingProgress = await loadReadingProgress()
+            readingProgress = try await loadReadingProgress()
             contentCover = await loadContentCover()
             startAutomaticCoverResolutionIfNeeded()
         } catch is CancellationError {
@@ -509,25 +455,30 @@ final class MangaDetailViewModel {
 
     // MARK: - Countdown timing
 
-    @ObservationIgnored private var directoryCooldownExpiresAt: Date?
-    @ObservationIgnored private var forcedSearchShortcutExpiresAt: Date?
+    @ObservationIgnored private var directoryTiming = MangaDirectoryCommandTiming()
 
     private func refreshDirectoryTiming() {
-        let now = workflowConfiguration.now()
-        directoryCooldownRemaining = remainingSeconds(until: directoryCooldownExpiresAt, now: now) ?? 0
-        if directoryCooldownRemaining == 0 {
-            directoryCooldownExpiresAt = nil
-        }
-        forcedSearchShortcutRemaining = remainingSeconds(until: forcedSearchShortcutExpiresAt, now: now)
-        if forcedSearchShortcutRemaining == nil {
-            forcedSearchShortcutExpiresAt = nil
-        }
+        publishDirectoryTiming()
         updateDirectoryTickTask()
     }
 
+    private func publishDirectoryTiming() {
+        let timing = directoryTiming.refresh(at: workflowConfiguration.now())
+        directoryCooldownRemaining = timing.cooldownRemaining
+        forcedSearchShortcutRemaining = timing.forcedSearchShortcutRemaining
+    }
+
+    private func applyDirectoryFailureCooldown(_ error: Error, workflow: MangaDirectoryWorkflow) async {
+        let deadline = await MangaDirectoryCommandTiming.failureCooldownExpiresAt(
+            for: error,
+            now: workflowConfiguration.now,
+            fallback: { await workflow.cooldownExpiresAt() }
+        )
+        directoryTiming.applyCooldown(until: deadline)
+    }
+
     private func updateDirectoryTickTask() {
-        let hasActiveDeadline = directoryCooldownExpiresAt != nil || forcedSearchShortcutExpiresAt != nil
-        guard hasActiveDeadline else {
+        guard directoryTiming.hasActiveDeadline else {
             directoryTickTask?.cancel()
             directoryTickTask = nil
             return
@@ -538,28 +489,13 @@ final class MangaDetailViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self, !Task.isCancelled else { return }
-                let now = self.workflowConfiguration.now()
-                self.directoryCooldownRemaining = self.remainingSeconds(until: self.directoryCooldownExpiresAt, now: now) ?? 0
-                if self.directoryCooldownRemaining == 0 {
-                    self.directoryCooldownExpiresAt = nil
-                }
-                self.forcedSearchShortcutRemaining = self.remainingSeconds(until: self.forcedSearchShortcutExpiresAt, now: now)
-                if self.forcedSearchShortcutRemaining == nil {
-                    self.forcedSearchShortcutExpiresAt = nil
-                }
-                guard self.directoryCooldownExpiresAt != nil || self.forcedSearchShortcutExpiresAt != nil else {
+                self.publishDirectoryTiming()
+                guard self.directoryTiming.hasActiveDeadline else {
                     self.directoryTickTask = nil
                     return
                 }
             }
         }
-    }
-
-    private func remainingSeconds(until deadline: Date?, now: Date) -> Int? {
-        guard let deadline else { return nil }
-        let remaining = deadline.timeIntervalSince(now)
-        guard remaining > 0 else { return nil }
-        return max(1, Int(ceil(remaining)))
     }
 
     // MARK: - Loading helpers
@@ -603,7 +539,7 @@ final class MangaDetailViewModel {
         }
         directory = refreshed
         await refreshFavoriteMembership()
-        readingProgress = await loadReadingProgress()
+        await refreshReadingProgress()
         contentCover = await loadContentCover()
     }
 
@@ -618,7 +554,7 @@ final class MangaDetailViewModel {
         guard automaticCoverResolutionTask == nil, let directory else { return }
         let cleanBookName = directory.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanBookName.isEmpty,
-              let firstChapter = directory.chapters.first,
+              !directory.chapters.isEmpty,
               !attemptedAutomaticCoverBookNames.contains(directory.id.rawValue) else {
             return
         }
@@ -630,41 +566,25 @@ final class MangaDetailViewModel {
         }
         attemptedAutomaticCoverBookNames.insert(directory.id.rawValue)
         automaticCoverResolutionTask = Task { @MainActor [weak self] in
-            await self?.performAutomaticCoverResolution(directoryID: directory.id, cleanBookName: cleanBookName, chapterTID: firstChapter.tid)
+            await self?.performAutomaticCoverResolution(directory: directory)
             self?.automaticCoverResolutionTask = nil
         }
     }
 
-    private func performAutomaticCoverResolution(directoryID: MangaDirectoryID, cleanBookName: String, chapterTID: String) async {
-        let key = ContentCoverKey.smartManga(directoryID: directoryID)
-        let store = dependencies.contentCoverStore
-        // Re-check right before resolving: the favorites backfill or a
-        // manual cover action may have raced a cover in since this page
-        // loaded its snapshot.
-        if let existing = await store.cover(for: key),
-           existing.textCoverForced || existing.resolvedURL != nil {
-            contentCover = await loadContentCover()
-            return
-        }
-        let repository = await makeThreadCoverPageRepository()
-        guard let coverURL = await ThreadCoverResolver().resolve(
-            thread: ThreadIdentity(tid: chapterTID),
-            title: cleanBookName,
-            repository: repository
-        ) else {
-            return
-        }
+    private func performAutomaticCoverResolution(directory: MangaDirectory) async {
         do {
-            _ = try await store.setAutomaticCover(coverURL, for: key)
+            try await MangaAutomaticCoverService(store: dependencies.contentCoverStore)
+                .fillMissingCover(for: directory, makeRepository: dependencies.makeForumThreadReaderRepository)
         } catch is CancellationError {
             return
         } catch {
-            YamiboLog.library.error("Failed to set automatic smartManga cover from manga detail for \(cleanBookName): \(error.localizedDescription)")
+            YamiboLog.library.error("Failed to set automatic smartManga cover from manga detail for \(directory.cleanBookName): \(error.localizedDescription)")
             return
         }
         // `setAutomaticCover` also posts the store's change notification,
         // but reloading directly keeps this page's cover from depending on
         // notification delivery ordering.
+        guard !Task.isCancelled else { return }
         contentCover = await loadContentCover()
     }
 
@@ -682,12 +602,21 @@ final class MangaDetailViewModel {
     /// the directory's true current position. Before `directory` resolves
     /// there is no directory identity yet to query by, so the coincidental
     /// OR-match remains the only option in that narrow window.
-    private func loadReadingProgress() async -> ReadingProgressRecord? {
+    private func refreshReadingProgress() async {
+        do {
+            readingProgress = try await loadReadingProgress()
+        } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            favoriteActions.transientFeedback = .failure(error)
+        }
+    }
+
+    private func loadReadingProgress() async throws -> ReadingProgressRecord? {
         guard let directory else {
-            return await dependencies.readingProgressStore.load(threadID: context.thread.tid)
+            return try await dependencies.readingProgressStore.load(threadID: context.thread.tid)
         }
         let target = FavoriteContentTarget(mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName)
-        return await dependencies.readingProgressStore.load(for: target)
+        return try await dependencies.readingProgressStore.load(for: target)
     }
 
     private func ensuringDirectoryContainsCurrentChapter(

@@ -84,6 +84,31 @@ public struct MangaDirectoryPanelCommandState: Hashable, Sendable {
         self.errorDetails = errorDetails
         self.failureEventID = failureEventID
     }
+
+    public var isUpdateButtonEnabled: Bool {
+        !isUpdating && cooldownRemaining <= 0
+    }
+
+    public var shouldForceSearchOnUpdate: Bool {
+        forcedSearchShortcutRemaining != nil
+    }
+
+    public func isSearchMode(strategy: MangaDirectoryStrategy?) -> Bool {
+        shouldForceSearchOnUpdate || (strategy.map { $0 != .tag } ?? false)
+    }
+
+    public func updateButtonTitle(strategy: MangaDirectoryStrategy?) -> String {
+        if isUpdating { return L10n.string("common.updating") }
+        if cooldownRemaining > 0 { return "\(cooldownRemaining)s" }
+        if let forcedSearchShortcutRemaining {
+            return forcedSearchShortcutRemaining > 0
+                ? L10n.string("manga.global_search_countdown", forcedSearchShortcutRemaining)
+                : L10n.string("manga.global_search")
+        }
+        return isSearchMode(strategy: strategy)
+            ? L10n.string("manga.global_search")
+            : L10n.string("reader.cache_action.update")
+    }
 }
 
 public struct MangaDirectoryPanelPresentation: Hashable, Sendable {

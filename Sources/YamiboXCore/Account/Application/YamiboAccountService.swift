@@ -2,12 +2,11 @@ import Foundation
 
 public struct YamiboAccountService: Sendable {
     private let session: URLSession
-    private let cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext
+    private let remote: any YamiboAccountRemoteOperating
     private let sessionStore: SessionStore
     private let profileStore: YamiboProfileStore
     private let userAgent: String
     private let websiteDataClearer: (any WebsiteDataClearing)?
-    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
     private let coordinatedSignOut: (@Sendable () async throws -> Void)?
     private let coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)?
 
@@ -20,15 +19,18 @@ public struct YamiboAccountService: Sendable {
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext = .standard,
         coordinatedSignOut: (@Sendable () async throws -> Void)? = nil,
-        coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil
+        coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil,
+        remote: (any YamiboAccountRemoteOperating)? = nil
     ) {
         self.session = session
-        self.cookieStorageContext = cookieStorageContext
+        self.remote = remote ?? YamiboAccountRemoteRepository(
+            session: session, userAgent: userAgent, wafRecoverer: wafRecoverer,
+            cookieStorageContext: cookieStorageContext
+        )
         self.sessionStore = sessionStore
         self.profileStore = profileStore
         self.userAgent = userAgent
         self.websiteDataClearer = websiteDataClearer
-        self.wafRecoverer = wafRecoverer
         self.coordinatedSignOut = coordinatedSignOut
         self.coordinatedInvalidation = coordinatedInvalidation
     }
@@ -55,30 +57,26 @@ public struct YamiboAccountService: Sendable {
             throw YamiboError.loginFailed(L10n.string("error.login_failed"))
         }
 
-        let form = try await fetchLoginForm()
+        let form = try await remote.fetchLoginForm()
         let clearance = await sessionStore.load().cookies.filter { YamiboCookie.isWAFCookie($0.name) }
-        let client = YamiboClient(
-            session: session, credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent),
-            wafRecoverer: wafRecoverer, cookieStorageContext: cookieStorageContext
-        )
-        let responseHTML = try await client.submitForm(
-            url: form.actionURL,
-            fields: loginFields(
-                form: form,
+        let response = try await remote.submitLogin(
+            YamiboLoginRequest(
                 username: trimmedUsername,
                 password: request.password,
                 questionID: request.questionID,
                 answer: request.answer
-            )
+            ),
+            form: form,
+            credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent)
         )
 
-        if requiresAdditionalVerification(responseHTML) {
+        if response.requiresAdditionalVerification {
             throw YamiboError.loginVerificationRequired
         }
 
         let cookies = await currentCookies()
         guard cookies.contains(where: { SessionState.isAuthenticationCookieName($0.name) && !$0.isExpired() }) else {
-            throw YamiboError.loginFailed(extractLoginFailureMessage(from: responseHTML))
+            throw YamiboError.loginFailed(response.failureMessage)
         }
 
         let credentials = YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
@@ -143,13 +141,8 @@ public struct YamiboAccountService: Sendable {
         if let formHash = profile?.formHash?.trimmingCharacters(in: .whitespacesAndNewlines),
            !formHash.isEmpty,
            !sessionState.cookies.isEmpty {
-            let client = YamiboClient(
-                session: session,
-                credentials: sessionState.credentials,
-                handlesCookies: false
-            )
             do {
-                _ = try await client.fetchHTML(for: .logout(formHash: formHash))
+                try await remote.signOut(credentials: sessionState.credentials, formHash: formHash)
             } catch {
                 YamiboLog.account.warning("Best-effort server-side logout request failed, proceeding with local sign-out: \(error)")
             }
@@ -172,22 +165,10 @@ public struct YamiboAccountService: Sendable {
     public func verifySession(_ state: SessionState) async throws -> YamiboProfile {
         guard state.isLoggedIn, state.hasValidAuthenticationCookie else { throw YamiboError.notAuthenticated }
         // Verification must never borrow the active account's WAF recovery session.
-        let client = YamiboClient(session: session, credentials: state.credentials, handlesCookies: false)
-        let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
-        return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
-            try YamiboProfileParser.parse(html)
-        }
-    }
-
-    private func fetchLoginForm() async throws -> YamiboLoginForm {
-        let client = YamiboClient(
-            session: session, userAgent: userAgent, wafRecoverer: wafRecoverer,
-            cookieStorageContext: cookieStorageContext
+        return try await remote.fetchProfile(
+            credentials: state.credentials, handlesCookies: false,
+            allowsWAFRecovery: false, validateSession: nil
         )
-        let html = try await client.fetchHTML(for: .login, cachePolicy: .reloadIgnoringLocalCacheData)
-        return try LoadDiagnosticError.parsing(html: html, context: "YamiboLoginFormParser.parse") {
-            try YamiboLoginFormParser.parse(html)
-        }
     }
 
     private func fetchProfile(
@@ -195,31 +176,10 @@ public struct YamiboAccountService: Sendable {
         handlesCookies: Bool = true,
         validateSession: (@Sendable () async throws -> Void)? = nil
     ) async throws -> YamiboProfile {
-        let client = YamiboClient(session: session, credentials: credentials, wafRecoverer: wafRecoverer,
-                                  handlesCookies: handlesCookies, cookieStorageContext: cookieStorageContext,
-                                  validateSession: validateSession)
-        let html = try await client.fetchHTML(for: .currentProfile, cachePolicy: .reloadIgnoringLocalCacheData)
-        return try LoadDiagnosticError.parsing(html: html, context: "YamiboProfileParser.parse") {
-            try YamiboProfileParser.parse(html)
-        }
-    }
-
-    private func loginFields(
-        form: YamiboLoginForm,
-        username: String,
-        password: String,
-        questionID: String,
-        answer: String
-    ) -> [(String, String)] {
-        var fields = form.hiddenFields.filter { name, _ in
-            !["username", "password", "questionid", "answer", "submit"].contains(name)
-        }
-        fields.append(("username", username))
-        fields.append(("password", password))
-        fields.append(("questionid", questionID))
-        fields.append(("answer", answer))
-        fields.append(("submit", "true"))
-        return fields
+        try await remote.fetchProfile(
+            credentials: credentials, handlesCookies: handlesCookies,
+            allowsWAFRecovery: true, validateSession: validateSession
+        )
     }
 
     private func currentCookies() async -> [YamiboCookie] {
@@ -254,42 +214,5 @@ public struct YamiboAccountService: Sendable {
                 storage.deleteCookie(cookie)
             }
         }
-    }
-
-
-    private func requiresAdditionalVerification(_ html: String) -> Bool {
-        let markers = [
-            "seccode",
-            "captcha",
-            "验证码",
-            "驗證碼",
-            "cf-challenge",
-            "cloudflare"
-        ]
-        return markers.contains { html.localizedCaseInsensitiveContains($0) }
-    }
-
-    private func extractLoginFailureMessage(from html: String) -> String {
-        guard let document = try? KannaSoup.parse(html) else {
-            return L10n.string("error.login_failed")
-        }
-
-        let selectors = [
-            ".jump_c p",
-            ".jump_c",
-            "#messagetext",
-            ".alert_info",
-            ".msgbox"
-        ]
-
-        for selector in selectors {
-            guard let text = document.select(selector).first()?.text() else { continue }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-
-        return L10n.string("error.login_failed")
     }
 }

@@ -26,6 +26,7 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     var favoriteSmartMangaBadgeEnabled = true
 
     let dependencies: SettingsDependencies
+    var settingsStore: SettingsStore { dependencies.settingsStore }
     let activity: SystemSettingsActivity
     private let updateSettings: AtomicSettingsUpdater?
 

@@ -14,7 +14,21 @@ import Foundation
 /// Whole rows merge by `updatedAt` — the store bumps one `updatedAt` per row
 /// on every write, so the row is the store's own conflict granularity. There
 /// deletion history survives cleared content and directory identity changes.
-struct ContentCoverWebDAVParticipant: WebDAVSyncParticipant {
+struct ContentCoverWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(
+            legacyRecordCollection: "covers",
+            legacyRecordDeletion: { record in
+                let key = record["key"] as? [String: Any]
+                let keys = (key?["targetType"] as? String).flatMap { type in
+                    (key?["targetID"] as? String).map { [type + ":" + $0] }
+                } ?? []
+                return MangaIdentityLegacyDeletion(keys: keys, date: record["updatedAt"] as? Double)
+            },
+            normalizePayload: ContentCoverWebDAVPayload.normalizingMangaIdentities
+        )
+    }
+
     let datasetID = "contentCovers"
     let remoteFileName = "yamibox-content-covers-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -149,5 +163,16 @@ struct ContentCoverWebDAVMerger: Sendable {
 
     private static func newerCover(_ lhs: ContentCover, _ rhs: ContentCover) -> ContentCover {
         lhs.updatedAt >= rhs.updatedAt ? lhs : rhs
+    }
+}
+
+private extension ContentCoverWebDAVPayload {
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try JSONDecoder().decode(Self.self, from: data)
+        for index in payload.covers.indices where payload.covers[index].key.targetType == .smartManga {
+            payload.covers[index].key.targetID = identities.resolve(payload.covers[index].key.targetID, legacy: false)
+        }
+        payload.deletions = MangaIdentityDeletionRemapping.normalize(payload.deletions, identities: identities)
+        return try JSONEncoder().encode(payload)
     }
 }

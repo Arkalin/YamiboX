@@ -17,7 +17,7 @@ public struct LikeTextUpsertResult: Hashable, Sendable {
 /// Persists the local-first Like Library: liked text excerpts and images,
 /// independent of the Favorite Library. Liking never requires or creates a
 /// favorite, and deleting a favorite never deletes Like Items.
-public actor LikeStore {
+public actor LikeStore: ReaderLikeMutating {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
     /// Multicast change feed; each element is the `changeID` of the store
@@ -40,18 +40,18 @@ public actor LikeStore {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
-    public func like(id: String) async -> LikeItem? {
-        try? await database.read { db in try Self.fetchLike(id: id, in: db) }
+    public func like(id: String) async throws -> LikeItem? {
+        try await database.read { db in try Self.fetchLike(id: id, in: db) }
     }
 
-    public func likes(for workKey: LikeWorkKey) async -> [LikeItem] {
-        (try? await database.read { db in try Self.fetchLikes(workKey: workKey, in: db) }) ?? []
+    public func likes(for workKey: ReadingWorkKey) async throws -> [LikeItem] {
+        try await database.read { db in try Self.fetchLikes(workKey: workKey, in: db) }
     }
 
     /// Work-level rows for the My Likes first level, ordered by most recent
     /// like activity.
-    public func workSummaries() async -> [LikeWorkSummary] {
-        (try? await database.read { db in try Self.fetchWorkSummaries(in: db) }) ?? []
+    public func workSummaries() async throws -> [LikeWorkSummary] {
+        try await database.read { db in try Self.fetchWorkSummaries(in: db) }
     }
 
     /// Adds a text Like Item, merging it with any existing text Like Items in
@@ -61,7 +61,7 @@ public actor LikeStore {
     @discardableResult
     public func upsertTextLike(
         id: String = UUID().uuidString,
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         anchor: NovelTextLikeAnchor,
         excerptText: String,
         excerptPrefix: String? = nil,
@@ -71,103 +71,93 @@ public actor LikeStore {
         chapterTitle: String? = nil,
         date: Date = .now
     ) async throws -> LikeTextUpsertResult {
-        do {
-            let result = try await database.write { db -> LikeTextUpsertResult in
-                let existing = try Self.fetchLikes(workKey: workKey, kind: .text, in: db)
-                var replacedIDs: [String] = []
-                for candidate in existing where candidate.id != id {
-                    guard case let .novelText(candidateAnchor) = candidate.anchor,
-                          NovelLikeTextEndpointOrdering.overlapsOrTouches(candidateAnchor, anchor) else {
-                        continue
-                    }
-                    replacedIDs.append(candidate.id)
+        return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db -> LikeTextUpsertResult in
+            let existing = try Self.fetchLikes(workKey: workKey, kind: .text, in: db)
+            var replacedIDs: [String] = []
+            for candidate in existing where candidate.id != id {
+                guard case let .novelText(candidateAnchor) = candidate.anchor,
+                      NovelLikeTextEndpointOrdering.overlapsOrTouches(candidateAnchor, anchor) else {
+                    continue
                 }
-                for replacedID in replacedIDs {
-                    // Soft, not physical. A physically deleted row is neither in
-                    // `items` nor in `tombstones` on the next WebDAV export, so
-                    // the remote snapshot's copy came back as an unseen new item
-                    // and the merged-away highlight reappeared, overlapping the
-                    // one that subsumed it.
-                    try Self.softDeleteRow(id: replacedID, date: date, in: db)
-                }
-                let previous = try Self.fetchLike(id: id, in: db)
-                let createdAt = previous?.createdAt ?? date
-                let retainedTitle = existing.first {
-                    ($0.id == id || replacedIDs.contains($0.id))
-                        && LikeSortKey.chapterIdentity(of: $0.anchor) == anchor.chapterIdentity
-                        && LikeItem.normalizedChapterTitle($0.chapterTitle) != nil
-                }?.chapterTitle
-                let item = LikeItem(
-                    id: id,
-                    workKey: workKey,
-                    kind: .text,
-                    excerptText: excerptText,
-                    excerptPrefix: excerptPrefix,
-                    excerptSuffix: excerptSuffix,
-                    anchor: .novelText(anchor),
-                    // New style wins over every style it subsumes: the user
-                    // just picked one, and the merged range is a single
-                    // annotation that can only have one.
-                    style: style,
-                    note: note,
-                    chapterTitle: LikeItem.normalizedChapterTitle(chapterTitle) ?? retainedTitle,
-                    createdAt: createdAt,
-                    updatedAt: date
-                )
-                try Self.upsertRow(item, in: db)
-                return LikeTextUpsertResult(item: item, replacedIDs: replacedIDs)
+                replacedIDs.append(candidate.id)
             }
-            postChangeNotification()
-            return result
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+            for replacedID in replacedIDs {
+                // Soft, not physical. A physically deleted row is neither in
+                // `items` nor in `tombstones` on the next WebDAV export, so
+                // the remote snapshot's copy came back as an unseen new item
+                // and the merged-away highlight reappeared, overlapping the
+                // one that subsumed it.
+                try Self.softDeleteRow(id: replacedID, date: date, in: db)
+            }
+            let previous = try Self.fetchLike(id: id, in: db)
+            let createdAt = previous?.createdAt ?? date
+            let retainedTitle = existing.first {
+                ($0.id == id || replacedIDs.contains($0.id))
+                    && LikeSortKey.chapterIdentity(of: $0.anchor) == anchor.chapterIdentity
+                    && LikeItem.normalizedChapterTitle($0.chapterTitle) != nil
+            }?.chapterTitle
+            let item = LikeItem(
+                id: id,
+                workKey: workKey,
+                kind: .text,
+                excerptText: excerptText,
+                excerptPrefix: excerptPrefix,
+                excerptSuffix: excerptSuffix,
+                anchor: .novelText(anchor),
+                // New style wins over every style it subsumes: the user
+                // just picked one, and the merged range is a single
+                // annotation that can only have one.
+                style: style,
+                note: note,
+                chapterTitle: LikeItem.normalizedChapterTitle(chapterTitle) ?? retainedTitle,
+                createdAt: createdAt,
+                updatedAt: date
+            )
+            try Self.upsertRow(item, in: db)
+            return LikeTextUpsertResult(item: item, replacedIDs: replacedIDs)
         }
     }
 
-    /// Adds or replaces an image Like Item (novel illustration or manga page).
+    /// Adds or replaces an image Like Item, reusing any live item at this anchor.
+    /// Position deduplication and insertion share a transaction across all callers.
     /// Image bytes are stored separately by `LikeImageStore`; this only
     /// persists the metadata row.
     @discardableResult
     public func upsertImageLike(
         id: String = UUID().uuidString,
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         anchor: LikeAnchorPayload,
         sourceImageURL: URL?,
         chapterTitle: String? = nil,
         date: Date = .now
     ) async throws -> LikeItem {
-        do {
-            let item = try await database.write { db -> LikeItem in
-                let previous = try Self.fetchLike(id: id, in: db)
-                let createdAt = previous?.createdAt ?? date
-                var item = LikeItem(
-                    id: id,
-                    workKey: workKey,
-                    kind: .image,
-                    sourceImageURL: sourceImageURL,
-                    anchor: anchor,
-                    chapterTitle: chapterTitle,
-                    createdAt: createdAt,
-                    updatedAt: date
-                )
-                if let previous {
-                    item = item.fillingChapterTitle(from: previous)
+        return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db -> LikeItem in
+            if var existing = try Self.fetchLikes(workKey: workKey, kind: .image, in: db)
+                .first(where: { anchor.matchesImage($0.anchor) }) {
+                if existing.chapterTitle == nil,
+                   let title = LikeItem.normalizedChapterTitle(chapterTitle) {
+                    existing.chapterTitle = title
+                    try Self.upsertRow(existing, in: db)
                 }
-                try Self.upsertRow(item, in: db)
-                return item
+                return existing
             }
-            postChangeNotification()
+            let previous = try Self.fetchLike(id: id, in: db)
+            let createdAt = previous?.createdAt ?? date
+            var item = LikeItem(
+                id: id,
+                workKey: workKey,
+                kind: .image,
+                sourceImageURL: sourceImageURL,
+                anchor: anchor,
+                chapterTitle: chapterTitle,
+                createdAt: createdAt,
+                updatedAt: date
+            )
+            if let previous {
+                item = item.fillingChapterTitle(from: previous)
+            }
+            try Self.upsertRow(item, in: db)
             return item
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
@@ -178,24 +168,12 @@ public actor LikeStore {
     /// swallow the neighbours that an overlap merge would.
     @discardableResult
     public func updateStyle(id: String, style: LikeStyle, date: Date = .now) async throws -> LikeItem? {
-        do {
-            let updated = try await database.write { db -> LikeItem? in
-                guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
-                item.style = style
-                item.updatedAt = date
-                try Self.upsertRow(item, in: db)
-                return item
-            }
-            if updated != nil {
-                postChangeNotification()
-            }
-            return updated
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster, shouldNotify: { $0 != nil }) { db -> LikeItem? in
+            guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
+            item.style = style
+            item.updatedAt = date
+            try Self.upsertRow(item, in: db)
+            return item
         }
     }
 
@@ -209,24 +187,12 @@ public actor LikeStore {
     public func updateNote(id: String, note: String?, date: Date = .now) async throws -> LikeItem? {
         let normalized = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolved = (normalized?.isEmpty ?? true) ? nil : normalized
-        do {
-            let updated = try await database.write { db -> LikeItem? in
-                guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
-                item.note = resolved
-                item.updatedAt = date
-                try Self.upsertRow(item, in: db)
-                return item
-            }
-            if updated != nil {
-                postChangeNotification()
-            }
-            return updated
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster, shouldNotify: { $0 != nil }) { db -> LikeItem? in
+            guard var item = try Self.fetchLike(id: id, in: db) else { return nil }
+            item.note = resolved
+            item.updatedAt = date
+            try Self.upsertRow(item, in: db)
+            return item
         }
     }
 
@@ -234,41 +200,23 @@ public actor LikeStore {
     /// `deleted_at`, so it disappears from every read below but a stale remote
     /// snapshot can't resurrect it on merge.
     public func delete(id: String, date: Date = .now) async throws {
-        do {
-            try await database.write { db in try Self.softDeleteRow(id: id, date: date, in: db) }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
-        }
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in try Self.softDeleteRow(id: id, date: date, in: db) }
     }
 
     /// Soft-deletes several items in one write transaction (multi-select
     /// batch delete on the My Likes list screens).
     public func delete(ids: [String], date: Date = .now) async throws {
         guard !ids.isEmpty else { return }
-        do {
-            try await database.write { db in
-                for id in ids {
-                    try Self.softDeleteRow(id: id, date: date, in: db)
-                }
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            for id in ids {
+                try Self.softDeleteRow(id: id, date: date, in: db)
             }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
     /// Every Like Item including soft-deleted rows, for WebDAV export.
-    public func allIncludingDeleted() async -> [LikeItem] {
-        (try? await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }) ?? []
+    public func allIncludingDeleted() async throws -> [LikeItem] {
+        try await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }
     }
 
     /// Replaces the entire local Like Library with a WebDAV-merged snapshot.
@@ -276,55 +224,28 @@ public actor LikeStore {
     /// data; the merge/export logic that builds this array lives in
     /// `LikeLibraryWebDAVParticipant`, not here.
     public func replaceAll(_ items: [LikeItem]) async throws {
-        do {
-            try await database.write { db in
-                try db.execute(sql: "DELETE FROM like_items")
-                for item in items {
-                    try Self.upsertRow(item, in: db)
-                }
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            try db.execute(sql: "DELETE FROM like_items")
+            for item in items {
+                try Self.upsertRow(item, in: db)
             }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
         }
     }
 
-    public func deleteAll(workKey: LikeWorkKey, date: Date = .now) async throws {
-        do {
-            try await database.write { db in
-                let ids = try String.fetchAll(db,
-                    sql: "SELECT id FROM like_items WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
-                    arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
-                )
-                for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
-            }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+    public func deleteAll(workKey: ReadingWorkKey, date: Date = .now) async throws {
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            let ids = try String.fetchAll(db,
+                sql: "SELECT id FROM like_items WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
+                arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
+            )
+            for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
         }
     }
 
     public func clearAll() async throws {
-        do {
-            try await database.write { db in
-                try db.execute(sql: "DELETE FROM like_items")
-                try db.execute(sql: "DELETE FROM like_sync_state")
-            }
-            postChangeNotification()
-        } catch let error as YamiboError {
-            throw error
-        } catch let error as YamiboPersistenceError {
-            throw error
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
+        try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
+            try db.execute(sql: "DELETE FROM like_items")
+            try db.execute(sql: "DELETE FROM like_sync_state")
         }
     }
 
@@ -339,7 +260,7 @@ public actor LikeStore {
     /// store observers.
     public func resolveChapterOrdinals(
         _ ordinalsByChapterIdentity: [NovelChapterIdentity: Int],
-        for workKey: LikeWorkKey
+        for workKey: ReadingWorkKey
     ) async {
         guard !ordinalsByChapterIdentity.isEmpty else { return }
         let changed = (try? await database.write { db -> Bool in
@@ -467,7 +388,7 @@ public actor LikeStore {
         return try Self.item(from: row)
     }
 
-    private static func fetchLikes(workKey: LikeWorkKey, in db: Database) throws -> [LikeItem] {
+    private static func fetchLikes(workKey: ReadingWorkKey, in db: Database) throws -> [LikeItem] {
         try Row.fetchAll(
             db,
             sql: Self.selectColumns
@@ -476,7 +397,7 @@ public actor LikeStore {
         ).compactMap { try Self.item(from: $0) }
     }
 
-    private static func fetchLikes(workKey: LikeWorkKey, kind: LikeItemKind, in db: Database) throws -> [LikeItem] {
+    private static func fetchLikes(workKey: ReadingWorkKey, kind: LikeItemKind, in db: Database) throws -> [LikeItem] {
         try Row.fetchAll(
             db,
             sql: Self.selectColumns
@@ -508,9 +429,9 @@ public actor LikeStore {
             ORDER BY last_liked_at DESC
             """
         ).compactMap { row -> LikeWorkSummary? in
-            guard let kind = LikeWorkKind(rawValue: row["work_kind"] as String) else { return nil }
+            guard let kind = ReadingWorkKind(rawValue: row["work_kind"] as String) else { return nil }
             return LikeWorkSummary(
-                workKey: LikeWorkKey(kind: kind, id: row["work_id"]),
+                workKey: ReadingWorkKey(kind: kind, id: row["work_id"]),
                 itemCount: row["item_count"],
                 lastLikedAt: Date(timeIntervalSince1970: row["last_liked_at"])
             )
@@ -570,13 +491,13 @@ public actor LikeStore {
     private static func item(from row: Row) throws -> LikeItem? {
         guard let anchorData = (row["anchor_json"] as String).data(using: .utf8),
               let anchor = try? JSONDecoder().decode(LikeAnchorPayload.self, from: anchorData),
-              let workKind = LikeWorkKind(rawValue: row["work_kind"] as String),
+              let workKind = ReadingWorkKind(rawValue: row["work_kind"] as String),
               let kind = LikeItemKind(rawValue: row["kind"] as String) else {
             return nil
         }
         return LikeItem(
             id: row["id"],
-            workKey: LikeWorkKey(kind: workKind, id: row["work_id"]),
+            workKey: ReadingWorkKey(kind: workKind, id: row["work_id"]),
             kind: kind,
             excerptText: row["excerpt_text"],
             excerptPrefix: row["excerpt_prefix"],

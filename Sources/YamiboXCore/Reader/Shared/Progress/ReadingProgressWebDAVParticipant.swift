@@ -3,7 +3,24 @@ import Foundation
 
 /// WebDAV sync participant for reading progress. Owns the payload format and
 /// newest-record-wins merge semantics for progress records.
-struct ReadingProgressWebDAVParticipant: WebDAVSyncParticipant {
+struct ReadingProgressWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(
+            legacyTargetField: "contentTarget",
+            legacyRecordDeletion: { record in
+                let target = (record["contentTarget"] ?? record["target"]) as? [String: Any]
+                guard target?["kind"] as? String == "mangaTitle" else { return nil }
+                return MangaIdentityLegacyDeletion(
+                    keys: ((target?["mangaID"] ?? target?["cleanBookName"]) as? String).map { ["manga-title:" + $0] } ?? [],
+                    date: (record["updatedAt"] ?? record["lastVisitTime"]) as? Double
+                )
+            },
+            contentFingerprint: { try JSONDecoder().decode(ReadingProgressWebDAVPayload.self, from: $0).contentFingerprint() },
+            currentTargetReferences: ReadingProgressWebDAVPayload.mangaTargetReferences,
+            normalizePayload: ReadingProgressWebDAVPayload.normalizingMangaIdentities
+        )
+    }
+
     let datasetID = "readingProgress"
     let remoteFileName = "yamibox-reading-progress-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -226,4 +243,30 @@ private struct MangaReadingProgressWebDAVRecord: Codable, Equatable, Sendable {
     var lastChapter: String
     var mangaPageIndex: Int
     var mangaPageCount: Int?
+}
+
+private extension ReadingProgressWebDAVPayload {
+    static func mangaTargetReferences(_ data: Data) throws -> [MangaIdentityTargetReference] {
+        try JSONDecoder().decode(Self.self, from: data).records.enumerated().compactMap { index, record in
+            guard let target = record.contentTarget, case let .mangaTitle(id, name) = target else { return nil }
+            return MangaIdentityTargetReference(index: index, name: name, identity: id,
+                chapterTID: record.manga?.chapterThreadID ?? record.threadID)
+        }
+    }
+
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _ resolvedTargets: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try JSONDecoder().decode(Self.self, from: data)
+        for index in payload.records.indices {
+            if let target = resolvedTargets[index] {
+                payload.records[index].contentTarget = .mangaTitle(mangaID: identities.canonicalID(target.id), cleanBookName: target.name)
+                continue
+            }
+            if let target = payload.records[index].contentTarget {
+                payload.records[index].contentTarget = FavoriteContentIdentityRemapping.normalize(
+                    target, identities: identities, legacy: false)
+            }
+        }
+        payload.deletions = MangaIdentityDeletionRemapping.normalize(payload.deletions, identities: identities)
+        return try JSONEncoder().encode(payload)
+    }
 }

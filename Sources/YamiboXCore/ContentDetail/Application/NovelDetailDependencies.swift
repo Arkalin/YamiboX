@@ -6,18 +6,18 @@ public struct NovelDetailDependencies: Sendable {
     public let readingProgressStore: ReadingProgressStore
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
-    public let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
-    public let makeNovelReaderRepository: @Sendable () async -> NovelReaderRepository
-    public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
+    public let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
+    public let makeNovelReaderRepository: @Sendable () async -> any NovelDetailDocumentLoading
+    public let makeForumThreadReaderRepository: @Sendable () async -> any NovelDetailThreadPageLoading
 
     public init(
         localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
-        makeNovelReaderRepository: @escaping @Sendable () async -> NovelReaderRepository,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
+        makeNovelReaderRepository: @escaping @Sendable () async -> any NovelDetailDocumentLoading,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any NovelDetailThreadPageLoading
     ) {
         self.localFavoriteLibraryStore = localFavoriteLibraryStore
         self.readingProgressStore = readingProgressStore

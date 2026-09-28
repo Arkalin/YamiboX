@@ -10,7 +10,7 @@ struct MangaReaderViewModelDependencies {
     var makeDirectoryStore: @Sendable () -> any MangaDirectoryPersisting
     var makeOfflineCacheStore: @Sendable () -> (any MangaOfflineCacheStoring & OfflineCacheQueueStoring)?
     var makeDirectorySearchCooldownState: @Sendable () -> MangaDirectorySearchCooldownState
-    var makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)?
+    var makeChapterCommentsRepository: (@Sendable () async -> any ReaderChapterCommentsLoading)?
     var makeContentCoverStore: @Sendable () -> ContentCoverStore?
     var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow
     var makeLikeDependencies: @Sendable () -> LikeDependencies?
@@ -33,7 +33,7 @@ struct MangaReaderViewModelDependencies {
         makeDirectorySearchCooldownState: @escaping @Sendable () -> MangaDirectorySearchCooldownState = {
             MangaDirectorySearchCooldownState()
         },
-        makeChapterCommentsRepository: (@Sendable () async -> ReaderChapterCommentsRepository)? = nil,
+        makeChapterCommentsRepository: (@Sendable () async -> any ReaderChapterCommentsLoading)? = nil,
         makeContentCoverStore: @escaping @Sendable () -> ContentCoverStore? = { nil },
         makeBrowsingHistoryWorkflow: @escaping @Sendable () -> BrowsingHistoryWorkflow,
         makeLikeDependencies: @escaping @Sendable () -> LikeDependencies? = { nil },
@@ -85,11 +85,11 @@ struct MangaReaderViewModelDependencies {
 @MainActor
 @Observable
 public final class MangaReaderViewModel {
+    let annotationOperations = AnnotationOperationState()
     var currentDirectoryID: MangaDirectoryID? {
         guard case let .loaded(loaded) = presentation.state else { return nil }
         return loaded.directoryID
     }
-    @ObservationIgnored private var directoryObservationTask: Task<Void, Never>?
     // The properties below were `@Published` before the `@Observable`
     // migration; they stay tracked so the views keep re-rendering on the
     // exact same writes as before.
@@ -123,12 +123,6 @@ public final class MangaReaderViewModel {
     /// reader's equivalent this is exact rather than cosmetic — manga pages are
     /// discrete, so "the same place" is exact page equality.
     public private(set) var isCurrentPageBookmarked = false
-    @ObservationIgnored private var bookmarkChangeObservationTask: Task<Void, Never>?
-    // Stays a tracked (observable) property on the view model (not on the
-    // navigation coordinator) because MangaReaderView observes only this
-    // object; the coordinator reads and writes it through its Reading
-    // closures.
-    private var navigationHistory = ReaderNavigationHistory<MangaReadingPosition>()
 
     public let context: MangaLaunchContext
     // Every `var` below was a plain (non-`@Published`) stored property
@@ -143,18 +137,20 @@ public final class MangaReaderViewModel {
     let dependencies: MangaReaderViewModelDependencies
     @ObservationIgnored private let uiImagePipeline: YamiboUIImagePipeline
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
-    @ObservationIgnored private var chapterCommentsRepository: ReaderChapterCommentsRepository?
+    @ObservationIgnored private var chapterCommentsRepository: (any ReaderChapterCommentsLoading)?
     @ObservationIgnored private var workflow: MangaReaderWorkflow?
-    @ObservationIgnored private var hasPrepared = false
     @ObservationIgnored private var committedSettings = MangaReaderSettings()
-    @ObservationIgnored private var chapterJumpTask: Task<Void, Never>?
-    @ObservationIgnored private var adjacentPrefetchTask: Task<Void, Never>?
-    @ObservationIgnored private var adjacentChapterNavigationCount = 0
-    @ObservationIgnored private var readerContentGeneration = 0
     @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
     @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
-    @ObservationIgnored private var chapterJumpGeneration = 0
     @ObservationIgnored private var offlineCacheOwnerName: String?
+    @ObservationIgnored private lazy var lifecycle: MangaReaderLifecycleCoordinator = MangaReaderLifecycleCoordinator { [weak self] in
+        guard let self else { return }
+        navigation.invalidatePendingNavigation()
+        directoryLane.cancelTasks()
+        likeModule.cancelObservation()
+        coverModule.cancelAutoThreadCoverResolution()
+        chapterCommentsModule.cancelLoading()
+    }
     // The lazy module/coordinator references are ignored for the same
     // reason (never published) — and `lazy` storage cannot be rewritten
     // into the macro's tracked accessors anyway.
@@ -190,13 +186,11 @@ public final class MangaReaderViewModel {
     )
 
     /// Wayfinding coordinator: sequences back/forward restores and records
-    /// nonlinear jumps into `navigationHistory`. The restore itself stays
+    /// nonlinear jumps into its observable history. The restore itself stays
     /// here (`performNavigationRestoreAttempt`) because it republishes
     /// reader content.
     @ObservationIgnored private lazy var navigation = MangaReaderNavigationCoordinator(
         reading: MangaReaderNavigationCoordinator.Reading(
-            navigationHistory: { [weak self] in self?.navigationHistory ?? ReaderNavigationHistory() },
-            setNavigationHistory: { [weak self] navigationHistory in self?.navigationHistory = navigationHistory },
             stableReadingPosition: { [weak self] in self?.currentStableReadingPosition },
             restorePosition: { [weak self] targetPosition in
                 await self?.performNavigationRestoreAttempt(to: targetPosition) ?? .aborted
@@ -220,12 +214,16 @@ public final class MangaReaderViewModel {
                 self?.imageSource(for: page) ?? page.mangaReaderImageSource(offlineScope: nil)
             },
             setLikedPageIDs: { [weak self] likedPageIDs in
-                self?.likedPageIDs = likedPageIDs
+                guard let self, lifecycle.acceptsResults else { return }
+                self.likedPageIDs = likedPageIDs
                 // The 书签与喜欢 capsule's count and visibility include likes,
                 // and every like-mutating path (capture, delete, the store's
                 // change stream) already funnels through this write-back.
-                Task { await self?.refreshAnnotationState() }
-            }
+                lifecycle.start(.annotationRefresh) { [weak self] _ in
+                    await self?.refreshAnnotationState()
+                }
+            },
+            onFailure: { [weak self] error in self?.annotationOperations.report(error) }
         )
     )
 
@@ -274,7 +272,10 @@ public final class MangaReaderViewModel {
                     state: .loading(MangaReaderLoadingPresentation(title: ""))
                 )
             },
-            setPresentation: { [weak self] presentation in self?.presentation = presentation },
+            setPresentation: { [weak self] presentation in
+                guard let self, lifecycle.acceptsResults else { return }
+                self.presentation = presentation
+            },
             progressSnapshot: { [weak self] presentation in self?.progressSnapshot(from: presentation) },
             publishPresentation: { [weak self] nextPresentation, previousProgressSnapshot in
                 self?.publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
@@ -283,18 +284,6 @@ public final class MangaReaderViewModel {
             offlineCacheOwnerName: { [weak self] in self?.offlineCacheOwnerName }
         )
     )
-
-    deinit {
-        directoryObservationTask?.cancel()
-        // Only the handles this view model still owns; the extracted
-        // modules (directory lane, like, cover) cancel their own task
-        // handles in their own deinits. Both handles must stay
-        // `@ObservationIgnored`: this nonisolated deinit could not touch
-        // them if the `@Observable` macro rewrote them into tracked
-        // (main-actor computed) properties.
-        chapterJumpTask?.cancel()
-        adjacentPrefetchTask?.cancel()
-    }
 
     public convenience init(
         context: MangaLaunchContext,
@@ -332,21 +321,24 @@ public final class MangaReaderViewModel {
 
     // MARK: - Loading
 
-    @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var initialProjection: MangaReaderProjection?
 
     func close() {
-        isClosed = true
-        cancelReaderTasks()
+        lifecycle.close()
     }
 
     public func prepare() async {
-        guard !hasPrepared, !isClosed else { return }
-        hasPrepared = true
+        await lifecycle.prepare { [weak self] request in
+            await self?.prepareContent(request: request) ?? false
+        }
+    }
+
+    private func prepareContent(request: MangaReaderLifecycleCoordinator.Request) async -> Bool {
         invalidateReaderContent()
         lastQueuedProgressSnapshot = nil
 
         let appSettings = await dependencies.settingsStore.load()
+        guard lifecycle.accepts(request) else { return false }
         committedSettings = Self.normalizedSettings(appSettings.manga)
         applePencilPageTurnSettings = appSettings.system.applePencilPageTurn
         presentation = presentationWithCommittedSettings(presentation)
@@ -375,14 +367,14 @@ public final class MangaReaderViewModel {
             directoryWorkflowConfiguration: directoryWorkflowConfiguration,
             directorySearchCooldownState: dependencies.makeDirectorySearchCooldownState()
         )
-        guard !isClosed, !Task.isCancelled else { return }
+        guard lifecycle.accepts(request) else { return false }
         self.workflow = workflow
         self.imageLoader = imageLoader
         presentation = workflow.presentation
         let initialProjection = self.initialProjection
         self.initialProjection = nil
         let preparedPresentation = await workflow.prepare(initialProjection: initialProjection)
-        guard !isClosed, !Task.isCancelled else { return }
+        guard lifecycle.accepts(request) else { return false }
         presentation = preparedPresentation
         currentStableReadingPosition = stableReadingPosition(from: presentation)
         updateOfflineCacheOwnerName(from: presentation)
@@ -391,19 +383,22 @@ public final class MangaReaderViewModel {
             directoryLane.startAutomaticDirectoryUpdate()
         }
         await likeModule.refreshLikedPageIDs()
+        guard lifecycle.accepts(request) else { return false }
         likeModule.observeLikeChangesIfNeeded()
         await refreshAnnotationState()
+        guard lifecycle.accepts(request) else { return false }
         observeBookmarkChangesIfNeeded()
         observeDirectoryChanges()
         coverModule.startAutoThreadCoverResolutionIfNeeded()
         browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
+        if case .loaded = presentation.state { return true }
+        return false
     }
 
     public func retryInitialLoad() async {
-        cancelReaderTasks()
+        guard await lifecycle.resetForRetry() else { return }
         workflow = nil
         imageLoader = nil
-        hasPrepared = false
         offlineCacheOwnerName = nil
         navigation.resetHistory()
         currentStableReadingPosition = nil
@@ -424,8 +419,7 @@ public final class MangaReaderViewModel {
     public func updateCurrentPage(globalIndex: Int) {
         guard let workflow else { return }
         let previousGlobalIndex = currentPageIndex(in: presentation)
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
+        lifecycle.invalidateContent()
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         let nextPresentation = workflow.moveToLoadedPage(at: globalIndex)
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
@@ -452,8 +446,7 @@ public final class MangaReaderViewModel {
         }
         let targetPosition = MangaReadingPosition(tid: targetPage.tid, localIndex: targetPage.localIndex)
 
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
+        lifecycle.invalidateContent()
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         let nextPresentation = workflow.jumpToLoadedPage(at: targetPage.globalIndex)
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
@@ -464,56 +457,55 @@ public final class MangaReaderViewModel {
     }
 
     public func jumpRelativePage(_ delta: Int, usesTwoPageSpread: Bool) async {
-        guard delta != 0,
-              let workflow,
-              presentation.settings.readingMode == .paged,
-              case let .loaded(loaded) = presentation.state,
-              !loaded.pages.isEmpty else {
+        guard let workflow,
+              let target = relativePageTurnTarget(for: delta, usesTwoPageSpread: usesTwoPageSpread) else {
             return
         }
 
-        let plan = MangaPagedReadingPlan(
-            pages: loaded.pages,
-            currentPageIndex: loaded.currentPageIndex,
-            pageTurnDirection: presentation.settings.pageTurnDirection,
-            usesTwoPageSpread: usesTwoPageSpread
-        )
-        let targetGlobalIndex: Int?
-        if usesTwoPageSpread {
-            targetGlobalIndex = plan.currentSpreadIndex.flatMap { currentSpreadIndex in
-                plan.globalIndex(forSpreadAt: currentSpreadIndex + delta)
-            }
-        } else {
-            targetGlobalIndex = plan.currentPageIndex.flatMap { currentPageIndex in
-                plan.globalIndex(forPageAt: currentPageIndex + delta)
-            }
-        }
-        guard let targetGlobalIndex else {
+        switch target {
+        case let .chapterBoundary(sourcePosition):
             await jumpToAdjacentChapterBoundary(
                 delta: delta,
-                sourcePosition: stableReadingPosition(from: loaded),
+                sourcePosition: sourcePosition,
                 workflow: workflow
             )
-            return
+        case let .loadedPage(targetGlobalIndex):
+            pageBoundary = nil
+            lifecycle.invalidateContent()
+            let previousProgressSnapshot = progressSnapshot(from: presentation)
+            let nextPresentation = workflow.jumpToLoadedPage(at: targetGlobalIndex, animated: true)
+            publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
+            navigation.recordLinearReading(direction: delta >= 0 ? .forward : .backward)
+            scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? targetGlobalIndex)
         }
-
-        pageBoundary = nil
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
-        let previousProgressSnapshot = progressSnapshot(from: presentation)
-        let nextPresentation = workflow.jumpToLoadedPage(at: targetGlobalIndex, animated: true)
-        publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
-        navigation.recordLinearReading(direction: delta >= 0 ? .forward : .backward)
-        scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? targetGlobalIndex)
     }
 
     public func canJumpRelativePage(_ delta: Int, usesTwoPageSpread: Bool) -> Bool {
+        guard let workflow,
+              let target = relativePageTurnTarget(for: delta, usesTwoPageSpread: usesTwoPageSpread) else {
+            return false
+        }
+        switch target {
+        case .loadedPage:
+            return true
+        case let .chapterBoundary(sourcePosition):
+            return workflow.canJumpToAdjacentChapter(from: sourcePosition, delta: delta)
+        }
+    }
+
+    private enum RelativePageTurnTarget {
+        case loadedPage(Int)
+        case chapterBoundary(MangaReadingPosition?)
+    }
+
+    /// Resolve once for both availability and execution. A chapter boundary is
+    /// retained even when unavailable so execution can still show boundary feedback.
+    private func relativePageTurnTarget(for delta: Int, usesTwoPageSpread: Bool) -> RelativePageTurnTarget? {
         guard delta != 0,
-              let workflow,
               presentation.settings.readingMode == .paged,
               case let .loaded(loaded) = presentation.state,
               !loaded.pages.isEmpty else {
-            return false
+            return nil
         }
 
         let plan = MangaPagedReadingPlan(
@@ -532,13 +524,10 @@ public final class MangaReaderViewModel {
                 plan.globalIndex(forPageAt: currentPageIndex + delta)
             }
         }
-        if targetGlobalIndex != nil {
-            return true
+        if let targetGlobalIndex {
+            return .loadedPage(targetGlobalIndex)
         }
-        return workflow.canJumpToAdjacentChapter(
-            from: stableReadingPosition(from: loaded),
-            delta: delta
-        )
+        return .chapterBoundary(stableReadingPosition(from: loaded))
     }
 
     /// Discrete adjacent-chapter jump for vertical mode, where page turning is
@@ -561,7 +550,7 @@ public final class MangaReaderViewModel {
     }
 
     func reportVerticalPageBoundary(_ delta: Int) {
-        guard abs(delta) == 1, chapterJumpTask == nil, adjacentChapterNavigationCount == 0, let workflow,
+        guard abs(delta) == 1, !lifecycle.isRunning(.chapterJump), !lifecycle.hasAdjacentNavigation, let workflow,
               presentation.settings.readingMode == .vertical,
               case let .loaded(loaded) = presentation.state,
               !loaded.pages.isEmpty,
@@ -650,7 +639,7 @@ public final class MangaReaderViewModel {
         likeModule.canShowLikes
     }
 
-    var likeSheetContext: (workKey: LikeWorkKey, like: LikeDependencies)? {
+    var likeSheetContext: (workKey: ReadingWorkKey, like: LikeDependencies)? {
         likeModule.likeSheetContext
     }
 
@@ -658,8 +647,8 @@ public final class MangaReaderViewModel {
         await likeModule.likePage(page)
     }
 
-    func isPageLiked(_ page: MangaReaderPageProjection) async -> LikeItem? {
-        await likeModule.isPageLiked(page)
+    func isPageLiked(_ page: MangaReaderPageProjection) async throws -> LikeItem? {
+        try await likeModule.isPageLiked(page)
     }
 
     // MARK: - Bookmarks
@@ -696,16 +685,16 @@ public final class MangaReaderViewModel {
     /// off), which is the same gate that hides the likes entry.
     @discardableResult
     func toggleBookmarkForCurrentPage() async -> Bool? {
+        let revision = lifecycle.contentRevision
         guard let annotation = likeModule.likeSheetContext,
               let page = currentPageProjection else {
             return nil
         }
-        guard let outcome = try? await annotation.like.bookmarkStore.toggle(
-            workKey: annotation.workKey,
-            anchor: bookmarkAnchor(for: page)
-        ) else {
-            return nil
-        }
+        guard let outcome = await annotationOperations.perform({
+            try await annotation.like.annotations.toggleBookmark(
+                work: annotation.workKey, anchor: bookmarkAnchor(for: page)
+            )
+        }), lifecycle.accepts(revision) else { return nil }
         isCurrentPageBookmarked = outcome.isBookmarked
         await refreshAnnotationState()
         return outcome.isBookmarked
@@ -714,49 +703,55 @@ public final class MangaReaderViewModel {
     /// Just the bookmark glyph's state, without the two count queries the full
     /// refresh does — this runs on every page turn.
     func refreshCurrentPageBookmarkState() async {
+        let revision = lifecycle.contentRevision
+        guard lifecycle.accepts(revision) else { return }
         guard let annotation = likeModule.likeSheetContext,
               let page = currentPageProjection else {
             isCurrentPageBookmarked = false
             return
         }
-        isCurrentPageBookmarked = await annotation.like.bookmarkStore
-            .bookmark(marking: bookmarkAnchor(for: page), in: annotation.workKey) != nil
+        guard let isBookmarked = await annotationOperations.perform({
+            try await annotation.like.bookmarkStore
+                .bookmark(marking: bookmarkAnchor(for: page), in: annotation.workKey) != nil
+        }), lifecycle.accepts(revision), currentPageProjection?.id == page.id else { return }
+        isCurrentPageBookmarked = isBookmarked
     }
 
     func refreshAnnotationState() async {
+        let revision = lifecycle.contentRevision
+        guard lifecycle.accepts(revision) else { return }
         guard let annotation = likeModule.likeSheetContext else {
             annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
             isCurrentPageBookmarked = false
             return
         }
-        let bookmarkCount = await annotation.like.bookmarkStore.count(for: annotation.workKey)
-        let likeCount = await annotation.like.likeStore.likes(for: annotation.workKey).count
+        guard let (bookmarkCount, likeCount) = await annotationOperations.perform({
+            let bookmarks = try await annotation.like.bookmarkStore.count(for: annotation.workKey)
+            let likes = try await annotation.like.likeStore.likes(for: annotation.workKey).count
+            return (bookmarks, likes)
+        }), lifecycle.accepts(revision) else { return }
         annotationCapsule = ReaderAnnotationCapsulePresentation(
             bookmarkCount: bookmarkCount,
             likeCount: likeCount
         )
-        if let page = currentPageProjection {
-            isCurrentPageBookmarked = await annotation.like.bookmarkStore
-                .bookmark(marking: bookmarkAnchor(for: page), in: annotation.workKey) != nil
-        } else {
-            isCurrentPageBookmarked = false
-        }
+        await refreshCurrentPageBookmarkState()
     }
 
     private func observeBookmarkChangesIfNeeded() {
-        guard bookmarkChangeObservationTask == nil,
+        guard !lifecycle.isRunning(.bookmarkObservation),
               let annotation = likeModule.likeSheetContext else {
             return
         }
         let bookmarkStore = annotation.like.bookmarkStore
-        bookmarkChangeObservationTask = Task { [weak self] in
+        lifecycle.start(.bookmarkObservation) { [weak self] request in
             for await _ in bookmarkStore.changes() {
+                guard self?.lifecycle.accepts(request) == true else { return }
                 await self?.refreshAnnotationState()
             }
         }
     }
 
-    var annotationSheetContext: (workKey: LikeWorkKey, like: LikeDependencies)? {
+    var annotationSheetContext: (workKey: ReadingWorkKey, like: LikeDependencies)? {
         likeModule.likeSheetContext
     }
 
@@ -774,8 +769,7 @@ public final class MangaReaderViewModel {
         let navigationGeneration = navigation.beginNavigationRequest()
         let sourcePosition = currentStableReadingPosition
         let targetPosition = MangaReadingPosition(tid: tid, localIndex: localIndex)
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
+        lifecycle.invalidateContent()
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         do {
             let nextPresentation = try await workflow.jumpToPosition(targetPosition)
@@ -842,21 +836,18 @@ public final class MangaReaderViewModel {
 
     public func jumpToChapter(_ chapter: MangaChapter) async {
         chapterJumpErrorMessage = nil
-        chapterJumpTask?.cancel()
         invalidateReaderContent()
-        chapterJumpGeneration += 1
-        let generation = chapterJumpGeneration
         let navigationGeneration = navigation.beginNavigationRequest()
         let sourcePosition = currentStableReadingPosition
-        chapterJumpTask = Task { @MainActor [weak self] in
+        let task = lifecycle.start(.chapterJump) { [weak self] request in
             await self?.performJumpToChapter(
                 chapter,
                 sourcePosition: sourcePosition,
                 navigationGeneration: navigationGeneration,
-                jumpGeneration: generation
+                request: request
             )
         }
-        await chapterJumpTask?.value
+        await task?.value
     }
 
     // Thin forwarders: the chrome and the navigation tests keep calling the
@@ -881,19 +872,13 @@ public final class MangaReaderViewModel {
         _ chapter: MangaChapter,
         sourcePosition: MangaReadingPosition?,
         navigationGeneration: Int,
-        jumpGeneration: Int
+        request: MangaReaderLifecycleCoordinator.Request
     ) async {
         guard let workflow else { return }
         let previousProgressSnapshot = progressSnapshot(from: presentation)
-        defer {
-            if chapterJumpGeneration == jumpGeneration {
-                chapterJumpTask = nil
-            }
-        }
-
         do {
             let nextPresentation = try await workflow.jumpToChapter(chapter)
-            guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
+            guard lifecycle.accepts(request) else { return }
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
             if navigation.isCurrentNavigationRequest(navigationGeneration) {
                 navigation.recordSuccessfulNonlinearNavigation(
@@ -905,7 +890,7 @@ public final class MangaReaderViewModel {
         } catch is CancellationError {
             return
         } catch {
-            guard !Task.isCancelled, chapterJumpGeneration == jumpGeneration else { return }
+            guard lifecycle.accepts(request) else { return }
             YamiboLog.reader.error("Jumping to manga chapter failed: \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 chapterJumpErrorMessage = error.localizedDescription
@@ -939,31 +924,27 @@ public final class MangaReaderViewModel {
 
     private func scheduleAdjacentPrefetch(around globalIndex: Int) {
         guard workflow != nil else { return }
-        let generation = readerContentGeneration
-        adjacentPrefetchTask = Task { @MainActor [weak self] in
+        let revision = lifecycle.contentRevision
+        lifecycle.start(.adjacentPrefetch) { [weak self] request in
             await self?.performAdjacentPrefetch(
                 around: globalIndex,
-                readerContentGeneration: generation
+                revision: revision,
+                request: request
             )
         }
     }
 
     private func performAdjacentPrefetch(
         around globalIndex: Int,
-        readerContentGeneration generation: Int
+        revision: MangaReaderLifecycleCoordinator.ContentRevision,
+        request: MangaReaderLifecycleCoordinator.Request
     ) async {
         guard let workflow else { return }
-        defer {
-            if readerContentGeneration == generation {
-                adjacentPrefetchTask = nil
-            }
-        }
-
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         guard let nextPresentation = await workflow.prefetchAdjacentChaptersIfNeeded(around: globalIndex) else {
             return
         }
-        guard !Task.isCancelled, readerContentGeneration == generation else { return }
+        guard lifecycle.accepts(request), lifecycle.accepts(revision) else { return }
         publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
     }
 
@@ -974,17 +955,15 @@ public final class MangaReaderViewModel {
     ) async {
         guard abs(delta) == 1, sourcePosition != nil else { return }
         guard workflow.canJumpToAdjacentChapter(from: sourcePosition, delta: delta) else {
-            guard chapterJumpTask == nil, adjacentChapterNavigationCount == 0 else { return }
+            guard !lifecycle.isRunning(.chapterJump), !lifecycle.hasAdjacentNavigation else { return }
             pageBoundary = ReaderPageBoundary(delta: delta)
             return
         }
 
         pageBoundary = nil
-        adjacentChapterNavigationCount += 1
-        defer { adjacentChapterNavigationCount -= 1 }
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
-        let generation = readerContentGeneration
+        let navigationID = lifecycle.beginAdjacentNavigation()
+        defer { lifecycle.finishAdjacentNavigation(navigationID) }
+        let revision = lifecycle.contentRevision
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         do {
             let nextPresentation = try await workflow.jumpToAdjacentChapter(
@@ -992,7 +971,7 @@ public final class MangaReaderViewModel {
                 delta: delta,
                 animated: true
             )
-            guard !Task.isCancelled, readerContentGeneration == generation else { return }
+            guard lifecycle.accepts(revision) else { return }
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
             navigation.recordLinearReading(direction: delta >= 0 ? .forward : .backward)
             scheduleAdjacentPrefetch(around: currentPageIndex(in: nextPresentation) ?? 0)
@@ -1007,36 +986,19 @@ public final class MangaReaderViewModel {
     // MARK: - Reader content lifecycle and presentation publishing
 
     func invalidateReaderContent() {
-        adjacentPrefetchTask?.cancel()
-        adjacentPrefetchTask = nil
-        readerContentGeneration += 1
-    }
-
-    private func cancelReaderTasks() {
-        directoryObservationTask?.cancel()
-        directoryObservationTask = nil
-        directoryLane.cancelTasks()
-        chapterJumpTask?.cancel()
-        chapterJumpTask = nil
-        adjacentPrefetchTask?.cancel()
-        adjacentPrefetchTask = nil
-        likeModule.cancelObservation()
-        bookmarkChangeObservationTask?.cancel()
-        bookmarkChangeObservationTask = nil
-        coverModule.cancelAutoThreadCoverResolution()
-        readerContentGeneration += 1
+        lifecycle.invalidateContent()
     }
 
     private func observeDirectoryChanges() {
-        guard directoryObservationTask == nil else { return }
+        guard !lifecycle.isRunning(.directoryObservation) else { return }
         let changes = dependencies.makeDirectoryStore().changes()
-        directoryObservationTask = Task { [weak self] in
+        lifecycle.start(.directoryObservation) { [weak self] request in
             for await _ in changes {
                 guard !Task.isCancelled else { return }
-                guard let self, !isClosed, let workflow else { return }
+                guard let self, lifecycle.accepts(request), let workflow else { return }
                 let previous = progressSnapshot(from: presentation)
                 do {
-                    if let updated = try await workflow.refreshPersistedDirectory(), !Task.isCancelled {
+                    if let updated = try await workflow.refreshPersistedDirectory(), lifecycle.accepts(request) {
                         publishPresentation(updated, previousProgressSnapshot: previous)
                         await likeModule.refreshLikedPageIDs()
                     }
@@ -1051,7 +1013,7 @@ public final class MangaReaderViewModel {
         _ nextPresentation: MangaReaderPresentation,
         previousProgressSnapshot: MangaReaderProgressSnapshot?
     ) {
-        guard !isClosed else { return }
+        guard lifecycle.acceptsResults else { return }
         if nextPresentation != presentation {
             presentation = nextPresentation
         }
@@ -1061,7 +1023,9 @@ public final class MangaReaderViewModel {
         // describes the CURRENT page. Without this it keeps describing whatever
         // page was on screen at load, so the button silently does the opposite
         // of its own label and icon.
-        Task { await refreshCurrentPageBookmarkState() }
+        lifecycle.start(.bookmarkRefresh) { [weak self] _ in
+            await self?.refreshCurrentPageBookmarkState()
+        }
         // Directory identity/title can change through any presentation
         // update (automatic directory update, rename); identity-stable
         // updates early-return on the record-key check inside.
@@ -1114,23 +1078,24 @@ public final class MangaReaderViewModel {
     /// One attempt of a back/forward restore, on behalf of the navigation
     /// coordinator: moves reader content to `targetPosition` and reports
     /// how the attempt ended. Lives here (not on the coordinator) because a
-    /// restore is a reader-content republish — prefetch cancellation,
-    /// content generation, and presentation publishing are this view
-    /// model's own lifecycle.
+    /// restore republishes reader content. The lifecycle coordinator owns
+    /// prefetch cancellation and admits the result by content revision.
     private func performNavigationRestoreAttempt(
         to targetPosition: MangaReadingPosition
     ) async -> MangaReaderNavigationCoordinator.RestoreAttemptOutcome {
         guard let workflow else { return .aborted }
-        adjacentPrefetchTask?.cancel()
-        readerContentGeneration += 1
+        lifecycle.invalidateContent()
+        let revision = lifecycle.contentRevision
         let previousProgressSnapshot = progressSnapshot(from: presentation)
         do {
             let nextPresentation = try await workflow.jumpToPosition(targetPosition)
+            guard lifecycle.accepts(revision) else { return .aborted }
             publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
             return .restored(prefetchIndex: currentPageIndex(in: nextPresentation) ?? 0)
         } catch is CancellationError {
             return .aborted
         } catch {
+            guard lifecycle.accepts(revision) else { return .aborted }
             YamiboLog.reader.warning("Restoring manga navigation history target failed, discarding and trying next: \(error.localizedDescription)")
             return .failed
         }
@@ -1182,15 +1147,11 @@ public final class MangaReaderViewModel {
         return nextPresentation
     }
 
-    // static (like `normalizedNonEmpty` below) so the browsing-history
-    // recorder can share the exact same normalization instead of keeping a
-    // drifting copy.
     static func normalizedDirectoryName(_ directoryName: String?) -> String? {
-        let normalized = directoryName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized?.isEmpty == false ? normalized : nil
+        directoryName?.nilIfBlank
     }
 
-    private func ensureChapterCommentsRepository() async throws -> ReaderChapterCommentsRepository {
+    private func ensureChapterCommentsRepository() async throws -> any ReaderChapterCommentsLoading {
         if chapterCommentsRepository == nil {
             guard let makeChapterCommentsRepository = dependencies.makeChapterCommentsRepository else {
                 throw ReaderChapterCommentsUnavailableError()
@@ -1222,11 +1183,6 @@ public final class MangaReaderViewModel {
     private static func normalizedBrightness(_ brightness: Double) -> Double {
         guard brightness.isFinite else { return 1.0 }
         return min(1.5, max(0.25, brightness))
-    }
-
-    static func normalizedNonEmpty(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func presentationTitle(for context: MangaLaunchContext) -> String {

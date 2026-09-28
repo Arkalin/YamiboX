@@ -2,8 +2,21 @@ import Foundation
 
 /// Everything the Forum feature UI (home, boards, search, thread reader,
 /// user space, messaging, blogs, in-app browser) needs from the composition
-/// root, plus dependency packages for the detail destinations it opens.
+/// root. Cross-feature destination packages belong to ForumNavigationDependencies.
 public struct ForumDependencies: Sendable {
+    public var history: BrowsingHistoryDependencies {
+        BrowsingHistoryDependencies(
+            browsingHistoryStore: browsingHistoryStore,
+            browsingHistoryWorkflow: browsingHistoryWorkflow,
+            localFavoriteLibraryStore: localFavoriteLibraryStore,
+            readingProgressStore: readingProgressStore,
+            settingsStore: settingsStore,
+            contentCoverStore: contentCoverStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            makeFavoriteRepository: makeFavoriteRepository
+        )
+    }
+
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
     public let messageUnreadWorkflow: MessageUnreadWorkflow
@@ -12,18 +25,18 @@ public struct ForumDependencies: Sendable {
     /// Shared with the other reader surfaces, including in test compositions.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
-    public let composerDraftStore: ForumComposerDraftStore
+    public let composerDraftStore: any ForumComposerDraftPersisting
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
-    public let novelDetailDependencies: NovelDetailDependencies
-    public let mangaDetailDependencies: MangaDetailDependencies
-    public let makeForumRepository: @Sendable () async -> ForumRepository
-    public let makePageRepository: @Sendable () async -> ForumPageRepository
-    public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
-    public let makeUserSpaceRepository: @Sendable () async -> UserSpaceRepository
-    public let makeBlogReaderRepository: @Sendable () async -> BlogReaderRepository
-    public let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
+    public let makeHomeRepository: @Sendable () async -> any ForumHomePageLoading
+    public let makeBoardRepository: @Sendable () async -> any ForumBoardPageLoading
+    public let makeSearchRepository: @Sendable () async -> any ForumSearchPageLoading
+    public let makePageRepository: @Sendable () async -> any ForumPageLoading
+    public let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageLoading
+    public let makeUserSpaceRepository: @Sendable () async -> any ForumUserSpacePageLoading
+    public let makeBlogReaderRepository: @Sendable () async -> any BlogReaderPageLoading
+    public let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     public let makeThreadRouteResolver: @Sendable () async -> YamiboThreadRouteResolver
 
     public init(
@@ -34,17 +47,18 @@ public struct ForumDependencies: Sendable {
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore,
         browsingHistoryWorkflow: BrowsingHistoryWorkflow,
-        composerDraftStore: ForumComposerDraftStore,
+        composerDraftStore: any ForumComposerDraftPersisting,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
-        novelDetailDependencies: NovelDetailDependencies,
-        mangaDetailDependencies: MangaDetailDependencies,
-        makeForumRepository: @escaping @Sendable () async -> ForumRepository,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
-        makeUserSpaceRepository: @escaping @Sendable () async -> UserSpaceRepository,
-        makeBlogReaderRepository: @escaping @Sendable () async -> BlogReaderRepository,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
+        makeHomeRepository: @escaping @Sendable () async -> any ForumHomePageLoading,
+        makeBoardRepository: @escaping @Sendable () async -> any ForumBoardPageLoading,
+        makeSearchRepository: @escaping @Sendable () async -> any ForumSearchPageLoading,
+        makePageRepository: @escaping @Sendable () async -> any ForumPageLoading,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageLoading,
+        makeUserSpaceRepository: @escaping @Sendable () async -> any ForumUserSpacePageLoading,
+        makeBlogReaderRepository: @escaping @Sendable () async -> any BlogReaderPageLoading,
+        makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
         makeThreadRouteResolver: @escaping @Sendable () async -> YamiboThreadRouteResolver
     ) {
         self.sessionStore = sessionStore
@@ -58,13 +72,10 @@ public struct ForumDependencies: Sendable {
         self.settingsStore = settingsStore
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore
-        self.novelDetailDependencies = novelDetailDependencies
-        self.mangaDetailDependencies = mangaDetailDependencies
-        self.makeForumRepository = makeForumRepository
-        self.makePageRepository = {
-            let repository = await makeForumRepository()
-            return await repository.pageRepository()
-        }
+        self.makeHomeRepository = makeHomeRepository
+        self.makeBoardRepository = makeBoardRepository
+        self.makeSearchRepository = makeSearchRepository
+        self.makePageRepository = makePageRepository
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeUserSpaceRepository = makeUserSpaceRepository
         self.makeBlogReaderRepository = makeBlogReaderRepository

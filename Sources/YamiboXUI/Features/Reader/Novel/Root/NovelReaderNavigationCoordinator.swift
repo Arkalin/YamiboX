@@ -26,6 +26,28 @@ struct NovelReaderChapterDirectoryState: Equatable {
 /// directly.
 @MainActor
 final class NovelReaderNavigationCoordinator: ObservableObject {
+    /// Presentation effects shared by every user-initiated navigation path.
+    /// Synchronous moves restore immediately; asynchronous moves refresh only
+    /// after the caller confirms that navigation completed successfully.
+    struct Presentation {
+        var restoreViewport: @MainActor () -> Void
+        var refreshAnnotations: @MainActor () async -> Void
+
+        @MainActor
+        func perform(_ navigate: () -> Void) {
+            navigate()
+            restoreViewport()
+            Task { await refreshAnnotations() }
+        }
+
+        @MainActor
+        func performAsync(_ navigate: () async -> Bool) async {
+            guard await navigate() else { return }
+            restoreViewport()
+            await refreshAnnotations()
+        }
+    }
+
     /// Reading context and load effects supplied by the owning view model.
     struct Reading {
         var maxView: @MainActor () -> Int

@@ -37,7 +37,7 @@ final class SystemSettingsViewModel {
         let forum = SettingsForumViewModel(dependencies: dependencies, activity: activity)
         let favorites = SettingsFavoritesViewModel(dependencies: dependencies, activity: activity)
         let reading = SettingsReadingViewModel(dependencies: dependencies, activity: activity)
-        let peripherals = SettingsPeripheralsViewModel(dependencies: dependencies, activity: activity)
+        let peripherals = SettingsPeripheralsViewModel(settingsStore: dependencies.settingsStore, activity: activity)
         let storage = SettingsStorageViewModel(
             dependencies: dependencies,
             activity: activity,

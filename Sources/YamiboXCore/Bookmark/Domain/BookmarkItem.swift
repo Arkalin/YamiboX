@@ -123,12 +123,11 @@ public enum BookmarkAnchorPayload: Codable, Hashable, Sendable {
 /// closing a work always restores where you were, bookmarks exist only for
 /// places the user chose to come back to.
 ///
-/// `workKey` reuses `LikeWorkKey`: that type is already the app's work-identity
-/// value (novel thread id / manga clean book name), independent of the Like
-/// feature it is named after.
+/// `workKey` is the shared reading identity (novel thread or manga directory),
+/// independent of the bookmark and excerpt features.
 public struct BookmarkItem: Codable, Hashable, Identifiable, Sendable {
     public var id: String
-    public var workKey: LikeWorkKey
+    public var workKey: ReadingWorkKey
     public var anchor: BookmarkAnchorPayload
     /// Body-text snapshot taken at capture time (novels only; nil for manga,
     /// whose rows show 话名 + 页码 instead). Two purposes: the panel row needs
@@ -151,7 +150,7 @@ public struct BookmarkItem: Codable, Hashable, Identifiable, Sendable {
 
     public init(
         id: String = UUID().uuidString,
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         anchor: BookmarkAnchorPayload,
         excerptText: String? = nil,
         sortKey: Int64 = 0,

@@ -21,9 +21,10 @@ final class NovelTextSelectionController {
     private var activeSurfaceIdentity: NovelReaderSurfaceIdentity?
     private weak var verticalScrollView: UIScrollView?
     private var mode = SelectionMode.paged
-    private var likeWorkKey: LikeWorkKey?
+    private var likeWorkKey: ReadingWorkKey?
     private var likeCaptureService: NovelTextLikeCaptureService?
     private var onLikeCaptured: ((LikeCaptureOutcome) -> Void)?
+    private var onLikeFailure: ((any Error) -> Void)?
     private var onLikeActionOffered: (() -> Void)?
     private var onRequestNoteEditor: ((LikeItem) -> Void)?
 
@@ -178,15 +179,17 @@ final class NovelTextSelectionController {
     }
 
     func configureLikeCapture(
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         service: NovelTextLikeCaptureService,
         onLikeActionVisible: @escaping () -> Void = {},
+        onFailure: @escaping (any Error) -> Void,
         onCaptured: @escaping (LikeCaptureOutcome) -> Void
     ) {
         likeWorkKey = workKey
         likeCaptureService = service
         onLikeActionOffered = onLikeActionVisible
         onLikeCaptured = onCaptured
+        onLikeFailure = onFailure
     }
 
     /// Called when the edit menu offers the like action, before the user can
@@ -234,8 +237,14 @@ final class NovelTextSelectionController {
             ReaderHighlightStyleDefault.set(style)
         }
         let onLikeCaptured = onLikeCaptured
+        let onLikeFailure = onLikeFailure
         Task { [weak self] in
-            guard let outcome = try? await likeCaptureService.like(request) else { return }
+            let outcome: LikeCaptureOutcome
+            do { outcome = try await likeCaptureService.like(request) }
+            catch {
+                onLikeFailure?(error)
+                return
+            }
             onLikeCaptured?(outcome)
             guard thenAddNote else { return }
             switch outcome {

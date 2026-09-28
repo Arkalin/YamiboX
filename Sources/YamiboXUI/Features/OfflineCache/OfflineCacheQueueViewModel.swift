@@ -33,14 +33,15 @@ final class OfflineCacheQueueViewModel {
         didSet { errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
+    private(set) var loadFailure: LoadFailureDetails?
 
-    private let dependencies: AccountDependencies
+    private let dependencies: OfflineCacheQueueDependencies
     @ObservationIgnored private var controller: (any OfflineCacheQueueControlling)?
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var directoryUpdatesTask: Task<Void, Never>?
 
     init(
-        dependencies: AccountDependencies,
+        dependencies: OfflineCacheQueueDependencies,
         controller: (any OfflineCacheQueueControlling)? = nil
     ) {
         self.dependencies = dependencies
@@ -74,21 +75,31 @@ final class OfflineCacheQueueViewModel {
         isLoading = true
         defer { isLoading = false }
 
-        let store = dependencies.offlineCacheStore
-        let works = await store.offlineCacheQueueWorks()
-        let directoriesByOwnerName = await directoriesByOwnerName(for: works)
-        let projection = OfflineCacheQueueProjection.project(
-            works: works,
-            mangaDirectoriesByOwnerName: directoriesByOwnerName
-        )
-        groups = projection.groups.map(OfflineCacheQueueOwnerGroup.init(group:))
-        entryCount = projection.unfinishedCount
-        runState = await store.offlineCacheQueueRunState()
+        do {
+            let store = dependencies.offlineCacheStore
+            let works = try await store.offlineCacheQueueWorks()
+            let nextRunState = try await store.offlineCacheQueueRunState()
+            let directoriesByOwnerName = await directoriesByOwnerName(for: works)
+            try Task.checkCancellation()
+            let projection = OfflineCacheQueueProjection.project(
+                works: works,
+                mangaDirectoriesByOwnerName: directoriesByOwnerName
+            )
+            // Publish only after every required read succeeds.
+            groups = projection.groups.map(OfflineCacheQueueOwnerGroup.init(group:))
+            entryCount = projection.unfinishedCount
+            runState = nextRunState
+            loadFailure = nil
 
-        let visibleIDs = Set(groups.flatMap { group in group.chapters.map(\.id) })
-        selectedWorkIDs.formIntersection(visibleIDs)
-        if selectedWorkIDs.isEmpty && isEmpty {
-            isSelectionMode = false
+            let visibleIDs = Set(groups.flatMap { group in group.chapters.map(\.id) })
+            selectedWorkIDs.formIntersection(visibleIDs)
+            if selectedWorkIDs.isEmpty && isEmpty {
+                isSelectionMode = false
+            }
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                loadFailure = LoadFailureDetails(error: error)
+            }
         }
     }
 

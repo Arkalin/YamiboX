@@ -3,18 +3,18 @@ import Foundation
 /// Serializes activity and configuration changes across all reader surfaces.
 /// Database compare-and-swap also protects against deletes outside this actor.
 public actor BrowsingHistoryWorkflow {
-    private let store: BrowsingHistoryStore
-    private let settingsStore: SettingsStore
-    private let progressStore: ReadingProgressStore
+    private let store: any BrowsingHistoryReconciling
+    private let settingsStore: any BrowsingHistorySettingsReading
+    private let progressStore: any BrowsingHistoryProgressReading
     private let directoryStore: any MangaDirectoryPersisting
     private let resolveForumIDs: @Sendable ([String]) async -> [String: String]
     private var isBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
-        store: BrowsingHistoryStore,
-        settingsStore: SettingsStore,
-        progressStore: ReadingProgressStore,
+        store: any BrowsingHistoryReconciling,
+        settingsStore: any BrowsingHistorySettingsReading,
+        progressStore: any BrowsingHistoryProgressReading,
         directoryStore: any MangaDirectoryPersisting,
         resolveForumIDs: @escaping @Sendable ([String]) async -> [String: String] = { _ in [:] }
     ) {
@@ -111,7 +111,7 @@ public actor BrowsingHistoryWorkflow {
         while true {
             try Task.checkCancellation()
             let original = try await store.snapshotEntries()
-            let settings = await settingsStore.load().boardReader
+            let settings = await settingsStore.loadBoardReaderSettings()
             let tids = Array(Set(original.compactMap(\.lastVisitedThreadID) + [pendingVisit?.threadID].compactMap { $0 }))
             let storedDirectories = try await directoryStore.directories(containingTIDs: tids)
             var directories = storedDirectories
@@ -125,7 +125,7 @@ public actor BrowsingHistoryWorkflow {
             let unknownTIDs = original.filter { $0.forumID == nil }.compactMap(\.lastVisitedThreadID)
                 + (pendingVisit?.forumID == nil ? [pendingVisit?.threadID].compactMap { $0 } : [])
             let forumIDs = await resolveForumIDs(Array(Set(unknownTIDs)))
-            let progress = Dictionary(uniqueKeysWithValues: await progressStore.loadAll().map { ($0.id, $0) })
+            let progress = Dictionary(uniqueKeysWithValues: try await progressStore.loadAll().map { ($0.id, $0) })
             var normalized = original.map {
                 Self.canonical($0, settings: settings, directories: directories, forumIDs: forumIDs, progress: progress)
             }
@@ -134,7 +134,7 @@ public actor BrowsingHistoryWorkflow {
                 let directoryTarget = directories[visit.threadID].map {
                     FavoriteContentTarget(mangaID: $0.favoriteIdentity, mangaCleanBookName: $0.cleanBookName)
                 }
-                let ordered = normalized.sorted(by: BrowsingHistoryStore.newestFirst)
+                let ordered = normalized.sorted(by: BrowsingHistoryTimelinePolicy.newestFirst)
                 let direct = ordered.first { $0.target.threadID == visit.threadID || $0.lastVisitedThreadID == visit.threadID }
                 let sourceForumID = visit.forumID ?? direct?.forumID ?? forumIDs[visit.threadID]
                 let mayJoinDirectory = sourceForumID == nil || settings.isSmartComicModeEnabled(forumID: sourceForumID)
@@ -176,20 +176,20 @@ public actor BrowsingHistoryWorkflow {
                 }
             }
             var byID: [String: BrowsingHistoryEntry] = [:]
-            for entry in normalized.sorted(by: BrowsingHistoryStore.newestFirst) where byID[entry.id] == nil {
+            for entry in normalized.sorted(by: BrowsingHistoryTimelinePolicy.newestFirst) where byID[entry.id] == nil {
                 byID[entry.id] = entry
             }
-            let entries = Array(byID.values).sorted(by: BrowsingHistoryStore.newestFirst)
-            guard settings == (await settingsStore.load()).boardReader,
+            let entries = Array(byID.values).sorted(by: BrowsingHistoryTimelinePolicy.newestFirst)
+            guard settings == (await settingsStore.loadBoardReaderSettings()),
                   storedDirectories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
             guard try await store.applyCanonicalEntries(entries, replacing: original, visit: pendingVisit, visitTargetID: visitTargetID) else { continue }
             // A settings save can race the database await. Finish normalizing
             // before exposing a snapshot; do not replay the activity timestamp.
             pendingVisit = nil
             mayCreate = false
-            guard settings == (await settingsStore.load()).boardReader,
+            guard settings == (await settingsStore.loadBoardReaderSettings()),
                   storedDirectories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
-            return BrowsingHistorySnapshot(entries: Array(entries.prefix(BrowsingHistoryStore.maxEntryCount)), boardReader: settings)
+            return BrowsingHistorySnapshot(entries: Array(entries.prefix(BrowsingHistoryTimelinePolicy.maximumRecords)), boardReader: settings)
         }
     }
 

@@ -225,7 +225,7 @@ final class ReaderSession: Identifiable {
             switch mode {
             case .novel:
                 if let savedNovel { return .novel(savedNovel) }
-                return .novel(await resolver.novelContext(
+                return .novel(try await resolver.novelContext(
                     thread: thread, title: title, authorID: authorID, isPreview: preview
                 ))
             case .manga:

@@ -50,7 +50,7 @@ struct OfflineCacheWorkProcessor<Strategy: OfflineCacheWorkProcessingStrategy>: 
 
     func process(_ work: OfflineCacheProcessingWork) async throws {
         try Task.checkCancellation()
-        guard await store.offlineCacheProcessingWork(id: work.id) != nil else {
+        guard try await store.offlineCacheProcessingWork(id: work.id) != nil else {
             throw CancellationError()
         }
 
@@ -83,7 +83,7 @@ struct OfflineCacheWorkProcessor<Strategy: OfflineCacheWorkProcessingStrategy>: 
         }
 
         try Task.checkCancellation()
-        guard await store.offlineCacheProcessingWork(id: preparedWork.workID) != nil else {
+        guard try await store.offlineCacheProcessingWork(id: preparedWork.workID) != nil else {
             throw CancellationError()
         }
         try await strategy.finish(preparedWork)
@@ -122,7 +122,7 @@ struct OfflineCacheWorkProcessor<Strategy: OfflineCacheWorkProcessingStrategy>: 
                 activeCount += 1
                 group.addTask { [store, imageAcquirer] in
                     try Task.checkCancellation()
-                    guard await store.offlineCacheProcessingWork(id: workID) != nil else {
+                    guard try await store.offlineCacheProcessingWork(id: workID) != nil else {
                         throw CancellationError()
                     }
                     let startedAt = Date()
@@ -133,7 +133,7 @@ struct OfflineCacheWorkProcessor<Strategy: OfflineCacheWorkProcessingStrategy>: 
                         throw YamiboError.invalidResponse(statusCode: nil)
                     }
                     try Task.checkCancellation()
-                    guard await store.offlineCacheProcessingWork(id: workID) != nil else {
+                    guard try await store.offlineCacheProcessingWork(id: workID) != nil else {
                         throw CancellationError()
                     }
                     try await store.saveOfflineImageData(acquisition.data, for: imageURL)

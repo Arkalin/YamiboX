@@ -22,13 +22,20 @@ struct NovelReaderCachePanel: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    NovelReaderCachePageSection(
+                    ReaderCacheSelectionSection(
                         rows: rows,
+                        sectionTitle: L10n.string("reader.cache_page_section"),
+                        emptyTitle: L10n.string("reader.no_cacheable_pages"),
+                        emptySystemImage: "doc.text",
                         isSelecting: $isSelecting,
-                        selectedViews: $selectedViews,
+                        selection: $selectedViews,
                         isAllSelected: selectionState.isAllSelected,
                         onToggleAll: toggleAll
-                    )
+                    ) { row, isSelected in
+                        NovelReaderCachePageRowView(
+                            row: row, isSelecting: isSelecting, isSelected: isSelected
+                        )
+                    }
                 }
                 .padding(16)
             }
@@ -181,76 +188,10 @@ private struct NovelReaderCachePageRow: Identifiable, Equatable {
     var id: Int { view }
 }
 
-private struct NovelReaderCachePageSection: View {
-    let rows: [NovelReaderCachePageRow]
-    @Binding var isSelecting: Bool
-    @Binding var selectedViews: Set<Int>
-    let isAllSelected: Bool
-    let onToggleAll: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ReaderCacheSelectionHeader(
-                sectionTitle: L10n.string("reader.cache_page_section"),
-                isSelecting: isSelecting,
-                isAllSelected: isAllSelected,
-                isEmpty: rows.isEmpty,
-                onToggleAll: onToggleAll,
-                onToggleSelectionMode: toggleSelectionMode
-            )
-            .frame(height: 38, alignment: .center)
-
-            if rows.isEmpty {
-                ContentUnavailableView(L10n.string("reader.no_cacheable_pages"), systemImage: "doc.text")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-            } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(rows) { row in
-                        NovelReaderCachePageRowView(
-                            row: row,
-                            isSelecting: isSelecting,
-                            isSelected: selectedViews.contains(row.view),
-                            onToggleSelection: {
-                                toggleSelection(row.view)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private func toggleSelectionMode() {
-        if isSelecting {
-            isSelecting = false
-            selectedViews = []
-        } else {
-            isSelecting = true
-        }
-    }
-
-    private func toggleSelection(_ view: Int) {
-        if !isSelecting {
-            isSelecting = true
-            selectedViews.insert(view)
-            return
-        }
-
-        if selectedViews.contains(view) {
-            selectedViews.remove(view)
-        } else {
-            selectedViews.insert(view)
-        }
-    }
-}
-
-
 private struct NovelReaderCachePageRowView: View {
     let row: NovelReaderCachePageRow
     let isSelecting: Bool
     let isSelected: Bool
-    let onToggleSelection: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -261,7 +202,12 @@ private struct NovelReaderCachePageRowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 3) {
-                NovelReaderCacheStateBadge(status: row.status, isDimmed: dimming.isDimmed)
+                ReaderCacheStateBadge(
+                    state: row.status.cacheDisplayState,
+                    uncachedTitle: L10n.string("reader.uncached"),
+                    cachingTitle: L10n.string("reader.caching"),
+                    isDimmed: dimming.isDimmed
+                )
 
                 if let updateTime = row.updateTime {
                     Text(L10n.string("reader.cache_updated_at", updateTime.formatted(date: .abbreviated, time: .shortened)))
@@ -269,9 +215,6 @@ private struct NovelReaderCachePageRowView: View {
                         .foregroundStyle(dimming.secondaryColor)
                 }
             }
-        }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected) {
-            onToggleSelection()
         }
     }
 
@@ -284,52 +227,12 @@ private struct NovelReaderCachePageRowView: View {
     }
 }
 
-private struct NovelReaderCacheStateBadge: View {
-    let status: NovelOfflineCacheViewStatus
-    let isDimmed: Bool
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-    }
-
-    private var title: String {
-        switch status {
-        case .cached:
-            L10n.string("reader.cached")
-        case .uncached:
-            L10n.string("reader.uncached")
-        case .caching:
-            L10n.string("reader.caching")
-        }
-    }
-
-    private var systemImage: String {
-        switch status {
-        case .cached:
-            "checkmark.seal.fill"
-        case .uncached:
-            "icloud"
-        case .caching:
-            "arrow.down.circle.fill"
-        }
-    }
-
-    private var tint: Color {
-        if isDimmed {
-            return Color.secondary.opacity(0.55)
-        }
-        switch status {
-        case .cached:
-            return Color.green
-        case .uncached:
-            return Color.secondary
-        case .caching:
-            return Color.orange
+private extension NovelOfflineCacheViewStatus {
+    var cacheDisplayState: ReaderCacheDisplayState {
+        switch self {
+        case .cached: .cached
+        case .uncached: .uncached
+        case .caching: .caching
         }
     }
 }

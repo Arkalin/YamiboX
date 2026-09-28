@@ -59,6 +59,10 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private var isUpdatingLayout = false
         private var lastAppliedLikedPageIDs: Set<String> = []
         private var pendingInitialPageIndex: Int?
+        // A programmatic jump owns the reading position until the user moves.
+        // At a clamped bottom edge, another fully visible page can otherwise
+        // win the area heuristic and immediately overwrite the requested page.
+        private var placementPageID: String?
         private var lastAppliedPlacementRevision: Int?
         private var lastAppliedControlScrollRevision: Int?
         private var pendingControlScrollTarget: (y: CGFloat, timestamp: TimeInterval)?
@@ -111,6 +115,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 guard let self, !self.isUpdatingLayout else { return }
                 if snapshot.isInteracting { self.lastScrollMotionTime = self.currentTime() }
                 if snapshot.isDragging { self.pendingControlScrollTarget = nil }
+                if snapshot.isDragging || snapshot.isZooming {
+                    self.placementPageID = nil
+                }
                 if snapshot.isZooming || snapshot.isZoomBouncing {
                     self.panIncludedPinch = true
                     self.pendingBoundaryPull = nil
@@ -145,10 +152,17 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 pendingReportedGlobalIndex = nil
                 cancelPendingCurrentPagePublish()
                 pendingControlScrollTarget = nil
+                // A retained placement index belongs to its original page
+                // window. Only a new request may override the current index
+                // after prefetch inserts or removes pages.
+                let requestedIndex = parent.viewportPlacement.flatMap { placement in
+                    placement.revision != lastAppliedPlacementRevision ? placement.targetPageIndex : nil
+                }
+                pendingInitialPageIndex = parent.pages.isEmpty ? nil
+                    : min(max(requestedIndex ?? parent.currentPageIndex ?? 0, 0), parent.pages.count - 1)
                 view.stopInteraction()
                 view.resetZoom(animated: false)
-                pendingInitialPageIndex = parent.pages.isEmpty ? nil
-                    : min(max(parent.viewportPlacement?.targetPageIndex ?? parent.currentPageIndex ?? 0, 0), parent.pages.count - 1)
+                retainPlacementTarget(at: pendingInitialPageIndex)
                 view.alpha = parent.pages.isEmpty ? 1 : 0
                 view.collectionView.reloadData()
                 rebuildLayout(preserving: nil)
@@ -182,7 +196,12 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 contentSize: CGSize(width: view.bounds.width, height: max(1, logicalLayout.contentSize.height)),
                 maximumFactor: parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
             )
-            if let anchor, let point = logicalLayout.contentPoint(for: anchor) {
+            if let placementPageID, let index = contentIdentity.firstIndex(of: placementPageID) {
+                // Image dimensions and prefetched pages can change after the
+                // jump. Reflow around its target, not a neighboring page at
+                // the viewport center.
+                view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero)
+            } else if let anchor, let point = logicalLayout.contentPoint(for: anchor) {
                 view.place(contentPoint: point, at: anchor.viewportPoint)
             }
             isUpdatingLayout = false
@@ -265,6 +284,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             if let index = pendingInitialPageIndex, logicalLayout.frames.indices.contains(index) {
                 pendingInitialPageIndex = nil
                 lastAppliedPlacementRevision = parent.viewportPlacement?.revision
+                retainPlacementTarget(at: index)
                 view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero)
                 view.alpha = 1
             } else if let placement = parent.viewportPlacement, placement.revision != lastAppliedPlacementRevision {
@@ -272,10 +292,19 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 view.stopInteraction()
                 view.resetZoom(animated: false)
                 let index = min(max(placement.targetPageIndex, 0), logicalLayout.frames.count - 1)
+                retainPlacementTarget(at: index)
                 view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero, animated: placement.animated)
             }
             updateWindow()
             publishCurrentPageIfNeeded()
+        }
+
+        private func retainPlacementTarget(at index: Int?) {
+            cancelPendingCurrentPagePublish()
+            placementPageID = index.flatMap { parent.pages.indices.contains($0) ? parent.pages[$0].id : nil }
+            // The model already published this position. Align callback dedup
+            // with it so a later user scroll can report the former visible page.
+            lastReportedGlobalIndex = index
         }
 
         private func applyControlScrollStepIfNeeded() {
@@ -283,6 +312,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                   view.bounds.height > 0, let request = parent.controlScrollStep,
                   request.revision != lastAppliedControlScrollRevision else { return }
             lastAppliedControlScrollRevision = request.revision
+            placementPageID = nil
             let minY = -view.contentInset.top
             let maxY = max(minY, view.contentSize.height - view.bounds.height + view.contentInset.bottom)
             let currentY = view.contentOffset.y
@@ -308,6 +338,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             guard let view = viewport else { return }
             switch recognizer.state {
             case .began:
+                placementPageID = nil
                 panIncludedPinch = view.isZooming || view.isZoomBouncing || recognizer.numberOfTouches > 1
                 pendingBoundaryPull = nil
             case .changed:
@@ -346,6 +377,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 return
             }
             guard parent.zoomEnabled, !parent.pages.isEmpty else { return }
+            placementPageID = nil
             let factor = MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: view.normalizedZoomFactor)
             if factor == 1 {
                 view.resetZoom(animated: true)
@@ -381,7 +413,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
 
         private func publishCurrentPageIfNeeded() {
             updateImagePrefetch()
-            guard pendingInitialPageIndex == nil, let view = viewport else { return }
+            guard pendingInitialPageIndex == nil, placementPageID == nil, let view = viewport else { return }
             let visible = view.snapshot.visibleRect
             let index = logicalLayout.indexes(intersecting: visible).max { lhs, rhs in
                 let left = visible.intersection(logicalLayout.frames[lhs])
@@ -404,7 +436,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         @objc private func flushPendingCurrentPagePublish(_ displayLink: CADisplayLink) {
             displayLink.invalidate()
             currentPagePublishDisplayLink = nil
-            guard let index = pendingReportedGlobalIndex, index != lastReportedGlobalIndex else { return }
+            guard !isDismantled, placementPageID == nil,
+                  let index = pendingReportedGlobalIndex, index != lastReportedGlobalIndex else { return }
             pendingReportedGlobalIndex = nil
             lastReportedGlobalIndex = index
             parent.onCurrentPageChange(index)
@@ -413,6 +446,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private func cancelPendingCurrentPagePublish() {
             currentPagePublishDisplayLink?.invalidate()
             currentPagePublishDisplayLink = nil
+            pendingReportedGlobalIndex = nil
         }
 
         func updateImagePrefetch() {

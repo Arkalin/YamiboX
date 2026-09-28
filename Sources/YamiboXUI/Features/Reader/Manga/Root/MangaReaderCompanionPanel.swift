@@ -18,6 +18,7 @@ struct MangaReaderCompanionPanel: View {
     let companion: MangaReaderCompanion
     let context: MangaLaunchContext
     let model: MangaReaderViewModel
+    let forumDependencies: ForumNavigationDependencies
     let appModel: YamiboAppModel
     let discussionWorkTIDs: Set<String>
     @Binding var annotationSegment: ReaderAnnotationSegment
@@ -88,7 +89,7 @@ struct MangaReaderCompanionPanel: View {
                 loadInitial: model.loadChapterComments(for:),
                 refresh: model.refreshChapterComments(for:),
                 loadNext: model.loadNextChapterCommentsPage,
-                forumDependencies: appModel.appContext.forumDependencies,
+                forumDependencies: forumDependencies,
                 appModel: appModel,
                 discussionWorkTIDs: discussionWorkTIDs,
                 cancelLoading: model.cancelChapterCommentsLoading

@@ -28,7 +28,7 @@ struct MangaReaderCacheSheet: View {
                 }
             )
         )
-        _queueViewModel = State(initialValue: OfflineCacheQueueViewModel(dependencies: dependencies.account))
+        _queueViewModel = State(initialValue: OfflineCacheQueueViewModel(dependencies: dependencies.cacheQueue))
     }
 
     var body: some View {
@@ -39,13 +39,20 @@ struct MangaReaderCacheSheet: View {
                         MangaReaderCacheErrorBanner(message: errorMessage, details: model.errorDetails)
                     }
 
-                    MangaReaderCacheChapterSection(
+                    ReaderCacheSelectionSection(
                         rows: model.rows,
+                        sectionTitle: L10n.string("manga.offline_cache.chapter_section"),
+                        emptyTitle: L10n.string("manga.no_chapters"),
+                        emptySystemImage: "books.vertical",
                         isSelecting: $isSelecting,
-                        selectedTIDs: $selectedTIDs,
+                        selection: $selectedTIDs,
                         isAllSelected: selectionState.isAllSelected,
                         onToggleAll: toggleAll
-                    )
+                    ) { row, isSelected in
+                        MangaReaderCacheRowView(
+                            row: row, isSelecting: isSelecting, isSelected: isSelected
+                        )
+                    }
                 }
                 .padding(16)
             }
@@ -364,75 +371,10 @@ private struct MangaReaderCacheErrorBanner: View {
     }
 }
 
-private struct MangaReaderCacheChapterSection: View {
-    let rows: [MangaReaderCacheRow]
-    @Binding var isSelecting: Bool
-    @Binding var selectedTIDs: Set<String>
-    let isAllSelected: Bool
-    let onToggleAll: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ReaderCacheSelectionHeader(
-                sectionTitle: L10n.string("manga.offline_cache.chapter_section"),
-                isSelecting: isSelecting,
-                isAllSelected: isAllSelected,
-                isEmpty: rows.isEmpty,
-                onToggleAll: onToggleAll,
-                onToggleSelectionMode: toggleSelectionMode
-            )
-            .frame(height: 38, alignment: .center)
-
-            if rows.isEmpty {
-                ContentUnavailableView(L10n.string("manga.no_chapters"), systemImage: "books.vertical")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-            } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(rows) { row in
-                        MangaReaderCacheRowView(
-                            row: row,
-                            isSelecting: isSelecting,
-                            isSelected: selectedTIDs.contains(row.id),
-                            onToggleSelection: {
-                                toggleSelection(row.id)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private func toggleSelectionMode() {
-        if isSelecting {
-            isSelecting = false
-            selectedTIDs = []
-        } else {
-            isSelecting = true
-        }
-    }
-
-    private func toggleSelection(_ tid: String) {
-        if !isSelecting {
-            isSelecting = true
-            selectedTIDs.insert(tid)
-            return
-        }
-
-        if selectedTIDs.contains(tid) {
-            selectedTIDs.remove(tid)
-        } else {
-            selectedTIDs.insert(tid)
-        }
-    }
-}
-
 private struct MangaReaderCacheRowView: View {
     let row: MangaReaderCacheRow
     let isSelecting: Bool
     let isSelected: Bool
-    let onToggleSelection: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -449,10 +391,12 @@ private struct MangaReaderCacheRowView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            MangaReaderCacheStateBadge(state: row.state, isDimmed: dimming.isDimmed)
-        }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected) {
-            onToggleSelection()
+            ReaderCacheStateBadge(
+                state: row.state.cacheDisplayState,
+                uncachedTitle: L10n.string("manga.offline_cache.uncached"),
+                cachingTitle: L10n.string("manga.offline_cache.caching"),
+                isDimmed: dimming.isDimmed
+            )
         }
     }
 
@@ -469,52 +413,12 @@ private struct MangaReaderCacheRowView: View {
     }
 }
 
-private struct MangaReaderCacheStateBadge: View {
-    let state: MangaOfflineCacheState
-    let isDimmed: Bool
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-    }
-
-    private var title: String {
-        switch state {
-        case .cached:
-            L10n.string("reader.cached")
-        case .uncached:
-            L10n.string("manga.offline_cache.uncached")
-        case .caching:
-            L10n.string("manga.offline_cache.caching")
-        }
-    }
-
-    private var systemImage: String {
-        switch state {
-        case .cached:
-            "checkmark.seal.fill"
-        case .uncached:
-            "icloud"
-        case .caching:
-            "arrow.down.circle.fill"
-        }
-    }
-
-    private var tint: Color {
-        if isDimmed {
-            return Color.secondary.opacity(0.55)
-        }
-        switch state {
-        case .cached:
-            return Color.green
-        case .uncached:
-            return Color.secondary
-        case .caching:
-            return Color.orange
+private extension MangaOfflineCacheState {
+    var cacheDisplayState: ReaderCacheDisplayState {
+        switch self {
+        case .cached: .cached
+        case .uncached: .uncached
+        case .caching: .caching
         }
     }
 }

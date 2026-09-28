@@ -15,14 +15,18 @@ public struct LikeDependencies: Sendable {
     /// Like Items don't store a chapter ordinal (see implementation-design §11).
     public let mangaDirectoryStore: MangaDirectoryStore
     /// Local-only source for backfilling chapter titles on legacy Like items.
-    public let novelReaderCacheStore: NovelReaderProjectionStore
+    public let novelReaderCacheStore: any NovelReaderProjectionReading
+
+    public var annotations: ReaderAnnotationService {
+        ReaderAnnotationService(likeStore: likeStore, likeImageStore: likeImageStore, bookmarkStore: bookmarkStore)
+    }
 
     public init(
         likeStore: LikeStore,
         likeImageStore: LikeImageStore,
         bookmarkStore: BookmarkStore,
         mangaDirectoryStore: MangaDirectoryStore,
-        novelReaderCacheStore: NovelReaderProjectionStore
+        novelReaderCacheStore: any NovelReaderProjectionReading
     ) {
         self.likeStore = likeStore
         self.likeImageStore = likeImageStore
@@ -31,9 +35,15 @@ public struct LikeDependencies: Sendable {
         self.novelReaderCacheStore = novelReaderCacheStore
     }
 
+    public func backfillNovelChapterTitles(in projections: [NovelReaderProjection]) async {
+        for projection in projections {
+            await LikeChapterInfoResolver.backfillNovelChapterTitles(in: projection, store: likeStore)
+        }
+    }
+
     public func resolveChapterInfo(
         for items: [LikeItem],
-        work: LikeWorkKey,
+        work: ReadingWorkKey,
         mangaDirectory: MangaDirectory? = nil
     ) async -> [String: String] {
         let scopedItems = items.filter { $0.workKey == work }

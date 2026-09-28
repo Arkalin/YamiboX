@@ -1,6 +1,6 @@
 import Foundation
 
-public actor ForumRepository {
+public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, ForumSearchPageLoading {
     private let client: YamiboClient
     private let cacheStore: ForumCacheStore
     private let now: @Sendable () -> Date

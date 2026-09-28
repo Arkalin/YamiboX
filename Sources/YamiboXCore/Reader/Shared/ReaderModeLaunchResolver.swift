@@ -17,15 +17,16 @@ public struct ReaderModeLaunchResolver: Sendable {
         title: String,
         authorID: String?,
         isPreview: Bool
-    ) async -> NovelLaunchContext {
-        let progress = await progressStore.load(for: .novelThread(threadID: thread.tid))?.novel
+    ) async throws -> NovelLaunchContext {
+        let progress = try await progressStore.load(for: .novelThread(threadID: thread.tid))?.novel
+        let position = NovelReadingResumeResolver.resolve(progress: progress, fallbackView: 1, fallbackAuthorID: authorID)
         return NovelLaunchContext(
             threadID: thread.tid,
             threadTitle: title,
             source: progress == nil ? .forum : .resume,
-            initialView: progress?.novelResumePoint?.view ?? progress?.lastView ?? 1,
-            authorID: progress?.novelResumePoint?.authorID ?? progress?.authorID ?? authorID,
-            initialResumePoint: progress?.novelResumePoint,
+            initialView: position.view,
+            authorID: position.authorID,
+            initialResumePoint: position.resumePoint,
             isPreview: isPreview,
             forumID: thread.fid
         )
@@ -38,10 +39,10 @@ public struct ReaderModeLaunchResolver: Sendable {
     ) async throws -> MangaLaunchContext {
         let smartMode = await settingsStore.load().isSmartComicModeEnabled(forumID: thread.fid)
         let directory = smartMode ? try await directoryStore.directory(containingTID: thread.tid) : nil
-        let threadProgress = await progressStore.load(for: .mangaThread(threadID: thread.tid))?.manga
+        let threadProgress = try await progressStore.load(for: .mangaThread(threadID: thread.tid))?.manga
         let directoryProgress: MangaReadingProgressRecord?
         if let directory {
-            directoryProgress = await progressStore.load(for: FavoriteContentTarget(
+            directoryProgress = try await progressStore.load(for: FavoriteContentTarget(
                 mangaID: directory.favoriteIdentity, mangaCleanBookName: directory.cleanBookName
             ))?.manga
         } else {

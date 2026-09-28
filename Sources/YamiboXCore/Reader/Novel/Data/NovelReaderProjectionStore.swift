@@ -3,7 +3,7 @@ import Foundation
 
 /// Thin façade over the shared `ReaderProjectionDiskStore`: owns only the
 /// novel namespace and key semantics, so it needs no isolation of its own.
-public final class NovelReaderProjectionStore: Sendable {
+public final class NovelReaderProjectionStore: NovelReaderProjectionReading {
     public static let projectionNamespace = "novel-reader-projections"
 
     private let store: ReaderProjectionDiskStore<NovelReaderProjection>

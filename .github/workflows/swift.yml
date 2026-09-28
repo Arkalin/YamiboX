@@ -19,6 +19,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Check architecture boundaries
+      run: bash scripts/check-architecture.sh
     - name: Show toolchain
       run: |
         xcodebuild -version

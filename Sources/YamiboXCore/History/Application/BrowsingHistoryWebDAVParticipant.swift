@@ -1,51 +1,4 @@
 import Foundation
-@preconcurrency import GRDB
-
-/// Stable visit data, independent of the device's reader mode and progress projection.
-struct BrowsingHistorySyncRecord: Codable, Equatable, Sendable {
-    var target: FavoriteContentTarget
-    var threadID: String?
-    var title: String
-    var forumID: String?
-    var authorID: String?
-    var lastVisitTime: Date
-    var id: String { threadID.map { "source:\($0)" } ?? target.id }
-
-    init(_ entry: BrowsingHistoryEntry) {
-        target = entry.target
-        threadID = entry.lastVisitedThreadID ?? entry.target.threadID
-        title = entry.lastVisitedThreadTitle ?? entry.title
-        forumID = entry.forumID
-        authorID = entry.authorID
-        lastVisitTime = entry.lastVisitTime
-    }
-
-    var entry: BrowsingHistoryEntry {
-        BrowsingHistoryEntry(target: target, title: target.mangaCleanBookName ?? title,
-            forumID: forumID, authorID: authorID, chapterThreadID: target.kind == .mangaTitle ? threadID : nil,
-            lastVisitTime: lastVisitTime, lastVisitedThreadID: threadID, lastVisitedThreadTitle: title)
-    }
-
-    static func load(in db: Database) throws -> [Self] {
-        try Data.fetchAll(db, sql: "SELECT record FROM browsing_history_sync_records ORDER BY id").map {
-            try JSONDecoder().decode(Self.self, from: $0)
-        }
-    }
-
-    static func save(_ records: [Self], in db: Database) throws {
-        try db.execute(sql: "DELETE FROM browsing_history_sync_records")
-        for record in records {
-            try record.save(in: db)
-        }
-    }
-
-    func save(in db: Database) throws {
-        var record = self
-        record.target = try MangaDirectoryIdentityDatabase.canonicalTarget(target, in: db)
-        try db.execute(sql: "INSERT OR REPLACE INTO browsing_history_sync_records (id, record, last_visit_time) VALUES (?, ?, ?)",
-            arguments: [record.id, try JSONEncoder().encode(record), record.lastVisitTime.timeIntervalSince1970])
-    }
-}
 
 struct BrowsingHistoryWebDAVPayload: Codable, Equatable, Sendable {
     var version = 1
@@ -77,28 +30,35 @@ struct BrowsingHistoryWebDAVPayload: Codable, Equatable, Sendable {
     }
 
     func merging(_ remote: Self?) throws -> Self {
+        let snapshot = try BrowsingHistorySyncMergeV1.merge(
+            SyncRecordSnapshot(records: records, deletions: deletions),
+            remote.map { SyncRecordSnapshot(records: $0.records, deletions: $0.deletions) }
+        )
         var result = self
-        result.deletions = deletions.merging(remote?.deletions ?? .init())
-        var byID: [String: BrowsingHistorySyncRecord] = [:]
-        for record in records + (remote?.records ?? []) {
-            if let existing = byID[record.id] {
-                if existing.lastVisitTime > record.lastVisitTime { continue }
-                if existing.lastVisitTime == record.lastVisitTime,
-                   try WebDAVSyncFingerprint.make(existing) >= WebDAVSyncFingerprint.make(record) { continue }
-            }
-            byID[record.id] = record
-        }
-        result.records = Array(byID.values.filter {
-            !result.deletions.containsDeletion(of: $0.id, updatedAt: $0.lastVisitTime)
-                && !result.deletions.containsDeletion(of: $0.target.id, updatedAt: $0.lastVisitTime)
-        }.sorted {
-            $0.lastVisitTime == $1.lastVisitTime ? $0.id < $1.id : $0.lastVisitTime > $1.lastVisitTime
-        }.prefix(BrowsingHistoryStore.maxEntryCount))
+        result.records = snapshot.records
+        result.deletions = snapshot.deletions
         return result
     }
 }
 
-struct BrowsingHistoryWebDAVParticipant: WebDAVSyncParticipant {
+struct BrowsingHistoryWebDAVParticipant: MangaIdentitySyncParticipant {
+    var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
+        MangaIdentityPayloadStrategy(
+            legacyTargetField: "target",
+            legacyRecordDeletion: { record in
+                let target = (record["contentTarget"] ?? record["target"]) as? [String: Any]
+                guard target?["kind"] as? String == "mangaTitle" else { return nil }
+                return MangaIdentityLegacyDeletion(
+                    keys: ((target?["mangaID"] ?? target?["cleanBookName"]) as? String).map { ["manga-title:" + $0] } ?? [],
+                    date: (record["updatedAt"] ?? record["lastVisitTime"]) as? Double
+                )
+            },
+            contentFingerprint: { try BrowsingHistoryWebDAVPayload.decode($0).contentFingerprint() },
+            currentTargetReferences: BrowsingHistoryWebDAVPayload.mangaTargetReferences,
+            normalizePayload: BrowsingHistoryWebDAVPayload.normalizingMangaIdentities
+        )
+    }
+
     let datasetID = WebDAVSyncContent.browsingHistory.rawValue
     let remoteFileName = "yamibox-browsing-history-v1.json"
     let uploadsOnlyWhenMarkedDirty = true
@@ -141,5 +101,28 @@ struct BrowsingHistoryWebDAVParticipant: WebDAVSyncParticipant {
             snapshot = SyncRecordSnapshot(records: merged.records, deletions: merged.deletions)
             return merged
         }
+    }
+}
+
+private extension BrowsingHistoryWebDAVPayload {
+    static func mangaTargetReferences(_ data: Data) throws -> [MangaIdentityTargetReference] {
+        try decode(data).records.enumerated().compactMap { index, record in
+            guard case let .mangaTitle(id, name) = record.target else { return nil }
+            return MangaIdentityTargetReference(index: index, name: name, identity: id, chapterTID: record.threadID)
+        }
+    }
+
+    static func normalizingMangaIdentities(_ data: Data, _ identities: MangaDirectoryIdentitySnapshot, _ resolvedTargets: [Int: MangaIdentityLegacyTarget]) throws -> Data {
+        var payload = try decode(data)
+        for index in payload.records.indices {
+            if let target = resolvedTargets[index] {
+                payload.records[index].target = .mangaTitle(mangaID: identities.canonicalID(target.id), cleanBookName: target.name)
+                continue
+            }
+            payload.records[index].target = FavoriteContentIdentityRemapping.normalize(
+                payload.records[index].target, identities: identities, legacy: false)
+        }
+        payload.deletions = MangaIdentityDeletionRemapping.normalize(payload.deletions, identities: identities)
+        return try JSONEncoder().encode(payload)
     }
 }

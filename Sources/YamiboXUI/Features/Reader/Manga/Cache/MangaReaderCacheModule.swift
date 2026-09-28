@@ -93,7 +93,16 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     }
 
     private func refreshOfflineCacheQueueEntryCount() async {
-        offlineCacheQueueEntryCount = await mangaQueueWorks().count
+        do {
+            let count = try await mangaQueueWorks().count
+            try Task.checkCancellation()
+            offlineCacheQueueEntryCount = count
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+        }
     }
 
     public func selectionState(for selectedTIDs: Set<String>) -> ReaderCacheSelectionState {
@@ -189,14 +198,14 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     }
 
     private func continueOfflineCacheQueueIfAllowed() async throws {
-        let works = await mangaQueueWorks()
+        let works = try await mangaQueueWorks()
         guard works.allSatisfy({ $0.state != .failed }) else { return }
         guard let controller = await offlineCacheController() else { return }
         try await controller.continueQueue()
     }
 
-    private func mangaQueueWorks() async -> [OfflineCacheQueueWorkProjection] {
-        (await offlineCacheStore.offlineCacheQueueWorks()).filter { $0.id.readerKind == .manga }
+    private func mangaQueueWorks() async throws -> [OfflineCacheQueueWorkProjection] {
+        (try await offlineCacheStore.offlineCacheQueueWorks()).filter { $0.id.readerKind == .manga }
     }
 
     private func offlineCacheController() async -> (any OfflineCacheQueueControlling)? {

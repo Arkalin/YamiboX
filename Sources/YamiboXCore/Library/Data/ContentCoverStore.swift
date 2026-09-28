@@ -125,13 +125,16 @@ public actor ContentCoverStore {
     public func cover(for key: ContentCoverKey) async -> ContentCover? {
         guard !key.targetID.isEmpty else { return nil }
         do {
-            return try await database.read { db in
-                try Self.fetchCover(for: key, in: db)
-            }
+            return try await storedCover(for: key)
         } catch {
             YamiboLog.library.warning("Failed to read content cover for key \(key.targetID, privacy: .public): \(error)")
             return nil
         }
+    }
+
+    /// Business operations must distinguish a failed lookup from a missing cover.
+    func storedCover(for key: ContentCoverKey) async throws -> ContentCover? {
+        try await database.read { db in try Self.fetchCover(for: key, in: db) }
     }
 
     /// Batch lookup for list surfaces (the browsing-history page): one read
@@ -231,19 +234,21 @@ public actor ContentCoverStore {
     }
 
     @discardableResult
-    public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
+    public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, date: Date = .now, onlyIfMissing: Bool = false) async throws -> Bool {
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
               !key.targetID.isEmpty else {
             return false
         }
-        try await database.write { db in
+        let didChange = try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
+            if onlyIfMissing, cover.textCoverForced || cover.resolvedURL != nil { return false }
             cover.automaticCoverURL = normalizedURL
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
+            return true
         }
-        postChangeNotification()
-        return true
+        if didChange { postChangeNotification() }
+        return didChange
     }
 
     @discardableResult
@@ -378,12 +383,10 @@ public actor ContentCoverStore {
         }
         // Use the shared tombstone normalizer so unresolved legacy deletion
         // markers retain their import-filtering semantics as well.
-        let deletions = try MangaDirectoryIdentityJSON.normalize(
-            JSONEncoder().encode(snapshot.deletions), identities: identities,
-            legacy: false, datasetID: "contentCovers"
+        let deletions = MangaIdentityDeletionRemapping.normalize(
+            snapshot.deletions, identities: identities
         )
-        return SyncRecordSnapshot(records: records,
-            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
+        return SyncRecordSnapshot(records: records, deletions: deletions)
     }
 
     public func totalDiskUsageBytes() async -> Int {

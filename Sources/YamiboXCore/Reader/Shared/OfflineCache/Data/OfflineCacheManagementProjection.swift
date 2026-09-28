@@ -2,8 +2,8 @@ import Foundation
 @preconcurrency import GRDB
 
 extension OfflineCacheStore {
-    func offlineCacheManagementSnapshot() async -> OfflineCacheManagementSnapshot {
-        await ensureQueueRecoveredBestEffort()
+    func offlineCacheManagementSnapshot() async throws -> OfflineCacheManagementSnapshot {
+        try await ensureQueueRecovered()
         do {
             return try await database.read { db in
                 try Self.managementSnapshot(
@@ -14,8 +14,7 @@ extension OfflineCacheStore {
                 )
             }
         } catch {
-            YamiboLog.offlineCache.error("Failed to build offline cache management snapshot: \(error)")
-            return OfflineCacheManagementSnapshot(groups: [])
+            throw offlineCachePersistenceError(from: error)
         }
     }
 
@@ -145,7 +144,7 @@ extension OfflineCacheStore {
         groupID: OfflineCacheGroupID,
         in groupTitles: inout [OfflineCacheGroupID: OfflineCacheManagementGroupTitle]
     ) {
-        guard let title = title.mangaReaderTrimmedNonEmpty else { return }
+        guard let title = title.nilIfBlank else { return }
         if let existing = groupTitles[groupID], existing.updatedAt > updatedAt {
             return
         }

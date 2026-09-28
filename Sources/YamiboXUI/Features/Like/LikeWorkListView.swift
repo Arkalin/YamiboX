@@ -13,16 +13,18 @@ struct LikeWorkListView: View {
     var onSelectionModeChange: (Bool) -> Void = { _ in }
 
     @State private var summaries: [LikeWorkSummary] = []
-    @State private var titlesByWorkKey: [LikeWorkKey: String] = [:]
-    @State private var coverURLsByWorkKey: [LikeWorkKey: URL] = [:]
+    @State private var titlesByWorkKey: [ReadingWorkKey: String] = [:]
+    @State private var coverURLsByWorkKey: [ReadingWorkKey: URL] = [:]
     @State private var searchText = ""
     @State private var localFilter = LikeWorkFilter.all
     @State private var hasLoaded = false
+    @State private var loadFailure: LoadFailureDetails?
+    @State private var annotationOperations = AnnotationOperationState()
     @State private var loadGeneration = 0
-    @State private var pushedWorkKey: LikeWorkKey?
+    @State private var pushedWorkKey: ReadingWorkKey?
 
     @State private var isSelecting = false
-    @State private var selectedWorkKeys: Set<LikeWorkKey> = []
+    @State private var selectedWorkKeys: Set<ReadingWorkKey> = []
     @State private var isShowingDeleteConfirmation = false
 
     private var filteredSummaries: [LikeWorkSummary] {
@@ -75,7 +77,13 @@ struct LikeWorkListView: View {
             // that swap makes `.searchable`'s search bar ghost during a push.
             .overlay {
                 if !hasLoaded {
-                    ProgressView()
+                    if let loadFailure {
+                        LoadFailureView(message: loadFailure.summary, details: loadFailure) {
+                            Task { await load() }
+                        }
+                    } else {
+                        ProgressView()
+                    }
                 } else if summaries.isEmpty {
                     ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
                 } else if filteredSummaries.isEmpty {
@@ -163,6 +171,7 @@ struct LikeWorkListView: View {
             }
         }
         .task { await load() }
+        .annotationOperationFeedback(annotationOperations)
         .task {
             for await _ in likeDependencies.mangaDirectoryStore.changes() {
                 guard !Task.isCancelled else { return }
@@ -210,13 +219,13 @@ struct LikeWorkListView: View {
         }
     }
 
-    private func title(for workKey: LikeWorkKey) -> String {
+    private func title(for workKey: ReadingWorkKey) -> String {
         titlesByWorkKey[workKey] ?? workKey.id
     }
 
     // MARK: - Selection
 
-    private func toggleSelection(_ workKey: LikeWorkKey) {
+    private func toggleSelection(_ workKey: ReadingWorkKey) {
         if selectedWorkKeys.contains(workKey) {
             selectedWorkKeys.remove(workKey)
         } else {
@@ -253,22 +262,31 @@ struct LikeWorkListView: View {
 
     private func deleteSelection() async {
         let keys = selectedWorkKeys.intersection(filteredSummaries.map(\.workKey))
-        for key in keys {
-            try? await likeDependencies.likeStore.deleteAll(workKey: key)
-        }
-        setSelecting(false)
+        let succeeded = await annotationOperations.perform {
+            for key in keys { try await likeDependencies.annotations.removeLikes(for: key) }
+        } != nil
+        if succeeded { setSelecting(false) }
         await load()
     }
 
     private func load() async {
         loadGeneration += 1
         let generation = loadGeneration
+        loadFailure = nil
         async let fetchedSummaries = likeDependencies.likeStore.workSummaries()
         async let favoriteDocument = try? favoriteLibraryStore.load()
-        let (summaries, document) = await (fetchedSummaries, favoriteDocument ?? FavoriteLibraryDocument())
+        let summaries: [LikeWorkSummary]
+        do { summaries = try await fetchedSummaries }
+        catch {
+            guard generation == loadGeneration, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            loadFailure = LoadFailureDetails(error: error)
+            annotationOperations.report(error)
+            return
+        }
+        let document = await favoriteDocument ?? FavoriteLibraryDocument()
 
-        var titles: [LikeWorkKey: String] = [:]
-        var covers: [LikeWorkKey: URL] = [:]
+        var titles: [ReadingWorkKey: String] = [:]
+        var covers: [ReadingWorkKey: URL] = [:]
         for summary in summaries {
             let key = summary.workKey
             switch key.kind {
@@ -290,7 +308,7 @@ struct LikeWorkListView: View {
         hasLoaded = true
     }
 
-    private func openAnchor(_ anchor: LikeAnchorPayload, work: LikeWorkKey) {
+    private func openAnchor(_ anchor: LikeAnchorPayload, work: ReadingWorkKey) {
         let workTitle = title(for: work)
         switch anchor {
         case let .novelText(textAnchor):

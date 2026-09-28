@@ -54,9 +54,7 @@ public actor FavoriteSyncRunStore {
         }
         do {
             try await database.write { db in
-                let json = String(decoding: try MangaDirectoryIdentityJSON.normalize(
-                    Data(json.utf8), identities: MangaDirectoryIdentityDatabase.snapshot(in: db), legacy: false
-                ), as: UTF8.self)
+                // This snapshot contains display/log metadata, not directory IDs.
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO favorite_sync_runs

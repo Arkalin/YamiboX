@@ -125,10 +125,22 @@ enum ForumThreadPostsParser {
     }
 
     private static func floorText(in container: Element) -> String? {
+        // Desktop postnum links and mobile floor cells may omit the #
+        // suffix. Accept bare digits only in these dedicated floor nodes,
+        // not in metadata that also contains dates or view counts.
+        let postNumber = container.firstText("a[id^=postnum]") ?? ""
+        let mobileFloor = container.firstText(".mtit .y") ?? ""
+        for text in [postNumber, mobileFloor] {
+            if let number = HTMLTextExtractor.firstMatch(pattern: #"^([0-9]+)\s*#?$"#, in: text)?
+                .dropFirst().first {
+                return "\(number)#"
+            }
+        }
         let raw = [
+            postNumber,
             container.selectFirst(".authi em[title]")?.attrText("title") ?? "",
             container.firstText(".authi em") ?? "",
-            container.firstText(".mtit .y") ?? "",
+            mobileFloor,
             container.firstText(".floor, .xg1") ?? ""
         ]
             .joined(separator: " ")

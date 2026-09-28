@@ -2,13 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol BoardFavoriteManaging: Sendable {
-    func fetchBoardFavoritesPage(page: Int) async throws -> BoardFavoriteRemotePage
-    func deleteFavorite(remoteFavoriteID: String) async throws
-}
-
-extension FavoriteRepository: BoardFavoriteManaging {}
-
 /// Drives the board-favorite management page. Board favorites are
 /// intentionally network-only — unlike thread favorites there is no local
 /// store or sync — so every load fetches the remote list and every delete

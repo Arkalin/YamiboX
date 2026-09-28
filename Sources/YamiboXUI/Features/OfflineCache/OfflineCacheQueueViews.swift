@@ -24,7 +24,12 @@ struct OfflineCacheQueueScreen: View {
     var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if viewModel.isEmpty {
+                    if let failure = viewModel.loadFailure {
+                        LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                            Task { await viewModel.refresh() }
+                        }
+                    }
+                    if viewModel.isEmpty && viewModel.loadFailure == nil {
                         OfflineCacheQueueEmptyState()
                     } else {
                         if viewModel.showsControls {
@@ -327,8 +332,13 @@ private struct OfflineCacheQueueOwnerScreen: View {
                                 )
                             }
                         }
-                    } else {
+                    } else if viewModel.loadFailure == nil {
                         OfflineCacheQueueEmptyState()
+                    }
+                    if let failure = viewModel.loadFailure {
+                        LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                            Task { await viewModel.refresh() }
+                        }
                     }
                 }
                 .padding(16)
@@ -397,7 +407,7 @@ private struct OfflineCacheQueueOwnerScreen: View {
     }
 
     private func dismissIfGroupIsEmpty() {
-        if group == nil {
+        if group == nil, viewModel.loadFailure == nil {
             dismiss()
         }
     }

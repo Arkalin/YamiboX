@@ -44,6 +44,7 @@ struct ForumThreadReaderView: View {
             errorMessage: model.errorMessage,
             errorDetails: model.errorDetails,
             isFavorited: model.isFavorited,
+            isFavoriteWorking: model.favoriteActions.isWorking,
             isReverseOrder: model.isReverseOrder,
             refresh: refresh,
             retry: model.retry,
@@ -111,35 +112,7 @@ struct ForumThreadReaderView: View {
                 .accessibilityLabel(L10n.string("common.more"))
             }
         }
-        .failureAlert(
-            L10n.string("forum.thread.favorite_failed"),
-            message: model.favoriteErrorMessage,
-            details: model.favoriteErrorDetails,
-            isPresented: favoriteErrorBinding
-        ) {
-                Button(L10n.string("common.ok")) {
-                    model.clearFavoriteError()
-                }
-            }
-        .favoriteQuickActionDialogs(
-            addPromptPresented: Bindable(model).favoriteAddPromptPresented,
-            removePrompt: Bindable(model).favoriteRemovePrompt,
-            onConfirmAdd: { syncToRemote, remember in
-                Task { await model.confirmFavoriteAdd(syncToRemote: syncToRemote, remember: remember) }
-            },
-            onConfirmRemoval: { favorite, removeRemote, remember in
-                Task { await model.confirmFavoriteRemoval(favorite, removeRemote: removeRemote, remember: remember) }
-            }
-        )
-        .sheet(item: Bindable(model).favoriteLocationPickerContext) { context in
-            FavoriteLocationPickerSheet(
-                context: context,
-                onCancel: { model.favoriteLocationPickerContext = nil },
-                onConfirm: { locations in
-                    Task { await model.confirmFavoriteLocationSelection(locations) }
-                }
-            )
-        }
+        .favoriteActionInterface(model.favoriteActions, showsTransientFeedback: false)
         .task(id: submissionChange?.id) {
             await model.load(submissionChange: submissionChange)
         }
@@ -149,7 +122,7 @@ struct ForumThreadReaderView: View {
         .onDisappear {
             model.flushReadingProgress()
         }
-        .transientMessage(model.transientFeedback, bottomPadding: model.page == nil ? 24 : 82) {
+        .transientMessage(model.favoriteActions.transientFeedback ?? model.transientFeedback, bottomPadding: model.page == nil ? 24 : 82) {
             model.clearTransientMessage()
         }
     }
@@ -166,13 +139,13 @@ struct ForumThreadReaderView: View {
 
     private func toggleFavorite() {
         Task {
-            await model.toggleFavorite()
+            await model.favoriteActions.toggleFavorite()
         }
     }
 
     private func presentFavoriteLocationPicker() {
         Task {
-            await model.presentFavoriteLocationPicker()
+            await model.favoriteActions.presentLocationPicker()
         }
     }
 
@@ -205,16 +178,4 @@ struct ForumThreadReaderView: View {
         )
     }
 
-    private var favoriteErrorBinding: Binding<Bool> {
-        Binding(
-            get: {
-                model.favoriteErrorMessage != nil
-            },
-            set: { isPresented in
-                if !isPresented {
-                    model.clearFavoriteError()
-                }
-            }
-        )
-    }
 }

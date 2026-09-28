@@ -8,7 +8,12 @@ struct OfflineCacheManagementView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if viewModel.offlineCacheManagementIsEmpty {
+                if let failure = viewModel.loadFailure {
+                    LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                        Task { await viewModel.refreshOfflineCacheManagement() }
+                    }
+                }
+                if viewModel.offlineCacheManagementIsEmpty && viewModel.loadFailure == nil {
                     OfflineCacheManagementEmptyState()
                 } else {
                     LazyVStack(spacing: 10) {

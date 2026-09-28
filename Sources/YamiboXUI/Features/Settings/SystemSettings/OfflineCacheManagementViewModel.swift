@@ -11,6 +11,7 @@ final class OfflineCacheManagementViewModel: SystemSettingsActivityReporting {
     var selectedOfflineCacheGroupIDs: Set<OfflineCacheGroupID> = []
     var isOfflineCacheManagementSelectionMode = false
     var pendingOfflineCacheManagementConfirmation: OfflineCacheManagementConfirmation?
+    private(set) var loadFailure: LoadFailureDetails?
 
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
@@ -55,6 +56,7 @@ final class OfflineCacheManagementViewModel: SystemSettingsActivityReporting {
         selectedOfflineCacheGroupIDs = []
         isOfflineCacheManagementSelectionMode = false
         pendingOfflineCacheManagementConfirmation = nil
+        loadFailure = nil
     }
 
     // MARK: - Loading
@@ -166,7 +168,17 @@ final class OfflineCacheManagementViewModel: SystemSettingsActivityReporting {
     }
 
     private func refreshOfflineCacheManagementRows() async {
-        let snapshot = await dependencies.offlineCacheStore.offlineCacheManagementSnapshot()
+        let snapshot: OfflineCacheManagementSnapshot
+        do {
+            snapshot = try await dependencies.offlineCacheStore.offlineCacheManagementSnapshot()
+            try Task.checkCancellation()
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                loadFailure = LoadFailureDetails(error: error)
+            }
+            return
+        }
+        loadFailure = nil
         offlineCacheManagementRows = snapshot.groups
             .map(OfflineCacheManagementRow.init(group:))
             .sorted { lhs, rhs in

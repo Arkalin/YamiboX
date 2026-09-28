@@ -2,20 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol UserSpacePageLoading: Sendable {
-    func fetchProfile(uid: String?, titleHint: String?) async throws -> UserSpaceProfile
-    func fetchThreads(uid: String?, page: Int) async throws -> UserSpaceThreadPage
-    func fetchReplies(uid: String?, page: Int) async throws -> UserSpaceReplyPage
-    func fetchBlogs(uid: String?, page: Int) async throws -> UserSpaceBlogPage
-    func fetchMyBlogs(uid: String?, page: Int) async throws -> UserSpaceBlogPage
-    func fetchFriendBlogs(page: Int) async throws -> UserSpaceBlogPage
-    func fetchViewAllBlogs(filter: UserSpaceViewAllBlogFilter, page: Int) async throws -> UserSpaceBlogPage
-    func fetchFriendPage(type: UserSpaceFriendType, page: Int) async throws -> UserSpaceFriendPage
-    func fetchAddFriendForm(uid: String, nameHint: String?) async throws -> UserSpaceAddFriendForm
-    func addFriend(uid: String, formHash: String, note: String, groupID: Int) async throws -> String
-}
-
-extension UserSpaceRepository: UserSpacePageLoading {}
 
 @MainActor
 @Observable

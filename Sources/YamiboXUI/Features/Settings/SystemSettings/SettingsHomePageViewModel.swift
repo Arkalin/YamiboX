@@ -8,6 +8,7 @@ final class SettingsHomePageViewModel: AppSettingsPersisting {
     var showsOnlyFavorites = false
 
     let dependencies: SettingsDependencies
+    var settingsStore: SettingsStore { dependencies.settingsStore }
     let activity: SystemSettingsActivity
 
     init(dependencies: SettingsDependencies, activity: SystemSettingsActivity) {

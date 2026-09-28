@@ -312,6 +312,14 @@ public final class YamiboAppModel {
         }
     }
 
+    var forumNavigationActions: ForumNavigationActions {
+        ForumNavigationActions(
+            accountGeneration: { [self] in accountGeneration },
+            presentNovel: { [self] in presentNovelReader($0) },
+            requestManga: { [self] in requestMangaReader($0) }
+        )
+    }
+
     public func presentNovelReader(_ context: NovelLaunchContext) {
         presentNovelReader(context, bookOpeningTransition: nil)
     }

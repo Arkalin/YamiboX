@@ -72,10 +72,10 @@ public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
         self.initialPage = max(0, initialPage)
         self.directoryName = directoryName
         self.directoryID = directoryID
-        self.offlineCacheFavoriteID = offlineCacheFavoriteID?.mangaReaderTrimmedNonEmpty
+        self.offlineCacheFavoriteID = offlineCacheFavoriteID?.nilIfBlank
         self.isPreview = isPreview
         self.isSmartModeEnabled = isSmartModeEnabled
-        self.forumID = forumID?.mangaReaderTrimmedNonEmpty
+        self.forumID = forumID?.nilIfBlank
     }
 
     private static func normalizedThreadID(_ value: String, field: String) -> String {

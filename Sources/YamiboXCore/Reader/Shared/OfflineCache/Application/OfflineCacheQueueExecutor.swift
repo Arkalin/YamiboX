@@ -22,13 +22,6 @@ protocol OfflineCacheImageTransporting: Sendable {
     func downloadImageData(for source: YamiboImageSource) async throws -> Data
 }
 
-protocol OfflineCacheQueueRunObserving: Sendable {
-    func submitUserInitiatedRun() async
-    func queueRunDidUpdateProgress(completedImageCount: Int, targetImageCount: Int) async
-    func queueRunDidFinish(success: Bool) async
-    func queueRunDidCancel() async
-}
-
 actor OfflineCacheImageAcquirer: OfflineCacheImageAcquiring {
     private let imagePipeline: any YamiboImageDataLoading
     private let backgroundTransport: (any OfflineCacheImageTransporting)?
@@ -188,7 +181,7 @@ public actor OfflineCacheQueueExecutor {
         let hadRunningTask = runTask != nil
         cancelActiveRun()
         do {
-            let wasRunning = await store.offlineCacheQueueRunState() == .running
+            let wasRunning = try await store.offlineCacheQueueRunState() == .running
             resumeAfterIdentityChange = resumeAfterIdentityChange || wasRunning || hadRunningTask
             try await store.setOfflineCacheQueueRunState(.paused)
             await runObserver?.queueRunDidCancel()
@@ -218,7 +211,7 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func cancelChapter(ownerName: String, tid: String) async throws {
-        let wasRunning = await store.offlineCacheQueueRunState() == .running
+        let wasRunning = try await store.offlineCacheQueueRunState() == .running
         cancelActiveRun()
         await runObserver?.queueRunDidCancel()
         await joinRetiringRuns()
@@ -231,7 +224,7 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func cancelOwnerGroup(ownerName: String) async throws {
-        let wasRunning = await store.offlineCacheQueueRunState() == .running
+        let wasRunning = try await store.offlineCacheQueueRunState() == .running
         cancelActiveRun()
         await runObserver?.queueRunDidCancel()
         await joinRetiringRuns()
@@ -244,7 +237,7 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func cancelWork(id: OfflineCacheWorkID) async throws {
-        let wasRunning = await store.offlineCacheQueueRunState() == .running
+        let wasRunning = try await store.offlineCacheQueueRunState() == .running
         cancelActiveRun()
         await runObserver?.queueRunDidCancel()
         await joinRetiringRuns()
@@ -255,7 +248,7 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func cancelGroup(id: OfflineCacheGroupID) async throws {
-        let wasRunning = await store.offlineCacheQueueRunState() == .running
+        let wasRunning = try await store.offlineCacheQueueRunState() == .running
         cancelActiveRun()
         await runObserver?.queueRunDidCancel()
         await joinRetiringRuns()
@@ -273,31 +266,39 @@ public actor OfflineCacheQueueExecutor {
 
     private func runQueue(generation: Int) async {
         while !Task.isCancelled {
-            guard await store.offlineCacheQueueRunState() == .running else {
-                await runObserver?.queueRunDidFinish(success: false)
-                await finishRun(generation: generation, pauseQueue: false)
-                return
-            }
-
-            guard let work = await store.nextOfflineCacheProcessingWork() else {
-                await runObserver?.queueRunDidFinish(success: true)
-                await finishRun(generation: generation, pauseQueue: true)
-                return
-            }
-
+            var processingWork: OfflineCacheProcessingWork?
             do {
+                guard try await store.offlineCacheQueueRunState() == .running else {
+                    await runObserver?.queueRunDidFinish(success: false)
+                    await finishRun(generation: generation, pauseQueue: false)
+                    return
+                }
+                processingWork = try await store.nextOfflineCacheProcessingWork()
+                try Task.checkCancellation()
+                guard let work = processingWork else {
+                    await runObserver?.queueRunDidFinish(success: true)
+                    await finishRun(generation: generation, pauseQueue: true)
+                    return
+                }
                 try await process(work)
             } catch is CancellationError {
                 await finishRun(generation: generation, pauseQueue: false)
                 return
             } catch {
-                do {
-                    try await store.markOfflineCacheWorkFailed(
-                        id: work.id,
-                        message: Self.failureMessage(from: error)
-                    )
-                } catch {
-                    YamiboLog.offlineCache.error("Failed to persist offline cache work \(work.id.rawValue) failure state: \(error)")
+                guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else {
+                    await finishRun(generation: generation, pauseQueue: false)
+                    return
+                }
+                YamiboLog.offlineCache.error("Offline cache queue run failed: \(error)")
+                if let work = processingWork {
+                    do {
+                        try await store.markOfflineCacheWorkFailed(
+                            id: work.id,
+                            message: Self.failureMessage(from: error)
+                        )
+                    } catch {
+                        YamiboLog.offlineCache.error("Failed to persist offline cache work \(work.id.rawValue) failure state: \(error)")
+                    }
                 }
                 await runObserver?.queueRunDidFinish(success: false)
                 await finishRun(generation: generation, pauseQueue: true)
@@ -336,7 +337,7 @@ public actor OfflineCacheQueueExecutor {
 
     private static func failureMessage(from error: Error) -> String {
         if let localizedError = error as? LocalizedError,
-           let description = localizedError.errorDescription?.mangaReaderTrimmedNonEmpty {
+           let description = localizedError.errorDescription?.nilIfBlank {
             return description
         }
         return error.localizedDescription

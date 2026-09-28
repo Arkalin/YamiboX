@@ -84,9 +84,9 @@ public enum ForumComposerAttributes: Equatable, Sendable {
         case .font, .ruby, .url, .email: return .text(parameter)
         case .color, .backcolor, .tr:
             if parameter.isEmpty && tag == .tr { return Self.none }
-            return ForumThreadTextStyleParser.normalizedColorHex(parameter).map(Self.text)
+            return ForumTextStyleRules.normalizedColorHex(parameter).map(Self.text)
         case .size:
-            if let relative = ForumThreadTextStyleParser.relativeFontSize(fromHTMLSize: parameter) { return .fontSize(relative: relative, points: nil) }
+            if let relative = ForumTextStyleRules.relativeFontSize(fromHTMLSize: parameter) { return .fontSize(relative: relative, points: nil) }
             let raw = parameter.lowercased()
             guard raw.hasSuffix("px") || raw.hasSuffix("pt"), let value = Double(raw.dropLast(2)), value.isFinite, value > 0 else { return nil }
             return .fontSize(relative: nil, points: value * (raw.hasSuffix("pt") ? 4.0 / 3.0 : 1))
@@ -117,7 +117,7 @@ public enum ForumComposerAttributes: Equatable, Sendable {
         case .table:
             if parameter.isEmpty { return .table(width: nil, background: nil) }
             guard pieces.count <= 2, let width = ForumComposerLength(pieces[0]) else { return nil }
-            let color = pieces.count == 2 ? ForumThreadTextStyleParser.normalizedColorHex(pieces[1]) : nil
+            let color = pieces.count == 2 ? ForumTextStyleRules.normalizedColorHex(pieces[1]) : nil
             guard pieces.count != 2 || color != nil else { return nil }
             return .table(width: width, background: color)
         case .td:
@@ -154,7 +154,7 @@ public enum ForumComposerAttributes: Equatable, Sendable {
 }
 
 public enum ForumComposerSyntax {
-    public static func normalizedColor(_ value: String) -> String? { ForumThreadTextStyleParser.normalizedColorHex(value) }
+    public static func normalizedColor(_ value: String) -> String? { ForumTextStyleRules.normalizedColorHex(value) }
 
     public static func markup(tag: ForumComposerTag, parameter: String = "", body: String = "") throws -> String {
         guard !parameter.contains("]"), !parameter.contains("["), !parameter.contains("\n"), !parameter.contains("\r"),

@@ -35,7 +35,7 @@ final class MineHomeViewModel {
         self.dependencies = dependencies
         self.checkInService = checkInService ?? dependencies.makeCheckInService()
         offlineQueue = OfflineCacheQueueViewModel(
-            dependencies: dependencies,
+            dependencies: dependencies.cacheQueue,
             controller: offlineCacheQueueController
         )
         profileAvatarLoader = YamiboProfileAvatarLoader(

@@ -42,7 +42,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
     }
 
     public func directory(named name: String) async throws -> MangaDirectory? {
-        guard let name = name.mangaReaderTrimmedNonEmpty else { return nil }
+        guard let name = name.nilIfBlank else { return nil }
         return try await database.read { db in
             try Self.directory(named: name, in: db)
         }
@@ -54,7 +54,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
 
     public func resolveOrCreateDirectory(_ seed: MangaDirectory) async throws -> MangaDirectory {
         let saved = try await database.write { db in
-            guard let name = seed.cleanBookName.mangaReaderTrimmedNonEmpty else {
+            guard let name = seed.cleanBookName.nilIfBlank else {
                 throw YamiboPersistenceError(context: "Directory name is empty")
             }
             let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
@@ -224,7 +224,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
     }
 
     public func directory(containingTID tid: String) async throws -> MangaDirectory? {
-        guard let tid = tid.mangaReaderTrimmedNonEmpty else { return nil }
+        guard let tid = tid.nilIfBlank else { return nil }
         return try await database.read { db in
             guard let row = try Row.fetchOne(
                 db,
@@ -254,7 +254,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
     /// is loaded once and shared by every tid that maps to it, rather than
     /// once per tid.
     public func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory] {
-        let normalizedTIDs = Array(Set(tids.compactMap(\.mangaReaderTrimmedNonEmpty)))
+        let normalizedTIDs = Array(Set(tids.compactMap(\.nilIfBlank)))
         guard !normalizedTIDs.isEmpty else { return [:] }
         return try await database.read { db in
             // Ties within a tid (same tid appearing under more than one
@@ -320,7 +320,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
     }
 
     public func renameDirectory(id: MangaDirectoryID, cleanBookName: String, searchKeyword: String?) async throws -> MangaDirectory {
-        guard let name = cleanBookName.mangaReaderTrimmedNonEmpty else { throw YamiboPersistenceError(context: "Directory name is empty") }
+        guard let name = cleanBookName.nilIfBlank else { throw YamiboPersistenceError(context: "Directory name is empty") }
         if let target = try await directory(named: name), target.id != id {
             return try await mergeDirectories(sourceID: id, targetID: target.id, cleanBookName: name, searchKeyword: searchKeyword)
         }
@@ -422,12 +422,10 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             // Preserve it so the merger can still identify unseen origins.
             return record
         }
-        let deletions = try MangaDirectoryIdentityJSON.normalize(
-            JSONEncoder().encode(snapshot.deletions), identities: identities,
-            legacy: false, datasetID: WebDAVSyncContent.mangaDirectories.rawValue
+        let deletions = MangaIdentityDeletionRemapping.normalize(
+            snapshot.deletions, identities: identities, directoryKeys: true
         )
-        return SyncRecordSnapshot(records: records,
-            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
+        return SyncRecordSnapshot(records: records, deletions: deletions)
     }
 
     private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<MangaDirectorySyncRecord> {
@@ -537,7 +535,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             if let current = try Self.directory(id: normalized.id, in: db) { normalized.searchKeyword = current.searchKeyword }
             normalized.cleanBookName = currentName
         }
-        guard let cleanBookName = normalized.cleanBookName.mangaReaderTrimmedNonEmpty else {
+        guard let cleanBookName = normalized.cleanBookName.nilIfBlank else {
             throw YamiboPersistenceError(context: "Directory name is empty")
         }
         normalized.cleanBookName = cleanBookName
@@ -566,7 +564,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         )
         try db.execute(sql: "DELETE FROM manga_directory_chapters WHERE directory_id = ?", arguments: [canonical])
         for (index, chapter) in normalized.chapters.enumerated() {
-            guard let tid = chapter.tid.mangaReaderTrimmedNonEmpty else { continue }
+            guard let tid = chapter.tid.nilIfBlank else { continue }
             try db.execute(
                 sql: """
                 INSERT INTO manga_directory_chapters

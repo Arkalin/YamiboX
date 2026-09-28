@@ -11,16 +11,15 @@ public enum FavoriteUpdateNotificationRouting {
     /// Returns false when the userInfo doesn't belong to a favorite-update
     /// notification, so unrelated notifications pass through untouched.
     @discardableResult
-    public static func open(notificationUserInfo userInfo: [AnyHashable: Any], appModel: YamiboAppModel) async -> Bool {
+    public static func open(notificationUserInfo userInfo: [AnyHashable: Any], dependencies: LibraryDependencies, appModel: YamiboAppModel) async -> Bool {
         guard let targetID = userInfo[FavoriteUpdateNotification.targetIDUserInfoKey] as? String else {
             return false
         }
-        await open(targetID: targetID, appModel: appModel)
+        await open(targetID: targetID, dependencies: dependencies, appModel: appModel)
         return true
     }
 
-    static func open(targetID: String, appModel: YamiboAppModel) async {
-        let dependencies = appModel.appContext.libraryDependencies
+    static func open(targetID: String, dependencies: LibraryDependencies, appModel: YamiboAppModel) async {
         let resolver = LocalFavoriteOpenTargetResolver(
             libraryStore: dependencies.localFavoriteLibraryStore,
             readingProgressStore: dependencies.readingProgressStore,

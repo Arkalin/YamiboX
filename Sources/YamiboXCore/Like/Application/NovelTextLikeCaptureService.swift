@@ -1,7 +1,7 @@
 import Foundation
 
 package struct NovelTextLikeCaptureRequest: Sendable {
-    package var workKey: LikeWorkKey
+    package var workKey: ReadingWorkKey
     package var start: NovelTextViewportSemanticTextPosition
     package var end: NovelTextViewportSemanticTextPosition
     package var excerptText: String
@@ -23,7 +23,7 @@ package struct NovelTextLikeCaptureRequest: Sendable {
     package var excerptSuffix: String?
 
     package init(
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         start: NovelTextViewportSemanticTextPosition,
         end: NovelTextViewportSemanticTextPosition,
         excerptText: String,
@@ -102,7 +102,7 @@ public struct NovelTextLikeCaptureService: Sendable {
             resolvedAuthorID: request.resolvedAuthorID
         )
 
-        let existing = await likeStore.likes(for: request.workKey).filter { $0.kind == .text }
+        let existing = try await likeStore.likes(for: request.workKey).filter { $0.kind == .text }
         var overlapping: [(item: LikeItem, anchor: NovelTextLikeAnchor)] = []
         for item in existing {
             guard case let .novelText(anchor) = item.anchor,

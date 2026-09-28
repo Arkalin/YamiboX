@@ -4,7 +4,7 @@ import Foundation
 /// `LikeItem.id`. Unlike `FavoriteBackgroundImageStore`, bytes are kept as
 /// captured (no JPEG re-encoding): a liked image is user-retained content,
 /// not regenerable decoration.
-public actor LikeImageStore {
+public actor LikeImageStore: LikeImageWriting {
     private let fileManager: FileManager
     private let baseDirectory: URL
 
@@ -75,11 +75,10 @@ public actor LikeImageStore {
     }
 
     private func removeExistingFiles(id: String) throws {
-        guard let urls = try? fileManager.contentsOfDirectory(at: baseDirectory, includingPropertiesForKeys: nil) else {
-            return
-        }
+        guard fileManager.fileExists(atPath: baseDirectory.path) else { return }
+        let urls = try fileManager.contentsOfDirectory(at: baseDirectory, includingPropertiesForKeys: nil)
         for url in urls where url.deletingPathExtension().lastPathComponent == id {
-            try? fileManager.removeItem(at: url)
+            try fileManager.removeItem(at: url)
         }
     }
 }

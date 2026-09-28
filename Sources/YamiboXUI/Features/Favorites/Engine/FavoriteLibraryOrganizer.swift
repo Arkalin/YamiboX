@@ -94,11 +94,12 @@ final class FavoriteLibraryOrganizer {
     /// views read it in `body` to show or hide the sparkles badge and must
     /// re-render when the Settings switch flips.
     private(set) var smartMangaBadgeEnabled = true
-    /// Backs `LocalFavoritesBackground` — consumed by every favorites page
-    /// (see `LocalFavoritesOrganizationView`): the root screen and the pushed
-    /// collection/merged-group detail pages alike.
-    private(set) var backgroundSettings = FavoriteBackgroundSettings()
-    private(set) var backgroundImageData: Data?
+    var backgroundSettings: FavoriteBackgroundSettings { background.settings }
+    var backgroundImageData: Data? { background.imageData }
+    private let background: FavoriteBackgroundState
+    @ObservationIgnored let covers: FavoriteCoverCoordinator
+    var coverLookup: FavoriteCoverCoordinator.Lookup { covers.lookup }
+
     var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -121,42 +122,13 @@ final class FavoriteLibraryOrganizer {
     private let libraryStore: FavoriteLibraryStore
     private let readingProgressStore: ReadingProgressStore
     let settingsStore: SettingsStore
-    let contentCoverStore: ContentCoverStore
-    let mangaDirectoryStore: MangaDirectoryStore?
-    private let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
-    let makeForumThreadReaderRepository: (@Sendable () async -> ForumThreadReaderRepository)?
+    let mangaDirectoryStore: (any MangaDirectoryReading & MangaDirectoryChangeObserving)?
     private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
 
     @ObservationIgnored private var readingProgress: [ReadingProgressRecord] = []
-    /// Resolved cover URLs and text-cover-forced flags for everything the
-    /// cards can display, keyed by the SAME `ContentCoverKey` each card's
-    /// `contentCoverKey` resolves — per-favorite `.thread(tid:)` entries
-    /// plus `.smartManga(cleanBookName:)` entries for resolved directories
-    /// (decision #13/#16). A single keyspace shared with `toggleTextCover`'s
-    /// write path, so the row a card displays and the row its cover actions
-    /// touch are the same by construction (two parallel string-keyed maps
-    /// here once let a smart card's text-cover toggle write a `.thread` row
-    /// its own display never read).
-    // Cover lane state, owned by FavoriteLibraryOrganizer+Covers.swift.
-    @ObservationIgnored var coverLookup = ContentCoverLookup()
-    /// Bumped by every `coverLookup` write, including `toggleTextCover`'s
-    /// optimistic update. `reload()`/`reloadContentCovers()`/
-    /// `reloadBoardReaderSettings()`/`reloadMangaDirectories()` each capture
-    /// this before their `await`-heavy cover-store round trips and re-check
-    /// it before applying the result: those round trips read one key at a
-    /// time, so a slow one can straddle a later write and still resolve
-    /// after it. If the revision moved on while it was reading, a fresher
-    /// write already landed and applying this now-stale snapshot would
-    /// silently revert it — e.g. toggling a smart card's text cover and
-    /// then, in the same instant, toggling the underlying thread's own
-    /// cover from an expanded archive view could otherwise have the first
-    /// toggle's late-arriving notification-driven reload clobber the second
-    /// toggle's just-applied state back to "not forced". Skipping a stale
-    /// refresh is harmless — the next change notification settles it.
-    @ObservationIgnored var coverLookupRevision = 0
     /// tid → resolved `MangaDirectory`, for virtual favorites grouping
     /// (smart-comic-mode decision #3/#5). Populated only at `load()`/
-    /// `reload()` via one batched `MangaDirectoryStore.directories
+    /// `reload()` via one batched `MangaDirectoryBatchReading.directories
     /// (containingTIDs:)` call — never recomputed per render (the design
     /// doc's performance constraint #2).
     @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
@@ -172,11 +144,8 @@ final class FavoriteLibraryOrganizer {
     @ObservationIgnored private(set) var smartMangaBulkDeleteEnabled = true
     @ObservationIgnored private var libraryUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var progressUpdatesTask: Task<Void, Never>?
-    @ObservationIgnored private var coverUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var settingsUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var mangaDirectoryUpdatesTask: Task<Void, Never>?
-    @ObservationIgnored var mangaCoverBackfillTask: Task<Void, Never>?
-    @ObservationIgnored var attemptedMangaCoverTargetIDs: Set<String> = []
 
     init(
         libraryStore: FavoriteLibraryStore,
@@ -184,18 +153,21 @@ final class FavoriteLibraryOrganizer {
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
-        mangaDirectoryStore: MangaDirectoryStore? = nil,
-        makeForumThreadReaderRepository: (@Sendable () async -> ForumThreadReaderRepository)? = nil,
+        mangaDirectoryStore: (any MangaDirectoryReading & MangaDirectoryChangeObserving)? = nil,
+        makeForumThreadReaderRepository: (@Sendable () async -> any ThreadCoverPageResolving)? = nil,
         makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     ) {
         self.libraryStore = libraryStore
         self.readingProgressStore = readingProgressStore
         self.settingsStore = settingsStore
-        self.contentCoverStore = contentCoverStore
-        self.favoriteBackgroundImageStore = favoriteBackgroundImageStore
+        self.background = FavoriteBackgroundState(settingsStore: settingsStore, imageStore: favoriteBackgroundImageStore)
+        self.covers = FavoriteCoverCoordinator(
+            store: contentCoverStore,
+            makeRepository: makeForumThreadReaderRepository
+        )
         self.mangaDirectoryStore = mangaDirectoryStore
-        self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeFavoriteRepository = makeFavoriteRepository
+        covers.onChange = { [weak self] in self?.refreshDerivedState() }
         libraryUpdatesTask = StoreChangeObservation.task(
             changes: { [store = libraryStore] in store.changes() },
             changeID: { [store = libraryStore] in store.changeID }
@@ -203,12 +175,6 @@ final class FavoriteLibraryOrganizer {
             await self?.reload()
         }
         observeReadingProgressIfNeeded()
-        coverUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = contentCoverStore] in store.changes() },
-            changeID: { [store = contentCoverStore] in store.changeID }
-        ) { [weak self] in
-            await self?.reloadContentCovers()
-        }
         // Without this, toggling the new Smart Comic Mode settings UI while
         // the Favorites tab is already loaded would leave the merged-card
         // grouping stale until some unrelated favorite/progress/cover change
@@ -220,7 +186,6 @@ final class FavoriteLibraryOrganizer {
             changeID: { [store = settingsStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadBoardReaderSettings()
-            await self?.reloadFavoriteBackground()
             await self?.reloadSmartMangaToggleSettings()
         }
         // Without this, renaming a manga directory from the manga reader's
@@ -241,10 +206,8 @@ final class FavoriteLibraryOrganizer {
     deinit {
         libraryUpdatesTask?.cancel()
         progressUpdatesTask?.cancel()
-        coverUpdatesTask?.cancel()
         settingsUpdatesTask?.cancel()
         mangaDirectoryUpdatesTask?.cancel()
-        mangaCoverBackfillTask?.cancel()
     }
 
     // MARK: - Document access
@@ -330,22 +293,18 @@ final class FavoriteLibraryOrganizer {
             }
             return
         }
-        let threadCovers = await loadContentCovers(for: loadedDocument.items)
         let settings = await settingsStore.load()
         boardReaderSettings = settings.boardReader
         smartMangaBulkDeleteEnabled = settings.favorites.smartMangaBulkDeleteEnabled
         smartMangaBadgeEnabled = settings.favorites.smartMangaBadgeEnabled
         mangaDirectoriesByTID = await resolveMangaDirectories(for: loadedDocument.items, boardReaderSettings: boardReaderSettings)
-        coverLookup = threadCovers.merging(
-            await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
-        )
-        coverLookupRevision += 1
+        await covers.refresh(.init(items: loadedDocument.items, directories: Array(Set(mangaDirectoriesByTID.values))))
         display = FavoriteLibraryDisplayState(
             layoutMode: settings.favorites.layoutMode,
             showsCategoryCounts: settings.favorites.showsCategoryCounts,
             gridCardScale: FavoriteLibrarySettings.clampGridCardScale(settings.favorites.gridCardScale)
         )
-        await applyBackgroundSettings(settings.favorites.background)
+        await background.reload()
         withCoalescedDerivedRefresh {
             var restoredFilter = filter
             restoredFilter.sortOrder = settings.favorites.sortOrder
@@ -379,8 +338,6 @@ final class FavoriteLibraryOrganizer {
             // let the next change notification retry.
             return
         }
-        let expectedCoverRevision = coverLookupRevision
-        let threadCovers = await loadContentCovers(for: loadedDocument.items)
         // Only the Smart Comic Mode snapshot is refreshed here — unlike
         // `load()`, `reload()` deliberately never re-applies
         // `settings.favorites` (sort order/layout/etc.) so a background
@@ -390,16 +347,7 @@ final class FavoriteLibraryOrganizer {
         let settings = await settingsStore.load()
         boardReaderSettings = settings.boardReader
         mangaDirectoriesByTID = await resolveMangaDirectories(for: loadedDocument.items, boardReaderSettings: boardReaderSettings)
-        let smartCovers = await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
-        // Same staleness guard as `reloadContentCovers()`: this read-then-
-        // apply spans several awaits, so a faster, more recent `coverLookup`
-        // write (an optimistic `toggleTextCover`, or another reload) can
-        // land while this one is still in flight. Applying this snapshot
-        // then would revert that fresher write.
-        if coverLookupRevision == expectedCoverRevision {
-            coverLookup = threadCovers.merging(smartCovers)
-            coverLookupRevision += 1
-        }
+        await covers.refresh(.init(items: loadedDocument.items, directories: Array(Set(mangaDirectoriesByTID.values))))
         withCoalescedDerivedRefresh {
             document = loadedDocument
             if !loadedDocument.categories.contains(where: { $0.id == selectedCategoryID }) {
@@ -445,25 +393,6 @@ final class FavoriteLibraryOrganizer {
         refreshDerivedState()
     }
 
-    /// Re-derives `coverLookup` in response to *any*
-    /// `ContentCoverStore.changes()` element — including ones this same
-    /// organizer's own `toggleTextCover` just caused, since that call posts
-    /// through the store like any other writer. `loadContentCovers`/
-    /// `smartMangaCoverLookup` read one key at a time, each its own `await`,
-    /// so this can start before and finish after a later, faster write (e.g.
-    /// `toggleTextCover`'s own optimistic update). Guarded on
-    /// `coverLookupRevision` so that a stale snapshot never wins a race
-    /// against a fresher one — see the property's doc comment.
-    private func reloadContentCovers() async {
-        let expectedRevision = coverLookupRevision
-        let threadCovers = await loadContentCovers(for: document.items)
-        let smartCovers = await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
-        guard coverLookupRevision == expectedRevision else { return }
-        coverLookup = threadCovers.merging(smartCovers)
-        coverLookupRevision += 1
-        refreshDerivedState()
-    }
-
     /// Re-derives only the Smart Comic Mode-dependent slice of state
     /// (`boardReaderSettings`/`mangaDirectoriesByTID`/`coverLookup`'s
     /// `.smartManga` slice) in response to *any*
@@ -481,36 +410,14 @@ final class FavoriteLibraryOrganizer {
         guard settings.boardReader != boardReaderSettings else { return }
         boardReaderSettings = settings.boardReader
         mangaDirectoriesByTID = await resolveMangaDirectories(for: document.items, boardReaderSettings: boardReaderSettings)
-        let expectedRevision = coverLookupRevision
-        let smartCovers = await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
-        // See `coverLookupRevision`'s doc comment: skip applying this slice
-        // if a fresher `coverLookup` write landed while it was being read,
-        // rather than clobbering that write with this now-stale one.
-        if coverLookupRevision == expectedRevision {
-            coverLookup.replaceSmartMangaSlice(with: smartCovers)
-            coverLookupRevision += 1
-        }
+        await covers.refreshSmartManga(Array(Set(mangaDirectoriesByTID.values)))
         refreshDerivedState()
         scheduleMangaCoverBackfill(for: document.items)
     }
 
-    /// Re-derives `backgroundSettings`/`backgroundImageData` in response to
-    /// *any* `SettingsStore.changes()` element, mirroring
-    /// `reloadBoardReaderSettings()`'s diff-guarded shape — this is the only
-    /// path that keeps the root favorites background in sync with an edit
-    /// made from Settings, since the favorites tab's `FavoriteLibraryOrganizer`
-    /// is constructed once for the app's lifetime and never reloads on tab
-    /// reselect.
-    private func reloadFavoriteBackground() async {
-        let settings = await settingsStore.load()
-        guard settings.favorites.background != backgroundSettings else { return }
-        await applyBackgroundSettings(settings.favorites.background)
-    }
-
     /// Re-derives the favorites-slice smart-manga toggles
     /// (`smartMangaBulkDeleteEnabled`/`smartMangaBadgeEnabled`) in response
-    /// to *any* `SettingsStore.changes()` element, mirroring
-    /// `reloadFavoriteBackground()`'s diff-guarded shape — kept in sync live
+    /// to *any* `SettingsStore.changes()` element — kept in sync live
     /// so flipping either Settings switch while Favorites is already open
     /// immediately updates `hasDeletableSelection`/the long-press menu/the
     /// sparkles badge without waiting for an unrelated reload. Each flag is
@@ -526,14 +433,9 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    private func applyBackgroundSettings(_ newValue: FavoriteBackgroundSettings) async {
-        backgroundSettings = newValue
-        backgroundImageData = await favoriteBackgroundImageStore.loadData(imageID: newValue.imageID)
-    }
-
     /// Re-derives the manga-directory-dependent slice of state
     /// (`mangaDirectoriesByTID`/`coverLookup`'s `.smartManga` slice) in
-    /// response to `MangaDirectoryStore.changes()` -- e.g.
+    /// response to `MangaDirectoryChangeObserving.changes()` -- e.g.
     /// resolving a previously-unresolved manga favorite's directory for the
     /// first time (`saveDirectory`), or renaming a directory from the manga
     /// reader's directory page (`renameDirectory`). Without this, a newly-
@@ -564,15 +466,7 @@ final class FavoriteLibraryOrganizer {
             selection.replaceFavoriteSelection(with: normalizedSelection)
         }
         mangaDirectoriesByTID = await resolveMangaDirectories(for: document.items, boardReaderSettings: boardReaderSettings)
-        let expectedRevision = coverLookupRevision
-        let smartCovers = await smartMangaCoverLookup(for: Array(Set(mangaDirectoriesByTID.values)))
-        // See `coverLookupRevision`'s doc comment: skip applying this slice
-        // if a fresher `coverLookup` write landed while it was being read,
-        // rather than clobbering that write with this now-stale one.
-        if coverLookupRevision == expectedRevision {
-            coverLookup.replaceSmartMangaSlice(with: smartCovers)
-            coverLookupRevision += 1
-        }
+        await covers.refreshSmartManga(Array(Set(mangaDirectoriesByTID.values)))
         refreshDerivedState()
     }
 

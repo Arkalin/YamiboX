@@ -9,6 +9,7 @@ import YamiboXCore
 struct LocalFavoritesOrganizationView: View {
     @Bindable var organizer: FavoriteLibraryOrganizer
     let navigator: ForumDestinationNavigator
+    let forumScreen: (ForumDestination) -> ForumDestinationScreen
     @Bindable var favoriteShare: FavoriteShareFlowModel
     @ObservedObject var remoteSync: FavoriteRemoteSyncSession
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
@@ -26,25 +27,27 @@ struct LocalFavoritesOrganizationView: View {
     let onOpenMangaDirectory: (MangaDirectoryID) async -> Void
     /// Feeds the pushed board-favorite page, which manages remote board
     /// favorites purely over the network (no local store involved).
-    let makeFavoriteRepository: @Sendable () async -> FavoriteRepository
+    let makeFavoriteRepository: @Sendable () async -> any BoardFavoriteManaging
     let onOpenBoard: (BoardFavorite) -> Void
 
     init(
         organizer: FavoriteLibraryOrganizer,
         navigator: ForumDestinationNavigator,
+        forumScreen: @escaping (ForumDestination) -> ForumDestinationScreen,
         routes: LocalFavoritesRoutes,
         detailScreen: @escaping (ContentDetailDestination) -> ContentDetailScreen,
         isBookPresented: Bool,
         favoriteShare: FavoriteShareFlowModel,
         remoteSync: FavoriteRemoteSyncSession,
         updateMonitor: FavoriteUpdateMonitor,
-        makeFavoriteRepository: @escaping @Sendable () async -> FavoriteRepository,
+        makeFavoriteRepository: @escaping @Sendable () async -> any BoardFavoriteManaging,
         onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void,
         onOpenMangaDirectory: @escaping (MangaDirectoryID) async -> Void,
         onOpenBoard: @escaping (BoardFavorite) -> Void
     ) {
         self.organizer = organizer
         self.navigator = navigator
+        self.forumScreen = forumScreen
         self.routes = routes
         self.detailScreen = detailScreen
         self.isBookPresented = isBookPresented
@@ -180,7 +183,7 @@ struct LocalFavoritesOrganizationView: View {
         case .mergedGroup:
             mergedGroupDetail
         case let .forum(route):
-            ForumDestinationScreen(destination: route, navigator: navigator)
+            forumScreen(route)
         case let .detail(destination):
             detailScreen(destination)
         case .updates:

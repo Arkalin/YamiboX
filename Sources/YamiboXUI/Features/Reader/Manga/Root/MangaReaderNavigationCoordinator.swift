@@ -1,17 +1,15 @@
 import Foundation
+import Observation
 import YamiboXCore
 
 /// Owns the manga reader's wayfinding across nonlinear jumps: the
 /// back/forward navigation history, the request sequencing that lets a
 /// newer jump invalidate an older one's history bookkeeping, and the
 /// linear-reading expiration that clears stale anchors after enough
-/// ordinary page turns. Counterpart of `NovelReaderNavigationCoordinator`,
-/// with one deliberate shape difference: the history container itself
-/// stays a tracked (observable) property on `MangaReaderViewModel` and is
-/// reached through the `Reading` closures, because `MangaReaderView`
-/// observes only the view model — hosting the state here would silently
-/// stop the chrome's back/forward buttons from refreshing.
+/// ordinary page turns. Observable history is owned here; view-model computed
+/// properties forward reads without duplicating state or observation signals.
 @MainActor
+@Observable
 final class MangaReaderNavigationCoordinator {
     /// How a single restore attempt against reader content ended. The view
     /// model performs the actual jump (prefetch cancellation, content
@@ -30,27 +28,26 @@ final class MangaReaderNavigationCoordinator {
 
     /// Reading context and load effects supplied by the owning view model.
     struct Reading {
-        var navigationHistory: @MainActor () -> ReaderNavigationHistory<MangaReadingPosition>
-        var setNavigationHistory: @MainActor (ReaderNavigationHistory<MangaReadingPosition>) -> Void
         var stableReadingPosition: @MainActor () -> MangaReadingPosition?
         var restorePosition: @MainActor (MangaReadingPosition) async -> RestoreAttemptOutcome
         var scheduleAdjacentPrefetch: @MainActor (Int) -> Void
     }
 
     private let reading: Reading
-    private var linearReadingHistoryExpiration = ReaderNavigationLinearReadingExpiration<MangaReadingPosition>()
-    private var navigationRequestGeneration = 0
+    private var navigationHistory = ReaderNavigationHistory<MangaReadingPosition>()
+    @ObservationIgnored private var linearReadingHistoryExpiration = ReaderNavigationLinearReadingExpiration<MangaReadingPosition>()
+    @ObservationIgnored private var navigationRequestGeneration = 0
 
     init(reading: Reading) {
         self.reading = reading
     }
 
     var canNavigateBack: Bool {
-        reading.stableReadingPosition() != nil && reading.navigationHistory().canGoBack
+        reading.stableReadingPosition() != nil && navigationHistory.canGoBack
     }
 
     var canNavigateForward: Bool {
-        reading.stableReadingPosition() != nil && reading.navigationHistory().canGoForward
+        reading.stableReadingPosition() != nil && navigationHistory.canGoForward
     }
 
     func navigateBack() async {
@@ -75,29 +72,29 @@ final class MangaReaderNavigationCoordinator {
         to targetPosition: MangaReadingPosition
     ) {
         guard let sourcePosition, sourcePosition != targetPosition else { return }
-        var navigationHistory = reading.navigationHistory()
         navigationHistory.recordNonlinearJump(from: sourcePosition, to: targetPosition)
-        reading.setNavigationHistory(navigationHistory)
         armLinearReadingHistoryExpirationIfNeeded()
     }
 
     func recordLinearReading(direction: ReaderNavigationLinearReadingDirection) {
-        let navigationHistory = reading.navigationHistory()
         guard navigationHistory.canGoBack || navigationHistory.canGoForward else {
             linearReadingHistoryExpiration.reset()
             return
         }
         guard let position = reading.stableReadingPosition() else { return }
         if linearReadingHistoryExpiration.recordLinearReading(at: position, direction: direction) {
-            var clearedHistory = navigationHistory
-            clearedHistory.clear()
-            reading.setNavigationHistory(clearedHistory)
+            navigationHistory.clear()
         }
     }
 
     func resetHistory() {
-        reading.setNavigationHistory(ReaderNavigationHistory())
+        invalidatePendingNavigation()
+        navigationHistory = ReaderNavigationHistory()
         linearReadingHistoryExpiration.reset()
+    }
+
+    func invalidatePendingNavigation() {
+        navigationRequestGeneration += 1
     }
 
     private enum NavigationRestoreDirection {
@@ -128,9 +125,9 @@ final class MangaReaderNavigationCoordinator {
     private func navigationTarget(for direction: NavigationRestoreDirection) -> MangaReadingPosition? {
         switch direction {
         case .back:
-            reading.navigationHistory().peekBack()
+            navigationHistory.peekBack()
         case .forward:
-            reading.navigationHistory().peekForward()
+            navigationHistory.peekForward()
         }
     }
 
@@ -138,31 +135,26 @@ final class MangaReaderNavigationCoordinator {
         direction: NavigationRestoreDirection,
         sourcePosition: MangaReadingPosition
     ) {
-        var navigationHistory = reading.navigationHistory()
         switch direction {
         case .back:
             navigationHistory.commitBack(from: sourcePosition)
         case .forward:
             navigationHistory.commitForward(from: sourcePosition)
         }
-        reading.setNavigationHistory(navigationHistory)
         armLinearReadingHistoryExpirationIfNeeded()
     }
 
     private func discardNavigationTarget(for direction: NavigationRestoreDirection) {
-        var navigationHistory = reading.navigationHistory()
         switch direction {
         case .back:
             navigationHistory.discardBackCandidate()
         case .forward:
             navigationHistory.discardForwardCandidate()
         }
-        reading.setNavigationHistory(navigationHistory)
         resetLinearReadingHistoryExpirationIfHistoryIsEmpty()
     }
 
     private func armLinearReadingHistoryExpirationIfNeeded() {
-        let navigationHistory = reading.navigationHistory()
         guard navigationHistory.canGoBack || navigationHistory.canGoForward,
               let position = reading.stableReadingPosition() else {
             linearReadingHistoryExpiration.reset()
@@ -172,7 +164,6 @@ final class MangaReaderNavigationCoordinator {
     }
 
     private func resetLinearReadingHistoryExpirationIfHistoryIsEmpty() {
-        let navigationHistory = reading.navigationHistory()
         guard !navigationHistory.canGoBack, !navigationHistory.canGoForward else { return }
         linearReadingHistoryExpiration.reset()
     }

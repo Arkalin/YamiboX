@@ -92,9 +92,11 @@ private final class YamiboAppStartup {
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let imageMemoryCache = YamiboUIImageMemoryCache()
+        let offlineCacheCoordinator = OfflineCacheContinuedProcessingCoordinator()
         let appContext = YamiboAppContext(
             sessionStore: sessionStore,
             ordinaryImageCache: imageMemoryCache,
+            offlineCacheRunObserver: offlineCacheCoordinator,
             websiteDataClearer: WebKitWebsiteDataClearer(),
             wafRecoverer: webSessionCoordinator
         )
@@ -102,7 +104,10 @@ private final class YamiboAppStartup {
         YamiboAppDelegate.appContext = appContext
         #endif
         if YamiboForumEnvironment.current.supportsBackgroundRelaunch {
-            Self.registerMangaOfflineCacheBackgroundTasks(appContext: appContext)
+            Self.registerMangaOfflineCacheBackgroundTasks(
+                appContext: appContext,
+                coordinator: offlineCacheCoordinator
+            )
         #if os(iOS) && canImport(BackgroundTasks)
             FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
         #endif
@@ -128,11 +133,14 @@ private final class YamiboAppStartup {
         return AppTabLaunchResolver.resolveInitialTab(homePage: settings.system.homePage)
     }
 
-    private static func registerMangaOfflineCacheBackgroundTasks(appContext: YamiboAppContext) {
+    private static func registerMangaOfflineCacheBackgroundTasks(
+        appContext: YamiboAppContext,
+        coordinator: OfflineCacheContinuedProcessingCoordinator
+    ) {
         #if os(iOS) && canImport(BackgroundTasks)
         guard #available(iOS 26.0, *) else { return }
         OfflineCacheContinuedProcessingCoordinator.configureLaunchHandler(
-            coordinator: appContext.offlineCacheContinuedProcessingCoordinator,
+            coordinator: coordinator,
             continueQueue: {
                 let executor = await appContext.makeOfflineCacheQueueExecutor()
                 try? await executor.continueQueue(submitsUserInitiatedRun: false)

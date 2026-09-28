@@ -78,41 +78,20 @@ enum NovelAttributedTextFactory {
         titleWeight: ReaderPlatformFontWeight = .bold
     ) -> NSAttributedString {
         let rendered = NSMutableAttributedString()
-        let textColor = textColor ?? readerThemeTextUIColor(for: settings.backgroundStyle)
         let segments = NovelChapterTextComponents.split(text: text, chapterTitle: chapterTitle)
-        let pointSize = baseFontSize * settings.fontScale
-        let firstBodyParagraphStyle = makeParagraphStyle(
-            settings: settings,
-            pointSize: pointSize,
-            appliesFirstLineIndent: startsAtParagraphBoundary
+        let attributes = makeTextAttributes(
+            settings: settings, baseFontSize: baseFontSize, textColor: textColor,
+            titleWeight: titleWeight, startsAtParagraphBoundary: startsAtParagraphBoundary
         )
-        let laterBodyParagraphStyle = makeParagraphStyle(
-            settings: settings,
-            pointSize: pointSize,
-            appliesFirstLineIndent: true
-        )
-        let titleParagraphStyle = makeParagraphStyle(settings: settings, pointSize: pointSize, appliesFirstLineIndent: false)
-        let bodyAttributes: [NSAttributedString.Key: Any] = [
-            .font: settings.fontFamily.platformFont(size: pointSize, weight: bodyFontWeight),
-            .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
-            .foregroundColor: textColor,
-            .paragraphStyle: firstBodyParagraphStyle,
-        ]
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: settings.fontFamily.platformFont(size: pointSize, weight: titleWeight),
-            .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
-            .foregroundColor: textColor,
-            .paragraphStyle: titleParagraphStyle,
-        ]
 
         if let title = segments.title {
-            rendered.append(NSAttributedString(string: title, attributes: titleAttributes))
+            rendered.append(NSAttributedString(string: title, attributes: attributes.title))
             if let body = segments.body {
                 appendBody(
                     body,
                     to: rendered,
-                    attributes: bodyAttributes,
-                    laterParagraphStyle: laterBodyParagraphStyle,
+                    attributes: attributes.body,
+                    laterParagraphStyle: attributes.laterBodyParagraphStyle,
                     startsAtParagraphBoundary: startsAtParagraphBoundary
                 )
             }
@@ -120,8 +99,8 @@ enum NovelAttributedTextFactory {
             appendBody(
                 text,
                 to: rendered,
-                attributes: bodyAttributes,
-                laterParagraphStyle: laterBodyParagraphStyle,
+                attributes: attributes.body,
+                laterParagraphStyle: attributes.laterBodyParagraphStyle,
                 startsAtParagraphBoundary: startsAtParagraphBoundary
             )
         }
@@ -140,33 +119,12 @@ enum NovelAttributedTextFactory {
         titleWeight: ReaderPlatformFontWeight = .bold
     ) -> NSAttributedString {
         let rendered = NSMutableAttributedString()
-        let textColor = textColor ?? readerThemeTextUIColor(for: settings.backgroundStyle)
-        let pointSize = baseFontSize * settings.fontScale
-        let firstBodyParagraphStyle = makeParagraphStyle(
-            settings: settings,
-            pointSize: pointSize,
-            appliesFirstLineIndent: startsAtParagraphBoundary
+        let attributes = makeTextAttributes(
+            settings: settings, baseFontSize: baseFontSize, textColor: textColor,
+            titleWeight: titleWeight, startsAtParagraphBoundary: startsAtParagraphBoundary
         )
-        let laterBodyParagraphStyle = makeParagraphStyle(
-            settings: settings,
-            pointSize: pointSize,
-            appliesFirstLineIndent: true
-        )
-        let titleParagraphStyle = makeParagraphStyle(settings: settings, pointSize: pointSize, appliesFirstLineIndent: false)
-        let bodyAttributes: [NSAttributedString.Key: Any] = [
-            .font: settings.fontFamily.platformFont(size: pointSize, weight: bodyFontWeight),
-            .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
-            .foregroundColor: textColor,
-            .paragraphStyle: firstBodyParagraphStyle,
-        ]
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: settings.fontFamily.platformFont(size: pointSize, weight: titleWeight),
-            .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
-            .foregroundColor: textColor,
-            .paragraphStyle: titleParagraphStyle,
-        ]
 
-        rendered.append(NSAttributedString(string: text, attributes: bodyAttributes))
+        rendered.append(NSAttributedString(string: text, attributes: attributes.body))
 
         if !startsAtParagraphBoundary {
             for range in NovelParagraphIndentPlanner.indentedParagraphRangesAfterFirst(in: text) {
@@ -174,24 +132,65 @@ enum NovelAttributedTextFactory {
                 guard utf16Range.length > 0 else { continue }
                 rendered.addAttribute(
                     .paragraphStyle,
-                    value: laterBodyParagraphStyle,
+                    value: attributes.laterBodyParagraphStyle,
                     range: utf16Range
                 )
             }
         }
 
         if let titleRange = titleRange(from: chapterTitleRange, in: text) {
-            rendered.addAttributes(titleAttributes, range: titleRange)
+            rendered.addAttributes(attributes.title, range: titleRange)
         }
         applyInlineTextStyles(
             inlineTextStyles,
             to: rendered,
             text: text,
             settings: settings,
-            pointSize: pointSize
+            pointSize: attributes.pointSize
         )
 
         return rendered
+    }
+
+    private struct TextAttributes {
+        let pointSize: Double
+        let body: [NSAttributedString.Key: Any]
+        let title: [NSAttributedString.Key: Any]
+        let laterBodyParagraphStyle: NSParagraphStyle
+    }
+
+    private static func makeTextAttributes(
+        settings: NovelReaderAppearanceSettings,
+        baseFontSize: Double,
+        textColor: ReaderPlatformColor?,
+        titleWeight: ReaderPlatformFontWeight,
+        startsAtParagraphBoundary: Bool
+    ) -> TextAttributes {
+        let textColor = textColor ?? readerThemeTextUIColor(for: settings.backgroundStyle)
+        let pointSize = baseFontSize * settings.fontScale
+        let firstBodyParagraphStyle = makeParagraphStyle(
+            settings: settings, pointSize: pointSize, appliesFirstLineIndent: startsAtParagraphBoundary
+        )
+        let laterBodyParagraphStyle = makeParagraphStyle(
+            settings: settings, pointSize: pointSize, appliesFirstLineIndent: true
+        )
+        let titleParagraphStyle = makeParagraphStyle(settings: settings, pointSize: pointSize, appliesFirstLineIndent: false)
+        return TextAttributes(
+            pointSize: pointSize,
+            body: [
+                .font: settings.fontFamily.platformFont(size: pointSize, weight: bodyFontWeight),
+                .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
+                .foregroundColor: textColor,
+                .paragraphStyle: firstBodyParagraphStyle,
+            ],
+            title: [
+                .font: settings.fontFamily.platformFont(size: pointSize, weight: titleWeight),
+                .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
+                .foregroundColor: textColor,
+                .paragraphStyle: titleParagraphStyle,
+            ],
+            laterBodyParagraphStyle: laterBodyParagraphStyle
+        )
     }
 
     static func makeParagraphStyle(settings: NovelReaderAppearanceSettings) -> NSMutableParagraphStyle {

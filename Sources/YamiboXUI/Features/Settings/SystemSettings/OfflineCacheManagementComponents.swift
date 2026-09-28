@@ -15,13 +15,18 @@ struct OfflineCacheManagementGroupScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                if let failure = viewModel.loadFailure {
+                    LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                        Task { await viewModel.refreshOfflineCacheManagement() }
+                    }
+                }
                 if let row {
                     ForEach(row.entries) { entry in
                         OfflineCacheManagementEntryRowView(entry: entry) {
                             viewModel.requestOfflineCacheEntryDeletion(id: entry.id)
                         }
                     }
-                } else {
+                } else if viewModel.loadFailure == nil {
                     OfflineCacheManagementEmptyState()
                 }
             }
@@ -49,7 +54,7 @@ struct OfflineCacheManagementGroupScreen: View {
     }
 
     private func dismissIfGroupMissing() {
-        if row == nil {
+        if row == nil, viewModel.loadFailure == nil {
             dismiss()
         }
     }

@@ -8,7 +8,7 @@ typealias AtomicSettingsUpdater = @Sendable (
 /// Optimistic presentation backed by atomic, field-level settings mutations.
 @MainActor
 protocol AppSettingsPersisting: SystemSettingsActivityReporting {
-    var dependencies: SettingsDependencies { get }
+    var settingsStore: SettingsStore { get }
 }
 
 extension AppSettingsPersisting {
@@ -38,7 +38,7 @@ extension AppSettingsPersisting {
                 if let updateSettings {
                     _ = try await updateSettings(mutate)
                 } else {
-                    _ = try await dependencies.settingsStore.update(mutate)
+                    _ = try await settingsStore.update(mutate)
                 }
                 succeeded = true
                 return true

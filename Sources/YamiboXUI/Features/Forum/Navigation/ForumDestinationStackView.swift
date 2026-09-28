@@ -7,11 +7,13 @@ import YamiboXCore
 struct ForumDestinationStackView<Root: View>: View {
     @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     private let navigator: ForumDestinationNavigator
+    private let appModel: YamiboAppModel
     private let root: Root
     private let path: Binding<[ForumDestination]>?
 
-    init(navigator: ForumDestinationNavigator, path: Binding<[ForumDestination]>? = nil, @ViewBuilder root: () -> Root) {
+    init(navigator: ForumDestinationNavigator, appModel: YamiboAppModel, path: Binding<[ForumDestination]>? = nil, @ViewBuilder root: () -> Root) {
         self.navigator = navigator
+        self.appModel = appModel
         self.path = path
         self.root = root()
     }
@@ -21,7 +23,7 @@ struct ForumDestinationStackView<Root: View>: View {
         return NavigationStack(path: path ?? $navigator.path) {
             root
                 .navigationDestination(for: ForumDestination.self) { destination in
-                    ForumDestinationScreen(destination: destination, navigator: navigator)
+                    ForumDestinationScreen(destination: destination, navigator: navigator, appModel: appModel)
                         .environment(\.forumBrowserSourceIsList, fromBrowserList)
                 }
         }

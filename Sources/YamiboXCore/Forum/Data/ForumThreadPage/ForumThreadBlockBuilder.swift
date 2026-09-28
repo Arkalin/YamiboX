@@ -74,7 +74,7 @@ final class ForumThreadBlockBuilder {
         }
 
         let previousStyle = currentStyle
-        currentStyle = currentStyle.merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: element.attr("style")))
+        currentStyle = currentStyle.merged(with: ForumTextStyleRules.style(fromStyleAttribute: element.attr("style")))
         defer { currentStyle = previousStyle }
         let tagName = element.tagName().lowercased()
         switch tagName {
@@ -129,7 +129,7 @@ final class ForumThreadBlockBuilder {
                 try parseChildren(of: element)
             }
         case "span":
-            try withTextStyle(ForumThreadTextStyleParser.style(fromStyleAttribute: element.attr("style"))) {
+            try withTextStyle(ForumTextStyleRules.style(fromStyleAttribute: element.attr("style"))) {
                 try parseChildren(of: element)
             }
         case "p":
@@ -242,14 +242,14 @@ final class ForumThreadBlockBuilder {
         let tableRows = try rows.map { row in
             try row.children().array().filter { ["td", "th"].contains($0.tagName().lowercased()) }.map { cell in
                 let tagName = cell.tagName().lowercased()
-                let rowStyle = currentStyle.merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: row.attr("style")))
+                let rowStyle = currentStyle.merged(with: ForumTextStyleRules.style(fromStyleAttribute: row.attr("style")))
                 let cellStyle = rowStyle
                     .merged(with: ForumThreadTextStyle(isBold: tagName == "th"))
-                    .merged(with: ForumThreadTextStyleParser.style(fromStyleAttribute: cell.attr("style")))
+                    .merged(with: ForumTextStyleRules.style(fromStyleAttribute: cell.attr("style")))
                 let background = cellStyle.backgroundHex
-                    ?? ForumThreadTextStyleParser.normalizedColorHex(cell.attr("bgcolor"))
-                    ?? ForumThreadTextStyleParser.normalizedColorHex(row.attr("bgcolor"))
-                    ?? ForumThreadTextStyleParser.normalizedColorHex(element.attr("bgcolor"))
+                    ?? ForumTextStyleRules.normalizedColorHex(cell.attr("bgcolor"))
+                    ?? ForumTextStyleRules.normalizedColorHex(row.attr("bgcolor"))
+                    ?? ForumTextStyleRules.normalizedColorHex(element.attr("bgcolor"))
                 return ForumThreadTableCell(
                     isHeader: tagName == "th",
                     blocks: try nestedBlocks(
@@ -511,7 +511,7 @@ final class ForumThreadBlockBuilder {
     }
 
     private func textAlignment(from element: Element) -> ForumThreadTextAlignment? {
-        let css = ForumThreadTextStyleParser.styleDeclarations(from: element.attr("style"))
+        let css = ForumTextStyleRules.styleDeclarations(from: element.attr("style"))
         switch (css["text-align"] ?? element.attr("align")).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "center":
             return .center

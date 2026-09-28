@@ -189,7 +189,7 @@ public final class MangaReaderWorkflow {
         for document: MangaReaderProjection,
         context: MangaLaunchContext
     ) -> MangaDirectory {
-        let title = context.displayTitle.mangaReaderTrimmedNonEmpty ?? document.chapterTitle
+        let title = context.displayTitle.nilIfBlank ?? document.chapterTitle
         return MangaDirectory(
             cleanBookName: title,
             strategy: .pendingSearch,
@@ -443,26 +443,7 @@ public final class MangaReaderWorkflow {
             return presentation
         }
 
-        let document = try await projectionLoader.loadReaderProjection(
-            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
-        )
-        try Task.checkCancellation()
-
-        let targetPosition = MangaReadingPosition(tid: document.tid, localIndex: 0)
-        let result = window.insertAdjacentDocument(document, preserving: targetPosition)
-        switch result {
-        case .changed:
-            break
-        case let .unchanged(_, reason):
-            if reason != .duplicateChapter {
-                _ = window.reset(to: document, position: targetPosition)
-            }
-        }
-
-        self.window = window
-        let targetIndex = MangaReaderPageProjection.resolvedPageIndex(for: window)
-        presentation = loadedPresentation(from: window, placementPageIndex: targetIndex)
-        return presentation
+        return try await loadChapterForNavigation(chapter, localIndex: 0, window: window)
     }
 
     @discardableResult
@@ -486,12 +467,23 @@ public final class MangaReaderWorkflow {
             throw YamiboError.underlying("Manga reader target chapter is unavailable.")
         }
 
+        return try await loadChapterForNavigation(chapter, localIndex: position.localIndex, window: window)
+    }
+
+    /// Both navigation entry points keep their own target lookup and cached fast
+    /// path, but share the loading and publication transaction.
+    private nonisolated(nonsending) func loadChapterForNavigation(
+        _ chapter: MangaChapter,
+        localIndex: Int,
+        window initialWindow: MangaChapterWindow
+    ) async throws -> MangaReaderPresentation {
+        var window = initialWindow
         let document = try await projectionLoader.loadReaderProjection(
             MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
         )
         try Task.checkCancellation()
 
-        let targetPosition = MangaReadingPosition(tid: document.tid, localIndex: position.localIndex)
+        let targetPosition = MangaReadingPosition(tid: document.tid, localIndex: localIndex)
         let result = window.insertAdjacentDocument(document, preserving: targetPosition)
         switch result {
         case .changed:
@@ -695,23 +687,6 @@ public final class MangaReaderWorkflow {
         let latestChapterText = MangaChapterDisplayFormatter.latestChapter(in: window.directory.chapters).map {
             L10n.string("manga.latest_chapter", MangaChapterDisplayFormatter.displayNumber(for: $0))
         }
-        let forcedRemaining = directoryPanelCommandState.forcedSearchShortcutRemaining
-        let isSearchMode = forcedRemaining != nil || window.directory.strategy != .tag
-        let updateTitle: String
-        if directoryPanelCommandState.isUpdating {
-            updateTitle = L10n.string("common.updating")
-        } else if directoryPanelCommandState.cooldownRemaining > 0 {
-            updateTitle = "\(directoryPanelCommandState.cooldownRemaining)s"
-        } else if let forcedRemaining {
-            updateTitle = forcedRemaining > 0
-                ? L10n.string("manga.global_search_countdown", forcedRemaining)
-                : L10n.string("manga.global_search")
-        } else if window.directory.strategy != .tag {
-            updateTitle = L10n.string("manga.global_search")
-        } else {
-            updateTitle = L10n.string("reader.cache_action.update")
-        }
-
         return MangaDirectoryPanelPresentation(
             directoryTitle: window.directory.cleanBookName,
             directoryID: window.directory.id,
@@ -719,10 +694,10 @@ public final class MangaReaderWorkflow {
             currentChapterTID: window.resolvedPosition?.tid,
             latestChapterText: latestChapterText,
             sortOrder: settings.directorySortOrder,
-            updateButtonTitle: updateTitle,
-            isUpdateButtonEnabled: !directoryPanelCommandState.isUpdating && directoryPanelCommandState.cooldownRemaining <= 0,
-            isSearchMode: isSearchMode,
-            shouldForceSearchOnUpdate: forcedRemaining != nil,
+            updateButtonTitle: directoryPanelCommandState.updateButtonTitle(strategy: window.directory.strategy),
+            isUpdateButtonEnabled: directoryPanelCommandState.isUpdateButtonEnabled,
+            isSearchMode: directoryPanelCommandState.isSearchMode(strategy: window.directory.strategy),
+            shouldForceSearchOnUpdate: directoryPanelCommandState.shouldForceSearchOnUpdate,
             isUpdating: directoryPanelCommandState.isUpdating,
             editDraft: directoryWorkflow.editDraft(for: window.directory, currentTID: window.resolvedPosition?.tid),
             errorMessage: directoryPanelCommandState.errorMessage,

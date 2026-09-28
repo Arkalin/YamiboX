@@ -1,13 +1,5 @@
 import Foundation
 
-public protocol ForumThreadFavoriteRemoteOperating: Sendable {
-    func addThreadFavorite(threadID: String, formHash: String?, resolveRemoteFavorite: Bool) async throws -> Favorite?
-    func deleteFavorite(remoteFavoriteID: String) async throws
-    func remoteFavorite(forThreadID threadID: String, maxPages: Int) async throws -> Favorite?
-}
-
-extension FavoriteRepository: ForumThreadFavoriteRemoteOperating {}
-
 /// Local-first quick actions for single favorites (reader star button, detail
 /// pages, favorite item menus), plus the shared decision/remember layer every
 /// favorite entry point routes through.

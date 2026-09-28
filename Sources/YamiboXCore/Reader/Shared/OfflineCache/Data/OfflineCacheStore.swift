@@ -9,8 +9,9 @@ actor OfflineCacheStore {
     let imagesDirectory: URL
     let mangaSourcePagesDirectory: URL
     let novelSourcePagesDirectory: URL
-    private let updateNotifier = OfflineCacheUpdateNotifier()
+    private let updateNotifier = StoreInvalidationBroadcaster<Void>()
     private var didRecoverQueueState = false
+    private var queueRecoveryTask: Task<Void, Error>?
     private static let mangaReaderKind = "manga"
     nonisolated(unsafe) let sourcePageCache: NSCache<NSString, SourcePageCacheEntry> = {
         let cache = NSCache<NSString, SourcePageCacheEntry>()
@@ -58,7 +59,7 @@ actor OfflineCacheStore {
 
     func mangaOfflineCacheMemberships(forOwnerName ownerName: String) async -> [MangaOfflineCacheMembership] {
         await ensureQueueRecoveredBestEffort()
-        guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return [] }
+        guard let ownerName = ownerName.nilIfBlank else { return [] }
         do {
             return try await database.read { db in
                 try Self.memberships(
@@ -173,7 +174,7 @@ actor OfflineCacheStore {
 
     func removeMangaOfflineCacheMemberships(forOwnerName ownerName: String) async throws {
         try await ensureQueueRecovered()
-        guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return }
+        guard let ownerName = ownerName.nilIfBlank else { return }
         do {
             try await database.write { db in
                 let ownerName = try Self.canonicalMangaOwnerKey(ownerName, in: db)
@@ -209,10 +210,10 @@ actor OfflineCacheStore {
         try await ensureQueueRecovered()
         do {
             let result: MangaOfflineCacheEnqueueResult = try await database.write { db in
-                guard request.ownerName.mangaReaderTrimmedNonEmpty != nil else {
+                guard request.ownerName.nilIfBlank != nil else {
                     throw YamiboPersistenceError(context: "Offline cache owner is empty")
                 }
-                guard request.tid.mangaReaderTrimmedNonEmpty != nil else {
+                guard request.tid.nilIfBlank != nil else {
                     throw YamiboPersistenceError(context: "Chapter tid is empty")
                 }
                 let normalizedRequest = MangaOfflineCacheWorkRequest(
@@ -235,25 +236,16 @@ actor OfflineCacheStore {
                 if let work = try Self.rawWork(readerKind: .manga, ownerKey: normalizedRequest.ownerName, entryKey: normalizedRequest.tid, in: db) {
                     return .alreadyQueued(try Self.queueWorkProjection(from: work, in: db))
                 }
-                let work = OfflineCacheRawWork(
+                return .enqueued(try Self.enqueueNewWork(
                     readerKind: .manga,
-                    workID: UUID().uuidString,
                     ownerKey: normalizedRequest.ownerName,
                     ownerTitle: try Self.mangaOwnerTitle(normalizedRequest.ownerName, in: db),
                     entryKey: normalizedRequest.tid,
                     title: normalizedRequest.chapterTitle,
                     targetImageURLs: normalizedRequest.targetImageURLs,
-                    completedImageURLs: [],
                     retainsInlineImages: false,
-                    state: .queued,
-                    failureMessage: nil,
-                    currentBytesPerSecond: 0,
-                    insertionIndex: try Self.nextQueueInsertionIndex(in: db),
-                    createdAt: Date(),
-                    updatedAt: Date()
-                )
-                try Self.save(work, in: db)
-                return .enqueued(try Self.queueWorkProjection(from: work, in: db))
+                    in: db
+                ))
             }
             if result.enqueuedWork != nil {
                 notifyOfflineCacheDidChange()
@@ -273,20 +265,19 @@ actor OfflineCacheStore {
         notifyOfflineCacheDidChange()
     }
 
-    func offlineCacheQueueRunState() async -> OfflineCacheQueueRunState {
-        await ensureQueueRecoveredBestEffort()
+    func offlineCacheQueueRunState() async throws -> OfflineCacheQueueRunState {
+        try await ensureQueueRecovered()
         do {
             return try await database.read { db in
                 try Self.queueRunState(in: db)
             }
         } catch {
-            YamiboLog.offlineCache.error("Failed to read offline cache queue run state: \(error)")
-            return .paused
+            throw offlineCachePersistenceError(from: error)
         }
     }
 
     func setOfflineCacheQueueRunState(_ state: OfflineCacheQueueRunState) async throws {
-        didRecoverQueueState = true
+        try await ensureQueueRecovered()
         do {
             try await database.write { db in
                 try Self.setQueueRunState(state, in: db)
@@ -369,15 +360,24 @@ actor OfflineCacheStore {
     }
 
     func recoverQueueStateAfterRestart() async throws {
+        if let queueRecoveryTask {
+            try await queueRecoveryTask.value
+            return
+        }
         guard !didRecoverQueueState else { return }
-        didRecoverQueueState = true
-        do {
+        let task = Task { [database] in
             try await database.write { db in
                 if try Self.queueRunState(in: db) == .running {
                     try Self.setQueueRunState(.paused, in: db)
                     try Self.pauseRunningOfflineCacheWorks(in: db)
                 }
             }
+        }
+        queueRecoveryTask = task
+        defer { queueRecoveryTask = nil }
+        do {
+            try await task.value
+            didRecoverQueueState = true
         } catch {
             YamiboLog.offlineCache.error("Failed to recover offline cache queue state after restart: \(error)")
             throw error
@@ -388,10 +388,9 @@ actor OfflineCacheStore {
     // recovery before touching queue state. The two wrappers below replace the
     // per-method `try`/`try?` prefix boilerplate so that "does this operation
     // tolerate a failed recovery?" is a visible, named decision at each call
-    // site instead of a one-character difference. Neither variant retries a
-    // failed recovery: `recoverQueueStateAfterRestart()` sets its
-    // `didRecoverQueueState` flag before attempting the write, which is the
-    // exact behavior every call site already had.
+    // site instead of a one-character difference. Concurrent callers await the
+    // same recovery. Only a successful recovery is remembered, allowing a later
+    // explicit refresh to retry after a transient persistence failure.
     //
     // They are internal rather than private only because the call sites live
     // in this actor's sibling extension files; the actor itself is internal,
@@ -406,24 +405,26 @@ actor OfflineCacheStore {
         try await recoverQueueStateAfterRestart()
     }
 
-    /// Best-effort variant for accessors that have no error channel and must
-    /// degrade to an empty/default answer (`nil`, `[]`, `0`, `.paused`)
-    /// instead of failing. Swallowing the error here loses no signal:
-    /// `recoverQueueStateAfterRestart()` already logs it before rethrowing.
+    /// Best-effort variant for regenerable cache accessors without an error
+    /// channel. Queue and management queries must use the throwing variant.
     func ensureQueueRecoveredBestEffort() async {
         try? await recoverQueueStateAfterRestart()
     }
 
     private func normalizedID(ownerName: String, tid: String) -> MangaOfflineCacheMembershipID? {
-        guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty,
-              let tid = tid.mangaReaderTrimmedNonEmpty else {
+        guard let ownerName = ownerName.nilIfBlank,
+              let tid = tid.nilIfBlank else {
             return nil
         }
         return MangaOfflineCacheMembershipID(ownerName: ownerName, tid: tid)
     }
 
+    public nonisolated func notifyIdentityMigrationCommitted() {
+        notifyOfflineCacheDidChange()
+    }
+
     nonisolated func notifyOfflineCacheDidChange() {
-        updateNotifier.notify()
+        updateNotifier.post(())
     }
 
     func ensureBaseDirectoryExists() throws {
@@ -485,10 +486,10 @@ actor OfflineCacheStore {
     }
 
     private static func normalizedMembership(_ membership: MangaOfflineCacheMembership) throws -> MangaOfflineCacheMembership {
-        guard membership.ownerName.mangaReaderTrimmedNonEmpty != nil else {
+        guard membership.ownerName.nilIfBlank != nil else {
             throw YamiboPersistenceError(context: "Offline cache owner is empty")
         }
-        guard membership.tid.mangaReaderTrimmedNonEmpty != nil else {
+        guard membership.tid.nilIfBlank != nil else {
             throw YamiboPersistenceError(context: "Chapter tid is empty")
         }
         guard membership.sourcePage.thread.tid == membership.tid else {
@@ -801,9 +802,9 @@ actor OfflineCacheStore {
         mangaSourcePagesDirectory: URL,
         sourcePageCache: NSCache<NSString, SourcePageCacheEntry>
     ) -> ForumThreadPage? {
-        guard let fileName = fileName?.mangaReaderTrimmedNonEmpty,
+        guard let fileName = fileName?.nilIfBlank,
               schemaVersion == 1,
-              let fingerprint = fingerprint?.mangaReaderTrimmedNonEmpty,
+              let fingerprint = fingerprint?.nilIfBlank,
               let byteCount else {
             return nil
         }
@@ -857,7 +858,7 @@ actor OfflineCacheStore {
             """,
             arguments: [ownerName, tid]
         )
-        return Set(fileNames.compactMap(\.mangaReaderTrimmedNonEmpty))
+        return Set(fileNames.compactMap(\.nilIfBlank))
     }
 
     static func mangaSourcePageFileNames(ownerName: String, in db: Database) throws -> Set<String> {
@@ -871,7 +872,7 @@ actor OfflineCacheStore {
             """,
             arguments: [ownerName]
         )
-        return Set(fileNames.compactMap(\.mangaReaderTrimmedNonEmpty))
+        return Set(fileNames.compactMap(\.nilIfBlank))
     }
 
     static func removeUnreferencedMangaSourcePageFiles(
@@ -884,7 +885,7 @@ actor OfflineCacheStore {
         let referenced = Set(try String.fetchAll(
             db,
             sql: "SELECT source_page_file_name FROM offline_cache_manga_entries WHERE source_page_file_name IS NOT NULL"
-        ).compactMap(\.mangaReaderTrimmedNonEmpty))
+        ).compactMap(\.nilIfBlank))
         for fileName in candidateFileNames where !referenced.contains(fileName) {
             do {
                 try fileManager.removeItem(at: mangaSourcePagesDirectory.appendingPathComponent(fileName, isDirectory: false))
@@ -960,37 +961,5 @@ final class SourcePageCacheEntry {
 
     init(sourcePage: ForumThreadPage) {
         self.sourcePage = sourcePage
-    }
-}
-
-private final class OfflineCacheUpdateNotifier: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuations: [UUID: AsyncStream<Void>.Continuation] = [:]
-
-    func stream() -> AsyncStream<Void> {
-        AsyncStream { continuation in
-            let id = UUID()
-            lock.withLock {
-                continuations[id] = continuation
-            }
-            continuation.onTermination = { [weak self] _ in
-                self?.removeContinuation(id: id)
-            }
-        }
-    }
-
-    func notify() {
-        let activeContinuations = lock.withLock {
-            Array(continuations.values)
-        }
-        for continuation in activeContinuations {
-            continuation.yield(())
-        }
-    }
-
-    private func removeContinuation(id: UUID) {
-        _ = lock.withLock {
-            continuations.removeValue(forKey: id)
-        }
     }
 }

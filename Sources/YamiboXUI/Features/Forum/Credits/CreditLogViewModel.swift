@@ -2,11 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol CreditLogPageLoading: Sendable {
-    func fetchCreditLog(filter: CreditLogFilter, page: Int) async throws -> CreditLogPage
-}
-
-extension UserSpaceRepository: CreditLogPageLoading {}
 
 @MainActor
 @Observable

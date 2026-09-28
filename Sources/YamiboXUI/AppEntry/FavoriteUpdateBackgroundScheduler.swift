@@ -71,22 +71,7 @@ public enum FavoriteUpdateBackgroundScheduler {
     @MainActor
     private static func makeMonitor(appContext: YamiboAppContext) -> FavoriteUpdateMonitor {
         let dependencies = appContext.libraryDependencies
-        return FavoriteUpdateMonitor(
-            updateStore: dependencies.favoriteUpdateStore,
-            libraryStore: dependencies.localFavoriteLibraryStore,
-            makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
-            settingsStore: dependencies.settingsStore,
-            notifier: UserNotificationFavoriteUpdateNotifier(),
-            mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            makeMangaDirectoryWorkflow: { searchForumID in
-                MangaDirectoryWorkflow(
-                    repository: await dependencies.makeMangaDirectoryRepository(),
-                    store: dependencies.mangaDirectoryStore,
-                    configuration: MangaDirectoryWorkflowConfiguration(searchForumID: searchForumID),
-                    searchCooldownState: dependencies.mangaDirectorySearchCooldownState
-                )
-            }
-        )
+        return FavoriteUpdateMonitor.makeForLibrary(dependencies)
     }
 }
 #endif

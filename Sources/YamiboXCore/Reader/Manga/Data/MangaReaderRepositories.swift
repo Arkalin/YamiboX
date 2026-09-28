@@ -95,8 +95,7 @@ public struct MangaDirectoryRefreshSnapshot: Sendable {
     }
 }
 
-public protocol MangaDirectoryPersisting: MangaDirectoryRenaming {
-    func directory(id: MangaDirectoryID) async throws -> MangaDirectory?
+public protocol MangaDirectoryPersisting: MangaDirectoryRenaming, MangaDirectoryReading, MangaDirectoryChangeObserving {
     func directoryRefreshSnapshot(id: MangaDirectoryID) async throws -> MangaDirectoryRefreshSnapshot?
     func saveRefreshedDirectory(_ directory: MangaDirectory, from snapshot: MangaDirectoryRefreshSnapshot) async throws -> MangaDirectory
     /// Atomically adopts an existing discovery identity or persists a new seed.
@@ -104,61 +103,8 @@ public protocol MangaDirectoryPersisting: MangaDirectoryRenaming {
     func resolveDirectoryID(legacyName: String?, legacyIdentity: String?, chapterTID: String?) async throws -> MangaDirectoryID?
     func registerIdentity(id: MangaDirectoryID, name: String) async throws
     func identityName(id: MangaDirectoryID) async throws -> String?
-    func directory(named name: String) async throws -> MangaDirectory?
-    func directory(containingTID tid: String) async throws -> MangaDirectory?
-    /// Bulk tid → owning-directory lookup (smart-comic-mode Phase E): tids
-    /// that resolve to a directory are present in the result keyed by the
-    /// tid itself; tids with no resolved directory are simply absent — never
-    /// an error. Conformers should implement this as a single batched query
-    /// rather than looping `directory(containingTID:)` once per tid (the
-    /// design doc's "现算分组的性能要求" hard constraint #1) — see
-    /// `MangaDirectoryStore`'s override for the real single-query
-    /// implementation. The default below is a naive per-tid fallback that
-    /// exists only so lightweight test fakes don't all need updating; it
-    /// must never be the implementation favorites grouping actually runs
-    /// against in the shipping app.
-    func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory]
     func saveDirectory(_ directory: MangaDirectory) async throws
     func deleteDirectory(id: MangaDirectoryID) async throws
-    /// Instance identity carried by every element of `changes()`, kept so
-    /// listeners can hold on to their existing "is this change from the
-    /// exact instance I observe?" guard — mirrors `ContentCoverStore`/
-    /// `FavoriteLibraryStore`'s own `changeID` pattern. Defaulted below for
-    /// every conformer except the real `MangaDirectoryStore`, which never
-    /// broadcasts through this protocol and so never needs a listener to
-    /// match against it.
-    nonisolated var changeID: String { get }
-    /// Typed change feed replacing the retired `didChangeNotification`
-    /// string bus; each element is the `changeID` of the conforming instance
-    /// that made the change. Defaulted below so lightweight test fakes —
-    /// which never broadcast — don't all need updating.
-    nonisolated func changes() -> AsyncStream<String>
-}
-
-/// Shared sink backing the default `changes()`: nothing ever posts through
-/// it, so a listener on a non-broadcasting conformer parks until cancelled —
-/// the exact observable behavior of the old default, which subscribed to a
-/// notification no fake ever sent. One shared instance (not one per call)
-/// so the registered continuation stays alive for as long as the consumer
-/// keeps iterating.
-private let neverBroadcastingChangeSink = StoreChangeBroadcaster()
-
-public extension MangaDirectoryPersisting {
-    func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory] {
-        var result: [String: MangaDirectory] = [:]
-        for tid in tids {
-            if let directory = try await directory(containingTID: tid) {
-                result[tid] = directory
-            }
-        }
-        return result
-    }
-
-    nonisolated var changeID: String { "" }
-
-    nonisolated func changes() -> AsyncStream<String> {
-        neverBroadcastingChangeSink.changes()
-    }
 }
 
 /// Replaces a directory identity and its persisted references atomically.

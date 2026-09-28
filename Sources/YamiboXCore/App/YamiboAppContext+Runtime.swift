@@ -1,41 +1,23 @@
 import Foundation
 
+/// The sync service and runtime observations are projections of the same registration.
+struct AppWebDAVDataset: Sendable {
+    let participant: any WebDAVSyncParticipant
+    let changeID: String
+    let changes: @Sendable () -> AsyncStream<String>
+}
+
 extension YamiboAppContext {
     @MainActor
     package func makeRuntimeCoordinator(continuity: AppContinuityWorkflow) -> AppRuntimeCoordinator {
         AppRuntimeCoordinator(
-            observations: [
+            observations: webDAVDatasets.map { dataset in
                 .init(
-                    changeID: mangaDirectoryStore.changeID,
-                    changes: { [mangaDirectoryStore] in mangaDirectoryStore.changes() },
+                    changeID: dataset.changeID,
+                    changes: dataset.changes,
                     onChange: { continuity.localDataChanged() }
-                ),
-                .init(
-                    changeID: browsingHistoryStore.changeID,
-                    changes: { [browsingHistoryStore] in browsingHistoryStore.changes() },
-                    onChange: { continuity.localDataChanged() }
-                ),
-                .init(
-                    changeID: localFavoriteLibraryStore.changeID,
-                    changes: { [localFavoriteLibraryStore] in localFavoriteLibraryStore.changes() },
-                    onChange: { continuity.localDataChanged() }
-                ),
-                .init(
-                    changeID: settingsStore.changeID,
-                    changes: { [settingsStore] in settingsStore.changes() },
-                    onChange: { continuity.localDataChanged(touchesAppSettings: true) }
-                ),
-                .init(
-                    changeID: readingProgressStore.changeID,
-                    changes: { [readingProgressStore] in readingProgressStore.changes() },
-                    onChange: { continuity.localDataChanged() }
-                ),
-                .init(
-                    changeID: contentCoverStore.changeID,
-                    changes: { [contentCoverStore] in contentCoverStore.changes() },
-                    onChange: { continuity.localDataChanged() }
-                ),
-            ],
+                )
+            },
             operations: [
                 { [browsingHistoryWorkflow] in await browsingHistoryWorkflow.observeChanges() },
                 { [messageUnreadWorkflow] in await messageUnreadWorkflow.observeSessionChanges() },

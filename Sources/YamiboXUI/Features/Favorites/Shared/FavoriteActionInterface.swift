@@ -5,8 +5,8 @@ extension View {
     /// Full favorite-star UI wiring for a detail page, bound to one
     /// `FavoriteActionController`: the failure alert, the add/remove decision
     /// dialogs, the location picker sheet, and the transient feedback toast.
-    func favoriteActionInterface(_ actions: FavoriteActionController) -> some View {
-        modifier(FavoriteActionInterfaceModifier(actions: actions))
+    func favoriteActionInterface(_ actions: FavoriteActionController, showsTransientFeedback: Bool = true) -> some View {
+        modifier(FavoriteActionInterfaceModifier(actions: actions, showsTransientFeedback: showsTransientFeedback))
     }
 
     /// Keep the host view's identity stable while a history row selects its

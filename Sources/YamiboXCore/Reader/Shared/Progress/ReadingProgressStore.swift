@@ -54,17 +54,8 @@ public actor ReadingProgressStore {
     /// exclusion it would shadow the real novel/manga record and silently
     /// kill resume. Normal-thread restore uses the precise
     /// `load(for: .normalThread(threadID:))` lookup instead.
-    public func load(threadID: String) async -> ReadingProgressRecord? {
-        do {
-            return try await loadThrowing(threadID: threadID)
-        } catch {
-            YamiboLog.persistence.warning("load(threadID:) failed to read reading progress; treating as no recorded progress: \(error)")
-            return nil
-        }
-    }
-
-    /// Startup observation must distinguish a missing record from a failed read.
-    func loadThrowing(threadID: String) async throws -> ReadingProgressRecord? {
+    /// Only a missing record returns nil; a failed read must not reset resume state.
+    public func load(threadID: String) async throws -> ReadingProgressRecord? {
         guard let threadID = Self.trimmedNonEmpty(threadID) else { return nil }
         return try await database.read { db in
             try Self.fetchRecord(
@@ -80,27 +71,13 @@ public actor ReadingProgressStore {
         }
     }
 
-    public func loadAll() async -> [ReadingProgressRecord] {
-        do {
-            return try await database.read { db in
-                try Self.fetchAll(in: db)
-            }
-        } catch {
-            YamiboLog.persistence.warning("loadAll() failed to read reading progress list; returning empty list: \(error)")
-            return []
+    public func loadAll() async throws -> [ReadingProgressRecord] {
+        try await database.read { db in
+            try Self.fetchAll(in: db)
         }
     }
 
-    public func load(for target: FavoriteContentTarget) async -> ReadingProgressRecord? {
-        do {
-            return try await loadThrowing(for: target)
-        } catch {
-            YamiboLog.persistence.warning("load(for:) failed to read reading progress; treating as no recorded progress: \(error)")
-            return nil
-        }
-    }
-
-    func loadThrowing(for target: FavoriteContentTarget) async throws -> ReadingProgressRecord? {
+    public func load(for target: FavoriteContentTarget) async throws -> ReadingProgressRecord? {
         try await database.read { db in
             let target = try Self.canonicalTarget(target, in: db)
             return try Self.fetchRecord(
@@ -241,12 +218,10 @@ public actor ReadingProgressStore {
             return record
         }
         // Preserve unresolved legacy deletion markers and their import rules.
-        let deletions = try MangaDirectoryIdentityJSON.normalize(
-            JSONEncoder().encode(snapshot.deletions), identities: identities,
-            legacy: false, datasetID: "readingProgress"
+        let deletions = MangaIdentityDeletionRemapping.normalize(
+            snapshot.deletions, identities: identities
         )
-        return SyncRecordSnapshot(records: records,
-            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
+        return SyncRecordSnapshot(records: records, deletions: deletions)
     }
 
     private static func syncSnapshot(in db: Database) throws -> SyncRecordSnapshot<ReadingProgressRecord> {

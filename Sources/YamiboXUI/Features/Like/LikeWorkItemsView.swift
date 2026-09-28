@@ -8,7 +8,7 @@ import UIKit
 /// Mine opens a text detail sheet or image browser first; the reader's
 /// annotation panel opts into opening the saved anchor directly.
 struct LikeWorkItemsView: View {
-    let work: LikeWorkKey
+    let work: ReadingWorkKey
     let workTitle: String
     let like: LikeDependencies
     let onOpenAnchor: (LikeAnchorPayload) -> Void
@@ -20,6 +20,8 @@ struct LikeWorkItemsView: View {
 
     @State private var items: [LikeItem] = []
     @State private var hasLoaded = false
+    @State private var loadFailure: LoadFailureDetails?
+    @State private var annotationOperations = AnnotationOperationState()
     @State private var currentWorkTitle: String?
     @State private var chapterInfoByItemID: [String: String] = [:]
     @State private var searchText = ""
@@ -36,7 +38,7 @@ struct LikeWorkItemsView: View {
     @Namespace private var imageBrowserZoomNamespace
 
     init(
-        work: LikeWorkKey,
+        work: ReadingWorkKey,
         workTitle: String,
         like: LikeDependencies,
         onOpenAnchor: @escaping (LikeAnchorPayload) -> Void,
@@ -88,7 +90,13 @@ struct LikeWorkItemsView: View {
         // what caused the search bar to briefly ghost/overlap the first row.
         .overlay {
             if !hasLoaded {
-                ProgressView()
+                if let loadFailure {
+                    LoadFailureView(message: loadFailure.summary, details: loadFailure) {
+                        Task { await load() }
+                    }
+                } else {
+                    ProgressView()
+                }
             } else if items.isEmpty {
                 ContentUnavailableView(L10n.string("likes.empty_state"), systemImage: "heart")
             } else if filteredItems.isEmpty {
@@ -178,6 +186,7 @@ struct LikeWorkItemsView: View {
             Task { await deleteSelection() }
         }
         .sensoryFeedback(.selection, trigger: selectedItemIDs)
+        .annotationOperationFeedback(annotationOperations)
         .task(id: work) {
             publishAnnotationNavigationState()
             await load()
@@ -219,7 +228,9 @@ struct LikeWorkItemsView: View {
                 chapterInfo: chapterInfoByItemID[item.id],
                 onSaveNote: { note in
                     Task {
-                        _ = try? await like.likeStore.updateNote(id: item.id, note: note)
+                        await annotationOperations.perform {
+                            try await like.annotations.updateNote(id: item.id, note: note)
+                        }
                     }
                 },
                 onJumpToOriginal: {
@@ -281,14 +292,15 @@ struct LikeWorkItemsView: View {
 
     private func saveImageNote(_ note: String?, for item: LikeItem) {
         let normalizedNote = normalizedNote(note)
-        var updatedItem = item
-        updatedItem.note = normalizedNote
-        items = items.map { $0.id == item.id ? updatedItem : $0 }
-        if presentedImageItem?.id == item.id {
-            presentedImageItem = updatedItem
-        }
         Task {
-            _ = try? await like.likeStore.updateNote(id: item.id, note: normalizedNote)
+            guard await annotationOperations.perform({
+                try await like.annotations.updateNote(id: item.id, note: normalizedNote)
+            }) != nil else { return }
+            if var presented = presentedImageItem, presented.id == item.id {
+                presented.note = normalizedNote
+                presentedImageItem = presented
+            }
+            await load()
         }
     }
 
@@ -300,6 +312,7 @@ struct LikeWorkItemsView: View {
     private func load() async {
         loadGeneration += 1
         let generation = loadGeneration
+        loadFailure = nil
         var currentWork = work
         var resolvedTitle: String?
         if work.kind == .manga {
@@ -309,7 +322,14 @@ struct LikeWorkItemsView: View {
             }
             resolvedTitle = try? await like.mangaDirectoryStore.identityName(id: directoryID)
         }
-        let fetched = await like.likeStore.likes(for: currentWork)
+        let fetched: [LikeItem]
+        do { fetched = try await like.likeStore.likes(for: currentWork) }
+        catch {
+            guard generation == loadGeneration, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            loadFailure = LoadFailureDetails(error: error)
+            annotationOperations.report(error)
+            return
+        }
         let sorted: [LikeItem]
         let chapterInfo: [String: String]
         switch work.kind {
@@ -335,10 +355,7 @@ struct LikeWorkItemsView: View {
 
     private func delete(_ item: LikeItem) {
         Task {
-            try? await like.likeStore.delete(id: item.id)
-            if item.kind == .image {
-                try? await like.likeImageStore.delete(id: item.id)
-            }
+            await annotationOperations.perform { try await like.annotations.removeLikes([item]) }
             await load()
         }
     }
@@ -390,12 +407,10 @@ struct LikeWorkItemsView: View {
 
     private func deleteSelection() async {
         let ids = selectedItemIDs.intersection(filteredItems.map(\.id))
-        let imageIDs = items.filter { $0.kind == .image && ids.contains($0.id) }.map(\.id)
-        try? await like.likeStore.delete(ids: Array(ids))
-        for imageID in imageIDs {
-            try? await like.likeImageStore.delete(id: imageID)
-        }
-        setSelecting(false)
+        let succeeded = await annotationOperations.perform {
+            try await like.annotations.removeLikes(items.filter { ids.contains($0.id) })
+        } != nil
+        if succeeded { setSelecting(false) }
         await load()
     }
 

@@ -2,8 +2,15 @@ import Foundation
 
 /// Everything the account surface ("Mine" tab) needs from the composition
 /// root: session/profile/check-in plus the offline cache queue it manages.
-/// The readers embed this package for their cache queue sheets.
 public struct AccountDependencies: Sendable {
+    public var cacheQueue: OfflineCacheQueueDependencies {
+        OfflineCacheQueueDependencies(
+            offlineCacheStore: offlineCacheStore,
+            mangaDirectoryStore: mangaDirectoryStore,
+            makeOfflineCacheQueueExecutor: makeOfflineCacheQueueExecutor
+        )
+    }
+
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
     public let accountSwitcher: AccountSwitchCoordinator?

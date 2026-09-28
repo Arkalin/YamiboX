@@ -297,7 +297,7 @@ struct ImageBrowserView: View {
     private func saveImage() async {
         await performImageAction { item in
             let data = try await imageData(for: item)
-            let saver = MangaImagePhotoSaver()
+            let saver = ImagePhotoSaver()
             try await saver.saveImageData(data)
             transientMessage = L10n.string("image.save_success_message")
         }
@@ -326,7 +326,7 @@ struct ImageBrowserView: View {
         }
         do {
             try await action(currentItem)
-        } catch MangaImagePhotoSaveError.authorizationDenied {
+        } catch ImagePhotoSaveError.authorizationDenied {
             guard !Task.isCancelled else { return }
             feedback = .photoPermissionDenied()
         } catch {
@@ -919,7 +919,7 @@ private struct ImageBrowserFeedback: Identifiable {
             title: L10n.string("image.save_photo_permission_denied_title"),
             message: L10n.string("image.save_photo_permission_denied"),
             offersOpenSettings: true,
-            details: LoadFailureDetails(error: MangaImagePhotoSaveError.authorizationDenied)
+            details: LoadFailureDetails(error: ImagePhotoSaveError.authorizationDenied)
         )
     }
 }

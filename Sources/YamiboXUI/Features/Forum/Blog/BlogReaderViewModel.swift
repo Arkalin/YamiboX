@@ -2,12 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol BlogReaderPageLoading: Sendable {
-    func fetchBlogPage(blogID: String, uid: String?, page: Int) async throws -> BlogReaderPage
-    func postBlogComment(blogID: String, uid: String, message: String, formHash: String) async throws -> String
-}
-
-extension BlogReaderRepository: BlogReaderPageLoading {}
 
 @MainActor
 @Observable

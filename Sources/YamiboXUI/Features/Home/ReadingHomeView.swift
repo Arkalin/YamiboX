@@ -4,6 +4,9 @@ import YamiboXCore
 
 struct ReadingHomeView: View {
     private let appModel: YamiboAppModel
+    private let libraryDependencies: LibraryDependencies
+    private let accountDependencies: AccountDependencies
+    private let accountSwitcher: AccountSwitchCoordinator
     @State private var model: ReadingHomeViewModel
     @State private var account: MineHomeViewModel
     @State private var navigator: ForumDestinationNavigator
@@ -12,13 +15,22 @@ struct ReadingHomeView: View {
     @State private var scrollPosition = ScrollPosition(y: 0)
     @State private var scrollOffset: CGFloat = 0
 
-    init(appModel: YamiboAppModel) {
+    init(
+        libraryDependencies: LibraryDependencies,
+        accountDependencies: AccountDependencies,
+        accountSwitcher: AccountSwitchCoordinator,
+        forumDependencies: ForumNavigationDependencies,
+        appModel: YamiboAppModel
+    ) {
+        self.libraryDependencies = libraryDependencies
+        self.accountDependencies = accountDependencies
+        self.accountSwitcher = accountSwitcher
         self.appModel = appModel
-        _model = State(initialValue: ReadingHomeViewModel(dependencies: appModel.appContext.libraryDependencies))
-        _account = State(initialValue: MineHomeViewModel(dependencies: appModel.appContext.accountDependencies))
+        _model = State(initialValue: ReadingHomeViewModel(dependencies: libraryDependencies))
+        _account = State(initialValue: MineHomeViewModel(dependencies: accountDependencies))
         _navigator = State(initialValue: ForumDestinationNavigator(
-            dependencies: appModel.appContext.forumDependencies,
-            appModel: appModel,
+            dependencies: forumDependencies,
+            actions: appModel.forumNavigationActions,
             mode: .forumTab
         ))
     }
@@ -26,7 +38,7 @@ struct ReadingHomeView: View {
     var body: some View {
         if UIDevice.current.userInterfaceIdiom == .pad, showsHistory {
             BrowsingHistoryView(
-                dependencies: appModel.appContext.libraryDependencies,
+                dependencies: libraryDependencies.history,
                 appModel: appModel,
                 showsPreviousReading: true,
                 onClose: { showsHistory = false }
@@ -37,7 +49,7 @@ struct ReadingHomeView: View {
     }
 
     private var homeNavigation: some View {
-        ForumDestinationStackView(navigator: navigator) {
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ReadingHomeHeader(
@@ -82,7 +94,7 @@ struct ReadingHomeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: UIDevice.current.userInterfaceIdiom == .pad ? .constant(false) : $showsHistory) {
                 BrowsingHistoryView(
-                    dependencies: appModel.appContext.libraryDependencies,
+                    dependencies: libraryDependencies.history,
                     appModel: appModel,
                     showsPreviousReading: true
                 )
@@ -91,8 +103,7 @@ struct ReadingHomeView: View {
             .sheet(isPresented: $showsLogin) {
                 MineLoginSheet(
                     viewModel: account,
-                    sessionStore: appModel.appContext.accountDependencies.sessionStore,
-                    appModel: appModel
+                    accountSwitcher: accountSwitcher
                 ) {
                     showsLogin = false
                 }
@@ -109,27 +120,27 @@ struct ReadingHomeView: View {
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                await model.observe(appModel.appContext.libraryDependencies.browsingHistoryStore.changes())
+                await model.observe(libraryDependencies.browsingHistoryStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                await model.observe(appModel.appContext.contentCoverStore.changes())
+                await model.observe(libraryDependencies.contentCoverStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                await model.observe(appModel.appContext.settingsStore.changes())
+                await model.observe(libraryDependencies.settingsStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                await model.observe(appModel.appContext.libraryDependencies.localFavoriteLibraryStore.changes())
+                await model.observe(libraryDependencies.localFavoriteLibraryStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                await model.observe(appModel.appContext.libraryDependencies.mangaDirectoryStore.changes())
+                await model.observe(libraryDependencies.mangaDirectoryStore.changes())
             }
             .task(id: isHomeVisible) {
                 guard isHomeVisible else { return }
-                for await _ in appModel.appContext.accountDependencies.sessionStore.changes() {
+                for await _ in accountDependencies.sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     await account.load()
                 }
@@ -156,7 +167,18 @@ struct ReadingHomeView: View {
         // Preserve an explicit position while the full-screen reader hides
         // the shelf; a user-driven ScrollPosition alone has no stored offset.
         scrollPosition.scrollTo(y: scrollOffset)
-        Task { await model.open(book.entry, using: appModel, bookOpeningTransition: transition) }
+        Task {
+            await model.open(book.entry) { target in
+                switch target {
+                case let .novelReader(context):
+                    appModel.presentNovelReader(context, bookOpeningTransition: transition)
+                case let .mangaReader(context):
+                    await appModel.requestMangaReader(context, bookOpeningTransition: transition).value
+                case let .nativeThread(url, title):
+                    appModel.openNativeForumThread(url: url, title: title)
+                }
+            }
+        }
     }
 }
 
@@ -408,7 +430,7 @@ private struct ReadingHomeCover: View {
     let title: String
 
     var body: some View {
-        LocalFavoriteCoverThumbnail(url: url, title: title)
+        BookCoverThumbnail(url: url, title: title)
             .background(Color(uiColor: .secondarySystemBackground))
             .overlay(alignment: .leading) {
                 LinearGradient(stops: [

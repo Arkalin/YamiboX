@@ -59,7 +59,7 @@ public enum YamiboRoute: Sendable {
             .value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let threadID = (queryThreadID?.isEmpty == false ? queryThreadID : nil)
-            ?? MangaTitleCleaner.extractTid(from: resolvedURL.absoluteString)
+            ?? YamiboForumURLIdentity.threadID(from: resolvedURL.absoluteString)
 
         guard let threadID, !threadID.isEmpty else { return nil }
 

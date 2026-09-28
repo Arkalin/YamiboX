@@ -35,7 +35,7 @@ public actor YamiboThreadRouteResolver {
         var locationMetadata: YamiboThreadMetadata?
         if isFindPostURL(requestURL) {
             do {
-                let response = try await client.fetchPageDocument(url: ForumWebPagePolicy.secureURL(requestURL))
+                let response = try await ForumPageClient(transport: client).fetchDocument(url: ForumWebPagePolicy.secureURL(requestURL))
                 guard response.continuationURL == nil, response.file == nil,
                       ForumWebPagePolicy.requiresForumHandling(response.url) else {
                     return .webFallback(requestURL)
@@ -81,7 +81,7 @@ public actor YamiboThreadRouteResolver {
         if request.intent == .nativeThreadReader || request.readerOverride == .plainThread {
             let tid = locationMetadata?.tid ?? request.threadID
                 ?? threadID(from: canonicalURL)
-                ?? MangaTitleCleaner.extractTid(from: canonicalURL.absoluteString)
+                ?? YamiboForumURLIdentity.threadID(from: canonicalURL.absoluteString)
                 ?? ""
             let thread = ThreadIdentity(
                 tid: tid,
@@ -134,7 +134,7 @@ public actor YamiboThreadRouteResolver {
         let tid = locationMetadata?.tid ?? request.threadID
             ?? metadata?.tid
             ?? threadID(from: canonicalURL)
-            ?? MangaTitleCleaner.extractTid(from: canonicalURL.absoluteString)
+            ?? YamiboForumURLIdentity.threadID(from: canonicalURL.absoluteString)
             ?? ""
         guard !tid.isEmpty else { return .webFallback(requestURL) }
         let fid = initialFid ?? metadata?.fid

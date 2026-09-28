@@ -1,6 +1,6 @@
 import Foundation
 
-package protocol NovelReadingPageRepository: Sendable {
+public protocol NovelReadingPageRepository: Sendable {
     func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection
     func loadPageIgnoringCache(_ request: NovelPageRequest) async throws -> NovelReaderProjection
     func loadPageResult(_ request: NovelPageRequest) async throws -> NovelReaderProjectionLoad
@@ -16,7 +16,7 @@ package protocol NovelReadingPageRepository: Sendable {
     ) async throws
 }
 
-extension NovelReadingPageRepository {
+public extension NovelReadingPageRepository {
     func loadPageResult(_ request: NovelPageRequest) async throws -> NovelReaderProjectionLoad {
         NovelReaderProjectionLoad(projection: try await loadPage(request), source: .online)
     }
@@ -726,11 +726,9 @@ public final class NovelReadingWorkflow {
         session?.currentChapterOrdinalsByIdentity() ?? [:]
     }
 
-    package nonisolated(nonsending) func resolveLikeChapterTitles(using store: LikeStore) async {
-        let projections = [currentProjection, prefetchedProjection].compactMap { $0 }
-        for projection in projections {
-            await LikeChapterInfoResolver.backfillNovelChapterTitles(in: projection, store: store)
-        }
+    /// Value snapshots only; annotation consumers own their persistence side effects.
+    package var loadedProjectionSnapshots: [NovelReaderProjection] {
+        [currentProjection, prefetchedProjection].compactMap { $0 }
     }
 
     public func updateVisibleSurfaceIdentities(_ surfaceIdentities: [NovelReaderSurfaceIdentity]) {

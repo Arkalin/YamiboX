@@ -1,61 +1,5 @@
 import Foundation
 
-struct NovelReaderRepositoryCacheOperationAdapter: NovelReaderCacheOperationRepository {
-    private let repository: NovelReaderRepository
-
-    init(repository: NovelReaderRepository) {
-        self.repository = repository
-    }
-
-    func cacheState(for context: NovelReaderCacheOperationContext) async -> NovelOfflineCacheViewsSnapshot {
-        NovelOfflineCacheViewsSnapshot(cachedViews: await cachedViews(for: context))
-    }
-
-    func cachedViews(for context: NovelReaderCacheOperationContext) async -> Set<Int> {
-        await repository.cachedViews(
-            for: context.threadID,
-            authorID: context.authorID
-        )
-    }
-
-    func deleteCachedViews(
-        _ views: Set<Int>,
-        for context: NovelReaderCacheOperationContext
-    ) async throws {
-        try await repository.deleteCachedViews(
-            views,
-            for: context.threadID,
-            authorID: context.authorID
-        )
-    }
-
-    func cacheViews(
-        _ views: Set<Int>,
-        for context: NovelReaderCacheOperationContext,
-        progress: (@Sendable (NovelReaderCacheBatchProgress) async -> Void)?
-    ) async -> NovelReaderCacheBatchResult {
-        await repository.cacheViews(
-            views,
-            for: context.threadID,
-            authorID: context.authorID,
-            progress: progress
-        )
-    }
-
-    func updateCachedViews(
-        _ views: Set<Int>,
-        for context: NovelReaderCacheOperationContext,
-        progress: (@Sendable (NovelReaderCacheBatchProgress) async -> Void)?
-    ) async -> NovelReaderCacheBatchResult {
-        do {
-            try await deleteCachedViews(views, for: context)
-        } catch {
-            return NovelReaderCacheBatchResult(totalCount: views.count, completedViews: [], failedViews: views.sorted(), wasCancelled: false)
-        }
-        return await cacheViews(views, for: context, progress: progress)
-    }
-}
-
 struct NovelOfflineStoreReaderCacheOperationAdapter: NovelReaderCacheOperationRepository {
     private let store: any NovelOfflineCacheStoring & OfflineCacheQueueStoring
     private let novelOfflineCacheSettings: @Sendable () async -> NovelOfflineCacheSettings
@@ -165,7 +109,7 @@ struct NovelOfflineStoreReaderCacheOperationAdapter: NovelReaderCacheOperationRe
     }
 
     private func continueOfflineCacheQueueIfAllowed() async throws {
-        let works = await store.offlineCacheQueueWorks()
+        let works = try await store.offlineCacheQueueWorks()
         guard works.allSatisfy({ $0.state != .failed }) else { return }
         try await continueOfflineCacheQueue?()
     }

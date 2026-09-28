@@ -10,8 +10,10 @@ import UIKit
 @MainActor
 final class NovelLikeHighlightController {
     private let registeredViews = NSHashTable<NovelTextViewportReferenceUIView>.weakObjects()
-    private var workKey: LikeWorkKey?
+    private var workKey: ReadingWorkKey?
     private var likeStore: LikeStore?
+    private var annotations: ReaderAnnotationService?
+    private var onFailure: ((any Error) -> Void)?
     private var changeObserverTask: Task<Void, Never>?
     private var items: [LikeItem] = []
     private var rangesByItemID: [String: NovelTextSelectionRange] = [:]
@@ -21,9 +23,14 @@ final class NovelLikeHighlightController {
         changeObserverTask?.cancel()
     }
 
-    func configure(workKey: LikeWorkKey, likeStore: LikeStore) {
+    func configure(
+        workKey: ReadingWorkKey, likeStore: LikeStore,
+        annotations: ReaderAnnotationService, onFailure: @escaping (any Error) -> Void
+    ) {
         self.workKey = workKey
         self.likeStore = likeStore
+        self.annotations = annotations
+        self.onFailure = onFailure
         changeObserverTask?.cancel()
         let expectedChangeID = likeStore.changeID
         changeObserverTask = Task { @MainActor [weak self] in
@@ -130,11 +137,18 @@ final class NovelLikeHighlightController {
     }
 
     func remove(_ item: LikeItem) async {
-        try? await likeStore?.delete(id: item.id)
+        do { try await annotations?.removeLikes([item]) }
+        catch { onFailure?(error) }
     }
 
     func updateStyle(_ item: LikeItem, to style: LikeStyle) async {
-        _ = try? await likeStore?.updateStyle(id: item.id, style: style)
+        do { try await annotations?.updateStyle(id: item.id, style: style) }
+        catch {
+            if items.first(where: { $0.id == item.id })?.style == style {
+                applyStyleOptimistically(itemID: item.id, style: item.style)
+            }
+            onFailure?(error)
+        }
     }
 
     /// Repaints a style change on the same runloop tick as the tap, for the
@@ -223,7 +237,12 @@ final class NovelLikeHighlightController {
 
     private func reload() async {
         guard let workKey, let likeStore else { return }
-        let fetched = await likeStore.likes(for: workKey)
+        let fetched: [LikeItem]
+        do { fetched = try await likeStore.likes(for: workKey) }
+        catch {
+            onFailure?(error)
+            return
+        }
         items = fetched.filter { $0.kind == .text }
         // Generation didn't change, so `refreshIfNeeded` won't recompute on
         // its own next call; force it and repaint every registered surface.

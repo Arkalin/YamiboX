@@ -135,16 +135,6 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     private static func mapUnderlyingError(_ error: Error) -> Error {
         if error is LoadDiagnosticError || LoadDiagnosticError.isCancellation(error) { return error }
-        if let yamiboError = error as? YamiboError {
-            return yamiboError
-        }
-        // Favorite-action and persistence errors were `YamiboError` cases
-        // before the domain split and thus passed through the branch above
-        // unchanged; keep that destination so they are never re-wrapped into
-        // an `.underlying` string here.
-        if error is FavoriteActionError || error is YamiboPersistenceError {
-            return error
-        }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
@@ -153,7 +143,9 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
                 return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(urlError.localizedDescription))
             }
         }
-        return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(error.localizedDescription))
+        // Only transport errors need translation here. Preserve other errors
+        // without making the image pipeline recognize each feature's types.
+        return error
     }
 }
 

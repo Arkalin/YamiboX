@@ -43,14 +43,14 @@ public struct MangaReadingResumeResolver: Sendable {
         isSmartModeEnabled: Bool,
         startsFromBeginning: Bool = false,
         fallbackChapterView: Int = 1
-    ) async -> MangaReadingResumeResolution {
+    ) async throws -> MangaReadingResumeResolution {
         let ownThreadProgress: MangaReadingProgressRecord?
         if startsFromBeginning {
             ownThreadProgress = nil
         } else {
             // A directory record can share the tid and be newer; only the
             // exact single-thread identity belongs to this fallback.
-            ownThreadProgress = await readingProgressStore.load(for: .mangaThread(threadID: threadID))?.manga
+            ownThreadProgress = try await readingProgressStore.load(for: .mangaThread(threadID: threadID))?.manga
         }
         let threadResolution = MangaReadingResumeResolution(
             chapterTID: ownThreadProgress?.chapterThreadID ?? threadID,
@@ -60,7 +60,7 @@ public struct MangaReadingResumeResolver: Sendable {
             directoryName: nil
         )
         guard isSmartModeEnabled,
-              let directory = try? await mangaDirectoryStore.directory(containingTID: threadID),
+              let directory = try await mangaDirectoryStore.directory(containingTID: threadID),
               let firstChapter = directory.chapters.first else {
             return threadResolution
         }
@@ -73,7 +73,7 @@ public struct MangaReadingResumeResolver: Sendable {
                 mangaID: directory.favoriteIdentity,
                 mangaCleanBookName: directory.cleanBookName
             )
-            directoryProgress = await readingProgressStore.load(for: target)?.manga
+            directoryProgress = try await readingProgressStore.load(for: target)?.manga
         }
         return MangaReadingResumeResolution(
             chapterTID: directoryProgress?.chapterThreadID ?? firstChapter.tid,

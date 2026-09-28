@@ -52,7 +52,7 @@ enum MangaHTMLParser {
             let href = link.attr("href")
             let title = link.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard
-                let tid = MangaTitleCleaner.extractTid(from: href),
+                let tid = YamiboForumURLIdentity.threadID(from: href),
                 let url = HTMLTextExtractor.absoluteURL(from: href, baseURL: baseURL)
             else {
                 return nil
@@ -198,7 +198,7 @@ enum MangaHTMLParser {
             let href = link[1]
             let title = HTMLTextExtractor.stripTags(link[2])
             guard
-                let tid = MangaTitleCleaner.extractTid(from: href),
+                let tid = YamiboForumURLIdentity.threadID(from: href),
                 let url = HTMLTextExtractor.absoluteURL(from: href)
             else {
                 return nil
@@ -245,7 +245,7 @@ enum MangaHTMLParser {
             let href = link[1]
             let title = HTMLTextExtractor.stripTags(link[2])
             guard
-                let tid = MangaTitleCleaner.extractTid(from: href),
+                let tid = YamiboForumURLIdentity.threadID(from: href),
                 let url = HTMLTextExtractor.absoluteURL(from: href)
             else {
                 return nil

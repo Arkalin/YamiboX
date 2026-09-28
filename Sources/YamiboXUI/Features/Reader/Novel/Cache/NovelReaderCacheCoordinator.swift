@@ -27,22 +27,22 @@ final class NovelReaderCacheCoordinator: ObservableObject {
 
     private let operationModule: NovelReaderCacheOperationModule
     private let repository: any NovelReaderCacheOperationRepository
-    private let offlineCacheStore: any OfflineCacheStoring
-    private let accountDependencies: AccountDependencies
+    private let offlineCacheStore: any OfflineCacheQueueStoring
+    private let queueDependencies: OfflineCacheQueueDependencies
     private let reading: Reading
     private var updatesTask: Task<Void, Never>?
 
     init(
         operationModule: NovelReaderCacheOperationModule,
         repository: any NovelReaderCacheOperationRepository,
-        offlineCacheStore: any OfflineCacheStoring,
-        accountDependencies: AccountDependencies,
+        offlineCacheStore: any OfflineCacheQueueStoring,
+        queueDependencies: OfflineCacheQueueDependencies,
         reading: Reading
     ) {
         self.operationModule = operationModule
         self.repository = repository
         self.offlineCacheStore = offlineCacheStore
-        self.accountDependencies = accountDependencies
+        self.queueDependencies = queueDependencies
         self.reading = reading
         operationModule.onChange = { [weak self] viewsSnapshot, operationState in
             guard let self else { return }
@@ -75,7 +75,15 @@ final class NovelReaderCacheCoordinator: ObservableObject {
     }
 
     func refreshQueueCount() async {
-        state.queueEntryCount = await offlineCacheStore.offlineCacheQueueWorks().count
+        do {
+            let count = try await offlineCacheStore.offlineCacheQueueWorks().count
+            try Task.checkCancellation()
+            state.queueEntryCount = count
+        } catch {
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                reading.onError(LoadFailureDetails(error: error))
+            }
+        }
     }
 
     func selectionState(for selectedViews: Set<Int>) -> NovelReaderCacheSelectionState {
@@ -152,7 +160,7 @@ final class NovelReaderCacheCoordinator: ObservableObject {
     }
 
     func makeOfflineCacheQueueViewModel() -> OfflineCacheQueueViewModel {
-        OfflineCacheQueueViewModel(dependencies: accountDependencies)
+        OfflineCacheQueueViewModel(dependencies: queueDependencies)
     }
 
     private var operationSnapshot: NovelReaderCacheOperationSnapshot {

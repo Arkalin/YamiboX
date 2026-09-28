@@ -68,7 +68,7 @@ struct LocalFavoriteOpenTargetResolver {
 
         switch effectiveOpenKind(for: latestItem, boardReader: boardReader) {
         case .novelThread:
-            let novel = await readingProgressStore.load(threadID: threadID)?.novel
+            let novel = try await readingProgressStore.load(threadID: threadID)?.novel
             if opensDetails {
                 return .novelDetail(NovelDetailLaunchContext(
                     thread: ThreadIdentity(tid: threadID, fid: latestItem.forumID),
@@ -76,15 +76,15 @@ struct LocalFavoriteOpenTargetResolver {
                     authorID: novel?.novelResumePoint?.authorID ?? novel?.authorID
                 ))
             }
-            let resumePoint = mode == .start ? nil : novel?.novelResumePoint
+            let position = NovelReadingResumeResolver.resolve(progress: novel, startsFromBeginning: mode == .start)
             return .novelReader(
                 NovelLaunchContext(
                     threadID: threadID,
                     threadTitle: latestItem.resolvedDisplayTitle,
                     source: .favorites,
-                    initialView: mode == .start ? 1 : (resumePoint?.view ?? novel?.lastView),
-                    authorID: resumePoint?.authorID ?? novel?.authorID,
-                    initialResumePoint: resumePoint,
+                    initialView: position.view,
+                    authorID: position.authorID,
+                    initialResumePoint: position.resumePoint,
                     forumID: latestItem.forumID
                 )
             )
@@ -113,7 +113,7 @@ struct LocalFavoriteOpenTargetResolver {
                     directoryNameHint: title
                 ))
             }
-            let resume = await MangaReadingResumeResolver(
+            let resume = try await MangaReadingResumeResolver(
                 readingProgressStore: readingProgressStore,
                 mangaDirectoryStore: mangaDirectoryStore
             ).resolve(

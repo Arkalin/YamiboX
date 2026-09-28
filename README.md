@@ -92,6 +92,8 @@ iOS 18.0 及以上，支持 iPhone 和 iPad。
 - [`Sources/YamiboXUI`](Sources/YamiboXUI)：SwiftUI 界面、论坛容器、收藏页、小说阅读器与漫画阅读器
 - [`YamiboX`](YamiboX)：独立 iOS App 入口，对应 Xcode 工程 [`YamiboX.xcodeproj`](YamiboX.xcodeproj)
 
+目录职责与代码归属约定见[项目结构](docs/architecture.md)。
+
 依赖：[`Kanna`](https://github.com/tid-kijyun/Kanna)、[`GRDB.swift`](https://github.com/groue/GRDB.swift)、[`Nuke`](https://github.com/kean/Nuke)
 
 环境要求为 Swift 6.2+、iOS 18+，以及支持 Swift 6.2 工具链的 Xcode 版本。在仓库根目录执行构建，将示例中的模拟器名称替换为本机可用的 iOS Simulator：

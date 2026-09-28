@@ -202,18 +202,10 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                       ) else {
                     continue
                 }
-                let lineBounds = lineFragment.typographicBounds
-                let rect = CGRect(
-                    x: fragment.layoutFragmentFrame.minX + lineBounds.minX,
-                    y: fragment.layoutFragmentFrame.minY + lineBounds.minY,
-                    width: lineBounds.width,
-                    height: lineBounds.height
-                ).insetBy(dx: 0, dy: -1)
-                guard rect.origin.x.isFinite,
-                      rect.origin.y.isFinite,
-                      rect.width.isFinite,
-                      rect.height.isFinite,
-                      rect.height > 0 else {
+                guard let rect = validatedLineRect(
+                    fragmentFrame: fragment.layoutFragmentFrame,
+                    typographicBounds: lineFragment.typographicBounds
+                ) else {
                     continue
                 }
                 segments.append(
@@ -362,18 +354,10 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                 ) else {
                     continue
                 }
-                let lineBounds = lineFragment.typographicBounds
-                let rect = CGRect(
-                    x: fragment.layoutFragmentFrame.minX + lineBounds.minX,
-                    y: fragment.layoutFragmentFrame.minY + lineBounds.minY,
-                    width: lineBounds.width,
-                    height: lineBounds.height
-                ).insetBy(dx: 0, dy: -1)
-                guard rect.origin.x.isFinite,
-                      rect.origin.y.isFinite,
-                      rect.width.isFinite,
-                      rect.height.isFinite,
-                      rect.height > 0 else {
+                guard let rect = validatedLineRect(
+                    fragmentFrame: fragment.layoutFragmentFrame,
+                    typographicBounds: lineFragment.typographicBounds
+                ) else {
                     continue
                 }
                 clipRect = clipRect.union(rect)
@@ -381,6 +365,28 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             return shouldContinue
         }
         return clipRect.isNull ? nil : clipRect
+    }
+
+    /// Pagination and rematerialized clipping use the same document-space
+    /// geometry, including vertical tolerance and support for zero-width lines.
+    private static func validatedLineRect(
+        fragmentFrame: CGRect,
+        typographicBounds: CGRect
+    ) -> CGRect? {
+        let rect = CGRect(
+            x: fragmentFrame.minX + typographicBounds.minX,
+            y: fragmentFrame.minY + typographicBounds.minY,
+            width: typographicBounds.width,
+            height: typographicBounds.height
+        ).insetBy(dx: 0, dy: -1)
+        guard rect.origin.x.isFinite,
+              rect.origin.y.isFinite,
+              rect.width.isFinite,
+              rect.height.isFinite,
+              rect.height > 0 else {
+            return nil
+        }
+        return rect
     }
 
     private static func validateRematerializedGeometry(

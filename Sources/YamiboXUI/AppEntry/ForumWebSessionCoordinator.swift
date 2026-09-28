@@ -235,7 +235,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
             guard let self else { return }
             guard let snapshot = try? await sessionStore.snapshot() else { return }
             await prepareWebView(userAgent: challenge.userAgent)
-            let cookies = await cookieStore.allCookiesAsync()
+            let cookies = await cookieStore.allCookies()
                 .map { YamiboCookie($0) }
                 .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
             guard flight?.id == flightID, !isChangingAccount, !Task.isCancelled,
@@ -286,7 +286,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
         webView.customUserAgent = userAgent
         let session = await sessionStore.load()
         if session.cookies.isEmpty, !session.isLoggedIn {
-            let existing = await cookieStore.allCookiesAsync()
+            let existing = await cookieStore.allCookies()
             for cookie in existing where YamiboDomain.containsYamiboDomain(cookie.domain) {
                 guard !isChangingAccount, !Task.isCancelled else { return }
                 await delete(cookie)
@@ -294,7 +294,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
             return
         }
 
-        let existing = Dictionary(uniqueKeysWithValues: await cookieStore.allCookiesAsync().map { cookie in
+        let existing = Dictionary(uniqueKeysWithValues: await cookieStore.allCookies().map { cookie in
             let stored = YamiboCookie(cookie)
             return (stored.identity, stored)
         })
@@ -314,7 +314,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     private func synchronizeCookieSnapshot() async {
         guard !isChangingAccount, !Task.isCancelled,
               let snapshot = try? await sessionStore.snapshot() else { return }
-        let cookies = await cookieStore.allCookiesAsync()
+        let cookies = await cookieStore.allCookies()
             .map { YamiboCookie($0) }
             .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
         let userAgent = webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent
@@ -389,7 +389,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
 
     func finishAccountChange(_ session: SessionState) async {
         webView.stopLoading()
-        let cookies = await cookieStore.allCookiesAsync()
+        let cookies = await cookieStore.allCookies()
         for cookie in cookies where YamiboDomain.containsYamiboDomain(cookie.domain) {
             await delete(cookie)
         }
@@ -429,7 +429,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     private func delete(_ cookie: YamiboCookie) async {
-        let cookies = await cookieStore.allCookiesAsync()
+        let cookies = await cookieStore.allCookies()
         for candidate in cookies {
             let stored = YamiboCookie(candidate)
             if stored.identity == cookie.identity {
@@ -439,9 +439,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     private func delete(_ cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            cookieStore.delete(cookie) { continuation.resume() }
-        }
+        await cookieStore.deleteCookieAsync(cookie)
     }
 
     private static let interactionDetectionScript = """
@@ -500,17 +498,4 @@ public struct ForumWAFVerificationView: View {
     }
 }
 
-private extension WKHTTPCookieStore {
-    func allCookiesAsync() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            getAllCookies { continuation.resume(returning: $0) }
-        }
-    }
-
-    func setCookieAsync(_ cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            setCookie(cookie) { continuation.resume() }
-        }
-    }
-}
 #endif

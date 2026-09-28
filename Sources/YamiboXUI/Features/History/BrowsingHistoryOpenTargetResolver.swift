@@ -61,12 +61,12 @@ struct ReadingOpenTargetResolver {
         origin: ReadingOpenOrigin = .history,
         fallbackNovelView: Int? = nil,
         fallbackMangaView: Int = 1
-    ) async -> BrowsingHistoryOpenTarget? {
+    ) async throws -> BrowsingHistoryOpenTarget? {
         // One settings snapshot backs both the category dispatch and the
         // manga smart bit, so a concurrent configuration change can't make
         // them disagree within a single resolve.
         var entry = entry
-        guard let snapshot = try? await historyWorkflow.snapshot() else { return nil }
+        let snapshot = try await historyWorkflow.snapshot()
         let boardReader = snapshot.boardReader
         if let current = snapshot.entries.first(where: {
             $0.id == entry.id || (entry.lastVisitedThreadID != nil && $0.lastVisitedThreadID == entry.lastVisitedThreadID)
@@ -90,16 +90,18 @@ struct ReadingOpenTargetResolver {
 
         case .novel:
             guard let threadID = entry.target.threadID ?? entry.chapterThreadID else { return nil }
-            let novel = await readingProgressStore.load(for: .novelThread(threadID: threadID))?.novel
-            let resumePoint = novel?.novelResumePoint
+            let novel = try await readingProgressStore.load(for: .novelThread(threadID: threadID))?.novel
+            let position = NovelReadingResumeResolver.resolve(
+                progress: novel, fallbackView: fallbackNovelView, fallbackAuthorID: entry.authorID
+            )
             return .novelReader(
                 NovelLaunchContext(
                     threadID: threadID,
                     threadTitle: entry.title,
                     source: origin.novelLaunchSource,
-                    initialView: resumePoint?.view ?? novel?.lastView ?? fallbackNovelView,
-                    authorID: resumePoint?.authorID ?? novel?.authorID ?? entry.authorID,
-                    initialResumePoint: resumePoint,
+                    initialView: position.view,
+                    authorID: position.authorID,
+                    initialResumePoint: position.resumePoint,
                     forumID: entry.forumID
                 )
             )
@@ -107,7 +109,7 @@ struct ReadingOpenTargetResolver {
         case .manga:
             let smartModeEnabled = boardReader.isSmartComicModeEnabled(forumID: entry.forumID)
             if case let .mangaTitle(mangaID, cleanBookName) = entry.target {
-                return await mangaTitleTarget(
+                return try await mangaTitleTarget(
                     directoryID: MangaDirectoryID(rawValue: mangaID),
                     cleanBookName: cleanBookName,
                     entry: entry,
@@ -117,7 +119,7 @@ struct ReadingOpenTargetResolver {
                 )
             }
             guard let threadID = entry.target.threadID else { return nil }
-            return await mangaThreadTarget(
+            return try await mangaThreadTarget(
                 threadID: threadID,
                 entry: entry,
                 smartModeEnabled: smartModeEnabled,
@@ -139,8 +141,8 @@ struct ReadingOpenTargetResolver {
         smartModeEnabled: Bool,
         source: MangaLaunchSource,
         fallbackMangaView: Int
-    ) async -> BrowsingHistoryOpenTarget {
-        let resume = await MangaReadingResumeResolver(
+    ) async throws -> BrowsingHistoryOpenTarget {
+        let resume = try await MangaReadingResumeResolver(
             readingProgressStore: readingProgressStore,
             mangaDirectoryStore: mangaDirectoryStore
         ).resolve(
@@ -173,8 +175,8 @@ struct ReadingOpenTargetResolver {
         smartModeEnabled: Bool,
         source: MangaLaunchSource,
         fallbackMangaView: Int
-    ) async -> BrowsingHistoryOpenTarget? {
-        let directoryProgress = await readingProgressStore.load(for: entry.target)?.manga
+    ) async throws -> BrowsingHistoryOpenTarget? {
+        let directoryProgress = try await readingProgressStore.load(for: entry.target)?.manga
         guard let chapterTID = directoryProgress?.chapterThreadID ?? entry.chapterThreadID else {
             return nil
         }
@@ -183,7 +185,7 @@ struct ReadingOpenTargetResolver {
             // route by the current switch (PRD compatibility note) — open the
             // row's current chapter as a plain single thread reading its own
             // `.mangaThread` progress.
-            let ownThreadProgress = await readingProgressStore.load(for: .mangaThread(threadID: chapterTID))?.manga
+            let ownThreadProgress = try await readingProgressStore.load(for: .mangaThread(threadID: chapterTID))?.manga
             return .mangaReader(
                 MangaLaunchContext(
                     originalThreadID: chapterTID,

@@ -13,24 +13,28 @@ public struct MineHomeView: View {
 
     private let settingsDependencies: SettingsDependencies
     private let sessionStore: SessionStore
+    private let accountSwitcher: AccountSwitchCoordinator
     private let appModel: YamiboAppModel
     private let likeDependencies: LikeDependencies
     private let messageUnreadWorkflow: MessageUnreadWorkflow
 
     public init(
         dependencies: AccountDependencies,
+        forumDependencies: ForumNavigationDependencies,
+        accountSwitcher: AccountSwitchCoordinator,
         settingsDependencies: SettingsDependencies,
         appModel: YamiboAppModel,
         likeDependencies: LikeDependencies
     ) {
         _viewModel = State(initialValue: MineHomeViewModel(dependencies: dependencies))
         _navigator = State(wrappedValue: ForumDestinationNavigator(
-            dependencies: appModel.appContext.forumDependencies,
-            appModel: appModel,
+            dependencies: forumDependencies,
+            actions: appModel.forumNavigationActions,
             mode: .forumTab
         ))
         self.settingsDependencies = settingsDependencies
         self.sessionStore = dependencies.sessionStore
+        self.accountSwitcher = accountSwitcher
         self.appModel = appModel
         self.likeDependencies = likeDependencies
         self.messageUnreadWorkflow = dependencies.messageUnreadWorkflow
@@ -41,6 +45,7 @@ public struct MineHomeView: View {
             if UIDevice.current.userInterfaceIdiom == .pad {
                 MineSidebarView(
                     viewModel: viewModel, navigator: navigator, appModel: appModel,
+                    accountSwitcher: accountSwitcher,
                     settingsDependencies: settingsDependencies, likeDependencies: likeDependencies,
                     messageUnreadWorkflow: messageUnreadWorkflow,
                     showLogin: { showingLoginSheet = true }, checkIn: checkIn,
@@ -98,14 +103,14 @@ public struct MineHomeView: View {
             viewModel.checkInResultMessage = nil
         }
         .sheet(isPresented: $showingLoginSheet) {
-            MineLoginSheet(viewModel: viewModel, sessionStore: sessionStore, appModel: appModel) {
+            MineLoginSheet(viewModel: viewModel, accountSwitcher: accountSwitcher) {
                 showingLoginSheet = false
             }
         }
     }
 
     private var mineNavigation: some View {
-        ForumDestinationStackView(navigator: navigator) {
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
             List {
                 if viewModel.isLoggedIn {
                     MineProfileSection(
@@ -198,7 +203,7 @@ public struct MineHomeView: View {
             onClose: {
                 isSettingsPushed = false
             },
-            accountSwitcher: appModel.appContext.accountSwitcher
+            accountSwitcher: accountSwitcher
         )
     }
 

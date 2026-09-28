@@ -40,14 +40,36 @@ final class FavoriteUpdateMonitor: ObservableObject {
     /// now lives as plain instance state inside the registry/engine.
     private static let sharedRunRegistry = FavoriteUpdateActiveRunRegistry()
 
+    /// Foreground and background checks share assembly, not monitor lifetime.
+    static func makeForLibrary(
+        _ dependencies: LibraryDependencies,
+        notifier: any FavoriteUpdateNotifying = UserNotificationFavoriteUpdateNotifier()
+    ) -> FavoriteUpdateMonitor {
+        FavoriteUpdateMonitor(
+            updateStore: dependencies.favoriteUpdateStore,
+            libraryStore: dependencies.localFavoriteLibraryStore,
+            makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
+            settingsStore: dependencies.settingsStore,
+            notifier: notifier,
+            mangaDirectoryStore: dependencies.mangaDirectoryStore,
+            makeMangaDirectoryWorkflow: { searchForumID in
+                MangaDirectoryWorkflow(
+                    repository: await dependencies.makeMangaDirectoryRepository(),
+                    store: dependencies.mangaDirectoryStore,
+                    configuration: MangaDirectoryWorkflowConfiguration(searchForumID: searchForumID),
+                    searchCooldownState: dependencies.mangaDirectorySearchCooldownState
+                )
+            }
+        )
+    }
+
     init(
         updateStore: FavoriteUpdateStore,
         libraryStore: FavoriteLibraryStore,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageFetching,
         settingsStore: SettingsStore? = nil,
         notifier: (any FavoriteUpdateNotifying)? = nil,
-        pageFetcher: ((FavoriteItem) async throws -> ForumThreadPage)? = nil,
-        mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)? = nil
     ) {
         engine = FavoriteUpdateCheckEngine(
@@ -56,7 +78,6 @@ final class FavoriteUpdateMonitor: ObservableObject {
             makeForumThreadReaderRepository: makeForumThreadReaderRepository,
             settingsStore: settingsStore,
             notifier: notifier,
-            pageFetcher: pageFetcher,
             mangaDirectoryStore: mangaDirectoryStore,
             makeMangaDirectoryWorkflow: makeMangaDirectoryWorkflow,
             runRegistry: Self.sharedRunRegistry

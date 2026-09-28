@@ -29,7 +29,7 @@ final class ForumComposerImageAttachment: NSTextAttachment {
 enum ForumRichTextCodec {
     static func attributedText(source: String, format: ForumComposerFormat, theme: ForumTheme, baseFontSize: CGFloat = 17) -> NSAttributedString {
         let result = NSMutableAttributedString(string: "")
-        for run in ForumComposerMarkup.parse(source, format: format) {
+        for run in ForumComposerMarkupCodec.parse(source, format: format) {
             var attributes = attributes(for: run, theme: theme, baseFontSize: baseFontSize)
             if run.isAttachment { attributes[.attachment] = ForumComposerImageAttachment(run: run) }
             result.append(NSAttributedString(string: run.text, attributes: attributes))
@@ -164,7 +164,7 @@ final class ForumRichEditorSession {
     }
 
     func wrap(before: String, after: String, placeholder: String, in view: UITextView) {
-        guard let parsed = ForumComposerMarkup.parse(before + "x" + after, format: format).first?.wrappers.last else { return }
+        guard let parsed = ForumComposerMarkupCodec.parse(before + "x" + after, format: format).first?.wrappers.last else { return }
         let wrapper = ForumComposerWrapper(id: UUID().uuidString, name: parsed.name, opening: parsed.opening, closing: parsed.closing,
                                            style: parsed.style, link: parsed.link, isQuote: parsed.isQuote)
         let selection = view.selectedRange

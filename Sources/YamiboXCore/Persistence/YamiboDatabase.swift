@@ -100,7 +100,7 @@ enum YamiboDatabase {
         for module in schemaModules {
             module.registerMigrations(in: &migrator)
         }
-        MangaDirectoryIdentityDatabase.registerMigration(in: &migrator)
+        MangaIdentityMigrationV1.register(in: &migrator)
         try migrator.migrate(writer)
     }
 

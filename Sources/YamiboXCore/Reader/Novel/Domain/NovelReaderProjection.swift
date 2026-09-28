@@ -85,6 +85,15 @@ public struct NovelReaderProjection: Codable, Hashable, Sendable {
         guard segmentSemantics.indices.contains(index) else { return nil }
         return segmentSemantics[index]
     }
+
+    func chapterTitle(forSegmentIdentity identity: String) -> String? {
+        for (segment, semantics) in zip(segments, segmentSemantics) {
+            if semantics?.textSegmentIdentity?.rawValue == identity {
+                return segment.chapterTitle?.nilIfBlank
+            }
+        }
+        return nil
+    }
 }
 
 extension NovelReaderProjection {

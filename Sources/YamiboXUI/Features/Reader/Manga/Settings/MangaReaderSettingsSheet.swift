@@ -8,7 +8,9 @@ struct MangaReaderSettingsSheet: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
     let model: MangaReaderViewModel
-    let appModel: YamiboAppModel
+    let settingsStore: SettingsStore
+    let peripheralInput: ReaderPeripheralInputManager
+    let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
@@ -17,10 +19,6 @@ struct MangaReaderSettingsSheet: View {
 
     private var isPadDevice: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
-    }
-
-    private var controlAccent: Color {
-        AppTheme.theme(for: appModel.appThemePreset).controlAccent
     }
 
     var body: some View {
@@ -71,8 +69,8 @@ struct MangaReaderSettingsSheet: View {
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
-                dependencies: appModel.appContext.settingsDependencies,
-                peripheralInput: appModel.peripheralInput
+                settingsStore: settingsStore,
+                peripheralInput: peripheralInput
             )
         }
     }

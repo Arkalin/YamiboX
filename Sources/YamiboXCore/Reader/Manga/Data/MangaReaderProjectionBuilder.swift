@@ -8,7 +8,7 @@ enum MangaReaderProjectionBuilder {
         schemaVersion: Int = MangaReaderProjection.schemaVersion,
         parserVersion: Int = MangaReaderProjection.parserVersion
     ) throws -> MangaReaderProjection {
-        guard identity.authorID?.mangaReaderTrimmedNonEmpty != nil else {
+        guard identity.authorID?.nilIfBlank != nil else {
             throw YamiboError.parsingFailed(context: L10n.string("parsing_context.manga_author_scope"))
         }
 
@@ -18,8 +18,8 @@ enum MangaReaderProjectionBuilder {
         }
 
         let ownerPost = page.posts.first
-        let rawTitle = page.title.mangaReaderTrimmedNonEmpty ?? identity.tid
-        let chapterTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).mangaReaderTrimmedNonEmpty
+        let rawTitle = page.title.nilIfBlank ?? identity.tid
+        let chapterTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).nilIfBlank
             ?? rawTitle
 
         return MangaReaderProjection(

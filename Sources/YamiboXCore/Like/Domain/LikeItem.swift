@@ -1,45 +1,8 @@
 import Foundation
 
-public enum LikeWorkKind: String, Codable, Hashable, Sendable, CaseIterable {
-    case novel
-    case manga
-}
-
-/// Identifies the work (novel thread or manga title) a Like Item belongs to,
-/// independent of Favorite Library membership.
-public struct LikeWorkKey: Codable, Hashable, Sendable {
-    public var kind: LikeWorkKind
-    public var id: String
-
-    public init(kind: LikeWorkKind, id: String) {
-        self.kind = kind
-        self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    public static func novel(threadID: String) -> LikeWorkKey {
-        LikeWorkKey(kind: .novel, id: threadID)
-    }
-
-    public static func mangaTitle(directoryID: MangaDirectoryID) -> LikeWorkKey {
-        LikeWorkKey(kind: .manga, id: directoryID.rawValue)
-    }
-
-    /// Normal forum threads are not capture sources, so they have no Like
-    /// work key. Nor is the per-thread `.mangaThread` reading-progress record
-    /// (smart-comic-mode design decision #15): Like work keys for manga are
-    /// keyed by the directory's `cleanBookName`, which a bare per-thread
-    /// record doesn't carry — only the merged `.mangaTitle` record does.
-    public init?(target: FavoriteContentTarget) {
-        switch target {
-        case let .novelThread(threadID):
-            self = .novel(threadID: threadID)
-        case let .mangaTitle(mangaID, _):
-            self = .mangaTitle(directoryID: MangaDirectoryID(rawValue: mangaID))
-        case .normalThread, .mangaThread:
-            return nil
-        }
-    }
-}
+// Source compatibility for clients using the former feature-specific names.
+public typealias LikeWorkKind = ReadingWorkKind
+public typealias LikeWorkKey = ReadingWorkKey
 
 public enum LikeItemKind: String, Codable, Hashable, Sendable, CaseIterable {
     case text
@@ -305,7 +268,7 @@ public enum LikeAnchorPayload: Codable, Hashable, Sendable {
 /// content target. Independent of Favorite Library membership.
 public struct LikeItem: Codable, Hashable, Identifiable, Sendable {
     public var id: String
-    public var workKey: LikeWorkKey
+    public var workKey: ReadingWorkKey
     public var kind: LikeItemKind
     public var excerptText: String?
     /// The un-highlighted head of the clause the excerpt starts inside, so a
@@ -362,7 +325,7 @@ public struct LikeItem: Codable, Hashable, Identifiable, Sendable {
 
     public init(
         id: String = UUID().uuidString,
-        workKey: LikeWorkKey,
+        workKey: ReadingWorkKey,
         kind: LikeItemKind,
         excerptText: String? = nil,
         excerptPrefix: String? = nil,
@@ -421,7 +384,7 @@ extension LikeItem {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(String.self, forKey: .id)
-        self.workKey = try container.decode(LikeWorkKey.self, forKey: .workKey)
+        self.workKey = try container.decode(ReadingWorkKey.self, forKey: .workKey)
         self.kind = try container.decode(LikeItemKind.self, forKey: .kind)
         self.excerptText = try container.decodeIfPresent(String.self, forKey: .excerptText)
         // Local-only, like `sortKey` below: never on the wire, and unlike the
@@ -463,11 +426,11 @@ extension LikeItem {
 /// A work-level row for the My Likes first level: one owning work plus its
 /// like count and most recent like activity, used to order the works list.
 public struct LikeWorkSummary: Hashable, Sendable {
-    public var workKey: LikeWorkKey
+    public var workKey: ReadingWorkKey
     public var itemCount: Int
     public var lastLikedAt: Date
 
-    public init(workKey: LikeWorkKey, itemCount: Int, lastLikedAt: Date) {
+    public init(workKey: ReadingWorkKey, itemCount: Int, lastLikedAt: Date) {
         self.workKey = workKey
         self.itemCount = itemCount
         self.lastLikedAt = lastLikedAt

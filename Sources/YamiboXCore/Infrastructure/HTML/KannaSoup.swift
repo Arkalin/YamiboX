@@ -304,55 +304,16 @@ class Element: Node {
     }
 
     private static func splitSelectorList(_ selector: String) -> [String] {
-        var parts: [String] = []
-        var current = ""
-        var bracketDepth = 0
-        var parenDepth = 0
-        var quote: Character?
-
-        for character in selector {
-            if let activeQuote = quote {
-                current.append(character)
-                if character == activeQuote {
-                    quote = nil
-                }
-                continue
-            }
-            switch character {
-            case "'", "\"":
-                quote = character
-                current.append(character)
-            case "[":
-                bracketDepth += 1
-                current.append(character)
-            case "]":
-                bracketDepth = max(0, bracketDepth - 1)
-                current.append(character)
-            case "(":
-                parenDepth += 1
-                current.append(character)
-            case ")":
-                parenDepth = max(0, parenDepth - 1)
-                current.append(character)
-            case "," where bracketDepth == 0 && parenDepth == 0:
-                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    parts.append(trimmed)
-                }
-                current = ""
-            default:
-                current.append(character)
-            }
-        }
-
-        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            parts.append(trimmed)
-        }
-        return parts
+        splitTopLevelSelector(selector, separatedBy: { $0 == "," })
     }
 
     private static func splitDescendantSelector(_ selector: String) -> [String] {
+        splitTopLevelSelector(selector, separatedBy: { $0.isWhitespace })
+    }
+
+    private static func splitTopLevelSelector(
+        _ selector: String, separatedBy isSeparator: (Character) -> Bool
+    ) -> [String] {
         var parts: [String] = []
         var current = ""
         var bracketDepth = 0
@@ -383,7 +344,7 @@ class Element: Node {
             case ")":
                 parenDepth = max(0, parenDepth - 1)
                 current.append(character)
-            case let character where character.isWhitespace && bracketDepth == 0 && parenDepth == 0:
+            case let character where bracketDepth == 0 && parenDepth == 0 && isSeparator(character):
                 let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     parts.append(trimmed)

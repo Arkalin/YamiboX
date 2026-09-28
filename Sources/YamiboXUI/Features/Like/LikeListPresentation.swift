@@ -35,7 +35,7 @@ enum LikeWorkFilter: CaseIterable, Hashable {
         return usesSidebar ? String(localized: title) : L10n.string("likes.section_title")
     }
 
-    func applying(to works: [LikeWorkSummary], titles: [LikeWorkKey: String], searchText: String) -> [LikeWorkSummary] {
+    func applying(to works: [LikeWorkSummary], titles: [ReadingWorkKey: String], searchText: String) -> [LikeWorkSummary] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return works.filter { work in
             let matchesKind = self == .all || (self == .novel ? work.workKey.kind == .novel : work.workKey.kind == .manga)
@@ -194,7 +194,7 @@ struct LikeItemMetadata: View {
 struct LikeWorkRow: View {
     let title: String
     let coverURL: URL?
-    let kind: LikeWorkKind
+    let kind: ReadingWorkKind
     let itemCount: Int
     let lastLikedAt: Date
     let isSelecting: Bool

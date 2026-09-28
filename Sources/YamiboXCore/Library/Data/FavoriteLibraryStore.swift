@@ -25,10 +25,8 @@ public actor FavoriteLibraryStore {
         self.database = databasePool
     }
 
-    /// Throws instead of returning an empty document: `save` replaces the
-    /// whole database, so a load-modify-save writer that mistakes a transient
-    /// read failure (SQLITE_BUSY, IO error, cancellation) for "library is
-    /// empty" would wipe every favorite on its next save.
+    /// A failed read is never an empty library. Mutations must use `update`,
+    /// which reads and writes the current document in one transaction.
     public func load() async throws -> FavoriteLibraryDocument {
         do {
             return try await database.read { db in
@@ -87,17 +85,6 @@ public actor FavoriteLibraryStore {
         }) ?? false
     }
 
-    public func save(_ document: FavoriteLibraryDocument) async throws {
-        do {
-            try await database.write { db in
-                try Self.save(document, in: db)
-            }
-            postChangeNotification()
-        } catch {
-            throw YamiboPersistenceError(context: error.localizedDescription, underlying: error)
-        }
-    }
-
     public func clearAll() async throws {
         try await database.write { db in
             // Favorites-scoped wipe: covers are content metadata and survive
@@ -124,10 +111,12 @@ public actor FavoriteLibraryStore {
     private static func save(_ document: FavoriteLibraryDocument, in db: Database) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        var data = try encoder.encode(canonicalized(document))
+        var document = canonicalized(document)
         if try db.tableExists("manga_identities") {
-            data = try MangaDirectoryIdentityJSON.normalize(data, identities: MangaDirectoryIdentityDatabase.snapshot(in: db), legacy: false)
+            document = FavoriteLibraryIdentityRemapping.normalize(document,
+                identities: try MangaDirectoryIdentityDatabase.snapshot(in: db), legacy: false)
         }
+        let data = try encoder.encode(document)
         let json = String(decoding: data, as: UTF8.self)
         try db.execute(
             sql: """

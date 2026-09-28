@@ -2,12 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol PrivateMessagePageLoading: Sendable {
-    func fetchPrivateMessagePage(uid: String, page: Int?, titleHint: String?) async throws -> PrivateMessagePage
-    func sendPrivateMessage(privateMessageID: String, uid: String, formHash: String, message: String) async throws -> String
-}
-
-extension UserSpaceRepository: PrivateMessagePageLoading {}
 
 @MainActor
 @Observable

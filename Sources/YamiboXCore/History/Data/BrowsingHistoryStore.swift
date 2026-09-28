@@ -11,7 +11,7 @@ import Foundation
 /// `last_visit_time` after every insert. Sync keeps stable visits separately
 /// from this device's canonical reader-mode and progress projection.
 public actor BrowsingHistoryStore {
-    public static let maxEntryCount = 2000
+    public static let maxEntryCount = BrowsingHistoryTimelinePolicy.maximumRecords
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
@@ -295,15 +295,13 @@ public actor BrowsingHistoryStore {
 
     // MARK: - Row mapping
 
-    func snapshotEntries() async throws -> [BrowsingHistoryEntry] {
+    public func snapshotEntries() async throws -> [BrowsingHistoryEntry] {
         try await database.read { db in
             try Self.snapshotEntries(in: db)
         }
     }
 
-    /// Compare-and-swap protects asynchronous normalization from concurrent
-    /// deletes or writes. Only changed rows are touched; observers see one commit.
-    func canRecord(_ visit: BrowsingHistoryVisit, targetID: String) async throws -> Bool {
+    public func canRecord(_ visit: BrowsingHistoryVisit, targetID: String) async throws -> Bool {
         guard visit.date > lastClearTime && visit.date > (deletedTargets[targetID] ?? .distantPast)
             && visit.date > (deletedThreads[visit.threadID] ?? .distantPast) else { return false }
         return try await database.read { db in
@@ -314,7 +312,9 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    func applyCanonicalEntries(
+    /// Compare-and-swap protects asynchronous normalization from concurrent
+    /// deletes or writes. Only changed rows are touched; observers see one commit.
+    public func applyCanonicalEntries(
         _ entries: [BrowsingHistoryEntry], replacing expected: [BrowsingHistoryEntry],
         visit: BrowsingHistoryVisit? = nil, visitTargetID: String? = nil
     ) async throws -> Bool {
@@ -331,7 +331,7 @@ public actor BrowsingHistoryStore {
                     try Self.recordSyncVisit(entry, in: db)
                 }
             }
-            let retained = Array(entries.sorted(by: Self.newestFirst).prefix(Self.maxEntryCount))
+            let retained = Array(entries.sorted(by: BrowsingHistoryTimelinePolicy.newestFirst).prefix(Self.maxEntryCount))
             let byID = Dictionary(uniqueKeysWithValues: retained.map { ($0.id, $0) })
             let oldByID = Dictionary(uniqueKeysWithValues: expected.map { ($0.id, $0) })
             for entry in expected where byID[entry.id] == nil {
@@ -342,7 +342,7 @@ public actor BrowsingHistoryStore {
             }
             return true
         }
-        if applied, entries.sorted(by: Self.newestFirst) != expected { postChangeNotification() }
+        if applied, entries.sorted(by: BrowsingHistoryTimelinePolicy.newestFirst) != expected { postChangeNotification() }
         return applied
     }
 
@@ -365,9 +365,10 @@ public actor BrowsingHistoryStore {
         incoming.target = try MangaDirectoryIdentityDatabase.canonicalTarget(incoming.target, in: db)
         let existing = try Data.fetchOne(db, sql: "SELECT record FROM browsing_history_sync_records WHERE id = ?", arguments: [incoming.id])
             .map { try JSONDecoder().decode(BrowsingHistorySyncRecord.self, from: $0) }
-        let payload = try BrowsingHistoryWebDAVPayload(updatedAt: .distantPast,
-            records: [existing, incoming].compactMap { $0 }).merging(nil)
-        if let record = payload.records.first, record != existing { try record.save(in: db) }
+        let snapshot = try BrowsingHistorySyncMergeV1.merge(
+            SyncRecordSnapshot(records: [existing, incoming].compactMap { $0 })
+        )
+        if let record = snapshot.records.first, record != existing { try record.save(in: db) }
         try db.execute(sql: """
             DELETE FROM browsing_history_sync_records WHERE id IN (
                 SELECT id FROM browsing_history_sync_records ORDER BY last_visit_time DESC, id ASC LIMIT -1 OFFSET ?
@@ -414,11 +415,11 @@ public actor BrowsingHistoryStore {
                     entry.chapterThreadID = local.chapterThreadID
                 }
                 entry.target = try MangaDirectoryIdentityDatabase.canonicalTarget(entry.target, in: db)
-                if let old = byID[entry.id], !Self.newestFirst(entry, old) { continue }
+                if let old = byID[entry.id], !BrowsingHistoryTimelinePolicy.newestFirst(entry, old) { continue }
                 byID[entry.id] = entry
             }
             try db.execute(sql: "DELETE FROM browsing_history")
-            for entry in byID.values.sorted(by: Self.newestFirst).prefix(Self.maxEntryCount) {
+            for entry in byID.values.sorted(by: BrowsingHistoryTimelinePolicy.newestFirst).prefix(Self.maxEntryCount) {
                 try Self.upsert(entry, in: db)
             }
             return (result, true)
@@ -443,16 +444,10 @@ public actor BrowsingHistoryStore {
             return record
         }
         // Preserve unresolved legacy deletion markers and their import rules.
-        let deletions = try MangaDirectoryIdentityJSON.normalize(
-            JSONEncoder().encode(snapshot.deletions), identities: identities,
-            legacy: false, datasetID: "browsingHistory"
+        let deletions = MangaIdentityDeletionRemapping.normalize(
+            snapshot.deletions, identities: identities
         )
-        return SyncRecordSnapshot(records: records,
-            deletions: try JSONDecoder().decode(SyncDeletionState.self, from: deletions))
-    }
-
-    static func newestFirst(_ lhs: BrowsingHistoryEntry, _ rhs: BrowsingHistoryEntry) -> Bool {
-        lhs.lastVisitTime == rhs.lastVisitTime ? lhs.id < rhs.id : lhs.lastVisitTime > rhs.lastVisitTime
+        return SyncRecordSnapshot(records: records, deletions: deletions)
     }
 
     private static func upsert(_ entry: BrowsingHistoryEntry, in db: Database) throws {

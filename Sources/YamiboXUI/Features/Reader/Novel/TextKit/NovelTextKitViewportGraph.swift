@@ -45,38 +45,10 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     ) -> NovelTextViewportSample? {
         let surfaceOrdinal = surfaceIdentity.ordinal
         guard let page = page(forSurfaceOrdinal: surfaceOrdinal),
-              let surfaceOriginY = surfaceOriginY(page: page),
-              let fragment = closestLayoutFragment(
-                  to: CGPoint(x: referencePoint.x, y: surfaceOriginY + referencePoint.y)
-              ) else {
+              let documentOffset = unclampedDocumentOffset(page: page, referencePoint: referencePoint) else {
             return nil
         }
 
-        let documentStart = textContentStorage.documentRange.location
-        let fragmentStart = textContentStorage.offset(from: documentStart, to: fragment.rangeInElement.location)
-        guard fragmentStart != NSNotFound else { return nil }
-        let fragmentPoint = CGPoint(
-            x: referencePoint.x - fragment.layoutFragmentFrame.minX,
-            y: surfaceOriginY + referencePoint.y - fragment.layoutFragmentFrame.minY
-        )
-        let lineOffset: Int
-        if let lineFragment = fragment.textLineFragment(
-            forVerticalOffset: fragmentPoint.y,
-            requiresExactMatch: false
-        ) {
-            let linePoint = CGPoint(
-                x: fragmentPoint.x - lineFragment.typographicBounds.minX,
-                y: fragmentPoint.y - lineFragment.typographicBounds.minY
-            )
-            lineOffset = min(
-                max(lineFragment.characterIndex(for: linePoint), lineFragment.characterRange.location),
-                lineFragment.characterRange.location + lineFragment.characterRange.length
-            )
-        } else {
-            lineOffset = 0
-        }
-        let utf16Offset = fragmentStart + lineOffset
-        let documentOffset = NovelDocumentUTF16Offset(result.viewportContext.document.coordinates.alignedOffset(utf16Offset))
         guard let sample = result.viewportContext.document.sample(
             containingDocumentOffset: documentOffset,
             surfaceIdentity: surfaceIdentity,
@@ -125,7 +97,19 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         guard let page = page(forSurfaceOrdinal: surfaceIdentity.ordinal),
               !page.ranges.isEmpty,
               let pageDocumentRange = documentRange(for: page),
-              let surfaceOriginY = surfaceOriginY(page: page),
+              let offset = unclampedDocumentOffset(page: page, referencePoint: referencePoint) else {
+            return nil
+        }
+        return min(max(offset, pageDocumentRange.lowerBound), pageDocumentRange.upperBound)
+    }
+
+    /// Both viewport sampling and selection use the same coordinate conversion;
+    /// their nearest-sample fallback and page-range clipping remain independent.
+    private func unclampedDocumentOffset(
+        page: NovelTextViewportIndexSurface,
+        referencePoint: CGPoint
+    ) -> NovelDocumentUTF16Offset? {
+        guard let surfaceOriginY = surfaceOriginY(page: page),
               let fragment = closestLayoutFragment(
                   to: CGPoint(x: referencePoint.x, y: surfaceOriginY + referencePoint.y)
               ) else {
@@ -156,8 +140,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             lineOffset = 0
         }
         let utf16Offset = fragmentStart + lineOffset
-        let offset = NovelDocumentUTF16Offset(result.viewportContext.document.coordinates.alignedOffset(utf16Offset))
-        return min(max(offset, pageDocumentRange.lowerBound), pageDocumentRange.upperBound)
+        return NovelDocumentUTF16Offset(result.viewportContext.document.coordinates.alignedOffset(utf16Offset))
     }
 
     func selectionRects(

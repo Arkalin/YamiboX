@@ -2,16 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol ForumComposerDraftPersisting: Sendable {
-    func generation() async throws -> UUID
-    func drafts(accountUID: String) async throws -> [ForumComposerDraft]
-    func save(_ draft: ForumComposerDraft, expecting revision: Int64?, generation: UUID) async throws
-    func delete(id: UUID, accountUID: String, expecting revision: Int64?, generation: UUID) async throws -> Bool
-    func importResource(_ file: ForumAttachmentFile, draftID: UUID, accountUID: String, generation: UUID) async throws -> UUID
-    func resource(id: UUID, accountUID: String) async throws -> ForumAttachmentFile
-    func removeUnreferencedResources(draftID: UUID, accountUID: String, generation: UUID) async throws
-}
-extension ForumComposerDraftStore: ForumComposerDraftPersisting {}
 
 @MainActor
 @Observable

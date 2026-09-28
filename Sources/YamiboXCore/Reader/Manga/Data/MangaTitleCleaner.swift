@@ -39,11 +39,6 @@ public enum MangaTitleCleaner {
         return clean.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public static func extractTid(from url: String) -> String? {
-        HTMLTextExtractor.firstMatch(pattern: #"tid=(\d+)"#, in: url)?.dropFirst().first
-            ?? HTMLTextExtractor.firstMatch(pattern: #"thread-(\d+)-"#, in: url)?.dropFirst().first
-    }
-
     public static func extractAuthorPrefix(_ rawTitle: String) -> String {
         if let direct = HTMLTextExtractor.firstMatch(pattern: #"^\s*【(.*?)】"#, in: rawTitle)?.dropFirst().first,
            !direct.isEmpty {

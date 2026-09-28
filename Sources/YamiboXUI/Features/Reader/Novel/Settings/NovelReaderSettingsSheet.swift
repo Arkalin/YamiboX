@@ -6,7 +6,9 @@ struct NovelReaderSettingsSheet: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
     let model: NovelReaderViewModel
-    let appModel: YamiboAppModel
+    let settingsStore: SettingsStore
+    let peripheralInput: ReaderPeripheralInputManager
+    let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
@@ -14,10 +16,6 @@ struct NovelReaderSettingsSheet: View {
     @State private var isPeripheralSettingsPresented = false
     private static let fallbackPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
-
-    private var controlAccent: Color {
-        AppTheme.theme(for: appModel.appThemePreset).controlAccent
-    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -52,8 +50,8 @@ struct NovelReaderSettingsSheet: View {
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
-                dependencies: appModel.appContext.settingsDependencies,
-                peripheralInput: appModel.peripheralInput
+                settingsStore: settingsStore,
+                peripheralInput: peripheralInput
             )
         }
     }

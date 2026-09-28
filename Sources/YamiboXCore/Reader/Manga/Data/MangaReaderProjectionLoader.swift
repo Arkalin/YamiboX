@@ -74,7 +74,7 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
         for request: MangaReaderProjectionRequest
     ) async -> ReaderProjectionOfflineSourcePageLoad<MangaReaderProjectionSourceIdentity, ForumThreadPage>? {
         guard let offlineCacheStore,
-              let ownerName = request.offlineOwnerName?.mangaReaderTrimmedNonEmpty,
+              let ownerName = request.offlineOwnerName?.nilIfBlank,
               let membership = await offlineCacheStore.mangaOfflineCacheMembership(ownerName: ownerName, tid: request.threadID),
               membership.tid == request.threadID,
               membership.sourcePage.thread.tid == request.threadID,

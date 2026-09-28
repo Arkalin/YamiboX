@@ -15,7 +15,7 @@ public protocol OfflineCacheImageAssetStoring: Sendable {
 }
 
 public protocol OfflineCacheManagementStoring: OfflineCacheUpdateObserving {
-    func offlineCacheManagementSnapshot() async -> OfflineCacheManagementSnapshot
+    func offlineCacheManagementSnapshot() async throws -> OfflineCacheManagementSnapshot
     /// A read-only, work-level projection for entry surfaces. Unlike the
     /// management snapshot, this excludes queued and failed cache work.
     func offlineCachedWorks() async -> [OfflineCachedWork]
@@ -31,9 +31,11 @@ public enum OfflineCacheQueueRunState: String, Codable, Hashable, Sendable {
 }
 
 public protocol OfflineCacheQueueStoring: OfflineCacheUpdateObserving {
-    func offlineCacheQueueWorks() async -> [OfflineCacheQueueWorkProjection]
-    func nextOfflineCacheProcessingWork() async -> OfflineCacheProcessingWork?
-    func offlineCacheProcessingWork(id: OfflineCacheWorkID) async -> OfflineCacheProcessingWork?
+    /// Empty means no work, never a failed database read or queue recovery.
+    func offlineCacheQueueWorks() async throws -> [OfflineCacheQueueWorkProjection]
+    /// Nil means absent work, never a failed read or queue recovery.
+    func nextOfflineCacheProcessingWork() async throws -> OfflineCacheProcessingWork?
+    func offlineCacheProcessingWork(id: OfflineCacheWorkID) async throws -> OfflineCacheProcessingWork?
     func retryFailedOfflineCacheWorks() async throws
     func updateOfflineCacheWorkProgress(
         id: OfflineCacheWorkID,
@@ -52,7 +54,7 @@ public protocol OfflineCacheQueueStoring: OfflineCacheUpdateObserving {
     func cancelOfflineCacheEntry(_ id: OfflineCacheEntryID) async throws
     func cancelOfflineCacheGroup(_ id: OfflineCacheGroupID) async throws
     func clearOfflineCacheQueue() async throws
-    func offlineCacheQueueRunState() async -> OfflineCacheQueueRunState
+    func offlineCacheQueueRunState() async throws -> OfflineCacheQueueRunState
     func setOfflineCacheQueueRunState(_ state: OfflineCacheQueueRunState) async throws
 }
 
@@ -60,7 +62,11 @@ public protocol OfflineCacheStoreCore:
     OfflineCacheUpdateObserving,
     OfflineCacheImageAssetStoring,
     OfflineCacheQueueStoring,
-    OfflineCacheManagementStoring {}
+    OfflineCacheManagementStoring {
+    /// Called after the shared identity transaction commits. Wrappers must forward
+    /// this invalidation to the same stream consumed by their observers.
+    func notifyIdentityMigrationCommitted()
+}
 
 /// The full capability surface of the shared offline cache store, as assembled
 /// by the composition root and consumed by reader/library/account features.

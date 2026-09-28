@@ -2,12 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-protocol MessageCenterPageLoading: Sendable {
-    func fetchPrivateMessages(page: Int) async throws -> UserSpacePrivateMessagePage
-    func fetchNotices(page: Int) async throws -> UserSpaceNoticePage
-}
-
-extension UserSpaceRepository: MessageCenterPageLoading {}
 
 @MainActor
 @Observable

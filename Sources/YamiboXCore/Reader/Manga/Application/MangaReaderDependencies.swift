@@ -16,16 +16,15 @@ public struct MangaReaderDependencies: Sendable {
     public let imagePipeline: any YamiboImageDataLoading
     public let makeProjectionLoader: @Sendable () async -> any MangaReaderProjectionSnapshotLoading
     public let makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
-    public let makeChapterCommentsRepository: @Sendable () async -> ReaderChapterCommentsRepository
+    public let makeChapterCommentsRepository: @Sendable () async -> any ReaderChapterCommentsLoading
     public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
     /// Smart Comic Mode off (design decision #16): the reader reuses
     /// `ThreadCoverResolver` to auto-resolve a `.thread(tid:)` cover for the
     /// chapter being read, the same mechanism
     /// `ForumThreadReaderViewModel`/`NovelDetailViewModel` already use
     /// for normal threads — this is what drives it.
-    public let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
-    /// The cache sheet embeds the account feature's offline queue view model.
-    public let account: AccountDependencies
+    public let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
+    public let cacheQueue: OfflineCacheQueueDependencies
     public let like: LikeDependencies
 
     public init(
@@ -40,12 +39,12 @@ public struct MangaReaderDependencies: Sendable {
         contentCoverStore: ContentCoverStore,
         makeProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionSnapshotLoading,
         makeDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository,
-        makeChapterCommentsRepository: @escaping @Sendable () async -> ReaderChapterCommentsRepository,
+        makeChapterCommentsRepository: @escaping @Sendable () async -> any ReaderChapterCommentsLoading,
         makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
-        account: AccountDependencies,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ThreadCoverPageResolving,
+        cacheQueue: OfflineCacheQueueDependencies,
         like: LikeDependencies,
-        imagePipeline: (any YamiboImageDataLoading)? = nil
+        imagePipeline: any YamiboImageDataLoading
     ) {
         self.settingsStore = settingsStore
         self.readingProgressStore = readingProgressStore
@@ -56,13 +55,13 @@ public struct MangaReaderDependencies: Sendable {
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.offlineCacheStore = offlineCacheStore
         self.contentCoverStore = contentCoverStore
-        self.imagePipeline = imagePipeline ?? account.imagePipeline
+        self.imagePipeline = imagePipeline
         self.makeProjectionLoader = makeProjectionLoader
         self.makeDirectoryRepository = makeDirectoryRepository
         self.makeChapterCommentsRepository = makeChapterCommentsRepository
         self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
-        self.account = account
+        self.cacheQueue = cacheQueue
         self.like = like
     }
 }

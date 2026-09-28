@@ -170,7 +170,7 @@ extension OfflineCacheStore {
 
     private func removeNovelOfflineCacheEntry(entryKey: String) async throws {
         try await ensureQueueRecovered()
-        guard let entryKey = entryKey.mangaReaderTrimmedNonEmpty else { return }
+        guard let entryKey = entryKey.nilIfBlank else { return }
         do {
             let files = try await database.write { db -> NovelPayloadFileNames in
                 let removed = try Self.novelEntry(entryKey: entryKey, in: db)
@@ -213,7 +213,7 @@ extension OfflineCacheStore {
 
     private func removeNovelOfflineCacheEntries(ownerName: String) async throws {
         try await ensureQueueRecovered()
-        guard let ownerName = ownerName.mangaReaderTrimmedNonEmpty else { return }
+        guard let ownerName = ownerName.nilIfBlank else { return }
         do {
             let files = try await database.write { db -> NovelPayloadFileNames in
                 let removed = try Self.novelEntries(ownerName: ownerName, in: db)
@@ -242,7 +242,7 @@ extension OfflineCacheStore {
     static func normalizedNovelWorkRequest(
         _ request: NovelOfflineCacheWorkRequest
     ) throws -> NovelOfflineCacheWorkRequest {
-        guard request.entryKey.mangaReaderTrimmedNonEmpty != nil else {
+        guard request.entryKey.nilIfBlank != nil else {
             throw YamiboPersistenceError(context: "Novel offline cache entry is empty")
         }
         return NovelOfflineCacheWorkRequest(
@@ -434,7 +434,7 @@ extension OfflineCacheStore {
     }
 
     static func novelDisplayOwnerTitle(ownerTitle: String, threadID: String) -> String {
-        ownerTitle.mangaReaderTrimmedNonEmpty ?? threadID.trimmingCharacters(in: .whitespacesAndNewlines)
+        ownerTitle.nilIfBlank ?? threadID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func novelGroupKey(fromEntryKey entryKey: String) -> String? {

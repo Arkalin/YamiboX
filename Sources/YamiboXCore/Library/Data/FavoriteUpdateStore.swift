@@ -23,43 +23,28 @@ public actor FavoriteUpdateStore {
         self.database = databasePool
     }
 
-    public func loadState() async -> FavoriteUpdateStoreState {
-        do {
-            return try await database.read { db in try Self.state(in: db) }
-        } catch {
-            YamiboLog.library.error("Failed to load stored favorite update tracking state, returning empty state: \(error)")
-            return FavoriteUpdateStoreState()
-        }
+    public func loadState() async throws -> FavoriteUpdateStoreState {
+        try await database.read { db in try Self.state(in: db) }
     }
 
-    public func latestRun() async -> FavoriteUpdateRunSnapshot? {
-        do {
-            return try await database.read { db in
-                guard let json = try String.fetchOne(
-                    db,
-                    sql: """
-                    SELECT run_json FROM favorite_update_runs
-                    ORDER BY updated_at DESC, run_id DESC
-                    LIMIT 1
-                    """
-                ) else {
-                    return nil
-                }
-                return try Self.decode(FavoriteUpdateRunSnapshot.self, from: json)
+    public func latestRun() async throws -> FavoriteUpdateRunSnapshot? {
+        return try await database.read { db in
+            guard let json = try String.fetchOne(
+                db,
+                sql: """
+                SELECT run_json FROM favorite_update_runs
+                ORDER BY updated_at DESC, run_id DESC
+                LIMIT 1
+                """
+            ) else {
+                return nil
             }
-        } catch {
-            YamiboLog.library.error("Failed to load latest favorite update run, returning none: \(error)")
-            return nil
+            return try Self.decode(FavoriteUpdateRunSnapshot.self, from: json)
         }
     }
 
-    public func activeEvents() async -> [FavoriteUpdateEvent] {
-        do {
-            return try await database.read { db in try Self.activeEvents(in: db) }
-        } catch {
-            YamiboLog.library.error("Failed to load active favorite update events, returning none: \(error)")
-            return []
-        }
+    public func activeEvents() async throws -> [FavoriteUpdateEvent] {
+        try await database.read { db in try Self.activeEvents(in: db) }
     }
 
     public func saveRun(_ snapshot: FavoriteUpdateRunSnapshot) async throws {
@@ -153,10 +138,10 @@ public actor FavoriteUpdateStore {
     /// is wrong mid-run: the store is missing this run's not-yet-committed
     /// detections, while the run's snapshot is missing read/dismiss marks the
     /// user applied since the run started.
-    public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async -> Int {
-        let merged = (try? await database.read { db in
+    public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async throws -> Int {
+        let merged = try await database.read { db in
             try Self.mergingRunEvents(runEvents, in: db)
-        }) ?? Self.mergingRunEvents(runEvents, intoStored: [])
+        }
         return merged
             .filter { $0.readAt == nil && $0.dismissedAt == nil }
             .count

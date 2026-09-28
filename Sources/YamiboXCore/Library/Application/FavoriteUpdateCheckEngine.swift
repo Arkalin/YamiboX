@@ -86,18 +86,15 @@ public final class FavoriteUpdateCheckEngine {
     }
 
     // Lane extensions (+SmartManga, +Notifications) share these members.
-    let updateStore: FavoriteUpdateStore
-    private let libraryStore: FavoriteLibraryStore
-    private let makeForumThreadReaderRepository: @Sendable () async -> ForumThreadReaderRepository
+    let updateStore: any FavoriteUpdateStatePersisting
+    private let libraryStore: any FavoriteUpdateLibraryAccessing
+    private let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageFetching
     let settingsStore: SettingsStore?
     let notifier: (any FavoriteUpdateNotifying)?
-    private let pageFetcher: ((FavoriteItem) async throws -> ForumThreadPage)?
     /// Batched tid -> directory resolution for the smart-manga check lane.
-    /// `nil` (the default) makes that lane a no-op, same as every other
-    /// optional dependency here — production wiring supplies the real
-    /// `MangaDirectoryStore` in a later phase; this phase only wires
-    /// dependency-injection plumbing plus internal candidate/check logic.
-    let mangaDirectoryStore: (any MangaDirectoryPersisting)?
+    /// `nil` makes that lane a no-op. The reader must explicitly implement
+    /// batched lookup; checking needs no directory mutation or observation.
+    let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
     /// Builds a fresh `MangaDirectoryWorkflow` scoped to one directory
     /// group's board (`searchForumID`), mirroring `makeForumThreadReaderRepository`'s
     /// "construct fresh per call so session state stays current" shape. `nil`
@@ -108,6 +105,7 @@ public final class FavoriteUpdateCheckEngine {
 
     private var checkTask: Task<Void, Never>?
     private var storeUpdatesTask: Task<Void, Never>?
+    private var finishingRunIDs: Set<String> = []
 
     private func isRunActive(_ runID: String) -> Bool {
         runRegistry.isActive(runID)
@@ -118,13 +116,12 @@ public final class FavoriteUpdateCheckEngine {
     ///   shared instance when several engines coexist in one process so they
     ///   keep the original cross-instance orphan-detection semantics.
     public init(
-        updateStore: FavoriteUpdateStore,
-        libraryStore: FavoriteLibraryStore,
-        makeForumThreadReaderRepository: @escaping @Sendable () async -> ForumThreadReaderRepository,
+        updateStore: any FavoriteUpdateStatePersisting,
+        libraryStore: any FavoriteUpdateLibraryAccessing,
+        makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageFetching,
         settingsStore: SettingsStore? = nil,
         notifier: (any FavoriteUpdateNotifying)? = nil,
-        pageFetcher: ((FavoriteItem) async throws -> ForumThreadPage)? = nil,
-        mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
+        mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)? = nil,
         runRegistry: FavoriteUpdateActiveRunRegistry = FavoriteUpdateActiveRunRegistry()
     ) {
@@ -133,7 +130,6 @@ public final class FavoriteUpdateCheckEngine {
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.settingsStore = settingsStore
         self.notifier = notifier
-        self.pageFetcher = pageFetcher
         self.mangaDirectoryStore = mangaDirectoryStore
         self.makeMangaDirectoryWorkflow = makeMangaDirectoryWorkflow
         self.runRegistry = runRegistry
@@ -168,40 +164,40 @@ public final class FavoriteUpdateCheckEngine {
     /// Reloads the persisted run, events, and filters. A run still marked
     /// running whose task no longer exists is downgraded to interrupted.
     public func load() async {
-        snapshot = await fetchLatestRunDowngradingIfOrphaned()
+        do {
+            let latest = try await fetchLatestRunDowngradingIfOrphaned()
+            if snapshot?.status != .running || snapshot.map({ !isRunActive($0.runID) }) == true {
+                snapshot = latest
+            }
+        } catch {
+            reportError(error)
+            return
+        }
         await reloadEventState()
     }
 
     /// Applies a store change observed via `changes()`. The stream
     /// consumer can fall arbitrarily far behind under scheduler contention
-    /// (it drains a backlog that includes this very instance's own writes
-    /// from the run that just finished), so unlike `load()` this
-    /// re-validates immediately before publishing that no new run has
+    /// (including this instance's own writes from the run that just finished).
+    /// `load()` re-validates immediately before publishing that no new run has
     /// started on this instance while the store read was in flight —
     /// applying a stale read at that point would regress the visible
     /// snapshot back to the old run's runID and silently break the new
     /// run's own updateSnapshot(runID:) calls, which compare against
     /// self.snapshot.runID and no-op on a mismatch.
     private func reloadFromExternalChange() async {
-        let latest = await fetchLatestRunDowngradingIfOrphaned()
-        guard snapshot?.status != .running else { return }
-        snapshot = latest
-        await reloadEventState()
+        await load()
     }
 
-    private func fetchLatestRunDowngradingIfOrphaned() async -> FavoriteUpdateRunSnapshot? {
-        var latest = await updateStore.latestRun()
+    private func fetchLatestRunDowngradingIfOrphaned() async throws -> FavoriteUpdateRunSnapshot? {
+        var latest = try await updateStore.latestRun()
         if var loaded = latest, loaded.status == .running, !isRunActive(loaded.runID) {
             loaded.status = .interrupted
             loaded.phase = .interrupted
             loaded.finishedAt = loaded.finishedAt ?? .now
             loaded.updatedAt = .now
             loaded.progress = nil
-            do {
-                try await updateStore.saveRun(loaded)
-            } catch {
-                YamiboLog.persistence.error("Failed to persist interrupted-run downgrade for favorite update run \(loaded.runID): \(error.localizedDescription)")
-            }
+            try await updateStore.saveRun(loaded)
             latest = loaded
         }
         return latest
@@ -211,7 +207,15 @@ public final class FavoriteUpdateCheckEngine {
     /// snapshot so a run can publish fresh event state before its terminal
     /// status becomes observable.
     public func reloadEventState() async {
-        let state = await updateStore.loadState()
+        do {
+            applyEventState(try await updateStore.loadState())
+        } catch {
+            // Retain the last good snapshot; a failed read is not an empty library.
+            reportError(error)
+        }
+    }
+
+    private func applyEventState(_ state: FavoriteUpdateStoreState) {
         events = state.events
             .filter { $0.dismissedAt == nil }
             .sorted { lhs, rhs in
@@ -250,11 +254,24 @@ public final class FavoriteUpdateCheckEngine {
             updatedAt: now
         )
         snapshot = startedSnapshot
+        runRegistry.register(startedSnapshot.runID)
         do {
             try await updateStore.saveRun(startedSnapshot)
         } catch {
+            runRegistry.unregister(startedSnapshot.runID)
             YamiboLog.persistence.error("Failed to persist initial running snapshot for favorite update run \(startedSnapshot.runID): \(error.localizedDescription)")
+            guard snapshot?.runID == startedSnapshot.runID else { return nil }
+            var failed = startedSnapshot
+            failed.status = .failed
+            failed.phase = .failed
+            failed.finishedAt = .now
+            failed.errorMessage = error.localizedDescription
+            snapshot = failed
             reportError(error)
+            return nil
+        }
+        guard snapshot?.runID == startedSnapshot.runID, snapshot?.status == .running else {
+            runRegistry.unregister(startedSnapshot.runID)
             return nil
         }
         checkTask?.cancel()
@@ -270,12 +287,14 @@ public final class FavoriteUpdateCheckEngine {
             }
             await self.runCheck(runID: startedSnapshot.runID, nonTagMangaDirectoryCheckCap: nonTagMangaDirectoryCheckCap)
         }
-        runRegistry.register(startedSnapshot.runID)
         return startedSnapshot.runID
     }
 
     public func interrupt() async {
         guard snapshot?.status == .running else { return }
+        // The final commit has begun: let it publish its durable outcome rather
+        // than race a second terminal write against it.
+        guard let runID = snapshot?.runID, !finishingRunIDs.contains(runID) else { return }
         checkTask?.cancel()
         await updateSnapshot { snapshot in
             snapshot.status = .interrupted
@@ -375,7 +394,7 @@ public final class FavoriteUpdateCheckEngine {
     public func markEventRead(_ eventID: String) async {
         let targetIDs = events.filter { $0.id == eventID }.map(\.target.id)
         do {
-            try await updateStore.markEventRead(eventID)
+            try await updateStore.markEventRead(eventID, date: .now)
             await load()
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
@@ -387,7 +406,7 @@ public final class FavoriteUpdateCheckEngine {
     public func dismissEvent(_ eventID: String) async {
         let targetIDs = events.filter { $0.id == eventID }.map(\.target.id)
         do {
-            try await updateStore.dismissEvent(eventID)
+            try await updateStore.dismissEvent(eventID, date: .now)
             await load()
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
@@ -399,7 +418,7 @@ public final class FavoriteUpdateCheckEngine {
     public func dismissAllEvents() async {
         let targetIDs = events.map(\.target.id)
         do {
-            try await updateStore.dismissAllEvents()
+            try await updateStore.dismissAllEvents(date: .now)
             await load()
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
@@ -410,7 +429,7 @@ public final class FavoriteUpdateCheckEngine {
 
     public func setFidFilter(_ fid: String, enabled: Bool) async {
         do {
-            try await updateStore.setFidEnabled(fid, enabled: enabled)
+            try await updateStore.setFidEnabled(fid, enabled: enabled, date: .now)
             await load()
         } catch {
             YamiboLog.persistence.error("Failed to toggle favorite update forum filter \(fid): \(error.localizedDescription)")
@@ -420,7 +439,7 @@ public final class FavoriteUpdateCheckEngine {
 
     public func setCategoryFilter(_ categoryID: String, enabled: Bool) async {
         do {
-            try await updateStore.setCategoryEnabled(categoryID, enabled: enabled)
+            try await updateStore.setCategoryEnabled(categoryID, enabled: enabled, date: .now)
             await load()
         } catch {
             YamiboLog.persistence.error("Failed to toggle favorite update category filter \(categoryID): \(error.localizedDescription)")
@@ -441,7 +460,7 @@ public final class FavoriteUpdateCheckEngine {
             let document = try await libraryStore.load()
             let candidates = Self.candidates(in: document)
             try await refreshFilters(candidates: candidates, document: document)
-            let scopedCandidates = await scopedCandidates(candidates)
+            let scopedCandidates = try await scopedCandidates(candidates)
             try await replaceTrackedTargetsIfNeeded(candidates)
             let mangaGroups = await mangaDirectoryGroups(in: document)
             await updateSnapshot(runID: runID) { snapshot in
@@ -450,7 +469,7 @@ public final class FavoriteUpdateCheckEngine {
                 snapshot.progress = .loadedTargets(count: scopedCandidates.count)
             }
 
-            let initialState = await updateStore.loadState()
+            let initialState = try await updateStore.loadState()
             trackedTargets = Dictionary(uniqueKeysWithValues: initialState.trackedTargets.map { ($0.id, $0) })
             events = initialState.events
 
@@ -530,6 +549,7 @@ public final class FavoriteUpdateCheckEngine {
                 return
             }
             YamiboLog.sync.error("Favorite update check run \(runID) failed: \(error.localizedDescription)")
+            reportError(error)
             await finishRun(
                 runID: runID,
                 trackedTargets: trackedTargets,
@@ -551,24 +571,46 @@ public final class FavoriteUpdateCheckEngine {
         errorMessage: String? = nil,
         onlyIfStillRunning: Bool = false
     ) async {
-        await commitCheckResults(trackedTargets: trackedTargets, events: events)
+        guard finishingRunIDs.insert(runID).inserted else { return }
+        defer { finishingRunIDs.remove(runID) }
+        var terminalStatus = status
+        var terminalErrorMessage = errorMessage
+        do {
+            try await commitCheckResults(trackedTargets: trackedTargets, events: events)
+        } catch {
+            terminalStatus = LoadDiagnosticError.isCancellation(error) ? .interrupted : .failed
+            terminalErrorMessage = error.localizedDescription
+            reportError(error)
+        }
         await reloadEventState()
-        let phase: FavoriteUpdateRunPhase = switch status {
+        guard var terminal = snapshot, terminal.runID == runID else { return }
+        // An interrupted run may still fail to persist its results. Surface that
+        // failure, but don't otherwise restamp an already-terminated run.
+        if onlyIfStillRunning, terminal.status != .running, terminalStatus != .failed { return }
+        let phase: FavoriteUpdateRunPhase = switch terminalStatus {
         case .completed: .completed
         case .interrupted: .interrupted
         case .canceled: .canceled
         case .failed, .running: .failed
         }
-        await updateSnapshot(runID: runID) { snapshot in
-            if onlyIfStillRunning, snapshot.status != .running { return }
-            snapshot.status = status
-            snapshot.phase = phase
-            snapshot.finishedAt = .now
-            snapshot.progress = nil
-            if let errorMessage {
-                snapshot.errorMessage = errorMessage
-            }
+        terminal.status = terminalStatus
+        terminal.phase = phase
+        terminal.finishedAt = .now
+        terminal.updatedAt = .now
+        terminal.progress = nil
+        if let terminalErrorMessage { terminal.errorMessage = terminalErrorMessage }
+        do {
+            try await updateStore.saveRun(terminal)
+        } catch {
+            // Never publish completion until both results and terminal status
+            // are durable. A failed write must also leave manual retry available.
+            terminal.status = LoadDiagnosticError.isCancellation(error) ? .interrupted : .failed
+            terminal.phase = terminal.status == .interrupted ? .interrupted : .failed
+            terminal.errorMessage = terminalErrorMessage ?? error.localizedDescription
+            reportError(error)
         }
+        guard snapshot?.runID == runID else { return }
+        snapshot = terminal
     }
 
     /// Applies this run's accumulated tracked-target/event changes to the
@@ -581,13 +623,9 @@ public final class FavoriteUpdateCheckEngine {
     private func commitCheckResults(
         trackedTargets: [String: FavoriteUpdateTrackedTarget],
         events: [FavoriteUpdateEvent]
-    ) async {
+    ) async throws {
         guard !trackedTargets.isEmpty else { return }
-        do {
-            try await updateStore.applyCheckRunResults(trackedTargets: Array(trackedTargets.values), events: events)
-        } catch {
-            YamiboLog.persistence.error("Failed to persist favorite update check results: \(error.localizedDescription)")
-        }
+        try await updateStore.applyCheckRunResults(trackedTargets: Array(trackedTargets.values), events: events)
     }
 
     func updateSnapshot(
@@ -644,8 +682,8 @@ public final class FavoriteUpdateCheckEngine {
         )
     }
 
-    private func scopedCandidates(_ candidates: [FavoriteItem]) async -> [FavoriteItem] {
-        let state = await updateStore.loadState()
+    private func scopedCandidates(_ candidates: [FavoriteItem]) async throws -> [FavoriteItem] {
+        let state = try await updateStore.loadState()
         let enabledFids = Set(state.fidFilters.filter(\.enabled).map(\.fid))
         let disabledFidsExist = state.fidFilters.contains { !$0.enabled }
         let enabledCategories = Set(state.categoryFilters.filter(\.enabled).map(\.categoryID))
@@ -667,7 +705,7 @@ public final class FavoriteUpdateCheckEngine {
     }
 
     private func replaceTrackedTargetsIfNeeded(_ candidates: [FavoriteItem]) async throws {
-        let state = await updateStore.loadState()
+        let state = try await updateStore.loadState()
         // `.mangaDirectory` tracked targets aren't keyed by any
         // `FavoriteItemTarget` in `candidates` (they're per-directory, not
         // per-favorite) — carry them through untouched instead of letting
@@ -736,7 +774,7 @@ public final class FavoriteUpdateCheckEngine {
             // circuit-breaker strike or touch its stored baseline on it, and
             // let the caller decide to abort the whole run instead of
             // grinding through every remaining candidate the same way.
-            if Self.isOfflineError(error) {
+            if YamiboNetworkErrorPolicy.isOffline(error) {
                 return .offline
             }
             YamiboLog.sync.warning("Failed to fetch thread page for favorite update check on \(item.target.id): \(error.localizedDescription)")
@@ -800,22 +838,6 @@ public final class FavoriteUpdateCheckEngine {
         return .checked(detected: 1)
     }
 
-    /// Mirrors the offline-detection used by other network call sites in the
-    /// app (e.g. `MangaReaderDataSupport.mapNetworkErrors`,
-    /// `ReaderThreadPageProjectionLoadingStrategy.fetchThreadHTML`): a
-    /// `YamiboError.offline` some caller already mapped, or the raw
-    /// `URLError` codes that mean "no network," as opposed to a server- or
-    /// parsing-side failure specific to this one target.
-    private static func isOfflineError(_ error: any Error) -> Bool {
-        if let yamiboError = LoadDiagnosticError.classificationError(error) as? YamiboError, case .offline = yamiboError {
-            return true
-        }
-        if let urlError = LoadDiagnosticError.classificationError(error) as? URLError {
-            return urlError.code == .notConnectedToInternet || urlError.code == .networkConnectionLost
-        }
-        return false
-    }
-
     /// Accumulates a newly detected delta onto an existing undismissed event
     /// for the same target instead of replacing it outright, so a user who
     /// misses several check cycles in a row sees the true accumulated total
@@ -840,18 +862,17 @@ public final class FavoriteUpdateCheckEngine {
     /// since nothing else in the app re-probes an already-favorited item.
     private func healUnknownSourceGroupIfNeeded(item: FavoriteItem, page: ForumThreadPage) async {
         guard item.sourceGroup == .unknown, let forumID = page.forumID ?? page.thread.fid else { return }
-        guard var document = try? await libraryStore.load() else {
-            YamiboLog.persistence.error("Failed to load favorite library while healing unknown source group for target \(item.target.id)")
-            return
+        do {
+            try await libraryStore.healUnknownSourceGroup(
+                for: item.target, forumID: forumID, forumName: page.forumName
+            )
+        } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            YamiboLog.persistence.error("Failed to heal favorite source group for target \(item.target.id): \(error.localizedDescription)")
         }
-        document.healUnknownSourceGroup(for: item.target, forumID: forumID, forumName: page.forumName)
-        try? await libraryStore.save(document)
     }
 
     private func threadPage(for item: FavoriteItem, knownPageCount: Int?) async throws -> ForumThreadPage {
-        if let pageFetcher {
-            return try await pageFetcher(item)
-        }
         guard let tid = item.target.threadID else {
             throw FavoriteActionError.missingFavoriteThreadID
         }
@@ -865,7 +886,7 @@ public final class FavoriteUpdateCheckEngine {
         // newest content instead of freezing at whatever was on page 1
         // forever once the thread grows past one page.
         let page = max(1, knownPageCount ?? 1)
-        return try await repository.fetchThreadPage(context: context, page: page)
+        return try await repository.fetchThreadPage(context: context, page: page, authorID: nil, reverse: false)
     }
 
 }

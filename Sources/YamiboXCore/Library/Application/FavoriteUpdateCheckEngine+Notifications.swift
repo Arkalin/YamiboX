@@ -59,8 +59,12 @@ extension FavoriteUpdateCheckEngine {
     func deliverNotificationIfEnabled(for event: FavoriteUpdateEvent, runEvents: [FavoriteUpdateEvent]) async {
         guard let notifier, await notificationsEnabled() else { return }
         guard await notifier.authorization() == .granted else { return }
-        let unreadCount = await updateStore.unreadEventCount(mergingRunEvents: runEvents)
-        await notifier.deliver(FavoriteUpdateNotification(event: event, badgeCount: unreadCount))
+        do {
+            let unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents)
+            await notifier.deliver(FavoriteUpdateNotification(event: event, badgeCount: unreadCount))
+        } catch {
+            YamiboLog.persistence.error("Failed to read favorite update notification badge: \(error)")
+        }
     }
 
     /// Removes the delivered notifications for events the user has handled

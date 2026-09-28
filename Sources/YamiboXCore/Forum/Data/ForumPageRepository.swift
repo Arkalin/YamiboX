@@ -1,11 +1,11 @@
 import Foundation
 
-public actor ForumPageRepository {
-    private let client: YamiboClient
+public actor ForumPageRepository: ForumPageLoading {
+    private let client: ForumPageClient
     private var composerBackgrounds: [URL: [ForumComposerBackground]] = [:]
 
     init(client: YamiboClient) {
-        self.client = client
+        self.client = ForumPageClient(transport: client)
     }
 
     public func fetchPage(url: URL, confirmedAction: Bool = false) async throws -> ForumPageLoadResult {
@@ -13,14 +13,14 @@ public actor ForumPageRepository {
         guard confirmedAction || !ForumWebPagePolicy.requiresConfirmationToLoad(url) else {
             throw ForumPageError.confirmationRequired
         }
-        let response = try await client.fetchPageDocument(url: ForumWebPagePolicy.secureURL(url))
+        let response = try await client.fetchDocument(url: ForumWebPagePolicy.secureURL(url))
         let result = try classifyGET(response)
         guard case .page(var page) = result else { return result }
         if let url = page.composerContext?.backgroundCatalogURL, page.composerContext?.backgrounds.isEmpty == true {
             if let cached = composerBackgrounds[url] { page.composerContext?.backgrounds = cached }
             else {
                 do {
-                    let catalog = try await client.fetchPageDocument(url: url, referer: page.url)
+                    let catalog = try await client.fetchDocument(url: url, referer: page.url)
                     let backgrounds = ForumComposerContextParser.backgrounds(in: catalog.html, baseURL: page.url)
                     composerBackgrounds[url] = backgrounds
                     page.composerContext?.backgrounds = backgrounds
@@ -48,20 +48,20 @@ public actor ForumPageRepository {
             }
         }
         fields += attachments.flatMap(\.values)
-        let response: YamiboHTMLResponse
+        let response: ForumPageResponse
         if form.method == "GET" {
             guard var components = URLComponents(url: form.actionURL, resolvingAgainstBaseURL: true) else { throw ForumPageError.invalidForm }
             // A GET form replaces the action query, as a browser does. Discuz
             // forms carry routing parameters as hidden successful controls.
             components.queryItems = fields.map { URLQueryItem(name: $0.name, value: $0.value) }
             guard let url = components.url else { throw ForumPageError.invalidForm }
-            response = try await client.fetchPageDocument(url: ForumWebPagePolicy.secureURL(url), referer: referer)
+            response = try await client.fetchDocument(url: ForumWebPagePolicy.secureURL(url), referer: referer)
         } else {
             guard fields.contains(where: { $0.name == "formhash" && !$0.value.isEmpty }) ||
                     URLComponents(url: form.actionURL, resolvingAgainstBaseURL: true)?.queryItems?.contains(where: { $0.name == "formhash" && $0.value?.isEmpty == false }) == true else {
                 throw ForumPageError.invalidForm
             }
-            response = try await client.fetchPageDocument(url: form.actionURL, fields: fields, files: files, referer: referer)
+            response = try await client.fetchDocument(url: form.actionURL, fields: fields, files: files, referer: referer)
         }
         if form.method == "GET" { return try classifyGET(response) }
         let page = try parse(response)
@@ -73,7 +73,7 @@ public actor ForumPageRepository {
         return .page(page)
     }
 
-    private func classifyGET(_ response: YamiboHTMLResponse) throws -> ForumPageLoadResult {
+    private func classifyGET(_ response: ForumPageResponse) throws -> ForumPageLoadResult {
         if ForumWebPagePolicy.isLoginPage(response.url) { throw YamiboError.notAuthenticated }
         if response.file == nil, response.continuationURL == nil {
             switch ForumRouteResolver.resolve(url: response.url) {
@@ -99,14 +99,14 @@ public actor ForumPageRepository {
         guard file.data.count <= configuration.maximumBytes else { throw ForumPageError.fileTooLarge }
         let ext = URL(fileURLWithPath: file.name).pathExtension.lowercased()
         guard configuration.extensions.isEmpty || configuration.extensions.contains(ext) else { throw ForumPageError.unsupportedUpload }
-        let response = try await client.fetchPageDocument(
+        let response = try await client.fetchDocument(
             url: configuration.url, fields: configuration.values + [.init(name: "filetype", value: mimeType)],
             files: [.init(fieldName: "Filedata", file: file, mimeType: mimeType)], referer: referer
         )
         return try ForumUploadParser.attachment(from: response.html, configuration: configuration, name: file.name)
     }
 
-    private func parse(_ response: YamiboHTMLResponse) throws -> ForumPageDocument {
+    private func parse(_ response: ForumPageResponse) throws -> ForumPageDocument {
         if ForumWebPagePolicy.isLoginPage(response.url) { throw YamiboError.notAuthenticated }
         if let continuationURL = response.continuationURL {
             return ForumPageDocument(url: response.url, title: L10n.string("forum.native.continue"), continuationURL: continuationURL)
