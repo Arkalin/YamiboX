@@ -268,6 +268,7 @@ public struct NovelReaderView: View {
                 NovelReaderSearchView(
                     snapshot: presentation.snapshot,
                     backgroundColor: backgroundColor,
+                    usesDarkBackground: model.settings.backgroundStyle == .quiet || colorScheme == .dark,
                     onSelect: handleSearchResult,
                     onDismiss: closeSearch
                 )

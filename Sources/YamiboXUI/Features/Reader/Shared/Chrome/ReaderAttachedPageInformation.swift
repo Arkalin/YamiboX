@@ -120,7 +120,8 @@ private struct ReaderAttachedInformationTitle: View {
             .minimumScaleFactor(0.75)
             .multilineTextAlignment(.center)
             .foregroundStyle(backgroundStyle == .quiet
-                ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8) : Color.secondary)
+                ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
+                : (backgroundStyle == nil ? Color.primary : Color.secondary))
         if backgroundStyle == nil {
             let capsuleSize = text.hidden().padding(.horizontal, 14).padding(.vertical, 8)
             let animation: Animation? = reduceMotion ? nil
@@ -138,6 +139,7 @@ private struct ReaderAttachedInformationTitle: View {
                     }
             }
             .animation(animation, value: title)
+            .modifier(MangaReaderTitleAppearance())
         } else {
             text
                 .modifier(ReaderInformationTitleTransition(title: title))

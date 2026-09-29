@@ -160,17 +160,20 @@ private extension Array where Element == String {
 struct NovelReaderSearchView: View {
     @State private var coordinator: NovelReaderSearchCoordinator
     let backgroundColor: Color
+    let usesDarkBackground: Bool
     let onSelect: (NovelReaderSearchMatch) -> Void
     let onDismiss: () -> Void
 
     init(
         snapshot: NovelReaderSearchSnapshot,
         backgroundColor: Color,
+        usesDarkBackground: Bool,
         onSelect: @escaping (NovelReaderSearchMatch) -> Void,
         onDismiss: @escaping () -> Void
     ) {
         _coordinator = State(initialValue: NovelReaderSearchCoordinator(snapshot: snapshot))
         self.backgroundColor = backgroundColor
+        self.usesDarkBackground = usesDarkBackground
         self.onSelect = onSelect
         self.onDismiss = onDismiss
     }
@@ -184,6 +187,9 @@ struct NovelReaderSearchView: View {
                 onSelect: select
             )
         }
+        // Quiet uses dark paper even when the system appearance is light.
+        // Scope semantic text colors to the results, not the close control.
+        .environment(\.colorScheme, usesDarkBackground ? .dark : .light)
         .background(backgroundColor.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             NovelReaderSearchBottomBar(
