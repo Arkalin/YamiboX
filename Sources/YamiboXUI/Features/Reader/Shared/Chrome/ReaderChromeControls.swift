@@ -239,11 +239,11 @@ struct ReaderChromeHistoryButton: View {
     }
 
     private var fillColor: Color {
-        toolbarStyle.effectiveStyle == .books && isGlassBacked ? toolbarInk : appTheme.controlAccent
+        toolbarStyle.effectiveStyle == .books ? toolbarInk : appTheme.controlAccent
     }
 
     private var symbolColor: Color {
-        if toolbarStyle.effectiveStyle == .books && isGlassBacked { return toolbarPaper }
+        if toolbarStyle.effectiveStyle == .books { return toolbarPaper }
         return colorScheme == .dark ? Color.black.opacity(0.82) : Color.white
     }
 }

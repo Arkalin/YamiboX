@@ -90,7 +90,15 @@ struct ReaderDirectoryProgressCapsule: View {
 
             Button(action: onTapDirectory) {
                 if isBooks {
-                    booksDirectoryLabel(width: width, progress: clampedProgress)
+                    if showsFill {
+                        booksDirectoryLabel(width: width, progress: clampedProgress)
+                    } else {
+                        booksDirectoryContent
+                            .foregroundStyle(toolbarInk)
+                            .frame(height: layout.progressPanelHeight)
+                            .readerStyledChromePanel()
+                            .contentShape(Capsule())
+                    }
                 } else {
                     directoryLabel(isBooks: false, controlTint: controlTint, width: width, clampedProgress: clampedProgress)
                 }
@@ -104,27 +112,19 @@ struct ReaderDirectoryProgressCapsule: View {
         .frame(height: layout.progressPanelHeight)
     }
 
-    private var booksUsesDarkPaper: Bool {
-        let color = UIColor(toolbarPaper).resolvedColor(with: UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light))
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        color.getRed(&red, green: &green, blue: &blue, alpha: nil)
-        return red * 0.299 + green * 0.587 + blue * 0.114 < 0.5
-    }
-
     private func booksDirectoryLabel(width: CGFloat, progress: Double) -> some View {
-        let darkPaper = booksUsesDarkPaper
+        let palette = ReaderBooksProgressPalette(paper: toolbarPaper, colorScheme: colorScheme)
+        let darkPaper = palette.usesDarkPaper
         let fillWidth = showsFill ? width * CGFloat(progress) : 0
 
         return ZStack(alignment: fillAlignment) {
             // The unread segment reverses its emphasis at night; it is not a
             // translucent progress tint painted over an always-black track.
             toolbarPaper
-                .overlay(darkPaper ? Color.white.opacity(0.38) : Color.black.opacity(0.85))
+                .overlay(palette.unreadOverlay)
 
             toolbarPaper
-                .overlay(colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.09))
+                .overlay(palette.readOverlay)
                 .frame(width: fillWidth)
                 .accessibilityHidden(true)
 
@@ -273,6 +273,8 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     @State private var progressCommitFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarPaper) private var toolbarPaper
 
     init(
         restingProgressFraction: Double,
@@ -419,25 +421,39 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
         let controlTint = appTheme.controlAccent
 
         return ZStack(alignment: .topTrailing) {
-            Capsule()
-                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                .readerStyledChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
+            if toolbarStyle.effectiveStyle == .books {
+                let palette = ReaderBooksProgressPalette(paper: toolbarPaper, colorScheme: colorScheme)
+                toolbarPaper.overlay(palette.unreadOverlay)
+                if layout.verticalScrubberShowsProgressFill {
+                    toolbarPaper.overlay(palette.readOverlay)
+                        .frame(height: min(max(thumbY, 0), height))
+                        .accessibilityHidden(true)
+                }
+            } else {
+                Capsule()
+                    .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .readerStyledChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
 
-            if layout.verticalScrubberShowsProgressFill {
-                Rectangle()
-                    .fill(controlTint.opacity(colorScheme == .dark ? 0.24 : 0.18))
-                    .frame(
-                        width: layout.verticalScrubberWidth,
-                        height: layout.capsuleProgressFillExtent(
-                            position: min(max(thumbY / max(height, 1), 0), 1),
-                            length: height,
-                            edgeInset: layout.capsuleChapterTickRoundedEdgeInset
+                if layout.verticalScrubberShowsProgressFill {
+                    Rectangle()
+                        .fill(controlTint.opacity(colorScheme == .dark ? 0.24 : 0.18))
+                        .frame(
+                            width: layout.verticalScrubberWidth,
+                            height: layout.capsuleProgressFillExtent(
+                                position: min(max(thumbY / max(height, 1), 0), 1),
+                                length: height,
+                                edgeInset: layout.capsuleChapterTickRoundedEdgeInset
+                            )
                         )
-                    )
-                    .accessibilityHidden(true)
+                        .accessibilityHidden(true)
+                }
             }
 
-            ReaderVerticalProgressChapterTickOverlay(ticks: ticks, currentTint: controlTint)
+            ReaderVerticalProgressChapterTickOverlay(
+                ticks: ticks,
+                currentTint: controlTint,
+                progressFraction: Double(thumbY / height)
+            )
                 .opacity(layout.verticalScrubberShowsChapterTicks && (!layout.verticalChapterTicksVisibleOnlyWhileScrubbing || isScrubbing) ? 1 : 0)
 
             if layout.verticalScrubberShowsLiveThumb {
@@ -449,7 +465,6 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
             }
         }
         .mask(Capsule())
-        .readerBooksPressFeedback(isPressed: isScrubbing)
     }
 }
 
@@ -482,14 +497,20 @@ extension ReaderVerticalProgressCapsule where PreviewContent == ReaderVerticalPr
 private struct ReaderVerticalProgressChapterTickOverlay: View {
     let ticks: [ReaderChromeProgressTick]
     let currentTint: Color
+    let progressFraction: Double
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarPaper) private var toolbarPaper
+    @Environment(\.readerToolbarInk) private var toolbarInk
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
+        let booksPalette = ReaderBooksProgressPalette(paper: toolbarPaper, colorScheme: colorScheme)
 
         GeometryReader { geometry in
             ForEach(Array(ticks.enumerated()), id: \.element.targetIndex) { _, tick in
                 Capsule()
-                    .fill(tick.isCurrent && layout.verticalCurrentChapterTickUsesAccentColor ? currentTint : Color.secondary.opacity(0.38))
+                    .fill(tickColor(tick, layout: layout, booksPalette: booksPalette))
                     .frame(width: tick.isCurrent ? 28 : 18, height: tick.isCurrent ? 3 : 2)
                     .position(
                         x: layout.verticalScrubberTicksAreCentered ? geometry.size.width / 2 : geometry.size.width - 24,
@@ -505,6 +526,22 @@ private struct ReaderVerticalProgressChapterTickOverlay: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func tickColor(
+        _ tick: ReaderChromeProgressTick,
+        layout: ReaderBottomChromeLayoutPresentation,
+        booksPalette: ReaderBooksProgressPalette
+    ) -> Color {
+        if toolbarStyle.effectiveStyle == .books {
+            // Match each segment's text color instead of using the glass accent.
+            let ink = booksPalette.usesDarkPaper
+                ? Color.white
+                : (tick.positionFraction <= progressFraction ? toolbarInk : .white)
+            return tick.isCurrent ? ink : ink.opacity(0.48)
+        }
+        return tick.isCurrent && layout.verticalCurrentChapterTickUsesAccentColor
+            ? currentTint : Color.secondary.opacity(0.38)
     }
 }
 
