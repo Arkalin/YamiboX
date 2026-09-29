@@ -38,6 +38,12 @@ public enum MangaChapterDisplayFormatter {
             return "Ex"
         }
 
+        if let composite = MangaTitleCleaner.explicitCompositeChapterNumber(normalizedTitle),
+           abs(chapterNumber - composite.value) < 0.000_001 {
+            // Keep the source's “-10” or “⑩” suffix instead of trimming its zero.
+            return composite.label
+        }
+
         guard chapterNumber > 0 else { return "-" }
         if chapterNumber == floor(chapterNumber) {
             return String(Int(chapterNumber))

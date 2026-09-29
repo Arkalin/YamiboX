@@ -69,11 +69,7 @@ public enum MangaTitleCleaner {
     }
 
     public static func extractChapterNumber(_ rawTitle: String) -> Double {
-        let cleaned = HTMLTextExtractor.regexReplacing(
-            rawTitle,
-            pattern: #"【.*?】|\[.*?\]|\(.*?\)|（.*?）|「.*?」|《.*?》"#,
-            with: ""
-        )
+        let cleaned = cleanedChapterNumberTitle(rawTitle)
 
         if HTMLTextExtractor.regexContainsMatch(cleaned, pattern: #"番外|特典|附录|SP|卷后附|卷彩页|小剧场|小漫画"#) {
             return 0
@@ -82,26 +78,11 @@ public enum MangaTitleCleaner {
             return 999
         }
 
-        if let circledSuffix = HTMLTextExtractor.firstMatch(
-            pattern: #"(?:第)?\s*(\d+(?:\.\d+)?)\s*[话話织回章节幕折更]\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳⓪]+)"#,
-            in: cleaned
-        ),
-           let base = circledSuffix.dropFirst().first.flatMap(Double.init),
-           let suffix = circledSuffix.dropFirst().dropFirst().first.flatMap(circledDigitsValue) {
-            return base + (suffix / 100)
-        }
-
-        if let circledSuffix = HTMLTextExtractor.firstMatch(
-            pattern: #"(?:^|[^\d.])(\d+(?:\.\d+)?)\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳⓪]+)(?!.*\d)"#,
-            in: cleaned
-        ),
-           let base = circledSuffix.dropFirst().first.flatMap(Double.init),
-           let suffix = circledSuffix.dropFirst().dropFirst().first.flatMap(circledDigitsValue) {
-            return base + (suffix / 100)
+        if let composite = explicitCompositeChapterNumber(in: cleaned) {
+            return composite.value
         }
 
         let patterns = [
-            #"第\s*(\d+(?:\.\d+)?)\s*[-—]\s*(\d+(?:\.\d+)?)"#,
             #"(?:第)?\s*(\d+(?:\.\d+)?)\s*[话話织回章节幕折更]"#,
             #"第\s*(\d+(?:\.\d+)?)"#,
             #"[-—|｜]\s*(\d+(?:\.\d+)?)"#,
@@ -120,6 +101,44 @@ public enum MangaTitleCleaner {
         }
 
         return 0
+    }
+
+    static func explicitCompositeChapterNumber(_ rawTitle: String) -> (value: Double, label: String)? {
+        explicitCompositeChapterNumber(in: cleanedChapterNumberTitle(rawTitle))
+    }
+
+    private static func explicitCompositeChapterNumber(in cleaned: String) -> (value: Double, label: String)? {
+        let circledPatterns = [
+            #"(?:第)?\s*(\d+(?:\.\d+)?)\s*[话話织回章节幕折更]\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳⓪]+)"#,
+            #"(?:^|[^\d.])(\d+(?:\.\d+)?)\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳⓪]+)(?!.*\d)"#
+        ]
+        for pattern in circledPatterns {
+            guard let match = HTMLTextExtractor.firstMatch(pattern: pattern, in: cleaned),
+                  let base = Double(match[1]),
+                  let suffix = circledDigitsValue(match[2]),
+                  suffix.isFinite, suffix < Double(Int.max) else { continue }
+            return (base + suffix / 100, "\(chapterNumberText(match[1]))-\(Int(suffix))")
+        }
+
+        guard let match = HTMLTextExtractor.firstMatch(
+            pattern: #"第\s*(\d+(?:\.\d+)?)\s*[-—]\s*(\d+(?:\.\d+)?)"#,
+            in: cleaned
+        ),
+            let base = Double(match[1]),
+            let suffix = Double(match[2]) else { return nil }
+        return (base + suffix / 100, "\(chapterNumberText(match[1]))-\(chapterNumberText(match[2]))")
+    }
+
+    private static func cleanedChapterNumberTitle(_ rawTitle: String) -> String {
+        HTMLTextExtractor.regexReplacing(
+            rawTitle,
+            pattern: #"【.*?】|\[.*?\]|\(.*?\)|（.*?）|「.*?」|《.*?》"#,
+            with: ""
+        )
+    }
+
+    private static func chapterNumberText(_ raw: String) -> String {
+        Int(raw).map(String.init) ?? raw
     }
 
     private static func circledDigitsValue(_ raw: String) -> Double? {
