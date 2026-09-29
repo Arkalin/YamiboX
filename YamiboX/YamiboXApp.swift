@@ -131,6 +131,7 @@ private final class YamiboAppStartup {
             let database = try await Task.detached(priority: .userInitiated) {
                 try YamiboAppContext.prepareDownloadStorage()
             }.value
+            await DownloadContinuedProcessingCoordinator.cancelRestoredRequests()
             startRuntime(database: database)
             failure = nil
             isStorageFailure = false
@@ -150,7 +151,6 @@ private final class YamiboAppStartup {
     private func startRuntime(database: GRDB.DatabasePool) {
         Task {
             await DownloadBackgroundSessionMigration.shared.retire()
-            await DownloadContinuedProcessingCoordinator.cancelLegacyRequests()
         }
         initialTab = Self.resolveInitialTab()
         let sessionStore = SessionStore()
@@ -168,12 +168,6 @@ private final class YamiboAppStartup {
         #if os(iOS)
         YamiboAppDelegate.appContext = appContext
         #endif
-        if YamiboForumEnvironment.current.supportsBackgroundRelaunch {
-            Self.registerMangaDownloadBackgroundTasks(
-                appContext: appContext,
-                coordinator: downloadCoordinator
-            )
-        }
         let windows = YamiboWindowCoordinator(
             appContext: appContext,
             webSessionCoordinator: webSessionCoordinator,
@@ -195,25 +189,6 @@ private final class YamiboAppStartup {
         return AppTabLaunchResolver.resolveInitialTab(homePage: settings.system.homePage)
     }
 
-    private static func registerMangaDownloadBackgroundTasks(
-        appContext: YamiboAppContext,
-        coordinator: DownloadContinuedProcessingCoordinator
-    ) {
-        #if os(iOS) && canImport(BackgroundTasks)
-        guard #available(iOS 26.0, *) else { return }
-        DownloadContinuedProcessingCoordinator.configureLaunchHandler(
-            coordinator: coordinator,
-            continueQueue: {
-                let executor = await appContext.makeDownloadQueueExecutor()
-                try? await executor.continueQueue(submitsUserInitiatedRun: false)
-            },
-            pauseQueue: {
-                let executor = await appContext.makeDownloadQueueExecutor()
-                try? await executor.pauseQueue()
-            }
-        )
-        #endif
-    }
 }
 
 #if os(iOS)

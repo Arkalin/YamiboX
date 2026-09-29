@@ -30,31 +30,36 @@ protocol DownloadWorkProcessingStrategy: Sendable {
 struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable {
     private let store: any DownloadQueueStoring & DownloadImageAssetStoring
     private let imageAcquirer: any DownloadImageAcquiring
-    private let runObserver: (any DownloadQueueRunObserving)?
     private let maxConcurrentImageTransfers: Int
     private let strategy: Strategy
 
     init(
         store: any DownloadQueueStoring & DownloadImageAssetStoring,
         imageAcquirer: any DownloadImageAcquiring,
-        runObserver: (any DownloadQueueRunObserving)? = nil,
         maxConcurrentImageTransfers: Int,
         strategy: Strategy
     ) {
         self.store = store
         self.imageAcquirer = imageAcquirer
-        self.runObserver = runObserver
         self.maxConcurrentImageTransfers = max(1, maxConcurrentImageTransfers)
         self.strategy = strategy
     }
 
-    func process(_ work: DownloadProcessingWork) async throws {
+    func process(
+        _ work: DownloadProcessingWork,
+        progress: @escaping @Sendable (DownloadWorkProgress) -> Void
+    ) async throws {
         try Task.checkCancellation()
         guard try await store.downloadProcessingWork(id: work.id) != nil else {
             throw CancellationError()
         }
 
         let preparedWork = try await strategy.prepare(work)
+        try Task.checkCancellation()
+        progress(DownloadWorkProgress(
+            phase: preparedWork.targetImageURLs.isEmpty ? .saving : .transferring,
+            fraction: preparedWork.targetImageURLs.isEmpty ? 0.95 : 0.05
+        ))
         try await strategy.persistPreparedSource(preparedWork)
 
         guard !preparedWork.targetImageURLs.isEmpty else {
@@ -68,17 +73,20 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
             targetImageURLs: preparedWork.targetImageURLs,
             completedImageURLs: completedImageURLs
         )
-        await runObserver?.queueRunDidUpdateProgress(
-            completedImageCount: completedImageURLs.count,
-            targetImageCount: preparedWork.targetImageURLs.count
+        let tracker = DownloadImageProgressTracker(
+            urls: preparedWork.targetImageURLs,
+            completed: completedImageURLs,
+            report: progress
         )
+        tracker.publish()
 
         if completedImageURLs.count < preparedWork.targetImageURLs.count {
             completedImageURLs = try await transferMissingImages(
                 workID: preparedWork.workID,
                 refererURL: preparedWork.refererURL,
                 targetImageURLs: preparedWork.targetImageURLs,
-                completedImageURLs: completedImageURLs
+                completedImageURLs: completedImageURLs,
+                tracker: tracker
             )
         }
 
@@ -86,6 +94,7 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         guard try await store.downloadProcessingWork(id: preparedWork.workID) != nil else {
             throw CancellationError()
         }
+        progress(DownloadWorkProgress(phase: .saving, fraction: 0.95))
         try await strategy.finish(preparedWork)
     }
 
@@ -105,7 +114,8 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         workID: DownloadWorkID,
         refererURL: URL,
         targetImageURLs: [URL],
-        completedImageURLs: [URL]
+        completedImageURLs: [URL],
+        tracker: DownloadImageProgressTracker
     ) async throws -> [URL] {
         var completedKeys = Set(completedImageURLs.map(\.absoluteString))
         var completed = targetImageURLs.filter { completedKeys.contains($0.absoluteString) }
@@ -127,7 +137,8 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
                     }
                     let startedAt = Date()
                     let acquisition = try await imageAcquirer.acquireImageData(
-                        for: YamiboImageSource(url: imageURL, refererPageURL: refererURL)
+                        for: YamiboImageSource(url: imageURL, refererPageURL: refererURL),
+                        progress: { tracker.update(url: imageURL, progress: $0) }
                     )
                     guard !acquisition.data.isEmpty else {
                         throw YamiboError.invalidResponse(statusCode: nil)
@@ -158,10 +169,7 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
                     completedImageURLs: completed,
                     currentBytesPerSecond: result.bytesPerSecond
                 )
-                await runObserver?.queueRunDidUpdateProgress(
-                    completedImageCount: completed.count,
-                    targetImageCount: targetImageURLs.count
-                )
+                tracker.finish(url: result.imageURL)
                 submitNext()
             }
         }
@@ -178,4 +186,49 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
 private struct DownloadImageTransferResult: Sendable {
     var imageURL: URL
     var bytesPerSecond: Int
+}
+
+/// Network delegates can run concurrently. Report while holding this private
+/// lock so snapshots reach the stream in the same order as the byte updates.
+private final class DownloadImageProgressTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private let count: Int
+    private var completed: Set<URL>
+    private var transfers: [URL: DownloadTransferProgress] = [:]
+    private let report: @Sendable (DownloadWorkProgress) -> Void
+
+    init(urls: [URL], completed: [URL], report: @escaping @Sendable (DownloadWorkProgress) -> Void) {
+        count = urls.count
+        self.completed = Set(completed)
+        self.report = report
+    }
+
+    func update(url: URL, progress: DownloadTransferProgress) {
+        lock.withLock {
+            guard !completed.contains(url) else { return }
+            transfers[url] = progress
+            report(snapshot)
+        }
+    }
+
+    func finish(url: URL) {
+        lock.withLock {
+            completed.insert(url)
+            report(snapshot)
+        }
+    }
+
+    func publish() { lock.withLock { report(snapshot) } }
+
+    private var snapshot: DownloadWorkProgress {
+        let partial = transfers.filter { !completed.contains($0.key) }
+        let fraction = (Double(completed.count) + partial.values.reduce(0) { $0 + ($1.fraction ?? 0) })
+            / Double(max(1, count))
+        return DownloadWorkProgress(
+            phase: .transferring,
+            fraction: 0.05 + 0.9 * fraction,
+            receivedBytes: transfers.values.reduce(0) { $0 + max(0, $1.receivedBytes) },
+            hasUnknownLength: partial.values.contains { $0.fraction == nil }
+        )
+    }
 }

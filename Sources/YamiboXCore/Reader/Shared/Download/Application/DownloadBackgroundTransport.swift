@@ -50,6 +50,13 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     public func downloadImageData(for source: YamiboImageSource) async throws -> Data {
+        try await downloadImageData(for: source, progress: { _ in })
+    }
+
+    func downloadImageData(
+        for source: YamiboImageSource,
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
+    ) async throws -> Data {
         await DownloadBackgroundSessionMigration.shared.retire()
         try Task.checkCancellation()
         let taskBox = URLSessionTaskBox()
@@ -72,7 +79,8 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                     register(
                         taskIdentifier: task.taskIdentifier,
                         task: task,
-                        continuation: continuation
+                        continuation: continuation,
+                        progress: progress
                     )
                     task.resume()
                     return true
@@ -128,6 +136,14 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     public func urlSession(
+        _ session: URLSession, downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+    ) {
+        let report = lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.progress }
+        report?(DownloadTransferProgress(receivedBytes: totalBytesWritten, expectedBytes: totalBytesExpectedToWrite))
+    }
+
+    public func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
@@ -179,10 +195,11 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     private func register(
         taskIdentifier: Int,
         task: URLSessionTask,
-        continuation: CheckedContinuation<Data, any Error>
+        continuation: CheckedContinuation<Data, any Error>,
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
     ) {
         lock.withLock {
-            pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task)
+            pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task, progress: progress)
         }
     }
 
@@ -212,6 +229,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
 private struct PendingDownload {
     var continuation: CheckedContinuation<Data, any Error>
     var task: URLSessionTask?
+    var progress: @Sendable (DownloadTransferProgress) -> Void
 }
 
 private final class URLSessionTaskBox: @unchecked Sendable {

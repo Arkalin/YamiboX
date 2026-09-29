@@ -16,7 +16,8 @@ struct ForumPageClient: Sendable {
         url: URL,
         fields: [ForumFormValue]? = nil,
         files: [ForumFormFile] = [],
-        referer: URL? = nil
+        referer: URL? = nil,
+        downloadProgress: (@Sendable (DownloadTransferProgress) -> Void)? = nil
     ) async throws -> ForumPageResponse {
         guard ForumWebPagePolicy.requiresForumHandling(url) else { throw ForumPageError.invalidURL }
         var request = YamiboNetworkConfiguration.makeRequest(url: documentURL(url), cachePolicy: .reloadIgnoringLocalCacheData)
@@ -37,10 +38,12 @@ struct ForumPageClient: Sendable {
         // Recovery may complete, but neither kind of action may be replayed.
         let allowsWAFReplay = request.httpMethod == "GET"
             && request.url.map(ForumWebPagePolicy.requiresConfirmationToLoad) != true
+        let delegate = ForumPageRedirectDelegate(progress: downloadProgress)
+        defer { delegate.stopObserving() }
         do {
             let response = try await transport.performRequest(
                 request,
-                delegate: ForumPageRedirectDelegate(),
+                delegate: delegate,
                 allowsWAFReplay: allowsWAFReplay
             )
             return try decode(response)
@@ -95,7 +98,52 @@ struct ForumPageClient: Sendable {
     }
 }
 
-private final class ForumPageRedirectDelegate: NSObject, URLSessionTaskDelegate {
+private final class ForumPageRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let progress: (@Sendable (DownloadTransferProgress) -> Void)?
+    private let lock = NSLock()
+    private var currentTask: ObjectIdentifier?
+    private var observations: [NSKeyValueObservation] = []
+
+    init(progress: (@Sendable (DownloadTransferProgress) -> Void)?) {
+        self.progress = progress
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        guard progress != nil else { return }
+        // WAF recovery creates a new task. Discard the previous attempt's
+        // observers and bytes rather than counting both responses as one file.
+        stopObserving()
+        lock.withLock { currentTask = ObjectIdentifier(task) }
+        let received = task.observe(\.countOfBytesReceived) { [weak self] task, _ in
+            self?.report(task)
+        }
+        let expected = task.observe(\.countOfBytesExpectedToReceive) { [weak self] task, _ in
+            self?.report(task)
+        }
+        lock.withLock { observations = [received, expected] }
+        report(task)
+    }
+
+    private func report(_ task: URLSessionTask) {
+        lock.withLock {
+            guard currentTask == ObjectIdentifier(task) else { return }
+            progress?(DownloadTransferProgress(
+                receivedBytes: max(0, task.countOfBytesReceived),
+                expectedBytes: task.countOfBytesExpectedToReceive
+            ))
+        }
+    }
+
+    func stopObserving() {
+        let retired = lock.withLock {
+            currentTask = nil
+            let retired = observations
+            observations = []
+            return retired
+        }
+        retired.forEach { $0.invalidate() }
+    }
+
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void

@@ -15,11 +15,17 @@ struct DownloadImageAcquisition: Hashable, Sendable {
 }
 
 protocol DownloadImageAcquiring: Sendable {
-    func acquireImageData(for source: YamiboImageSource) async throws -> DownloadImageAcquisition
+    func acquireImageData(
+        for source: YamiboImageSource,
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
+    ) async throws -> DownloadImageAcquisition
 }
 
 protocol DownloadImageTransporting: Sendable {
-    func downloadImageData(for source: YamiboImageSource) async throws -> Data
+    func downloadImageData(
+        for source: YamiboImageSource,
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
+    ) async throws -> Data
 }
 
 actor DownloadImageAcquirer: DownloadImageAcquiring {
@@ -34,10 +40,13 @@ actor DownloadImageAcquirer: DownloadImageAcquiring {
         self.backgroundTransport = backgroundTransport
     }
 
-    func acquireImageData(for source: YamiboImageSource) async throws -> DownloadImageAcquisition {
+    func acquireImageData(
+        for source: YamiboImageSource,
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
+    ) async throws -> DownloadImageAcquisition {
         let data: Data
         if let backgroundTransport {
-            data = try await backgroundTransport.downloadImageData(for: source)
+            data = try await backgroundTransport.downloadImageData(for: source, progress: progress)
         } else {
             data = try await imagePipeline.data(for: source)
         }
@@ -54,11 +63,20 @@ public actor DownloadQueueExecutor {
     private let novelWorkProcessor: DownloadWorkProcessor<NovelDownloadWorkProcessingStrategy>?
     private let attachmentWorkProcessor: ForumAttachmentDownloadProcessor
     private var runTask: Task<Void, Never>?
+    private var isFinishingRun = false
     private var retiringRuns: [Int: Task<Void, Never>] = [:]
     private var runGeneration = 0
+    private var runID: DownloadRunID?
+    private var completedWorkCount = 0
+    private var remainingWorkCount = 0
+    private var currentTitle = ""
+    private var currentProgress = DownloadWorkProgress()
+    private var lastProgressLog: ContinuousClock.Instant?
     private var isInvalidated = false
     private var externalCommandCount = 0
     private var externalCommandWaiters: [CheckedContinuation<Void, Never>] = []
+    private var commandIsActive = false
+    private var commandAdmissionWaiters: [CheckedContinuation<Void, Never>] = []
     private let isSessionCurrent: @Sendable () async -> Bool
 
     init(
@@ -81,7 +99,6 @@ public actor DownloadQueueExecutor {
         self.mangaWorkProcessor = DownloadWorkProcessor(
             store: store,
             imageAcquirer: imageAcquirer,
-            runObserver: runObserver,
             maxConcurrentImageTransfers: transferLimit,
             strategy: MangaDownloadWorkProcessingStrategy(
                 store: mangaDownloadStore,
@@ -92,7 +109,6 @@ public actor DownloadQueueExecutor {
             self.novelWorkProcessor = DownloadWorkProcessor(
                 store: store,
                 imageAcquirer: imageAcquirer,
-                runObserver: runObserver,
                 maxConcurrentImageTransfers: transferLimit,
                 strategy: NovelDownloadWorkProcessingStrategy(
                     store: novelDownloadStore,
@@ -109,8 +125,12 @@ public actor DownloadQueueExecutor {
     }
 
     public func continueQueue(submitsUserInitiatedRun: Bool) async throws {
-        try beginExternalCommand()
+        try await beginExternalCommand()
         defer { finishExternalCommand() }
+        try await continueQueueAfterAdmission(submitsUserInitiatedRun: submitsUserInitiatedRun)
+    }
+
+    private func continueQueueAfterAdmission(submitsUserInitiatedRun: Bool) async throws {
         try await ensureExternalCommandAllowed()
         if identityChangeDepth > 0 {
             resumeAfterIdentityChange = true
@@ -132,20 +152,30 @@ public actor DownloadQueueExecutor {
         }
         guard !deferRunForIdentityChange() else { return }
         if let runTask, !runTask.isCancelled {
+            try await refreshRunProgress(generation: runGeneration)
+            if isFinishingRun || self.runTask == nil {
+                // A new enqueue/Continue may overlap the last worker's pause
+                // write. Join that write before publishing another running state.
+                await runTask.value
+                try await continueQueueAfterAdmission(submitsUserInitiatedRun: submitsUserInitiatedRun)
+            }
             return
         }
 
-        if submitsUserInitiatedRun {
-            await runObserver?.submitUserInitiatedRun()
+        // Publish worker ownership before the first suspension involved in
+        // background submission. Concurrent Continue commands reuse this worker.
+        let startsSystemTask = runID == nil && submitsUserInitiatedRun
+        if runID == nil {
+            runID = DownloadRunID()
+            completedWorkCount = 0
+            lastProgressLog = nil
         }
-        try await ensureExternalCommandAllowed()
-        guard !deferRunForIdentityChange() else { return }
-        // Another continuation may have installed a worker during the awaits.
-        guard runTask == nil || runTask?.isCancelled == true else { return }
+        currentTitle = ""
+        currentProgress = DownloadWorkProgress()
         runGeneration += 1
         let generation = runGeneration
         runTask = Task { [weak self] in
-            await self?.runQueue(generation: generation)
+            await self?.runQueue(generation: generation, startsSystemTask: startsSystemTask)
         }
     }
 
@@ -156,7 +186,7 @@ public actor DownloadQueueExecutor {
     }
 
     public func pauseQueue() async throws {
-        try beginExternalCommand()
+        try await beginExternalCommand()
         defer { finishExternalCommand() }
         try await ensureExternalCommandAllowed()
         try await pauseQueueForTeardown()
@@ -168,9 +198,9 @@ public actor DownloadQueueExecutor {
     private func pauseQueueForTeardown() async throws {
         resumeAfterIdentityChange = false
         cancelActiveRun()
+        await endSession(success: false)
         do {
             try await store.setDownloadQueueRunState(.paused)
-            await runObserver?.queueRunDidCancel()
             await joinRetiringRuns()
         } catch {
             await joinRetiringRuns()
@@ -185,6 +215,7 @@ public actor DownloadQueueExecutor {
         }
         runGeneration += 1
         runTask = nil
+        isFinishingRun = false
     }
 
     private func joinRetiringRuns() async {
@@ -206,11 +237,11 @@ public actor DownloadQueueExecutor {
             let wasRunning = try await store.downloadQueueRunState() == .running
             resumeAfterIdentityChange = resumeAfterIdentityChange || wasRunning || hadRunningTask
             try await store.setDownloadQueueRunState(.paused)
-            await runObserver?.queueRunDidCancel()
             await joinRetiringRuns()
         } catch {
             await joinRetiringRuns()
             identityChangeDepth = 0
+            await endSession(success: false)
             throw error
         }
     }
@@ -223,6 +254,7 @@ public actor DownloadQueueExecutor {
         do {
             try await continueQueue(submitsUserInitiatedRun: false)
         } catch {
+            await endSession(success: false)
             YamiboLog.download.error("Could not resume queue after directory identity change: \(error)")
         }
     }
@@ -244,62 +276,52 @@ public actor DownloadQueueExecutor {
     }
 
     public func cancelChapter(ownerName: String, tid: String) async throws {
-        try beginExternalCommand()
-        defer { finishExternalCommand() }
-        let wasRunning = try await prepareExternalCancellation()
-        try await store.cancelDownloadEntry(
-            DownloadEntryID(readerKind: .manga, ownerKey: ownerName, entryKey: tid)
-        )
-        try await ensureExternalCommandAllowed()
-        if wasRunning {
-            try await continueQueue()
+        try await cancelSelection {
+            try await self.store.cancelDownloadEntry(
+                DownloadEntryID(readerKind: .manga, ownerKey: ownerName, entryKey: tid)
+            )
         }
     }
 
     public func cancelOwnerGroup(ownerName: String) async throws {
-        try beginExternalCommand()
-        defer { finishExternalCommand() }
-        let wasRunning = try await prepareExternalCancellation()
-        try await store.cancelDownloadGroup(
-            DownloadGroupID(readerKind: .manga, ownerKey: ownerName)
-        )
-        try await ensureExternalCommandAllowed()
-        if wasRunning {
-            try await continueQueue()
+        try await cancelSelection {
+            try await self.store.cancelDownloadGroup(
+                DownloadGroupID(readerKind: .manga, ownerKey: ownerName)
+            )
         }
     }
 
     public func cancelWork(id: DownloadWorkID) async throws {
-        try beginExternalCommand()
-        defer { finishExternalCommand() }
-        let wasRunning = try await prepareExternalCancellation()
-        try await store.cancelDownloadWork(id: id)
-        try await ensureExternalCommandAllowed()
-        if wasRunning {
-            try await continueQueue()
-        }
+        try await cancelSelection { try await self.store.cancelDownloadWork(id: id) }
     }
 
     public func cancelGroup(id: DownloadGroupID) async throws {
-        try beginExternalCommand()
-        defer { finishExternalCommand() }
-        let wasRunning = try await prepareExternalCancellation()
-        try await store.cancelDownloadGroup(id)
-        try await ensureExternalCommandAllowed()
-        if wasRunning {
-            try await continueQueue()
-        }
+        try await cancelSelection { try await self.store.cancelDownloadGroup(id) }
     }
 
-    private func prepareExternalCancellation() async throws -> Bool {
+    private func cancelSelection(_ remove: () async throws -> Void) async throws {
+        try await beginExternalCommand()
+        defer { finishExternalCommand() }
         try await ensureExternalCommandAllowed()
-        let wasRunning = try await store.downloadQueueRunState() == .running
-        try await ensureExternalCommandAllowed()
-        cancelActiveRun()
-        await runObserver?.queueRunDidCancel()
-        await joinRetiringRuns()
-        try await ensureExternalCommandAllowed()
-        return wasRunning
+        do {
+            let wasRunning = try await store.downloadQueueRunState() == .running
+            try await ensureExternalCommandAllowed()
+            cancelActiveRun()
+            await joinRetiringRuns()
+            try await ensureExternalCommandAllowed()
+            try await remove()
+            try await ensureExternalCommandAllowed()
+            if wasRunning {
+                // Removing an item keeps the logical run and its completed
+                // count, but never manufactures another user-initiated request.
+                try await continueQueueAfterAdmission(submitsUserInitiatedRun: false)
+            } else {
+                await endSession(success: false)
+            }
+        } catch {
+            await endSession(success: false)
+            throw error
+        }
     }
 
     private func ensureExternalCommandAllowed() async throws {
@@ -308,13 +330,22 @@ public actor DownloadQueueExecutor {
         guard !isInvalidated else { throw CancellationError() }
     }
 
-    private func beginExternalCommand() throws {
+    private func beginExternalCommand() async throws {
         guard !isInvalidated else { throw CancellationError() }
         externalCommandCount += 1
+        if commandIsActive {
+            await withCheckedContinuation { commandAdmissionWaiters.append($0) }
+        }
+        commandIsActive = true
     }
 
     private func finishExternalCommand() {
         externalCommandCount -= 1
+        if commandAdmissionWaiters.isEmpty {
+            commandIsActive = false
+        } else {
+            commandAdmissionWaiters.removeFirst().resume()
+        }
         guard externalCommandCount == 0 else { return }
         let waiters = externalCommandWaiters
         externalCommandWaiters.removeAll()
@@ -327,23 +358,45 @@ public actor DownloadQueueExecutor {
         await joinRetiringRuns()
     }
 
-    private func runQueue(generation: Int) async {
+    private func runQueue(generation: Int, startsSystemTask: Bool) async {
+        do {
+            try await refreshRunProgress(generation: generation)
+            try checkRun(generation)
+            if startsSystemTask, remainingWorkCount > 0, let id = runID {
+                await runObserver?.queueRunDidStart(id: id, progress: progressSnapshot) { [weak self] in
+                    await self?.pauseRun(id: id)
+                }
+                try checkRun(generation)
+            }
+        } catch {
+            await finishRun(generation: generation, pauseQueue: true)
+            return
+        }
+
         while !Task.isCancelled {
             var processingWork: DownloadProcessingWork?
             do {
                 guard try await store.downloadQueueRunState() == .running else {
-                    await runObserver?.queueRunDidFinish(success: false)
                     await finishRun(generation: generation, pauseQueue: false)
                     return
                 }
+                try checkRun(generation)
                 processingWork = try await store.nextDownloadProcessingWork()
-                try Task.checkCancellation()
+                try checkRun(generation)
                 guard let work = processingWork else {
-                    await runObserver?.queueRunDidFinish(success: true)
-                    await finishRun(generation: generation, pauseQueue: true)
+                    await finishRun(generation: generation, pauseQueue: true, success: completedWorkCount > 0)
                     return
                 }
-                try await process(work)
+                currentTitle = work.title
+                currentProgress = DownloadWorkProgress()
+                try await refreshRunProgress(generation: generation)
+                try checkRun(generation)
+                try await process(work, generation: generation)
+                try checkRun(generation)
+                completedWorkCount += 1
+                currentTitle = ""
+                currentProgress = DownloadWorkProgress()
+                try await refreshRunProgress(generation: generation)
             } catch is CancellationError {
                 await finishRun(generation: generation, pauseQueue: false)
                 return
@@ -356,50 +409,121 @@ public actor DownloadQueueExecutor {
                 if let work = processingWork {
                     do {
                         try await store.markDownloadWorkFailed(
-                            id: work.id,
-                            message: Self.failureMessage(from: error)
+                            id: work.id, message: Self.failureMessage(from: error)
                         )
                     } catch {
-                        YamiboLog.download.error("Failed to persist offline download work \(work.id.rawValue) failure state: \(error)")
+                        YamiboLog.download.error("Failed to persist download failure: \(error)")
                     }
                 }
-                await runObserver?.queueRunDidFinish(success: false)
                 await finishRun(generation: generation, pauseQueue: true)
                 return
             }
         }
-
-        await runObserver?.queueRunDidFinish(success: false)
         await finishRun(generation: generation, pauseQueue: false)
     }
 
-    private func finishRun(generation: Int, pauseQueue: Bool) async {
+    private func checkRun(_ generation: Int) throws {
+        try Task.checkCancellation()
+        guard generation == runGeneration, !isInvalidated else { throw CancellationError() }
+    }
+
+    private var progressSnapshot: DownloadQueueRunProgress {
+        DownloadQueueRunProgress(
+            completedWorkCount: completedWorkCount,
+            totalWorkCount: completedWorkCount + remainingWorkCount,
+            currentTitle: currentTitle,
+            phase: currentProgress.phase,
+            currentWorkFraction: currentProgress.fraction,
+            receivedBytes: currentProgress.receivedBytes,
+            hasUnknownLength: currentProgress.hasUnknownLength
+        )
+    }
+
+    private func refreshRunProgress(generation: Int) async throws {
+        let works = try await store.downloadQueueWorks()
+        try checkRun(generation)
+        remainingWorkCount = works.count
+        if let id = runID {
+            await runObserver?.queueRunDidUpdateProgress(id: id, progress: progressSnapshot)
+        }
+    }
+
+    private func receiveProgress(_ progress: DownloadWorkProgress, generation: Int) async {
+        guard generation == runGeneration, let id = runID else { return }
+        let now = ContinuousClock.now
+        if currentProgress.phase != progress.phase || lastProgressLog.map({ now - $0 >= .seconds(1) }) != false {
+            lastProgressLog = now
+            YamiboLog.download.debug("Download run \(id.rawValue): \(self.completedWorkCount)/\(self.completedWorkCount + self.remainingWorkCount) items, current fraction \(progress.fraction), bytes \(progress.receivedBytes), unknown length \(progress.hasUnknownLength)")
+        }
+        currentProgress = progress
+        await runObserver?.queueRunDidUpdateProgress(id: id, progress: progressSnapshot)
+    }
+
+    private func pauseRun(id: DownloadRunID) async {
+        do {
+            try await beginExternalCommand()
+            defer { finishExternalCommand() }
+            guard runID == id, !isInvalidated else { return }
+            // No session lookup/await between identity validation and cancellation.
+            try await pauseQueueForTeardown()
+        }
+        catch { YamiboLog.download.error("Could not persist expired download pause: \(error)") }
+    }
+
+    private func endSession(success: Bool) async {
+        guard let id = runID else { return }
+        runID = nil
+        YamiboLog.download.info("Download queue run \(id.rawValue) finished, success: \(success), completed items: \(self.completedWorkCount)")
+        await runObserver?.queueRunDidFinish(id: id, success: success)
+    }
+
+    private func finishRun(generation: Int, pauseQueue: Bool, success: Bool = false) async {
         guard runGeneration == generation else { return }
+        isFinishingRun = true
+        var completedSuccessfully = success
         if pauseQueue {
             do {
                 try await store.setDownloadQueueRunState(.paused)
             } catch {
-                YamiboLog.download.error("Failed to persist paused offline download queue run state: \(error)")
+                completedSuccessfully = false
+                YamiboLog.download.error("Failed to persist paused download queue: \(error)")
             }
         }
         guard runGeneration == generation else { return }
         runTask = nil
+        isFinishingRun = false
+        await endSession(success: completedSuccessfully)
     }
 
-    private func process(_ work: DownloadProcessingWork) async throws {
-        switch work.id.readerKind {
-        case .attachment:
-            try await store.prepareDownloadWorkForRun(id: work.id, targetImageURLs: nil, completedImageURLs: [])
-            await runObserver?.queueRunDidUpdateProgress(completedImageCount: 0, targetImageCount: 1)
-            try await attachmentWorkProcessor.process(work)
-            await runObserver?.queueRunDidUpdateProgress(completedImageCount: 1, targetImageCount: 1)
-        case .manga:
-            try await mangaWorkProcessor.process(work)
-        case .novel:
-            guard let novelWorkProcessor else {
-                throw YamiboError.parsingFailed(context: "Novel Download")
+    private func process(_ work: DownloadProcessingWork, generation: Int) async throws {
+        // A single ordered consumer avoids spawning an unbounded number of
+        // actor tasks for URLSession's synchronous byte callbacks.
+        let (updates, continuation) = AsyncStream<DownloadWorkProgress>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let consumer = Task {
+            for await progress in updates {
+                await receiveProgress(progress, generation: generation)
             }
-            try await novelWorkProcessor.process(work)
+        }
+        let report: @Sendable (DownloadWorkProgress) -> Void = { continuation.yield($0) }
+        do {
+            switch work.id.readerKind {
+            case .attachment:
+                try await store.prepareDownloadWorkForRun(id: work.id, targetImageURLs: nil, completedImageURLs: [])
+                try await attachmentWorkProcessor.process(work, progress: report)
+            case .manga:
+                try await mangaWorkProcessor.process(work, progress: report)
+            case .novel:
+                guard let novelWorkProcessor else {
+                    throw YamiboError.parsingFailed(context: "Novel Download")
+                }
+                try await novelWorkProcessor.process(work, progress: report)
+            }
+            continuation.finish()
+            await consumer.value
+        } catch {
+            continuation.finish()
+            await consumer.value
+            throw error
         }
     }
 
