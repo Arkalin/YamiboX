@@ -190,9 +190,7 @@ private struct AboutHeaderView: View {
     var body: some View {
         VStack(spacing: 16) {
             AppIconView()
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
+                .frame(width: 160, height: 160)
 
             Text(AppMetadata.displayName)
                 .font(.title2.weight(.semibold))
@@ -346,9 +344,7 @@ private struct AppIconView: View {
 
     var body: some View {
         if let icon = PlatformAppIcon.load() {
-            icon
-                .resizable()
-                .scaledToFit()
+            AboutInteractiveIcon(image: icon)
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -363,11 +359,11 @@ private struct AppIconView: View {
 }
 
 private enum PlatformAppIcon {
-    static func load() -> Image? {
+    static func load() -> UIImage? {
         for name in iconNames {
             #if canImport(UIKit)
             if let image = UIImage(named: name) {
-                return Image(uiImage: image)
+                return image
             }
             #endif
         }
