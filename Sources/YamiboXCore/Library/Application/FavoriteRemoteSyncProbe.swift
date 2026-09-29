@@ -24,7 +24,7 @@ public extension FavoriteYamiboSyncClient {
                 return FavoriteYamiboRemotePage(
                     entries: result.favorites.map {
                         YamiboRemoteFavoriteEntry(
-                            remoteFavoriteID: $0.remoteFavoriteID ?? $0.id,
+                            remoteFavoriteID: $0.remoteFavoriteID,
                             threadID: $0.threadID,
                             title: $0.title
                         )

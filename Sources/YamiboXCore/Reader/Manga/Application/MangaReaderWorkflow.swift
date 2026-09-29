@@ -42,10 +42,31 @@ public final class MangaReaderWorkflow {
     private let offlineCacheStore: (any MangaOfflineCacheStoring)?
     private let adjacentPrefetchPolicy: MangaAdjacentChapterPrefetchPolicy
     private var window: MangaChapterWindow?
+    // Async work may suspend while another reader action mutates the window.
+    // These generations are the workflow's commit boundary: UI-side result
+    // guards can prevent a stale publication, but only this owner can prevent
+    // a stale task from replacing the window underneath the next action.
+    private var sessionGeneration: UInt64 = 0
+    private var positionGeneration: UInt64 = 0
+    private var navigationMutationGeneration: UInt64 = 0
+    private var directoryMutationGeneration: UInt64 = 0
+    private var activeDirectoryMutationGeneration: UInt64?
     private var settings: MangaReaderSettings
     private var directoryPanelCommandState = MangaDirectoryPanelCommandState()
     private var viewportPlacementRevision = 0
     private var currentViewportPlacement: MangaNovelReaderViewportPlacement?
+
+    private struct NavigationMutationToken: Equatable {
+        let sessionGeneration: UInt64
+        let positionGeneration: UInt64
+        let navigationGeneration: UInt64
+    }
+
+    private struct DirectoryMutationToken: Equatable {
+        let sessionGeneration: UInt64
+        let generation: UInt64
+        let directoryID: MangaDirectoryID
+    }
 
     public init(
         context: MangaLaunchContext,
@@ -78,6 +99,12 @@ public final class MangaReaderWorkflow {
 
     @discardableResult
     public nonisolated(nonsending) func prepare(initialProjection: MangaReaderProjection? = nil) async -> MangaReaderPresentation {
+        sessionGeneration &+= 1
+        positionGeneration &+= 1
+        navigationMutationGeneration &+= 1
+        directoryMutationGeneration &+= 1
+        activeDirectoryMutationGeneration = nil
+        let preparationSessionGeneration = sessionGeneration
         window = nil
         shouldAutoUpdateDirectoryAfterPrepare = false
         directoryPanelCommandState = MangaDirectoryPanelCommandState()
@@ -152,11 +179,17 @@ public final class MangaReaderWorkflow {
                 initialDocument: document,
                 position: requestedPosition
             )
-            self.window = window
+            guard !Task.isCancelled,
+                  sessionGeneration == preparationSessionGeneration else {
+                throw CancellationError()
+            }
+            commitWindow(window, positionChanged: true)
             shouldAutoUpdateDirectoryAfterPrepare = resolution.shouldAutoUpdateAfterInitialLoad
             presentation = loadedPresentation(from: window, placementPageIndex: MangaReaderPageProjection.resolvedPageIndex(for: window))
         } catch {
-            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return presentation }
+            guard !Task.isCancelled,
+                  !LoadDiagnosticError.isCancellation(error),
+                  sessionGeneration == preparationSessionGeneration else { return presentation }
             window = nil
             presentation = MangaReaderPresentation(
                 state: .failed(
@@ -249,7 +282,7 @@ public final class MangaReaderWorkflow {
     public func moveToLoadedPage(at globalIndex: Int) -> MangaReaderPresentation {
         guard var window else { return presentation }
         _ = window.moveToLoadedPage(at: globalIndex)
-        self.window = window
+        commitWindow(window, positionChanged: true)
         currentViewportPlacement = nil
         presentation = loadedPresentation(from: window)
         return presentation
@@ -259,7 +292,7 @@ public final class MangaReaderWorkflow {
     public func jumpToLoadedPage(at globalIndex: Int, animated: Bool = false) -> MangaReaderPresentation {
         guard var window else { return presentation }
         _ = window.moveToLoadedPage(at: globalIndex)
-        self.window = window
+        commitWindow(window, positionChanged: true)
         presentation = loadedPresentation(
             from: window,
             placementPageIndex: MangaReaderPageProjection.resolvedPageIndex(for: window),
@@ -270,7 +303,7 @@ public final class MangaReaderWorkflow {
 
     @discardableResult
     public nonisolated(nonsending) func prefetchAdjacentChaptersIfNeeded(around globalIndex: Int) async -> MangaReaderPresentation? {
-        guard var window else { return nil }
+        guard let window else { return nil }
 
         let pages = MangaReaderPageProjection.projections(from: window)
         let deltas = adjacentPrefetchPolicy.triggeredDeltas(
@@ -279,24 +312,38 @@ public final class MangaReaderWorkflow {
         )
         guard !deltas.isEmpty else { return nil }
 
-        let preservedPosition = window.resolvedPosition
-        var didChange = false
+        let session = sessionGeneration
+        var documents: [MangaReaderProjection] = []
         for delta in deltas {
             guard !Task.isCancelled else { return nil }
-            guard let chapter = window.adjacentChapterForLoadedRange(delta: delta) else { continue }
+            guard sessionGeneration == session,
+                  let windowForLoad = self.window else {
+                return nil
+            }
+            guard let chapter = windowForLoad.adjacentChapterForLoadedRange(delta: delta) else { continue }
             let document: MangaReaderProjection
             do {
                 document = try await projectionLoader.loadReaderProjection(
-                    MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
+                    MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: windowForLoad.directory.id.rawValue)
                 )
             } catch {
                 guard !Task.isCancelled else { return nil }
                 YamiboLog.reader.warning("Adjacent chapter prefetch failed to load reader projection: \(error)")
                 continue
             }
-            guard !Task.isCancelled else { return nil }
+            documents.append(document)
+        }
 
-            let result = window.insertAdjacentDocument(document, preserving: preservedPosition)
+        guard !Task.isCancelled, sessionGeneration == session,
+              var rebasedWindow = self.window else { return nil }
+        var didChange = false
+        for document in documents {
+            guard let chapter = rebasedWindow.directory.chapters.first(where: { $0.tid == document.tid }),
+                  chapter.view == document.sourceIdentity.view else { continue }
+            let result = rebasedWindow.insertAdjacentDocument(
+                document,
+                preserving: rebasedWindow.resolvedPosition
+            )
             if case .changed = result {
                 didChange = true
             }
@@ -304,9 +351,9 @@ public final class MangaReaderWorkflow {
 
         guard didChange else { return nil }
 
-        self.window = window
-        let currentIndex = MangaReaderPageProjection.resolvedPageIndex(for: window)
-        presentation = loadedPresentation(from: window, placementPageIndex: currentIndex)
+        commitWindow(rebasedWindow)
+        let currentIndex = MangaReaderPageProjection.resolvedPageIndex(for: rebasedWindow)
+        presentation = loadedPresentation(from: rebasedWindow, placementPageIndex: currentIndex)
         return presentation
     }
 
@@ -341,9 +388,11 @@ public final class MangaReaderWorkflow {
     public nonisolated(nonsending) func updateDirectory(isForcedSearch: Bool = false) async throws -> MangaDirectoryUpdateResult {
         try Task.checkCancellation()
 
-        guard var window else {
+        guard let window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
+        let mutation = try beginDirectoryMutation()
+        defer { endDirectoryMutationIfNeeded(mutation) }
         let result = try await directoryWorkflow.updateDirectory(
             window.directory,
             currentTID: window.resolvedPosition?.tid,
@@ -351,10 +400,7 @@ public final class MangaReaderWorkflow {
         )
         try Task.checkCancellation()
 
-        let position = window.resolvedPosition
-        _ = window.updateDirectory(result.directory, preserving: position)
-        self.window = window
-        presentation = loadedPresentation(from: window)
+        _ = try commitDirectoryMutation(result.directory, mutation: mutation)
         return result
     }
 
@@ -366,17 +412,17 @@ public final class MangaReaderWorkflow {
     public nonisolated(nonsending) func resetDirectory() async throws -> MangaDirectoryUpdateResult {
         try Task.checkCancellation()
 
-        guard var window else {
+        guard let window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
         let position = window.resolvedPosition
         let seedTID = position?.tid ?? window.directory.chapters.first?.tid ?? context.chapterTID
+        let mutation = try beginDirectoryMutation()
+        defer { endDirectoryMutationIfNeeded(mutation) }
         let result = try await directoryWorkflow.resetDirectory(window.directory, seedTID: seedTID)
         try Task.checkCancellation()
 
-        _ = window.updateDirectory(result.directory, preserving: position)
-        self.window = window
-        presentation = loadedPresentation(from: window)
+        _ = try commitDirectoryMutation(result.directory, mutation: mutation)
         return result
     }
 
@@ -385,18 +431,20 @@ public final class MangaReaderWorkflow {
         cleanBookName: String,
         searchKeyword: String
     ) async throws -> MangaDirectory {
-        guard var window else {
+        try Task.checkCancellation()
+
+        guard let window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
+        let mutation = try beginDirectoryMutation()
+        defer { endDirectoryMutationIfNeeded(mutation) }
         let updated = try await directoryWorkflow.renameDirectory(
             window.directory,
             cleanBookName: cleanBookName,
             searchKeyword: searchKeyword
         )
-        let position = window.resolvedPosition
-        _ = window.updateDirectory(updated, preserving: position)
-        self.window = window
-        presentation = loadedPresentation(from: window)
+        try Task.checkCancellation()
+        _ = try commitDirectoryMutation(updated, mutation: mutation)
         return updated
     }
 
@@ -404,7 +452,7 @@ public final class MangaReaderWorkflow {
     public nonisolated(nonsending) func deleteDirectoryChapters(tids: Set<String>) async throws -> MangaReaderPresentation {
         try Task.checkCancellation()
 
-        guard var window else {
+        guard let window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
 
@@ -415,15 +463,17 @@ public final class MangaReaderWorkflow {
             return presentation
         }
 
-        let position = window.resolvedPosition
+        let mutation = try beginDirectoryMutation()
+        defer { endDirectoryMutationIfNeeded(mutation) }
         let updated = try await directoryWorkflow.deleteChapters(window.directory, tids: targetTIDs)
         try Task.checkCancellation()
 
-        _ = window.updateDirectory(updated, preserving: position)
-        _ = window.removeLoadedDocuments(withTIDs: targetTIDs, preserving: position)
-        self.window = window
-        let currentIndex = MangaReaderPageProjection.resolvedPageIndex(for: window)
-        presentation = loadedPresentation(from: window, placementPageIndex: currentIndex)
+        _ = try commitDirectoryMutation(
+            updated,
+            mutation: mutation,
+            removingLoadedTIDs: targetTIDs,
+            refreshViewportPlacement: true
+        )
         return presentation
     }
 
@@ -434,16 +484,22 @@ public final class MangaReaderWorkflow {
         guard var window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
+        let navigation = navigationMutationToken()
 
         let pages = MangaReaderPageProjection.projections(from: window)
         if let loadedIndex = pages.firstIndex(where: { $0.tid == chapter.tid && $0.localIndex == 0 }) {
             _ = window.moveToLoadedPage(at: loadedIndex)
-            self.window = window
+            commitWindow(window, positionChanged: true)
             presentation = loadedPresentation(from: window, placementPageIndex: loadedIndex)
             return presentation
         }
 
-        return try await loadChapterForNavigation(chapter, localIndex: 0, window: window)
+        return try await loadChapterForNavigation(
+            chapter,
+            localIndex: 0,
+            window: window,
+            navigation: navigation
+        )
     }
 
     @discardableResult
@@ -453,12 +509,13 @@ public final class MangaReaderWorkflow {
         guard var window else {
             throw YamiboError.underlying("Manga reader workflow is not prepared.")
         }
+        let navigation = navigationMutationToken()
 
         let pages = MangaReaderPageProjection.projections(from: window)
         if let loadedPosition = window.clampedPosition(position),
            let loadedIndex = MangaReaderPageProjection.resolvedPageIndex(for: loadedPosition, in: pages) {
             _ = window.moveToLoadedPage(at: loadedIndex)
-            self.window = window
+            commitWindow(window, positionChanged: true)
             presentation = loadedPresentation(from: window, placementPageIndex: loadedIndex)
             return presentation
         }
@@ -467,7 +524,12 @@ public final class MangaReaderWorkflow {
             throw YamiboError.underlying("Manga reader target chapter is unavailable.")
         }
 
-        return try await loadChapterForNavigation(chapter, localIndex: position.localIndex, window: window)
+        return try await loadChapterForNavigation(
+            chapter,
+            localIndex: position.localIndex,
+            window: window,
+            navigation: navigation
+        )
     }
 
     /// Both navigation entry points keep their own target lookup and cached fast
@@ -475,13 +537,20 @@ public final class MangaReaderWorkflow {
     private nonisolated(nonsending) func loadChapterForNavigation(
         _ chapter: MangaChapter,
         localIndex: Int,
-        window initialWindow: MangaChapterWindow
+        window initialWindow: MangaChapterWindow,
+        navigation: NavigationMutationToken
     ) async throws -> MangaReaderPresentation {
-        var window = initialWindow
         let document = try await projectionLoader.loadReaderProjection(
-            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: window.directory.id.rawValue)
+            MangaReaderProjectionRequest(chapter: chapter, offlineOwnerName: initialWindow.directory.id.rawValue)
         )
         try Task.checkCancellation()
+        guard acceptsNavigationMutation(navigation), var window = self.window else {
+            throw CancellationError()
+        }
+        if initialWindow.directory.chapters.contains(where: { $0.tid == chapter.tid }) {
+            guard let currentChapter = window.directory.chapters.first(where: { $0.tid == chapter.tid }),
+                  currentChapter.view == chapter.view else { throw CancellationError() }
+        }
 
         let targetPosition = MangaReadingPosition(tid: document.tid, localIndex: localIndex)
         let result = window.insertAdjacentDocument(document, preserving: targetPosition)
@@ -489,12 +558,14 @@ public final class MangaReaderWorkflow {
         case .changed:
             break
         case let .unchanged(_, reason):
-            if reason != .duplicateChapter {
+            if reason == .duplicateChapter {
+                window.updatePosition(targetPosition)
+            } else {
                 _ = window.reset(to: document, position: targetPosition)
             }
         }
 
-        self.window = window
+        commitWindow(window, positionChanged: true)
         let targetIndex = MangaReaderPageProjection.resolvedPageIndex(for: window)
         presentation = loadedPresentation(from: window, placementPageIndex: targetIndex)
         return presentation
@@ -526,6 +597,7 @@ public final class MangaReaderWorkflow {
               let chapter = initialWindow.adjacentChapter(from: sourcePosition, delta: delta) else {
             throw YamiboError.underlying("Manga reader adjacent chapter is unavailable.")
         }
+        let navigation = navigationMutationToken()
 
         if let presentation = jumpToLoadedAdjacentChapter(
             chapterTID: chapter.tid,
@@ -544,8 +616,12 @@ public final class MangaReaderWorkflow {
             throw YamiboError.unreadableBody
         }
 
-        guard var currentWindow = window,
-              currentWindow.resolvedPosition == sourcePosition else {
+        guard acceptsNavigationMutation(navigation),
+              var currentWindow = window,
+              currentWindow.resolvedPosition == sourcePosition,
+              let currentChapter = currentWindow.adjacentChapter(from: sourcePosition, delta: delta),
+              currentChapter.tid == chapter.tid,
+              currentChapter.view == chapter.view else {
             throw CancellationError()
         }
 
@@ -565,7 +641,7 @@ public final class MangaReaderWorkflow {
             throw YamiboError.underlying("Manga reader adjacent chapter could not be inserted.")
         }
 
-        self.window = currentWindow
+        commitWindow(currentWindow, positionChanged: true)
         presentation = loadedPresentation(
             from: currentWindow,
             placementPageIndex: targetIndex,
@@ -587,12 +663,18 @@ public final class MangaReaderWorkflow {
     /// Other windows can rename or merge this identity while a chapter is open.
     /// Resolve the latest metadata without discarding the loaded image pages.
     public nonisolated(nonsending) func refreshPersistedDirectory() async throws -> MangaReaderPresentation? {
-        guard context.isSmartModeEnabled, let id = window?.directory.id,
-              let latest = try await directoryStore.directory(id: id),
-              var current = window, current.directory.id == id,
+        guard context.isSmartModeEnabled,
+              let mutation = directoryObservationToken() else { return nil }
+        let latest = try await directoryStore.directory(id: mutation.directoryID)
+        try Task.checkCancellation()
+        guard let latest,
+              acceptsDirectoryObservation(mutation),
+              var current = window,
+              current.directory.id == mutation.directoryID,
               current.directory != latest else { return nil }
         _ = current.updateDirectory(latest, preserving: current.resolvedPosition)
-        window = current
+        commitWindow(current)
+        finishDirectoryObservation(mutation)
         presentation = loadedPresentation(from: current)
         return presentation
     }
@@ -603,6 +685,115 @@ public final class MangaReaderWorkflow {
 
     public func currentDirectoryCleanBookName() -> String? {
         window?.directory.cleanBookName
+    }
+
+    private func navigationMutationToken() -> NavigationMutationToken {
+        navigationMutationGeneration &+= 1
+        return NavigationMutationToken(
+            sessionGeneration: sessionGeneration,
+            positionGeneration: positionGeneration,
+            navigationGeneration: navigationMutationGeneration
+        )
+    }
+
+    private func acceptsNavigationMutation(_ token: NavigationMutationToken) -> Bool {
+        !Task.isCancelled
+            && token.sessionGeneration == sessionGeneration
+            && token.positionGeneration == positionGeneration
+            && token.navigationGeneration == navigationMutationGeneration
+            && window != nil
+    }
+
+    private func beginDirectoryMutation() throws -> DirectoryMutationToken {
+        try Task.checkCancellation()
+        guard let window else {
+            throw YamiboError.underlying("Manga reader workflow is not prepared.")
+        }
+
+        directoryMutationGeneration &+= 1
+        activeDirectoryMutationGeneration = directoryMutationGeneration
+        return DirectoryMutationToken(
+            sessionGeneration: sessionGeneration,
+            generation: directoryMutationGeneration,
+            directoryID: window.directory.id
+        )
+    }
+
+    private func endDirectoryMutationIfNeeded(_ token: DirectoryMutationToken) {
+        guard activeDirectoryMutationGeneration == token.generation else { return }
+        activeDirectoryMutationGeneration = nil
+    }
+
+    private func directoryObservationToken() -> DirectoryMutationToken? {
+        guard let window, activeDirectoryMutationGeneration == nil else { return nil }
+        return DirectoryMutationToken(
+            sessionGeneration: sessionGeneration,
+            generation: directoryMutationGeneration,
+            directoryID: window.directory.id
+        )
+    }
+
+    private func acceptsDirectoryMutation(_ token: DirectoryMutationToken) -> Bool {
+        !Task.isCancelled
+            && activeDirectoryMutationGeneration == token.generation
+            && token.sessionGeneration == sessionGeneration
+            && token.generation == directoryMutationGeneration
+            && window?.directory.id == token.directoryID
+    }
+
+    private func acceptsDirectoryObservation(_ token: DirectoryMutationToken) -> Bool {
+        !Task.isCancelled
+            && activeDirectoryMutationGeneration == nil
+            && token.sessionGeneration == sessionGeneration
+            && token.generation == directoryMutationGeneration
+            && window?.directory.id == token.directoryID
+    }
+
+    private func finishDirectoryObservation(_ token: DirectoryMutationToken) {
+        guard token.generation == directoryMutationGeneration,
+              activeDirectoryMutationGeneration == nil else { return }
+        directoryMutationGeneration &+= 1
+    }
+
+    private func commitDirectoryMutation(
+        _ directory: MangaDirectory,
+        mutation: DirectoryMutationToken,
+        removingLoadedTIDs: Set<String>? = nil,
+        refreshViewportPlacement: Bool = false
+    ) throws -> MangaReaderPresentation {
+        guard acceptsDirectoryMutation(mutation), var current = window else {
+            throw CancellationError()
+        }
+
+        let position = current.resolvedPosition
+        _ = current.updateDirectory(directory, preserving: position)
+        if let removingLoadedTIDs {
+            _ = current.removeLoadedDocuments(
+                withTIDs: removingLoadedTIDs,
+                preserving: position
+            )
+        }
+
+        // Rebase the directory result onto the latest window rather than the
+        // snapshot that was captured before the external store/network work.
+        // This preserves a page turn or chapter load that completed while the
+        // directory command was suspended.
+        commitWindow(current)
+        activeDirectoryMutationGeneration = nil
+        directoryMutationGeneration &+= 1
+
+        let placementPageIndex = refreshViewportPlacement
+            ? MangaReaderPageProjection.resolvedPageIndex(for: current)
+            : nil
+        presentation = loadedPresentation(from: current, placementPageIndex: placementPageIndex)
+        return presentation
+    }
+
+    private func commitWindow(_ nextWindow: MangaChapterWindow, positionChanged: Bool = false) {
+        window = nextWindow
+        if positionChanged {
+            positionGeneration &+= 1
+        }
     }
 
     private func loadedPresentation(
@@ -658,7 +849,7 @@ public final class MangaReaderWorkflow {
 
         var updatedWindow = window
         _ = updatedWindow.moveToLoadedPage(at: loadedIndex)
-        self.window = updatedWindow
+        commitWindow(updatedWindow, positionChanged: true)
         presentation = loadedPresentation(
             from: updatedWindow,
             placementPageIndex: loadedIndex,

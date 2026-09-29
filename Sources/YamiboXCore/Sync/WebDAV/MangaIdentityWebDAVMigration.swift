@@ -13,6 +13,7 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
         accountUID: String,
         operations: WebDAVSyncMigrationOperations
     ) async throws -> WebDAVSyncSettings {
+        try await operations.checkCurrent()
         struct ImportScope: Encodable {
             var location: String
             var username: String
@@ -53,10 +54,12 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
             try operations.validateAccounts(remotePayloads)
             try operations.validateAccounts(legacyPayloads)
             try Task.checkCancellation()
+            try await operations.checkCurrent()
         }
 
         var effective = settings
         for participant in selected {
+            try await operations.checkCurrent()
             guard let key = importScopes[participant.datasetID] else { continue }
             let id = participant.datasetID
             // Neither old-format history nor another remote/account's
@@ -68,10 +71,12 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
                 effective.localRevisionByDatasetID[id] = nil
                 effective.dirtyDatasetIDs.insert(id)
                 effective.mangaIdentityBaselineScopeByDatasetID[id] = key
+                try await operations.checkCurrent()
                 try await settingsStore.update { current in
                     if current.trimmedBaseURLString.isEmpty,
                        current.contentSelectionRevision == settings.contentSelectionRevision { current = settings }
-                    guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+                    guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings),
+                          current.receiptScope == settings.receiptScope else { return }
                     current.lastSyncedFingerprintByDatasetID[id] = nil
                     current.lastAppliedRemoteUpdatedAtByDatasetID[id] = nil
                     current.lastAppliedRemoteRevisionByDatasetID[id] = nil
@@ -79,23 +84,30 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
                     current.dirtyDatasetIDs.insert(id)
                     current.mangaIdentityBaselineScopeByDatasetID[id] = key
                 }
+                try await operations.checkCurrent()
             }
             guard !effective.completedMangaIdentityImports.contains(key) else { continue }
             let remote = remotePayloads[id]
             if let legacy = legacyPayloads[id] {
+                try await operations.checkCurrent()
                 _ = try await participant.mergeAndExportSnapshot(remoteData: legacy.data,
                     updatedAt: operations.uploadStamp(legacy.info.updatedAt), accountUID: accountUID)
+                try await operations.checkCurrent()
             }
             try await operations.upload(participant, remote, effective, operations.uploadStamp(remote?.info.updatedAt))
             try Task.checkCancellation()
+            try await operations.checkCurrent()
             let updated = try await settingsStore.update { current in
-                guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+                guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings),
+                      current.receiptScope == settings.receiptScope else { return }
                 current.completedMangaIdentityImports.insert(key)
             }
+            try await operations.checkCurrent()
             // A settings write can change the destination while an upload is
             // suspended. Never pair this round's fetched payloads with that
             // new connection, even when its migration bookkeeping was skipped.
-            guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings) else {
+            guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings),
+                  updated.receiptScope == settings.receiptScope else {
                 throw CancellationError()
             }
             effective = updated

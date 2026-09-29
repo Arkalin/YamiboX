@@ -229,33 +229,46 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     ) {
         guard flight == nil, !isChangingAccount else { return }
         flight = Flight(baselineClearance: nil, hasDemandWaiter: hasDemandWaiter, restoreCookie: restoreCookie)
-        let flightID = flight?.id
+        guard let flightID = flight?.id else { return }
         preparationTask?.cancel()
         preparationTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let snapshot = try? await sessionStore.snapshot() else { return }
-            await prepareWebView(userAgent: challenge.userAgent)
-            let cookies = await cookieStore.allCookies()
-                .map { YamiboCookie($0) }
-                .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
-            guard flight?.id == flightID, !isChangingAccount, !Task.isCancelled,
-                  await sessionStore.isCurrentGeneration(snapshot.generation) else { return }
-            let clearance = cookies.first { $0.name == "nox_jst_v1" && !$0.isExpired() }
-            flight?.baselineClearance = clearance
-            if hasUsableClearance(clearance, replacing: challenge) {
-                try? await sessionStore.updateWebSession(
-                    cookies: cookies,
-                    userAgent: webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent,
-                    expectedGeneration: snapshot.generation
-                )
-                let session = await sessionStore.load()
-                guard flight?.id == flightID, !Task.isCancelled else { return }
-                finishFlight(with: .success(session.credentials), restorePreheatCookie: false)
-                return
+            do {
+                let snapshot = try await sessionStore.snapshot()
+                await prepareWebView(userAgent: challenge.userAgent)
+                let cookies = await cookieStore.allCookies()
+                    .map { YamiboCookie($0) }
+                    .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
+                guard await sessionStore.isCurrentGeneration(snapshot.generation),
+                      flight?.id == flightID, !isChangingAccount, !Task.isCancelled else {
+                    throw CancellationError()
+                }
+                let clearance = cookies.first { $0.name == "nox_jst_v1" && !$0.isExpired() }
+                flight?.baselineClearance = clearance
+                if hasUsableClearance(clearance, replacing: challenge) {
+                    try await sessionStore.updateWebSession(
+                        cookies: cookies,
+                        userAgent: webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent,
+                        expectedGeneration: snapshot.generation
+                    )
+                    guard await sessionStore.isCurrentGeneration(snapshot.generation),
+                          flight?.id == flightID, !isChangingAccount, !Task.isCancelled else {
+                        throw CancellationError()
+                    }
+                    let session = await sessionStore.load()
+                    guard await sessionStore.isCurrentGeneration(snapshot.generation),
+                          flight?.id == flightID, !isChangingAccount, !Task.isCancelled else {
+                        throw CancellationError()
+                    }
+                    finishFlight(with: .success(session.credentials), restorePreheatCookie: false)
+                    return
+                }
+                flight?.isObservingClearance = true
+                webView.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
+                beginSilentTimeout()
+            } catch {
+                finishFlight(for: flightID, with: error, restorePreheatCookie: false)
             }
-            flight?.isObservingClearance = true
-            webView.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
-            beginSilentTimeout()
         }
     }
 
@@ -275,9 +288,17 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     private func prepareWebView(userAgent: String) async {
         guard !isChangingAccount, !Task.isCancelled else { return }
         let id = UUID()
-        let task = Task { await installCurrentSession(userAgent: userAgent) }
+        let pending = Array(webPreparationTasks.values)
+        let task = Task {
+            for previous in pending { await previous.value }
+            await installCurrentSession(userAgent: userAgent)
+        }
         webPreparationTasks[id] = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         webPreparationTasks[id] = nil
     }
 
@@ -312,24 +333,32 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     private func synchronizeCookieSnapshot() async {
-        guard !isChangingAccount, !Task.isCancelled,
-              let snapshot = try? await sessionStore.snapshot() else { return }
-        let cookies = await cookieStore.allCookies()
-            .map { YamiboCookie($0) }
-            .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
-        let userAgent = webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent
-        guard !isChangingAccount, !Task.isCancelled else { return }
+        let flightID = flight?.id
         do {
+            guard !isChangingAccount, !Task.isCancelled else { return }
+            let snapshot = try await sessionStore.snapshot()
+            let cookies = await cookieStore.allCookies()
+                .map { YamiboCookie($0) }
+                .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
+            let userAgent = webView.customUserAgent ?? YamiboNetworkConfiguration.defaultMobileUserAgent
+            guard !isChangingAccount, !Task.isCancelled else { return }
             try await sessionStore.updateWebSession(cookies: cookies, userAgent: userAgent, expectedGeneration: snapshot.generation)
-        } catch { return }
 
-        guard let flight, flight.isObservingClearance else { return }
-        let clearance = cookies.first { $0.name == "nox_jst_v1" && !$0.isExpired() }
-        guard isUpdatedClearance(clearance, since: flight.baselineClearance) else { return }
-        let session = await sessionStore.load()
-        guard self.flight?.id == flight.id, !isChangingAccount, !Task.isCancelled,
-              await sessionStore.isCurrentGeneration(snapshot.generation) else { return }
-        finishFlight(with: .success(session.credentials), restorePreheatCookie: false)
+            guard let flightID, let flight, flight.id == flightID,
+                  flight.isObservingClearance else { return }
+            let clearance = cookies.first { $0.name == "nox_jst_v1" && !$0.isExpired() }
+            guard isUpdatedClearance(clearance, since: flight.baselineClearance) else { return }
+            let session = await sessionStore.load()
+            guard await sessionStore.isCurrentGeneration(snapshot.generation) else {
+                throw CancellationError()
+            }
+            guard self.flight?.id == flightID, !isChangingAccount, !Task.isCancelled else { return }
+            finishFlight(with: .success(session.credentials), restorePreheatCookie: false)
+        } catch {
+            // A replacement cookie observer owns recovery after cancellation.
+            guard !Task.isCancelled else { return }
+            finishFlight(for: flightID, with: error, restorePreheatCookie: false)
+        }
     }
 
     private func isUpdatedClearance(_ current: YamiboCookie?, since baseline: YamiboCookie?) -> Bool {
@@ -346,6 +375,8 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
 
     private func finishFlight(with result: Result<YamiboRequestCredentials, Error>, restorePreheatCookie: Bool) {
         let restoreCookie = restorePreheatCookie ? flight?.restoreCookie : nil
+        preparationTask?.cancel()
+        preparationTask = nil
         flight = nil
         silentTimeoutTask?.cancel()
         silentTimeoutTask = nil
@@ -364,6 +395,15 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
             }
         }
         if presentation == nil, let hiddenContainer { installWebView(in: hiddenContainer) }
+    }
+
+    private func finishFlight(
+        for flightID: UUID?,
+        with error: Error,
+        restorePreheatCookie: Bool
+    ) {
+        guard let flightID, flight?.id == flightID else { return }
+        finishFlight(with: .failure(error), restorePreheatCookie: restorePreheatCookie)
     }
 
     private func finishFlight(with error: Error, restorePreheatCookie: Bool) {

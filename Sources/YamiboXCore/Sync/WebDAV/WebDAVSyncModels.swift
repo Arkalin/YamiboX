@@ -8,10 +8,31 @@ public enum WebDAVSyncContent: String, Codable, CaseIterable, Sendable, Identifi
     public var title: String { L10n.string("webdav.content.\(rawValue)") }
 }
 
+/// The receipt fields in `WebDAVSyncSettings` describe one remote/account
+/// scope. The password is deliberately not part of this value: changing a
+/// credential is a connection change and clears the receipts before the new
+/// connection is admitted.
+struct WebDAVReceiptScope: Codable, Equatable, Sendable {
+    let baseURL: String
+    let username: String
+    let accountUID: String
+
+    init(settings: WebDAVSyncSettings, accountUID: String) {
+        baseURL = settings.trimmedBaseURLString
+        username = settings.trimmedUsername
+        self.accountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     public var baseURLString: String
     public var username: String
+    /// In-memory only. `encode(to:)` intentionally omits this field; the
+    /// settings store hydrates it from Keychain after decoding.
     public var password: String
+    /// Non-secret reference to the Keychain item containing `password`.
+    var credentialReference: String?
+    var pendingCredentialDeletionReferences: Set<String> = []
     public var isAutoSyncEnabled: Bool
     public var disabledContentIDs: Set<String>
     public var contentSelectionRevision: UInt64
@@ -58,6 +79,10 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     public var completedMangaIdentityImports: Set<String>
     /// Scope of the active new-format baseline, independent of import history.
     public var mangaIdentityBaselineScopeByDatasetID: [String: String]
+    /// The remote location and forum account whose receipt dictionaries are
+    /// valid. A mismatch forces a fresh reconciliation instead of allowing a
+    /// revision floor from another destination or account to suppress data.
+    var receiptScope: WebDAVReceiptScope?
 
     public init(
         baseURLString: String = "",
@@ -80,6 +105,7 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         self.baseURLString = baseURLString
         self.username = username
         self.password = password
+        self.credentialReference = nil
         self.isAutoSyncEnabled = isAutoSyncEnabled
         self.disabledContentIDs = disabledContentIDs
         self.contentSelectionRevision = contentSelectionRevision
@@ -93,12 +119,17 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         self.lastAppliedRemoteRevisionByDatasetID = lastAppliedRemoteRevisionByDatasetID
         self.completedMangaIdentityImports = completedMangaIdentityImports
         self.mangaIdentityBaselineScopeByDatasetID = mangaIdentityBaselineScopeByDatasetID
+        self.receiptScope = nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case baseURLString
         case username
+        // Decoded for migration from the old UserDefaults blob only. Never
+        // emitted by encode(to:).
         case password
+        case credentialReference
+        case pendingCredentialDeletionReferences
         case isAutoSyncEnabled
         case disabledContentIDs, contentSelectionRevision
         case lastSyncedAt
@@ -111,6 +142,7 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         case lastAppliedRemoteRevisionByDatasetID
         case completedMangaIdentityImports
         case mangaIdentityBaselineScopeByDatasetID
+        case receiptScope
     }
 
     /// Every field decodes with `decodeIfPresent ?? default` (the same
@@ -138,6 +170,51 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
             completedMangaIdentityImports: try container.decodeIfPresent(Set<String>.self, forKey: .completedMangaIdentityImports) ?? [],
             mangaIdentityBaselineScopeByDatasetID: try container.decodeIfPresent([String: String].self, forKey: .mangaIdentityBaselineScopeByDatasetID) ?? [:]
         )
+        credentialReference = try container.decodeIfPresent(String.self, forKey: .credentialReference)
+        pendingCredentialDeletionReferences = try container.decodeIfPresent(Set<String>.self, forKey: .pendingCredentialDeletionReferences) ?? []
+        receiptScope = try container.decodeIfPresent(WebDAVReceiptScope.self, forKey: .receiptScope)
+    }
+
+    /// Keep secrets out of the generic JSON storage. The old `password` key
+    /// remains decodable solely so the settings store can migrate it without
+    /// deleting the plaintext until a secure write succeeds.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(baseURLString, forKey: .baseURLString)
+        try container.encode(username, forKey: .username)
+        try container.encodeIfPresent(credentialReference, forKey: .credentialReference)
+        try container.encode(pendingCredentialDeletionReferences, forKey: .pendingCredentialDeletionReferences)
+        try container.encode(isAutoSyncEnabled, forKey: .isAutoSyncEnabled)
+        try container.encode(disabledContentIDs, forKey: .disabledContentIDs)
+        try container.encode(contentSelectionRevision, forKey: .contentSelectionRevision)
+        try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
+        try container.encodeIfPresent(lastRemoteUpdatedAt, forKey: .lastRemoteUpdatedAt)
+        try container.encodeIfPresent(localUpdatedAt, forKey: .localUpdatedAt)
+        try container.encode(dirtyDatasetIDs, forKey: .dirtyDatasetIDs)
+        try container.encode(lastSyncedFingerprintByDatasetID, forKey: .lastSyncedFingerprintByDatasetID)
+        try container.encode(lastAppliedRemoteUpdatedAtByDatasetID, forKey: .lastAppliedRemoteUpdatedAtByDatasetID)
+        try container.encode(localRevisionByDatasetID, forKey: .localRevisionByDatasetID)
+        try container.encode(lastAppliedRemoteRevisionByDatasetID, forKey: .lastAppliedRemoteRevisionByDatasetID)
+        try container.encode(completedMangaIdentityImports, forKey: .completedMangaIdentityImports)
+        try container.encode(mangaIdentityBaselineScopeByDatasetID, forKey: .mangaIdentityBaselineScopeByDatasetID)
+        try container.encodeIfPresent(receiptScope, forKey: .receiptScope)
+    }
+
+    /// Receipt state is disposable remote bookkeeping. Local content remains
+    /// in its feature stores and is fingerprinted again on the next automatic
+    /// round, so a new destination cannot inherit floors from the old one.
+    mutating func clearRemoteReceiptState() {
+        lastSyncedAt = nil
+        lastRemoteUpdatedAt = nil
+        localUpdatedAt = nil
+        dirtyDatasetIDs.removeAll()
+        lastSyncedFingerprintByDatasetID.removeAll()
+        lastAppliedRemoteUpdatedAtByDatasetID.removeAll()
+        localRevisionByDatasetID.removeAll()
+        lastAppliedRemoteRevisionByDatasetID.removeAll()
+        completedMangaIdentityImports.removeAll()
+        mangaIdentityBaselineScopeByDatasetID.removeAll()
+        receiptScope = nil
     }
 
     public var trimmedBaseURLString: String {

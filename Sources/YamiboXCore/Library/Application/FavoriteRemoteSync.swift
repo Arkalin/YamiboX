@@ -1,13 +1,16 @@
 import Foundation
 
 public struct YamiboRemoteFavoriteEntry: Hashable, Sendable {
-    public var remoteFavoriteID: String
+    /// Nil when the page exposed a valid thread link but no server `favid`.
+    /// This is deliberately not replaced with `Favorite.id`, which is a local
+    /// UI identity and cannot be sent to the delete endpoint.
+    public var remoteFavoriteID: String?
     public var threadID: String
     public var title: String?
     public var remoteOrder: Int
 
-    public init(remoteFavoriteID: String, threadID: String, title: String? = nil, remoteOrder: Int = 0) {
-        self.remoteFavoriteID = remoteFavoriteID
+    public init(remoteFavoriteID: String? = nil, threadID: String, title: String? = nil, remoteOrder: Int = 0) {
+        self.remoteFavoriteID = FavoriteRemoteIdentity.normalizedID(remoteFavoriteID)
         self.threadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         self.title = title
         self.remoteOrder = remoteOrder
@@ -278,7 +281,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 await commit { $0.logEntries.append(.importingItem(index: offset + 1, total: importTotal, title: label)) }
 
                 if let existing = workingDocument.items.first(where: { $0.target.threadID == entry.threadID }) {
-                    let alreadyMapped = existing.remoteMapping?.yamiboFavoriteID != nil
+                    let alreadyMapped = FavoriteRemoteIdentity.normalizedID(existing.remoteMapping?.yamiboFavoriteID) != nil
                     let existingTarget = existing.target
                     if !alreadyMapped {
                         apply { doc in doc.addLocation(targetLocation, to: existingTarget) }
@@ -286,7 +289,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     apply { doc in
                         doc.updateRemoteMapping(
                             for: existingTarget,
-                            yamiboFavoriteID: entry.remoteFavoriteID,
+                            yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                             yamiboRemoteOrder: entry.remoteOrder
                         )
                     }
@@ -314,7 +317,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         throw YamiboError.parsingFailed(context: entry.threadID)
                     }
                     let mapping = FavoriteRemoteMapping(
-                        yamiboFavoriteID: entry.remoteFavoriteID,
+                        yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                         yamiboRemoteOrder: entry.remoteOrder,
                         lastSeenAt: .now
                     )
@@ -445,7 +448,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         apply { doc in
                             doc.updateRemoteMapping(
                                 for: target,
-                                yamiboFavoriteID: entry.remoteFavoriteID,
+                                yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                                 yamiboRemoteOrder: entry.remoteOrder
                             )
                         }

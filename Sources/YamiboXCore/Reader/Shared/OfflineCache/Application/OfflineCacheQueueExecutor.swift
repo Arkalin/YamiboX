@@ -56,6 +56,8 @@ public actor OfflineCacheQueueExecutor {
     private var retiringRuns: [Int: Task<Void, Never>] = [:]
     private var runGeneration = 0
     private var isInvalidated = false
+    private var externalCommandCount = 0
+    private var externalCommandWaiters: [CheckedContinuation<Void, Never>] = []
     private let isSessionCurrent: @Sendable () async -> Bool
 
     init(
@@ -104,19 +106,26 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func continueQueue(submitsUserInitiatedRun: Bool) async throws {
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        try await ensureExternalCommandAllowed()
         if identityChangeDepth > 0 {
             resumeAfterIdentityChange = true
             return
         }
-        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
         guard !deferRunForIdentityChange() else { return }
         try await store.retryFailedOfflineCacheWorks()
-        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
+        try await ensureExternalCommandAllowed()
         guard !deferRunForIdentityChange() else { return }
         try await store.setOfflineCacheQueueRunState(.running)
-        guard !isInvalidated, await isSessionCurrent() else {
-            try await store.setOfflineCacheQueueRunState(.paused)
-            throw CancellationError()
+        do {
+            try await ensureExternalCommandAllowed()
+        } catch {
+            // Normal invalidation joins this command and performs the final
+            // pause. If the transition failed before reaching invalidation,
+            // retain the previous rollback rather than publishing a phantom run.
+            if !isInvalidated { try await store.setOfflineCacheQueueRunState(.paused) }
+            throw error
         }
         guard !deferRunForIdentityChange() else { return }
         if let runTask, !runTask.isCancelled {
@@ -126,7 +135,7 @@ public actor OfflineCacheQueueExecutor {
         if submitsUserInitiatedRun {
             await runObserver?.submitUserInitiatedRun()
         }
-        guard !isInvalidated, await isSessionCurrent() else { throw CancellationError() }
+        try await ensureExternalCommandAllowed()
         guard !deferRunForIdentityChange() else { return }
         // Another continuation may have installed a worker during the awaits.
         guard runTask == nil || runTask?.isCancelled == true else { return }
@@ -144,6 +153,16 @@ public actor OfflineCacheQueueExecutor {
     }
 
     public func pauseQueue() async throws {
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        try await ensureExternalCommandAllowed()
+        try await pauseQueueForTeardown()
+    }
+
+    // Account invalidation sets isInvalidated before it pauses and joins this
+    // executor. Keep that teardown path private so retired executors cannot
+    // accept ordinary UI mutations while cleanup can still pause the queue.
+    private func pauseQueueForTeardown() async throws {
         resumeAfterIdentityChange = false
         cancelActiveRun()
         do {
@@ -207,55 +226,96 @@ public actor OfflineCacheQueueExecutor {
 
     func invalidateForAccountChange() async throws {
         isInvalidated = true
-        try await pauseQueue()
+        cancelActiveRun()
+        // Join admitted UI commands too: a store write already in flight may
+        // finish after invalidation, but must finish before the final pause.
+        if externalCommandCount > 0 {
+            await withCheckedContinuation { externalCommandWaiters.append($0) }
+        }
+        try await pauseQueueForTeardown()
+    }
+
+    /// A factory result rejected before publication has no work to tear down.
+    func rejectBeforeUse() {
+        isInvalidated = true
     }
 
     public func cancelChapter(ownerName: String, tid: String) async throws {
-        let wasRunning = try await store.offlineCacheQueueRunState() == .running
-        cancelActiveRun()
-        await runObserver?.queueRunDidCancel()
-        await joinRetiringRuns()
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        let wasRunning = try await prepareExternalCancellation()
         try await store.cancelOfflineCacheEntry(
             OfflineCacheEntryID(readerKind: .manga, ownerKey: ownerName, entryKey: tid)
         )
+        try await ensureExternalCommandAllowed()
         if wasRunning {
             try await continueQueue()
         }
     }
 
     public func cancelOwnerGroup(ownerName: String) async throws {
-        let wasRunning = try await store.offlineCacheQueueRunState() == .running
-        cancelActiveRun()
-        await runObserver?.queueRunDidCancel()
-        await joinRetiringRuns()
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        let wasRunning = try await prepareExternalCancellation()
         try await store.cancelOfflineCacheGroup(
             OfflineCacheGroupID(readerKind: .manga, ownerKey: ownerName)
         )
+        try await ensureExternalCommandAllowed()
         if wasRunning {
             try await continueQueue()
         }
     }
 
     public func cancelWork(id: OfflineCacheWorkID) async throws {
-        let wasRunning = try await store.offlineCacheQueueRunState() == .running
-        cancelActiveRun()
-        await runObserver?.queueRunDidCancel()
-        await joinRetiringRuns()
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        let wasRunning = try await prepareExternalCancellation()
         try await store.cancelOfflineCacheWork(id: id)
+        try await ensureExternalCommandAllowed()
         if wasRunning {
             try await continueQueue()
         }
     }
 
     public func cancelGroup(id: OfflineCacheGroupID) async throws {
-        let wasRunning = try await store.offlineCacheQueueRunState() == .running
-        cancelActiveRun()
-        await runObserver?.queueRunDidCancel()
-        await joinRetiringRuns()
+        try beginExternalCommand()
+        defer { finishExternalCommand() }
+        let wasRunning = try await prepareExternalCancellation()
         try await store.cancelOfflineCacheGroup(id)
+        try await ensureExternalCommandAllowed()
         if wasRunning {
             try await continueQueue()
         }
+    }
+
+    private func prepareExternalCancellation() async throws -> Bool {
+        try await ensureExternalCommandAllowed()
+        let wasRunning = try await store.offlineCacheQueueRunState() == .running
+        try await ensureExternalCommandAllowed()
+        cancelActiveRun()
+        await runObserver?.queueRunDidCancel()
+        await joinRetiringRuns()
+        try await ensureExternalCommandAllowed()
+        return wasRunning
+    }
+
+    private func ensureExternalCommandAllowed() async throws {
+        guard !isInvalidated else { throw CancellationError() }
+        guard await isSessionCurrent() else { throw CancellationError() }
+        guard !isInvalidated else { throw CancellationError() }
+    }
+
+    private func beginExternalCommand() throws {
+        guard !isInvalidated else { throw CancellationError() }
+        externalCommandCount += 1
+    }
+
+    private func finishExternalCommand() {
+        externalCommandCount -= 1
+        guard externalCommandCount == 0 else { return }
+        let waiters = externalCommandWaiters
+        externalCommandWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     public func waitForIdle() async {

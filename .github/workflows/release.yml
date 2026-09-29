@@ -12,10 +12,16 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Existing release tag to build (for example, v0.7.0)"
+        required: true
+        default: ""
+        type: string
       release_notes:
         description: "Release notes shown in-app (optional; falls back to an annotated tag message, then a generic note)"
         required: false
         default: ""
+        type: string
 
 permissions:
   contents: write
@@ -27,40 +33,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
           fetch-depth: 0
+
+      - name: Restore annotated release tag
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git check-ref-format "refs/tags/${RELEASE_TAG}"
+          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+
+      - name: Validate release identity
+        id: identity
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.release_tag }}
+          PROJECT_PATH: YamiboX.xcodeproj
+          SCHEME: YamiboX
+          CONFIGURATION: Release
+          TARGET: YamiboX
+          DESTINATION: generic/platform=iOS
+        run: bash scripts/validate-release-identity.sh
 
       - name: Show toolchain
         run: |
           xcodebuild -version
           swift --version
 
-      - name: Resolve version
-        id: version
-        run: |
-          set -euo pipefail
-          version="$(grep -m1 'MARKETING_VERSION = ' YamiboX.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);.*/\1/')"
-          if [[ -z "${version}" ]]; then
-            echo "Failed to resolve MARKETING_VERSION from project.pbxproj" >&2
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Resolved MARKETING_VERSION=${version}"
-
       - name: Resolve release notes
         id: notes
         env:
           RELEASE_NOTES_INPUT: ${{ github.event.inputs.release_notes }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="v${{ steps.version.outputs.version }}"
-
-          # actions/checkout can rewrite the pushed tag as a lightweight ref
-          # (actions/checkout#290); re-fetch so the annotated message is intact.
-          git fetch origin "+refs/tags/${tag}:refs/tags/${tag}" --force 2>/dev/null || true
 
           notes="${RELEASE_NOTES_INPUT:-}"
-          if [[ -z "${notes}" && "$(git for-each-ref "refs/tags/${tag}" --format='%(objecttype)')" == "tag" ]]; then
-            notes="$(git tag -l --format='%(contents)' "${tag}")"
+          if [[ -z "${notes}" && "$(git for-each-ref "refs/tags/${RELEASE_TAG}" --format='%(objecttype)')" == "tag" ]]; then
+            notes="$(git tag -l --format='%(contents)' "${RELEASE_TAG}")"
           fi
 
           if [[ -n "${notes//[[:space:]]/}" ]]; then
@@ -87,6 +100,8 @@ jobs:
 
       - name: Package unsigned IPA
         id: package
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
         run: |
           set -euo pipefail
           app_path="$RUNNER_TEMP/YamiboX.xcarchive/Products/Applications/YamiboX.app"
@@ -98,7 +113,7 @@ jobs:
           rm -rf "${payload_dir}"
           mkdir -p "${payload_dir}"
           cp -R "${app_path}" "${payload_dir}/"
-          ipa_name="YamiboX_v${{ steps.version.outputs.version }}_unsigned.ipa"
+          ipa_name="YamiboX_v${RELEASE_VERSION}_unsigned.ipa"
           ipa_path="$RUNNER_TEMP/${ipa_name}"
           (cd "${payload_dir}/.." && zip -r -y -q "${ipa_path}" Payload)
           echo "ipa_name=${ipa_name}" >> "$GITHUB_OUTPUT"
@@ -109,28 +124,36 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ steps.notes.outputs.notes }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+          IPA_PATH: ${{ steps.package.outputs.ipa_path }}
+          IPA_NAME: ${{ steps.package.outputs.ipa_name }}
         run: |
           set -euo pipefail
           args=(
-            "${{ steps.package.outputs.ipa_path }}#${{ steps.package.outputs.ipa_name }}"
-            --repo "${{ github.repository }}"
-            --title "v${{ steps.version.outputs.version }}"
+            "${IPA_PATH}#${IPA_NAME}"
+            --repo "${GITHUB_REPOSITORY}"
+            --title "${RELEASE_TAG}"
             --generate-notes
+            --verify-tag
           )
           if [[ -n "${NOTES}" ]]; then
             args+=(--notes "${NOTES}")
           fi
-          gh release create "v${{ steps.version.outputs.version }}" "${args[@]}"
+          gh release create "${RELEASE_TAG}" "${args[@]}"
 
       - name: Register release in app-repo.json
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ steps.notes.outputs.notes }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+          IPA_NAME: ${{ steps.package.outputs.ipa_name }}
+          IPA_SIZE: ${{ steps.package.outputs.ipa_size }}
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          tag="v${version}"
-          download_url="https://github.com/${{ github.repository }}/releases/download/${tag}/${{ steps.package.outputs.ipa_name }}"
+          version="${RELEASE_VERSION}"
+          tag="${RELEASE_TAG}"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${IPA_NAME}"
 
           # The notes are Markdown for the GitHub Release: each line ends with a
           # "(shorthash[, …] · @author[, …])" group (GitHub auto-links the SHAs and
@@ -147,7 +170,7 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
-          python3 - "${version}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${description}" "${download_url}" "${{ steps.package.outputs.ipa_size }}" <<'PYEOF'
+          python3 - "${version}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${description}" "${download_url}" "${IPA_SIZE}" <<'PYEOF'
           import json
           import sys
 

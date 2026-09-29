@@ -106,6 +106,9 @@ final class MangaReaderLifecycleCoordinator {
 
     func invalidateContent() {
         contentID = UUID()
+        // Chapter-load admission belongs to MangaReaderWorkflow. Retiring it
+        // here would also cancel a navigation that can safely rebase across a
+        // directory-only commit.
         retire(.adjacentPrefetch)
     }
 

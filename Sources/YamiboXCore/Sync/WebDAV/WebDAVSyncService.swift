@@ -33,24 +33,34 @@ public actor WebDAVSyncService {
 
     @discardableResult
     public func upload() async throws -> Date {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await performUpload(using: settingsStore.load())
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await performUpload(using: await settingsStore.load(), run: run)
         }
     }
 
     @discardableResult
     public func upload(using settings: WebDAVSyncSettings, allowingAccountMismatch: Bool = false) async throws -> Date {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await performUpload(using: settings, allowingAccountMismatch: allowingAccountMismatch)
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await performUpload(using: settings, allowingAccountMismatch: allowingAccountMismatch, run: run)
         }
     }
 
-    private func performUpload(using settings: WebDAVSyncSettings, allowingAccountMismatch: Bool = false) async throws -> Date {
+    private func performUpload(
+        using settings: WebDAVSyncSettings,
+        allowingAccountMismatch: Bool = false,
+        run: WebDAVSyncCoordinator.RunToken
+    ) async throws -> Date {
+        try await checkCurrent(run)
         guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
-        let settings = try await prepareDatasets(settings: settings, accountUID: accountUID,
+        try await checkCurrent(run)
+        let scopedSettings = try await settingsStore.prepareReceiptScope(for: settings, accountUID: accountUID)
+        try await checkCurrent(run)
+        let settings = try await prepareDatasets(settings: scopedSettings, accountUID: accountUID, run: run,
             allowingAccountMismatch: allowingAccountMismatch)
-        let remotePayloads = try await fetchRemotePayloads(settings: settings)
+        try await checkCurrent(run)
+        let remotePayloads = try await fetchRemotePayloads(settings: settings, run: run)
+        try await checkCurrent(run)
         if !allowingAccountMismatch {
             try validateAccount(of: remotePayloads, localUID: accountUID)
         }
@@ -61,37 +71,44 @@ public actor WebDAVSyncService {
             settings: settings,
             accountUID: accountUID,
             updatedAt: updatedAt,
+            run: run,
             allowingAccountMismatch: allowingAccountMismatch
         )
-        try await updateSettingsAfterSync(settings, updatedAt: updatedAt, outcomes: uploaded)
+        try await updateSettingsAfterSync(settings, updatedAt: updatedAt, outcomes: uploaded, run: run)
         return updatedAt
     }
 
     @discardableResult
     public func download() async throws -> Date {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await performDownload(using: settingsStore.load())
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await performDownload(using: await settingsStore.load(), run: run)
         }
     }
 
     @discardableResult
     public func download(using settings: WebDAVSyncSettings, allowingAccountMismatch _: Bool = false) async throws -> Date {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await performDownload(using: settings)
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await performDownload(using: settings, run: run)
         }
     }
 
-    private func performDownload(using settings: WebDAVSyncSettings) async throws -> Date {
+    private func performDownload(using settings: WebDAVSyncSettings, run: WebDAVSyncCoordinator.RunToken) async throws -> Date {
+        try await checkCurrent(run)
         guard settings.hasEnabledContent else { throw WebDAVSyncError.noContentSelected }
         let accountUID = try await currentAccountUID()
-        let settings = try await prepareDatasets(settings: settings, accountUID: accountUID)
-        let remotePayloads = try await fetchRemotePayloads(settings: settings)
+        try await checkCurrent(run)
+        let scopedSettings = try await settingsStore.prepareReceiptScope(for: settings, accountUID: accountUID)
+        try await checkCurrent(run)
+        let settings = try await prepareDatasets(settings: scopedSettings, accountUID: accountUID, run: run)
+        try await checkCurrent(run)
+        let remotePayloads = try await fetchRemotePayloads(settings: settings, run: run)
+        try await checkCurrent(run)
         try validateAccount(of: remotePayloads, localUID: accountUID)
-        let applied = try await applyRemotePayloads(remotePayloads)
+        let applied = try await applyRemotePayloads(remotePayloads, run: run)
         guard let updatedAt = applied.values.map(\.appliedRemoteUpdatedAt).max() else {
             throw WebDAVSyncError.notFound
         }
-        try await updateSettingsAfterSync(settings, updatedAt: updatedAt, outcomes: applied)
+        try await updateSettingsAfterSync(settings, updatedAt: updatedAt, outcomes: applied, run: run)
         return updatedAt
     }
 
@@ -102,23 +119,41 @@ public actor WebDAVSyncService {
     ///   are skipped, only touching `localUpdatedAt`/dirty state, not the network.
     @discardableResult
     public func synchronizeAutomatically(bypassingMinimumInterval: Bool = false) async throws -> WebDAVAutomaticSyncResult {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await performAutomaticSync(bypassingMinimumInterval: bypassingMinimumInterval)
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await performAutomaticSync(bypassingMinimumInterval: bypassingMinimumInterval, run: run)
         }
     }
 
-    private func performAutomaticSync(bypassingMinimumInterval: Bool) async throws -> WebDAVAutomaticSyncResult {
+    private func performAutomaticSync(
+        bypassingMinimumInterval: Bool,
+        run: WebDAVSyncCoordinator.RunToken
+    ) async throws -> WebDAVAutomaticSyncResult {
+        try await checkCurrent(run)
         var settings = await settingsStore.load()
+        try await checkCurrent(run)
+        let snapshot = try await sessionStore.snapshot()
+        try await checkCurrent(run)
+        guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return .skipped }
+        let sessionState = snapshot.session
+        guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
+        let accountUID = try? currentAccountUID(from: sessionState)
+        guard let accountUID else { return .skipped }
+        settings = try await settingsStore.prepareReceiptScope(for: settings, accountUID: accountUID)
+        try await checkCurrent(run)
         let disabledContentIDs = settings.disabledContentIDs
         let selectionRevision = settings.contentSelectionRevision
         let participants = enabledParticipants(settings)
         guard !participants.isEmpty else { return .skipped }
-        let snapshot = try await sessionStore.snapshot()
-        guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return .skipped }
-        let sessionState = snapshot.session
-        guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
-        try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
-        settings = try await reloadSettings(for: settings)
+        try await refreshDirtyState(
+            at: .now,
+            // A missing receipt baseline is not a local edit. Participants
+            // opt into first-time uploads; snapshot-only settings must remain
+            // eligible to download an existing remote value instead.
+            includeUntracked: false,
+            using: settings,
+            run: run
+        )
+        settings = try await reloadSettings(for: settings, run: run)
         settings.disabledContentIDs = disabledContentIDs
         settings.contentSelectionRevision = selectionRevision
         if !bypassingMinimumInterval,
@@ -126,14 +161,14 @@ public actor WebDAVSyncService {
            Date.now.timeIntervalSince(lastSyncedAt) < Self.minimumAutomaticSyncInterval {
             return .skipped
         }
-        guard let accountUID = try? currentAccountUID(from: sessionState) else { return .skipped }
+        settings = try await prepareDatasets(settings: settings, accountUID: accountUID, run: run)
 
-        settings = try await prepareDatasets(settings: settings, accountUID: accountUID)
-
-        let remotePayloads = try await fetchRemotePayloads(settings: settings)
+        try await checkCurrent(run)
+        let remotePayloads = try await fetchRemotePayloads(settings: settings, run: run)
+        try await checkCurrent(run)
         try validateAccount(of: remotePayloads, localUID: accountUID)
-        try await refreshDirtyState(at: .now, includeUntracked: false, using: settings)
-        settings = try await reloadSettings(for: settings)
+        try await refreshDirtyState(at: .now, includeUntracked: false, using: settings, run: run)
+        settings = try await reloadSettings(for: settings, run: run)
         settings.disabledContentIDs = disabledContentIDs
         settings.contentSelectionRevision = selectionRevision
         let newestRemoteUpdatedAt = remotePayloads.values.map(\.info.updatedAt).max()
@@ -157,10 +192,11 @@ public actor WebDAVSyncService {
             let applied = try await applyRemotePayloads(
                 remotePayloads,
                 excludingDatasetIDs: Set(dirtyParticipants.map(\.datasetID)),
-                skippingPayloadsAlreadyAbsorbedPer: settings
+                skippingPayloadsAlreadyAbsorbedPer: settings,
+                run: run
             )
             guard !dirtyParticipants.isEmpty else {
-                try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied)
+                try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied, run: run)
                 return .downloaded
             }
             let updatedAt = uploadStamp(absorbing: newestRemoteUpdatedAt)
@@ -169,12 +205,14 @@ public actor WebDAVSyncService {
                 remotePayloads: remotePayloads,
                 settings: settings,
                 accountUID: accountUID,
-                updatedAt: updatedAt
+                updatedAt: updatedAt,
+                run: run
             )
             try await updateSettingsAfterSync(
                 settings,
                 updatedAt: updatedAt,
-                outcomes: uploaded.merging(applied) { uploadedOutcome, _ in uploadedOutcome }
+                outcomes: uploaded.merging(applied) { uploadedOutcome, _ in uploadedOutcome },
+                run: run
             )
             return .uploaded
         }
@@ -189,7 +227,8 @@ public actor WebDAVSyncService {
         let applied = try await applyRemotePayloads(
             remotePayloads,
             excludingDatasetIDs: Set(included.map(\.datasetID)),
-            skippingPayloadsAlreadyAbsorbedPer: settings
+            skippingPayloadsAlreadyAbsorbedPer: settings,
+            run: run
         )
 
         if included.isEmpty {
@@ -201,7 +240,7 @@ public actor WebDAVSyncService {
             }
             // Every remote payload is now at or below this device's absorbed
             // state, so the newest remote stamp is the truthful local stamp.
-            try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied)
+            try await updateSettingsAfterSync(settings, updatedAt: newestRemoteUpdatedAt, outcomes: applied, run: run)
             return .downloaded
         }
 
@@ -211,12 +250,14 @@ public actor WebDAVSyncService {
             remotePayloads: remotePayloads,
             settings: settings,
             accountUID: accountUID,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            run: run
         )
         try await updateSettingsAfterSync(
             settings,
             updatedAt: updatedAt,
-            outcomes: uploaded.merging(applied) { uploadedOutcome, _ in uploadedOutcome }
+            outcomes: uploaded.merging(applied) { uploadedOutcome, _ in uploadedOutcome },
+            run: run
         )
         return .uploaded
     }
@@ -230,8 +271,8 @@ public actor WebDAVSyncService {
     /// earlier version gated on a per-caller flag, which left non-flagged
     /// participants' dirty state uncomputed forever).
     public func markLocalDataChanged(at date: Date = .now) async throws {
-        try await settingsStore.syncCoordinator.run { [self] in
-            try await refreshDirtyState(at: date, includeUntracked: true)
+        try await settingsStore.syncCoordinator.run { [self] run in
+            try await refreshDirtyState(at: date, includeUntracked: true, run: run)
         }
     }
 
@@ -239,26 +280,37 @@ public actor WebDAVSyncService {
         participants.filter { !settings.disabledContentIDs.contains($0.datasetID) }
     }
 
-    private func refreshDirtyState(at date: Date, includeUntracked: Bool, using snapshot: WebDAVSyncSettings? = nil) async throws {
+    private func refreshDirtyState(
+        at date: Date,
+        includeUntracked: Bool,
+        using snapshot: WebDAVSyncSettings? = nil,
+        run: WebDAVSyncCoordinator.RunToken? = nil
+    ) async throws {
+        if let run { try await checkCurrent(run) }
         let settings: WebDAVSyncSettings
         if let snapshot { settings = snapshot } else { settings = await settingsStore.load() }
         guard settings.isAutoSyncEnabled, !enabledParticipants(settings).isEmpty else { return }
         var changed = Set<String>()
         for participant in enabledParticipants(settings) where participant.uploadsOnlyWhenMarkedDirty {
+            if let run { try await checkCurrent(run) }
             guard includeUntracked || settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != nil
                 || participant.uploadsUntrackedContentAutomatically else { continue }
             guard let fingerprint = try await participant.readLocalFingerprint() else { continue }
+            if let run { try await checkCurrent(run) }
             if settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != fingerprint {
                 changed.insert(participant.datasetID)
             }
         }
         let changedIDs = changed
         try Task.checkCancellation()
+        if let run { try await checkCurrent(run) }
         try await settingsStore.update { current in
-            guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+            guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings),
+                  current.receiptScope == settings.receiptScope else { return }
             current.dirtyDatasetIDs.formUnion(changedIDs)
             if !current.dirtyDatasetIDs.subtracting(current.disabledContentIDs).isEmpty { current.localUpdatedAt = date }
         }
+        if let run { try await checkCurrent(run) }
     }
 
     /// Stamp for an upload produced by a round that also absorbed remote
@@ -295,15 +347,23 @@ public actor WebDAVSyncService {
     private func prepareDatasets(
         settings: WebDAVSyncSettings,
         accountUID: String,
+        run: WebDAVSyncCoordinator.RunToken,
         allowingAccountMismatch: Bool = false
     ) async throws -> WebDAVSyncSettings {
+        let coordinator = settingsStore.syncCoordinator
         let operations = WebDAVSyncMigrationOperations(
             participants: participants,
             fetchRemotePayloads: { settings in
-                try await self.fetchRemotePayloads(settings: settings)
+                try await coordinator.checkCurrent(run)
+                let payloads = try await self.fetchRemotePayloads(settings: settings, run: run)
+                try await coordinator.checkCurrent(run)
+                return payloads
             },
-            fetchRemoteFile: { [client] settings, fileName in
-                try await client.fetchPayload(settings: settings, fileName: fileName)
+            fetchRemoteFile: { [client, coordinator] settings, fileName in
+                try await coordinator.checkCurrent(run)
+                let file = try await client.fetchPayload(settings: settings, fileName: fileName)
+                try await coordinator.checkCurrent(run)
+                return file
             },
             validateAccounts: { payloads in
                 if !allowingAccountMismatch {
@@ -318,22 +378,34 @@ public actor WebDAVSyncService {
                     settings: settings,
                     accountUID: accountUID,
                     updatedAt: stamp,
+                    run: run,
                     allowingAccountMismatch: allowingAccountMismatch
                 )
+            },
+            checkCurrent: {
+                try await coordinator.checkCurrent(run)
             }
         )
         var prepared = settings
         for migration in migrations {
+            try await checkCurrent(run)
             prepared = try await migration.prepare(
                 settings: prepared, accountUID: accountUID, operations: operations
             )
+            try await checkCurrent(run)
         }
         return prepared
     }
 
-    private func reloadSettings(for snapshot: WebDAVSyncSettings) async throws -> WebDAVSyncSettings {
+    private func reloadSettings(
+        for snapshot: WebDAVSyncSettings,
+        run: WebDAVSyncCoordinator.RunToken
+    ) async throws -> WebDAVSyncSettings {
+        try await checkCurrent(run)
         let current = await settingsStore.load()
-        guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(snapshot) else {
+        try await checkCurrent(run)
+        guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(snapshot),
+              current.receiptScope == snapshot.receiptScope else {
             throw CancellationError()
         }
         return current
@@ -346,11 +418,18 @@ public actor WebDAVSyncService {
     /// datasets — on a high-latency WebDAV server the difference is tens of
     /// seconds. Any fetch failing fails the round exactly as the previous
     /// serial loop did; the group cancels the requests still in flight.
-    private func fetchRemotePayloads(settings: WebDAVSyncSettings) async throws -> [String: WebDAVRemotePayload] {
-        try await withThrowingTaskGroup(of: (String, WebDAVRemotePayload?).self) { group in
+    private func fetchRemotePayloads(
+        settings: WebDAVSyncSettings,
+        run: WebDAVSyncCoordinator.RunToken
+    ) async throws -> [String: WebDAVRemotePayload] {
+        let coordinator = settingsStore.syncCoordinator
+        return try await withThrowingTaskGroup(of: (String, WebDAVRemotePayload?).self) { group in
             for participant in enabledParticipants(settings) {
                 group.addTask {
-                    (participant.datasetID, try await self.fetchRemotePayloadIfPresent(for: participant, settings: settings))
+                    try await coordinator.checkCurrent(run)
+                    let payload = try await self.fetchRemotePayloadIfPresent(for: participant, settings: settings)
+                    try await coordinator.checkCurrent(run)
+                    return (participant.datasetID, payload)
                 }
             }
             var payloads: [String: WebDAVRemotePayload] = [:]
@@ -359,6 +438,7 @@ public actor WebDAVSyncService {
                     payloads[datasetID] = payload
                 }
             }
+            try await coordinator.checkCurrent(run)
             return payloads
         }
     }
@@ -406,28 +486,37 @@ public actor WebDAVSyncService {
         settings: WebDAVSyncSettings,
         accountUID: String,
         updatedAt: Date,
+        run: WebDAVSyncCoordinator.RunToken,
         allowingAccountMismatch: Bool = false
     ) async throws -> [String: DatasetSyncOutcome] {
         guard !included.isEmpty else { return [:] }
         var outcomes: [String: DatasetSyncOutcome] = [:]
         let includedIDs = Set(included.map(\.datasetID))
+        try await checkCurrent(run)
         try await settingsStore.update { current in
             if current.trimmedBaseURLString.isEmpty, current.contentSelectionRevision == settings.contentSelectionRevision { current = settings }
-            guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings) else { return }
+            guard WebDAVConnectionIdentity(current) == WebDAVConnectionIdentity(settings),
+                  current.receiptScope == settings.receiptScope else { return }
             current.dirtyDatasetIDs.formUnion(includedIDs)
         }
+        try await checkCurrent(run)
         try await client.ensureDirectoryExists(settings: settings)
         for directory in Set(included.flatMap(\.remoteDirectories)).sorted() {
+            try await checkCurrent(run)
             try await client.ensureDirectoryExists(settings: settings, namespace: directory)
         }
+        try await checkCurrent(run)
         let connection = WebDAVConnectionIdentity(settings)
         if !(await settingsStore.syncCoordinator.hasVerified(connection)) {
+            try await checkCurrent(run)
             try await client.verifyConditionalWrites(settings: settings)
+            try await checkCurrent(run)
             await settingsStore.syncCoordinator.markVerified(connection)
         }
         for participant in included {
             var remote = remotePayloads[participant.datasetID]
             for attempt in 0...3 {
+                try await checkCurrent(run)
                 try Task.checkCancellation()
                 if !allowingAccountMismatch {
                     try validateAccount(remoteAccountUID: remote?.info.accountUID, localUID: accountUID)
@@ -444,22 +533,28 @@ public actor WebDAVSyncService {
                 let stamp = max(updatedAt, uploadStamp(absorbing: remote?.info.updatedAt))
                 let snapshot = try await participant.mergeAndExportSnapshot(
                     remoteData: remote?.data, updatedAt: stamp, accountUID: accountUID)
+                try await checkCurrent(run)
                 let revision = nextUploadRevision(datasetID: participant.datasetID,
                     settings: settings, absorbingRemoteRevision: remote?.info.revision)
                 let data = WebDAVPayloadEnvelope.injectingSyncRevision(revision, into: snapshot.data)
                 do {
+                    try await checkCurrent(run)
                     try Task.checkCancellation()
                     try await client.uploadPayloadData(data, settings: settings,
                         fileName: participant.remoteFileName, condition: condition)
+                    try await checkCurrent(run)
                 } catch WebDAVSyncError.writeConflict {
                     guard attempt < 3 else { throw WebDAVSyncError.writeConflict }
+                    try await checkCurrent(run)
                     remote = try await fetchRemotePayloadIfPresent(for: participant, settings: settings)
+                    try await checkCurrent(run)
                     continue
                 }
                 let outcome = DatasetSyncOutcome(fingerprint: snapshot.fingerprint,
                     appliedRemoteUpdatedAt: stamp, uploadedRevision: revision, appliedRemoteRevision: revision)
                 outcomes[participant.datasetID] = outcome
-                try await updateSettingsAfterSync(settings, updatedAt: stamp, outcomes: [participant.datasetID: outcome])
+                try await updateSettingsAfterSync(settings, updatedAt: stamp,
+                    outcomes: [participant.datasetID: outcome], run: run)
                 break
             }
         }
@@ -473,7 +568,8 @@ public actor WebDAVSyncService {
     private func applyRemotePayloads(
         _ remotePayloads: [String: WebDAVRemotePayload],
         excludingDatasetIDs: Set<String> = [],
-        skippingPayloadsAlreadyAbsorbedPer settings: WebDAVSyncSettings? = nil
+        skippingPayloadsAlreadyAbsorbedPer settings: WebDAVSyncSettings? = nil,
+        run: WebDAVSyncCoordinator.RunToken
     ) async throws -> [String: DatasetSyncOutcome] {
         var outcomes: [String: DatasetSyncOutcome] = [:]
         for participant in participants {
@@ -483,8 +579,10 @@ public actor WebDAVSyncService {
                remotePayloadIsAlreadyAbsorbed(payload.info, datasetID: participant.datasetID, settings: settings) {
                 continue
             }
+            try await checkCurrent(run)
             try Task.checkCancellation()
             let applied = try await participant.applyRemoteSnapshot(payload.data)
+            try await checkCurrent(run)
             outcomes[participant.datasetID] = DatasetSyncOutcome(
                 fingerprint: applied.fingerprint,
                 appliedRemoteUpdatedAt: payload.info.updatedAt,
@@ -581,17 +679,22 @@ public actor WebDAVSyncService {
     private func updateSettingsAfterSync(
         _ settings: WebDAVSyncSettings,
         updatedAt: Date,
-        outcomes: [String: DatasetSyncOutcome]
+        outcomes: [String: DatasetSyncOutcome],
+        run: WebDAVSyncCoordinator.RunToken
     ) async throws {
+        try await checkCurrent(run)
         var currentFingerprints: [String: String] = [:]
         for participant in participants where outcomes[participant.datasetID] != nil {
             currentFingerprints[participant.datasetID] = try await participant.readLocalFingerprint()
+            try await checkCurrent(run)
         }
         let fingerprints = currentFingerprints
         try Task.checkCancellation()
+        try await checkCurrent(run)
         try await settingsStore.update { updated in
             if updated.trimmedBaseURLString.isEmpty, updated.contentSelectionRevision == settings.contentSelectionRevision { updated = settings }
-            guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings) else { return }
+            guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings),
+                  updated.receiptScope == settings.receiptScope else { return }
             updated.lastSyncedAt = .now
             updated.lastRemoteUpdatedAt = max(updated.lastRemoteUpdatedAt ?? updatedAt, updatedAt)
             for (datasetID, outcome) in outcomes {
@@ -617,5 +720,10 @@ public actor WebDAVSyncService {
             updated.localUpdatedAt = updated.dirtyDatasetIDs.subtracting(updated.disabledContentIDs).isEmpty
                 ? updatedAt : max(updated.localUpdatedAt ?? updatedAt, updatedAt)
         }
+        try await checkCurrent(run)
+    }
+
+    private func checkCurrent(_ run: WebDAVSyncCoordinator.RunToken) async throws {
+        try await settingsStore.syncCoordinator.checkCurrent(run)
     }
 }

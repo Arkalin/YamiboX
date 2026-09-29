@@ -82,15 +82,13 @@ public enum FavoriteCommands {
                 formHash: formHash,
                 resolveRemoteFavorite: true
             )
-            guard let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite?.remoteFavoriteID) else {
-                return AddResult(favorite: item.favorite(type: type), remote: .syncedWithoutMapping)
-            }
+            let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite?.remoteFavoriteID)
             try await localFavoriteLibraryStore.update { document in
                 document.updateRemoteMapping(for: item.target, yamiboFavoriteID: remoteFavoriteID, yamiboRemoteOrder: nil)
             }
             var synced = item
             synced.remoteMapping = FavoriteRemoteMapping(yamiboFavoriteID: remoteFavoriteID, lastSeenAt: .now)
-            return AddResult(favorite: synced.favorite(type: type), remote: .synced)
+            return AddResult(favorite: synced.favorite(type: type), remote: remoteFavoriteID == nil ? .syncedWithoutMapping : .synced)
         } catch {
             if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw CancellationError() }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -186,13 +184,11 @@ public enum FavoriteCommands {
             formHash: nil,
             resolveRemoteFavorite: true
         )
-        guard let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite?.remoteFavoriteID) else {
-            return .syncedWithoutMapping
-        }
+        let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite?.remoteFavoriteID)
         try await localFavoriteLibraryStore.update { document in
             document.updateRemoteMapping(for: item.target, yamiboFavoriteID: remoteFavoriteID, yamiboRemoteOrder: nil)
         }
-        return .synced
+        return remoteFavoriteID == nil ? .syncedWithoutMapping : .synced
     }
 
     // MARK: - Remembered sync choices
@@ -298,9 +294,6 @@ public enum FavoriteCommands {
     }
 
     private static func normalizedRemoteFavoriteID(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
+        FavoriteRemoteIdentity.normalizedID(value)
     }
 }

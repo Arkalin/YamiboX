@@ -13,16 +13,7 @@ public actor FavoriteRepository {
     }
 
     public func fetchFavorites(page: Int = 1) async throws -> [Favorite] {
-        let html = try await client.fetchHTML(for: .favorites(page: page))
-        let parsed = FavoriteHTMLParser.parseFavoritePage(from: html)
-        if parsed.favorites.isEmpty {
-            if let error = inferContentError(from: html) {
-                throw error
-            }
-            if !parsed.documentParsed {
-                throw YamiboError.parsingFailed(context: L10n.string("context.favorites_page"))
-            }
-        }
+        let parsed = try await fetchFavoritePage(page: page)
         return parsed.favorites
     }
 
@@ -38,14 +29,11 @@ public actor FavoriteRepository {
     func fetchFavoritePage(page: Int = 1) async throws -> FavoriteHTMLParser.FavoritePageResult {
         let html = try await client.fetchHTML(for: .favorites(page: page))
         let parsed = FavoriteHTMLParser.parseFavoritePage(from: html)
-        if parsed.favorites.isEmpty {
-            if let error = inferContentError(from: html) {
-                throw error
-            }
-            if !parsed.documentParsed {
-                throw YamiboError.parsingFailed(context: L10n.string("context.favorites_page"))
-            }
-        }
+        try validatePage(
+            status: parsed.parseStatus,
+            html: html,
+            context: L10n.string("context.favorites_page")
+        )
         return parsed
     }
 
@@ -57,14 +45,12 @@ public actor FavoriteRepository {
     public func fetchBoardFavoritesPage(page: Int = 1) async throws -> BoardFavoriteRemotePage {
         let html = try await client.fetchHTML(for: .boardFavorites(page: page))
         let parsed = FavoriteHTMLParser.parseBoardFavoritePage(from: html)
-        if parsed.boards.isEmpty {
-            if let error = inferContentError(from: html) {
-                throw error
-            }
-            if !parsed.documentParsed {
-                throw LoadDiagnosticError.attaching(to: YamiboError.parsingFailed(context: L10n.string("context.board_favorites_page")), html: html)
-            }
-        }
+        try validatePage(
+            status: parsed.parseStatus,
+            html: html,
+            context: L10n.string("context.board_favorites_page"),
+            attachHTML: true
+        )
         return BoardFavoriteRemotePage(
             boards: parsed.boards,
             currentPage: parsed.currentPage,
@@ -110,15 +96,8 @@ public actor FavoriteRepository {
         guard let threadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
         guard maxPages > 0 else { return nil }
         for page in 1 ... maxPages {
-            let html = try await client.fetchHTML(for: .favorites(page: page))
-            let parsed = FavoriteHTMLParser.parseFavoritePage(from: html)
+            let parsed = try await fetchFavoritePage(page: page)
             if parsed.favorites.isEmpty {
-                if let error = inferContentError(from: html) {
-                    throw error
-                }
-                if !parsed.documentParsed {
-                    throw YamiboError.parsingFailed(context: L10n.string("context.favorites_page"))
-                }
                 return nil
             }
             if let favorite = parsed.favorites.first(where: { $0.threadID == threadID }) {
@@ -132,6 +111,9 @@ public actor FavoriteRepository {
     }
 
     public func deleteFavorite(remoteFavoriteID: String) async throws {
+        guard let remoteFavoriteID = FavoriteRemoteIdentity.normalizedID(remoteFavoriteID) else {
+            throw FavoriteActionError.missingFavoriteDeleteID
+        }
         let formHTML = try await client.fetchHTML(for: .favoriteDeleteForm, userAgent: YamiboNetworkConfiguration.desktopTagUserAgent)
         if isLoginPage(formHTML) {
             throw YamiboError.notAuthenticated
@@ -230,4 +212,26 @@ public actor FavoriteRepository {
         return markers.contains { html.localizedCaseInsensitiveContains($0) }
     }
 
+    private func validatePage(
+        status: FavoritePageParseStatus,
+        html: String,
+        context: String,
+        attachHTML: Bool = false
+    ) throws {
+        switch status {
+        case .recognizedEmpty:
+            if let error = inferContentError(from: html) {
+                throw error
+            }
+        case .parsedContent:
+            return
+        case .failed, .uncertain:
+            let contentError = inferContentError(from: html)
+            let error = contentError ?? YamiboError.parsingFailed(context: context)
+            if attachHTML, contentError == nil {
+                throw LoadDiagnosticError.attaching(to: error, html: html)
+            }
+            throw error
+        }
+    }
 }

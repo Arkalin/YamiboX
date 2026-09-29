@@ -119,12 +119,12 @@ extension FavoriteCommands {
         for item: FavoriteItem,
         repository: any ForumThreadFavoriteRemoteOperating
     ) async throws -> String {
-        if let id = item.remoteMapping?.yamiboFavoriteID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+        if let id = FavoriteRemoteIdentity.normalizedID(item.remoteMapping?.yamiboFavoriteID) {
             return id
         }
         guard let threadID = item.target.threadID,
               let favorite = try await repository.remoteFavorite(forThreadID: threadID, maxPages: 30),
-              let id = favorite.remoteFavoriteID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
+              let id = FavoriteRemoteIdentity.normalizedID(favorite.remoteFavoriteID) else {
             throw FavoriteActionError.missingFavoriteDeleteID
         }
         return id

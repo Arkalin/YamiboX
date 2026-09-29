@@ -28,7 +28,6 @@ final class MangaReaderDirectoryLane {
         var setPresentation: @MainActor (MangaReaderPresentation) -> Void
         var progressSnapshot: @MainActor (MangaReaderPresentation) -> MangaReaderProgressSnapshot?
         var publishPresentation: @MainActor (MangaReaderPresentation, MangaReaderProgressSnapshot?) -> Void
-        var invalidateReaderContent: @MainActor () -> Void
         var offlineCacheOwnerName: @MainActor () -> String?
     }
 
@@ -72,10 +71,7 @@ final class MangaReaderDirectoryLane {
     func resetDirectory() async {
         automaticDirectoryUpdateTask?.cancel()
         automaticDirectoryUpdateTask = nil
-        directoryMutationTask?.cancel()
-        reader.invalidateReaderContent()
-        directoryMutationGeneration += 1
-        let generation = directoryMutationGeneration
+        let generation = beginDirectoryMutation(cancellingExistingTask: true)
         directoryMutationTask = Task { @MainActor [weak self] in
             await self?.performDirectoryReset(mutationGeneration: generation)
         }
@@ -85,10 +81,7 @@ final class MangaReaderDirectoryLane {
     func renameDirectory(cleanBookName: String, searchKeyword: String) async {
         automaticDirectoryUpdateTask?.cancel()
         automaticDirectoryUpdateTask = nil
-        directoryMutationTask?.cancel()
-        reader.invalidateReaderContent()
-        directoryMutationGeneration += 1
-        let generation = directoryMutationGeneration
+        let generation = beginDirectoryMutation(cancellingExistingTask: true)
         directoryMutationTask = Task { @MainActor [weak self] in
             await self?.performRenameDirectory(
                 cleanBookName: cleanBookName,
@@ -117,10 +110,7 @@ final class MangaReaderDirectoryLane {
 
         automaticDirectoryUpdateTask?.cancel()
         automaticDirectoryUpdateTask = nil
-        directoryMutationTask?.cancel()
-        reader.invalidateReaderContent()
-        directoryMutationGeneration += 1
-        let generation = directoryMutationGeneration
+        let generation = beginDirectoryMutation(cancellingExistingTask: true)
         directoryMutationTask = Task { @MainActor [weak self] in
             await self?.performDeleteDirectoryChapters(
                 tids: targetTIDs,
@@ -162,13 +152,7 @@ final class MangaReaderDirectoryLane {
             return
         }
 
-        if !isAutomatic {
-            directoryMutationTask?.cancel()
-        }
-
-        reader.invalidateReaderContent()
-        directoryMutationGeneration += 1
-        let generation = directoryMutationGeneration
+        let generation = beginDirectoryMutation(cancellingExistingTask: !isAutomatic)
         let task: Task<Void, Never> = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.performDirectoryUpdate(
@@ -179,6 +163,17 @@ final class MangaReaderDirectoryLane {
         }
         directoryMutationTask = task
         await task.value
+    }
+
+    /// Establishes one UI-side command boundary for every directory writer.
+    /// The workflow separately admits the eventual window commit; this lane
+    /// generation only controls which command may publish panel/content UI.
+    private func beginDirectoryMutation(cancellingExistingTask: Bool) -> Int {
+        if cancellingExistingTask {
+            directoryMutationTask?.cancel()
+        }
+        directoryMutationGeneration += 1
+        return directoryMutationGeneration
     }
 
     private func performDirectoryUpdate(

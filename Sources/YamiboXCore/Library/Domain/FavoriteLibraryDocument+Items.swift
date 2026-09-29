@@ -151,7 +151,8 @@ extension FavoriteLibraryDocument {
     ) {
         guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
         var mapping = items[index].remoteMapping ?? FavoriteRemoteMapping()
-        mapping.yamiboFavoriteID = yamiboFavoriteID ?? mapping.yamiboFavoriteID
+        mapping.yamiboFavoriteID = FavoriteRemoteIdentity.normalizedID(yamiboFavoriteID)
+            ?? FavoriteRemoteIdentity.normalizedID(mapping.yamiboFavoriteID)
         mapping.yamiboRemoteOrder = yamiboRemoteOrder ?? mapping.yamiboRemoteOrder
         mapping.lastSeenAt = date
         items[index].remoteMapping = mapping

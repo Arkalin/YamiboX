@@ -46,20 +46,16 @@ public struct AppUpdateChecker: Sendable {
     public static let defaultSourceURL = URL(string: "https://raw.githubusercontent.com/Arkalin/YamiboX/main/app-repo.json")!
 
     let session: URLSession?
-    private let fetchData: @Sendable (URL) async throws -> (Data, URLResponse)
+    private let sourceLoader: AppSourceLoader
 
     public init(session: URLSession = YamiboNetworkConfiguration.makeSession()) {
         self.session = session
-        fetchData = { url in
-            var request = YamiboNetworkConfiguration.makeRequest(url: url)
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            return try await session.data(for: request)
-        }
+        sourceLoader = AppSourceLoader(session: session)
     }
 
     init(fetchData: @escaping @Sendable (URL) async throws -> (Data, URLResponse)) {
         session = nil
-        self.fetchData = fetchData
+        sourceLoader = AppSourceLoader(fetchData: fetchData)
     }
 
     public func checkForUpdate(
@@ -78,7 +74,7 @@ public struct AppUpdateChecker: Sendable {
         currentVersion: String
     ) async -> AppUpdateCheckOutcome {
         do {
-            let (data, response) = try await fetchData(sourceURL)
+            let (data, response) = try await sourceLoader.fetch(sourceURL: sourceURL)
             return Self.checkForUpdateWithDetails(
                 data: data,
                 response: response,
@@ -109,30 +105,41 @@ public struct AppUpdateChecker: Sendable {
         currentBundleIdentifier: String,
         currentVersion: String
     ) -> AppUpdateCheckOutcome {
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return .init(result: .failure(.invalidResponse(statusCode: nil)))
-        }
-        guard 200 ..< 300 ~= httpResponse.statusCode else {
-            let failure = AppUpdateCheckFailure.invalidResponse(statusCode: httpResponse.statusCode)
-            return .init(result: .failure(failure), details: LoadFailureDetails(error:
-                LoadDiagnosticError.attaching(to: failure, requestContext: response.url?.absoluteString,
-                                              httpStatus: httpResponse.statusCode)
-            ))
-        }
-        guard !data.isEmpty else {
-            return .init(result: .failure(.emptyBody))
-        }
-
         do {
-            let source = try JSONDecoder().decode(AppSource.self, from: data)
+            let source = try AppSourceLoader.decode(data: data, response: response)
             return .init(result: checkForUpdate(
                 source: source,
                 currentBundleIdentifier: currentBundleIdentifier,
                 currentVersion: currentVersion
             ))
+        } catch let failure as AppSourceLoader.Failure {
+            return outcome(for: failure)
         } catch {
             return .init(result: .failure(.decodingFailed(error.localizedDescription)),
                          details: LoadFailureDetails(error: error, requestContext: response.url?.absoluteString))
+        }
+    }
+
+    private static func outcome(for failure: AppSourceLoader.Failure) -> AppUpdateCheckOutcome {
+        switch failure {
+        case let .invalidResponse(statusCode, responseURL):
+            let result = AppUpdateCheckFailure.invalidResponse(statusCode: statusCode)
+            guard let statusCode else {
+                return .init(result: .failure(result))
+            }
+            return .init(
+                result: .failure(result),
+                details: LoadFailureDetails(error: LoadDiagnosticError.attaching(
+                    to: result, requestContext: responseURL, httpStatus: statusCode
+                ))
+            )
+        case .emptyBody:
+            return .init(result: .failure(.emptyBody))
+        case let .decodingFailed(underlying, responseURL):
+            return .init(
+                result: .failure(.decodingFailed(underlying.localizedDescription)),
+                details: LoadFailureDetails(error: underlying, requestContext: responseURL)
+            )
         }
     }
 

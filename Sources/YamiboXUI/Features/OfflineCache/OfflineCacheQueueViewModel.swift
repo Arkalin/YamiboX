@@ -36,7 +36,7 @@ final class OfflineCacheQueueViewModel {
     private(set) var loadFailure: LoadFailureDetails?
 
     private let dependencies: OfflineCacheQueueDependencies
-    @ObservationIgnored private var controller: (any OfflineCacheQueueControlling)?
+    private let injectedController: (any OfflineCacheQueueControlling)?
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var directoryUpdatesTask: Task<Void, Never>?
 
@@ -45,7 +45,7 @@ final class OfflineCacheQueueViewModel {
         controller: (any OfflineCacheQueueControlling)? = nil
     ) {
         self.dependencies = dependencies
-        self.controller = controller
+        self.injectedController = controller
     }
 
     deinit {
@@ -228,13 +228,14 @@ final class OfflineCacheQueueViewModel {
     }
 
     private func queueController() async -> any OfflineCacheQueueControlling {
-        if let controller {
-            return controller
+        if let injectedController {
+            return injectedController
         }
 
-        let executor = await dependencies.makeOfflineCacheQueueExecutor()
-        controller = executor
-        return executor
+        // Composition-owned executors are scoped to the current account
+        // generation. This model can outlive that scope, so reacquire one for
+        // each command instead of retaining a retired executor.
+        return await dependencies.makeOfflineCacheQueueExecutor()
     }
 
     private func startObservingUpdates() {

@@ -12,18 +12,14 @@ public struct AppChangelogLoader: Sendable {
         }
     }
 
-    private let fetchData: @Sendable (URL) async throws -> (Data, URLResponse)
+    private let sourceLoader: AppSourceLoader
 
     public init(session: URLSession = YamiboNetworkConfiguration.makeSession()) {
-        fetchData = { url in
-            var request = YamiboNetworkConfiguration.makeRequest(url: url)
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            return try await session.data(for: request)
-        }
+        sourceLoader = AppSourceLoader(session: session)
     }
 
     init(fetchData: @escaping @Sendable (URL) async throws -> (Data, URLResponse)) {
-        self.fetchData = fetchData
+        sourceLoader = AppSourceLoader(fetchData: fetchData)
     }
 
     public func load(
@@ -31,26 +27,13 @@ public struct AppChangelogLoader: Sendable {
         currentBundleIdentifier: String = Self.defaultBundleIdentifier
     ) async throws -> [AppSourceVersion] {
         do {
-            let (data, response) = try await fetchData(sourceURL)
+            let (data, response) = try await sourceLoader.fetch(sourceURL: sourceURL)
             try Task.checkCancellation()
-            guard let response = response as? HTTPURLResponse else {
-                throw AppUpdateCheckFailure.invalidResponse(statusCode: nil)
-            }
-            guard 200 ..< 300 ~= response.statusCode else {
-                throw LoadDiagnosticError.attaching(
-                    to: AppUpdateCheckFailure.invalidResponse(statusCode: response.statusCode),
-                    httpStatus: response.statusCode
-                )
-            }
-            guard !data.isEmpty else { throw AppUpdateCheckFailure.emptyBody }
-
             let source: AppSource
             do {
-                source = try JSONDecoder().decode(AppSource.self, from: data)
-            } catch {
-                throw LoadDiagnosticError.mapping(
-                    error, to: AppUpdateCheckFailure.decodingFailed(error.localizedDescription)
-                )
+                source = try AppSourceLoader.decode(data: data, response: response)
+            } catch let failure as AppSourceLoader.Failure {
+                throw Self.map(failure)
             }
             guard let app = source.apps.first(where: { $0.bundleIdentifier == currentBundleIdentifier }) else {
                 throw Failure.sourceDoesNotContainCurrentApp
@@ -59,6 +42,21 @@ public struct AppChangelogLoader: Sendable {
             return app.versions
         } catch {
             throw LoadDiagnosticError.attaching(to: error, requestContext: sourceURL.absoluteString)
+        }
+    }
+
+    private static func map(_ failure: AppSourceLoader.Failure) -> any Error {
+        switch failure {
+        case let .invalidResponse(statusCode, _):
+            let error = AppUpdateCheckFailure.invalidResponse(statusCode: statusCode)
+            guard let statusCode else { return error }
+            return LoadDiagnosticError.attaching(to: error, httpStatus: statusCode)
+        case .emptyBody:
+            return AppUpdateCheckFailure.emptyBody
+        case let .decodingFailed(underlying, _):
+            return LoadDiagnosticError.mapping(
+                underlying, to: AppUpdateCheckFailure.decodingFailed(underlying.localizedDescription)
+            )
         }
     }
 }

@@ -23,4 +23,5 @@ struct WebDAVSyncMigrationOperations: Sendable {
     let validateAccounts: @Sendable ([String: WebDAVRemotePayload]) throws -> Void
     let uploadStamp: @Sendable (Date?) -> Date
     let upload: @Sendable (any WebDAVSyncParticipant, WebDAVRemotePayload?, WebDAVSyncSettings, Date) async throws -> Void
+    let checkCurrent: @Sendable () async throws -> Void
 }

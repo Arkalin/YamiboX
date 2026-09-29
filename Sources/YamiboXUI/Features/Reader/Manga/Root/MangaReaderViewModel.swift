@@ -280,7 +280,6 @@ public final class MangaReaderViewModel {
             publishPresentation: { [weak self] nextPresentation, previousProgressSnapshot in
                 self?.publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
             },
-            invalidateReaderContent: { [weak self] in self?.invalidateReaderContent() },
             offlineCacheOwnerName: { [weak self] in self?.offlineCacheOwnerName }
         )
     )

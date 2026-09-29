@@ -208,7 +208,7 @@ public final class YamiboAppContext: Sendable {
             steps: [
                 .init("checkIn") { await checkInStore.clearAll() },
                 .init("settings") { try await settingsStore.reset() },
-                .init("webDAVSettings") { try await webDAVSyncSettingsStore.reset() },
+                .init("webDAVSettings") { try await webDAVSyncSettingsStore.resetWithinAccountTransition() },
                 .init("readerResume") { await readerResumeRouteStore.clear() },
                 .init("favorites") { [store = self.localFavoriteLibraryStore] in try await store.clearAll() },
                 .init("favoriteUpdates") { [store = self.favoriteUpdateStore] in try await store.clearAll() },
@@ -528,7 +528,9 @@ public final class YamiboAppContext: Sendable {
                 await sessionStore.isCurrentGeneration(generation)
             }
         )
-        return await offlineCacheQueueExecutorBox.setIfEmpty(executor, generation: generation)
+        return await offlineCacheQueueExecutorBox.setIfEmpty(executor, generation: generation) { [sessionStore] in
+            await sessionStore.isCurrentGeneration(generation)
+        }
     }
 
     public func makeCheckInService() -> any YamiboCheckInServicing {
@@ -702,6 +704,7 @@ public final class YamiboAppContext: Sendable {
 private actor OfflineCacheQueueExecutorBox {
     private var values: [UUID: OfflineCacheQueueExecutor] = [:]
     private var identityChangeDepth = 0
+    private var isInvalidating = false
 
     func prepareIdentityChange() async throws {
         identityChangeDepth += 1
@@ -725,6 +728,8 @@ private actor OfflineCacheQueueExecutorBox {
     func value(for generation: UUID) -> OfflineCacheQueueExecutor? { values[generation] }
 
     func invalidate() async throws {
+        isInvalidating = true
+        defer { isInvalidating = false }
         let executors = values
         var failure: (any Error)?
         // Keep retiring executors visible until their writers have joined, so
@@ -737,7 +742,15 @@ private actor OfflineCacheQueueExecutorBox {
         if let failure { throw failure }
     }
 
-    func setIfEmpty(_ executor: OfflineCacheQueueExecutor, generation: UUID) async -> OfflineCacheQueueExecutor {
+    func setIfEmpty(
+        _ executor: OfflineCacheQueueExecutor,
+        generation: UUID,
+        isCurrent: @Sendable () async -> Bool
+    ) async -> OfflineCacheQueueExecutor {
+        guard await isCurrent(), !isInvalidating else {
+            await executor.rejectBeforeUse()
+            return executor
+        }
         if let value = values[generation] {
             return value
         }

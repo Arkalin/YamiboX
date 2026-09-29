@@ -41,7 +41,6 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     private let localFavoriteLibraryStore: FavoriteLibraryStore
     private let offlineCacheStore: any MangaOfflineCacheStoring & OfflineCacheQueueStoring
     private let offlineCacheQueueControllerProvider: (@Sendable () async -> any OfflineCacheQueueControlling)?
-    private var offlineCacheQueueController: (any OfflineCacheQueueControlling)?
     private var offlineCacheUpdatesTask: Task<Void, Never>?
 
     public init(
@@ -209,13 +208,8 @@ public final class MangaReaderCacheViewModel: ObservableObject {
     }
 
     private func offlineCacheController() async -> (any OfflineCacheQueueControlling)? {
-        if let offlineCacheQueueController {
-            return offlineCacheQueueController
-        }
         guard let offlineCacheQueueControllerProvider else { return nil }
-        let controller = await offlineCacheQueueControllerProvider()
-        offlineCacheQueueController = controller
-        return controller
+        return await offlineCacheQueueControllerProvider()
     }
 
     private var presentationTitle: String {

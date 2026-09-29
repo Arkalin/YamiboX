@@ -50,10 +50,12 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
     }
 
     public func downloadImageData(for source: YamiboImageSource) async throws -> Data {
-        let credentials = await currentCredentials()
         let taskBox = URLSessionTaskBox()
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try Task.checkCancellation()
+            let credentials = await currentCredentials()
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
                 var urlRequest = URLRequest(url: source.url)
                 if let credentials {
                     YamiboNetworkPolicy.applyCredentials(credentials, to: &urlRequest)
@@ -63,13 +65,20 @@ public final class OfflineCacheBackgroundDownloadTransport: NSObject, OfflineCac
                 }
                 let task = session.downloadTask(with: urlRequest)
                 task.taskDescription = source.url.absoluteString
-                taskBox.setTask(task)
-                register(
-                    taskIdentifier: task.taskIdentifier,
-                    task: task,
-                    continuation: continuation
-                )
-                task.resume()
+                let admitted = taskBox.admit(task) {
+                    guard !Task.isCancelled else { return false }
+                    register(
+                        taskIdentifier: task.taskIdentifier,
+                        task: task,
+                        continuation: continuation
+                    )
+                    task.resume()
+                    return true
+                }
+                guard admitted else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
             }
         } onCancel: {
             taskBox.cancel()
@@ -206,17 +215,33 @@ private struct PendingDownload {
 private final class URLSessionTaskBox: @unchecked Sendable {
     private let lock = NSLock()
     private var task: URLSessionTask?
+    private var isCancelled = false
 
-    func setTask(_ task: URLSessionTask) {
+    /// Atomically admits the task and its registration/start sequence. A
+    /// cancellation that wins before admission cannot leave a task waiting
+    /// behind credentials and then start a transfer after the caller paused.
+    func admit(_ task: URLSessionTask, start: () -> Bool) -> Bool {
         lock.withLock {
+            guard !isCancelled else {
+                task.cancel()
+                return false
+            }
             self.task = task
+            guard start() else {
+                task.cancel()
+                self.task = nil
+                return false
+            }
+            return true
         }
     }
 
     func cancel() {
-        lock.withLock {
-            task?.cancel()
+        let task = lock.withLock {
+            isCancelled = true
+            return self.task
         }
+        task?.cancel()
     }
 }
 
