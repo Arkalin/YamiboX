@@ -36,12 +36,13 @@ xcrun simctl launch booted com.arkalin.YamiboX.local --forum-base-url http://127
 
 | 参数 | 目标 |
 | --- | --- |
-| `--open-page home` / `forum` / `favorites` / `mine` | 首页、论坛、收藏、我的 |
+| `--open-page bookshelf` / `forum` / `favorites` / `mine` | 书架、论坛、收藏、我的；`home` 保留为书架的兼容别名 |
+| `--open-page messages` / `history` / `likes` | 消息、浏览记录、喜欢；已加入底栏时选择该 Tab，否则从「我的」打开，不修改底栏配置 |
 | `--open-page search` / `login` / `settings` | 搜索、登录、设置首页 |
-| `--open-page mine/profile` / `mine/messages` | 我的资料、我的消息（默认私信）；未登录时打开登录入口 |
-| `--open-page mine/history` / `mine/likes` / `mine/downloads` | 浏览记录、我的喜欢、下载管理（内含下载队列入口） |
+| `--open-page mine/profile` / `mine/messages` | 我的资料、我的消息（默认私信）；未登录时提示登录，消息已加入底栏时切换到消息 Tab |
+| `--open-page mine/history` / `mine/likes` / `mine/downloads` / `mine/bookshelf` | 浏览记录、我的喜欢、下载管理、书架；有对应 Tab 时切换到该 Tab |
 | `--open-page favorites/updates` | 收藏更新页 |
-| `--open-page settings/general` / `settings/home` / `settings/forum` | 通用、首页、论坛设置 |
+| `--open-page settings/general` / `settings/bookshelf` / `settings/forum` | 通用、书架、论坛设置；`settings/home` 保留为书架设置的兼容别名 |
 | `--open-page settings/favorites` / `settings/reading` / `settings/storage` | 收藏、阅读、数据存储设置 |
 | `--open-page settings/accounts` / `settings/about` | 账号管理、关于 |
 | `--open-page novel-detail/<帖子ID>` / `manga-detail/<帖子ID>` | 指定类型的详情页，不自动进入阅读器 |
@@ -68,7 +69,7 @@ xcrun simctl launch booted com.arkalin.YamiboX.local --forum-base-url http://127
 xcrun simctl launch booted com.arkalin.YamiboX.local --forum-base-url http://127.0.0.1:8088 --open-url '/forum.php?mod=viewthread&tid=852'
 ```
 
-不传直达参数时维持原来的启动行为；不支持更深设置子页、章节/楼层/图片定位或执行操作参数。
+不传直达参数时进入「导航栏与启动页」配置的启动 Tab，并保留阅读器续读；不会被上次选中的 Tab 覆盖。从后台返回不重新跳转。不支持更深设置子页、章节/楼层/图片定位或执行操作参数。
 
 ## 后台持续下载验证（iOS 26+）
 

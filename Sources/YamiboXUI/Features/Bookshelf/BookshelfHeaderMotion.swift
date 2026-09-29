@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReadingHomeHeaderMotion {
+struct BookshelfHeaderMotion {
     let scrollOffset: CGFloat
 
     var titleOpacity: Double {

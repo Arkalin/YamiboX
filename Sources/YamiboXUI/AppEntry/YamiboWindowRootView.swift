@@ -7,7 +7,6 @@ public struct YamiboWindowRootView: View {
     let request: YamiboWindowRequest?
 
     @SceneStorage("yamibox.window.identifier") private var windowID = ""
-    @SceneStorage("yamibox.window.selectedTab") private var selectedTabName = ""
     @SceneStorage("yamibox.window.requestHandled") private var requestHandled = false
     @State private var model: YamiboAppModel?
     @Environment(\.scenePhase) private var scenePhase
@@ -23,9 +22,6 @@ public struct YamiboWindowRootView: View {
             if let model {
                 RootTabView(appModel: model)
                     .background(YamiboWindowInputHost(coordinator: coordinator, model: model))
-                    .onChange(of: model.selectedTab) { _, tab in
-                        selectedTabName = Self.name(for: tab)
-                    }
             } else {
                 ProgressView()
             }
@@ -37,7 +33,7 @@ public struct YamiboWindowRootView: View {
             if windowID.isEmpty { windowID = UUID().uuidString }
             let model = coordinator.makeModel(
                 windowID: windowID,
-                initialTab: initialNavigation?.initialTab ?? Self.tab(named: selectedTabName) ?? initialTab,
+                initialTab: initialNavigation?.initialTab ?? initialTab,
                 initialNavigation: initialNavigation
             )
             if initialNavigation != nil {
@@ -57,24 +53,6 @@ public struct YamiboWindowRootView: View {
         }
     }
 
-    private static func name(for tab: AppTab) -> String {
-        switch tab {
-        case .home: "home"
-        case .forum: "forum"
-        case .favorites: "favorites"
-        case .mine: "mine"
-        }
-    }
-
-    private static func tab(named name: String) -> AppTab? {
-        switch name {
-        case "home": .home
-        case "forum": .forum
-        case "favorites": .favorites
-        case "mine": .mine
-        default: nil
-        }
-    }
 }
 
 struct OpenContentInNewWindowButton: View {

@@ -10,6 +10,7 @@ struct BrowsingHistoryView: View {
     private let onClose: (() -> Void)?
     private let categorySelection: Binding<BrowsingHistoryFilter>?
     private let onOpenThread: ((URL, String?) -> Void)?
+    private let ownsNavigation: Bool
 
     init(
         dependencies: BrowsingHistoryDependencies,
@@ -17,7 +18,8 @@ struct BrowsingHistoryView: View {
         showsPreviousReading: Bool = false,
         onClose: (() -> Void)? = nil,
         categorySelection: Binding<BrowsingHistoryFilter>? = nil,
-        onOpenThread: ((URL, String?) -> Void)? = nil
+        onOpenThread: ((URL, String?) -> Void)? = nil,
+        ownsNavigation: Bool = true
     ) {
         let model = BrowsingHistoryViewModel(dependencies: dependencies, showsPreviousReading: showsPreviousReading)
         if let categorySelection { model.selectedFilter = categorySelection.wrappedValue }
@@ -26,11 +28,12 @@ struct BrowsingHistoryView: View {
         self.onClose = onClose
         self.categorySelection = categorySelection
         self.onOpenThread = onOpenThread
+        self.ownsNavigation = ownsNavigation
     }
 
     var body: some View {
         LibraryPageNavigation(
-            ownsNavigation: categorySelection == nil,
+            ownsNavigation: ownsNavigation && categorySelection == nil,
             onClose: onClose
         ) {
             historyList

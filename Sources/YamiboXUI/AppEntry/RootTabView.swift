@@ -90,7 +90,21 @@ public struct RootTabView: View {
 
     private var content: some View {
         TabView(selection: selectedTabBinding) {
-            ReadingHomeView(
+            ForEach(appModel.navigationSettings.tabs) { tab in
+                tabContent(tab)
+                    .tag(tab)
+                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                    .badge(MessageUnreadBadge.tabValue(for: appModel.unreadCount(for: tab)))
+            }
+        }
+        .modifier(ReaderPresentationModifier(appModel: appModel))
+    }
+
+    @ViewBuilder
+    private func tabContent(_ tab: AppTab) -> some View {
+        switch tab {
+        case .bookshelf:
+            BookshelfView(
                 libraryDependencies: appModel.appContext.libraryDependencies,
                 accountDependencies: appModel.appContext.accountDependencies,
                 accountSwitcher: appModel.appContext.accountSwitcher,
@@ -98,33 +112,21 @@ public struct RootTabView: View {
                 appModel: appModel
             )
                 .id(appModel.accountGeneration)
-                .tag(AppTab.home)
-                .tabItem {
-                    Label(L10n.string("tab.home"), systemImage: "house")
-                }
-
+        case .forum:
             ForumNavigationHostView(
                 dependencies: appModel.appContext.forumNavigationDependencies,
                 appModel: appModel,
                 theme: AppTheme.theme(for: appModel.appThemePreset).forumTheme
             )
                 .id(appModel.accountGeneration)
-                .tag(AppTab.forum)
-                .tabItem {
-                    Label(L10n.string("tab.forum"), systemImage: "text.bubble")
-                }
-
+        case .favorites:
             FavoritesNavigationHostView(
                 dependencies: appModel.appContext.libraryDependencies,
                 forumDependencies: appModel.appContext.forumNavigationDependencies,
                 appModel: appModel
             )
                 .id(appModel.accountGeneration)
-                .tag(AppTab.favorites)
-                .tabItem {
-                    Label(L10n.string("tab.favorites"), systemImage: "heart.text.square")
-                }
-
+        case .mine:
             MineHomeView(
                 dependencies: appModel.appContext.accountDependencies,
                 forumDependencies: appModel.appContext.forumNavigationDependencies,
@@ -133,16 +135,10 @@ public struct RootTabView: View {
                 appModel: appModel,
                 likeDependencies: appModel.appContext.likeLibraryDependencies
             )
-                .tag(AppTab.mine)
-                .tabItem {
-                    Label(L10n.string("tab.mine"), systemImage: "person.crop.circle")
-                        .accessibilityValue(MessageUnreadBadge.accessibilityValue(
-                            for: appModel.appContext.messageUnreadWorkflow.totalCount
-                        ))
-                }
-                .badge(MessageUnreadBadge.tabValue(for: appModel.appContext.messageUnreadWorkflow.totalCount))
+        case .messages, .history, .likes:
+            OptionalTabRootView(tab: tab, appModel: appModel)
+                .id(appModel.accountGeneration)
         }
-        .modifier(ReaderPresentationModifier(appModel: appModel))
     }
 
     private var selectedTabBinding: Binding<AppTab> {

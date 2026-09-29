@@ -42,6 +42,18 @@ public final class YamiboAppModel {
     public private(set) var bootstrapPhase: AppBootstrapPhase?
     public var bootstrapErrorMessage: String?
     public private(set) var selectedTab: AppTab
+    public private(set) var navigationSettings = AppNavigationSettings()
+
+    func unreadCount(for tab: AppTab) -> Int {
+        navigationSettings.unreadIndicatorTab == tab ? appContext.messageUnreadWorkflow.totalCount : 0
+    }
+
+    @discardableResult
+    func selectConfiguredTab(_ tab: AppTab) -> Bool {
+        guard navigationSettings.tabs.contains(tab) else { return false }
+        selectTab(tab)
+        return true
+    }
     public var activeNovelContext: NovelLaunchContext? {
         guard case let .novel(context) = currentReaderSession?.resumeRoute else { return nil }
         return context
@@ -198,6 +210,13 @@ public final class YamiboAppModel {
             )
         }
         let state = generation == accountGeneration ? result.bootstrapState : await appContext.bootstrap()
+        let latestSettings = await appContext.settingsStore.load()
+        navigationSettings = latestSettings.system.navigation
+        // Explicit navigation may arrive during bootstrap (e.g. a new-window URL).
+        if forumNavigationRequest == nil, forumSearchRequest == nil, mineNavigationRequest == nil,
+           favoriteUpdatesRequestID == nil {
+            selectedTab = AppTabLaunchResolver.resolveInitialTab(navigation: navigationSettings)
+        }
         appThemePreset = state.settings.appearance.themePreset
         bootstrapState = state
         bootstrapErrorMessage = nil
@@ -257,6 +276,7 @@ public final class YamiboAppModel {
         }
 
         let state = await appContext.bootstrap(onProgress: updateBootstrapPhase)
+        applyNavigationSettings(state.settings.system.navigation)
         appThemePreset = state.settings.appearance.themePreset
         bootstrapState = state
         bootstrapErrorMessage = nil
@@ -298,6 +318,15 @@ public final class YamiboAppModel {
     public func refreshAppAppearanceSettings() async {
         let settings = await appContext.settingsStore.load()
         appThemePreset = settings.appearance.themePreset
+        applyNavigationSettings(settings.system.navigation)
+    }
+
+    private func applyNavigationSettings(_ settings: AppNavigationSettings) {
+        navigationSettings = settings
+        if !settings.tabs.contains(selectedTab) {
+            cancelMangaReaderOpen()
+            selectedTab = settings.startupTab
+        }
     }
 
     private func observeAppAppearanceSettings() {
@@ -331,6 +360,7 @@ public final class YamiboAppModel {
     }
 
     public func selectTab(_ tab: AppTab) {
+        guard navigationSettings.tabs.contains(tab) else { return }
         if tab != selectedTab { cancelMangaReaderOpen() }
         selectedTab = tab
         restoreSuspendedNovelIfNeeded(for: tab)
@@ -552,6 +582,14 @@ public final class YamiboAppModel {
     }
 
     private func open(_ target: AppNavigationTarget) {
+        if case let .tab(tab) = target, !navigationSettings.tabs.contains(tab),
+           let destination = AppMineDestination(rawValue: tab.rawValue) {
+            open(.mine(destination))
+            return
+        }
+        if case let .mine(destination) = target, let tab = destination.tab, selectConfiguredTab(tab) {
+            return
+        }
         selectedTab = target.initialTab
         switch target {
         case .tab: break

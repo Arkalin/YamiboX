@@ -1,25 +1,27 @@
 import Foundation
 
+/// Legacy startup-page values retained only for local and WebDAV compatibility.
 public enum AppHomePage: String, Codable, Hashable, CaseIterable, Sendable {
     case home
     case favorites
     case forum
 
-    public var title: String {
+    public var tab: AppTab {
         switch self {
-        case .home: L10n.string("tab.home")
-        case .favorites: L10n.string("app.home.favorites")
-        case .forum: L10n.string("app.home.forum")
+        case .home: .bookshelf
+        case .favorites: .favorites
+        case .forum: .forum
         }
     }
 
-    public var systemImageName: String {
-        switch self {
-        case .home: "house"
-        case .favorites: "heart.text.square"
-        case .forum: "text.bubble"
+    public init(tab: AppTab) {
+        switch tab {
+        case .bookshelf: self = .home
+        case .favorites: self = .favorites
+        default: self = .forum
         }
     }
+
 }
 
 public enum ApplePencilPageTurnGesture: Hashable, Sendable {
@@ -72,7 +74,9 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
 }
 
 public struct SystemSettings: Codable, Hashable, Sendable {
-    public var homePage: AppHomePage
+    public var navigation: AppNavigationSettings
+    /// Compatibility projection for settings snapshots written by older clients.
+    public var homePage: AppHomePage { AppHomePage(tab: navigation.startupTab) }
     public var homeShowsOnlyFavorites: Bool
     public var usesDataSaverMode: Bool
     public var enhancedCheckInEnabled: Bool
@@ -82,6 +86,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
 
     public init(
         homePage: AppHomePage = .home,
+        navigation: AppNavigationSettings? = nil,
         homeShowsOnlyFavorites: Bool = false,
         usesDataSaverMode: Bool = false,
         enhancedCheckInEnabled: Bool = false,
@@ -89,7 +94,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         gamepad: GamepadSettings = .init(),
         keyboard: KeyboardSettings = .init()
     ) {
-        self.homePage = homePage
+        self.navigation = navigation ?? AppNavigationSettings(startupTab: homePage.tab)
         self.homeShowsOnlyFavorites = homeShowsOnlyFavorites
         self.usesDataSaverMode = usesDataSaverMode
         self.enhancedCheckInEnabled = enhancedCheckInEnabled
@@ -100,6 +105,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case homePage
+        case navigation
         case homeShowsOnlyFavorites
         case usesDataSaverMode
         case enhancedCheckInEnabled
@@ -113,6 +119,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             homePage: try container.decodeIfPresent(AppHomePage.self, forKey: .homePage) ?? .forum,
+            navigation: try container.decodeIfPresent(AppNavigationSettings.self, forKey: .navigation),
             homeShowsOnlyFavorites: try container.decodeIfPresent(Bool.self, forKey: .homeShowsOnlyFavorites) ?? false,
             usesDataSaverMode: try container.decodeIfPresent(Bool.self, forKey: .usesDataSaverMode) ?? false,
             enhancedCheckInEnabled: try container.decodeIfPresent(Bool.self, forKey: .enhancedCheckInEnabled) ?? false,
@@ -120,5 +127,17 @@ public struct SystemSettings: Codable, Hashable, Sendable {
             gamepad: try container.decodeIfPresent(GamepadSettings.self, forKey: .gamepad) ?? .init(),
             keyboard: try container.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init()
         )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(homePage, forKey: .homePage)
+        try container.encode(navigation, forKey: .navigation)
+        try container.encode(homeShowsOnlyFavorites, forKey: .homeShowsOnlyFavorites)
+        try container.encode(usesDataSaverMode, forKey: .usesDataSaverMode)
+        try container.encode(enhancedCheckInEnabled, forKey: .enhancedCheckInEnabled)
+        try container.encode(applePencilPageTurn, forKey: .applePencilPageTurn)
+        try container.encode(gamepad, forKey: .gamepad)
+        try container.encode(keyboard, forKey: .keyboard)
     }
 }

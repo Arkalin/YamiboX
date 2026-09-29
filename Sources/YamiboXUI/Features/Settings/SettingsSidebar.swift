@@ -226,8 +226,8 @@ struct SettingsCategoryPage: View {
         switch category {
         case .general:
             SettingsGeneralView(viewModel: viewModel.general)
-        case .home:
-            SettingsHomePageView(viewModel: viewModel.home)
+        case .bookshelf:
+            SettingsBookshelfView(viewModel: viewModel.bookshelf)
         case .forum:
             SettingsForumView(viewModel: viewModel.forum)
         case .favorites:

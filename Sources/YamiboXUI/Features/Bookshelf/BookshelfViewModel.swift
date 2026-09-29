@@ -4,9 +4,9 @@ import YamiboXCore
 
 @MainActor
 @Observable
-final class ReadingHomeViewModel {
-    private(set) var continuing: [ReadingHomeBook] = []
-    private(set) var previous: [ReadingHomeBook] = []
+final class BookshelfViewModel {
+    private(set) var continuing: [BookshelfBook] = []
+    private(set) var previous: [BookshelfBook] = []
     private(set) var hasLoaded = false
     private(set) var loadErrorMessage: String?
     private(set) var loadErrorDetails: LoadFailureDetails?
@@ -51,15 +51,15 @@ final class ReadingHomeViewModel {
         }
         let settings = snapshot.boardReader
         let entries = snapshot.entries
-        let shelf = ReadingHomeShelf(entries: entries, boardReader: settings, favorites: favorites)
+        let shelf = BookshelfShelf(entries: entries, boardReader: settings, favorites: favorites)
         let keys = (shelf.continuing + shelf.previous).compactMap { ContentCoverKey(target: $0.target) }
         let covers = await dependencies.contentCoverStore.covers(for: keys)
         guard !Task.isCancelled, currentGeneration == generation else { return }
         loadErrorMessage = nil
         loadErrorDetails = nil
 
-        func book(_ entry: BrowsingHistoryEntry) -> ReadingHomeBook {
-            ReadingHomeBook(
+        func book(_ entry: BrowsingHistoryEntry) -> BookshelfBook {
+            BookshelfBook(
                 entry: entry,
                 category: entry.category(boardReader: settings),
                 isSmartManga: settings.isSmartComicModeEnabled(forumID: entry.forumID),

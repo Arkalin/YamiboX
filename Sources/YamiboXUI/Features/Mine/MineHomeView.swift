@@ -9,6 +9,7 @@ public struct MineHomeView: View {
     @State private var isSettingsPushed = false
     @State private var isDownloadManagementPushed = false
     @State private var isMyLikesPushed = false
+    @State private var showsBookshelf = false
     @State private var initialSettingsDestination: SettingsSidebarDestination?
 
     private let settingsDependencies: SettingsDependencies
@@ -69,6 +70,10 @@ public struct MineHomeView: View {
                 isSettingsPushed = true
             case let .page(destination):
                 guard UIDevice.current.userInterfaceIdiom != .pad else { return }
+                if let tab = destination.tab, appModel.selectConfiguredTab(tab) {
+                    _ = appModel.claimMineNavigationRequest()
+                    return
+                }
                 if destination.requiresLogin { await viewModel.reloadAccountSnapshot() }
                 guard !Task.isCancelled, appModel.mineNavigationRequest?.id == request.id else { return }
                 _ = appModel.claimMineNavigationRequest()
@@ -82,6 +87,7 @@ public struct MineHomeView: View {
                 case .history: navigator.push(.browsingHistory)
                 case .likes: isMyLikesPushed = true
                 case .downloads: isDownloadManagementPushed = true
+                case .bookshelf: showsBookshelf = true
                 }
             }
         }
@@ -140,6 +146,7 @@ public struct MineHomeView: View {
                     downloadQueueCount: viewModel.offlineQueue.entryCount,
                     unreadMessageCount: messageUnreadWorkflow.totalCount,
                     showMessages: {
+                        if appModel.selectConfiguredTab(.messages) { return }
                         if viewModel.isLoggedIn {
                             navigator.openMessageCenter(tab: .privateMessages)
                         } else {
@@ -150,12 +157,17 @@ public struct MineHomeView: View {
                         isDownloadManagementPushed = true
                     },
                     showMyLikes: {
+                        if appModel.selectConfiguredTab(.likes) { return }
                         isMyLikesPushed = true
                     },
                     showHistory: {
+                        if appModel.selectConfiguredTab(.history) { return }
                         // Keep history and its thread pages in the same path
                         // so a thread push preserves the history page below it.
                         navigator.push(.browsingHistory)
+                    },
+                    showBookshelf: {
+                        if !appModel.selectConfiguredTab(.bookshelf) { showsBookshelf = true }
                     }
                 )
                 MineSettingsSection(
@@ -166,7 +178,7 @@ public struct MineHomeView: View {
                 )
             }
             .listStyle(.insetGrouped)
-            .messageUnreadTabAccessibility(count: messageUnreadWorkflow.totalCount)
+            .messageUnreadTabAccessibility(count: appModel.unreadCount(for: .mine))
             .navigationTitle(L10n.string("tab.mine"))
             .yamiboInlineNavigationTitleDisplayMode()
             .refreshable {
@@ -187,6 +199,9 @@ public struct MineHomeView: View {
                     settingsStore: settingsDependencies.settingsStore,
                     appModel: appModel
                 )
+            }
+            .navigationDestination(isPresented: $showsBookshelf) {
+                MineBookshelfView(appModel: appModel, navigator: navigator)
             }
         }
     }

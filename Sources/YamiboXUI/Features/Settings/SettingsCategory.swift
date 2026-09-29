@@ -4,7 +4,7 @@ import YamiboXCore
 
 public enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     case general
-    case home
+    case bookshelf
     case forum
     case favorites
     case reading
@@ -16,8 +16,8 @@ public enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general:
             L10n.string("settings.section.general")
-        case .home:
-            L10n.string("tab.home")
+        case .bookshelf:
+            L10n.string("tab.bookshelf")
         case .forum:
             L10n.string("settings.section.forum")
         case .favorites:
@@ -32,7 +32,7 @@ public enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     var systemImageName: String {
         switch self {
         case .general: "gearshape"
-        case .home: "house"
+        case .bookshelf: "books.vertical"
         case .forum: "text.bubble"
         case .favorites: "heart.text.square"
         case .reading: "book"
@@ -89,16 +89,16 @@ enum SettingsSearchRegistry {
 
     private static let baseEntries: [SettingsSearchEntry] = [
         SettingsSearchEntry(
-            id: "home.only_favorites",
-            title: L10n.string("settings.home.only_favorites"),
-            category: .home,
-            keywords: ["主页", "首页", "收藏", "继续阅读", "此前阅读"]
+            id: "bookshelf.only_favorites",
+            title: L10n.string("settings.bookshelf.only_favorites"),
+            category: .bookshelf,
+            keywords: ["书架", "主页", "首页", "收藏", "继续阅读", "此前阅读"]
         ),
         SettingsSearchEntry(
-            id: "general.home_page",
-            title: L10n.string("settings.home_page"),
+            id: "general.navigation",
+            title: L10n.string("settings.navigation.title"),
             category: .general,
-            keywords: ["主页", "首页", "论坛", "收藏"]
+            keywords: ["导航栏", "底栏", "排序", "启动页", "书架", "消息", "浏览记录", "喜欢"]
         ),
         SettingsSearchEntry(
             id: "general.appearance",

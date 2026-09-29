@@ -1,4 +1,5 @@
 import Foundation
+import YamiboXCore
 
 /// Semantic navigation input. Argument parsing belongs to the app composition root.
 public enum AppNavigationTarget: Hashable, Sendable {
@@ -22,7 +23,9 @@ public enum AppNavigationTarget: Hashable, Sendable {
 }
 
 public enum AppMineDestination: String, Hashable, Sendable {
-    case profile, messages, history, likes, downloads
+    case profile, messages, history, likes, downloads, bookshelf
+
+    var tab: AppTab? { AppTab(rawValue: rawValue) }
 
     var requiresLogin: Bool { self == .profile || self == .messages }
 }

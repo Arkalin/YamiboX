@@ -186,7 +186,7 @@ private final class YamiboAppStartup {
 
     private static func resolveInitialTab() -> AppTab {
         let settings = SettingsStore.loadSync()
-        return AppTabLaunchResolver.resolveInitialTab(homePage: settings.system.homePage)
+        return AppTabLaunchResolver.resolveInitialTab(navigation: settings.system.navigation)
     }
 
 }
@@ -333,7 +333,11 @@ private enum YamiboLaunchNavigationArguments {
             return .forumURL(url)
         }
         switch value {
-        case "home": return .tab(.home)
+        case "home", "bookshelf": return .tab(.bookshelf)
+        case "messages": return .tab(.messages)
+        case "history": return .tab(.history)
+        case "likes": return .tab(.likes)
+        case "settings/home": return .settings(.category(.bookshelf))
         case "forum": return .tab(.forum)
         case "favorites": return .tab(.favorites)
         case "mine": return .tab(.mine)
