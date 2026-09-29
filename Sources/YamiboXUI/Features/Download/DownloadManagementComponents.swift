@@ -26,7 +26,7 @@ struct DownloadManagementGroupScreen: View {
                     }
                     Section(L10n.string("settings.download.contents")) {
                         ForEach(row.entries) { entry in
-                            DownloadManagementEntryRowView(entry: entry) {
+                            DownloadManagementEntryRowView(entry: entry, viewModel: viewModel) {
                                 viewModel.requestDownloadEntryDeletion(id: entry.id)
                             }
                         }
@@ -101,7 +101,7 @@ struct DownloadManagementGroupRowView: View {
             Image(
                 systemName: isSelecting
                     ? (isSelected ? "checkmark.circle.fill" : "circle")
-                    : (row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
+                    : (row.readerKind == .attachment ? "paperclip" : (row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
             )
             .font(.system(size: 20))
             .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
@@ -165,6 +165,7 @@ struct DownloadManagementGroupRowView: View {
 
 private struct DownloadManagementEntryRowView: View {
     let entry: DownloadManagementEntry
+    let viewModel: DownloadManagementViewModel
     let delete: () -> Void
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -198,6 +199,9 @@ private struct DownloadManagementEntryRowView: View {
             }
             .font(.subheadline)
             .labelStyle(.titleAndIcon)
+            if entry.id.readerKind == .attachment, entry.state == .downloaded {
+                DownloadedAttachmentActionsView(entryID: entry.id, viewModel: viewModel)
+            }
         }
         .downloadListRow()
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {

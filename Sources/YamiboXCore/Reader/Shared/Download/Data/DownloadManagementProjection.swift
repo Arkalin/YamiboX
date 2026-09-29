@@ -69,6 +69,13 @@ extension DownloadStore {
             recordGroupTitle(entry.ownerTitle, updatedAt: entry.updatedAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
+        for row in try Row.fetchAll(db, sql: "SELECT * FROM download_attachment_entries") {
+            let id = DownloadEntryID(readerKind: .attachment, ownerKey: row["owner_name"], entryKey: row["entry_key"])
+            let date = Date(timeIntervalSince1970: row["updated_at"])
+            builders[id] = DownloadManagementEntryBuilder(id: id, title: row["file_name"], byteCount: row["byte_count"], state: .downloaded, updatedAt: date)
+            recordGroupTitle(row["owner_title"], updatedAt: date, groupID: id.groupID, in: &groupTitles)
+        }
+
         for work in try allRawWorks(in: db) {
             let entryID = DownloadEntryID(
                 readerKind: work.readerKind,

@@ -15,6 +15,7 @@ public protocol DownloadImageAssetStoring: Sendable {
 }
 
 public protocol DownloadManagementStoring: DownloadUpdateObserving {
+    func downloadedAttachmentURL(id: DownloadEntryID) async throws -> URL
     func downloadManagementSnapshot() async throws -> DownloadManagementSnapshot
     /// A read-only, work-level projection for entry surfaces. Unlike the
     /// management snapshot, this excludes queued and failed download work.
@@ -71,6 +72,7 @@ public protocol DownloadStoreCore:
 /// The full capability surface of the shared offline download store, as assembled
 /// by the composition root and consumed by reader/library/account features.
 public typealias DownloadStoring = DownloadStoreCore
+    & ForumAttachmentDownloadStoring
     & MangaDownloadStoring
     & NovelDownloadStoring
     & YamiboOfflineImageDataProviding

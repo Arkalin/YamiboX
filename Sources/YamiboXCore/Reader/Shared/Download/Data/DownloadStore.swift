@@ -7,6 +7,7 @@ actor DownloadStore {
     nonisolated(unsafe) let fileManager: FileManager
     private let baseDirectory: URL
     let imagesDirectory: URL
+    let attachmentsDirectory: URL
     let mangaSourcePagesDirectory: URL
     let novelSourcePagesDirectory: URL
     private let updateNotifier = StoreInvalidationBroadcaster<Void>()
@@ -29,6 +30,7 @@ actor DownloadStore {
         let root = baseDirectory ?? Self.defaultBaseDirectory(fileManager: fileManager)
         self.baseDirectory = root
         self.imagesDirectory = root.appendingPathComponent("images", isDirectory: true)
+        self.attachmentsDirectory = root.appendingPathComponent("attachments", isDirectory: true)
         self.mangaSourcePagesDirectory = root.appendingPathComponent("manga-source-pages", isDirectory: true)
         self.novelSourcePagesDirectory = root.appendingPathComponent("novel-source-pages", isDirectory: true)
     }
@@ -321,7 +323,7 @@ actor DownloadStore {
     func clearAll() async throws {
         do {
             try await database.write { db in
-                for table in ReaderDatabaseSchema.downloadTableNamesInDeletionOrder {
+                for table in ForumAttachmentDownloadSchema.tables + ReaderDatabaseSchema.downloadTableNamesInDeletionOrder {
                     try db.execute(sql: "DELETE FROM \(table)")
                 }
             }
@@ -351,7 +353,8 @@ actor DownloadStore {
                     db,
                     sql: "SELECT COALESCE(SUM(byte_count), 0) FROM download_manga_entries"
                 ) ?? 0
-                return imageBytes + novelBytes + mangaSourcePageBytes
+                let attachmentBytes = try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(byte_count), 0) FROM download_attachment_entries") ?? 0
+                return imageBytes + novelBytes + mangaSourcePageBytes + attachmentBytes
             }
         } catch {
             YamiboLog.download.error("Failed to read total offline download disk usage: \(error)")

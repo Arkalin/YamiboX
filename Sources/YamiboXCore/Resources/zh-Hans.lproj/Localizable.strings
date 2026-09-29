@@ -105,6 +105,7 @@
 "common.original_post" = "原帖";
 "common.apply" = "应用";
 "common.refresh" = "刷新";
+"forum.browser.open_in_browser" = "在浏览器中打开";
 "common.retry" = "重试";
 "load_failure.details" = "详情";
 "load_failure.items" = "失败项目";
@@ -148,6 +149,11 @@
 "favorites.sidebar.collections" = "合集";
 "common.select_all" = "全选";
 "common.share" = "分享";
+"downloads.attachment.enqueued" = "已加入下载队列";
+"downloads.attachment.queued" = "附件已在下载队列中";
+"downloads.attachment.not_file" = "未能获取附件文件，请检查登录状态、下载权限或附件是否需要购买，然后重试。";
+"downloads.attachment.progress" = "%d / %d 个文件";
+"downloads.attachment.too_large" = "附件超过下载大小限制（50 MiB）。";
 "common.stop" = "终止";
 "common.unhide" = "取消隐藏";
 "common.updating" = "更新中";
@@ -687,6 +693,13 @@
 "user_space.view_all_blogs" = "随便看看";
 "user_space.visitors" = "我的访客";
 "user_space.write_blog" = "发表日志";
+"forum.blog.edit" = "编辑日志";
+"forum.blog.organization" = "分类与标签";
+"forum.blog.visibility" = "谁可以看";
+"forum.blog.settings" = "发布设置";
+"forum.blog.friends_hint" = "填写好友用户名，多个用户名用空格分隔。";
+"forum.blog.uncategorized" = "未分类";
+"forum.blog.html_source" = "HTML 源码";
 "forum.home.empty" = "暂无论坛版块";
 "forum.home.empty_message" = "没有找到可显示的论坛版块。";
 "forum.home.refresh_failed" = "刷新失败：%@";
@@ -776,6 +789,7 @@
 "manga.delete_current_chapter_failed_message" = "不可删除正在阅读中的章节，请重新选择";
 "manga.directory" = "目录";
 "manga.directory.reset" = "重置目录";
+"manga.directory.edit" = "编辑目录";
 "manga.directory.reset_confirm_title" = "重置目录？";
 "manga.directory.reset_confirm_message" = "将清空本地记录并从原始来源重新抓取整本目录，你所做的手动修正（改名、排序、删除章节等）都会丢失，且无法撤销。";
 "manga.directory.selected_count" = "已选择 %d 项";

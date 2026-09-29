@@ -8,6 +8,7 @@ struct ForumThreadLockedBlockView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         ForumThreadNestedBlockContainer(accented: false) {
@@ -20,7 +21,8 @@ struct ForumThreadLockedBlockView: View {
                     fallbackText: "",
                     refererURL: refererURL,
                     onImageTap: onImageTap,
-                    onURLTap: onURLTap
+                    onURLTap: onURLTap,
+                    onAttachmentTap: onAttachmentTap
                 )
             }
         }

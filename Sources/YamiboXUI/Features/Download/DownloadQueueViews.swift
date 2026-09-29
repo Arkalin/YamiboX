@@ -282,7 +282,7 @@ private struct DownloadQueueOwnerRow: View {
             Image(
                 systemName: isSelecting
                     ? (isSelected ? "checkmark.circle.fill" : "circle")
-                    : (group.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
+                    : (group.readerKind == .attachment ? "paperclip" : (group.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
             )
             .font(.system(size: 20))
             .foregroundStyle(dimming.emphasis(appTheme.controlAccent))

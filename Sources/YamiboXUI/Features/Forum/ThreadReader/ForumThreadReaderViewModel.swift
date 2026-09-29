@@ -58,6 +58,7 @@ final class ForumThreadReaderViewModel {
     /// shows up — and resolved on demand when this session never loaded that
     /// page (a resumed session opens deep into the thread).
     @ObservationIgnored private var threadAuthorID: String?
+    @ObservationIgnored private var enqueueAttachmentRequest: (@Sendable (ForumAttachmentDownloadRequest) async throws -> ForumAttachmentEnqueueResult)?
 
     convenience init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies) {
         self.init(
@@ -78,6 +79,34 @@ final class ForumThreadReaderViewModel {
                 return nil
             }
         )
+        enqueueAttachmentRequest = { request in
+            let executor = await dependencies.makeDownloadQueueExecutor()
+            let result = try await dependencies.attachmentDownloadStore.enqueueAttachmentDownload(request)
+            if case .alreadyDownloaded = result { return result }
+            try await executor.continueQueue()
+            return result
+        }
+    }
+
+    func enqueueAttachment(_ attachment: ForumThreadAttachmentBlock) async {
+        guard let enqueueAttachmentRequest else { return }
+        let request = ForumAttachmentDownloadRequest(
+            threadID: context.thread.tid,
+            threadTitle: navigationTitle,
+            attachment: attachment,
+            refererURL: YamiboRoute.threadByID(tid: context.thread.tid, page: currentPage, authorID: nil, reverse: false).url
+        )
+        do {
+            let result = try await enqueueAttachmentRequest(request)
+            switch result {
+            case .enqueued: transientMessage = L10n.string("downloads.attachment.enqueued")
+            case .alreadyQueued: transientMessage = L10n.string("downloads.attachment.queued")
+            case .alreadyDownloaded: transientMessage = L10n.string("settings.download.state.downloaded")
+            }
+        } catch {
+            guard !LoadDiagnosticError.isCancellation(error) else { return }
+            transientMessage = error.localizedDescription
+        }
     }
 
     convenience init(

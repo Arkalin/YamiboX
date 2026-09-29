@@ -3,6 +3,7 @@ import Foundation
 public enum DownloadReaderKind: String, Codable, CaseIterable, Hashable, Sendable {
     case manga
     case novel
+    case attachment
 }
 
 public struct DownloadWorkID: Codable, Hashable, Sendable {

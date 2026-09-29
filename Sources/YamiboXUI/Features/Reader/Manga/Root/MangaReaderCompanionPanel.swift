@@ -124,7 +124,7 @@ private struct MangaReaderDirectoryCompanion: View {
                     settings.directorySortOrder = sortOrder
                     model.applySettings(settings)
                 },
-                onUpdateDirectory: { Task { await model.updateDirectoryFromPanel() } },
+                onGlobalSearch: { Task { await model.updateDirectory(isForcedSearch: true) } },
                 onResetDirectory: { Task { await model.resetDirectory() } },
                 onSaveCorrection: { draft in Task { await model.renameDirectory(with: draft) } },
                 onDeleteChapters: { tids in Task { await model.deleteDirectoryChapters(tids: tids) } },

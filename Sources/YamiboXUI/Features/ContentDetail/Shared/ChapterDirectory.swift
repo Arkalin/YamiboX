@@ -271,18 +271,7 @@ struct ChapterDirectoryToolbar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Picker(L10n.string("forum.detail.layout"), selection: $layout) {
-                Image(systemName: "list.bullet")
-                    .accessibilityLabel(L10n.string("forum.detail.layout_list"))
-                    .tag(ChapterDirectoryLayout.list)
-                Image(systemName: "square.grid.2x2")
-                    .accessibilityLabel(L10n.string("forum.detail.layout_grid"))
-                    .tag(ChapterDirectoryLayout.grid)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 104, height: 44)
-            .accessibilityIdentifier("forum.detail.layout")
-            .help(L10n.string("forum.detail.layout"))
+            ChapterDirectoryLayoutPicker(layout: $layout)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -290,6 +279,25 @@ struct ChapterDirectoryToolbar: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.divider).frame(height: 0.5)
         }
+    }
+}
+
+struct ChapterDirectoryLayoutPicker: View {
+    @Binding var layout: ChapterDirectoryLayout
+
+    var body: some View {
+        Picker(L10n.string("forum.detail.layout"), selection: $layout) {
+            Image(systemName: "list.bullet")
+                .accessibilityLabel(L10n.string("forum.detail.layout_list"))
+                .tag(ChapterDirectoryLayout.list)
+            Image(systemName: "square.grid.2x2")
+                .accessibilityLabel(L10n.string("forum.detail.layout_grid"))
+                .tag(ChapterDirectoryLayout.grid)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 104, height: 44)
+        .accessibilityIdentifier("forum.detail.layout")
+        .help(L10n.string("forum.detail.layout"))
     }
 }
 

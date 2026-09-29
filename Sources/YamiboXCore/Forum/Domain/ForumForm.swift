@@ -67,6 +67,14 @@ public struct ForumForm: Identifiable, Equatable, Sendable {
             if field.isRequired && (selected.isEmpty || selected.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })) {
                 throw ForumPageError.requiredField(field.label)
             }
+            if kind == .blog, field.name == "message", field.isRequired {
+                let content = try KannaSoup.parseBodyFragment(selected.first ?? "")
+                content.select("script, style").remove()
+                guard !content.text().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || content.select("img[src]").contains(where: { !$0.attr("src").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                    throw ForumPageError.requiredField(field.label)
+                }
+            }
             if let maxLength = field.maxLength, selected.contains(where: { $0.count > maxLength }) {
                 throw ForumPageError.fieldTooLong(field.label, maxLength)
             }
@@ -85,13 +93,19 @@ public struct ForumForm: Identifiable, Equatable, Sendable {
             result.append(ForumFormValue(name: "wysiwyg", value: "0"))
         }
         if kind == .blog {
+            // The native editor always submits HTML, including when the server
+            // returned a touch form carrying its plain-text editor flag.
+            result.removeAll { $0.name == "plaintext" }
             let privacy = result.first { $0.name == "friend" }?.value
-            if privacy == "4", result.first(where: { $0.name == "password" })?.value.isEmpty != false {
+            // Discuz falls back to public visibility for a whitespace-only
+            // password. Reject it locally rather than silently exposing a blog.
+            if privacy == "4", result.first(where: { $0.name == "password" })?.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                 throw ForumPageError.requiredField(L10n.string("forum.native.password"))
             }
             if privacy == "2", result.first(where: { $0.name == "target_names" })?.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                 throw ForumPageError.requiredField(L10n.string("forum.native.target_names"))
             }
+            result.removeAll { ($0.name == "password" && privacy != "4") || ($0.name == "target_names" && privacy != "2") }
         }
         return result
     }

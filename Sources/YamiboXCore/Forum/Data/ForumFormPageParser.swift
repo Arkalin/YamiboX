@@ -16,7 +16,7 @@ enum ForumFormPageParser {
         // These are desktop upload dialog forms, not independent user forms.
         // Remove their chrome too; otherwise hidden dialog text leaks below
         // the native composer even when its controls were excluded.
-        document.select("#e_menus, #e_image_menu, #e_attach_menu, form[id=imgattachform], form[id^=imgattachform_], form[id=attachform], form[id^=attachform_]").remove()
+        document.select("#e_menus, #e_image_menu, #e_attach_menu, #icoImg_image_menu, #icoAttach_attach_menu, form[id=imgattachform], form[id^=imgattachform_], form[id=attachform], form[id^=attachform_]").remove()
         // Do not mistake the desktop header's inline login form for a login page.
         if document.select("body.pg_logging, #main_messaqge #loginform, .loginbox").count > 0 {
             throw YamiboError.notAuthenticated
@@ -24,7 +24,9 @@ enum ForumFormPageParser {
         document.select("script, style, noscript, #hd, #toptb, #nv, #qmenu_menu, #scbar, #scbar_form, #ft, #scrolltop").remove()
         let root = document.selectFirst("#ct") ?? document.selectFirst("#wp") ?? document.body() ?? document
         let title = pageTitle(document: document, root: root)
-        let forms = try root.select("form").array().enumerated().compactMap { index, form in
+        // Some touch templates place the editor before an otherwise empty #ct.
+        let formRoot = ForumPagePurpose(url: url) == .blogEditor ? (document.body() ?? document) : root
+        let forms = try formRoot.select("form").array().enumerated().compactMap { index, form in
             try parseForm(form, index: index, pageURL: url, pageTitle: title, isFirstPost: isFirstPost)
         }
         if forms.contains(where: { $0.kind != .standard }) { root.select("#pt").remove() }
@@ -51,10 +53,10 @@ enum ForumFormPageParser {
         let value: (String) -> String? = { key in items.first { $0.name == key }?.value }
         let postAction = value("action") ?? URLComponents(url: pageURL, resolvingAgainstBaseURL: true)?.queryItems?.first { $0.name == "action" }?.value
         let kind: ForumForm.Kind
-        if formID == "postform" || formID == "fastpostform" || (actionURL.path == "/forum.php" && value("mod") == "post") {
-            kind = .thread
-        } else if formID == "ttHtmlEditor" || (value("ac") == "blog" && !element.select("textarea[name=message]").isEmpty) {
+        if formID == "ttHtmlEditor" || (value("ac") == "blog" && !element.select("textarea[name=message]").isEmpty) {
             kind = .blog
+        } else if formID == "postform" || formID == "fastpostform" || (actionURL.path == "/forum.php" && value("mod") == "post") {
+            kind = .thread
         } else {
             kind = .standard
         }
@@ -144,6 +146,7 @@ enum ForumFormPageParser {
                 switch (tag, type) {
                 case ("textarea", _): fieldKind = .multiline
                 case (_, "password"): fieldKind = .password
+                case _ where kind == .blog && name == "password": fieldKind = .password
                 case (_, "email"): fieldKind = .email
                 case (_, "number"): fieldKind = .number
                 case (_, "file"): fieldKind = .file

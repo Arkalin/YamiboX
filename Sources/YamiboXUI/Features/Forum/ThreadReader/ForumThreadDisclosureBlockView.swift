@@ -8,6 +8,7 @@ struct ForumThreadDisclosureBlockView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     @State private var isExpanded = false
 
@@ -18,7 +19,8 @@ struct ForumThreadDisclosureBlockView: View {
                 fallbackText: "",
                 refererURL: refererURL,
                 onImageTap: onImageTap,
-                onURLTap: onURLTap
+                onURLTap: onURLTap,
+                onAttachmentTap: onAttachmentTap
             )
                 .padding(.top, 8)
 
