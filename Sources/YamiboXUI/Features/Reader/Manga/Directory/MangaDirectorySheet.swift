@@ -8,7 +8,7 @@ struct MangaDirectorySheet: View {
     let panel: MangaDirectoryPanelPresentation
     let onClearFailure: @MainActor () -> Void
     let onSortOrderChange: (MangaDirectorySortOrder) -> Void
-    let onUpdateDirectory: () -> Void
+    let onGlobalSearch: () -> Void
     let onResetDirectory: () -> Void
     let onSaveCorrection: (MangaDirectoryEditDraft) -> Void
     let onDeleteChapters: (Set<String>) -> Void
@@ -30,12 +30,14 @@ struct MangaDirectorySheet: View {
     @State private var isCurrentChapterDeleteAlertPresented = false
     @State private var isBatchDeleteConfirmationPresented = false
     @State private var isResetConfirmationPresented = false
+    @State private var layout = ChapterDirectoryLayout.list
+    @ScaledMetric(relativeTo: .body) private var minimumColumnWidth: CGFloat = 72
 
     init(
         panel: MangaDirectoryPanelPresentation,
         onClearFailure: @escaping @MainActor () -> Void = {},
         onSortOrderChange: @escaping (MangaDirectorySortOrder) -> Void,
-        onUpdateDirectory: @escaping () -> Void,
+        onGlobalSearch: @escaping () -> Void,
         onResetDirectory: @escaping () -> Void,
         onSaveCorrection: @escaping (MangaDirectoryEditDraft) -> Void,
         onDeleteChapters: @escaping (Set<String>) -> Void,
@@ -47,7 +49,7 @@ struct MangaDirectorySheet: View {
         self.panel = panel
         self.onClearFailure = onClearFailure
         self.onSortOrderChange = onSortOrderChange
-        self.onUpdateDirectory = onUpdateDirectory
+        self.onGlobalSearch = onGlobalSearch
         self.onResetDirectory = onResetDirectory
         self.onSaveCorrection = onSaveCorrection
         self.onDeleteChapters = onDeleteChapters
@@ -72,32 +74,14 @@ struct MangaDirectorySheet: View {
 
     private var directoryContent: some View {
         List {
-                MangaDirectoryMetadataSection(
-                    panel: panel,
-                    isSelecting: isSelecting,
-                    onUpdateDirectory: onUpdateDirectory,
-                    onEditDirectory: {
-                        seedDraft(from: panel)
-                        isCorrectionPresented = true
-                    }
-                )
-                .mangaDirectoryListRow(top: 16, bottom: 10)
-
-                MangaDirectoryChapterControlsRow(
-                    isSelecting: isSelecting,
-                    hasChapters: !panel.displayChapters.isEmpty,
-                    visibleSelectionIsComplete: visibleSelectionIsComplete,
-                    sortOrder: panel.sortOrder,
-                    onSortOrderChange: onSortOrderChange,
-                    onToggleVisibleSelection: toggleVisibleSelection,
-                    onToggleSelectionMode: {
-                        if isSelecting {
-                            exitSelectionMode()
-                        } else {
-                            isSelecting = true
-                        }
-                    }
-                )
+                HStack {
+                    MangaDirectorySortToggleButton(
+                        sortOrder: panel.sortOrder,
+                        onSortOrderChange: onSortOrderChange
+                    )
+                    Spacer(minLength: 0)
+                    ChapterDirectoryLayoutPicker(layout: $layout)
+                }
                 .mangaDirectoryListRow(top: 10, bottom: 7)
 
                 if panel.displayChapters.isEmpty {
@@ -105,6 +89,26 @@ struct MangaDirectorySheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .mangaDirectoryListRow(top: 5, bottom: 16)
+                } else if layout == .grid {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumColumnWidth), spacing: 8)], spacing: 8) {
+                        ForEach(panel.displayChapters) { chapter in
+                            MangaDirectoryChapterGridItem(
+                                chapter: chapter,
+                                isCurrent: chapter.tid == panel.currentChapterTID,
+                                isSelecting: isSelecting,
+                                isSelected: selectedChapterTIDs.contains(chapter.tid),
+                                action: {
+                                    if isSelecting {
+                                        toggleSelection(chapter)
+                                    } else if chapter.tid != panel.currentChapterTID {
+                                        onSelectChapter(chapter)
+                                    }
+                                }
+                            )
+                            .onLongPressGesture { beginSelection(chapter) }
+                        }
+                    }
+                    .mangaDirectoryListRow(top: 5, bottom: 16)
                 } else {
                     ForEach(panel.displayChapters) { chapter in
                         MangaDirectoryChapterRow(
@@ -141,7 +145,18 @@ struct MangaDirectorySheet: View {
             )
             .toolbar {
                 if isActive {
-                    if !isEmbeddedInReaderPanel {
+                    if isSelecting {
+                        ToolbarItem(placement: .topBarLeading) {
+                            SelectAllToolbarButton(
+                                isSelectionComplete: visibleSelectionIsComplete,
+                                isDisabled: panel.displayChapters.isEmpty,
+                                toggle: toggleVisibleSelection
+                            )
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(L10n.string("common.done"), action: exitSelectionMode)
+                        }
+                    } else if !isEmbeddedInReaderPanel {
                         ToolbarItem(placement: .topBarLeading) {
                             Button {
                                 dismiss()
@@ -154,13 +169,35 @@ struct MangaDirectorySheet: View {
 
                     if !isSelecting {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                isResetConfirmationPresented = true
+                            Menu {
+                                Button {
+                                    seedDraft(from: panel)
+                                    isCorrectionPresented = true
+                                } label: {
+                                    Label(L10n.string("manga.correction_title"), systemImage: "pencil")
+                                }
+                                .disabled(panel.isUpdating)
+                                Button {
+                                    isSelecting = true
+                                } label: {
+                                    Label(L10n.string("manga.directory.edit"), systemImage: "checklist")
+                                }
+                                .disabled(panel.displayChapters.isEmpty || panel.isUpdating)
+                                Button(action: onGlobalSearch) {
+                                    Label(L10n.string("manga.global_search"), systemImage: "magnifyingglass")
+                                }
+                                .disabled(!panel.isUpdateButtonEnabled)
+                                Divider()
+                                Button(role: .destructive) {
+                                    isResetConfirmationPresented = true
+                                } label: {
+                                    Label(L10n.string("manga.directory.reset"), systemImage: "arrow.counterclockwise")
+                                }
+                                .disabled(panel.isUpdating)
                             } label: {
-                                Image(systemName: "arrow.counterclockwise")
+                                Image(systemName: "ellipsis")
                             }
-                            .disabled(panel.isUpdating)
-                            .accessibilityLabel(L10n.string("manga.directory.reset"))
+                            .accessibilityLabel(L10n.string("common.more"))
                         }
                     }
 
@@ -347,100 +384,6 @@ private extension View {
     }
 }
 
-private struct MangaDirectoryMetadataSection: View {
-    let panel: MangaDirectoryPanelPresentation
-    let isSelecting: Bool
-    let onUpdateDirectory: () -> Void
-    let onEditDirectory: () -> Void
-    @Environment(\.appTheme) private var appTheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button {
-                onEditDirectory()
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(panel.directoryTitle)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-
-                    if !isSelecting {
-                        Image(systemName: "pencil")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .disabled(isSelecting)
-
-            HStack(alignment: .center, spacing: 12) {
-                if let latestChapterText = panel.latestChapterText {
-                    Text(latestChapterText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-
-                Button(panel.updateButtonTitle) {
-                    onUpdateDirectory()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(appTheme.controlAccent)
-                .disabled(!panel.isUpdateButtonEnabled || isSelecting)
-            }
-
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(YamiboColors.SystemSurface.secondaryGroupedBackground)
-        )
-    }
-}
-
-private struct MangaDirectoryChapterControlsRow: View {
-    let isSelecting: Bool
-    let hasChapters: Bool
-    let visibleSelectionIsComplete: Bool
-    let sortOrder: MangaDirectorySortOrder
-    let onSortOrderChange: (MangaDirectorySortOrder) -> Void
-    let onToggleVisibleSelection: () -> Void
-    let onToggleSelectionMode: () -> Void
-
-    var body: some View {
-        HStack {
-            if isSelecting {
-                SelectAllToolbarButton(
-                    isSelectionComplete: visibleSelectionIsComplete,
-                    isDisabled: !hasChapters,
-                    expandsHitTarget: true,
-                    toggle: onToggleVisibleSelection
-                )
-                .font(.subheadline.weight(.semibold))
-                .buttonStyle(.plain)
-            } else {
-                MangaDirectorySortToggleButton(
-                    sortOrder: sortOrder,
-                    onSortOrderChange: onSortOrderChange
-                )
-            }
-
-            Spacer(minLength: 0)
-
-            MangaDirectorySelectionToggleButton(isSelecting: isSelecting) {
-                onToggleSelectionMode()
-            }
-        }
-        .frame(height: 38, alignment: .center)
-    }
-}
 
 private struct MangaDirectorySortToggleButton: View {
     let sortOrder: MangaDirectorySortOrder
@@ -480,27 +423,49 @@ private struct MangaDirectorySortToggleButton: View {
     }
 }
 
-private struct MangaDirectorySelectionToggleButton: View {
+
+private struct MangaDirectoryChapterGridItem: View {
+    let chapter: MangaChapter
+    let isCurrent: Bool
     let isSelecting: Bool
+    let isSelected: Bool
     let action: () -> Void
     @Environment(\.appTheme) private var appTheme
+    @ScaledMetric(relativeTo: .body) private var minimumHeight: CGFloat = 48
 
     var body: some View {
         Button(action: action) {
-            Group {
-                if isSelecting {
-                    Text(L10n.string("common.done"))
-                        .font(.subheadline.weight(.semibold))
-                } else {
-                    Image(systemName: "trash")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(appTheme.controlAccent)
+            Text(MangaChapterDisplayFormatter.displayNumber(for: chapter))
+                .font(.body.weight(isCurrent ? .semibold : .regular))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 8)
+                .padding(.vertical, isSelecting ? 12 : 0)
+                .frame(maxWidth: .infinity, minHeight: minimumHeight)
+                .foregroundStyle(isCurrent ? appTheme.controlAccent : .primary)
+                .background(
+                    isCurrent ? appTheme.controlAccent.opacity(0.12) : YamiboColors.SystemSurface.secondaryGroupedBackground,
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .overlay {
+                    if isSelecting && isSelected {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(appTheme.controlAccent, lineWidth: 2)
+                    }
                 }
-            }
-            .expandedHitTarget()
+                .overlay(alignment: .topTrailing) {
+                    if isSelecting {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.caption2)
+                            .foregroundStyle(isSelected ? appTheme.controlAccent : .secondary)
+                            .padding(4)
+                    }
+                }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelecting ? L10n.string("common.done") : L10n.string("common.select"))
+        .accessibilityLabel(chapter.rawTitle)
+        .accessibilityAddTraits(isSelected || (!isSelecting && isCurrent) ? .isSelected : [])
     }
 }
 

@@ -774,6 +774,7 @@
 "manga.delete_current_chapter_failed_message" = "不可删除正在阅读中的章节，请重新选择";
 "manga.directory" = "目录";
 "manga.directory.reset" = "重置目录";
+"manga.directory.edit" = "编辑目录";
 "manga.directory.reset_confirm_title" = "重置目录？";
 "manga.directory.reset_confirm_message" = "将清空本地记录并从原始来源重新抓取整本目录，你所做的手动修正（改名、排序、删除章节等）都会丢失，且无法撤销。";
 "manga.directory.selected_count" = "已选择 %d 项";
