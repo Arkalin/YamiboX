@@ -19,6 +19,29 @@ extension EnvironmentValues {
 }
 
 #if os(iOS)
+/// Shared by horizontal and vertical Books progress indicators.
+struct ReaderBooksProgressPalette {
+    let paper: Color
+    let colorScheme: ColorScheme
+
+    var usesDarkPaper: Bool {
+        let color = UIColor(paper).resolvedColor(with: UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light))
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: nil)
+        return red * 0.299 + green * 0.587 + blue * 0.114 < 0.5
+    }
+
+    var readOverlay: Color {
+        colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.09)
+    }
+
+    var unreadOverlay: Color {
+        usesDarkPaper ? Color.white.opacity(0.38) : Color.black.opacity(0.85)
+    }
+}
+
 extension View {
     func readerBooksBackdrop(isVisible: Bool) -> some View {
         background {
