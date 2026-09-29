@@ -14,6 +14,8 @@ struct NovelReaderSettingsSheet: View {
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
     @State private var isPeripheralSettingsPresented = false
+    @State private var isFontLibraryPresented = false
+    @State private var fontProtectionID = UUID()
     private static let fallbackPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
 
@@ -48,6 +50,21 @@ struct NovelReaderSettingsSheet: View {
         .background(Color.clear)
         .tint(controlAccent)
         .onAppear(perform: loadDraftIfNeeded)
+        .onChange(of: draftSettings.fontSelection) { _, selection in
+            model.fontLibrary.protect(selection, owner: fontProtectionID)
+        }
+        .onDisappear { model.fontLibrary.protect(nil, owner: fontProtectionID) }
+        .sheet(isPresented: $isFontLibraryPresented) {
+            NovelReaderFontLibraryView(
+                library: model.fontLibrary,
+                selection: draftSettings.fontSelection,
+                currentSelection: model.settings.fontSelection,
+                onSelect: { selection in
+                    draftSettings.fontSelection = selection
+                    draftSettings = model.fontLibrary.resolving(draftSettings)
+                }
+            )
+        }
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
@@ -62,7 +79,7 @@ struct NovelReaderSettingsSheet: View {
         palette: NovelReaderSheetPalette
     ) -> some View {
         NovelReaderHeroSection(
-            settings: draftSettings,
+            settings: model.fontLibrary.resolving(draftSettings),
             palette: palette,
             previewText: model.previewText(
                 translationMode: draftSettings.translationMode,
@@ -83,7 +100,8 @@ struct NovelReaderSettingsSheet: View {
                     settings: draftSettings,
                     palette: palette,
                     onFontScaleChange: setFontScale,
-                    onFontFamilyChange: setFontFamily,
+                    fontTitle: model.fontLibrary.title(for: draftSettings.fontSelection),
+                    onChooseFont: { isFontLibraryPresented = true },
                     onSelectOriginalText: { setTranslationMode(.none) },
                     onSelectSimplifiedText: { setTranslationMode(.simplified) },
                     onSelectTraditionalText: { setTranslationMode(.traditional) }
@@ -136,6 +154,7 @@ struct NovelReaderSettingsSheet: View {
     private func loadDraftIfNeeded() {
         guard !hasLoadedDraft else { return }
         draftSettings = model.settings
+        model.fontLibrary.protect(draftSettings.fontSelection, owner: fontProtectionID)
         hasLoadedDraft = true
     }
 
@@ -148,7 +167,6 @@ struct NovelReaderSettingsSheet: View {
     }
 
     private func setFontScale(_ value: Double) { draftSettings.fontScale = value }
-    private func setFontFamily(_ value: ReaderFontFamily) { draftSettings.fontFamily = value }
     private func setLineHeightScale(_ value: Double) { draftSettings.lineHeightScale = value }
     private func setCharacterSpacingScale(_ value: Double) { draftSettings.characterSpacingScale = value }
     private func setHorizontalPadding(_ value: Double) { draftSettings.horizontalPadding = value }

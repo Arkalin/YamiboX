@@ -5,6 +5,12 @@ import YamiboXCore
 @MainActor
 @Observable
 public final class NovelReaderViewModel {
+    let fontLibrary: ReaderFontLibrary
+    private let fontProtectionID = UUID()
+    private var fontProtectionClosed = false
+    var fontWarning: String? {
+        settings.resolvedFont?.isFallback == true ? L10n.string("reader.font.fallback") : nil
+    }
     public var isLoading: Bool { loading.isLoading }
     private var preparation: NovelReaderPreparationCoordinator { runtimeUpdates.preparation }
     @ObservationIgnored private lazy var runtimeUpdates = NovelReaderRuntimeUpdateCoordinator(
@@ -72,7 +78,14 @@ public final class NovelReaderViewModel {
                 self?.errorDetails = LoadFailureDetails(error: error)
             },
             refreshDownload: { [weak self] in await self?.download.refresh() },
-            prefetchAnchor: { [weak self] in self?.selectedSurface?.identity }
+            prefetchAnchor: { [weak self] in self?.selectedSurface?.identity },
+            resolveFonts: { [weak self] settings in
+                guard let self else { return settings }
+                await self.fontLibrary.prepare()
+                guard !self.fontProtectionClosed else { return settings }
+                self.fontLibrary.protect(settings.fontSelection, owner: self.fontProtectionID)
+                return self.fontLibrary.resolving(settings)
+            }
         )
     )
     @ObservationIgnored var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
@@ -175,6 +188,7 @@ public final class NovelReaderViewModel {
         context: NovelLaunchContext,
         dependencies: NovelReaderDependencies,
         initialSettings: NovelReaderAppearanceSettings? = nil,
+        fontLibrary: ReaderFontLibrary? = nil,
         imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler = { _ in }
     ) {
@@ -183,6 +197,7 @@ public final class NovelReaderViewModel {
             dependencies: dependencies,
             initialSettings: initialSettings,
             runtimeAdapter: nil,
+            fontLibrary: fontLibrary,
             imagePipeline: imagePipeline,
             onReaderResumeRouteChange: onReaderResumeRouteChange
         )
@@ -209,10 +224,12 @@ public final class NovelReaderViewModel {
         dependencies: NovelReaderDependencies,
         initialSettings: NovelReaderAppearanceSettings?,
         runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?,
+        fontLibrary: ReaderFontLibrary? = nil,
         imagePipeline: YamiboUIImagePipeline? = nil,
         onReaderResumeRouteChange: @escaping ReaderResumeRouteChangeHandler
     ) {
         self.context = context
+        self.fontLibrary = fontLibrary ?? ReaderFontLibrary()
         self.dependencies = dependencies
         self.onReaderResumeRouteChange = onReaderResumeRouteChange
         self.runtimeAdapter = runtimeAdapter
@@ -462,6 +479,8 @@ public final class NovelReaderViewModel {
     }
 
     public func close() {
+        fontProtectionClosed = true
+        fontLibrary.protect(nil, owner: fontProtectionID)
         runtimeUpdates.close()
         imagePrefetchCoordinator.cancel()
         imagePrefetchSuspendedPosition = nil
@@ -595,9 +614,15 @@ public final class NovelReaderViewModel {
         _ newSettings: NovelReaderAppearanceSettings,
         applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
     ) async {
-        await runtimeUpdates.commitNovelTextAppearance(
-            newSettings, applePencilPageTurnSettings: applePencilPageTurnSettings
-        )
+        guard !fontProtectionClosed else { return }
+        let resolved = fontLibrary.resolving(newSettings)
+        guard resolved.resolvedFont?.isFallback != true || newSettings.fontSelection == settings.fontSelection else {
+            errorMessage = L10n.string("reader.font.unavailable")
+            return
+        }
+        fontLibrary.protect(newSettings.fontSelection, owner: fontProtectionID)
+        await runtimeUpdates.commitNovelTextAppearance(resolved, applePencilPageTurnSettings: applePencilPageTurnSettings)
+        if !fontProtectionClosed { fontLibrary.protect(settings.fontSelection, owner: fontProtectionID) }
     }
 
     public func applyApplePencilPageTurnSettings(_ newSettings: ApplePencilPageTurnSettings) {

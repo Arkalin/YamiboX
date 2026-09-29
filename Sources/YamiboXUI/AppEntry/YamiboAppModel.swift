@@ -37,6 +37,7 @@ public struct ForumSearchRequest: Identifiable, Hashable, Sendable {
 @MainActor
 @Observable
 public final class YamiboAppModel {
+    let readerFontLibrary = ReaderFontLibrary()
     public private(set) var bootstrapState: YamiboBootstrapState?
     public private(set) var isBootstrapping = false
     public private(set) var bootstrapPhase: AppBootstrapPhase?

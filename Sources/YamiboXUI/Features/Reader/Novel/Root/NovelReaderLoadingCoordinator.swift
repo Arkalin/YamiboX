@@ -14,6 +14,7 @@ final class NovelReaderLoadingCoordinator {
         var reportFailure: @MainActor (any Error) -> Void
         var refreshDownload: @MainActor () async -> Void
         var prefetchAnchor: @MainActor () -> NovelReaderSurfaceIdentity?
+        var resolveFonts: @MainActor (NovelReaderAppearanceSettings) async -> NovelReaderAppearanceSettings
     }
 
     private(set) var isLoading = false
@@ -77,7 +78,14 @@ final class NovelReaderLoadingCoordinator {
             guard !isClosed, !Task.isCancelled else { return nil }
             if self.repository == nil { self.repository = repository }
         }
-        if workflow == nil, let repository { workflow = makeWorkflow(repository: repository) }
+        if workflow == nil, let repository {
+            let resolvedSettings = await presentation.resolveFonts(presentation.settings())
+            guard !isClosed, !Task.isCancelled else { return nil }
+            if workflow == nil {
+                runtime.bootstrapSettings = resolvedSettings
+                workflow = makeWorkflow(repository: repository)
+            }
+        }
         return workflow
     }
 

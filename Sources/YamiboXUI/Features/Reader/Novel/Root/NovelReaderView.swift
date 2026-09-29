@@ -39,6 +39,7 @@ public struct NovelReaderView: View {
     /// Reader-session-scoped: once dismissed the banner stays gone until the
     /// reader is closed and reopened (this view is recreated).
     @State private var isOfflineBannerDismissed = false
+    @State private var isFontBannerDismissed = false
     @State private var topChromeHeight: CGFloat = 0
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
@@ -77,6 +78,7 @@ public struct NovelReaderView: View {
             context: context,
             dependencies: dependencies,
             initialSettings: initialSettings,
+            fontLibrary: appModel.readerFontLibrary,
             imagePipeline: appModel.imagePipeline,
             onReaderResumeRouteChange: { route in
                 if let onResumeRouteChange {
@@ -182,6 +184,22 @@ public struct NovelReaderView: View {
                     Task { await goRelativePage(delta, pagerIdentity: pagedPagerIdentity) }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if let warning = model.fontWarning, !isFontBannerDismissed,
+                   chromeState.showsChrome, topChromeHeight > 0, model.sourceStatusText == nil {
+                    VStack {
+                        NovelReaderOfflineFallbackBanner(
+                            message: warning, details: nil,
+                            retryTitle: L10n.string("reader.font.library"), retrySystemName: "textformat",
+                            retry: openSettings,
+                            dismiss: { isFontBannerDismissed = true }
+                        )
+                        .padding(.top, topInset + topChromeHeight + 6)
+                        .padding(.horizontal, 12)
+                        Spacer(minLength: 0)
+                    }
+                    .zIndex(2.5)
+                }
 
                 if loadingOverlayPresentation.allowsChrome {
                     NovelReaderChromeControls(

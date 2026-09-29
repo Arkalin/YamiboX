@@ -61,9 +61,9 @@ struct NovelReaderFontScaleRow: View {
 }
 
 struct NovelReaderFontPickerRow: View {
-    let selectedFamily: ReaderFontFamily
+    let title: String
     let palette: NovelReaderSheetPalette
-    let onSelect: (ReaderFontFamily) -> Void
+    let onSelect: () -> Void
 
     var body: some View {
         HStack {
@@ -71,15 +71,9 @@ struct NovelReaderFontPickerRow: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
             Spacer()
-            Menu {
-                ForEach(ReaderFontFamily.allCases, id: \.self) { family in
-                    Button(family.title) {
-                        onSelect(family)
-                    }
-                }
-            } label: {
+            Button(action: onSelect) {
                 HStack(spacing: 8) {
-                    Text(selectedFamily.title)
+                    Text(title)
                         .foregroundStyle(palette.secondaryText)
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))

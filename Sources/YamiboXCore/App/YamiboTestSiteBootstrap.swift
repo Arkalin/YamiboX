@@ -37,6 +37,7 @@ public enum YamiboTestSiteBootstrap {
         )
         await context.downloadBackgroundDownloadTransport.invalidateRestoredDownloads()
         try await context.resetApplicationData()
+        try await ReaderFontFileStore().reset()
         // Nuke stages deletions; flush them before another pipeline can read disk.
         guard await context.imagePipeline.totalDiskUsageBytes() == 0 else {
             throw CocoaError(.fileWriteUnknown)

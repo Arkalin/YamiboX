@@ -56,32 +56,11 @@ public enum ReaderTranslationMode: String, Codable, Hashable, CaseIterable, Send
     }
 }
 
-public enum ReaderFontFamily: String, Codable, Hashable, CaseIterable, Sendable {
-    case systemSans
-    case systemSerif
-    case rounded
-
-    public var title: String {
-        switch self {
-        case .systemSans: L10n.string("reader.font.system_sans")
-        case .systemSerif: L10n.string("reader.font.system_serif")
-        case .rounded: L10n.string("reader.font.rounded")
-        }
-    }
-
-    public var paginationWidthFactor: Double {
-        switch self {
-        case .systemSans: 0.9
-        case .systemSerif: 0.98
-        case .rounded: 0.94
-        }
-    }
-}
-
 public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var isImmersiveModeEnabled: Bool
     public var fontScale: Double
-    public var fontFamily: ReaderFontFamily
+    public var fontSelection: ReaderFontSelection
+    public var resolvedFont: ReaderResolvedFont? = nil
     public var lineHeightScale: Double
     public var characterSpacingScale: Double
     public var horizontalPadding: Double
@@ -99,7 +78,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public init(
         isImmersiveModeEnabled: Bool = false,
         fontScale: Double = 1.0,
-        fontFamily: ReaderFontFamily = .systemSans,
+        fontSelection: ReaderFontSelection = .standard,
         lineHeightScale: Double = 1.45,
         characterSpacingScale: Double = 0,
         horizontalPadding: Double = 16,
@@ -114,7 +93,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         translationMode: ReaderTranslationMode = .none
     ) {
         self.fontScale = fontScale
-        self.fontFamily = fontFamily
+        self.fontSelection = fontSelection
         self.lineHeightScale = lineHeightScale
         self.characterSpacingScale = characterSpacingScale
         self.horizontalPadding = horizontalPadding
@@ -133,7 +112,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case isImmersiveModeEnabled
         case fontScale
-        case fontFamily
+        case fontSelection
         case lineHeightScale
         case characterSpacingScale
         case horizontalPadding
@@ -152,7 +131,13 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         isImmersiveModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isImmersiveModeEnabled) ?? false
         fontScale = try container.decode(Double.self, forKey: .fontScale)
-        fontFamily = try container.decode(ReaderFontFamily.self, forKey: .fontFamily)
+        if container.contains(.fontSelection) {
+            fontSelection = (try? container.decode(ReaderFontSelection.self, forKey: .fontSelection)) ?? .standard
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyFontKeys.self)
+            let name = try? legacy.decode(String.self, forKey: .fontFamily)
+            fontSelection = name == "systemSerif" ? .curated(.songtiSC) : .standard
+        }
         lineHeightScale = try container.decode(Double.self, forKey: .lineHeightScale)
         characterSpacingScale = try container.decode(Double.self, forKey: .characterSpacingScale)
         horizontalPadding = try container.decode(Double.self, forKey: .horizontalPadding)
@@ -166,4 +151,6 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         pageTurnDirection = try container.decode(ReaderPageTurnDirection.self, forKey: .pageTurnDirection)
         translationMode = try container.decode(ReaderTranslationMode.self, forKey: .translationMode)
     }
+
+    private enum LegacyFontKeys: String, CodingKey { case fontFamily }
 }

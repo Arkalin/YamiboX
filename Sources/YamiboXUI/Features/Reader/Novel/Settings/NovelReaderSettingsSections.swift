@@ -7,7 +7,8 @@ struct NovelReaderTextSection: View {
     let settings: NovelReaderAppearanceSettings
     let palette: NovelReaderSheetPalette
     let onFontScaleChange: (Double) -> Void
-    let onFontFamilyChange: (ReaderFontFamily) -> Void
+    let fontTitle: String
+    let onChooseFont: () -> Void
     let onSelectOriginalText: () -> Void
     let onSelectSimplifiedText: () -> Void
     let onSelectTraditionalText: () -> Void
@@ -21,9 +22,9 @@ struct NovelReaderTextSection: View {
             )
             ReaderSettingsDivider(palette: palette)
             NovelReaderFontPickerRow(
-                selectedFamily: settings.fontFamily,
+                title: fontTitle,
                 palette: palette,
-                onSelect: onFontFamilyChange
+                onSelect: onChooseFont
             )
             ReaderSettingsDivider(palette: palette)
             NovelReaderTranslationPicker(

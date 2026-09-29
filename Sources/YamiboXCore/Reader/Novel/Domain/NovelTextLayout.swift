@@ -423,7 +423,8 @@ public enum NovelTextLayout {
             ].joined(separator: "\u{1f}")
         }.joined(separator: "\u{1e}")
         let layoutPayload = [
-            settings.fontFamily.rawValue,
+            settings.fontSelection.stableID,
+            settings.resolvedFont?.fingerprint ?? "unresolved",
             String(settings.fontScale),
             String(settings.lineHeightScale),
             String(settings.characterSpacingScale),

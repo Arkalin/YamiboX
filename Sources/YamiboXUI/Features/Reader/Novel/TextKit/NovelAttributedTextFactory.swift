@@ -56,15 +56,17 @@ enum NovelAttributedTextFactory {
         settings: NovelReaderAppearanceSettings,
         baseFontSize: Double = defaultBaseFontSize
     ) -> String {
-        let font = settings.fontFamily.platformFont(
+        let font = settings.readerFont(
             size: baseFontSize * settings.fontScale,
             weight: bodyFontWeight
         )
         return [
+            settings.fontSelection.stableID,
+            settings.resolvedFont?.fingerprint ?? "unresolved",
             font.fontName,
             font.familyName,
             String(describing: font.pointSize),
-            String(describing: font.fontDescriptor.fontAttributes),
+            settings.readerFont(size: font.pointSize, weight: .bold).fontName,
         ].joined(separator: "|")
     }
 
@@ -178,14 +180,14 @@ enum NovelAttributedTextFactory {
         return TextAttributes(
             pointSize: pointSize,
             body: [
-                .font: settings.fontFamily.platformFont(size: pointSize, weight: bodyFontWeight),
-                .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
+                .font: settings.readerFont(size: pointSize, weight: bodyFontWeight),
+                .kern: CGFloat(pointSize * settings.characterSpacingScale * 0.55),
                 .foregroundColor: textColor,
                 .paragraphStyle: firstBodyParagraphStyle,
             ],
             title: [
-                .font: settings.fontFamily.platformFont(size: pointSize, weight: titleWeight),
-                .kern: settings.fontFamily.kerning(size: pointSize, scale: settings.characterSpacingScale),
+                .font: settings.readerFont(size: pointSize, weight: titleWeight),
+                .kern: CGFloat(pointSize * settings.characterSpacingScale * 0.55),
                 .foregroundColor: textColor,
                 .paragraphStyle: titleParagraphStyle,
             ],
@@ -262,7 +264,7 @@ enum NovelAttributedTextFactory {
             }
             rendered.addAttribute(
                 .font,
-                value: settings.fontFamily.platformFont(size: pointSize, weight: .bold),
+                value: settings.readerFont(size: pointSize, weight: .bold),
                 range: range
             )
         }
@@ -282,56 +284,21 @@ enum NovelAttributedTextFactory {
     }
 }
 
-extension ReaderFontFamily {
-    func platformFont(size: Double, weight: ReaderPlatformFontWeight) -> ReaderPlatformFont {
-        let pointSize = CGFloat(size)
-        switch self {
-        case .systemSans:
-            return preferredFamilyFont(familyName: "PingFang SC", size: pointSize, weight: weight)
-                ?? .systemFont(ofSize: pointSize, weight: weight)
-        case .systemSerif:
-            return preferredFamilyFont(familyName: "Songti SC", size: pointSize, weight: weight)
-                ?? systemFont(size: pointSize, weight: weight, design: .serif)
-                ?? .systemFont(ofSize: pointSize, weight: weight)
-        case .rounded:
-            return systemFont(size: pointSize, weight: weight, design: .rounded)
-                ?? .systemFont(ofSize: pointSize, weight: weight)
+extension NovelReaderAppearanceSettings {
+    func readerFont(size: Double, weight: UIFont.Weight) -> UIFont {
+        if let resolvedFont {
+            let name = weight == .bold ? resolvedFont.boldName : resolvedFont.bodyName
+            if let font = UIFont(name: name, size: size) { return font }
         }
-    }
-
-    func uiFont(size: Double, weight: UIFont.Weight) -> UIFont {
-        platformFont(size: size, weight: weight)
-    }
-
-    func kerning(size: Double, scale: Double) -> CGFloat {
-        CGFloat(size * scale * 0.55)
-    }
-
-    private func preferredFamilyFont(
-        familyName: String,
-        size: CGFloat,
-        weight: ReaderPlatformFontWeight
-    ) -> ReaderPlatformFont? {
-        let descriptor = ReaderPlatformFontDescriptor(
-            fontAttributes: [
-                .family: familyName,
-                .traits: [ReaderPlatformFontDescriptor.TraitKey.weight: weight],
-            ]
-        )
-        let font = ReaderPlatformFont(descriptor: descriptor, size: size)
-        return font.familyName == familyName ? font : nil
-    }
-
-    private func systemFont(
-        size: CGFloat,
-        weight: ReaderPlatformFontWeight,
-        design: ReaderPlatformFontDescriptor.SystemDesign
-    ) -> ReaderPlatformFont? {
-        let baseDescriptor = ReaderPlatformFont.systemFont(ofSize: size, weight: weight).fontDescriptor
-        guard let designedDescriptor = baseDescriptor.withDesign(design) else {
-            return nil
+        // Standalone layout callers may not have prepared the library. Never
+        // pretend a serif or rounded system design is a Chinese font family.
+        if case let .curated(curated) = fontSelection {
+            let fonts = UIFont.fontNames(forFamilyName: curated.familyName).compactMap { UIFont(name: $0, size: size) }
+            let suffix = weight == .bold ? "-Bold" : "-Light"
+            if let font = fonts.first(where: { $0.fontName.hasSuffix(suffix) })
+                ?? fonts.first(where: { $0.fontName.hasSuffix("-Regular") }) { return font }
         }
-
-        return ReaderPlatformFont(descriptor: designedDescriptor, size: size)
+        return UIFont(name: weight == .bold ? "PingFangSC-Semibold" : "PingFangSC-Light", size: size)
+            ?? .systemFont(ofSize: size, weight: weight)
     }
 }

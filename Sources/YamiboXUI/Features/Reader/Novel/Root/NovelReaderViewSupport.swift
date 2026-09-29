@@ -318,6 +318,8 @@ struct NovelReaderChromeHeightObserverModifier: ViewModifier {
 struct NovelReaderOfflineFallbackBanner: View {
     let message: String
     var details: LoadFailureDetails?
+    var retryTitle: String = L10n.string("common.retry")
+    var retrySystemName: String = "arrow.clockwise"
     let retry: () -> Void
     let dismiss: () -> Void
 
@@ -335,12 +337,12 @@ struct NovelReaderOfflineFallbackBanner: View {
 
             VStack(spacing: 0) {
                 Button(action: retry) {
-                    Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
+                    Label(retryTitle, systemImage: retrySystemName)
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .accessibilityLabel(L10n.string("common.retry"))
+                .accessibilityLabel(retryTitle)
                 LoadFailureDetailsButton(details: details, message: message)
             }
 
