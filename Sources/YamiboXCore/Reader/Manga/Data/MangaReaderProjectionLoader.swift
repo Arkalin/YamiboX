@@ -7,7 +7,7 @@ actor MangaReaderProjectionLoader: MangaReaderProjectionSnapshotLoading {
         client: YamiboClient,
         projectionStore: any MangaReaderProjectionPersisting,
         forumCacheStore: ForumCacheStore,
-        offlineCacheStore: (any MangaOfflineCacheStoring)? = nil
+        downloadStore: (any MangaDownloadStoring)? = nil
     ) {
         loader = ReaderProjectionLoader(
             strategy: ReaderThreadPageProjectionLoadingStrategy(
@@ -15,7 +15,7 @@ actor MangaReaderProjectionLoader: MangaReaderProjectionSnapshotLoading {
                     client: client,
                     projectionStore: projectionStore,
                     forumCacheStore: forumCacheStore,
-                    offlineCacheStore: offlineCacheStore
+                    downloadStore: downloadStore
                 )
             ),
             // Manga chapter requests race within one reader session:
@@ -58,7 +58,7 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
     let client: YamiboClient
     let projectionStore: any MangaReaderProjectionPersisting
     let forumCacheStore: ForumCacheStore
-    let offlineCacheStore: (any MangaOfflineCacheStoring)?
+    let downloadStore: (any MangaDownloadStoring)?
 
     var authorScopeErrorContext: String { L10n.string("parsing_context.manga_author_scope") }
 
@@ -73,9 +73,9 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
     func offlineSourcePage(
         for request: MangaReaderProjectionRequest
     ) async -> ReaderProjectionOfflineSourcePageLoad<MangaReaderProjectionSourceIdentity, ForumThreadPage>? {
-        guard let offlineCacheStore,
+        guard let downloadStore,
               let ownerName = request.offlineOwnerName?.nilIfBlank,
-              let membership = await offlineCacheStore.mangaOfflineCacheMembership(ownerName: ownerName, tid: request.threadID),
+              let membership = await downloadStore.mangaDownloadMembership(ownerName: ownerName, tid: request.threadID),
               membership.tid == request.threadID,
               membership.sourcePage.thread.tid == request.threadID,
               sourcePageMatchesRequestedView(membership.sourcePage, view: request.view) else {

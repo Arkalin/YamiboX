@@ -32,7 +32,7 @@ struct MangaReaderChromeControls: View {
     let onShowDirectory: () -> Void
     let onShowComments: () -> Void
     let onShowSettings: () -> Void
-    let onShowCache: () -> Void
+    let onShowDownload: () -> Void
     let onToggleBookmark: () -> Void
     let onShowAnnotations: () -> Void
     let isBookmarked: Bool
@@ -76,7 +76,7 @@ struct MangaReaderChromeControls: View {
                 onShowDirectory: onShowDirectory,
                 onShowComments: onShowComments,
                 onShowSettings: onShowSettings,
-                onShowCache: onShowCache,
+                onShowDownload: onShowDownload,
                 onToggleBookmark: onToggleBookmark,
                 onShowAnnotations: onShowAnnotations,
                 isBookmarked: isBookmarked,

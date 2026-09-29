@@ -37,16 +37,16 @@ struct SettingsReadingView: View {
                     .accessibilityIdentifier("chapter-comment-rules-\(scope.rawValue)")
                 }
             }
-            Section(L10n.string("settings.section.novel_offline_cache")) {
+            Section(L10n.string("settings.section.novel_download")) {
                 Toggle(
-                    L10n.string("settings.novel_offline_cache.retain_inline_images"),
-                    isOn: novelOfflineCacheRetainsInlineImagesBinding
+                    L10n.string("settings.novel_download.retain_inline_images"),
+                    isOn: novelDownloadRetainsInlineImagesBinding
                 )
                 .disabled(viewModel.isBusy)
 
                 Toggle(
-                    L10n.string("settings.novel_offline_cache.auto_refresh"),
-                    isOn: novelOfflineCacheAutoRefreshBinding
+                    L10n.string("settings.novel_download.auto_refresh"),
+                    isOn: novelDownloadAutoRefreshBinding
                 )
                 .disabled(viewModel.isBusy)
             }
@@ -73,17 +73,17 @@ struct SettingsReadingView: View {
         )
     }
 
-    private var novelOfflineCacheRetainsInlineImagesBinding: Binding<Bool> {
+    private var novelDownloadRetainsInlineImagesBinding: Binding<Bool> {
         Binding(
-            get: { viewModel.novelOfflineCache.retainsInlineImages },
-            set: { viewModel.updateNovelOfflineCacheRetainsInlineImages($0) }
+            get: { viewModel.novelDownload.retainsInlineImages },
+            set: { viewModel.updateNovelDownloadRetainsInlineImages($0) }
         )
     }
 
-    private var novelOfflineCacheAutoRefreshBinding: Binding<Bool> {
+    private var novelDownloadAutoRefreshBinding: Binding<Bool> {
         Binding(
-            get: { viewModel.novelOfflineCache.isAutoRefreshEnabled },
-            set: { viewModel.updateNovelOfflineCacheAutoRefreshEnabled($0) }
+            get: { viewModel.novelDownload.isAutoRefreshEnabled },
+            set: { viewModel.updateNovelDownloadAutoRefreshEnabled($0) }
         )
     }
 }

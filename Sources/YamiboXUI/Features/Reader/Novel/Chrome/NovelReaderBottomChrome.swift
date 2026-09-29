@@ -17,7 +17,7 @@ struct NovelReaderBottomChrome: View {
     let isVisible: Bool
     let onShowChapters: () -> Void
     let onShowSettings: () -> Void
-    let onShowCache: () -> Void
+    let onShowDownload: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
     let onShowSearch: () -> Void
@@ -149,10 +149,10 @@ struct NovelReaderBottomChrome: View {
                 handler: onToggleBookmark
             )
             bottomActionButton(
-                action: ReaderBottomAction(kind: .cache),
-                title: L10n.string("reader.cache"),
+                action: ReaderBottomAction(kind: .download),
+                title: L10n.string("reader.download"),
                 systemName: "square.and.arrow.down",
-                handler: onShowCache
+                handler: onShowDownload
             )
         }
         .frame(maxWidth: .infinity)

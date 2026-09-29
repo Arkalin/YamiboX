@@ -55,7 +55,7 @@ enum YamiboDatabasePoolResolver {
     }
 
     /// Shared form of the no-argument `openDatabase()` helper that
-    /// `OfflineCacheStore`/`MangaDirectoryStore`/`BrowsingHistoryStore` each
+    /// `DownloadStore`/`MangaDirectoryStore`/`BrowsingHistoryStore` each
     /// carried as a private copy: a default-root pool behind the historical
     /// per-store crash message. Deliberately NOT routed through `cachedPool`
     /// — the copies always opened their own pool, and folding them into the

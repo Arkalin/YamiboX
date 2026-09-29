@@ -1,7 +1,7 @@
 import Foundation
 
 /// Single owner of the `tid_<t>_author_<a>_view_<v>` cache-key format shared
-/// by both readers' projection stores and the novel offline cache. The two
+/// by both readers' projection stores and the novel download. The two
 /// sides previously kept private copies that drifted: the manga store
 /// sanitized components while the novel store did not, so an id containing
 /// the `_` separator produced keys the novel-side parser silently rejected.

@@ -266,7 +266,7 @@ struct MineSidebarView: View {
         case .messages:
             ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator, appModel: appModel)
         case .downloads:
-            OfflineCacheQueueScreen(viewModel: viewModel.offlineQueue)
+            DownloadQueueScreen(viewModel: viewModel.offlineQueue)
         case .history:
             BrowsingHistoryView(dependencies: settings.dependencies.library.history, appModel: appModel,
                 categorySelection: Binding { historyFilter } set: { navigation.show(.history($0)) },

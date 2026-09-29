@@ -19,7 +19,7 @@ final class MineHomeViewModel {
     var hasCheckedInToday = false
     var checkInResultMessage: String?
 
-    let offlineQueue: OfflineCacheQueueViewModel
+    let offlineQueue: DownloadQueueViewModel
     let loginQuestions = YamiboLoginQuestion.defaultQuestions
     @ObservationIgnored let profileAvatarLoader: YamiboProfileAvatarLoader
 
@@ -29,14 +29,14 @@ final class MineHomeViewModel {
 
     init(
         dependencies: AccountDependencies,
-        offlineCacheQueueController: (any OfflineCacheQueueControlling)? = nil,
+        downloadQueueController: (any DownloadQueueControlling)? = nil,
         checkInService: (any YamiboCheckInServicing)? = nil
     ) {
         self.dependencies = dependencies
         self.checkInService = checkInService ?? dependencies.makeCheckInService()
-        offlineQueue = OfflineCacheQueueViewModel(
-            dependencies: dependencies.cacheQueue,
-            controller: offlineCacheQueueController
+        offlineQueue = DownloadQueueViewModel(
+            dependencies: dependencies.downloadQueue,
+            controller: downloadQueueController
         )
         profileAvatarLoader = YamiboProfileAvatarLoader(
             sessionStore: dependencies.sessionStore,

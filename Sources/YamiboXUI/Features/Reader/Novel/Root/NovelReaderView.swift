@@ -199,7 +199,7 @@ public struct NovelReaderView: View {
                         onRefresh: refreshReader,
                         onShowChapters: openChapterDrawer,
                         onShowSettings: openSettings,
-                        onShowCache: openCachePanel,
+                        onShowDownload: openDownloadPanel,
                         onShowComments: openChapterComments,
                         onOpenForum: openInForum,
                         onShowSearch: openSearch,
@@ -884,12 +884,12 @@ public struct NovelReaderView: View {
         presentedSheet = .settings
     }
 
-    private func openCachePanel() {
-        if model.cache.hasOperationSession {
-            model.cache.showProgressIfRunning()
-            presentedSheet = .cacheProgress
+    private func openDownloadPanel() {
+        if model.download.hasOperationSession {
+            model.download.showProgressIfRunning()
+            presentedSheet = .downloadProgress
         } else {
-            presentedSheet = .cachePanel
+            presentedSheet = .downloadPanel
         }
     }
 

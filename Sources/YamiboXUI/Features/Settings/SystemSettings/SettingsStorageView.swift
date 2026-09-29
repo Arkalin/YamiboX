@@ -6,7 +6,7 @@ struct SettingsStorageView: View {
     let viewModel: SettingsStorageViewModel
     /// This page owns the navigation into the two management sub-pages, so it
     /// carries their view models purely to hand them on.
-    let offlineCacheManagement: OfflineCacheManagementViewModel
+    let downloadManagement: DownloadManagementViewModel
     let mangaDirectoryManagement: MangaDirectoryManagementViewModel
     /// Called after a successful reset, before `viewModel.resetApplication()`'s
     /// caller-provided completion runs — lets the owning navigation stack pop
@@ -17,7 +17,7 @@ struct SettingsStorageView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var showingWebDAVSettings = false
-    @State private var showingOfflineCacheManagement = false
+    @State private var showingDownloadManagement = false
     @State private var showingMangaDirectoryManagement = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
     @State private var syncSettings = WebDAVSyncSettings()
@@ -118,11 +118,11 @@ struct SettingsStorageView: View {
                 .disabled(viewModel.isBusy)
 
                 Button {
-                    showingOfflineCacheManagement = true
+                    showingDownloadManagement = true
                 } label: {
                     SystemSettingsRow(
-                        title: L10n.string("settings.offline_cache.cleanup"),
-                        value: viewModel.offlineCacheLabel,
+                        title: L10n.string("settings.download.cleanup"),
+                        value: viewModel.downloadLabel,
                         showsChevronAfterValue: true
                     )
                 }
@@ -157,8 +157,8 @@ struct SettingsStorageView: View {
         .navigationDestination(isPresented: $showingWebDAVSettings) {
             WebDAVSyncSettingsView(dependencies: dependencies.webDAVSync)
         }
-        .navigationDestination(isPresented: $showingOfflineCacheManagement) {
-            OfflineCacheManagementView(viewModel: offlineCacheManagement)
+        .navigationDestination(isPresented: $showingDownloadManagement) {
+            DownloadManagementView(viewModel: downloadManagement)
         }
         .navigationDestination(isPresented: $showingMangaDirectoryManagement) {
             MangaDirectoryManagementView(viewModel: mangaDirectoryManagement)

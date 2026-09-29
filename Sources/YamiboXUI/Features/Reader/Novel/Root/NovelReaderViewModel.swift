@@ -71,7 +71,7 @@ public final class NovelReaderViewModel {
                 self?.errorMessage = error.localizedDescription
                 self?.errorDetails = LoadFailureDetails(error: error)
             },
-            refreshCache: { [weak self] in await self?.cache.refresh() },
+            refreshDownload: { [weak self] in await self?.download.refresh() },
             prefetchAnchor: { [weak self] in self?.selectedSurface?.identity }
         )
     )
@@ -104,18 +104,18 @@ public final class NovelReaderViewModel {
         }
     }
 
-    /// Offline-cache coordinator: owns cache/queue state and batch
-    /// operations. Cache views bind it directly.
-    @ObservationIgnored private(set) lazy var cache = NovelReaderCacheCoordinator(
-        operationModule: dependencies.makeCacheOperationModule(),
-        repository: dependencies.makeCacheOperationRepository(),
-        offlineCacheStore: dependencies.offlineCacheStore,
-        queueDependencies: dependencies.cacheQueue,
-        reading: NovelReaderCacheCoordinator.Reading(
+    /// Offline-download coordinator: owns download/queue state and batch
+    /// operations. Download views bind it directly.
+    @ObservationIgnored private(set) lazy var download = NovelReaderDownloadCoordinator(
+        operationModule: dependencies.makeDownloadOperationModule(),
+        repository: dependencies.makeDownloadOperationRepository(),
+        downloadStore: dependencies.downloadStore,
+        queueDependencies: dependencies.downloadQueue,
+        reading: NovelReaderDownloadCoordinator.Reading(
             maxView: { [weak self] in self?.maxView ?? 0 },
             displayedView: { [weak self] in self?.visibleView ?? 1 },
             operationContext: { [weak self] in
-                self?.currentCacheOperationContext() ?? NovelReaderCacheOperationContext(
+                self?.currentDownloadOperationContext() ?? NovelReaderDownloadOperationContext(
                     ownerTitle: "",
                     threadID: "",
                     authorID: nil
@@ -1138,8 +1138,8 @@ public final class NovelReaderViewModel {
         return workflowContext.authorID
     }
 
-    private func currentCacheOperationContext() -> NovelReaderCacheOperationContext {
-        NovelReaderCacheOperationContext(
+    private func currentDownloadOperationContext() -> NovelReaderDownloadOperationContext {
+        NovelReaderDownloadOperationContext(
             ownerTitle: title,
             threadID: context.threadID,
             authorID: cacheContext(forView: displayedView)

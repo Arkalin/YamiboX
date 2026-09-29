@@ -8,7 +8,7 @@ struct MangaReaderViewModelDependencies {
     var makeProjectionLoader: @Sendable () async -> any MangaReaderProjectionLoading
     var makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
     var makeDirectoryStore: @Sendable () -> any MangaDirectoryPersisting
-    var makeOfflineCacheStore: @Sendable () -> (any MangaOfflineCacheStoring & OfflineCacheQueueStoring)?
+    var makeDownloadStore: @Sendable () -> (any MangaDownloadStoring & DownloadQueueStoring)?
     var makeDirectorySearchCooldownState: @Sendable () -> MangaDirectorySearchCooldownState
     var makeChapterCommentsRepository: (@Sendable () async -> any ReaderChapterCommentsLoading)?
     var makeContentCoverStore: @Sendable () -> ContentCoverStore?
@@ -29,7 +29,7 @@ struct MangaReaderViewModelDependencies {
         makeProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionLoading,
         makeDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository,
         makeDirectoryStore: @escaping @Sendable () -> any MangaDirectoryPersisting,
-        makeOfflineCacheStore: @escaping @Sendable () -> (any MangaOfflineCacheStoring & OfflineCacheQueueStoring)? = { nil },
+        makeDownloadStore: @escaping @Sendable () -> (any MangaDownloadStoring & DownloadQueueStoring)? = { nil },
         makeDirectorySearchCooldownState: @escaping @Sendable () -> MangaDirectorySearchCooldownState = {
             MangaDirectorySearchCooldownState()
         },
@@ -46,7 +46,7 @@ struct MangaReaderViewModelDependencies {
         self.makeProjectionLoader = makeProjectionLoader
         self.makeDirectoryRepository = makeDirectoryRepository
         self.makeDirectoryStore = makeDirectoryStore
-        self.makeOfflineCacheStore = makeOfflineCacheStore
+        self.makeDownloadStore = makeDownloadStore
         self.makeDirectorySearchCooldownState = makeDirectorySearchCooldownState
         self.makeChapterCommentsRepository = makeChapterCommentsRepository
         self.makeContentCoverStore = makeContentCoverStore
@@ -64,7 +64,7 @@ struct MangaReaderViewModelDependencies {
             makeProjectionLoader: { await dependencies.makeProjectionLoader() },
             makeDirectoryRepository: { await dependencies.makeDirectoryRepository() },
             makeDirectoryStore: { dependencies.mangaDirectoryStore },
-            makeOfflineCacheStore: { dependencies.offlineCacheStore },
+            makeDownloadStore: { dependencies.downloadStore },
             makeDirectorySearchCooldownState: { dependencies.mangaDirectorySearchCooldownState },
             makeChapterCommentsRepository: { await dependencies.makeChapterCommentsRepository() },
             makeContentCoverStore: { dependencies.contentCoverStore },
@@ -142,7 +142,7 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private var committedSettings = MangaReaderSettings()
     @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
     @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
-    @ObservationIgnored private var offlineCacheOwnerName: String?
+    @ObservationIgnored private var downloadOwnerName: String?
     @ObservationIgnored private lazy var lifecycle: MangaReaderLifecycleCoordinator = MangaReaderLifecycleCoordinator { [weak self] in
         guard let self else { return }
         navigation.invalidatePendingNavigation()
@@ -280,7 +280,7 @@ public final class MangaReaderViewModel {
             publishPresentation: { [weak self] nextPresentation, previousProgressSnapshot in
                 self?.publishPresentation(nextPresentation, previousProgressSnapshot: previousProgressSnapshot)
             },
-            offlineCacheOwnerName: { [weak self] in self?.offlineCacheOwnerName }
+            downloadOwnerName: { [weak self] in self?.downloadOwnerName }
         )
     )
 
@@ -361,7 +361,7 @@ public final class MangaReaderViewModel {
             projectionLoader: await dependencies.makeProjectionLoader(),
             directoryRepository: await dependencies.makeDirectoryRepository(),
             directoryStore: dependencies.makeDirectoryStore(),
-            offlineCacheStore: dependencies.makeOfflineCacheStore(),
+            downloadStore: dependencies.makeDownloadStore(),
             settings: committedSettings,
             directoryWorkflowConfiguration: directoryWorkflowConfiguration,
             directorySearchCooldownState: dependencies.makeDirectorySearchCooldownState()
@@ -376,7 +376,7 @@ public final class MangaReaderViewModel {
         guard lifecycle.accepts(request) else { return false }
         presentation = preparedPresentation
         currentStableReadingPosition = stableReadingPosition(from: presentation)
-        updateOfflineCacheOwnerName(from: presentation)
+        updateDownloadOwnerName(from: presentation)
         directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
         if workflow.shouldAutoUpdateDirectoryAfterPrepare {
             directoryLane.startAutomaticDirectoryUpdate()
@@ -398,7 +398,7 @@ public final class MangaReaderViewModel {
         guard await lifecycle.resetForRetry() else { return }
         workflow = nil
         imageLoader = nil
-        offlineCacheOwnerName = nil
+        downloadOwnerName = nil
         navigation.resetHistory()
         currentStableReadingPosition = nil
         lastQueuedProgressSnapshot = nil
@@ -597,7 +597,7 @@ public final class MangaReaderViewModel {
     }
 
     func imageSource(for page: MangaReaderPageProjection) -> YamiboImageSource {
-        let scope = offlineCacheOwnerName.flatMap { ownerName in
+        let scope = downloadOwnerName.flatMap { ownerName in
             YamiboImageOfflineScope(tid: page.tid, ownerName: ownerName)
         }
         return page.mangaReaderImageSource(offlineScope: scope)
@@ -1016,7 +1016,7 @@ public final class MangaReaderViewModel {
         if nextPresentation != presentation {
             presentation = nextPresentation
         }
-        updateOfflineCacheOwnerName(from: nextPresentation)
+        updateDownloadOwnerName(from: nextPresentation)
         currentStableReadingPosition = stableReadingPosition(from: nextPresentation)
         // Every page change funnels through here, and the bookmark glyph
         // describes the CURRENT page. Without this it keeps describing whatever
@@ -1048,12 +1048,12 @@ public final class MangaReaderViewModel {
         }
     }
 
-    private func updateOfflineCacheOwnerName(from presentation: MangaReaderPresentation) {
+    private func updateDownloadOwnerName(from presentation: MangaReaderPresentation) {
         guard case let .loaded(loaded) = presentation.state else {
-            offlineCacheOwnerName = nil
+            downloadOwnerName = nil
             return
         }
-        offlineCacheOwnerName = loaded.directoryID?.rawValue
+        downloadOwnerName = loaded.directoryID?.rawValue
     }
 
     private func currentPageIndex(in presentation: MangaReaderPresentation) -> Int? {
@@ -1127,7 +1127,7 @@ public final class MangaReaderViewModel {
             initialPage: currentPage.localIndex,
             directoryName: directoryName,
             directoryID: loaded.directoryID,
-            offlineCacheFavoriteID: context.offlineCacheFavoriteID,
+            downloadFavoriteID: context.downloadFavoriteID,
             isPreview: context.isPreview,
             isSmartModeEnabled: context.isSmartModeEnabled,
             forumID: context.forumID

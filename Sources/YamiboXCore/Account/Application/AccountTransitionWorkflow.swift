@@ -9,7 +9,7 @@ struct AccountTransitionWorkflow: Sendable {
     let syncCoordinator: WebDAVSyncCoordinator
     let lifecycle: AccountTransitionLifecycle
     let unread: MessageUnreadWorkflow
-    let stopOfflineCache: @Sendable () async throws -> Void
+    let stopDownload: @Sendable () async throws -> Void
     let clearAccountCaches: @Sendable () async throws -> Void
     let clearWebData: @Sendable (WebDataCleanup) async -> Void
 
@@ -23,7 +23,7 @@ struct AccountTransitionWorkflow: Sendable {
             try await syncCoordinator.reset {
                 do {
                     await unread.prepareForAccountChange()
-                    try await stopOfflineCache()
+                    try await stopDownload()
                     try await lifecycle.willChange()
                     try await clearAccountCaches()
                     try Task.checkCancellation()

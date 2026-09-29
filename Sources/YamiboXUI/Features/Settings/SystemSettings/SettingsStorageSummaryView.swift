@@ -94,7 +94,7 @@ private extension SettingsStorageCategory {
         case .progress: .green
         case .history: .cyan
         case .directories: .indigo
-        case .offline: .orange
+        case .downloads: .orange
         }
     }
 }

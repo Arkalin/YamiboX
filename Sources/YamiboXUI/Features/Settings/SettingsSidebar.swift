@@ -242,7 +242,7 @@ struct SettingsCategoryPage: View {
             SettingsStorageView(
                 dependencies: dependencies,
                 viewModel: viewModel.storage,
-                offlineCacheManagement: viewModel.offlineCacheManagement,
+                downloadManagement: viewModel.downloadManagement,
                 mangaDirectoryManagement: viewModel.mangaDirectoryManagement,
                 onReset: onReset
             )

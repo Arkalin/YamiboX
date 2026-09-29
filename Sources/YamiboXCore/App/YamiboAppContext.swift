@@ -7,6 +7,12 @@
 /// `AppContinuityWorkflow`). Feature views and view models receive their
 /// `*Dependencies` package instead of this context.
 public final class YamiboAppContext: Sendable {
+    /// The app opens storage before constructing stores so migration failures can be
+    /// shown and retried without exposing a partially upgraded runtime.
+    public static func prepareDownloadStorage() throws -> DatabasePool {
+        try YamiboDatabase.openPool()
+    }
+
     let sessionStore: SessionStore
     let profileStore: YamiboProfileStore
     let checkInStore: YamiboCheckInStore
@@ -34,17 +40,17 @@ public final class YamiboAppContext: Sendable {
     let mangaDirectoryStore: MangaDirectoryStore
     let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     let mangaReaderProjectionStore: MangaReaderProjectionStore
-    let offlineCacheStore: any OfflineCacheStoring
+    let downloadStore: any DownloadStoring
     let forumCacheStore: ForumCacheStore
     public let imagePipeline: YamiboImagePipeline
     private let ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)?
     let httpCache: URLCache
-    public let offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport
-    private let offlineCacheRunObserver: (any OfflineCacheQueueRunObserving)?
+    public let downloadBackgroundDownloadTransport: DownloadBackgroundTransport
+    private let downloadRunObserver: (any DownloadQueueRunObserving)?
     /// The single pool for `yamibox.sqlite`; every GRDB-backed store receives this instance.
     let databasePool: DatabasePool
     let session: URLSession
-    private let offlineCacheQueueExecutorBox: OfflineCacheQueueExecutorBox
+    private let downloadQueueExecutorBox: DownloadQueueExecutorBox
     private let accountTransitionWorkflow: AccountTransitionWorkflow
     private let dataResetWorkflow: AppDataResetWorkflow
     private let websiteDataClearer: (any WebsiteDataClearing)?
@@ -73,11 +79,11 @@ public final class YamiboAppContext: Sendable {
         mangaDirectoryStore: MangaDirectoryStore? = nil,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState = MangaDirectorySearchCooldownState(),
         mangaReaderProjectionStore: MangaReaderProjectionStore? = nil,
-        offlineCacheStore: (any OfflineCacheStoring)? = nil,
+        downloadStore: (any DownloadStoring)? = nil,
         forumCacheStore: ForumCacheStore? = nil,
         ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)? = nil,
-        offlineCacheBackgroundDownloadTransport: OfflineCacheBackgroundDownloadTransport? = nil,
-        offlineCacheRunObserver: (any OfflineCacheQueueRunObserving)? = nil,
+        downloadBackgroundDownloadTransport: DownloadBackgroundTransport? = nil,
+        downloadRunObserver: (any DownloadQueueRunObserving)? = nil,
         databasePool: DatabasePool? = nil,
         grdbRootDirectory: URL? = nil,
         cachesRootDirectory: URL? = nil,
@@ -89,8 +95,8 @@ public final class YamiboAppContext: Sendable {
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         httpCache: URLCache = .shared
     ) {
-        let queueExecutors = OfflineCacheQueueExecutorBox()
-        self.offlineCacheQueueExecutorBox = queueExecutors
+        let queueExecutors = DownloadQueueExecutorBox()
+        self.downloadQueueExecutorBox = queueExecutors
         nonisolated(unsafe) let profileDefaults = uiDefaults
         let profileStore = profileStore ?? sessionStore.accountStore.map { YamiboProfileStore(accountStore: $0) }
             ?? YamiboProfileStore(defaults: profileDefaults)
@@ -112,9 +118,9 @@ public final class YamiboAppContext: Sendable {
         self.settingsStore = settingsStore
         self.webDAVSyncSettingsStore = webDAVSyncSettingsStore
         self.readerResumeRouteStore = readerResumeRouteStore
-        let resolvedOfflineCacheStore = offlineCacheStore ?? OfflineCacheStore(
+        let resolvedDownloadStore = downloadStore ?? DownloadStore(
             databasePool: resolvedGRDBDatabasePool,
-            baseDirectory: Self.prepareOfflineCacheDirectory(rootDirectory: resolvedGRDBRootDirectory)
+            baseDirectory: Self.prepareDownloadDirectory(rootDirectory: resolvedGRDBRootDirectory)
         )
         self.localFavoriteLibraryStore = localFavoriteLibraryStore ?? FavoriteLibraryStore(databasePool: resolvedGRDBDatabasePool)
         let resolvedFavoriteUpdateStore = favoriteUpdateStore ?? FavoriteUpdateStore(databasePool: resolvedGRDBDatabasePool)
@@ -147,12 +153,12 @@ public final class YamiboAppContext: Sendable {
                 bookmarks.notifyIdentityMigrationCommitted()
                 covers.notifyIdentityMigrationCommitted()
                 history.notifyIdentityMigrationCommitted()
-                resolvedOfflineCacheStore.notifyIdentityMigrationCommitted()
+                resolvedDownloadStore.notifyIdentityMigrationCommitted()
             }
         )
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.mangaReaderProjectionStore = mangaReaderProjectionStore ?? MangaReaderProjectionStore(diskCacheStore: diskCacheStore)
-        self.offlineCacheStore = resolvedOfflineCacheStore
+        self.downloadStore = resolvedDownloadStore
         self.forumCacheStore = forumCacheStore ?? ForumCacheStore(
             diskCacheStore: diskCacheStore
         )
@@ -181,12 +187,12 @@ public final class YamiboAppContext: Sendable {
             engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory),
             sessionStore: sessionStore,
             imageSession: imageSession,
-            offlineImages: resolvedOfflineCacheStore
+            offlineImages: resolvedDownloadStore
         )
         self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
-        self.offlineCacheBackgroundDownloadTransport = offlineCacheBackgroundDownloadTransport ?? OfflineCacheBackgroundDownloadTransport(sessionStore: sessionStore)
-        self.offlineCacheRunObserver = offlineCacheRunObserver
+        self.downloadBackgroundDownloadTransport = downloadBackgroundDownloadTransport ?? DownloadBackgroundTransport(sessionStore: sessionStore)
+        self.downloadRunObserver = downloadRunObserver
         self.session = session
         self.wafRecoverer = wafRecoverer
         let webDataCleaner = AccountWebDataCleaner(session: session, httpCache: httpCache, websiteDataClearer: websiteDataClearer)
@@ -195,7 +201,7 @@ public final class YamiboAppContext: Sendable {
             syncCoordinator: webDAVSyncSettingsStore.syncCoordinator,
             lifecycle: accountTransitionLifecycle,
             unread: messageUnreadWorkflow,
-            stopOfflineCache: { try await queueExecutors.invalidate() },
+            stopDownload: { try await queueExecutors.invalidate() },
             clearAccountCaches: { [store = self.forumCacheStore] in try await store.clearAccountCaches() },
             clearWebData: { await webDataCleaner.clear($0) }
         )
@@ -221,7 +227,7 @@ public final class YamiboAppContext: Sendable {
                 .init("mangaDirectories") { [store = self.mangaDirectoryStore] in try await store.clearAll() },
                 .init("mangaSearchCooldown") { await mangaDirectorySearchCooldownState.clear() },
                 .init("mangaProjections") { [store = self.mangaReaderProjectionStore] in try await store.clearAll() },
-                .init("offlineCache") { try await resolvedOfflineCacheStore.clearAll() },
+                .init("download") { try await resolvedDownloadStore.clearAll() },
                 .init("forumCache") { [store = self.forumCacheStore] in try await store.clearAll() },
                 .init("favoriteBackgrounds") { [store = self.favoriteBackgroundImageStore] in try await store.deleteAll() },
                 .init("ordinaryImageCache") { [pipeline = self.imagePipeline] in
@@ -260,7 +266,7 @@ public final class YamiboAppContext: Sendable {
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
             mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
-            mangaOfflineCacheStore: offlineCacheStore,
+            mangaDownloadStore: downloadStore,
             makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
             makeMangaReaderProjectionLoader: { [self] in await makeMangaReaderProjectionLoader() },
@@ -334,14 +340,14 @@ public final class YamiboAppContext: Sendable {
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             mangaDirectoryStore: mangaDirectoryStore,
             mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
-            offlineCacheStore: offlineCacheStore,
+            downloadStore: downloadStore,
             contentCoverStore: contentCoverStore,
             makeProjectionLoader: { [self] in await makeMangaReaderProjectionLoader() },
             makeDirectoryRepository: { [self] in await makeMangaDirectoryRepository() },
             makeChapterCommentsRepository: { [self] in await makeReaderChapterCommentsRepository() },
-            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
+            makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
-            cacheQueue: offlineCacheQueueDependencies,
+            downloadQueue: downloadQueueDependencies,
             like: likeLibraryDependencies,
             imagePipeline: imagePipeline
         )
@@ -354,22 +360,22 @@ public final class YamiboAppContext: Sendable {
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
             browsingHistoryWorkflow: browsingHistoryWorkflow,
-            offlineCacheStore: offlineCacheStore,
+            downloadStore: downloadStore,
             contentCoverStore: contentCoverStore,
             makeNovelReaderRepository: { [self] in await makeNovelReaderRepository() },
             makeChapterCommentsRepository: { [self] in await makeReaderChapterCommentsRepository() },
-            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
-            cacheQueue: offlineCacheQueueDependencies,
+            makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() },
+            downloadQueue: downloadQueueDependencies,
             like: likeLibraryDependencies,
             imagePipeline: imagePipeline
         )
     }
 
-    public var offlineCacheQueueDependencies: OfflineCacheQueueDependencies {
-        OfflineCacheQueueDependencies(
-            offlineCacheStore: offlineCacheStore,
+    public var downloadQueueDependencies: DownloadQueueDependencies {
+        DownloadQueueDependencies(
+            downloadStore: downloadStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() }
+            makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() }
         )
     }
 
@@ -380,10 +386,10 @@ public final class YamiboAppContext: Sendable {
             messageUnreadWorkflow: messageUnreadWorkflow,
             checkInStore: checkInStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            offlineCacheStore: offlineCacheStore,
+            downloadStore: downloadStore,
             makeAccountService: { [self] in makeAccountService() },
             makeCheckInService: { [self] in makeCheckInService() },
-            makeOfflineCacheQueueExecutor: { [self] in await makeOfflineCacheQueueExecutor() },
+            makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() },
             imagePipeline: imagePipeline,
             accountSwitcher: accountSwitcher
         )
@@ -401,7 +407,7 @@ public final class YamiboAppContext: Sendable {
             contentCoverStore: contentCoverStore,
             checkInStore: checkInStore,
             favoriteUpdateStore: favoriteUpdateStore,
-            offlineCacheStore: offlineCacheStore,
+            downloadStore: downloadStore,
             clearOrdinaryImageCache: { [self] in await clearOrdinaryImageCache() },
             ordinaryImageCacheUsageBytes: { [imagePipeline, ordinaryImageCache] in
                 let dataBytes = await imagePipeline.totalDiskUsageBytes()
@@ -458,12 +464,12 @@ public final class YamiboAppContext: Sendable {
             client: await makeClient(),
             cacheStore: novelReaderCacheStore,
             forumCacheStore: forumCacheStore,
-            offlineCacheStore: offlineCacheStore,
+            downloadStore: downloadStore,
             novelOfflineAutoRefreshEnabled: { [settingsStore] in
-                await settingsStore.load().novelOfflineCache.isAutoRefreshEnabled
+                await settingsStore.load().novelDownload.isAutoRefreshEnabled
             },
             novelOfflineRetainsInlineImages: { [settingsStore] in
-                await settingsStore.load().novelOfflineCache.retainsInlineImages
+                await settingsStore.load().novelDownload.retainsInlineImages
             }
         )
     }
@@ -498,7 +504,7 @@ public final class YamiboAppContext: Sendable {
             client: await makeClient(),
             projectionStore: mangaReaderProjectionStore,
             forumCacheStore: forumCacheStore,
-            offlineCacheStore: offlineCacheStore
+            downloadStore: downloadStore
         )
     }
 
@@ -506,29 +512,29 @@ public final class YamiboAppContext: Sendable {
         YamiboMangaDirectoryRepository(client: await makeClient())
     }
 
-    public func makeOfflineCacheQueueExecutor() async -> OfflineCacheQueueExecutor {
+    public func makeDownloadQueueExecutor() async -> DownloadQueueExecutor {
         let snapshot = try? await sessionStore.snapshot()
         let generation = snapshot?.generation ?? UUID()
-        if let executor = await offlineCacheQueueExecutorBox.value(for: generation) {
+        if let executor = await downloadQueueExecutorBox.value(for: generation) {
             return executor
         }
 
-        let executor = OfflineCacheQueueExecutor(
-            store: offlineCacheStore,
-            mangaCacheStore: offlineCacheStore,
-            novelCacheStore: offlineCacheStore,
+        let executor = DownloadQueueExecutor(
+            store: downloadStore,
+            mangaDownloadStore: downloadStore,
+            novelDownloadStore: downloadStore,
             readerProjectionLoader: await makeMangaReaderProjectionLoader(),
             novelSourcePageLoader: await makeNovelReaderRepository(),
-            imageAcquirer: OfflineCacheImageAcquirer(
+            imageAcquirer: DownloadImageAcquirer(
                 imagePipeline: imagePipeline,
-                backgroundTransport: offlineCacheBackgroundDownloadTransport
+                backgroundTransport: downloadBackgroundDownloadTransport
             ),
-            runObserver: offlineCacheRunObserver,
+            runObserver: downloadRunObserver,
             isSessionCurrent: { [sessionStore] in
                 await sessionStore.isCurrentGeneration(generation)
             }
         )
-        return await offlineCacheQueueExecutorBox.setIfEmpty(executor, generation: generation) { [sessionStore] in
+        return await downloadQueueExecutorBox.setIfEmpty(executor, generation: generation) { [sessionStore] in
             await sessionStore.isCurrentGeneration(generation)
         }
     }
@@ -682,27 +688,27 @@ public final class YamiboAppContext: Sendable {
     /// the root (yamibox.sqlite, favorite-background, like-images) is user data
     /// that participates in backups. Idempotent; failures are logged because
     /// the store lazily recreates the directory on first write anyway.
-    private static func prepareOfflineCacheDirectory(
+    private static func prepareDownloadDirectory(
         rootDirectory: URL,
         fileManager: FileManager = .default
     ) -> URL {
-        let directory = offlineCacheDirectory(rootDirectory: rootDirectory)
+        let directory = downloadDirectory(rootDirectory: rootDirectory)
         do {
-            try OfflineCacheStore.createBackupExcludedDirectory(at: directory, fileManager: fileManager)
+            try DownloadStore.createBackupExcludedDirectory(at: directory, fileManager: fileManager)
         } catch {
-            YamiboLog.persistence.error("Failed to prepare the backup-excluded offline cache directory: \(error)")
+            YamiboLog.persistence.error("Failed to prepare the backup-excluded download directory: \(error)")
         }
         return directory
     }
 
-    private static func offlineCacheDirectory(rootDirectory: URL) -> URL {
-        rootDirectory.appendingPathComponent("offline-cache", isDirectory: true)
+    private static func downloadDirectory(rootDirectory: URL) -> URL {
+        rootDirectory.appendingPathComponent("downloads", isDirectory: true)
     }
 
 }
 
-private actor OfflineCacheQueueExecutorBox {
-    private var values: [UUID: OfflineCacheQueueExecutor] = [:]
+private actor DownloadQueueExecutorBox {
+    private var values: [UUID: DownloadQueueExecutor] = [:]
     private var identityChangeDepth = 0
     private var isInvalidating = false
 
@@ -725,7 +731,7 @@ private actor OfflineCacheQueueExecutorBox {
         for executor in Array(values.values) { await executor.finishIdentityChange() }
     }
 
-    func value(for generation: UUID) -> OfflineCacheQueueExecutor? { values[generation] }
+    func value(for generation: UUID) -> DownloadQueueExecutor? { values[generation] }
 
     func invalidate() async throws {
         isInvalidating = true
@@ -743,10 +749,10 @@ private actor OfflineCacheQueueExecutorBox {
     }
 
     func setIfEmpty(
-        _ executor: OfflineCacheQueueExecutor,
+        _ executor: DownloadQueueExecutor,
         generation: UUID,
         isCurrent: @Sendable () async -> Bool
-    ) async -> OfflineCacheQueueExecutor {
+    ) async -> DownloadQueueExecutor {
         guard await isCurrent(), !isInvalidating else {
             await executor.rejectBeforeUse()
             return executor
@@ -757,7 +763,7 @@ private actor OfflineCacheQueueExecutorBox {
         values[generation] = executor
         if identityChangeDepth > 0 {
             do { try await executor.suspendForIdentityChange() }
-            catch { YamiboLog.offlineCache.error("Could not suspend new queue executor: \(error)") }
+            catch { YamiboLog.download.error("Could not suspend new queue executor: \(error)") }
         }
         return executor
     }

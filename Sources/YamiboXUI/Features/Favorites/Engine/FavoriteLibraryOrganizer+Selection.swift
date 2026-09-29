@@ -145,7 +145,7 @@ extension FavoriteLibraryOrganizer {
 
     /// Whether every currently-visible favorite/collection is already
     /// selected — this is a plain count comparison, not a per-item
-    /// membership diff (mirrors `ReaderCacheSelectionState
+    /// membership diff (mirrors `ReaderDownloadSelectionState
     /// .isAllSelected` in the cache sheets' own select-all button).
     var isAllVisibleSelected: Bool {
         let favoriteIDs = selectableFavoriteIDs

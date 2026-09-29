@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).offlineCache.continuedProcessing.*</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).download.continuedProcessing.*</string>
 		<string>com.arkalin.YamiboX.favoriteUpdates.refresh</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>

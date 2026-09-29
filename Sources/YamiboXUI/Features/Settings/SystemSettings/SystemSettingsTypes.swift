@@ -9,27 +9,27 @@ enum SystemSettingsAction: Equatable {
     case clearingImageCache
     case clearingReadingProgress
     case clearingBrowsingHistory
-    case clearingOfflineCache
+    case clearingDownload
     case clearingMangaDirectory
     case resettingApplication
 }
 
-struct OfflineCacheManagementRow: Hashable, Identifiable {
-    var id: OfflineCacheGroupID
-    var readerKind: OfflineCacheReaderKind
+struct DownloadManagementRow: Hashable, Identifiable {
+    var id: DownloadGroupID
+    var readerKind: DownloadReaderKind
     var title: String
     var byteCount: Int
-    var cachedCount: Int
+    var downloadedCount: Int
     var pendingCount: Int
     var failedCount: Int
-    var entries: [OfflineCacheManagementEntry]
+    var entries: [DownloadManagementEntry]
 
-    init(group: OfflineCacheManagementGroup) {
+    init(group: DownloadManagementGroup) {
         id = group.id
         readerKind = group.id.readerKind
         title = group.title
         byteCount = group.byteCount
-        cachedCount = group.cachedCount
+        downloadedCount = group.downloadedCount
         pendingCount = group.pendingCount
         failedCount = group.failedCount
         entries = group.entries
@@ -44,27 +44,27 @@ struct OfflineCacheManagementRow: Hashable, Identifiable {
 
     var summaryText: String {
         var pieces = [
-            L10n.string("settings.offline_cache.entry_count_format", entries.count),
+            L10n.string("settings.download.entry_count_format", entries.count),
             byteCountLabel
         ]
         if pendingCount > 0 {
-            pieces.append(L10n.string("settings.offline_cache.pending_count_format", pendingCount))
+            pieces.append(L10n.string("settings.download.pending_count_format", pendingCount))
         }
         if failedCount > 0 {
-            pieces.append(L10n.string("settings.offline_cache.failed_count_format", failedCount))
+            pieces.append(L10n.string("settings.download.failed_count_format", failedCount))
         }
         return pieces.joined(separator: " · ")
     }
 }
 
-struct OfflineCacheManagementSelectionActionState: Equatable {
+struct DownloadManagementSelectionActionState: Equatable {
     let selectedGroupCount: Int
     let canDelete: Bool
 }
 
-struct OfflineCacheManagementConfirmation: Identifiable, Equatable {
-    var groupIDs: [OfflineCacheGroupID]
-    var entryIDs: [OfflineCacheEntryID]
+struct DownloadManagementConfirmation: Identifiable, Equatable {
+    var groupIDs: [DownloadGroupID]
+    var entryIDs: [DownloadEntryID]
     var titles: [String]
 
     var id: String {
@@ -75,7 +75,7 @@ struct OfflineCacheManagementConfirmation: Identifiable, Equatable {
         return [groupPart, entryPart].filter { !$0.isEmpty }.joined(separator: "#")
     }
 
-    init(groupIDs: [OfflineCacheGroupID] = [], entryIDs: [OfflineCacheEntryID] = [], titles: [String]) {
+    init(groupIDs: [DownloadGroupID] = [], entryIDs: [DownloadEntryID] = [], titles: [String]) {
         self.groupIDs = groupIDs
         self.entryIDs = entryIDs
         self.titles = titles
@@ -83,25 +83,25 @@ struct OfflineCacheManagementConfirmation: Identifiable, Equatable {
 
     var title: String {
         if isEntryDeletion {
-            return L10n.string("settings.offline_cache.confirm_entry_title")
+            return L10n.string("settings.download.confirm_entry_title")
         }
         if groupIDs.count == 1 {
-            return L10n.string("settings.offline_cache.confirm_single_title")
+            return L10n.string("settings.download.confirm_single_title")
         }
-        return L10n.string("settings.offline_cache.confirm_batch_title")
+        return L10n.string("settings.download.confirm_batch_title")
     }
 
     var message: String {
         if isEntryDeletion {
             if let firstTitle = titles.first, entryIDs.count == 1 {
-                return L10n.string("settings.offline_cache.confirm_entry_message", firstTitle)
+                return L10n.string("settings.download.confirm_entry_message", firstTitle)
             }
-            return L10n.string("settings.offline_cache.confirm_entry_batch_message", entryIDs.count)
+            return L10n.string("settings.download.confirm_entry_batch_message", entryIDs.count)
         }
         if let firstTitle = titles.first, groupIDs.count == 1 {
-            return L10n.string("settings.offline_cache.confirm_single_message", firstTitle)
+            return L10n.string("settings.download.confirm_single_message", firstTitle)
         }
-        return L10n.string("settings.offline_cache.confirm_batch_message", groupIDs.count)
+        return L10n.string("settings.download.confirm_batch_message", groupIDs.count)
     }
 
     private var isEntryDeletion: Bool {
@@ -225,7 +225,7 @@ struct MangaDirectoryManagementConfirmation: Identifiable, Equatable {
 }
 
 /// Builds the manga-directory management selection-mode bottom bar's single
-/// "delete selected" action, mirroring `OfflineCacheManagementSelectionActions`.
+/// "delete selected" action, mirroring `DownloadManagementSelectionActions`.
 enum MangaDirectoryManagementSelectionActions {
     static func delete(
         selectedCount: Int,

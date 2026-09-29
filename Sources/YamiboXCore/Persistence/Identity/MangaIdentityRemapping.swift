@@ -18,7 +18,7 @@ enum MangaIdentityRemapping {
         try MangaIdentityRemapping.normalizeDeletionState(table: "manga_directory_sync_state", directoryKeys: true, snapshot: snapshot, legacy: legacy, in: db)
         try ContentCoverIdentityRemapping.normalizeDeletionState(snapshot: snapshot, legacy: legacy, in: db)
         try BrowsingHistoryIdentityRemapping.normalizeDeletionState(snapshot: snapshot, legacy: legacy, in: db)
-        try OfflineCacheIdentityRemapping.normalize(snapshot: snapshot, legacy: legacy, in: db)
+        try DownloadIdentityRemapping.normalize(snapshot: snapshot, legacy: legacy, in: db)
     }
 
     static func normalizeDeletionState(table: String, directoryKeys: Bool = false, snapshot: MangaDirectoryIdentitySnapshot, legacy: Bool, in db: Database) throws {

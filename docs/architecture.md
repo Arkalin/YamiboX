@@ -22,7 +22,7 @@ UI 不直接导入 GRDB、Kanna。另外对小说 Application 调用喜欢 Store
 
 编辑器文档的纯文本解析规则随 `Forum/Domain` 中的文档模型放置。
 外部 BBCode/HTML 通过 `Forum/Data/Composer/ForumComposerMarkupCodec` 转为编辑模型；Domain 不调用 Data 解析器。颜色、字号和内联样式规则属于 Domain，HTML 元素适配留在 Data。
-阅读器页面投影、目录编辑草稿、收藏排序选项和缓存标识规则随 Domain 放置；离线缓存能力契约不依赖 Application 中的实现。
+阅读器页面投影、目录编辑草稿、收藏排序选项和缓存标识规则随 Domain 放置；下载能力契约不依赖 Application 中的实现。
 阅读位置排序基础算法属于 `Reader/Shared/Domain`，段落标识解析属于 `Reader/Novel/Domain`；
 Bookmark、Like 各自保留锚点适配，不互相引用对方的内部排序实现。
 
@@ -67,7 +67,7 @@ SQL 放在 Data 层，WebDAV payload 仅负责传输封装。普通访问写入�
 `Persistence/SyncDeletionState+Persistence`；已有编码、SQL 和历史迁移规则不变。
 
 Core 保留系统能力的协议及业务数据，不承载系统通知和后台任务调度的具体实现。
-例如 `FavoriteUpdateNotifying` 和 `OfflineCacheQueueRunObserving` 定义调用契约，UI 提供平台实现。
+例如 `FavoriteUpdateNotifying` 和 `DownloadQueueRunObserving` 定义调用契约，UI 提供平台实现。
 
 `YamiboAppContext` 装配账号转换与数据重置，不直接执行这些流程。
 `AccountTransitionWorkflow` 保持同步协调、停止任务、提交、清理和发布的顺序及失败语义；
@@ -132,9 +132,9 @@ UIKit 与 SwiftUI 更新回调的调度器属于 `Platform/UIKit`，不由阅读
 
 `FavoriteUpdateStore` 的关键读取通过抛错区分失败与空数据；刷新失败保留最后有效快照。
 收藏更新只有在结果提交与终态保存均成功后才发布完成；持久化失败进入失败状态并允许重试。
-普通 Store 与离线缓存共用 `StoreInvalidationBroadcaster` 的有界多播内核，
+普通 Store 与下载存储共用 `StoreInvalidationBroadcaster` 的有界多播内核，
 每个订阅者最多保留一个待处理的失效信号，业务接口分别保留 `changeID` 与 `Void`。
-离线缓存身份迁移提交后的失效通知通过 `OfflineCacheStoreCore` 契约调用；替代实现或包装器必须实现该通知，不再依赖向具体 Store 转换。
+下载身份迁移提交后的失效通知通过 `DownloadStoreCore` 契约调用；替代实现或包装器必须实现该通知，不再依赖向具体 Store 转换。
 
 第三方产品依赖与实际导入保持一致：Core 使用 GRDB、Kanna、Nuke，UI 直接依赖 Nuke，不引入未使用的 NukeUI。
 
@@ -145,15 +145,23 @@ UIKit 与 SwiftUI 更新回调的调度器属于 `Platform/UIKit`，不由阅读
 防止读取旧快照后覆盖并发的编辑、删除或同步结果。
 
 阅读器设置与外设面板只接收 `SettingsStore`，论坛导航宿主由阅读会话显式传入 `ForumNavigationDependencies`，再向页面投影 `ForumDependencies`。
-下载队列使用 `OfflineCacheQueueDependencies`，小说和漫画不再为了缓存面板携带账号依赖包；
+下载队列使用 `DownloadQueueDependencies`，小说和漫画不再为了下载面板携带账号依赖包；
 历史页使用 `BrowsingHistoryDependencies`，由 Forum 或 Library 的入口依赖投影得到。
-小说缓存协调器只依赖 `OfflineCacheQueueStoring` 读取队列和订阅变更，不要求漫画、图片或缓存管理能力。
-小说与漫画在各自的入队事务内完成规范化、缓存完整性和已有任务检查，再共用 `enqueueNewWork` 创建队列记录并保存；提交成功后的通知仍由调用方负责。
+小说下载协调器只依赖 `DownloadQueueStoring` 读取队列和订阅变更，不要求漫画、图片或下载管理能力。
+小说与漫画在各自的入队事务内完成规范化、下载完整性和已有任务检查，再共用 `enqueueNewWork` 创建队列记录并保存；提交成功后的通知仍由调用方负责。
 小说阅读器从依赖包到 ViewModel、workflow 均使用 `NovelReadingPageRepository` 契约。
 帖子、用户空间、消息、积分和博客的页面能力契约定义在 Core，`ForumDependencies` 的工厂返回对应能力协议；UI 不再声明 Repository 的协议遵循，正式装配与替代实现使用相同入口。
 功能目录不通过 `appModel.appContext` 查找服务；通知响应的依赖也由 AppEntry 注入。
 
-小说与漫画缓存页共用 `ReaderCacheSelectionSection` 的选择模式、单项选择和列表结构，以及 `ReaderCacheStateBadge` 的状态展示；下载动作、业务状态与行内容仍由各自页面负责。
+小说与漫画下载页共用 `ReaderDownloadSelectionSection` 的选择模式、单项选择和列表结构，以及 `ReaderDownloadStateBadge` 的状态展示；下载动作、业务状态与行内容仍由各自页面负责。
+
+### 下载命名与升级边界
+
+用户主动保存的离线内容使用 `Download` 命名。论坛页、projection、排版和临时图片等技术缓存仍使用原来的 Cache 名称、键格式和路径；共享的 `ReaderCacheKeyCodec` 与 `NovelReaderCacheIdentity` 不改名。
+
+`downloads.v1.naming` 在冻结的漫画身份迁移之后执行，将下载专用表及索引从 `offline_cache_*` 改为 `download_*`，并迁移同级 `offline-cache` 目录至 `downloads`。历史迁移保留原 SQL 与旧路径；改名迁移保持外键检查开启，确保外键引用随表名更新。通常直接原子移动目录，避免复制大量文件；新旧目录并存时先复制核验，全部通过后才移除旧目录。同名异内容报错，启动页允许重试，不创建空库代替失败迁移。新目录继续排除备份。
+
+设置兼容读取旧 `novelOfflineCache` 字段，成功解码后写为 `novelDownload`。旧系统下载会话仅用于取消和收尾，新任务使用 `download` 标识。升级保留已完成文件及队列记录，队列暂停，用户确认继续后恢复；不保留未完成单个文件的传输进度。
 
 注解删除、笔记修改与书签操作由 `ReaderAnnotationService` 执行。删除喜欢先提交元数据，成功后才清理图片；
 服务通过 `ReaderLikeMutating`、`ReaderBookmarkMutating` 和 `LikeImageWriting` 分离元数据与文件 I/O；

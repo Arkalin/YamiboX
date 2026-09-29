@@ -124,7 +124,7 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
 
     /// Selecting every visible row and deleting the selection is how this
     /// screen supports "clear all" — the same select-all-then-delete flow the
-    /// offline cache management screen already uses, rather than a second,
+    /// download management screen already uses, rather than a second,
     /// separate destructive action.
     func toggleAllMangaDirectoryManagementRows() {
         let visibleIDs = Set(mangaDirectoryManagementRows.map(\.id))

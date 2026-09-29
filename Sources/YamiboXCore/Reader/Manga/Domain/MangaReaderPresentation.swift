@@ -107,7 +107,7 @@ public struct MangaDirectoryPanelCommandState: Hashable, Sendable {
         }
         return isSearchMode(strategy: strategy)
             ? L10n.string("manga.global_search")
-            : L10n.string("reader.cache_action.update")
+            : L10n.string("reader.download_action.update")
     }
 }
 

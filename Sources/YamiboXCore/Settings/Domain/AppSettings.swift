@@ -5,7 +5,7 @@ import Foundation
 /// `SettingsStore` falls back to defaults when stored data fails to decode.
 public struct AppSettings: Codable, Hashable, Sendable {
     public var novelReader: NovelReaderAppearanceSettings
-    public var novelOfflineCache: NovelOfflineCacheSettings
+    public var novelDownload: NovelDownloadSettings
     public var manga: MangaReaderSettings
     public var favorites: FavoriteLibrarySettings
     public var webBrowser: WebBrowserSettings
@@ -17,7 +17,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
-        novelOfflineCache: NovelOfflineCacheSettings = .init(),
+        novelDownload: NovelDownloadSettings = .init(),
         manga: MangaReaderSettings = .init(),
         favorites: FavoriteLibrarySettings = .init(),
         webBrowser: WebBrowserSettings = .init(),
@@ -28,7 +28,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         readingProgress: ReadingProgressSettings = .init()
     ) {
         self.novelReader = novelReader
-        self.novelOfflineCache = novelOfflineCache
+        self.novelDownload = novelDownload
         self.manga = manga
         self.favorites = favorites
         self.webBrowser = webBrowser
@@ -41,7 +41,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case novelReader
-        case novelOfflineCache
+        case novelDownload
         case manga
         case favorites
         case webBrowser
@@ -52,14 +52,20 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case readingProgress
     }
 
+    private enum LegacyCodingKeys: String, CodingKey {
+        case novelOfflineCache
+    }
+
     /// Fields added after the aggregate shipped are optional so legacy payloads
     /// retain their other settings. Malformed original fields keep the
     /// store's existing all-settings fallback behavior.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
         self.init(
             novelReader: try container.decode(NovelReaderAppearanceSettings.self, forKey: .novelReader),
-            novelOfflineCache: try container.decode(NovelOfflineCacheSettings.self, forKey: .novelOfflineCache),
+            novelDownload: try container.decodeIfPresent(NovelDownloadSettings.self, forKey: .novelDownload)
+                ?? legacy.decodeIfPresent(NovelDownloadSettings.self, forKey: .novelOfflineCache) ?? .init(),
             manga: try container.decode(MangaReaderSettings.self, forKey: .manga),
             favorites: try container.decode(FavoriteLibrarySettings.self, forKey: .favorites),
             webBrowser: try container.decode(WebBrowserSettings.self, forKey: .webBrowser),

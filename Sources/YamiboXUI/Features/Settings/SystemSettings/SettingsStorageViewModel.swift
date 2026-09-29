@@ -35,7 +35,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var webReaderCacheBytes: Int { storageUsage.webReaderCacheBytes }
     var contentCoverCacheBytes: Int { storageUsage.contentCoverCacheBytes }
     var mangaDirectoryCacheBytes: Int { storageUsage.mangaDirectoryCacheBytes }
-    var offlineCacheBytes: Int { storageUsage.offlineCacheBytes }
+    var downloadBytes: Int { storageUsage.downloadBytes }
     var imageCacheBytes: Int? { storageUsage.imageCacheBytes }
     var otherCacheBytes: Int? { storageUsage.otherCacheBytes }
     var readingProgressBytes: Int? { storageUsage.readingProgressBytes }
@@ -44,7 +44,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var webReaderCacheLabel: String { storageUsage.webReaderCacheLabel }
     var contentCoverCacheLabel: String { storageUsage.contentCoverCacheLabel }
     var mangaDirectoryCacheLabel: String { storageUsage.mangaDirectoryCacheLabel }
-    var offlineCacheLabel: String { storageUsage.offlineCacheLabel }
+    var downloadLabel: String { storageUsage.downloadLabel }
     var imageCacheLabel: String { storageUsage.imageCacheLabel }
     var otherCacheLabel: String { storageUsage.otherCacheLabel }
     var readingProgressLabel: String { storageUsage.readingProgressLabel }

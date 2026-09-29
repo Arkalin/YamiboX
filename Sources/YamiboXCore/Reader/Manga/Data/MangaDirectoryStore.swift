@@ -201,7 +201,7 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         }
     }
 
-    public func configureOfflineCacheIdentityChange(prepare: @escaping @Sendable () async throws -> Void, finish: @escaping @Sendable () async -> Void) {
+    public func configureDownloadIdentityChange(prepare: @escaping @Sendable () async throws -> Void, finish: @escaping @Sendable () async -> Void) {
         prepareIdentityChange = prepare
         finishIdentityChange = finish
     }
@@ -677,7 +677,7 @@ private func optionalDate(from value: Double?) -> Date? {
     value.map(Date.init(timeIntervalSince1970:))
 }
 
-// Same contract as `offlineCachePersistenceError`: domain errors pass through
+// Same contract as `downloadPersistenceError`: domain errors pass through
 // untouched, everything else is wrapped with the source error preserved as
 // `underlying` for logging.
 private func persistenceError(from error: Error) -> any Error {

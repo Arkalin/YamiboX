@@ -62,10 +62,10 @@ struct MineCheckInSection: View {
 }
 
 struct MineLibraryEntriesSection: View {
-    let offlineCacheQueueCount: Int
+    let downloadQueueCount: Int
     var unreadMessageCount: Int = 0
     let showMessages: () -> Void
-    let showOfflineCacheQueue: () -> Void
+    let showDownloadQueue: () -> Void
     let showMyLikes: () -> Void
     let showHistory: () -> Void
 
@@ -94,8 +94,8 @@ struct MineLibraryEntriesSection: View {
             MineEntryButtonRow(
                 title: L10n.string("mine.download_queue"),
                 systemImage: "arrow.down.circle.fill",
-                badgeText: offlineCacheQueueCount > 0 ? String(offlineCacheQueueCount) : nil,
-                action: showOfflineCacheQueue
+                badgeText: downloadQueueCount > 0 ? String(downloadQueueCount) : nil,
+                action: showDownloadQueue
             )
         }
     }

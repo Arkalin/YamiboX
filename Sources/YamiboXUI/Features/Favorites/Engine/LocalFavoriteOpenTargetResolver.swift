@@ -132,7 +132,7 @@ struct LocalFavoriteOpenTargetResolver {
                     initialPage: resume.initialPage,
                     directoryName: resume.directoryName,
                     directoryID: resume.directoryID,
-                    offlineCacheFavoriteID: latestItem.id,
+                    downloadFavoriteID: latestItem.id,
                     isSmartModeEnabled: smartModeEnabled,
                     forumID: latestItem.forumID
                 )

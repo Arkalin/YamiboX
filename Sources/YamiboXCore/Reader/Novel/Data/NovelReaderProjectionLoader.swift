@@ -23,7 +23,7 @@ actor NovelReaderProjectionLoader {
         client: YamiboClient,
         projectionStore: NovelReaderProjectionStore = NovelReaderProjectionStore(),
         forumCacheStore: ForumCacheStore = ForumCacheStore(),
-        offlineCacheStore: (any NovelOfflineCacheStoring)? = nil
+        downloadStore: (any NovelDownloadStoring)? = nil
     ) {
         // Uses the `ReaderProjectionLoader` default of not coalescing
         // in-flight requests: the novel workflow loads one web-view document
@@ -38,7 +38,7 @@ actor NovelReaderProjectionLoader {
                     client: client,
                     projectionStore: projectionStore,
                     forumCacheStore: forumCacheStore,
-                    offlineCacheStore: offlineCacheStore
+                    downloadStore: downloadStore
                 )
             )
         )
@@ -90,7 +90,7 @@ private struct NovelProjectionAdapter: ReaderThreadPageProjectionAdapter {
     let client: YamiboClient
     let projectionStore: NovelReaderProjectionStore
     let forumCacheStore: ForumCacheStore
-    let offlineCacheStore: (any NovelOfflineCacheStoring)?
+    let downloadStore: (any NovelDownloadStoring)?
 
     var authorScopeErrorContext: String { L10n.string("parsing_context.novel_author_scope") }
 
@@ -101,9 +101,9 @@ private struct NovelProjectionAdapter: ReaderThreadPageProjectionAdapter {
     func offlineSourcePage(
         for request: NovelPageRequest
     ) async -> ReaderProjectionOfflineSourcePageLoad<NovelProjectionIdentity, ForumThreadPage>? {
-        guard let offlineCacheStore else { return nil }
+        guard let downloadStore else { return nil }
         let normalizedRequestAuthorID = ReaderThreadPageProjectionLoadingStrategy<Self>.normalizedAuthorID(request.authorID)
-        guard let sourceSnapshot = await offlineCacheStore.novelOfflineSourcePageSnapshot(
+        guard let sourceSnapshot = await downloadStore.novelOfflineSourcePageSnapshot(
             threadID: request.threadID,
             view: request.view,
             authorID: normalizedRequestAuthorID

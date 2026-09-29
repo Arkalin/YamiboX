@@ -14,7 +14,7 @@ public struct SettingsDependencies: Sendable {
     public let contentCoverStore: ContentCoverStore
     public let checkInStore: YamiboCheckInStore
     public let favoriteUpdateStore: FavoriteUpdateStore
-    public let offlineCacheStore: any OfflineCacheStoring
+    public let downloadStore: any DownloadStoring
     public let clearOrdinaryImageCache: @Sendable () async -> Void
     public let ordinaryImageCacheUsageBytes: @Sendable () async -> Int
     public let httpCache: URLCache
@@ -34,7 +34,7 @@ public struct SettingsDependencies: Sendable {
         contentCoverStore: ContentCoverStore,
         checkInStore: YamiboCheckInStore,
         favoriteUpdateStore: FavoriteUpdateStore,
-        offlineCacheStore: any OfflineCacheStoring,
+        downloadStore: any DownloadStoring,
         clearOrdinaryImageCache: @escaping @Sendable () async -> Void,
         ordinaryImageCacheUsageBytes: @escaping @Sendable () async -> Int,
         resetApplicationData: @escaping @Sendable () async throws -> Void,
@@ -52,7 +52,7 @@ public struct SettingsDependencies: Sendable {
         self.contentCoverStore = contentCoverStore
         self.checkInStore = checkInStore
         self.favoriteUpdateStore = favoriteUpdateStore
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.clearOrdinaryImageCache = clearOrdinaryImageCache
         self.ordinaryImageCacheUsageBytes = ordinaryImageCacheUsageBytes
         self.httpCache = httpCache

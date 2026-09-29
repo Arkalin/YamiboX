@@ -138,7 +138,7 @@ public struct WebDAVSyncSettingsView: View {
 
     /// Hierarchy detail of the storage settings page: pushed onto the
     /// settings navigation stack rather than presented as a sheet, so back
-    /// navigation matches its sibling rows (e.g. offline cache management).
+    /// navigation matches its sibling rows (e.g. download management).
     public var body: some View {
         Form {
                 Section {

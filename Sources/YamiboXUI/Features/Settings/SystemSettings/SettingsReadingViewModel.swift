@@ -6,7 +6,7 @@ import YamiboXCore
 @MainActor
 @Observable
 final class SettingsReadingViewModel: AppSettingsPersisting {
-    var novelOfflineCache = NovelOfflineCacheSettings()
+    var novelDownload = NovelDownloadSettings()
     var chapterComments = ChapterCommentFilterSettings()
     var readingProgress = ReadingProgressSettings()
     var isEditingCommentRule = false
@@ -26,13 +26,13 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
     }
 
     func applyLoadedSettings(_ settings: AppSettings) {
-        novelOfflineCache = settings.novelOfflineCache
+        novelDownload = settings.novelDownload
         chapterComments = settings.chapterComments
         readingProgress = settings.readingProgress
     }
 
     func restoreDefaultsAfterApplicationReset() {
-        novelOfflineCache = NovelOfflineCacheSettings()
+        novelDownload = NovelDownloadSettings()
         chapterComments = ChapterCommentFilterSettings()
         readingProgress = ReadingProgressSettings()
     }
@@ -43,17 +43,17 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
         }
     }
 
-    // MARK: - Novel offline cache
+    // MARK: - Novel download
 
-    func updateNovelOfflineCacheRetainsInlineImages(_ retainsInlineImages: Bool) {
-        persistSettings(\.novelOfflineCache.retainsInlineImages, to: retainsInlineImages) {
-            $0.novelOfflineCache.retainsInlineImages = retainsInlineImages
+    func updateNovelDownloadRetainsInlineImages(_ retainsInlineImages: Bool) {
+        persistSettings(\.novelDownload.retainsInlineImages, to: retainsInlineImages) {
+            $0.novelDownload.retainsInlineImages = retainsInlineImages
         }
     }
 
-    func updateNovelOfflineCacheAutoRefreshEnabled(_ isAutoRefreshEnabled: Bool) {
-        persistSettings(\.novelOfflineCache.isAutoRefreshEnabled, to: isAutoRefreshEnabled) {
-            $0.novelOfflineCache.isAutoRefreshEnabled = isAutoRefreshEnabled
+    func updateNovelDownloadAutoRefreshEnabled(_ isAutoRefreshEnabled: Bool) {
+        persistSettings(\.novelDownload.isAutoRefreshEnabled, to: isAutoRefreshEnabled) {
+            $0.novelDownload.isAutoRefreshEnabled = isAutoRefreshEnabled
         }
     }
 

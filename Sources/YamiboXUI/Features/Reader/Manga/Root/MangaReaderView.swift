@@ -22,7 +22,7 @@ public struct MangaReaderView: View {
     @State private var companionPanel: MangaReaderCompanion?
     @State private var forumThreadOverlayItem: ForumThreadOverlayItem?
     @State private var isSettingsPresented = false
-    @State private var isCachePresented = false
+    @State private var isDownloadPresented = false
     /// Remembered for the reader session so reopening returns to the segment
     /// the user last looked at; nil means "not chosen yet".
     @State private var rememberedAnnotationSegment: ReaderAnnotationSegment?
@@ -232,8 +232,8 @@ public struct MangaReaderView: View {
                     onShowSettings: {
                         isSettingsPresented = true
                     },
-                    onShowCache: {
-                        isCachePresented = true
+                    onShowDownload: {
+                        isDownloadPresented = true
                     },
                     onToggleBookmark: {
                         Task { await model.toggleBookmarkForCurrentPage() }
@@ -327,9 +327,9 @@ public struct MangaReaderView: View {
                 controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent
             )
         }
-        .sheet(isPresented: $isCachePresented) {
+        .sheet(isPresented: $isDownloadPresented) {
             if case let .loaded(loaded) = model.presentation.state {
-                MangaReaderCacheSheet(
+                MangaReaderDownloadSheet(
                     context: context,
                     panel: loaded.directoryPanel,
                     dependencies: dependencies
@@ -482,7 +482,7 @@ public struct MangaReaderView: View {
             hasReadableContent: !loaded.pages.isEmpty,
             hasBlockingOverlay: companionPanel != nil
                 || isSettingsPresented
-                || isCachePresented
+                || isDownloadPresented
                 || noteEditTarget != nil
                 || forumThreadOverlayItem != nil,
             isDismissing: isDismissing,
@@ -493,7 +493,7 @@ public struct MangaReaderView: View {
     private var hasControlBlockingSheet: Bool {
         companionPanel != nil ||
             isSettingsPresented ||
-            isCachePresented ||
+            isDownloadPresented ||
             noteEditTarget != nil ||
             forumThreadOverlayItem != nil
     }
@@ -707,7 +707,7 @@ public struct MangaReaderView: View {
                 initialPage: anchor.pageLocalIndex,
                 directoryName: context.directoryName,
                 directoryID: model.currentDirectoryID,
-                offlineCacheFavoriteID: context.offlineCacheFavoriteID,
+                downloadFavoriteID: context.downloadFavoriteID,
                 isSmartModeEnabled: context.isSmartModeEnabled,
                 forumID: anchor.forumID ?? context.forumID
             )
@@ -728,7 +728,7 @@ public struct MangaReaderView: View {
                 initialPage: mangaAnchor.pageLocalIndex,
                 directoryName: context.directoryName,
                 directoryID: model.currentDirectoryID,
-                offlineCacheFavoriteID: context.offlineCacheFavoriteID,
+                downloadFavoriteID: context.downloadFavoriteID,
                 isSmartModeEnabled: context.isSmartModeEnabled,
                 forumID: context.forumID
             )

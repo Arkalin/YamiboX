@@ -240,7 +240,7 @@ struct LikeWorkListView: View {
 
     /// Not a true per-item inversion — mirrors `FavoriteLibraryOrganizer
     /// .toggleSelectAllVisible`/`SystemSettingsViewModel
-    /// .toggleAllOfflineCacheManagementRows`: selects every currently visible
+    /// .toggleAllDownloadManagementRows`: selects every currently visible
     /// (search-filtered) work, or clears the whole selection when everything
     /// visible is already selected.
     private func toggleSelectAll() {

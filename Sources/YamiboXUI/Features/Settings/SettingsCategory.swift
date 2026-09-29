@@ -173,8 +173,8 @@ enum SettingsSearchRegistry {
             keywords: ["评论", "屏蔽", "正则", "评分", "点评", "回复", "过滤"]
         ),
         SettingsSearchEntry(
-            id: "reading.novel_offline_cache",
-            title: L10n.string("settings.section.novel_offline_cache"),
+            id: "reading.novel_download",
+            title: L10n.string("settings.section.novel_download"),
             category: .reading,
             keywords: ["小说", "离线", "缓存", "内嵌图片", "自动刷新"]
         ),
@@ -245,10 +245,10 @@ enum SettingsSearchRegistry {
             keywords: ["漫画", "目录", "索引", "清理", "分组"]
         ),
         SettingsSearchEntry(
-            id: "storage.offline_cache",
-            title: L10n.string("settings.offline_cache.cleanup"),
+            id: "storage.download",
+            title: L10n.string("settings.download.cleanup"),
             category: .storage,
-            keywords: ["离线缓存", "管理", "清理"]
+            keywords: ["下载", "离线", "管理", "清理"]
         ),
         SettingsSearchEntry(
             id: "storage.reset_application",

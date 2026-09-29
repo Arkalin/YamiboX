@@ -71,13 +71,13 @@ struct NovelReaderLifecycleModifier: ViewModifier {
 
 /// A single route keeps companion panels and modal work mutually exclusive.
 /// Chapters and comments use large sheets; complete settings,
-/// cache management and note editing have independent sheet content.
+/// download management and note editing have independent sheet content.
 /// The item-driven full-screen covers (`forumThreadOverlayItem`,
 /// `imageBrowserItem`) are separate presentation slots and stay item-based.
 enum NovelReaderPresentedSheet: Identifiable, Hashable {
     case settings
-    case cachePanel
-    case cacheProgress
+    case downloadPanel
+    case downloadProgress
     case chapterComments
     /// Chapters, bookmarks, and likes share this one reader-library panel.
     case annotations
@@ -91,7 +91,7 @@ enum NovelReaderPresentedSheet: Identifiable, Hashable {
     var isCompanionPanel: Bool {
         switch self {
         case .annotations, .chapterComments: true
-        case .settings, .cachePanel, .cacheProgress, .note: false
+        case .settings, .downloadPanel, .downloadProgress, .note: false
         }
     }
 }
@@ -204,15 +204,15 @@ struct NovelReaderPresentationModifier: ViewModifier {
                 hasLaterChapter: chapterCommentsHasLaterChapter,
                 cancelLoading: model.cancelChapterCommentsLoading
             )
-        case .cachePanel:
-            NovelReaderCachePanel(cache: model.cache)
-        case .cacheProgress:
-            NovelReaderCacheProgressSheet(cache: model.cache) {
+        case .downloadPanel:
+            NovelReaderDownloadPanel(download: model.download)
+        case .downloadProgress:
+            NovelReaderDownloadProgressSheet(download: model.download) {
                 presentedSheet = nil
             }
             .onDisappear {
-                if model.cache.hasOperationSession {
-                    model.cache.hideProgress()
+                if model.download.hasOperationSession {
+                    model.download.hideProgress()
                 }
             }
         case .annotations:

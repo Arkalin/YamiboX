@@ -8,7 +8,7 @@ public protocol YamiboImageDataLoading: Sendable {
 /// The single entry point for loading Yamibo image bytes.
 ///
 /// Callers describe *what* image they want with `YamiboImageSource`; the
-/// pipeline owns *how* it is fetched: offline-cache lookup, current-session
+/// pipeline owns *how* it is fetched: downloads lookup, current-session
 /// authentication headers, Referer, the shared bytes disk cache, and error
 /// mapping.
 public final class YamiboImagePipeline: YamiboImageDataLoading {

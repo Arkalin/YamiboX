@@ -8,8 +8,8 @@ public struct MangaDetailDependencies: Sendable {
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
-    /// Directory corrections also rename the offline-cache owner when present.
-    public let mangaOfflineCacheStore: (any MangaOfflineCacheStoring)?
+    /// Directory corrections also rename the downloads owner when present.
+    public let mangaDownloadStore: (any MangaDownloadStoring)?
     public let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     public let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
     public let makeMangaReaderProjectionLoader: @Sendable () async -> any MangaReaderProjectionSnapshotLoading
@@ -22,7 +22,7 @@ public struct MangaDetailDependencies: Sendable {
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,
-        mangaOfflineCacheStore: (any MangaOfflineCacheStoring)? = nil,
+        mangaDownloadStore: (any MangaDownloadStoring)? = nil,
         makeFavoriteRepository: @escaping @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
         makeForumThreadReaderRepository: @escaping @Sendable () async -> any ThreadCoverPageResolving,
         makeMangaReaderProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionSnapshotLoading,
@@ -34,7 +34,7 @@ public struct MangaDetailDependencies: Sendable {
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
-        self.mangaOfflineCacheStore = mangaOfflineCacheStore
+        self.mangaDownloadStore = mangaDownloadStore
         self.makeFavoriteRepository = makeFavoriteRepository
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeMangaReaderProjectionLoader = makeMangaReaderProjectionLoader

@@ -11,20 +11,20 @@ public struct MangaReaderDependencies: Sendable {
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
-    public let offlineCacheStore: any OfflineCacheStoring
+    public let downloadStore: any DownloadStoring
     public let contentCoverStore: ContentCoverStore
     public let imagePipeline: any YamiboImageDataLoading
     public let makeProjectionLoader: @Sendable () async -> any MangaReaderProjectionLoading
     public let makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
     public let makeChapterCommentsRepository: @Sendable () async -> any ReaderChapterCommentsLoading
-    public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
+    public let makeDownloadQueueExecutor: @Sendable () async -> DownloadQueueExecutor
     /// Smart Comic Mode off (design decision #16): the reader reuses
     /// `ThreadCoverResolver` to auto-resolve a `.thread(tid:)` cover for the
     /// chapter being read, the same mechanism
     /// `ForumThreadReaderViewModel`/`NovelDetailViewModel` already use
     /// for normal threads — this is what drives it.
     public let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
-    public let cacheQueue: OfflineCacheQueueDependencies
+    public let downloadQueue: DownloadQueueDependencies
     public let like: LikeDependencies
 
     public init(
@@ -35,14 +35,14 @@ public struct MangaReaderDependencies: Sendable {
         localFavoriteLibraryStore: FavoriteLibraryStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,
-        offlineCacheStore: any OfflineCacheStoring,
+        downloadStore: any DownloadStoring,
         contentCoverStore: ContentCoverStore,
         makeProjectionLoader: @escaping @Sendable () async -> any MangaReaderProjectionLoading,
         makeDirectoryRepository: @escaping @Sendable () async -> any MangaDirectoryRepository,
         makeChapterCommentsRepository: @escaping @Sendable () async -> any ReaderChapterCommentsLoading,
-        makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
+        makeDownloadQueueExecutor: @escaping @Sendable () async -> DownloadQueueExecutor,
         makeForumThreadReaderRepository: @escaping @Sendable () async -> any ThreadCoverPageResolving,
-        cacheQueue: OfflineCacheQueueDependencies,
+        downloadQueue: DownloadQueueDependencies,
         like: LikeDependencies,
         imagePipeline: any YamiboImageDataLoading
     ) {
@@ -53,15 +53,15 @@ public struct MangaReaderDependencies: Sendable {
         self.localFavoriteLibraryStore = localFavoriteLibraryStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.contentCoverStore = contentCoverStore
         self.imagePipeline = imagePipeline
         self.makeProjectionLoader = makeProjectionLoader
         self.makeDirectoryRepository = makeDirectoryRepository
         self.makeChapterCommentsRepository = makeChapterCommentsRepository
-        self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor
+        self.makeDownloadQueueExecutor = makeDownloadQueueExecutor
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
-        self.cacheQueue = cacheQueue
+        self.downloadQueue = downloadQueue
         self.like = like
     }
 }

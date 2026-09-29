@@ -6,7 +6,7 @@ public enum MangaReaderOpenError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? { L10n.string("manga.open.no_readable_images") }
 }
 
-/// Uses the reader's real author-scoped projection pipeline, including offline caches.
+/// Uses the reader's real author-scoped projection pipeline, including downloads.
 public struct MangaReaderOpenValidator: Sendable {
     private let loadProjection: @Sendable (MangaReaderProjectionRequest) async throws -> MangaReaderProjection
     private let resolveDirectoryID: @Sendable (MangaLaunchContext) async throws -> MangaDirectoryID?

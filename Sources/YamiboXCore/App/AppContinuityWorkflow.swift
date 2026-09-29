@@ -498,7 +498,7 @@ private extension MangaLaunchContext {
             initialPage: manga.mangaPageIndex,
             directoryName: directoryName,
             directoryID: directoryID,
-            offlineCacheFavoriteID: favoriteItem?.id ?? offlineCacheFavoriteID,
+            downloadFavoriteID: favoriteItem?.id ?? downloadFavoriteID,
             isPreview: isPreview,
             isSmartModeEnabled: isSmartModeEnabled,
             forumID: forumID

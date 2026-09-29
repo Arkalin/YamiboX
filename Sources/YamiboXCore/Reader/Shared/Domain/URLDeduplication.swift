@@ -1,7 +1,7 @@
 import Foundation
 
 extension Array where Element == URL {
-    /// Single shared definition of the offline-cache image-list dedup rule,
+    /// Single shared definition of the downloads image-list dedup rule,
     /// which several domain types used to redeclare privately and had to keep
     /// in sync by hand.
     ///

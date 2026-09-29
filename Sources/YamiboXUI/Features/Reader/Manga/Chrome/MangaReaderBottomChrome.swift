@@ -16,7 +16,7 @@ struct MangaReaderBottomChrome: View {
     let onShowDirectory: () -> Void
     let onShowComments: () -> Void
     let onShowSettings: () -> Void
-    let onShowCache: () -> Void
+    let onShowDownload: () -> Void
     let onToggleBookmark: () -> Void
     let onShowAnnotations: () -> Void
     let isBookmarked: Bool
@@ -84,11 +84,11 @@ struct MangaReaderBottomChrome: View {
                         commentsTitle: L10n.string("reader.comments"),
                         bookmarkTitle: L10n.string(isBookmarked ? "annotations.bookmark.remove" : "annotations.bookmark.add"),
                         bookmarkSystemName: isBookmarked ? "bookmark.fill" : "bookmark",
-                        cacheTitle: L10n.string("reader.cache"),
+                        downloadTitle: L10n.string("reader.download"),
                         onOpenOriginalPost: onOpenOriginalPost,
                         onShowComments: onShowComments,
                         onShowSettings: onShowSettings,
-                        onShowCache: onShowCache,
+                        onShowDownload: onShowDownload,
                         onToggleBookmark: onToggleBookmark
                     )
                     .opacity(staticControlVisibility.opacity)
@@ -407,11 +407,11 @@ private struct MangaReaderStaticActionControls: View {
     let commentsTitle: String
     let bookmarkTitle: String
     let bookmarkSystemName: String
-    let cacheTitle: String
+    let downloadTitle: String
     let onOpenOriginalPost: () -> Void
     let onShowComments: () -> Void
     let onShowSettings: () -> Void
-    let onShowCache: () -> Void
+    let onShowDownload: () -> Void
     let onToggleBookmark: () -> Void
     @Environment(\.appTheme) private var appTheme
 
@@ -444,9 +444,9 @@ private struct MangaReaderStaticActionControls: View {
                 handler: onToggleBookmark
             )
             bottomActionButton(
-                title: cacheTitle,
+                title: downloadTitle,
                 systemName: "square.and.arrow.down",
-                handler: onShowCache
+                handler: onShowDownload
             )
         }
         .frame(maxWidth: .infinity)

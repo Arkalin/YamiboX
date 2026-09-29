@@ -7,7 +7,9 @@ public enum YamiboLog {
     private static let subsystem = "com.arkalin.YamiboX"
 
     public static let persistence = Logger(subsystem: subsystem, category: "persistence")
+    // Historical technical-cache category; user downloads have their own logger.
     public static let offlineCache = Logger(subsystem: subsystem, category: "offline-cache")
+    public static let download = Logger(subsystem: subsystem, category: "downloads")
     public static let sync = Logger(subsystem: subsystem, category: "sync")
     public static let account = Logger(subsystem: subsystem, category: "account")
     public static let library = Logger(subsystem: subsystem, category: "library")

@@ -119,7 +119,7 @@ final class SettingsStorageUsage {
     private(set) var webReaderCacheBytes = 0
     private(set) var contentCoverCacheBytes = 0
     private(set) var mangaDirectoryCacheBytes = 0
-    private(set) var offlineCacheBytes = 0
+    private(set) var downloadBytes = 0
     private(set) var imageCacheBytes: Int?
     private(set) var otherCacheBytes: Int?
     private(set) var readingProgressBytes: Int?
@@ -145,8 +145,8 @@ final class SettingsStorageUsage {
         Self.cacheLabel(for: mangaDirectoryCacheBytes)
     }
 
-    var offlineCacheLabel: String {
-        Self.cacheLabel(for: offlineCacheBytes)
+    var downloadLabel: String {
+        Self.cacheLabel(for: downloadBytes)
     }
 
     var imageCacheLabel: String { additionalUsageLabel(for: imageCacheBytes) }
@@ -164,7 +164,7 @@ final class SettingsStorageUsage {
         ]
         categories.append(.init(category: .history, bytes: browsingHistoryBytes))
         categories.append(.init(category: .directories, bytes: mangaDirectoryCacheBytes))
-        categories.append(.init(category: .offline, bytes: offlineCacheBytes))
+        categories.append(.init(category: .downloads, bytes: downloadBytes))
         return SettingsStorageSummary(categories: categories, hasLoaded: hasLoadedAdditionalUsage)
     }
 
@@ -176,7 +176,7 @@ final class SettingsStorageUsage {
         let forumBytes = await dependencies.forumCacheStore.totalDiskUsageBytes()
         let coverBytes = await dependencies.contentCoverStore.totalDiskUsageBytes()
         let directoryBytes = await dependencies.mangaDirectoryStore.totalDiskUsageBytes()
-        let offlineBytes = await dependencies.offlineCacheStore.totalDiskUsageBytes()
+        let offlineBytes = await dependencies.downloadStore.totalDiskUsageBytes()
         var imageBytes: Int?
         var otherBytes: Int?
         var progressBytes: Int?
@@ -195,7 +195,7 @@ final class SettingsStorageUsage {
         webReaderCacheBytes = novelBytes + mangaProjectionBytes + forumBytes
         contentCoverCacheBytes = coverBytes
         mangaDirectoryCacheBytes = directoryBytes
-        offlineCacheBytes = offlineBytes
+        downloadBytes = offlineBytes
         if includeAdditionalUsage {
             imageCacheBytes = imageBytes
             otherCacheBytes = otherBytes
@@ -213,7 +213,7 @@ final class SettingsStorageUsage {
         webReaderCacheBytes = 0
         contentCoverCacheBytes = 0
         mangaDirectoryCacheBytes = 0
-        offlineCacheBytes = 0
+        downloadBytes = 0
         imageCacheBytes = 0
         otherCacheBytes = 0
         readingProgressBytes = 0

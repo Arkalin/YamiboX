@@ -4,7 +4,7 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
     private let client: YamiboClient
     private let cacheStore: NovelReaderProjectionStore
     private let forumCacheStore: ForumCacheStore
-    private let offlineCacheStore: (any NovelOfflineCacheStoring)?
+    private let downloadStore: (any NovelDownloadStoring)?
     private let projectionLoader: NovelReaderProjectionLoader
     private let novelOfflineAutoRefreshEnabled: @Sendable () async -> Bool
     private let novelOfflineRetainsInlineImages: @Sendable () async -> Bool
@@ -13,7 +13,7 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         client: YamiboClient,
         cacheStore: NovelReaderProjectionStore = NovelReaderProjectionStore(),
         forumCacheStore: ForumCacheStore = ForumCacheStore(),
-        offlineCacheStore: (any NovelOfflineCacheStoring)? = nil,
+        downloadStore: (any NovelDownloadStoring)? = nil,
         projectionLoader: NovelReaderProjectionLoader? = nil,
         novelOfflineAutoRefreshEnabled: @escaping @Sendable () async -> Bool = { true },
         novelOfflineRetainsInlineImages: @escaping @Sendable () async -> Bool = { false }
@@ -21,12 +21,12 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         self.client = client
         self.cacheStore = cacheStore
         self.forumCacheStore = forumCacheStore
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.projectionLoader = projectionLoader ?? NovelReaderProjectionLoader(
             client: client,
             projectionStore: cacheStore,
             forumCacheStore: forumCacheStore,
-            offlineCacheStore: offlineCacheStore
+            downloadStore: downloadStore
         )
         self.novelOfflineAutoRefreshEnabled = novelOfflineAutoRefreshEnabled
         self.novelOfflineRetainsInlineImages = novelOfflineRetainsInlineImages
@@ -95,13 +95,13 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         _ views: Set<Int>,
         for threadID: String,
         authorID: String?,
-        progress: (@Sendable (NovelReaderCacheBatchProgress) async -> Void)? = nil
-    ) async -> NovelReaderCacheBatchResult {
+        progress: (@Sendable (NovelReaderDownloadBatchProgress) async -> Void)? = nil
+    ) async -> NovelReaderDownloadBatchResult {
         let normalizedThreadID = Self.normalizedThreadID(threadID)
         let targets = views.sorted()
         guard !targets.isEmpty else {
-            let result = NovelReaderCacheBatchResult(totalCount: 0, completedViews: [], failedViews: [], wasCancelled: false)
-            await progress?(NovelReaderCacheBatchProgress(
+            let result = NovelReaderDownloadBatchResult(totalCount: 0, completedViews: [], failedViews: [], wasCancelled: false)
+            await progress?(NovelReaderDownloadBatchProgress(
                 totalCount: 0,
                 completedCount: 0,
                 currentView: nil,
@@ -136,7 +136,7 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
                 failedViews.append(view)
             }
 
-            await progress?(NovelReaderCacheBatchProgress(
+            await progress?(NovelReaderDownloadBatchProgress(
                 totalCount: targets.count,
                 completedCount: completedViews.count,
                 currentView: view,
@@ -146,14 +146,14 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             ))
         }
 
-        let status: NovelReaderCacheBatchProgress.Status = wasCancelled ? .cancelled : .completed
-        let result = NovelReaderCacheBatchResult(
+        let status: NovelReaderDownloadBatchProgress.Status = wasCancelled ? .cancelled : .completed
+        let result = NovelReaderDownloadBatchResult(
             totalCount: targets.count,
             completedViews: completedViews,
             failedViews: failedViews,
             wasCancelled: wasCancelled
         )
-        await progress?(NovelReaderCacheBatchProgress(
+        await progress?(NovelReaderDownloadBatchProgress(
             totalCount: targets.count,
             completedCount: completedViews.count,
             currentView: nil,
@@ -176,16 +176,16 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         try await loadPageIgnoringCache(NovelPageRequest(threadID: threadID, view: view, authorID: authorID))
     }
 
-    public func loadNovelOfflineCacheSourcePage(
-        _ request: NovelOfflineCacheWorkRequest
-    ) async throws -> NovelOfflineCachePreparedSourcePage {
+    public func loadNovelDownloadSourcePage(
+        _ request: NovelDownloadWorkRequest
+    ) async throws -> NovelDownloadPreparedSourcePage {
         let readerRequest = NovelPageRequest(
             threadID: request.threadID,
             view: request.view,
             authorID: request.authorID
         )
         let onlinePage = try await projectionLoader.loadOnlineProjection(readerRequest, ignoresCache: true)
-        return NovelOfflineCachePreparedSourcePage(
+        return NovelDownloadPreparedSourcePage(
             sourcePage: onlinePage.sourcePage,
             projection: onlinePage.projection
         )
@@ -204,7 +204,7 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             ? try await projectionLoader.loadProjectionIgnoringCache(request)
             : try await projectionLoader.loadProjection(request)
         if case let .online(sourceLoadedOnline) = loaded.source {
-            await autoRefreshNovelOfflineCacheIfNeeded(loaded, sourceLoadedOnline: sourceLoadedOnline)
+            await autoRefreshNovelDownloadIfNeeded(loaded, sourceLoadedOnline: sourceLoadedOnline)
             return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
         }
         if case let .offlineFallback(updatedAt, failure) = loaded.source {
@@ -216,17 +216,17 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
     }
 
-    private func autoRefreshNovelOfflineCacheIfNeeded(
+    private func autoRefreshNovelDownloadIfNeeded(
         _ onlinePage: NovelReaderProjectionLoadedPage,
         sourceLoadedOnline: Bool
     ) async {
         guard sourceLoadedOnline,
-              let offlineCacheStore,
+              let downloadStore,
               await novelOfflineAutoRefreshEnabled(),
               let authorID = normalizedAuthorID(onlinePage.projection.resolvedAuthorID) else {
             return
         }
-        guard let existing = await offlineCacheStore.novelOfflineSourcePageSnapshot(
+        guard let existing = await downloadStore.novelOfflineSourcePageSnapshot(
             threadID: onlinePage.projection.threadID,
             view: onlinePage.projection.view,
             authorID: authorID
@@ -235,9 +235,9 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         }
         let retainsInlineImages = await novelOfflineRetainsInlineImages()
         let targetImageURLs = retainsInlineImages ? Self.inlineImageURLs(in: onlinePage.projection) : []
-        let request = NovelOfflineCacheWorkRequest(
+        let request = NovelDownloadWorkRequest(
             ownerTitle: existing.ownerTitle,
-            title: NovelOfflineCacheEntry.defaultTitle(document: onlinePage.projection),
+            title: NovelDownloadEntry.defaultTitle(document: onlinePage.projection),
             threadID: onlinePage.projection.threadID,
             view: onlinePage.projection.view,
             authorID: authorID,
@@ -245,7 +245,7 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             retainsInlineImages: retainsInlineImages
         )
         do {
-            try await offlineCacheStore.saveNovelOfflineSourcePage(
+            try await downloadStore.saveNovelOfflineSourcePage(
                 onlinePage.sourcePage,
                 request: request,
                 updatedAt: .now,
@@ -253,13 +253,13 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
                 preservesExistingImageReferencesWhenEmpty: !retainsInlineImages
             )
         } catch {
-            YamiboLog.offlineCache.error("Failed to save auto-refreshed novel offline source page for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
+            YamiboLog.download.error("Failed to save auto-refreshed novel offline source page for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
         }
         guard retainsInlineImages, !targetImageURLs.isEmpty else { return }
         do {
-            _ = try await offlineCacheStore.enqueueNovelOfflineCacheUpdateWork(request)
+            _ = try await downloadStore.enqueueNovelDownloadUpdateWork(request)
         } catch {
-            YamiboLog.offlineCache.warning("Failed to enqueue novel offline cache update work for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
+            YamiboLog.download.warning("Failed to enqueue novel download update work for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
         }
     }
 
@@ -288,4 +288,4 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
 
 }
 
-extension NovelReaderRepository: NovelOfflineCacheSourcePageLoading {}
+extension NovelReaderRepository: NovelDownloadSourcePageLoading {}

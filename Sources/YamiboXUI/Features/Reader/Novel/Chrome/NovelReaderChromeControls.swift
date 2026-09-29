@@ -13,7 +13,7 @@ struct NovelReaderChromeControls: View {
     let onRefresh: () -> Void
     let onShowChapters: () -> Void
     let onShowSettings: () -> Void
-    let onShowCache: () -> Void
+    let onShowDownload: () -> Void
     let onShowComments: () -> Void
     let onOpenForum: () -> Void
     let onShowSearch: () -> Void
@@ -78,7 +78,7 @@ struct NovelReaderChromeControls: View {
             isVisible: isChromeVisible,
             onShowChapters: onShowChapters,
             onShowSettings: onShowSettings,
-            onShowCache: onShowCache,
+            onShowDownload: onShowDownload,
             onShowComments: onShowComments,
             onOpenForum: onOpenForum,
             onShowSearch: onShowSearch,

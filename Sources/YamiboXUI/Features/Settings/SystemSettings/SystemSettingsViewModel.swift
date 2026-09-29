@@ -21,7 +21,7 @@ final class SystemSettingsViewModel {
     let reading: SettingsReadingViewModel
     let peripherals: SettingsPeripheralsViewModel
     let storage: SettingsStorageViewModel
-    let offlineCacheManagement: OfflineCacheManagementViewModel
+    let downloadManagement: DownloadManagementViewModel
     let mangaDirectoryManagement: MangaDirectoryManagementViewModel
 
     private(set) var isLoggedIn = false
@@ -43,7 +43,7 @@ final class SystemSettingsViewModel {
             activity: activity,
             storageUsage: storageUsage
         )
-        let offlineCacheManagement = OfflineCacheManagementViewModel(
+        let downloadManagement = DownloadManagementViewModel(
             dependencies: dependencies,
             activity: activity,
             storageUsage: storageUsage
@@ -66,7 +66,7 @@ final class SystemSettingsViewModel {
             favorites.restoreDefaultsAfterApplicationReset()
             reading.restoreDefaultsAfterApplicationReset()
             peripherals.restoreDefaultsAfterApplicationReset()
-            offlineCacheManagement.restoreDefaultsAfterApplicationReset()
+            downloadManagement.restoreDefaultsAfterApplicationReset()
             mangaDirectoryManagement.restoreDefaultsAfterApplicationReset()
         }
 
@@ -80,7 +80,7 @@ final class SystemSettingsViewModel {
         self.reading = reading
         self.peripherals = peripherals
         self.storage = storage
-        self.offlineCacheManagement = offlineCacheManagement
+        self.downloadManagement = downloadManagement
         self.mangaDirectoryManagement = mangaDirectoryManagement
     }
 

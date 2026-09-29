@@ -101,6 +101,7 @@ enum YamiboDatabase {
             module.registerMigrations(in: &migrator)
         }
         MangaIdentityMigrationV1.register(in: &migrator)
+        DownloadNamingMigration.register(in: &migrator)
         try migrator.migrate(writer)
     }
 

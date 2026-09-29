@@ -12,7 +12,7 @@ final class NovelReaderLoadingCoordinator {
         var publish: @MainActor (NovelReadingWorkflowState) -> Void
         var clearFailure: @MainActor () -> Void
         var reportFailure: @MainActor (any Error) -> Void
-        var refreshCache: @MainActor () async -> Void
+        var refreshDownload: @MainActor () async -> Void
         var prefetchAnchor: @MainActor () -> NovelReaderSurfaceIdentity?
     }
 
@@ -171,7 +171,7 @@ final class NovelReaderLoadingCoordinator {
                 preparation.advance(to: .restoring, for: sequence)
                 presentation.publish(state)
                 recordVisitIfNeeded()
-                scheduleFollowUp(refreshCache: true)
+                scheduleFollowUp(refreshDownload: true)
                 return
             }
         } catch {
@@ -189,20 +189,20 @@ final class NovelReaderLoadingCoordinator {
         view: Int, preferredSurfaceOrdinal: Int, preferredResumePoint: NovelResumePoint?,
         forceRefresh: Bool, reportsError: Bool
     ) async -> Bool {
-        await performLoad(reportsError: reportsError, refreshCache: true) { workflow in
+        await performLoad(reportsError: reportsError, refreshDownload: true) { workflow in
             try await workflow.loadView(view, preferredSurfaceOrdinal: preferredSurfaceOrdinal,
                 preferredResumePoint: preferredResumePoint, forceRefresh: forceRefresh)
         }
     }
 
     func loadChapter(_ anchor: NovelChapterAnchor) async -> Bool {
-        await performLoad(reportsError: true, refreshCache: false) { workflow in
+        await performLoad(reportsError: true, refreshDownload: false) { workflow in
             try await workflow.loadChapter(anchor)
         }
     }
 
     private func performLoad(
-        reportsError: Bool, refreshCache: Bool,
+        reportsError: Bool, refreshDownload: Bool,
         operation: @MainActor (NovelReadingWorkflow) async throws -> NovelReadingWorkflowState
     ) async -> Bool {
         guard let workflow = await ensureWorkflow() else { return false }
@@ -217,11 +217,11 @@ final class NovelReaderLoadingCoordinator {
             guard admits(request, workflow: workflow) else { return false }
             presentation.publish(state)
             isLoading = false
-            if refreshCache {
+            if refreshDownload {
                 recordVisitIfNeeded()
-                await presentation.refreshCache()
+                await presentation.refreshDownload()
                 guard admits(request, workflow: workflow) else { return false }
-                scheduleFollowUp(refreshCache: false)
+                scheduleFollowUp(refreshDownload: false)
             }
             return true
         } catch {
@@ -246,12 +246,12 @@ final class NovelReaderLoadingCoordinator {
         presentation.publish(state)
     }
 
-    private func scheduleFollowUp(refreshCache: Bool) {
+    private func scheduleFollowUp(refreshDownload: Bool) {
         followUpTask?.cancel()
         let request = loadRevision
         guard let workflow else { return }
-        followUpTask = Task { [weak self, refresh = presentation.refreshCache] in
-            if refreshCache { await refresh() }
+        followUpTask = Task { [weak self, refresh = presentation.refreshDownload] in
+            if refreshDownload { await refresh() }
             guard let self, self.admits(request, workflow: workflow), let anchor = self.presentation.prefetchAnchor() else { return }
             await self.prefetch(near: anchor)
         }

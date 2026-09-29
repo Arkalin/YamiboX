@@ -16,7 +16,7 @@ import Foundation
 /// call sites keep their guards as the explicit, self-documenting contract.
 ///
 /// `AsyncStream` is single-consumer, while one store has many observers, so
-/// `post()` uses the same bounded multicast kernel as offline-cache invalidations.
+/// `post()` uses the same bounded multicast kernel as downloads invalidations.
 struct StoreChangeBroadcaster: Sendable {
     /// Fresh per broadcaster — and each store creates exactly one broadcaster
     /// per instance — preserving the "changeID identifies a store instance"

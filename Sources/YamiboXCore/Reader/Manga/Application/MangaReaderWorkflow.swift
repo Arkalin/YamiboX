@@ -39,7 +39,7 @@ public final class MangaReaderWorkflow {
     private let directoryWorkflow: MangaDirectoryWorkflow
     private let directoryStore: any MangaDirectoryPersisting
     private var resolvedDirectoryID: MangaDirectoryID?
-    private let offlineCacheStore: (any MangaOfflineCacheStoring)?
+    private let downloadStore: (any MangaDownloadStoring)?
     private let adjacentPrefetchPolicy: MangaAdjacentChapterPrefetchPolicy
     private var window: MangaChapterWindow?
     // Async work may suspend while another reader action mutates the window.
@@ -73,7 +73,7 @@ public final class MangaReaderWorkflow {
         projectionLoader: any MangaReaderProjectionLoading,
         directoryRepository: any MangaDirectoryRepository,
         directoryStore: any MangaDirectoryPersisting,
-        offlineCacheStore: (any MangaOfflineCacheStoring)? = nil,
+        downloadStore: (any MangaDownloadStoring)? = nil,
         settings: MangaReaderSettings = MangaReaderSettings(),
         directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
         directorySearchCooldownState: MangaDirectorySearchCooldownState = MangaDirectorySearchCooldownState(),
@@ -81,7 +81,7 @@ public final class MangaReaderWorkflow {
     ) {
         self.context = context
         self.projectionLoader = projectionLoader
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.directoryStore = directoryStore
         self.adjacentPrefetchPolicy = adjacentPrefetchPolicy
         self.directoryWorkflow = MangaDirectoryWorkflow(
@@ -241,9 +241,9 @@ public final class MangaReaderWorkflow {
     }
 
     private nonisolated(nonsending) func offlineReadableCurrentChapterDirectory(for document: MangaReaderProjection) async -> MangaDirectory? {
-        guard let offlineCacheStore,
+        guard let downloadStore,
               let directoryID = resolvedDirectoryID,
-              let membership = await offlineCacheStore.mangaOfflineCacheMembership(ownerName: directoryID.rawValue, tid: document.tid),
+              let membership = await downloadStore.mangaDownloadMembership(ownerName: directoryID.rawValue, tid: document.tid),
               membership.imageURLs.map(\.absoluteString) == document.imageURLs.map(\.absoluteString),
               !membership.imageURLs.isEmpty
         else {
@@ -254,7 +254,7 @@ public final class MangaReaderWorkflow {
             // Existence check only — reading the actual bytes of every page
             // just to decide offline readability would load the whole chapter
             // into memory on each reader launch.
-            guard await offlineCacheStore.hasOfflineImage(for: imageURL) else {
+            guard await downloadStore.hasOfflineImage(for: imageURL) else {
                 return nil
             }
         }

@@ -1,13 +1,13 @@
 import Foundation
 
 /// Everything the account surface ("Mine" tab) needs from the composition
-/// root: session/profile/check-in plus the offline cache queue it manages.
+/// root: session/profile/check-in plus the download queue it manages.
 public struct AccountDependencies: Sendable {
-    public var cacheQueue: OfflineCacheQueueDependencies {
-        OfflineCacheQueueDependencies(
-            offlineCacheStore: offlineCacheStore,
+    public var downloadQueue: DownloadQueueDependencies {
+        DownloadQueueDependencies(
+            downloadStore: downloadStore,
             mangaDirectoryStore: mangaDirectoryStore,
-            makeOfflineCacheQueueExecutor: makeOfflineCacheQueueExecutor
+            makeDownloadQueueExecutor: makeDownloadQueueExecutor
         )
     }
 
@@ -17,11 +17,11 @@ public struct AccountDependencies: Sendable {
     public let messageUnreadWorkflow: MessageUnreadWorkflow
     public let checkInStore: YamiboCheckInStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
-    public let offlineCacheStore: any OfflineCacheStoring
+    public let downloadStore: any DownloadStoring
     public let imagePipeline: any YamiboImageDataLoading
     public let makeAccountService: @Sendable () -> YamiboAccountService
     public let makeCheckInService: @Sendable () -> any YamiboCheckInServicing
-    public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
+    public let makeDownloadQueueExecutor: @Sendable () async -> DownloadQueueExecutor
 
     public init(
         sessionStore: SessionStore,
@@ -29,10 +29,10 @@ public struct AccountDependencies: Sendable {
         messageUnreadWorkflow: MessageUnreadWorkflow,
         checkInStore: YamiboCheckInStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
-        offlineCacheStore: any OfflineCacheStoring,
+        downloadStore: any DownloadStoring,
         makeAccountService: @escaping @Sendable () -> YamiboAccountService,
         makeCheckInService: @escaping @Sendable () -> any YamiboCheckInServicing,
-        makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
+        makeDownloadQueueExecutor: @escaping @Sendable () async -> DownloadQueueExecutor,
         imagePipeline: (any YamiboImageDataLoading)? = nil,
         accountSwitcher: AccountSwitchCoordinator? = nil
     ) {
@@ -42,13 +42,13 @@ public struct AccountDependencies: Sendable {
         self.messageUnreadWorkflow = messageUnreadWorkflow
         self.checkInStore = checkInStore
         self.mangaDirectoryStore = mangaDirectoryStore
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.imagePipeline = imagePipeline ?? YamiboImagePipeline(
             sessionStore: sessionStore,
-            offlineImages: offlineCacheStore
+            offlineImages: downloadStore
         )
         self.makeAccountService = makeAccountService
         self.makeCheckInService = makeCheckInService
-        self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor
+        self.makeDownloadQueueExecutor = makeDownloadQueueExecutor
     }
 }

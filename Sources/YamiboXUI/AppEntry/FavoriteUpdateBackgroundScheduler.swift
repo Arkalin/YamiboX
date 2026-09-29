@@ -11,13 +11,19 @@ public enum FavoriteUpdateBackgroundScheduler {
 
     /// Must run before the app finishes launching.
     @MainActor
-    public static func register(appContext: YamiboAppContext) {
+    public static func register(
+        appContext: @escaping @MainActor @Sendable () async -> YamiboAppContext?
+    ) {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
                 task.setTaskCompleted(success: false)
                 return
             }
             Task { @MainActor in
+                guard let appContext = await appContext() else {
+                    refreshTask.setTaskCompleted(success: false)
+                    return
+                }
                 await handle(refreshTask, appContext: appContext)
             }
         }

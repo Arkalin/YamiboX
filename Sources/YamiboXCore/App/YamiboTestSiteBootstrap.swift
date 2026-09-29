@@ -28,11 +28,14 @@ public enum YamiboTestSiteBootstrap {
             .write(to: file, options: .atomic)
 
         // No WebView, session observers or runtime are active while resetting.
+        let database = try await Task.detached(priority: .userInitiated) {
+            try YamiboDatabase.openPool()
+        }.value
         let context = YamiboAppContext(
-            databasePool: try YamiboDatabase.openPool(),
+            databasePool: database,
             websiteDataClearer: websiteDataClearer
         )
-        await context.offlineCacheBackgroundDownloadTransport.invalidateRestoredDownloads()
+        await context.downloadBackgroundDownloadTransport.invalidateRestoredDownloads()
         try await context.resetApplicationData()
         // Nuke stages deletions; flush them before another pipeline can read disk.
         guard await context.imagePipeline.totalDiskUsageBytes() == 0 else {

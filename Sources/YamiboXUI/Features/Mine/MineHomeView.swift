@@ -7,7 +7,7 @@ public struct MineHomeView: View {
     @State private var navigator: ForumDestinationNavigator
     @State private var showingLoginSheet = false
     @State private var isSettingsPushed = false
-    @State private var isOfflineCacheQueuePushed = false
+    @State private var isDownloadQueuePushed = false
     @State private var isMyLikesPushed = false
     @State private var initialSettingsDestination: SettingsSidebarDestination?
 
@@ -81,7 +81,7 @@ public struct MineHomeView: View {
                 case .messages: navigator.openMessageCenter(tab: .privateMessages)
                 case .history: navigator.push(.browsingHistory)
                 case .likes: isMyLikesPushed = true
-                case .downloads: isOfflineCacheQueuePushed = true
+                case .downloads: isDownloadQueuePushed = true
                 }
             }
         }
@@ -137,7 +137,7 @@ public struct MineHomeView: View {
                     checkIn: checkIn
                 )
                 MineLibraryEntriesSection(
-                    offlineCacheQueueCount: viewModel.offlineQueue.entryCount,
+                    downloadQueueCount: viewModel.offlineQueue.entryCount,
                     unreadMessageCount: messageUnreadWorkflow.totalCount,
                     showMessages: {
                         if viewModel.isLoggedIn {
@@ -146,8 +146,8 @@ public struct MineHomeView: View {
                             showingLoginSheet = true
                         }
                     },
-                    showOfflineCacheQueue: {
-                        isOfflineCacheQueuePushed = true
+                    showDownloadQueue: {
+                        isDownloadQueuePushed = true
                     },
                     showMyLikes: {
                         isMyLikesPushed = true
@@ -176,8 +176,8 @@ public struct MineHomeView: View {
             .navigationDestination(isPresented: $isSettingsPushed) {
                 settingsScreen
             }
-            .navigationDestination(isPresented: $isOfflineCacheQueuePushed) {
-                OfflineCacheQueueScreen(viewModel: viewModel.offlineQueue)
+            .navigationDestination(isPresented: $isDownloadQueuePushed) {
+                DownloadQueueScreen(viewModel: viewModel.offlineQueue)
             }
             .navigationDestination(isPresented: $isMyLikesPushed) {
                 LikeWorkListView(

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Everything the novel reader feature UI (reader, offline cache panel)
+/// Everything the novel reader feature UI (reader, download panel)
 /// needs from the composition root.
 public struct NovelReaderDependencies: Sendable {
     public let sessionStore: SessionStore
@@ -9,12 +9,12 @@ public struct NovelReaderDependencies: Sendable {
     /// Shared with the other reader surfaces, including in test compositions.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
-    public let offlineCacheStore: any OfflineCacheStoring
+    public let downloadStore: any DownloadStoring
     public let contentCoverStore: ContentCoverStore
     public let imagePipeline: any YamiboImageDataLoading
     public let makeNovelReaderRepository: @Sendable () async -> any NovelReadingPageRepository
-    public let makeOfflineCacheQueueExecutor: @Sendable () async -> OfflineCacheQueueExecutor
-    public let cacheQueue: OfflineCacheQueueDependencies
+    public let makeDownloadQueueExecutor: @Sendable () async -> DownloadQueueExecutor
+    public let downloadQueue: DownloadQueueDependencies
     public let like: LikeDependencies
 
     public init(
@@ -23,12 +23,12 @@ public struct NovelReaderDependencies: Sendable {
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore,
         browsingHistoryWorkflow: BrowsingHistoryWorkflow,
-        offlineCacheStore: any OfflineCacheStoring,
+        downloadStore: any DownloadStoring,
         contentCoverStore: ContentCoverStore,
         makeNovelReaderRepository: @escaping @Sendable () async -> any NovelReadingPageRepository,
         makeChapterCommentsRepository: @escaping @Sendable () async -> any ReaderChapterCommentsLoading,
-        makeOfflineCacheQueueExecutor: @escaping @Sendable () async -> OfflineCacheQueueExecutor,
-        cacheQueue: OfflineCacheQueueDependencies,
+        makeDownloadQueueExecutor: @escaping @Sendable () async -> DownloadQueueExecutor,
+        downloadQueue: DownloadQueueDependencies,
         like: LikeDependencies,
         imagePipeline: any YamiboImageDataLoading
     ) {
@@ -37,12 +37,12 @@ public struct NovelReaderDependencies: Sendable {
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
-        self.offlineCacheStore = offlineCacheStore
+        self.downloadStore = downloadStore
         self.contentCoverStore = contentCoverStore
         self.imagePipeline = imagePipeline
         self.makeNovelReaderRepository = makeNovelReaderRepository
-        self.makeOfflineCacheQueueExecutor = makeOfflineCacheQueueExecutor
-        self.cacheQueue = cacheQueue
+        self.makeDownloadQueueExecutor = makeDownloadQueueExecutor
+        self.downloadQueue = downloadQueue
         self.like = like
         makeChapterCommentsModule = { onChange in
             ReaderChapterCommentsModule(
@@ -60,14 +60,14 @@ public struct NovelReaderDependencies: Sendable {
                 onChange: onChange
             )
         }
-        makeCacheOperationRepository = { [settingsStore, offlineCacheStore, makeOfflineCacheQueueExecutor] in
-            NovelOfflineStoreReaderCacheOperationAdapter(
-                store: offlineCacheStore,
-                novelOfflineCacheSettings: {
-                    await settingsStore.load().novelOfflineCache
+        makeDownloadOperationRepository = { [settingsStore, downloadStore, makeDownloadQueueExecutor] in
+            NovelOfflineStoreReaderDownloadOperationAdapter(
+                store: downloadStore,
+                novelDownloadSettings: {
+                    await settingsStore.load().novelDownload
                 },
-                continueOfflineCacheQueue: {
-                    try await makeOfflineCacheQueueExecutor().continueQueue()
+                continueDownloadQueue: {
+                    try await makeDownloadQueueExecutor().continueQueue()
                 }
             )
         }
@@ -79,12 +79,12 @@ public struct NovelReaderDependencies: Sendable {
         _ onChange: @escaping @Sendable (ReaderChapterCommentsSnapshot) -> Void
     ) -> ReaderChapterCommentsModule
 
-    /// Builds the offline-cache operation repository backed by the shared
-    /// offline cache store, settings, and download queue executor.
-    public let makeCacheOperationRepository: @Sendable () -> any NovelReaderCacheOperationRepository
+    /// Builds the downloads operation repository backed by the shared
+    /// download store, settings, and download queue executor.
+    public let makeDownloadOperationRepository: @Sendable () -> any NovelReaderDownloadOperationRepository
 
     @MainActor
-    public func makeCacheOperationModule() -> NovelReaderCacheOperationModule {
-        NovelReaderCacheOperationModule()
+    public func makeDownloadOperationModule() -> NovelReaderDownloadOperationModule {
+        NovelReaderDownloadOperationModule()
     }
 }

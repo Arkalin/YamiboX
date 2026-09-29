@@ -1,4 +1,5 @@
 import SwiftUI
+import GRDB
 #if canImport(AppIntents)
 import AppIntents
 #endif
@@ -27,9 +28,13 @@ struct YamiboXApp: App {
                     YamiboAppWindow(windows: windows, initialTab: startup.initialTab, request: request.wrappedValue)
                 } else if let failure = startup.failure {
                     ContentUnavailableView {
-                        Label(L10n.string("test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
+                        Label(L10n.string(startup.isStorageFailure ? "download.migration_failed" : "test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
                     } description: {
-                        Text(failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
+                        Text(startup.isStorageFailure ? failure : failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
+                    } actions: {
+                        if startup.isStorageFailure {
+                            Button(L10n.string("common.retry")) { startup.retryStorage() }
+                        }
                     }
                 } else {
                     ProgressView(L10n.string("test_forum.preparing"))
@@ -46,7 +51,9 @@ private final class YamiboAppStartup {
     var windows: YamiboWindowCoordinator?
     var initialTab: AppTab = .forum
     var failure: String?
-    private var didStart = false
+    var isStorageFailure = false
+    @ObservationIgnored private var preparationTask: Task<Void, Never>?
+    private var isPreparingStorage = false
     private var initialNavigation: AppNavigationTarget?
 
     init() {
@@ -59,15 +66,41 @@ private final class YamiboAppStartup {
                 } catch {
                     failure = error.localizedDescription
                 }
-            } else {
-                startRuntime()
             }
         }
+        #if os(iOS)
+        YamiboAppDelegate.prepareRuntime = { [weak self] in await self?.prepare() }
+        #if canImport(BackgroundTasks)
+        if case let .success(environment) = YamiboForumEnvironment.launchConfiguration,
+           environment.supportsBackgroundRelaunch {
+            // Registration must still happen before launch finishes, but its
+            // handler waits for storage rather than opening it synchronously.
+            FavoriteUpdateBackgroundScheduler.register {
+                await YamiboAppDelegate.prepareRuntime?()
+                return YamiboAppDelegate.appContext
+            }
+        }
+        #endif
+        #endif
     }
 
     func prepare() async {
-        guard !didStart, windows == nil, failure == nil else { return }
-        didStart = true
+        if let preparationTask {
+            await preparationTask.value
+            return
+        }
+        guard windows == nil, failure == nil else { return }
+        let task = Task {
+            if YamiboForumEnvironment.current.requiresTestSitePreparation {
+                guard await prepareTestSite() else { return }
+            }
+            await startRuntime()
+        }
+        preparationTask = task
+        await task.value
+    }
+
+    private func prepareTestSite() async -> Bool {
         do {
             #if canImport(BackgroundTasks)
             BGTaskScheduler.shared.cancelAllTaskRequests()
@@ -81,22 +114,54 @@ private final class YamiboAppStartup {
                 try? await center.setBadgeCount(0)
             }
             #endif
-            startRuntime()
+            return true
         } catch {
             failure = L10n.string("test_forum.reset_failed") + "\n" + error.localizedDescription
+            return false
         }
     }
 
-    private func startRuntime() {
+    private func startRuntime() async {
+        guard !isPreparingStorage, windows == nil else { return }
+        isPreparingStorage = true
+        defer { isPreparingStorage = false }
+        do {
+            // Directory verification/copying can take minutes. Keep it off the
+            // main actor, including on retry, and do not cancel it with a window's task.
+            let database = try await Task.detached(priority: .userInitiated) {
+                try YamiboAppContext.prepareDownloadStorage()
+            }.value
+            startRuntime(database: database)
+            failure = nil
+            isStorageFailure = false
+        } catch {
+            isStorageFailure = true
+            failure = error.localizedDescription
+        }
+    }
+
+    func retryStorage() {
+        guard isStorageFailure, !isPreparingStorage else { return }
+        isStorageFailure = false
+        failure = nil
+        preparationTask = Task { await startRuntime() }
+    }
+
+    private func startRuntime(database: GRDB.DatabasePool) {
+        Task {
+            await DownloadBackgroundSessionMigration.shared.retire()
+            await DownloadContinuedProcessingCoordinator.cancelLegacyRequests()
+        }
         initialTab = Self.resolveInitialTab()
         let sessionStore = SessionStore()
         let webSessionCoordinator = ForumWebSessionCoordinator(sessionStore: sessionStore)
         let imageMemoryCache = YamiboUIImageMemoryCache()
-        let offlineCacheCoordinator = OfflineCacheContinuedProcessingCoordinator()
+        let downloadCoordinator = DownloadContinuedProcessingCoordinator()
         let appContext = YamiboAppContext(
             sessionStore: sessionStore,
             ordinaryImageCache: imageMemoryCache,
-            offlineCacheRunObserver: offlineCacheCoordinator,
+            downloadRunObserver: downloadCoordinator,
+            databasePool: database,
             websiteDataClearer: WebKitWebsiteDataClearer(),
             wafRecoverer: webSessionCoordinator
         )
@@ -104,13 +169,10 @@ private final class YamiboAppStartup {
         YamiboAppDelegate.appContext = appContext
         #endif
         if YamiboForumEnvironment.current.supportsBackgroundRelaunch {
-            Self.registerMangaOfflineCacheBackgroundTasks(
+            Self.registerMangaDownloadBackgroundTasks(
                 appContext: appContext,
-                coordinator: offlineCacheCoordinator
+                coordinator: downloadCoordinator
             )
-        #if os(iOS) && canImport(BackgroundTasks)
-            FavoriteUpdateBackgroundScheduler.register(appContext: appContext)
-        #endif
         }
         let windows = YamiboWindowCoordinator(
             appContext: appContext,
@@ -133,20 +195,20 @@ private final class YamiboAppStartup {
         return AppTabLaunchResolver.resolveInitialTab(homePage: settings.system.homePage)
     }
 
-    private static func registerMangaOfflineCacheBackgroundTasks(
+    private static func registerMangaDownloadBackgroundTasks(
         appContext: YamiboAppContext,
-        coordinator: OfflineCacheContinuedProcessingCoordinator
+        coordinator: DownloadContinuedProcessingCoordinator
     ) {
         #if os(iOS) && canImport(BackgroundTasks)
         guard #available(iOS 26.0, *) else { return }
-        OfflineCacheContinuedProcessingCoordinator.configureLaunchHandler(
+        DownloadContinuedProcessingCoordinator.configureLaunchHandler(
             coordinator: coordinator,
             continueQueue: {
-                let executor = await appContext.makeOfflineCacheQueueExecutor()
+                let executor = await appContext.makeDownloadQueueExecutor()
                 try? await executor.continueQueue(submitsUserInitiatedRun: false)
             },
             pauseQueue: {
-                let executor = await appContext.makeOfflineCacheQueueExecutor()
+                let executor = await appContext.makeDownloadQueueExecutor()
                 try? await executor.pauseQueue()
             }
         )
@@ -156,6 +218,7 @@ private final class YamiboAppStartup {
 
 #if os(iOS)
 private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    static var prepareRuntime: (@MainActor () async -> Void)?
     static var appContext: YamiboAppContext?
     static var windows: YamiboWindowCoordinator?
 
@@ -189,15 +252,25 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        guard let appContext = Self.appContext else {
-            completionHandler()
+        if identifier == DownloadBackgroundSessionMigration.legacyIdentifier {
+            Task { @MainActor in
+                await DownloadBackgroundSessionMigration.shared.retire()
+                completionHandler()
+            }
             return
         }
-        appContext.offlineCacheBackgroundDownloadTransport
-            .setBackgroundEventsCompletionHandler(
-                completionHandler,
-                forSessionIdentifier: identifier
-            )
+        Task { @MainActor in
+            await Self.prepareRuntime?()
+            guard let appContext = Self.appContext else {
+                completionHandler()
+                return
+            }
+            appContext.downloadBackgroundDownloadTransport
+                .setBackgroundEventsCompletionHandler(
+                    completionHandler,
+                    forSessionIdentifier: identifier
+                )
+        }
     }
 
     func userNotificationCenter(
@@ -216,6 +289,7 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
     ) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         let userInfo = response.notification.request.content.userInfo
+        await Self.prepareRuntime?()
         guard let windows = await MainActor.run(body: { Self.windows }) else { return }
         await windows.openNotification(userInfo: userInfo)
     }
@@ -247,7 +321,10 @@ private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private static func handle(_ shortcutItem: UIApplicationShortcutItem, sceneIdentifier: String) {
         guard shortcutItem.type == searchShortcutType else { return }
-        YamiboAppDelegate.windows?.openForumSearch(sceneIdentifier: sceneIdentifier)
+        Task { @MainActor in
+            await YamiboAppDelegate.prepareRuntime?()
+            YamiboAppDelegate.windows?.openForumSearch(sceneIdentifier: sceneIdentifier)
+        }
     }
 }
 #endif

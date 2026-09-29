@@ -59,9 +59,19 @@ public actor SettingsStore {
         defaults: UserDefaults,
         key: String
     ) -> UserDefaultsJSONStorage<AppSettings> {
-        UserDefaultsJSONStorage(defaults: defaults, key: key) { error in
+        let storage = UserDefaultsJSONStorage<AppSettings>(defaults: defaults, key: key) { error in
             YamiboLog.persistence.error("Failed to decode persisted app settings, resetting to defaults: \(error)")
         }
+        // Only rewrite legacy settings after a full successful decode; never persist
+        // the fallback defaults over an unreadable payload during a naming migration.
+        if let data = defaults.data(forKey: key),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           object["novelOfflineCache"] != nil,
+           let settings = storage.loadStored() {
+            do { try storage.save(settings) }
+            catch { YamiboLog.persistence.error("Failed to migrate download settings: \(error)") }
+        }
+        return storage
     }
 
     private func persist(_ settings: AppSettings) throws {

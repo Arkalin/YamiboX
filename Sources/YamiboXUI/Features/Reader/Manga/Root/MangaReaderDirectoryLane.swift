@@ -28,7 +28,7 @@ final class MangaReaderDirectoryLane {
         var setPresentation: @MainActor (MangaReaderPresentation) -> Void
         var progressSnapshot: @MainActor (MangaReaderPresentation) -> MangaReaderProgressSnapshot?
         var publishPresentation: @MainActor (MangaReaderPresentation, MangaReaderProgressSnapshot?) -> Void
-        var offlineCacheOwnerName: @MainActor () -> String?
+        var downloadOwnerName: @MainActor () -> String?
     }
 
     private let dependencies: MangaReaderViewModelDependencies

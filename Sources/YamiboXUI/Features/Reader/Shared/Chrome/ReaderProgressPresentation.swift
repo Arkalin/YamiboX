@@ -131,7 +131,7 @@ public enum ReaderBottomActionKind: Equatable, Sendable {
     case comments
     case settings
     case bookmark
-    case cache
+    case download
 }
 
 public struct ReaderBottomAction: Equatable, Sendable {
@@ -156,7 +156,7 @@ public struct ReaderBottomActionRowPresentation: Equatable, Sendable {
             ReaderBottomAction(kind: .browser),
             ReaderBottomAction(kind: .search),
             ReaderBottomAction(kind: .bookmark, isDisabled: true),
-            ReaderBottomAction(kind: .cache),
+            ReaderBottomAction(kind: .download),
         ]
     }
 

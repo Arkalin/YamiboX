@@ -55,8 +55,8 @@ public enum YamiboForumEnvironment: Sendable, Equatable {
 
     var backgroundDownloadIdentifier: String {
         switch self {
-        case .production: "com.arkalin.YamiboX.offlineCache.backgroundDownloads"
-        case .localSimulator: "com.arkalin.YamiboX.local.offlineCache.backgroundDownloads"
+        case .production: "com.arkalin.YamiboX.download.backgroundDownloads"
+        case .localSimulator: "com.arkalin.YamiboX.local.download.backgroundDownloads"
         }
     }
 
