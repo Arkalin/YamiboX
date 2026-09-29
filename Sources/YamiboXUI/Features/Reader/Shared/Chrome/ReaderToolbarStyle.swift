@@ -42,6 +42,36 @@ extension View {
     func readerBottomChromeButtonStyle(tint: Color) -> some View {
         modifier(ReaderBottomChromeButtonStyle(tint: tint))
     }
+
+    func readerBooksPressFeedback(isPressed: Bool) -> some View {
+        modifier(ReaderBooksPressFeedback(isPressed: isPressed))
+    }
+}
+
+/// Only changes rendering: control layout and hit targets stay stable while pressed.
+private struct ReaderBooksPressFeedback: ViewModifier {
+    let isPressed: Bool
+    @Environment(\.readerToolbarStyle) private var style
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let pressed = isPressed && isEnabled && style.effectiveStyle == .books
+        content
+            .brightness(pressed ? (colorScheme == .dark ? 0.10 : -0.10) : 0)
+            .scaleEffect(pressed && !reduceMotion ? 0.96 : 1)
+            .animation(.easeOut(duration: pressed ? 0.10 : 0.20), value: pressed)
+    }
+}
+
+/// For controls whose label already contains its panel, unlike the action row.
+struct ReaderBooksPressButtonStyle: ButtonStyle {
+    var isPressFeedbackEnabled = true
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.readerBooksPressFeedback(isPressed: isPressFeedbackEnabled && configuration.isPressed)
+    }
 }
 
 private struct ReaderStyledChromePanel: ViewModifier {
@@ -114,7 +144,7 @@ private struct ReaderBooksButtonStyle: ButtonStyle {
             .foregroundStyle(ink)
             .padding(.vertical, 7)
             .readerStyledChromePanel()
-            .opacity(configuration.isPressed ? 0.65 : 1)
+            .readerBooksPressFeedback(isPressed: configuration.isPressed)
     }
 }
 #endif

@@ -49,6 +49,8 @@ struct ReaderDirectoryProgressCapsule: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
     @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarPaper) private var toolbarPaper
+    @Environment(\.readerToolbarInk) private var toolbarInk
     private let layout = ReaderBottomChromeLayoutPresentation()
 
     init(
@@ -86,56 +88,127 @@ struct ReaderDirectoryProgressCapsule: View {
             let width = max(geometry.size.width, 1)
             let clampedProgress = min(max(progressFraction, 0), 1)
 
-            ZStack(alignment: fillAlignment) {
-                Capsule()
-                    .fill(Color.secondary.opacity(isBooks ? 0 : (colorScheme == .dark ? 0.18 : 0.12)))
-
-                if showsFill {
-                    Rectangle()
-                        .fill(controlTint.opacity(colorScheme == .dark ? 0.24 : 0.18))
-                        .frame(
-                            width: layout.capsuleProgressFillExtent(
-                                position: clampedProgress,
-                                length: width,
-                                edgeInset: layout.capsuleChapterTickRoundedEdgeInset
-                            )
-                        )
-                        .accessibilityHidden(true)
+            Button(action: onTapDirectory) {
+                if isBooks {
+                    booksDirectoryLabel(width: width, progress: clampedProgress)
+                } else {
+                    directoryLabel(isBooks: false, controlTint: controlTint, width: width, clampedProgress: clampedProgress)
                 }
-
-                ReaderProgressChapterTickOverlay(ticks: ticks, currentTint: controlTint)
-                    .opacity(showsChapterTicks(layout: layout) ? 1 : 0)
-
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(isBooks ? .body : .callout.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Spacer(minLength: 12)
-                    Image(systemName: iconSystemName)
-                        .font(.system(size: 22, weight: .medium))
-                }
-                .foregroundStyle(isBooks ? Color.white : (layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary))
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 16)
-                .opacity(layout.horizontalDirectoryContentHiddenWhileScrubbing && isScrubbing ? 0 : 1)
             }
-            .frame(height: layout.progressPanelHeight)
-            .clipShape(Capsule())
-            .contentShape(Capsule())
-            .readerStyledChromePanel(
-                cornerRadius: 24,
-                tint: readerChromePanelTint(for: colorScheme),
-                isInteractive: usesNativePressFeedback,
-                isDirectory: true
-            )
-            .gesture(scrubGesture(width: width), including: supportsScrub ? .gesture : .subviews)
-            .onTapGesture(perform: onTapDirectory)
-            .accessibilityAddTraits(.isButton)
+            .buttonStyle(ReaderBooksPressButtonStyle(isPressFeedbackEnabled: usesNativePressFeedback))
+            // A recognized scrub takes priority over activating the directory button.
+            .highPriorityGesture(scrubGesture(width: width), including: supportsScrub ? .all : .subviews)
             .accessibilityLabel(title)
             .accessibilityHint(L10n.string("reader.chapters"))
         }
         .frame(height: layout.progressPanelHeight)
+    }
+
+    private var booksUsesDarkPaper: Bool {
+        let color = UIColor(toolbarPaper).resolvedColor(with: UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light))
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: nil)
+        return red * 0.299 + green * 0.587 + blue * 0.114 < 0.5
+    }
+
+    private func booksDirectoryLabel(width: CGFloat, progress: Double) -> some View {
+        let darkPaper = booksUsesDarkPaper
+        let fillWidth = showsFill ? width * CGFloat(progress) : 0
+
+        return ZStack(alignment: fillAlignment) {
+            // The unread segment reverses its emphasis at night; it is not a
+            // translucent progress tint painted over an always-black track.
+            toolbarPaper
+                .overlay(darkPaper ? Color.white.opacity(0.38) : Color.black.opacity(0.85))
+
+            toolbarPaper
+                .overlay(colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.09))
+                .frame(width: fillWidth)
+                .accessibilityHidden(true)
+
+            ReaderProgressChapterTickOverlay(ticks: ticks, currentTint: .white)
+                .opacity(showsChapterTicks(layout: layout) ? 1 : 0)
+
+            booksDirectoryContent
+                .foregroundStyle(.white)
+                .overlay {
+                    // Clip a second, identically laid-out label at the exact
+                    // progress boundary, including characters crossing it.
+                    booksDirectoryContent
+                        .foregroundStyle(darkPaper ? Color.white : toolbarInk)
+                        .mask(alignment: fillAlignment) {
+                            Rectangle().frame(width: fillWidth)
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .opacity(layout.horizontalDirectoryContentHiddenWhileScrubbing && isScrubbing ? 0 : 1)
+        }
+        .frame(height: layout.progressPanelHeight)
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+
+    private var booksDirectoryContent: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.body)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 12)
+            Image(systemName: iconSystemName)
+                .font(.system(size: 22, weight: .medium))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+    }
+
+    private func directoryLabel(isBooks: Bool, controlTint: Color, width: CGFloat, clampedProgress: Double) -> some View {
+        ZStack(alignment: fillAlignment) {
+            Capsule()
+                .fill(Color.secondary.opacity(isBooks ? 0 : (colorScheme == .dark ? 0.18 : 0.12)))
+
+            if showsFill {
+                Rectangle()
+                    .fill(controlTint.opacity(colorScheme == .dark ? 0.24 : 0.18))
+                    .frame(
+                        width: layout.capsuleProgressFillExtent(
+                            position: clampedProgress,
+                            length: width,
+                            edgeInset: layout.capsuleChapterTickRoundedEdgeInset
+                        )
+                    )
+                    .accessibilityHidden(true)
+            }
+
+            ReaderProgressChapterTickOverlay(ticks: ticks, currentTint: controlTint)
+                .opacity(showsChapterTicks(layout: layout) ? 1 : 0)
+
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(isBooks ? .body : .callout.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 12)
+                Image(systemName: iconSystemName)
+                    .font(.system(size: 22, weight: .medium))
+            }
+            .foregroundStyle(isBooks ? Color.white : (layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary))
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .opacity(layout.horizontalDirectoryContentHiddenWhileScrubbing && isScrubbing ? 0 : 1)
+        }
+        .frame(height: layout.progressPanelHeight)
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .readerStyledChromePanel(
+            cornerRadius: 24,
+            tint: readerChromePanelTint(for: colorScheme),
+            isInteractive: usesNativePressFeedback,
+            isDirectory: true
+        )
     }
 
     private func scrubGesture(width: CGFloat) -> some Gesture {
@@ -376,6 +449,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
             }
         }
         .mask(Capsule())
+        .readerBooksPressFeedback(isPressed: isScrubbing)
     }
 }
 
