@@ -15,6 +15,7 @@ public struct SettingsDependencies: Sendable {
     public let checkInStore: YamiboCheckInStore
     public let favoriteUpdateStore: FavoriteUpdateStore
     public let downloadStore: any DownloadStoring
+    public let downloadQueue: DownloadQueueDependencies
     public let clearOrdinaryImageCache: @Sendable () async -> Void
     public let ordinaryImageCacheUsageBytes: @Sendable () async -> Int
     public let httpCache: URLCache
@@ -35,6 +36,7 @@ public struct SettingsDependencies: Sendable {
         checkInStore: YamiboCheckInStore,
         favoriteUpdateStore: FavoriteUpdateStore,
         downloadStore: any DownloadStoring,
+        downloadQueue: DownloadQueueDependencies,
         clearOrdinaryImageCache: @escaping @Sendable () async -> Void,
         ordinaryImageCacheUsageBytes: @escaping @Sendable () async -> Int,
         resetApplicationData: @escaping @Sendable () async throws -> Void,
@@ -53,6 +55,7 @@ public struct SettingsDependencies: Sendable {
         self.checkInStore = checkInStore
         self.favoriteUpdateStore = favoriteUpdateStore
         self.downloadStore = downloadStore
+        self.downloadQueue = downloadQueue
         self.clearOrdinaryImageCache = clearOrdinaryImageCache
         self.ordinaryImageCacheUsageBytes = ordinaryImageCacheUsageBytes
         self.httpCache = httpCache

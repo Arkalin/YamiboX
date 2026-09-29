@@ -2,126 +2,132 @@ import SwiftUI
 import YamiboXCore
 
 /// Sheet shell for contexts without a navigation stack of their own (the
-/// full-screen readers' download sheets). The Mine tab pushes
-/// `DownloadQueueScreen` directly instead.
+/// full-screen readers' download sheets).
 struct DownloadQueueSheet: View {
     let viewModel: DownloadQueueViewModel
+    let management: DownloadManagementViewModel
 
     var body: some View {
         NavigationStack {
-            DownloadQueueScreen(viewModel: viewModel, showsCloseButton: true)
+            DownloadsScreen(initialPage: .queue, management: management, queue: viewModel, showsCloseButton: true)
         }
     }
 }
 
 struct DownloadQueueScreen: View {
     let viewModel: DownloadQueueViewModel
-    var showsCloseButton = false
+    let openManagement: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var selectedGroupID: DownloadGroupID?
 
     var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let failure = viewModel.loadFailure {
-                        LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
-                            Task { await viewModel.refresh() }
-                        }
+        List {
+            Group {
+                if let failure = viewModel.loadFailure {
+                    LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                        Task { await viewModel.refresh() }
                     }
-                    if viewModel.isEmpty && viewModel.loadFailure == nil && !viewModel.isLoading {
-                        DownloadQueueEmptyState()
-                    } else {
-                        if viewModel.showsControls {
-                            DownloadQueueControls(viewModel: viewModel)
-                        }
-
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.groups) { group in
-                                DownloadQueueOwnerRow(
-                                    group: group,
-                                    runState: viewModel.runState,
-                                    isSelecting: viewModel.isSelectionMode,
-                                    isSelected: viewModel.isOwnerSelected(id: group.id),
-                                    open: {
-                                        viewModel.setSelectionMode(false)
-                                        selectedGroupID = group.id
-                                    },
-                                    toggleSelection: {
-                                        viewModel.toggleOwnerSelection(id: group.id)
-                                    },
-                                    cancel: {
-                                        Task {
-                                            await viewModel.cancelOwnerGroup(id: group.id)
-                                        }
+                }
+                if viewModel.isEmpty && viewModel.loadFailure == nil && !viewModel.isLoading {
+                    DownloadQueueEmptyState()
+                } else {
+                    Section {
+                        ForEach(viewModel.groups) { group in
+                            DownloadQueueOwnerRow(
+                                group: group,
+                                runState: viewModel.runState,
+                                isSelecting: viewModel.isSelectionMode,
+                                isSelected: viewModel.isOwnerSelected(id: group.id),
+                                open: {
+                                    viewModel.setSelectionMode(false)
+                                    selectedGroupID = group.id
+                                },
+                                toggleSelection: {
+                                    viewModel.toggleOwnerSelection(id: group.id)
+                                },
+                                cancel: {
+                                    Task {
+                                        await viewModel.cancelOwnerGroup(id: group.id)
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }
-                .padding(16)
             }
-            .background(YamiboColors.SystemSurface.groupedBackground)
-            .downloadQueueFailureAlert(viewModel, isActive: selectedGroupID == nil)
-            .navigationTitle(
-                viewModel.isSelectionMode
-                    ? L10n.string("mine.download_queue.selected_count", viewModel.selectedWorkCount)
-                    : L10n.string("mine.download_queue")
+        }
+        .listStyle(.insetGrouped)
+        .contentMargins(.top, 12, for: .scrollContent)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if viewModel.showsControls {
+                DownloadQueueControls(viewModel: viewModel)
+            }
+        }
+        .yamiboInlineNavigationTitleDisplayMode()
+        .navigationBarBackButtonHidden(viewModel.isSelectionMode)
+        .downloadQueueFailureAlert(viewModel, isActive: selectedGroupID == nil)
+        .navigationTitle(
+            viewModel.isSelectionMode
+                ? L10n.string("mine.download_queue.selected_count", viewModel.selectedWorkCount)
+                : L10n.string("mine.download_queue")
+        )
+        .task {
+            await viewModel.load()
+        }
+        .refreshable {
+            await viewModel.refresh()
+        }
+        .navigationDestination(item: $selectedGroupID) { groupID in
+            DownloadQueueOwnerScreen(
+                viewModel: viewModel,
+                groupID: groupID
             )
-            .task {
-                await viewModel.load()
-            }
-            .refreshable {
-                await viewModel.refresh()
-            }
-            .navigationDestination(item: $selectedGroupID) { groupID in
-                DownloadQueueOwnerScreen(
-                    viewModel: viewModel,
-                    groupID: groupID
-                )
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if viewModel.isSelectionMode {
-                        DownloadQueueSelectAllButton(viewModel: viewModel)
-                    } else if showsCloseButton {
-                        Button(L10n.string("common.close")) {
-                            dismiss()
-                        }
-                    }
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if viewModel.isSelectionMode {
+                    DownloadQueueSelectAllButton(viewModel: viewModel)
                 }
+            }
 
+            if !viewModel.isSelectionMode {
                 ToolbarItem(placement: .primaryAction) {
-                    if !viewModel.isEmpty {
-                        SelectionModeToggleButton(
-                            isSelecting: viewModel.isSelectionMode,
-                            isDisabled: viewModel.isCommandRunning
-                        ) {
-                            viewModel.setSelectionMode(!viewModel.isSelectionMode)
-                        }
-                    }
+                    Button(L10n.string("settings.download.title"), action: openManagement)
+                        .disabled(viewModel.isCommandRunning)
                 }
+            }
 
-                if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+            ToolbarItem(placement: .primaryAction) {
+                if !viewModel.isEmpty {
+                    SelectionModeToggleButton(
+                        isSelecting: viewModel.isSelectionMode,
+                        isDisabled: viewModel.isCommandRunning
+                    ) {
+                        viewModel.setSelectionMode(!viewModel.isSelectionMode)
                     }
                 }
             }
-            .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+
+            if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
+                ToolbarItem(placement: .bottomBar) {
                     SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
-                        .selectionBottomToolbarCapsule()
                 }
             }
-            .overlay {
-                if viewModel.isLoading && viewModel.isEmpty {
-                    ProgressView()
-                }
+        }
+        .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+                SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+                    .selectionBottomToolbarCapsule()
             }
-            .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.isEmpty {
+                ProgressView()
+            }
+        }
+        .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
+        .onDisappear { viewModel.setSelectionMode(false) }
     }
 }
 
@@ -144,7 +150,8 @@ private struct DownloadQueueSelectAllButton: View {
 @MainActor
 private enum DownloadQueueSelectionActions {
     static func cancel(viewModel: DownloadQueueViewModel) -> [SelectionToolbarAction] {
-        let canCancel = !viewModel.selectedWorkIDs.isEmpty
+        let canCancel =
+            !viewModel.selectedWorkIDs.isEmpty
             && !viewModel.isCommandRunning
         return [
             SelectionToolbarAction(
@@ -168,23 +175,62 @@ private enum DownloadQueueSelectionActions {
 private struct DownloadQueueControls: View {
     let viewModel: DownloadQueueViewModel
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: viewModel.runState == .running ? "arrow.down.circle.fill" : "pause.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(appTheme.controlAccent)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(L10n.string(viewModel.runState == .running
-                        ? "mine.download_queue.running" : "mine.download_queue.paused"))
-                        .font(.headline)
-                    Text(L10n.string("mine.download_queue.chapter_count_format", viewModel.entryCount))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    summary
+                    actions
                 }
-                Spacer(minLength: 0)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) {
+                        summary
+                        Spacer(minLength: 0)
+                        actions
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        summary
+                        actions
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("downloads.queue.controls")
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(L10n.string(viewModel.runState == .running ? "settings.download.state.running" : "settings.download.state.paused"))
+                .font(.subheadline.weight(.semibold))
+            Text(viewModel.failedCount > 0
+                ? L10n.string("downloads.queue_counts_failed", viewModel.entryCount, viewModel.failedCount)
+                : L10n.string("settings.download.entry_count_format", viewModel.entryCount))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 12) {
+            if viewModel.failedCount > 0 && viewModel.runState == .running {
+                Button {
+                    Task { await viewModel.continueQueue() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 24, height: 32)
+                }
+                .accessibilityLabel(L10n.string("downloads.retry_continue_all"))
+                .frame(minWidth: 44, minHeight: 44)
             }
             Button {
                 Task {
@@ -195,29 +241,28 @@ private struct DownloadQueueControls: View {
                     }
                 }
             } label: {
-                HStack(spacing: 8) {
-                    if viewModel.isCommandRunning { ProgressView() }
-                    Label(controlTitle, systemImage: controlImage)
+                Group {
+                    if viewModel.isCommandRunning {
+                        ProgressView()
+                    } else {
+                        Image(systemName: viewModel.runState == .running ? "pause.fill" : "play.fill")
+                    }
                 }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 32)
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 24, height: 32)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(appTheme.controlAccent)
-            .disabled(viewModel.isCommandRunning)
+            .accessibilityLabel(controlAccessibilityLabel)
+            .frame(minWidth: 44, minHeight: 44)
         }
-        .padding(16)
-        .background(YamiboColors.SystemSurface.secondaryGroupedBackground, in: RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.bordered)
+        .tint(appTheme.controlAccent)
+        .disabled(viewModel.isCommandRunning)
     }
 
-    private var controlTitle: String {
+    private var controlAccessibilityLabel: String {
         viewModel.runState == .running
             ? L10n.string("mine.download_queue.pause_all")
-            : L10n.string("mine.download_queue.continue_all")
-    }
-
-    private var controlImage: String {
-        viewModel.runState == .running ? "pause.fill" : "play.fill"
+            : L10n.string(viewModel.failedCount > 0 ? "downloads.retry_continue_all" : "mine.download_queue.continue_all")
     }
 }
 
@@ -230,16 +275,19 @@ private struct DownloadQueueOwnerRow: View {
     let toggleSelection: () -> Void
     let cancel: () -> Void
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: isSelecting ? (isSelected ? "checkmark.circle.fill" : "circle")
-                : (group.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
-                .font(.title3)
-                .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
-                .frame(width: 40, height: 48)
-                .background(dimming.emphasis(appTheme.controlAccent).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityHidden(true)
+            Image(
+                systemName: isSelecting
+                    ? (isSelected ? "checkmark.circle.fill" : "circle")
+                    : (group.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
+            )
+            .font(.system(size: 20))
+            .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
+            .frame(width: 28, height: 32)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -247,7 +295,7 @@ private struct DownloadQueueOwnerRow: View {
                         Text(group.ownerName)
                             .font(.headline)
                             .foregroundStyle(dimming.titleColor)
-                            .lineLimit(2)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
                         Text(L10n.string("mine.download_queue.chapter_count_format", group.chapterCount))
                             .font(.caption)
@@ -265,7 +313,8 @@ private struct DownloadQueueOwnerRow: View {
                 DownloadQueueProgress(
                     fraction: group.progressFraction,
                     progressText: group.progressText,
-                    speedText: runState == .running ? group.currentSpeedText : nil,
+                    speedText: runState == .running && group.chapters.contains(where: { $0.state == .running })
+                        ? group.currentSpeedText : nil,
                     failureText: group.failureStatusText,
                     isDimmed: dimming.isDimmed
                 )
@@ -280,7 +329,14 @@ private struct DownloadQueueOwnerRow: View {
                 .opacity(isSelecting ? 0 : 1)
                 .accessibilityHidden(isSelecting)
         }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: rowAction)
+        .downloadListRow(isSelected: isSelected, action: rowAction)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !isSelecting {
+                Button(role: .destructive, action: cancel) {
+                    Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
+                }
+            }
+        }
         .contextMenu {
             if !isSelecting {
                 Button(role: .destructive, action: cancel) {
@@ -316,117 +372,120 @@ private struct DownloadQueueOwnerScreen: View {
     }
 
     var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let group {
-                        if viewModel.showsControls {
-                            DownloadQueueControls(viewModel: viewModel)
-                        }
+        List {
+            Group {
+                if let group {
+                    Section {
+                        Text(L10n.string("mine.download_queue.chapter_count_format", group.chapterCount))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
 
-                        LazyVStack(spacing: 10) {
-                            ForEach(group.chapters) { chapter in
-                                DownloadQueueChapterRowView(
-                                    chapter: chapter,
-                                    runState: viewModel.runState,
-                                    isCommandRunning: viewModel.isCommandRunning,
-                                    isSelecting: viewModel.isSelectionMode,
-                                    isSelected: viewModel.selectedWorkIDs.contains(chapter.id),
-                                    toggleSelection: {
-                                        viewModel.toggleWorkSelection(chapter.id)
-                                    },
-                                    cancel: {
-                                        Task {
-                                            await viewModel.cancelChapter(chapter.id)
-                                            dismissIfGroupIsEmpty()
-                                        }
+                    Section {
+                        ForEach(group.chapters) { chapter in
+                            DownloadQueueChapterRowView(
+                                chapter: chapter,
+                                runState: viewModel.runState,
+                                isCommandRunning: viewModel.isCommandRunning,
+                                isSelecting: viewModel.isSelectionMode,
+                                isSelected: viewModel.selectedWorkIDs.contains(chapter.id),
+                                toggleSelection: {
+                                    viewModel.toggleWorkSelection(chapter.id)
+                                },
+                                cancel: {
+                                    Task {
+                                        await viewModel.cancelChapter(chapter.id)
+                                        dismissIfGroupIsEmpty()
                                     }
-                                )
-                            }
-                        }
-                    } else if viewModel.loadFailure == nil {
-                        DownloadQueueEmptyState()
-                    }
-                    if let failure = viewModel.loadFailure {
-                        LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
-                            Task { await viewModel.refresh() }
+                                }
+                            )
                         }
                     }
+                } else if viewModel.loadFailure == nil {
+                    DownloadQueueEmptyState()
                 }
-                .padding(16)
-            }
-            .background(YamiboColors.SystemSurface.groupedBackground)
-            .navigationTitle(
-                viewModel.isSelectionMode
-                    ? L10n.string("mine.download_queue.selected_count", viewModel.selectedWorkCount)
-                    : (group?.title ?? L10n.string("mine.download_queue"))
-            )
-            .task {
-                viewModel.setSelectionMode(false)
-                await viewModel.refresh()
-                dismissIfGroupIsEmpty()
-            }
-            .refreshable {
-                await viewModel.refresh()
-                dismissIfGroupIsEmpty()
-            }
-            .onChange(of: viewModel.entryCount) {
-                dismissIfGroupIsEmpty()
-            }
-            .onDisappear {
-                viewModel.setSelectionMode(false)
-            }
-            .toolbar {
-                if viewModel.isSelectionMode {
-                    ToolbarItem(placement: .cancellationAction) {
-                        DownloadQueueSelectAllButton(
-                            viewModel: viewModel,
-                            groupID: groupID
-                        )
+                if let failure = viewModel.loadFailure {
+                    LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
+                        Task { await viewModel.refresh() }
                     }
                 }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .yamiboInlineNavigationTitleDisplayMode()
+        .navigationBarBackButtonHidden(viewModel.isSelectionMode)
+        .navigationTitle(
+            viewModel.isSelectionMode
+                ? L10n.string("mine.download_queue.selected_count", viewModel.selectedWorkCount)
+                : (group?.title ?? L10n.string("mine.download_queue"))
+        )
+        .task {
+            viewModel.setSelectionMode(false)
+            await viewModel.refresh()
+            dismissIfGroupIsEmpty()
+        }
+        .refreshable {
+            await viewModel.refresh()
+            dismissIfGroupIsEmpty()
+        }
+        .onChange(of: viewModel.groups.map(\.id)) {
+            dismissIfGroupIsEmpty()
+        }
+        .onChange(of: viewModel.isLoading) { dismissIfGroupIsEmpty() }
+        .onDisappear {
+            viewModel.setSelectionMode(false)
+        }
+        .toolbar {
+            if viewModel.isSelectionMode {
+                ToolbarItem(placement: .cancellationAction) {
+                    DownloadQueueSelectAllButton(
+                        viewModel: viewModel,
+                        groupID: groupID
+                    )
+                }
+            }
 
-                ToolbarItem(placement: .primaryAction) {
-                    if group != nil {
-                        SelectionModeToggleButton(
-                            isSelecting: viewModel.isSelectionMode,
-                            isDisabled: viewModel.isCommandRunning
-                        ) {
-                            viewModel.setSelectionMode(!viewModel.isSelectionMode)
-                        }
-                    }
-                }
-
-                if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+            ToolbarItem(placement: .primaryAction) {
+                if group != nil {
+                    SelectionModeToggleButton(
+                        isSelecting: viewModel.isSelectionMode,
+                        isDisabled: viewModel.isCommandRunning
+                    ) {
+                        viewModel.setSelectionMode(!viewModel.isSelectionMode)
                     }
                 }
             }
-            .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+
+            if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
+                ToolbarItem(placement: .bottomBar) {
                     SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
-                        .selectionBottomToolbarCapsule()
                 }
             }
-            .overlay {
-                if viewModel.isLoading && group == nil {
-                    ProgressView()
-                }
+        }
+        .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+                SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+                    .selectionBottomToolbarCapsule()
             }
-            .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
-            .downloadQueueFailureAlert(viewModel)
+        }
+        .overlay {
+            if viewModel.isLoading && group == nil {
+                ProgressView()
+            }
+        }
+        .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
+        .downloadQueueFailureAlert(viewModel)
     }
 
     private func dismissIfGroupIsEmpty() {
-        if group == nil, viewModel.loadFailure == nil {
+        if group == nil, viewModel.loadFailure == nil, !viewModel.isLoading {
             dismiss()
         }
     }
 }
 
-private extension View {
-    func downloadQueueFailureAlert(_ model: DownloadQueueViewModel, isActive: Bool = true) -> some View {
+extension View {
+    fileprivate func downloadQueueFailureAlert(_ model: DownloadQueueViewModel, isActive: Bool = true) -> some View {
         failureAlert(
             L10n.string("common.operation_failed"), message: model.errorMessage, details: model.errorDetails,
             isPresented: Binding(
@@ -448,6 +507,7 @@ private struct DownloadQueueChapterRowView: View {
     let toggleSelection: () -> Void
     let cancel: () -> Void
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -460,7 +520,7 @@ private struct DownloadQueueChapterRowView: View {
                 Text(chapter.title)
                     .font(.headline)
                     .foregroundStyle(dimming.titleColor)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
                 Spacer(minLength: 8)
 
@@ -473,29 +533,36 @@ private struct DownloadQueueChapterRowView: View {
             DownloadQueueProgress(
                 fraction: chapter.progressFraction,
                 progressText: chapter.progressText,
-                speedText: runState == .running ? chapter.speedText : nil,
+                speedText: runState == .running && chapter.state == .running ? chapter.speedText : nil,
                 failureText: chapter.failureStatusText,
                 isDimmed: dimming.isDimmed
             )
 
             HStack {
                 Label(statusTitle, systemImage: statusImage)
+                    .labelStyle(.titleAndIcon)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(dimming.emphasis(chapter.state == .failed ? .red : appTheme.controlAccent))
                 Spacer(minLength: 8)
-                if !isSelecting {
-                    Button(role: .destructive, action: cancel) {
-                        Text(L10n.string("mine.download_queue.cancel_download"))
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .frame(minHeight: 44)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(isCommandRunning)
-                }
             }
         }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: selectionAction)
+        .downloadListRow(isSelected: isSelected, action: selectionAction)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !isSelecting {
+                Button(role: .destructive, action: cancel) {
+                    Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
+                }
+                .disabled(isCommandRunning)
+            }
+        }
+        .contextMenu {
+            if !isSelecting {
+                Button(role: .destructive, action: cancel) {
+                    Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
+                }
+                .disabled(isCommandRunning)
+            }
+        }
     }
 
     private var selectionAction: (() -> Void)? {
@@ -510,8 +577,9 @@ private struct DownloadQueueChapterRowView: View {
     private var statusTitle: String {
         if chapter.state == .failed { return L10n.string("settings.download.state.failed") }
         if runState != .running { return L10n.string("settings.download.state.paused") }
-        return L10n.string(chapter.state == .running
-            ? "settings.download.state.running" : "settings.download.state.queued")
+        return L10n.string(
+            chapter.state == .running
+                ? "settings.download.state.running" : "settings.download.state.queued")
     }
 
     private var statusImage: String {

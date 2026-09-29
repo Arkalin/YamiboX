@@ -142,9 +142,10 @@ struct MineSidebarView: View {
                 sectionLink(.history, icon: "clock.arrow.circlepath")
                 sectionLink(.likes, icon: "heart.fill")
                 Button { navigation.show(.downloads) } label: {
-                    Label(L10n.string("mine.download_queue"), systemImage: "arrow.down.circle.fill")
-                        .badge(viewModel.offlineQueue.entryCount)
+                    Label(L10n.string("settings.download.title"), systemImage: "arrow.down.circle.fill")
+                        .badge(viewModel.offlineQueue.entryCount > 0 ? Text(L10n.string("downloads.pending_badge", viewModel.offlineQueue.entryCount)) : nil)
                 }
+                .accessibilityValue(L10n.string("mine.download_queue.chapter_count_format", viewModel.offlineQueue.entryCount))
                 .tag(MineSidebarDetail.downloads)
                 .accessibilityIdentifier("mine.sidebar.downloads")
             }
@@ -266,7 +267,7 @@ struct MineSidebarView: View {
         case .messages:
             ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator, appModel: appModel)
         case .downloads:
-            DownloadQueueScreen(viewModel: viewModel.offlineQueue)
+            DownloadsScreen(initialPage: .management, management: viewModel.downloadManagement, queue: viewModel.offlineQueue)
         case .history:
             BrowsingHistoryView(dependencies: settings.dependencies.library.history, appModel: appModel,
                 categorySelection: Binding { historyFilter } set: { navigation.show(.history($0)) },

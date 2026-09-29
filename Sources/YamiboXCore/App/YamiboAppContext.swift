@@ -373,6 +373,7 @@ public final class YamiboAppContext: Sendable {
 
     public var downloadQueueDependencies: DownloadQueueDependencies {
         DownloadQueueDependencies(
+            sessionStore: sessionStore,
             downloadStore: downloadStore,
             mangaDirectoryStore: mangaDirectoryStore,
             makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() }
@@ -408,6 +409,7 @@ public final class YamiboAppContext: Sendable {
             checkInStore: checkInStore,
             favoriteUpdateStore: favoriteUpdateStore,
             downloadStore: downloadStore,
+            downloadQueue: downloadQueueDependencies,
             clearOrdinaryImageCache: { [self] in await clearOrdinaryImageCache() },
             ordinaryImageCacheUsageBytes: { [imagePipeline, ordinaryImageCache] in
                 let dataBytes = await imagePipeline.totalDiskUsageBytes()

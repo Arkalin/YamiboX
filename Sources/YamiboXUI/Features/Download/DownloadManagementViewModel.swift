@@ -6,28 +6,33 @@ import YamiboXCore
 /// per-group drill-down screen.
 @MainActor
 @Observable
-final class DownloadManagementViewModel: SystemSettingsActivityReporting {
+final class DownloadManagementViewModel {
+    enum Action: Equatable { case loading, clearingDownload }
+    private(set) var activeAction: Action?
+    var errorMessage: String?
+    var errorDetails: LoadFailureDetails?
     var downloadManagementRows: [DownloadManagementRow] = []
     var selectedDownloadGroupIDs: Set<DownloadGroupID> = []
     var isDownloadManagementSelectionMode = false
     var pendingDownloadManagementConfirmation: DownloadManagementConfirmation?
     private(set) var loadFailure: LoadFailureDetails?
 
-    let dependencies: SettingsDependencies
-    let activity: SystemSettingsActivity
-
-    /// Deletions here shrink the Storage page's downloads figure, so this
-    /// page refreshes the shared usage model rather than a private counter.
-    private let storageUsage: SettingsStorageUsage
+    private let downloadStore: any DownloadManagementStoring
+    private let sessionStore: SessionStore
+    private let onDeletion: @MainActor () async -> Void
+    @ObservationIgnored private var revision = 0
+    @ObservationIgnored private var needsRefresh = false
+    @ObservationIgnored private var displayedGeneration: UUID?
+    @ObservationIgnored private var loadingID: UUID?
 
     init(
-        dependencies: SettingsDependencies,
-        activity: SystemSettingsActivity,
-        storageUsage: SettingsStorageUsage
+        downloadStore: any DownloadManagementStoring,
+        sessionStore: SessionStore,
+        onDeletion: @escaping @MainActor () async -> Void = {}
     ) {
-        self.dependencies = dependencies
-        self.activity = activity
-        self.storageUsage = storageUsage
+        self.downloadStore = downloadStore
+        self.sessionStore = sessionStore
+        self.onDeletion = onDeletion
     }
 
     var downloadManagementIsEmpty: Bool {
@@ -52,20 +57,61 @@ final class DownloadManagementViewModel: SystemSettingsActivityReporting {
     }
 
     func restoreDefaultsAfterApplicationReset() {
+        revision += 1
         downloadManagementRows = []
         selectedDownloadGroupIDs = []
         isDownloadManagementSelectionMode = false
         pendingDownloadManagementConfirmation = nil
         loadFailure = nil
+        errorMessage = nil
+        errorDetails = nil
     }
 
     // MARK: - Loading
 
     func refreshDownloadManagement() async {
+        guard activeAction == nil else {
+            needsRefresh = true
+            return
+        }
+        let id = UUID()
+        loadingID = id
         activeAction = .loading
-        defer { activeAction = nil }
+        defer {
+            if loadingID == id && activeAction == .loading {
+                loadingID = nil
+                activeAction = nil
+                // A pushed page may request its load while the disappearing
+                // page's task is being cancelled. Do not lose that request.
+                if needsRefresh { Task { await self.refreshDownloadManagement() } }
+            }
+        }
+        repeat {
+            needsRefresh = false
+            await refreshDownloadManagementRows()
+        } while needsRefresh && loadingID == id && !Task.isCancelled
+    }
 
-        await refreshDownloadManagementRows()
+    /// Throttle bursty progress notifications without losing the final update.
+    /// The view owns cancellation, so hidden pages do not scan the disk.
+    func observeUpdates() async {
+        let updates = downloadStore.downloadUpdates()
+        await refreshDownloadManagement()
+        for await _ in updates {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard !Task.isCancelled else { return }
+            await refreshDownloadManagement()
+        }
+    }
+
+    func observeSession() async {
+        for await _ in sessionStore.changes() {
+            guard !Task.isCancelled else { return }
+            let generation = try? await sessionStore.snapshot().generation
+            guard generation != displayedGeneration else { continue }
+            restoreDefaultsAfterApplicationReset()
+            await refreshDownloadManagement()
+        }
     }
 
     // MARK: - Deletion requests and confirmation
@@ -136,44 +182,66 @@ final class DownloadManagementViewModel: SystemSettingsActivityReporting {
     // MARK: - Private
 
     private func clearDownload(groupIDs: [DownloadGroupID], entryIDs: [DownloadEntryID]) async -> Bool {
+        guard activeAction != .clearingDownload else { return false }
         let normalizedGroupIDs = normalizedDownloadGroupIDs(groupIDs)
         let normalizedEntryIDs = normalizedDownloadEntryIDs(entryIDs)
         guard !normalizedGroupIDs.isEmpty || !normalizedEntryIDs.isEmpty else { return false }
 
+        revision += 1
+        loadingID = nil
+        let commandRevision = revision
         activeAction = .clearingDownload
-        defer { activeAction = nil }
+        defer {
+            activeAction = nil
+            if needsRefresh { Task { await self.refreshDownloadManagement() } }
+        }
 
         do {
+            let account = try await sessionStore.snapshot()
             for groupID in normalizedGroupIDs {
-                try await dependencies.downloadStore.removeDownloadGroup(groupID)
+                guard await sessionStore.isCurrentGeneration(account.generation), commandRevision == revision else { return false }
+                try await downloadStore.removeDownloadGroup(groupID)
             }
             for entryID in normalizedEntryIDs {
-                try await dependencies.downloadStore.removeDownloadEntry(entryID)
+                guard await sessionStore.isCurrentGeneration(account.generation), commandRevision == revision else { return false }
+                try await downloadStore.removeDownloadEntry(entryID)
             }
+            guard commandRevision == revision else { return false }
             pendingDownloadManagementConfirmation = nil
             selectedDownloadGroupIDs.subtract(normalizedGroupIDs)
             if selectedDownloadGroupIDs.isEmpty {
                 isDownloadManagementSelectionMode = false
             }
-            await storageUsage.refresh()
+            await onDeletion()
             await refreshDownloadManagementRows()
             return true
         } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+            if commandRevision == revision, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
             }
+            needsRefresh = true
             return false
         }
     }
 
     private func refreshDownloadManagementRows() async {
+        let refreshRevision = revision
         let snapshot: DownloadManagementSnapshot
         do {
-            snapshot = try await dependencies.downloadStore.downloadManagementSnapshot()
+            let account = try await sessionStore.snapshot()
+            snapshot = try await downloadStore.downloadManagementSnapshot()
             try Task.checkCancellation()
+            guard await sessionStore.isCurrentGeneration(account.generation), refreshRevision == revision else { return }
+            if displayedGeneration != account.generation {
+                setDownloadManagementSelectionMode(false)
+                pendingDownloadManagementConfirmation = nil
+                errorMessage = nil
+                errorDetails = nil
+                displayedGeneration = account.generation
+            }
         } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+            if refreshRevision == revision, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 loadFailure = LoadFailureDetails(error: error)
             }
             return
@@ -181,6 +249,7 @@ final class DownloadManagementViewModel: SystemSettingsActivityReporting {
         loadFailure = nil
         downloadManagementRows = snapshot.groups
             .map(DownloadManagementRow.init(group:))
+            .filter { !$0.entries.isEmpty }
             .sorted { lhs, rhs in
                 let titleComparison = lhs.title.localizedStandardCompare(rhs.title)
                 if titleComparison != .orderedSame {
@@ -218,7 +287,8 @@ final class DownloadManagementViewModel: SystemSettingsActivityReporting {
     private func normalizedDownloadGroupIDs(_ groupIDs: [DownloadGroupID]) -> [DownloadGroupID] {
         let visibleIDs = Set(downloadManagementRows.map(\.id))
         var seen: Set<DownloadGroupID> = []
-        return groupIDs
+        return
+            groupIDs
             .filter { visibleIDs.contains($0) && seen.insert($0).inserted }
             .sorted { lhs, rhs in
                 lhs.ownerKey.localizedStandardCompare(rhs.ownerKey) == .orderedAscending
@@ -228,7 +298,8 @@ final class DownloadManagementViewModel: SystemSettingsActivityReporting {
     private func normalizedDownloadEntryIDs(_ entryIDs: [DownloadEntryID]) -> [DownloadEntryID] {
         let visibleIDs = Set(downloadManagementRows.flatMap(\.entries).map(\.id))
         var seen: Set<DownloadEntryID> = []
-        return entryIDs
+        return
+            entryIDs
             .filter { visibleIDs.contains($0) && seen.insert($0).inserted }
             .sorted { lhs, rhs in
                 if lhs.ownerKey != rhs.ownerKey {

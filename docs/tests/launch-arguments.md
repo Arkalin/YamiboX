@@ -39,7 +39,7 @@ xcrun simctl launch booted com.arkalin.YamiboX.local --forum-base-url http://127
 | `--open-page home` / `forum` / `favorites` / `mine` | 首页、论坛、收藏、我的 |
 | `--open-page search` / `login` / `settings` | 搜索、登录、设置首页 |
 | `--open-page mine/profile` / `mine/messages` | 我的资料、我的消息（默认私信）；未登录时打开登录入口 |
-| `--open-page mine/history` / `mine/likes` / `mine/downloads` | 浏览记录、我的喜欢、下载队列 |
+| `--open-page mine/history` / `mine/likes` / `mine/downloads` | 浏览记录、我的喜欢、下载管理（内含下载队列入口） |
 | `--open-page favorites/updates` | 收藏更新页 |
 | `--open-page settings/general` / `settings/home` / `settings/forum` | 通用、首页、论坛设置 |
 | `--open-page settings/favorites` / `settings/reading` / `settings/storage` | 收藏、阅读、数据存储设置 |

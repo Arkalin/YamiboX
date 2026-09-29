@@ -4,33 +4,37 @@ import YamiboXCore
 struct DownloadStorageSummary: View {
     let rows: [DownloadManagementRow]
     var isSelecting = false
-    @Environment(\.appTheme) private var appTheme
+    var showsEntryCount = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             Label(
                 L10n.string(isSelecting ? "settings.download.selected_storage" : "settings.download.storage_used"),
                 systemImage: isSelecting ? "checkmark.circle" : "internaldrive"
             )
+            .labelStyle(.titleAndIcon)
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
 
-            Text(ByteCountFormatter.string(fromByteCount: Int64(rows.reduce(0) { $0 + $1.byteCount }), countStyle: .file))
-                .font(.largeTitle.weight(.semibold).monospacedDigit())
-                .foregroundStyle(appTheme.controlAccent)
+            if isSelecting {
+                Text(L10n.string("settings.download.selected_count", rows.count))
+                    .font(.headline)
+            } else {
+                Text(
+                    ByteCountFormatter.string(
+                        fromByteCount: Int64(rows.reduce(0) { $0 + $1.byteCount }), countStyle: .file)
+                )
+                .font(.title2.weight(.semibold).monospacedDigit())
                 .fixedSize(horizontal: false, vertical: true)
-
-            DownloadStatusSummary(
-                downloadedCount: rows.reduce(0) { $0 + $1.downloadedCount },
-                pendingCount: rows.reduce(0) { $0 + $1.pendingCount },
-                failedCount: rows.reduce(0) { $0 + $1.failedCount }
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+                Text(L10n.string(
+                    showsEntryCount ? "downloads.local_entry_count" : "downloads.local_work_count",
+                    showsEntryCount ? rows.reduce(0) { $0 + $1.entries.count } : rows.count
+                ))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(YamiboColors.SystemSurface.secondaryGroupedBackground, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 6)
     }
 }
 

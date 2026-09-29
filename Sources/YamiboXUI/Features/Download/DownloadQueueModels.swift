@@ -18,7 +18,7 @@ struct DownloadQueueOwnerGroup: Hashable, Identifiable {
         let rows = group.works.map(DownloadQueueChapterRow.init(work:))
         let completedImageCount = group.works.reduce(0) { $0 + $1.progress.completedUnitCount }
         let targetImageCount = group.works.reduce(0) { $0 + $1.progress.targetUnitCount }
-        let currentBytesPerSecond = group.works.reduce(0) { $0 + $1.currentBytesPerSecond }
+        let currentBytesPerSecond = group.works.filter { $0.state == .running }.reduce(0) { $0 + $1.currentBytesPerSecond }
         id = group.id
         readerKind = group.id.readerKind
         ownerName = group.title

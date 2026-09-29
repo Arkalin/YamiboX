@@ -12,10 +12,12 @@ struct NovelReaderDownloadPanel: View {
     @State private var isQueuePresented = false
     @State private var isDeleteConfirmationPresented = false
     @State private var queueViewModel: DownloadQueueViewModel
+    @State private var managementViewModel: DownloadManagementViewModel
 
     init(download: NovelReaderDownloadCoordinator) {
         _download = ObservedObject(wrappedValue: download)
         _queueViewModel = State(initialValue: download.makeDownloadQueueViewModel())
+        _managementViewModel = State(initialValue: download.makeDownloadManagementViewModel())
     }
 
     var body: some View {
@@ -76,7 +78,7 @@ struct NovelReaderDownloadPanel: View {
                 }
             }
             .sheet(isPresented: $isQueuePresented) {
-                DownloadQueueSheet(viewModel: queueViewModel)
+                DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .destructiveConfirmationDialog(
                 L10n.string(

@@ -7,7 +7,7 @@ public struct MineHomeView: View {
     @State private var navigator: ForumDestinationNavigator
     @State private var showingLoginSheet = false
     @State private var isSettingsPushed = false
-    @State private var isDownloadQueuePushed = false
+    @State private var isDownloadManagementPushed = false
     @State private var isMyLikesPushed = false
     @State private var initialSettingsDestination: SettingsSidebarDestination?
 
@@ -81,7 +81,7 @@ public struct MineHomeView: View {
                 case .messages: navigator.openMessageCenter(tab: .privateMessages)
                 case .history: navigator.push(.browsingHistory)
                 case .likes: isMyLikesPushed = true
-                case .downloads: isDownloadQueuePushed = true
+                case .downloads: isDownloadManagementPushed = true
                 }
             }
         }
@@ -146,8 +146,8 @@ public struct MineHomeView: View {
                             showingLoginSheet = true
                         }
                     },
-                    showDownloadQueue: {
-                        isDownloadQueuePushed = true
+                    showDownloadManagement: {
+                        isDownloadManagementPushed = true
                     },
                     showMyLikes: {
                         isMyLikesPushed = true
@@ -176,8 +176,8 @@ public struct MineHomeView: View {
             .navigationDestination(isPresented: $isSettingsPushed) {
                 settingsScreen
             }
-            .navigationDestination(isPresented: $isDownloadQueuePushed) {
-                DownloadQueueScreen(viewModel: viewModel.offlineQueue)
+            .navigationDestination(isPresented: $isDownloadManagementPushed) {
+                DownloadsScreen(initialPage: .management, management: viewModel.downloadManagement, queue: viewModel.offlineQueue)
             }
             .navigationDestination(isPresented: $isMyLikesPushed) {
                 LikeWorkListView(

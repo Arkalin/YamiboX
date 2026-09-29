@@ -16,8 +16,7 @@ public extension DownloadQueueControlling {
 
 extension DownloadQueueExecutor: DownloadQueueControlling {}
 
-/// State and commands for the downloads download queue screens. Shared by
-/// the Mine tab's queue entry and both readers' download sheets, so none of them
+/// State and commands shared by download management and both readers' sheets, so none of them
 /// have to carry unrelated home-screen state just to show the queue.
 @MainActor
 @Observable
@@ -39,6 +38,10 @@ final class DownloadQueueViewModel {
     private let injectedController: (any DownloadQueueControlling)?
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var directoryUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var needsRefresh = false
+    @ObservationIgnored private var revision = 0
+    @ObservationIgnored private var displayedGeneration: UUID?
 
     init(
         dependencies: DownloadQueueDependencies,
@@ -51,6 +54,7 @@ final class DownloadQueueViewModel {
     deinit {
         updatesTask?.cancel()
         directoryUpdatesTask?.cancel()
+        sessionUpdatesTask?.cancel()
     }
 
     var isEmpty: Bool {
@@ -59,6 +63,18 @@ final class DownloadQueueViewModel {
 
     var showsControls: Bool {
         !isEmpty
+    }
+
+    var failedCount: Int { groups.reduce(0) { $0 + $1.chapters.filter { $0.state == .failed }.count } }
+
+    var summaryText: String {
+        if loadFailure != nil { return L10n.string("common.load_failed") }
+        if isLoading && isEmpty { return L10n.string("common.loading") }
+        if isEmpty { return L10n.string("downloads.queue_empty") }
+        var parts = [L10n.string("mine.download_queue.chapter_count_format", entryCount)]
+        parts.append(L10n.string(runState == .running ? "mine.download_queue.running" : "mine.download_queue.paused"))
+        if failedCount > 0 { parts.append(L10n.string("settings.download.failed_count_format", failedCount)) }
+        return parts.joined(separator: " · ")
     }
 
     var selectedWorkCount: Int {
@@ -71,16 +87,36 @@ final class DownloadQueueViewModel {
     }
 
     func refresh() async {
-        guard !isLoading else { return }
+        guard !isLoading else {
+            needsRefresh = true
+            return
+        }
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            if needsRefresh { Task { await self.refresh() } }
+        }
+        repeat {
+            needsRefresh = false
+            await refreshSnapshot()
+        } while needsRefresh && !Task.isCancelled
+    }
 
+    private func refreshSnapshot() async {
+        let refreshRevision = revision
         do {
+            let account = try await dependencies.sessionStore.snapshot()
             let store = dependencies.downloadStore
             let works = try await store.downloadQueueWorks()
             let nextRunState = try await store.downloadQueueRunState()
             let directoriesByOwnerName = await directoriesByOwnerName(for: works)
             try Task.checkCancellation()
+            guard await dependencies.sessionStore.isCurrentGeneration(account.generation), refreshRevision == revision else { return }
+            if displayedGeneration != account.generation {
+                setSelectionMode(false)
+                errorMessage = nil
+                displayedGeneration = account.generation
+            }
             let projection = DownloadQueueProjection.project(
                 works: works,
                 mangaDirectoriesByOwnerName: directoriesByOwnerName
@@ -97,7 +133,7 @@ final class DownloadQueueViewModel {
                 isSelectionMode = false
             }
         } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+            if refreshRevision == revision, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 loadFailure = LoadFailureDetails(error: error)
             }
         }
@@ -192,12 +228,14 @@ final class DownloadQueueViewModel {
     }
 
     private func workIDs(groupID: DownloadGroupID?) -> Set<DownloadWorkID> {
-        let scopedGroups = groupID.map { id in
-            groups.filter { $0.id == id }
-        } ?? groups
-        return Set(scopedGroups.flatMap { group in
-            group.chapters.map(\.id)
-        })
+        let scopedGroups =
+            groupID.map { id in
+                groups.filter { $0.id == id }
+            } ?? groups
+        return Set(
+            scopedGroups.flatMap { group in
+                group.chapters.map(\.id)
+            })
     }
 
     private func chapterRow(id: DownloadWorkID) -> DownloadQueueChapterRow? {
@@ -255,6 +293,21 @@ final class DownloadQueueViewModel {
                 await self?.refresh()
             }
         }
+        let sessionChanges = dependencies.sessionStore.changes()
+        sessionUpdatesTask = Task { @MainActor [weak self] in
+            for await _ in sessionChanges {
+                guard !Task.isCancelled, let self else { return }
+                let generation = try? await dependencies.sessionStore.snapshot().generation
+                guard generation != displayedGeneration else { continue }
+                revision += 1
+                groups = []
+                entryCount = 0
+                setSelectionMode(false)
+                loadFailure = nil
+                errorMessage = nil
+                await refresh()
+            }
+        }
     }
 
     private func directoriesByOwnerName(
@@ -265,7 +318,9 @@ final class DownloadQueueViewModel {
             guard work.groupID.readerKind == .manga else { continue }
             guard directoriesByOwnerName[work.groupID.ownerKey] == nil else { continue }
             do {
-                if let directory = try await dependencies.mangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: work.groupID.ownerKey)) {
+                if let directory = try await dependencies.mangaDirectoryStore.directory(
+                    id: MangaDirectoryID(rawValue: work.groupID.ownerKey))
+                {
                     directoriesByOwnerName[work.groupID.ownerKey] = directory
                 }
             } catch {

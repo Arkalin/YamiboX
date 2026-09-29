@@ -18,6 +18,7 @@ struct SettingsStorageView: View {
 
     @State private var showingWebDAVSettings = false
     @State private var showingDownloadManagement = false
+    @State private var downloadQueue: DownloadQueueViewModel?
     @State private var showingMangaDirectoryManagement = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
     @State private var syncSettings = WebDAVSyncSettings()
@@ -118,6 +119,7 @@ struct SettingsStorageView: View {
                 .disabled(viewModel.isBusy)
 
                 Button {
+                    downloadQueue = downloadQueue ?? DownloadQueueViewModel(dependencies: dependencies.downloadQueue)
                     showingDownloadManagement = true
                 } label: {
                     SystemSettingsRow(
@@ -158,7 +160,9 @@ struct SettingsStorageView: View {
             WebDAVSyncSettingsView(dependencies: dependencies.webDAVSync)
         }
         .navigationDestination(isPresented: $showingDownloadManagement) {
-            DownloadManagementView(viewModel: downloadManagement)
+            if let downloadQueue {
+                DownloadsScreen(initialPage: .management, management: downloadManagement, queue: downloadQueue)
+            }
         }
         .navigationDestination(isPresented: $showingMangaDirectoryManagement) {
             MangaDirectoryManagementView(viewModel: mangaDirectoryManagement)

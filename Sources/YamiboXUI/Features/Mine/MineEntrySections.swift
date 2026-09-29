@@ -65,7 +65,7 @@ struct MineLibraryEntriesSection: View {
     let downloadQueueCount: Int
     var unreadMessageCount: Int = 0
     let showMessages: () -> Void
-    let showDownloadQueue: () -> Void
+    let showDownloadManagement: () -> Void
     let showMyLikes: () -> Void
     let showHistory: () -> Void
 
@@ -92,11 +92,12 @@ struct MineLibraryEntriesSection: View {
                 action: showMyLikes
             )
             MineEntryButtonRow(
-                title: L10n.string("mine.download_queue"),
+                title: L10n.string("settings.download.title"),
                 systemImage: "arrow.down.circle.fill",
-                badgeText: downloadQueueCount > 0 ? String(downloadQueueCount) : nil,
-                action: showDownloadQueue
+                badgeText: downloadQueueCount > 0 ? L10n.string("downloads.pending_badge", downloadQueueCount) : nil,
+                action: showDownloadManagement
             )
+            .accessibilityValue(L10n.string("mine.download_queue.chapter_count_format", downloadQueueCount))
         }
     }
 }

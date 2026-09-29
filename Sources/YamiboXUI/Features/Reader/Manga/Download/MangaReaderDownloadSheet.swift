@@ -6,6 +6,7 @@ import YamiboXCore
 struct MangaReaderDownloadSheet: View {
     @StateObject private var model: MangaReaderDownloadViewModel
     @State private var queueViewModel: DownloadQueueViewModel
+    @State private var managementViewModel: DownloadManagementViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var isSelecting = false
     @State private var selectedTIDs: Set<String> = []
@@ -29,6 +30,9 @@ struct MangaReaderDownloadSheet: View {
             )
         )
         _queueViewModel = State(initialValue: DownloadQueueViewModel(dependencies: dependencies.downloadQueue))
+        _managementViewModel = State(initialValue: DownloadManagementViewModel(
+            downloadStore: dependencies.downloadStore, sessionStore: dependencies.downloadQueue.sessionStore
+        ))
     }
 
     var body: some View {
@@ -98,7 +102,7 @@ struct MangaReaderDownloadSheet: View {
                 }
             }
             .sheet(isPresented: $isQueuePresented) {
-                DownloadQueueSheet(viewModel: queueViewModel)
+                DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .task {
                 await model.load()

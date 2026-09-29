@@ -44,9 +44,9 @@ final class SystemSettingsViewModel {
             storageUsage: storageUsage
         )
         let downloadManagement = DownloadManagementViewModel(
-            dependencies: dependencies,
-            activity: activity,
-            storageUsage: storageUsage
+            downloadStore: dependencies.downloadStore,
+            sessionStore: dependencies.sessionStore,
+            onDeletion: { await storageUsage.refresh() }
         )
         let mangaDirectoryManagement = MangaDirectoryManagementViewModel(
             dependencies: dependencies,
@@ -88,7 +88,7 @@ final class SystemSettingsViewModel {
     /// action still running on one page can never be joined by another
     /// concurrent action (or sign-out) started elsewhere.
     var isBusy: Bool {
-        activity.isBusy
+        activity.isBusy || downloadManagement.activeAction == .clearingDownload
     }
 
     /// Root-screen error surface; the root also *sets* this (sign-out

@@ -27,7 +27,7 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
 
     private let operationModule: NovelReaderDownloadOperationModule
     private let repository: any NovelReaderDownloadOperationRepository
-    private let downloadStore: any DownloadQueueStoring
+    private let downloadStore: any DownloadQueueStoring & DownloadManagementStoring
     private let queueDependencies: DownloadQueueDependencies
     private let reading: Reading
     private var updatesTask: Task<Void, Never>?
@@ -35,7 +35,7 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
     init(
         operationModule: NovelReaderDownloadOperationModule,
         repository: any NovelReaderDownloadOperationRepository,
-        downloadStore: any DownloadQueueStoring,
+        downloadStore: any DownloadQueueStoring & DownloadManagementStoring,
         queueDependencies: DownloadQueueDependencies,
         reading: Reading
     ) {
@@ -161,6 +161,10 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
 
     func makeDownloadQueueViewModel() -> DownloadQueueViewModel {
         DownloadQueueViewModel(dependencies: queueDependencies)
+    }
+
+    func makeDownloadManagementViewModel() -> DownloadManagementViewModel {
+        DownloadManagementViewModel(downloadStore: downloadStore, sessionStore: queueDependencies.sessionStore)
     }
 
     private var operationSnapshot: NovelReaderDownloadOperationSnapshot {

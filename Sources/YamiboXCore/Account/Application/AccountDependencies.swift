@@ -5,6 +5,7 @@ import Foundation
 public struct AccountDependencies: Sendable {
     public var downloadQueue: DownloadQueueDependencies {
         DownloadQueueDependencies(
+            sessionStore: sessionStore,
             downloadStore: downloadStore,
             mangaDirectoryStore: mangaDirectoryStore,
             makeDownloadQueueExecutor: makeDownloadQueueExecutor

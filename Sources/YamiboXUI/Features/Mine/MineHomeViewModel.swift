@@ -20,6 +20,7 @@ final class MineHomeViewModel {
     var checkInResultMessage: String?
 
     let offlineQueue: DownloadQueueViewModel
+    let downloadManagement: DownloadManagementViewModel
     let loginQuestions = YamiboLoginQuestion.defaultQuestions
     @ObservationIgnored let profileAvatarLoader: YamiboProfileAvatarLoader
 
@@ -33,6 +34,10 @@ final class MineHomeViewModel {
         checkInService: (any YamiboCheckInServicing)? = nil
     ) {
         self.dependencies = dependencies
+        downloadManagement = DownloadManagementViewModel(
+            downloadStore: dependencies.downloadStore,
+            sessionStore: dependencies.sessionStore
+        )
         self.checkInService = checkInService ?? dependencies.makeCheckInService()
         offlineQueue = DownloadQueueViewModel(
             dependencies: dependencies.downloadQueue,

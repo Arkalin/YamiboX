@@ -13,29 +13,18 @@ struct DownloadManagementGroupScreen: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+        List {
+            Group {
                 if let failure = viewModel.loadFailure {
                     LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
                         Task { await viewModel.refreshDownloadManagement() }
                     }
                 }
                 if let row {
-                    DownloadStorageSummary(rows: [row])
-                    HStack {
-                        Text(L10n.string("settings.download.contents"))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button(role: .destructive) {
-                            viewModel.requestDownloadGroupDeletion(id: row.id)
-                        } label: {
-                            Label(L10n.string("settings.download.delete_group"), systemImage: "trash")
-                                .font(.subheadline)
-                                .frame(minHeight: 44)
-                        }
+                    Section {
+                        DownloadStorageSummary(rows: [row], showsEntryCount: true)
                     }
-                    LazyVStack(spacing: 12) {
+                    Section(L10n.string("settings.download.contents")) {
                         ForEach(row.entries) { entry in
                             DownloadManagementEntryRowView(entry: entry) {
                                 viewModel.requestDownloadEntryDeletion(id: entry.id)
@@ -46,15 +35,32 @@ struct DownloadManagementGroupScreen: View {
                     DownloadManagementEmptyState()
                 }
             }
-            .padding(16)
             .disabled(viewModel.activeAction == .clearingDownload)
         }
-        .background(YamiboColors.SystemSurface.groupedBackground)
+        .listStyle(.insetGrouped)
+        .yamiboInlineNavigationTitleDisplayMode()
         .navigationTitle(row?.title ?? L10n.string("settings.download.title"))
-        .task {
-            await viewModel.refreshDownloadManagement()
-            dismissIfGroupMissing()
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if let row {
+                    Menu {
+                        Button(role: .destructive) {
+                            viewModel.requestDownloadGroupDeletion(id: row.id)
+                        } label: {
+                            Label(L10n.string("settings.download.delete_group"), systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel(L10n.string("common.more"))
+                    .disabled(viewModel.activeAction == .clearingDownload)
+                }
+            }
         }
+        .task {
+            await viewModel.observeUpdates()
+        }
+        .task { await viewModel.observeSession() }
         .refreshable {
             await viewModel.refreshDownloadManagement()
             dismissIfGroupMissing()
@@ -62,6 +68,7 @@ struct DownloadManagementGroupScreen: View {
         .onChange(of: viewModel.downloadManagementRows) {
             dismissIfGroupMissing()
         }
+        .onChange(of: viewModel.activeAction) { dismissIfGroupMissing() }
         .overlay {
             if (viewModel.activeAction == .loading && row == nil) || viewModel.activeAction == .clearingDownload {
                 ProgressView(L10n.string(viewModel.activeAction == .clearingDownload ? "common.deleting" : "common.loading"))
@@ -73,7 +80,7 @@ struct DownloadManagementGroupScreen: View {
     }
 
     private func dismissIfGroupMissing() {
-        if row == nil, viewModel.loadFailure == nil {
+        if row == nil, viewModel.loadFailure == nil, viewModel.activeAction == nil {
             dismiss()
         }
     }
@@ -91,23 +98,25 @@ struct DownloadManagementGroupRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: isSelecting ? (isSelected ? "checkmark.circle.fill" : "circle")
-                : (row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
-                .font(.title3)
-                .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
-                .frame(width: 40, height: 48)
-                .background(dimming.emphasis(appTheme.controlAccent).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityHidden(true)
+            Image(
+                systemName: isSelecting
+                    ? (isSelected ? "checkmark.circle.fill" : "circle")
+                    : (row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
+            )
+            .font(.system(size: 20))
+            .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
+            .frame(width: 28, height: 32)
+            .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(row.title)
                     .font(.headline)
                     .foregroundStyle(dimming.titleColor)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
-                Text(row.byteCountLabel)
-                    .font(.subheadline.monospacedDigit().weight(.medium))
-                    .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
+                Text(L10n.string("downloads.local_entry_count", row.entries.count) + " · " + row.byteCountLabel)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(dimming.secondaryColor)
 
                 DownloadStatusSummary(downloadedCount: row.downloadedCount, pendingCount: row.pendingCount, failedCount: row.failedCount)
                     .font(.caption)
@@ -124,7 +133,14 @@ struct DownloadManagementGroupRowView: View {
                 .opacity(isSelecting ? 0 : 1)
                 .accessibilityHidden(isSelecting)
         }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: rowAction)
+        .downloadListRow(isSelected: isSelected, action: rowAction)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !isSelecting {
+                Button(role: .destructive, action: delete) {
+                    Label(L10n.string("settings.download.delete_download"), systemImage: "trash")
+                }
+            }
+        }
         .contextMenu {
             if !isSelecting {
                 Button(role: .destructive, action: delete) {
@@ -181,16 +197,20 @@ private struct DownloadManagementEntryRowView: View {
                 }
             }
             .font(.subheadline)
+            .labelStyle(.titleAndIcon)
+        }
+        .downloadListRow()
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive, action: delete) {
                 Label(L10n.string("settings.download.delete_download"), systemImage: "trash")
-                    .font(.caption.weight(.semibold))
-                    .frame(minHeight: 44)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
         }
-        .cardRowChrome()
+        .contextMenu {
+            Button(role: .destructive, action: delete) {
+                Label(L10n.string("settings.download.delete_download"), systemImage: "trash")
+            }
+        }
+        .accessibilityAction(named: L10n.string("settings.download.delete_download"), delete)
     }
 
     private var stateColor: Color {
@@ -222,12 +242,8 @@ private struct DownloadManagementEntryRowView: View {
         switch entry.state {
         case .downloaded:
             L10n.string("settings.download.state.downloaded")
-        case .queued:
-            L10n.string("settings.download.state.queued")
-        case .running:
-            L10n.string("settings.download.state.running")
-        case .paused:
-            L10n.string("settings.download.state.paused")
+        case .queued, .running, .paused:
+            L10n.string("downloads.incomplete")
         case .failed:
             L10n.string("settings.download.state.failed")
         }
@@ -284,12 +300,12 @@ struct DownloadManagementEmptyState: View {
 }
 
 extension View {
-    func downloadManagementAlert(viewModel: DownloadManagementViewModel) -> some View {
+    func downloadManagementAlert(viewModel: DownloadManagementViewModel, isActive: Bool = true) -> some View {
         destructiveConfirmationAlert(
             item: Binding(
-                get: { viewModel.pendingDownloadManagementConfirmation },
+                get: { isActive ? viewModel.pendingDownloadManagementConfirmation : nil },
                 set: { pending in
-                    if pending == nil {
+                    if pending == nil && isActive {
                         Task { @MainActor in
                             viewModel.cancelDownloadManagementConfirmation()
                         }
@@ -302,6 +318,25 @@ extension View {
         ) { confirmation in
             Task {
                 _ = await viewModel.confirmDownloadManagementDeletion(confirmation)
+            }
+        }
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: Binding(
+                get: { isActive && viewModel.errorMessage != nil },
+                set: {
+                    if !$0 && isActive {
+                        viewModel.errorMessage = nil
+                        viewModel.errorDetails = nil
+                    }
+                }
+            )
+        ) {
+            Button(L10n.string("common.ok")) {
+                viewModel.errorMessage = nil
+                viewModel.errorDetails = nil
             }
         }
     }
