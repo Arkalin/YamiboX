@@ -8,6 +8,8 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
     private let sessionState: SessionState
     private let promotionSession: URLSession
     private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    private let sessionStore: SessionStore
+    private let generation: UUID
 
     init(
         session: URLSession,
@@ -28,9 +30,25 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         self.sessionState = snapshot.session
         self.promotionSession = promotionSession
         self.wafRecoverer = wafRecoverer
+        self.sessionStore = sessionStore
+        self.generation = snapshot.generation
+    }
+
+    private func currentClient() async throws -> YamiboClient {
+        let snapshot = try await sessionStore.snapshot()
+        guard snapshot.generation == generation,
+              await sessionStore.isCurrentGeneration(generation) else { throw CancellationError() }
+        var client = client
+        client.credentials = YamiboRequestCredentials(
+            cookies: sessionState.cookies.filter { !YamiboCookie.isWAFCookie($0.name) }
+                + snapshot.session.cookies.filter { YamiboCookie.isWAFCookie($0.name) },
+            userAgent: sessionState.userAgent
+        )
+        return client
     }
 
     func loadPage() async throws -> YamiboCheckInPage {
+        let client = try await currentClient()
         let html = try await client.fetchHTML(url: Self.checkInPageURL)
         if Self.isAlreadyCheckedIn(in: html) { return .alreadyCheckedIn }
         if let url = Self.extractCheckInURL(from: html) { return .available(url) }
@@ -41,10 +59,12 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
     }
 
     func submit(at url: URL) async throws {
+        let client = try await currentClient()
         _ = try await client.fetchHTML(url: url)
     }
 
     func verifyCheckIn() async throws -> Bool {
+        let client = try await currentClient()
         let html = try await client.fetchHTML(url: Self.checkInPageURL)
         return Self.isAlreadyCheckedIn(in: html)
     }

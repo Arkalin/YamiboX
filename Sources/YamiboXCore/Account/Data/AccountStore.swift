@@ -62,6 +62,14 @@ public actor AccountStore {
 
     func isCurrent(_ expected: UUID) -> Bool { generation == expected && transition == nil }
 
+    func mergeWAFCookies(_ cookies: [YamiboCookie], expected: UUID, replacingCurrent: Bool) throws {
+        try Task.checkCancellation()
+        try check(expected)
+        var session = try loadDocument().current
+        session.mergeWAFCookies(cookies, replacingCurrent: replacingCurrent)
+        try saveSession(session, expected: expected)
+    }
+
     func saveSession(_ session: SessionState, expected: UUID? = nil) throws {
         try check(expected)
         var next = try loadDocument()

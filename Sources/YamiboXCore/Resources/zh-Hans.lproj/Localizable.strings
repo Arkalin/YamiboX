@@ -60,6 +60,7 @@
 "yamibo_check_in.not_authenticated" = "未登录，请先在 App 中登录";
 "yamibo_check_in.parse_failed" = "签到页面解析失败，请稍后重试";
 "yamibo_check_in.success" = "签到成功";
+"yamibo_check_in.background_verification_failed" = "后台安全验证未完成，请稍后重试或打开 App 手动验证后签到。";
 "yamibo_check_in.verification_failed" = "签到未生效，请手动签到";
 "color.blue" = "蓝色";
 "color.cyan" = "青色";

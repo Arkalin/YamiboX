@@ -36,11 +36,13 @@ public struct YamiboCheckInOutcome: Sendable {
     public let result: YamiboCheckInResult
     public let details: LoadFailureDetails?
     public let isCancelled: Bool
+    public let requiresSecurityVerification: Bool
 
-    public init(result: YamiboCheckInResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false) {
+    public init(result: YamiboCheckInResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false, requiresSecurityVerification: Bool = false) {
         self.result = result
         self.details = details
         self.isCancelled = isCancelled
+        self.requiresSecurityVerification = requiresSecurityVerification
     }
 }
 
@@ -112,6 +114,9 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
 
         switch page {
         case .alreadyCheckedIn:
+            guard await sessionStore.isCurrentGeneration(snapshot.generation), !Task.isCancelled else {
+                return networkFailureOutcome(CancellationError())
+            }
             await checkInStore.markCheckedIn(session: sessionState)
             return .init(result: .alreadyCheckedInToday)
         case let .unavailable(details):
@@ -131,6 +136,9 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
             guard try await remote.verifyCheckIn() else {
                 return .init(result: .verificationFailed)
             }
+            guard await sessionStore.isCurrentGeneration(snapshot.generation), !Task.isCancelled else {
+                throw CancellationError()
+            }
             await checkInStore.markCheckedIn(session: sessionState)
             return .init(result: .success)
         } catch {
@@ -143,7 +151,8 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         return YamiboCheckInOutcome(
             result: mapNetworkError(error),
             details: cancelled ? nil : LoadFailureDetails(error: error),
-            isCancelled: cancelled
+            isCancelled: cancelled,
+            requiresSecurityVerification: LoadDiagnosticError.classificationError(error) as? YamiboError == .securityVerificationRequired
         )
     }
 

@@ -464,7 +464,27 @@ struct YamiboCheckInIntent: AppIntent {
               environment.supportsBackgroundRelaunch else {
             return .result(dialog: IntentDialog(stringLiteral: L10n.string("test_forum.background_unavailable")))
         }
-        let result = await YamiboAppContext().makeCheckInService().checkInIfNeeded(force: false)
+        let sessionStore = SessionStore()
+        let result: YamiboCheckInResult
+        do {
+            let snapshot = try await sessionStore.snapshot()
+            guard snapshot.session.isLoggedIn else {
+                return .result(dialog: IntentDialog(stringLiteral: YamiboCheckInResult.notAuthenticated.message))
+            }
+            let recoverer = await BackgroundCheckInWAFRecoverer(sessionStore: sessionStore, snapshot: snapshot)
+            try await recoverer.synchronizeCookies()
+            let outcome = await YamiboAppContext(sessionStore: sessionStore, wafRecoverer: recoverer)
+                .makeCheckInService().checkInWithDetails(force: false)
+            if outcome.isCancelled { throw CancellationError() }
+            if outcome.requiresSecurityVerification {
+                return .result(dialog: IntentDialog(stringLiteral: L10n.string("yamibo_check_in.background_verification_failed")))
+            }
+            result = outcome.result
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return .result(dialog: IntentDialog(stringLiteral: L10n.string("yamibo_check_in.background_verification_failed")))
+        }
         return .result(dialog: IntentDialog(stringLiteral: result.message))
     }
 }

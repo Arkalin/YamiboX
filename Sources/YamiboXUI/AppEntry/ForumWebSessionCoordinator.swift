@@ -482,7 +482,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
         await cookieStore.deleteCookieAsync(cookie)
     }
 
-    private static let interactionDetectionScript = """
+    static let interactionDetectionScript = """
     (() => {
       const text = (document.body?.innerText || '').toLowerCase();
       const selector = '[name*=captcha i], [name*=seccode i], .geetest_holder, iframe[src*=captcha i], iframe[src*=geetest i]';

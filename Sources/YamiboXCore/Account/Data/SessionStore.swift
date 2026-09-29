@@ -75,6 +75,20 @@ public actor SessionStore: SessionStoring {
         postChangeNotification()
     }
 
+    /// Updates clearance atomically without copying a WebKit account identity.
+    public func mergeWAFCookies(_ cookies: [YamiboCookie], expectedGeneration: UUID, replacingCurrent: Bool = false) async throws {
+        try Task.checkCancellation()
+        if let accountStore {
+            try await accountStore.mergeWAFCookies(cookies, expected: expectedGeneration, replacingCurrent: replacingCurrent)
+            return
+        }
+        guard transition == nil, generation == expectedGeneration else { throw CancellationError() }
+        var session = storage?.load(default: SessionState()) ?? SessionState()
+        session.mergeWAFCookies(cookies, replacingCurrent: replacingCurrent)
+        try storage?.save(session)
+        postChangeNotification()
+    }
+
     public func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws {
         let snapshot = try await snapshot()
         var session = snapshot.session

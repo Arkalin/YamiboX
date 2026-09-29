@@ -40,6 +40,17 @@ public struct SessionState: Codable, Hashable, Sendable {
         YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
     }
 
+    mutating func mergeWAFCookies(_ incoming: [YamiboCookie], replacingCurrent: Bool) {
+        var merged = Dictionary(uniqueKeysWithValues: YamiboCookie.canonicalCookies(cookies).map { ($0.identity, $0) })
+        for cookie in incoming where YamiboCookie.isWAFCookie(cookie.name) && !cookie.isExpired() && YamiboDomain.isYamiboCookieDomain(cookie.domain) {
+            // A freshly read WebKit snapshot must not replace longer-lived clearance.
+            if !replacingCurrent, let current = merged[cookie.identity], !current.isExpired(),
+               (current.expiresAt ?? .distantFuture) >= (cookie.expiresAt ?? .distantFuture) { continue }
+            merged[cookie.identity] = cookie
+        }
+        cookies = YamiboCookie.canonicalCookies(Array(merged.values))
+    }
+
     public var authenticationCookie: YamiboCookie? {
         cookies.first {
             Self.isAuthenticationCookieName($0.name) && !$0.isExpired()
