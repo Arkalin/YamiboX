@@ -8,6 +8,7 @@ struct ForumThreadContentBlocksView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -23,7 +24,8 @@ struct ForumThreadContentBlocksView: View {
                         block: block,
                         refererURL: refererURL,
                         onImageTap: onImageTap,
-                        onURLTap: onURLTap
+                        onURLTap: onURLTap,
+                        onAttachmentTap: onAttachmentTap
                     )
                 }
             }
@@ -38,6 +40,7 @@ private struct ForumThreadContentBlockView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         switch block.kind {
@@ -52,7 +55,7 @@ private struct ForumThreadContentBlockView: View {
                 onURLTap: onURLTap
             )
         case let .attachment(attachment):
-            ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap)
+            ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
         case let .quote(blocks):
             ForumThreadNestedBlockContainer(accented: true) {
                 ForumThreadContentBlocksView(
@@ -60,13 +63,14 @@ private struct ForumThreadContentBlockView: View {
                     fallbackText: "",
                     refererURL: refererURL,
                     onImageTap: onImageTap,
-                    onURLTap: onURLTap
+                    onURLTap: onURLTap,
+                    onAttachmentTap: onAttachmentTap
                 )
             }
         case let .indent(blocks):
             ForumThreadContentBlocksView(
                 blocks: blocks, fallbackText: "", refererURL: refererURL,
-                onImageTap: onImageTap, onURLTap: onURLTap
+                onImageTap: onImageTap, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap
             )
             .padding(.leading, 20)
         case let .code(text):
@@ -80,7 +84,8 @@ private struct ForumThreadContentBlockView: View {
                 blocks: blocks,
                 refererURL: refererURL,
                 onImageTap: onImageTap,
-                onURLTap: onURLTap
+                onURLTap: onURLTap,
+                onAttachmentTap: onAttachmentTap
             )
         case let .locked(cost, blocks):
             ForumThreadLockedBlockView(
@@ -88,14 +93,16 @@ private struct ForumThreadContentBlockView: View {
                 blocks: blocks,
                 refererURL: refererURL,
                 onImageTap: onImageTap,
-                onURLTap: onURLTap
+                onURLTap: onURLTap,
+                onAttachmentTap: onAttachmentTap
             )
         case let .table(rows):
             ForumThreadTableBlockView(
                 rows: rows,
                 refererURL: refererURL,
                 onImageTap: onImageTap,
-                onURLTap: onURLTap
+                onURLTap: onURLTap,
+                onAttachmentTap: onAttachmentTap
             )
         }
     }

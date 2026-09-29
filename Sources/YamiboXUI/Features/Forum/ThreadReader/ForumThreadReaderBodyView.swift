@@ -41,6 +41,7 @@ struct ForumThreadReaderBodyView: View {
     let commentPost: (String, String) async throws -> String
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
+    let onAttachmentTap: (ForumThreadAttachmentBlock) -> Void
     var onReaderModeSwitch: ((YamiboThreadReaderOverride) -> Void)? = nil
     var isSwitchingReaderMode = false
     var recommendedReaderKind: YamiboThreadKind = .unknown
@@ -111,7 +112,8 @@ struct ForumThreadReaderBodyView: View {
                                 onLoadRateOptions: loadRateOptions,
                                 onRatePost: ratePost,
                                 onCommentPost: commentPost,
-                                onURLTap: onURLTap
+                                onURLTap: onURLTap,
+                                onAttachmentTap: onAttachmentTap
                             )
                             .id(post.postID)
                             .onAppear {

@@ -29,7 +29,7 @@ struct DownloadQueueOwnerGroup: Hashable, Identifiable {
             : 0
         if targetImageCount > 0 {
             progressText = L10n.string(
-                "mine.download_queue.image_progress_format",
+                readerKind == .attachment ? "downloads.attachment.progress" : "mine.download_queue.image_progress_format",
                 completedImageCount,
                 targetImageCount
             )
@@ -77,7 +77,7 @@ struct DownloadQueueChapterRow: Hashable, Identifiable {
         progressFraction = work.progress.fractionCompleted
         if targetImageCount > 0 {
             progressText = L10n.string(
-                "mine.download_queue.image_progress_format",
+                readerKind == .attachment ? "downloads.attachment.progress" : "mine.download_queue.image_progress_format",
                 completedImageCount,
                 targetImageCount
             )

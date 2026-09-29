@@ -148,6 +148,11 @@
 "favorites.sidebar.collections" = "合集";
 "common.select_all" = "全选";
 "common.share" = "分享";
+"downloads.attachment.enqueued" = "已加入下载队列";
+"downloads.attachment.queued" = "附件已在下载队列中";
+"downloads.attachment.not_file" = "未能获取附件文件，请检查登录状态、下载权限或附件是否需要购买，然后重试。";
+"downloads.attachment.progress" = "%d / %d 个文件";
+"downloads.attachment.too_large" = "附件超过下载大小限制（50 MiB）。";
 "common.stop" = "终止";
 "common.unhide" = "取消隐藏";
 "common.updating" = "更新中";

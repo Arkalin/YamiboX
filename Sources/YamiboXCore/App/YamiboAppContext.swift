@@ -284,6 +284,8 @@ public final class YamiboAppContext: Sendable {
             browsingHistoryStore: browsingHistoryStore,
             browsingHistoryWorkflow: browsingHistoryWorkflow,
             composerDraftStore: composerDraftStore,
+            attachmentDownloadStore: downloadStore,
+            makeDownloadQueueExecutor: { [self] in await makeDownloadQueueExecutor() },
             settingsStore: settingsStore,
             contentCoverStore: contentCoverStore,
             mangaDirectoryStore: mangaDirectoryStore,
@@ -531,6 +533,7 @@ public final class YamiboAppContext: Sendable {
                 imagePipeline: imagePipeline,
                 backgroundTransport: downloadBackgroundDownloadTransport
             ),
+            attachmentWorkProcessor: ForumAttachmentDownloadProcessor(store: downloadStore, client: await makeClient()),
             runObserver: downloadRunObserver,
             isSessionCurrent: { [sessionStore] in
                 await sessionStore.isCurrentGeneration(generation)

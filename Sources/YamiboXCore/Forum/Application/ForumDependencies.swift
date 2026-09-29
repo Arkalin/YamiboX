@@ -26,6 +26,8 @@ public struct ForumDependencies: Sendable {
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let composerDraftStore: any ForumComposerDraftPersisting
+    public let attachmentDownloadStore: any ForumAttachmentDownloadStoring
+    public let makeDownloadQueueExecutor: @Sendable () async -> DownloadQueueExecutor
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -48,6 +50,8 @@ public struct ForumDependencies: Sendable {
         browsingHistoryStore: BrowsingHistoryStore,
         browsingHistoryWorkflow: BrowsingHistoryWorkflow,
         composerDraftStore: any ForumComposerDraftPersisting,
+        attachmentDownloadStore: any ForumAttachmentDownloadStoring,
+        makeDownloadQueueExecutor: @escaping @Sendable () async -> DownloadQueueExecutor,
         settingsStore: SettingsStore,
         contentCoverStore: ContentCoverStore,
         mangaDirectoryStore: any MangaDirectoryPersisting,
@@ -69,6 +73,8 @@ public struct ForumDependencies: Sendable {
         self.browsingHistoryStore = browsingHistoryStore
         self.browsingHistoryWorkflow = browsingHistoryWorkflow
         self.composerDraftStore = composerDraftStore
+        self.attachmentDownloadStore = attachmentDownloadStore
+        self.makeDownloadQueueExecutor = makeDownloadQueueExecutor
         self.settingsStore = settingsStore
         self.contentCoverStore = contentCoverStore
         self.mangaDirectoryStore = mangaDirectoryStore

@@ -5,6 +5,7 @@ struct ForumThreadFooterAttachmentsView: View {
     @Environment(\.forumTheme) private var theme
     let attachments: [ForumThreadAttachmentBlock]
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -13,7 +14,7 @@ struct ForumThreadFooterAttachmentsView: View {
                 .foregroundStyle(theme.mutedAccent)
 
             ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
-                ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap)
+                ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
             }
         }
     }
@@ -23,10 +24,12 @@ struct ForumThreadAttachmentBlockView: View {
     @Environment(\.forumTheme) private var theme
     let block: ForumThreadAttachmentBlock
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         Button {
-            onURLTap(block.url)
+            if let onAttachmentTap { onAttachmentTap(block) }
+            else { onURLTap(block.url) }
         } label: {
             HStack(spacing: 12) {
                 ForumThreadAttachmentIconView(iconURL: block.iconURL)

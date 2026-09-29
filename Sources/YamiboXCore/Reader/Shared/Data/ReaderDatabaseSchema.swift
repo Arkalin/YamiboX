@@ -203,7 +203,7 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
 
     static func erase(in db: Database) throws {
         try db.execute(sql: "DELETE FROM manga_directory_sync_state")
-        for table in downloadTableNamesInDeletionOrder {
+        for table in ForumAttachmentDownloadSchema.tables + downloadTableNamesInDeletionOrder {
             try db.execute(sql: "DELETE FROM \(table)")
         }
         try db.execute(sql: "DELETE FROM manga_directory_chapters")

@@ -52,6 +52,7 @@ public actor DownloadQueueExecutor {
     private let runObserver: (any DownloadQueueRunObserving)?
     private let mangaWorkProcessor: DownloadWorkProcessor<MangaDownloadWorkProcessingStrategy>
     private let novelWorkProcessor: DownloadWorkProcessor<NovelDownloadWorkProcessingStrategy>?
+    private let attachmentWorkProcessor: ForumAttachmentDownloadProcessor
     private var runTask: Task<Void, Never>?
     private var retiringRuns: [Int: Task<Void, Never>] = [:]
     private var runGeneration = 0
@@ -67,11 +68,13 @@ public actor DownloadQueueExecutor {
         readerProjectionLoader: any MangaReaderProjectionSnapshotLoading,
         novelSourcePageLoader: (any NovelDownloadSourcePageLoading)? = nil,
         imageAcquirer: any DownloadImageAcquiring,
+        attachmentWorkProcessor: ForumAttachmentDownloadProcessor,
         runObserver: (any DownloadQueueRunObserving)? = nil,
         maxConcurrentImageTransfers: Int = 3,
         isSessionCurrent: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.store = store
+        self.attachmentWorkProcessor = attachmentWorkProcessor
         self.runObserver = runObserver
         self.isSessionCurrent = isSessionCurrent
         let transferLimit = max(1, maxConcurrentImageTransfers)
@@ -385,6 +388,11 @@ public actor DownloadQueueExecutor {
 
     private func process(_ work: DownloadProcessingWork) async throws {
         switch work.id.readerKind {
+        case .attachment:
+            try await store.prepareDownloadWorkForRun(id: work.id, targetImageURLs: nil, completedImageURLs: [])
+            await runObserver?.queueRunDidUpdateProgress(completedImageCount: 0, targetImageCount: 1)
+            try await attachmentWorkProcessor.process(work)
+            await runObserver?.queueRunDidUpdateProgress(completedImageCount: 1, targetImageCount: 1)
         case .manga:
             try await mangaWorkProcessor.process(work)
         case .novel:
