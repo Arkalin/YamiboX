@@ -69,6 +69,7 @@ struct NovelReaderFontLibraryView: View {
             .fileImporter(isPresented: $showsImporter, allowedContentTypes: ["ttf", "otf", "ttc", "otc"].compactMap {
                 UTType(filenameExtension: $0)
             }, allowsMultipleSelection: true) { result in
+                showsImporter = false
                 switch result {
                 case let .success(urls):
                     Task { report = await library.importFiles(urls).joined(separator: "\n") }

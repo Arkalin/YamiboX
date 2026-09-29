@@ -4,46 +4,10 @@ import Observation
 import UIKit
 import YamiboXCore
 
-private struct ReaderFontError: LocalizedError {
+struct ReaderFontError: LocalizedError {
     let message: String
     init(_ key: String) { message = L10n.string(key) }
     var errorDescription: String? { message }
-}
-
-/// Core Text registration callbacks arrive on a private queue. The lock protects
-/// the single continuation and error result.
-private final class ReaderFontOperation: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, any Error>?
-    private var result: Result<Void, any Error>?
-    private var registrationError: NSError?
-
-    func install(_ continuation: CheckedContinuation<Void, any Error>) {
-        let result = lock.withLock {
-            if self.result == nil { self.continuation = continuation }
-            return self.result
-        }
-        if let result { continuation.resume(with: result) }
-    }
-
-    func finish(_ result: Result<Void, any Error>) {
-        let continuation = lock.withLock {
-            guard self.result == nil else { return Optional<CheckedContinuation<Void, any Error>>.none }
-            self.result = result
-            defer { self.continuation = nil }
-            return self.continuation
-        }
-        continuation?.resume(with: result)
-    }
-
-    func recordRegistrationError(_ error: NSError) {
-        lock.withLock { if registrationError == nil { registrationError = error } }
-    }
-
-    func finishRegistration() {
-        let error = lock.withLock { registrationError }
-        finish(error.map { .failure($0) } ?? .success(()))
-    }
 }
 
 @MainActor
@@ -52,6 +16,7 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
     public private(set) var entries: [ReaderFontEntry] = []
     public private(set) var isWorking = false
     public private(set) var issue: String?
+    @ObservationIgnored private let registrar = ReaderFontFileRegistrar()
     @ObservationIgnored private let store: ReaderFontFileStore
     @ObservationIgnored private var files: [ReaderImportedFontFile] = []
     @ObservationIgnored private var registeredFiles: Set<String> = []
@@ -75,7 +40,7 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
             for file in files {
                 do {
                     let url = try await store.fileURL(file.relativePath)
-                    do { try await register(url) }
+                    do { try await registrar.register(url) }
                     catch {
                         // Collection registration can partially succeed. Keep
                         // those faces from conflicting with a later repair.
@@ -181,32 +146,17 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
                 let staged = try await store.stage(source)
                 if let existing = files.first(where: { $0.id == staged.id }) {
                     if !registeredFiles.contains(existing.id) {
-                        try await register(staged.url)
+                        try await registrar.register(staged.url)
                         registeredFiles.insert(existing.id)
                     }
                     reports.append(source.lastPathComponent + ": " + L10n.string("reader.font.duplicate"))
                     continue
                 }
                 stagedPath = staged.relativePath
-                guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(staged.url as CFURL) as? [CTFontDescriptor],
-                      !descriptors.isEmpty else { throw ReaderFontError("reader.font.invalid_file") }
-                let faces = descriptors.compactMap { descriptor -> ReaderImportedFontFace? in
-                    guard let name = CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as? String,
-                          let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String else { return nil }
-                    let font = CTFontCreateWithFontDescriptor(descriptor, 22, nil)
-                    return ReaderImportedFontFace(postScriptName: name, familyName: family,
-                        displayName: CTFontCopyDisplayName(font) as String,
-                        isBold: CTFontGetSymbolicTraits(font).contains(.traitBold))
-                }
-                guard faces.count == descriptors.count else { throw ReaderFontError("reader.font.invalid_file") }
-                let knownNames = Set(files.flatMap { $0.faces.map(\.postScriptName) })
-                    .union(CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? [])
-                guard Set(faces.map(\.postScriptName)).count == faces.count,
-                      !faces.contains(where: { knownNames.contains($0.postScriptName) }) else {
-                    throw ReaderFontError("reader.font.name_conflict")
-                }
+                let faces = try await registrar.inspect(staged.url,
+                    existingNames: Set(files.flatMap { $0.faces.map(\.postScriptName) }))
                 registeredURL = staged.url
-                try await register(staged.url)
+                try await registrar.register(staged.url)
                 let file = ReaderImportedFontFile(id: staged.id, relativePath: staged.relativePath, faces: faces)
                 try await store.save(files + [file])
                 files.append(file)
@@ -256,20 +206,8 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
             catch { try await store.save(files); throw error }
             files = remaining
         } catch {
-            if (try? await register(url)) != nil { registeredFiles.insert(id) }
+            if (try? await registrar.register(url)) != nil { registeredFiles.insert(id) }
             throw error
-        }
-    }
-
-    private func register(_ url: URL) async throws {
-        let operation = ReaderFontOperation()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            operation.install(continuation)
-            CTFontManagerRegisterFontURLs([url] as CFArray, .process, true) { @Sendable errors, done in
-                if let error = (errors as? [NSError])?.first { operation.recordRegistrationError(error) }
-                if done { operation.finishRegistration() }
-                return true
-            }
         }
     }
 
