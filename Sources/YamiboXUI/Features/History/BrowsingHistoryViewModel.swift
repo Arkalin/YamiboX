@@ -110,7 +110,7 @@ final class BrowsingHistoryViewModel {
         boardReaderSettings = boardReader
         showsNormalThreadProgress = settings.readingProgress.savesNormalThreadProgress
         let scopedEntries = showsPreviousReading
-            ? ReadingHomeShelf(entries: loadedEntries, boardReader: boardReader, favorites: settings.system.homeShowsOnlyFavorites ? favorites : nil).readingEntries
+            ? BookshelfShelf(entries: loadedEntries, boardReader: boardReader, favorites: settings.system.homeShowsOnlyFavorites ? favorites : nil).readingEntries
             : loadedEntries
         entries = scopedEntries.filter { entry in
             if !searchQuery.isEmpty,

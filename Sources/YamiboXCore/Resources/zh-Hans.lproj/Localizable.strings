@@ -1128,7 +1128,7 @@
 "settings.favorite_sync_behavior.footer" = "适用于所有收藏入口，包括详情页、阅读页、浏览记录，以及收藏页的“彻底删除”。关闭询问后将按默认动作静默执行；在任意询问弹窗中选择“不再询问”也会更新这里的开关。";
 "settings.favorite_smart_manga_bulk_delete" = "允许批量删除智能漫画收藏";
 "settings.favorite_smart_manga_bulk_delete.footer" = "开启后，可通过收藏卡片菜单、多选工具栏，以及详情页和浏览记录中已点亮的作品星标，确认删除该作品归档下的全部收藏项。关闭后，作品星标会打开“查看归档收藏”，只能在其中逐项删除。";
-"settings.home_page" = "启动App后进入";
+"settings.navigation.title" = "导航栏与启动页";
 "settings.gamepad" = "手柄";
 "settings.gamepad.capture_prompt" = "请按下手柄按键…";
 "settings.gamepad.capture_rejected" = "该键不可绑定";
@@ -1192,7 +1192,7 @@
 "settings.section.favorite_sync_behavior" = "收藏同步偏好";
 "settings.section.favorite_smart_manga_management" = "智能漫画收藏管理";
 "settings.section.general" = "通用";
-"settings.home.only_favorites" = "只显示已收藏项";
+"settings.bookshelf.only_favorites" = "只显示已收藏项";
 "settings.section.forum" = "论坛";
 "settings.section.novel_download" = "小说下载";
 "settings.section.board_reader" = "板块阅读方式";
@@ -1227,7 +1227,8 @@
 "sort.descending" = "倒序";
 "tab.favorites" = "收藏";
 "tab.forum" = "论坛";
-"tab.home" = "主页";
+"tab.bookshelf" = "书架";
+"tab.messages" = "消息";
 "home.continue" = "继续阅读";
 "home.previous" = "之前读过";
 "home.profile" = "我的资料";

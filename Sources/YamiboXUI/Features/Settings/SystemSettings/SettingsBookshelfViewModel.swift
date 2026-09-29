@@ -4,7 +4,7 @@ import YamiboXCore
 
 @MainActor
 @Observable
-final class SettingsHomePageViewModel: AppSettingsPersisting {
+final class SettingsBookshelfViewModel: AppSettingsPersisting {
     var showsOnlyFavorites = false
 
     let dependencies: SettingsDependencies

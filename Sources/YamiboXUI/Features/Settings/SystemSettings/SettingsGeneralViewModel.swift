@@ -6,7 +6,7 @@ import YamiboXCore
 @MainActor
 @Observable
 final class SettingsGeneralViewModel: AppSettingsPersisting {
-    var homePage: AppHomePage = .home
+    var navigation = AppNavigationSettings()
     var themePreset = AppThemePreset.classic
 
     let dependencies: SettingsDependencies
@@ -30,12 +30,13 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     /// loads for all pages, so opening Settings still costs a single store
     /// read instead of one per page.
     func applyLoadedSettings(_ settings: AppSettings) {
-        homePage = settings.system.homePage
+        navigation = settings.system.navigation
         themePreset = settings.appearance.themePreset
     }
 
-    func updateHomePage(_ value: AppHomePage) {
-        persistSettings(\.homePage, to: value, updateSettings: updateSettings) { $0.system.homePage = value }
+    func saveNavigation(_ value: AppNavigationSettings) async throws {
+        let saved = try await updateSettings { $0.system.navigation = value }
+        navigation = saved.system.navigation
     }
 
     func updateThemePreset(_ value: AppThemePreset) {
@@ -48,7 +49,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     /// Mirrors what `resetApplicationData()` just persisted; see the storage
     /// page's reset action, which fans out to every page.
     func restoreDefaultsAfterApplicationReset() {
-        homePage = .home
+        navigation = AppNavigationSettings()
         themePreset = .classic
     }
 }

@@ -15,18 +15,19 @@ enum MineSidebarSection: Hashable {
 }
 
 enum MineSidebarDetail: Hashable {
-    case profile, messages, downloads
+    case profile, messages, downloads, bookshelf
     case history(BrowsingHistoryFilter)
     case likes(LikeWorkFilter)
     case settings(SettingsSidebarDestination)
 
-    enum Identity: Hashable { case profile, messages, downloads, history, likes, settings }
+    enum Identity: Hashable { case profile, messages, downloads, history, likes, settings, bookshelf }
 
     var identity: Identity {
         switch self {
         case .profile: .profile
         case .messages: .messages
         case .downloads: .downloads
+        case .bookshelf: .bookshelf
         case .history: .history
         case .likes: .likes
         case .settings: .settings
@@ -78,7 +79,7 @@ final class MineSidebarNavigationState {
         guard !isSelectingLikes else { return }
         switch destination {
         case .settings: guard section == .settings else { return }
-        case .history, .likes, .profile, .messages, .downloads: guard section == nil else { return }
+        case .history, .likes, .profile, .messages, .downloads, .bookshelf: guard section == nil else { return }
         }
         detail = destination
         preferredCompactColumn = .detail

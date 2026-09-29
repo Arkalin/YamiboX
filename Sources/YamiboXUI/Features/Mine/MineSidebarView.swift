@@ -72,6 +72,10 @@ struct MineSidebarView: View {
                 navigation.setSidebarPath([.settings])
                 if let destination { navigation.show(.settings(destination)) }
             case let .page(destination):
+                if let tab = destination.tab, appModel.selectConfiguredTab(tab) {
+                    _ = appModel.claimMineNavigationRequest()
+                    return
+                }
                 if destination.requiresLogin { await viewModel.reloadAccountSnapshot() }
                 guard !Task.isCancelled, appModel.mineNavigationRequest?.id == request.id else { return }
                 _ = appModel.claimMineNavigationRequest()
@@ -86,6 +90,7 @@ struct MineSidebarView: View {
                 case .history: navigation.show(.history(.all))
                 case .likes: navigation.show(.likes(.all))
                 case .downloads: navigation.show(.downloads)
+                case .bookshelf: navigation.show(.bookshelf)
                 }
             }
         }
@@ -132,6 +137,7 @@ struct MineSidebarView: View {
             )
             Section {
                 Button {
+                    if appModel.selectConfiguredTab(.messages) { return }
                     if viewModel.isLoggedIn { navigation.show(.messages) } else { showLogin() }
                 } label: {
                     Label(L10n.string("message_center.private_messages"), systemImage: "envelope.fill")
@@ -148,6 +154,12 @@ struct MineSidebarView: View {
                 .accessibilityValue(L10n.string("mine.download_queue.chapter_count_format", viewModel.offlineQueue.entryCount))
                 .tag(MineSidebarDetail.downloads)
                 .accessibilityIdentifier("mine.sidebar.downloads")
+                Button {
+                    if !appModel.selectConfiguredTab(.bookshelf) { navigation.show(.bookshelf) }
+                } label: {
+                    Label(AppTab.bookshelf.title, systemImage: AppTab.bookshelf.systemImage)
+                }
+                .tag(MineSidebarDetail.bookshelf)
             }
             Section {
                 sectionLink(.settings, icon: "gearshape.fill")
@@ -156,7 +168,7 @@ struct MineSidebarView: View {
         .listStyle(.sidebar)
         // Keep the native tab accessibility probe inside the column; wrapping
         // the split view changes its navigation-bar safe-area layout.
-        .messageUnreadTabAccessibility(count: messageUnreadWorkflow.totalCount)
+        .messageUnreadTabAccessibility(count: appModel.unreadCount(for: .mine))
         .navigationTitle(L10n.string("tab.mine"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
@@ -176,6 +188,13 @@ struct MineSidebarView: View {
             }
         } set: { destination in
             guard let destination else { return }
+            switch destination {
+            case .messages: if appModel.selectConfiguredTab(.messages) { return }
+            case .history: if appModel.selectConfiguredTab(.history) { return }
+            case .likes: if appModel.selectConfiguredTab(.likes) { return }
+            case .bookshelf: if appModel.selectConfiguredTab(.bookshelf) { return }
+            default: break
+            }
             if (destination == .profile || destination == .messages), !viewModel.isLoggedIn {
                 showLogin()
             } else {
@@ -186,6 +205,8 @@ struct MineSidebarView: View {
 
     private func sectionLink(_ section: MineSidebarSection, icon: String) -> some View {
         Button {
+            if section == .history, appModel.selectConfiguredTab(.history) { return }
+            if section == .likes, appModel.selectConfiguredTab(.likes) { return }
             navigation.setSidebarPath([section])
         } label: {
             Label(section.title, systemImage: icon)
@@ -268,6 +289,8 @@ struct MineSidebarView: View {
             ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator, appModel: appModel)
         case .downloads:
             DownloadsScreen(initialPage: .management, management: viewModel.downloadManagement, queue: viewModel.offlineQueue)
+        case .bookshelf:
+            MineBookshelfView(appModel: appModel, navigator: navigator)
         case .history:
             BrowsingHistoryView(dependencies: settings.dependencies.library.history, appModel: appModel,
                 categorySelection: Binding { historyFilter } set: { navigation.show(.history($0)) },

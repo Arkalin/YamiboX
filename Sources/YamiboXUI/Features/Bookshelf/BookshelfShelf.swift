@@ -2,7 +2,7 @@ import Foundation
 import YamiboXCore
 
 /// A presentation of existing history, not a separate reading library.
-struct ReadingHomeShelf: Equatable {
+struct BookshelfShelf: Equatable {
     let readingEntries: [BrowsingHistoryEntry]
     let continuing: [BrowsingHistoryEntry]
     let previous: [BrowsingHistoryEntry]
@@ -36,7 +36,7 @@ struct ReadingHomeShelf: Equatable {
     }
 }
 
-struct ReadingHomeBook: Identifiable {
+struct BookshelfBook: Identifiable {
     let entry: BrowsingHistoryEntry
     let category: BrowsingHistoryCategory
     let isSmartManga: Bool

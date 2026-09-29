@@ -10,15 +10,25 @@ struct ForumDestinationStackView<Root: View>: View {
     private let appModel: YamiboAppModel
     private let root: Root
     private let path: Binding<[ForumDestination]>?
+    private let ownsNavigation: Bool
 
-    init(navigator: ForumDestinationNavigator, appModel: YamiboAppModel, path: Binding<[ForumDestination]>? = nil, @ViewBuilder root: () -> Root) {
+    init(navigator: ForumDestinationNavigator, appModel: YamiboAppModel, path: Binding<[ForumDestination]>? = nil, ownsNavigation: Bool = true, @ViewBuilder root: () -> Root) {
         self.navigator = navigator
         self.appModel = appModel
         self.path = path
+        self.ownsNavigation = ownsNavigation
         self.root = root()
     }
 
     var body: some View {
+        if ownsNavigation {
+            navigation
+        } else {
+            root
+        }
+    }
+
+    private var navigation: some View {
         @Bindable var navigator = navigator
         return NavigationStack(path: path ?? $navigator.path) {
             root

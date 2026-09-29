@@ -8,8 +8,12 @@ enum MessageUnreadBadge {
         return count > 99 ? "99+" : String(count)
     }
 
+    @MainActor
     static func tabValue(for count: Int) -> String? {
-        count > 0 ? "" : nil
+        guard count > 0 else { return nil }
+        // The iPad top tab bar hides an empty badge; whitespace keeps its native
+        // indicator visible without introducing a numeric badge.
+        return UIDevice.current.userInterfaceIdiom == .pad ? " " : ""
     }
 
     static func accessibilityValue(for count: Int) -> String {

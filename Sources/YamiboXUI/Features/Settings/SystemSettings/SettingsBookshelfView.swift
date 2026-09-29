@@ -1,22 +1,22 @@
 import SwiftUI
 import YamiboXCore
 
-struct SettingsHomePageView: View {
-    let viewModel: SettingsHomePageViewModel
+struct SettingsBookshelfView: View {
+    let viewModel: SettingsBookshelfViewModel
 
     var body: some View {
         Form {
             Toggle(
-                L10n.string("settings.home.only_favorites"),
+                L10n.string("settings.bookshelf.only_favorites"),
                 isOn: Binding(
                     get: { viewModel.showsOnlyFavorites },
                     set: { viewModel.updateShowsOnlyFavorites($0) }
                 )
             )
             .disabled(viewModel.isBusy)
-            .accessibilityIdentifier("settings.home.only_favorites")
+            .accessibilityIdentifier("settings.bookshelf.only_favorites")
         }
-        .navigationTitle(L10n.string("tab.home"))
+        .navigationTitle(L10n.string("tab.bookshelf"))
         .navigationBarTitleDisplayMode(.inline)
         .failureAlert(
             L10n.string("common.operation_failed"),

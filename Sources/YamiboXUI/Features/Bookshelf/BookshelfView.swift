@@ -2,12 +2,13 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-struct ReadingHomeView: View {
+struct BookshelfView: View {
     private let appModel: YamiboAppModel
     private let libraryDependencies: LibraryDependencies
     private let accountDependencies: AccountDependencies
     private let accountSwitcher: AccountSwitchCoordinator
-    @State private var model: ReadingHomeViewModel
+    private let isPresentedFromMine: Bool
+    @State private var model: BookshelfViewModel
     @State private var account: MineHomeViewModel
     @State private var navigator: ForumDestinationNavigator
     @State private var showsLogin = false
@@ -20,15 +21,17 @@ struct ReadingHomeView: View {
         accountDependencies: AccountDependencies,
         accountSwitcher: AccountSwitchCoordinator,
         forumDependencies: ForumNavigationDependencies,
-        appModel: YamiboAppModel
+        appModel: YamiboAppModel,
+        navigator: ForumDestinationNavigator? = nil
     ) {
         self.libraryDependencies = libraryDependencies
         self.accountDependencies = accountDependencies
         self.accountSwitcher = accountSwitcher
         self.appModel = appModel
-        _model = State(initialValue: ReadingHomeViewModel(dependencies: libraryDependencies))
+        self.isPresentedFromMine = navigator != nil
+        _model = State(initialValue: BookshelfViewModel(dependencies: libraryDependencies))
         _account = State(initialValue: MineHomeViewModel(dependencies: accountDependencies))
-        _navigator = State(initialValue: ForumDestinationNavigator(
+        _navigator = State(initialValue: navigator ?? ForumDestinationNavigator(
             dependencies: forumDependencies,
             actions: appModel.forumNavigationActions,
             mode: .forumTab
@@ -36,7 +39,7 @@ struct ReadingHomeView: View {
     }
 
     var body: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad, showsHistory {
+        if UIDevice.current.userInterfaceIdiom == .pad, !isPresentedFromMine, showsHistory {
             BrowsingHistoryView(
                 dependencies: libraryDependencies.history,
                 appModel: appModel,
@@ -44,15 +47,15 @@ struct ReadingHomeView: View {
                 onClose: { showsHistory = false }
             )
         } else {
-            homeNavigation
+            bookshelfNavigation
         }
     }
 
-    private var homeNavigation: some View {
-        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
+    private var bookshelfNavigation: some View {
+        ForumDestinationStackView(navigator: navigator, appModel: appModel, ownsNavigation: !isPresentedFromMine) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ReadingHomeHeader(
+                    BookshelfHeader(
                         profile: account.isLoggedIn ? account.profile : nil,
                         avatarLoader: account.profileAvatarLoader,
                         avatarReloadDate: account.session.lastUpdatedAt,
@@ -65,11 +68,11 @@ struct ReadingHomeView: View {
                     .zIndex(1)
 
                     if model.hasLoaded {
-                        ReadingHomeContinueSection(books: model.continuing, open: openBook) {
+                        BookshelfContinueSection(books: model.continuing, open: openBook) {
                             appModel.selectTab(.favorites)
                         }
                         Divider().padding(.top, 12)
-                        ReadingHomePreviousSection(books: model.previous, open: openBook) {
+                        BookshelfPreviousSection(books: model.previous, open: openBook) {
                             showsHistory = true
                         }
                         .padding(.top, 28)
@@ -83,20 +86,23 @@ struct ReadingHomeView: View {
                     }
                 }
             }
-            .modifier(ReadingHomeScrollEdgeEffect())
+            .modifier(BookshelfScrollEdgeEffect())
             .scrollPosition($scrollPosition)
             .onScrollGeometryChange(for: CGFloat.self) {
                 max(0, $0.contentOffset.y + $0.contentInsets.top)
             } action: { _, offset in
-                if isHomeVisible { scrollOffset = offset }
+                if isBookshelfVisible { scrollOffset = offset }
             }
             .background(Color(uiColor: .systemBackground))
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(isPresented: UIDevice.current.userInterfaceIdiom == .pad ? .constant(false) : $showsHistory) {
+            .navigationTitle(AppTab.bookshelf.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(isPresentedFromMine ? .visible : .hidden, for: .navigationBar)
+            .navigationDestination(isPresented: UIDevice.current.userInterfaceIdiom == .pad && !isPresentedFromMine ? .constant(false) : $showsHistory) {
                 BrowsingHistoryView(
                     dependencies: libraryDependencies.history,
                     appModel: appModel,
-                    showsPreviousReading: true
+                    showsPreviousReading: true,
+                    ownsNavigation: false
                 )
                 .toolbar(.visible, for: .navigationBar)
             }
@@ -113,33 +119,33 @@ struct ReadingHomeView: View {
             } message: {
                 Text(L10n.string("home.open_failed"))
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.reload()
                 await account.load()
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.browsingHistoryStore.changes())
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.contentCoverStore.changes())
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.settingsStore.changes())
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.localFavoriteLibraryStore.changes())
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.mangaDirectoryStore.changes())
             }
-            .task(id: isHomeVisible) {
-                guard isHomeVisible else { return }
+            .task(id: isBookshelfVisible) {
+                guard isBookshelfVisible else { return }
                 for await _ in accountDependencies.sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     await account.load()
@@ -150,8 +156,8 @@ struct ReadingHomeView: View {
 
     // Readers save frequently; refresh once on return rather than rebuilding
     // a hidden shelf for every page turn.
-    private var isHomeVisible: Bool {
-        appModel.selectedTab == .home && !appModel.isReaderCoverVisible && !appModel.hasActiveReaderPresentation
+    private var isBookshelfVisible: Bool {
+        appModel.selectedTab == (isPresentedFromMine ? .mine : .bookshelf) && !appModel.isReaderCoverVisible && !appModel.hasActiveReaderPresentation
             && navigator.path.isEmpty && !showsHistory && !showsLogin
     }
 
@@ -163,7 +169,7 @@ struct ReadingHomeView: View {
         }
     }
 
-    private func openBook(_ book: ReadingHomeBook, transition: BookOpeningTransition) {
+    private func openBook(_ book: BookshelfBook, transition: BookOpeningTransition) {
         // Preserve an explicit position while the full-screen reader hides
         // the shelf; a user-driven ScrollPosition alone has no stored offset.
         scrollPosition.scrollTo(y: scrollOffset)
@@ -182,7 +188,7 @@ struct ReadingHomeView: View {
     }
 }
 
-private struct ReadingHomeScrollEdgeEffect: ViewModifier {
+private struct BookshelfScrollEdgeEffect: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content.scrollEdgeEffectStyle(.soft, for: .top)
@@ -192,7 +198,7 @@ private struct ReadingHomeScrollEdgeEffect: ViewModifier {
     }
 }
 
-private struct ReadingHomeHeader: View {
+private struct BookshelfHeader: View {
     let profile: YamiboProfile?
     let avatarLoader: YamiboProfileAvatarLoader
     let avatarReloadDate: Date?
@@ -201,9 +207,9 @@ private struct ReadingHomeHeader: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let motion = ReadingHomeHeaderMotion(scrollOffset: scrollOffset)
+        let motion = BookshelfHeaderMotion(scrollOffset: scrollOffset)
         HStack(alignment: .center) {
-            Text(L10n.string("tab.home"))
+            Text(L10n.string("tab.bookshelf"))
                 .font(.largeTitle.bold())
                 .accessibilityAddTraits(.isHeader)
                 .opacity(motion.titleOpacity)
@@ -225,7 +231,7 @@ private struct ReadingHomeHeader: View {
                 .overlay { Circle().strokeBorder(.quaternary, lineWidth: 1) }
             }
             .buttonStyle(.plain)
-            .modifier(ReadingHomeAvatarPressFeedback())
+            .modifier(BookshelfAvatarPressFeedback())
             .accessibilityLabel(L10n.string(profile == nil ? "mine.tap_to_login" : "home.profile"))
             .accessibilityIdentifier("home.profile")
             .blur(radius: reduceMotion ? 0 : motion.avatarBlurRadius)
@@ -239,7 +245,7 @@ private struct ReadingHomeHeader: View {
     }
 }
 
-private struct ReadingHomeAvatarPressFeedback: ViewModifier {
+private struct BookshelfAvatarPressFeedback: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: Circle())
@@ -249,9 +255,9 @@ private struct ReadingHomeAvatarPressFeedback: ViewModifier {
     }
 }
 
-private struct ReadingHomeContinueSection: View {
-    let books: [ReadingHomeBook]
-    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
+private struct BookshelfContinueSection: View {
+    let books: [BookshelfBook]
+    let open: (BookshelfBook, BookOpeningTransition) -> Void
     let openFavorites: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -273,7 +279,7 @@ private struct ReadingHomeContinueSection: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 16) {
                         ForEach(books) { book in
-                            ReadingHomeBookButton(book: book, isContinuing: true, open: open)
+                            BookshelfBookButton(book: book, isContinuing: true, open: open)
                             .containerRelativeFrame(.horizontal) { width, _ in min(440, max(240, width - 56)) }
                             .accessibilityIdentifier("home.continue.\(book.id)")
                         }
@@ -290,8 +296,8 @@ private struct ReadingHomeContinueSection: View {
     }
 }
 
-private struct ReadingHomeContinueCard: View {
-    let book: ReadingHomeBook
+private struct BookshelfContinueCard: View {
+    let book: BookshelfBook
     let transition: BookOpeningTransition
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var coverWidth = 54.0
@@ -302,7 +308,7 @@ private struct ReadingHomeContinueCard: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
             : AnyLayout(HStackLayout(spacing: 14))
         layout {
-            ReadingHomeCover(url: book.coverURL, title: book.entry.title)
+            BookshelfCover(url: book.coverURL, title: book.entry.title)
                 .frame(width: min(coverWidth, 80), height: min(coverWidth, 80) * 1.43)
                 .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
             VStack(alignment: .leading, spacing: 5) {
@@ -337,9 +343,9 @@ private struct ReadingHomeContinueCard: View {
     }
 }
 
-private struct ReadingHomePreviousSection: View {
-    let books: [ReadingHomeBook]
-    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
+private struct BookshelfPreviousSection: View {
+    let books: [BookshelfBook]
+    let open: (BookshelfBook, BookOpeningTransition) -> Void
     let showHistory: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -367,7 +373,7 @@ private struct ReadingHomePreviousSection: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 240 : 144), spacing: 24)], alignment: .leading, spacing: 30) {
                     ForEach(books) { book in
-                        ReadingHomeBookButton(book: book, isContinuing: false, open: open)
+                        BookshelfBookButton(book: book, isContinuing: false, open: open)
                         .accessibilityIdentifier("home.previous.\(book.id)")
                     }
                 }
@@ -378,13 +384,13 @@ private struct ReadingHomePreviousSection: View {
     }
 }
 
-private struct ReadingHomeShelfBook: View {
-    let book: ReadingHomeBook
+private struct BookshelfShelfBook: View {
+    let book: BookshelfBook
     let transition: BookOpeningTransition
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ReadingHomeCover(url: book.coverURL, title: book.entry.title)
+            BookshelfCover(url: book.coverURL, title: book.entry.title)
                 .aspectRatio(0.7, contentMode: .fit)
                 .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
                 .modifier(BookOpeningCoverPressEffect())
@@ -404,19 +410,19 @@ private struct ReadingHomeShelfBook: View {
     }
 }
 
-private struct ReadingHomeBookButton: View {
-    let book: ReadingHomeBook
+private struct BookshelfBookButton: View {
+    let book: BookshelfBook
     let isContinuing: Bool
-    let open: (ReadingHomeBook, BookOpeningTransition) -> Void
+    let open: (BookshelfBook, BookOpeningTransition) -> Void
     @Namespace private var bookNamespace
 
     var body: some View {
         let transition = BookOpeningTransition(namespace: bookNamespace)
         Button { open(book, transition) } label: {
             if isContinuing {
-                ReadingHomeContinueCard(book: book, transition: transition)
+                BookshelfContinueCard(book: book, transition: transition)
             } else {
-                ReadingHomeShelfBook(book: book, transition: transition)
+                BookshelfShelfBook(book: book, transition: transition)
             }
         }
         .buttonStyle(BookOpeningButtonStyle(pressTarget: isContinuing ? .label : .cover))
@@ -425,7 +431,7 @@ private struct ReadingHomeBookButton: View {
 
 /// The narrow highlight and dark crease form the spine, independently of
 /// the cast shadow. Keeping both inside the cover also works for text art.
-private struct ReadingHomeCover: View {
+private struct BookshelfCover: View {
     let url: URL?
     let title: String
 

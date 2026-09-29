@@ -58,26 +58,34 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
 /// The subset of `AppSettings` that participates in WebDAV synchronization.
 struct WebDAVSyncedAppSettings: Codable, Equatable, Sendable {
     var homePage: AppHomePage
+    var navigation: AppNavigationSettings?
     var webBrowser: WebBrowserSettings
 
     init(
         homePage: AppHomePage,
+        navigation: AppNavigationSettings? = nil,
         webBrowser: WebBrowserSettings
     ) {
         self.homePage = homePage
+        self.navigation = navigation
         self.webBrowser = webBrowser
     }
 
     init(settings: AppSettings) {
         self.init(
             homePage: settings.system.homePage,
+            navigation: settings.system.navigation,
             webBrowser: settings.webBrowser
         )
     }
 
     func applying(to settings: AppSettings) -> AppSettings {
         var updated = settings
-        updated.system.homePage = homePage
+        if let navigation {
+            updated.system.navigation = navigation
+        } else if updated.system.navigation.tabs.contains(homePage.tab) {
+            updated.system.navigation = AppNavigationSettings(tabs: updated.system.navigation.tabs, startupTab: homePage.tab)
+        }
         updated.webBrowser = webBrowser
         return updated
     }

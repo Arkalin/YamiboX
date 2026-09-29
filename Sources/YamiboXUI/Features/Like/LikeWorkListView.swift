@@ -11,6 +11,7 @@ struct LikeWorkListView: View {
     var onClose: (() -> Void)? = nil
     var categorySelection: Binding<LikeWorkFilter>? = nil
     var onSelectionModeChange: (Bool) -> Void = { _ in }
+    var ownsNavigation = true
 
     @State private var summaries: [LikeWorkSummary] = []
     @State private var titlesByWorkKey: [ReadingWorkKey: String] = [:]
@@ -41,7 +42,7 @@ struct LikeWorkListView: View {
 
     var body: some View {
         LibraryPageNavigation(
-            ownsNavigation: categorySelection == nil,
+            ownsNavigation: ownsNavigation && categorySelection == nil,
             isCloseEnabled: !isSelecting,
             onClose: onClose
         ) {
