@@ -23,7 +23,7 @@ struct LocalFavoriteFilterSheet: View {
                             toggleSourceFilter(sourceFilter)
                         } label: {
                             HStack {
-                                Text(sourceFilter.displayLabel)
+                                Text(organizer.sourceFilterLabel(sourceFilter))
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Text("\(organizer.derived.sourceFilterEntryCounts[sourceFilter] ?? 0)")
@@ -82,7 +82,7 @@ struct LocalFavoriteFilterSheet: View {
 
     private var availableSourceFilters: [LocalFavoriteSourceFilter] {
         organizer.derived.sourceFilterEntryCounts.keys.sorted {
-            $0.displayLabel.localizedCaseInsensitiveCompare($1.displayLabel) == .orderedAscending
+            organizer.sourceFilterLabel($0).localizedCaseInsensitiveCompare(organizer.sourceFilterLabel($1)) == .orderedAscending
         }
     }
 

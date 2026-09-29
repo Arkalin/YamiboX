@@ -137,7 +137,27 @@ final class FavoriteLibraryOrganizer {
     /// Snapshot of the per-board reader configuration taken at the same
     /// load/reload as `mangaDirectoriesByTID`, so the two are always
     /// consistent with each other for a given derivation.
-    @ObservationIgnored var boardReaderSettings = BoardReaderSettings()
+    var boardReaderSettings = BoardReaderSettings()
+
+    func sourceFilterLabel(_ filter: LocalFavoriteSourceFilter) -> String {
+        guard case let .forumBoard(id, label) = filter else { return filter.displayLabel }
+        func usableName(_ value: String?) -> String? {
+            guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty, name != id else { return nil }
+            return name
+        }
+        // Filter identity ignores labels, so a grouped key or selected chip may
+        // retain an old ID-only label even when another favorite has the name.
+        for item in document.items where filter.matches(item) {
+            if let name = usableName(item.forumName) ?? usableName(item.sourceGroup.forumName) {
+                return name
+            }
+        }
+        return usableName(boardReaderSettings.entry(forumID: id)?.boardName)
+            ?? usableName(label)
+            ?? usableName(BoardReaderSettings.factoryDefault.entry(forumID: id)?.boardName)
+            ?? L10n.string("settings.board_reader.board_placeholder", id)
+    }
     /// Snapshot of `settings.favorites.smartMangaBulkDeleteEnabled`, kept
     /// live alongside `boardReaderSettings` (see `settingsUpdatesTask`) so
     /// `hasDeletableSelection` and `LocalFavoriteCardActions.standard(...)`
