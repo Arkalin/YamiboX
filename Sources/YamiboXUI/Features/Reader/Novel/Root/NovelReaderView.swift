@@ -268,6 +268,7 @@ public struct NovelReaderView: View {
                 NovelReaderSearchView(
                     snapshot: presentation.snapshot,
                     backgroundColor: backgroundColor,
+                    usesDarkBackground: model.settings.backgroundStyle == .quiet || colorScheme == .dark,
                     onSelect: handleSearchResult,
                     onDismiss: closeSearch
                 )
@@ -312,6 +313,10 @@ public struct NovelReaderView: View {
         // Inspector belongs outside the viewport geometry so a pinned panel
         // reflows the reader rather than covering already laid-out text.
         .modifier(novelReaderPresentationModifier())
+        .environment(\.readerToolbarPaper, readerThemeColor(for: model.settings.backgroundStyle, colorScheme: colorScheme))
+        .environment(\.readerToolbarInk, model.settings.backgroundStyle == .quiet
+            ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
+            : (colorScheme == .dark ? .white : .black))
         .annotationOperationFeedback(annotations.operations)
     }
 

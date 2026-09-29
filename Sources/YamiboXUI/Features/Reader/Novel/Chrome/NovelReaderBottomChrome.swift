@@ -38,6 +38,7 @@ struct NovelReaderBottomChrome: View {
     @State private var scrubFeedback = ReaderProgressScrubFeedback()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
 
     var body: some View {
         VStack(spacing: 12) {
@@ -46,7 +47,7 @@ struct NovelReaderBottomChrome: View {
                 .accessibilityHidden(!isVisible)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 12)
-                .padding(.trailing, 12)
+                .padding(.trailing, 16)
                 .padding(.bottom, chromeLayout.bottomControlsAdditionalBottomOffset)
 
             if readingMode == .paged {
@@ -60,6 +61,10 @@ struct NovelReaderBottomChrome: View {
             }
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
+        .environment(\.readerToolbarPaper, readerThemeColor(for: backgroundStyle, colorScheme: colorScheme))
+        .environment(\.readerToolbarInk, backgroundStyle == .quiet
+            ? Color(uiColor: readerThemeTextUIColor(for: backgroundStyle))
+            : (colorScheme == .dark ? .white : .black))
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
         .onAppear(perform: prepareFeedbackGenerators)
     }
@@ -85,7 +90,8 @@ struct NovelReaderBottomChrome: View {
                 actionRow
                     .readerChromeRowVisibility(isVisible, index: stackedCapsuleCount, count: stackedCapsuleCount + 1)
             }
-            .frame(width: chromeLayout.maxChromeWidth)
+            .frame(maxWidth: chromeLayout.maxChromeWidth)
+            .readerBooksBackdrop(isVisible: isVisible && !isProgressScrubbing)
 
             if progressChromePresentation.showsVerticalScrubber {
                 verticalProgressControl
@@ -210,7 +216,7 @@ struct NovelReaderBottomChrome: View {
             }
         }
         .modifier(ReaderInformationFont())
-        .foregroundStyle(backgroundStyle == .quiet && readingMode == .paged
+        .foregroundStyle(backgroundStyle == .quiet && (readingMode == .paged || toolbarStyle.effectiveStyle == .books)
             ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
             : Color.secondary)
         .lineLimit(1)
@@ -225,7 +231,7 @@ struct NovelReaderBottomChrome: View {
             content
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .readerChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
                 .frame(maxWidth: .infinity, alignment: .center)
         } else {
             content
@@ -241,12 +247,12 @@ struct NovelReaderBottomChrome: View {
     ) -> some View {
         Button(action: handler) {
             Image(systemName: systemName)
-                .font(.headline)
+                .font(.system(size: 22, weight: .medium))
                 .frame(width: chromeLayout.actionButtonIconFrame, height: chromeLayout.actionButtonIconFrame)
                 .frame(maxWidth: .infinity)
         }
         .buttonBorderShape(.capsule)
-        .readerChromeButtonStyle(tint: appTheme.controlAccent)
+        .readerBottomChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(action.isDisabled ? 0.34 : 1)
         .disabled(action.isDisabled)
         .accessibilityLabel(title)

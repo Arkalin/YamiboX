@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 struct MangaReaderBottomChrome: View {
+    private let layout = ReaderBottomChromeLayoutPresentation()
     let bottomInset: CGFloat
     let isVisible: Bool
     let information: ReaderPageInformationPresentation
@@ -29,7 +30,6 @@ struct MangaReaderBottomChrome: View {
     @State private var activeVerticalProgressPreview: ReaderProgressScrubPreview?
 
     var body: some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
         let capsuleCount = layout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0)
         let rowCount = capsuleCount + 1
         let progressChromePresentation = ReaderProgressChromePresentation(
@@ -95,7 +95,8 @@ struct MangaReaderBottomChrome: View {
                     .allowsHitTesting(staticControlVisibility.allowsHitTesting)
                     .accessibilityHidden(staticControlVisibility.isAccessibilityHidden)
                 }
-                .frame(width: layout.maxChromeWidth)
+                .frame(maxWidth: layout.maxChromeWidth)
+                .readerBooksBackdrop(isVisible: isVisible && activeVerticalProgressPreview == nil)
                 .opacity(verticalScrubVisibility.opacity)
                 .allowsHitTesting(verticalScrubVisibility.allowsHitTesting)
                 .accessibilityHidden(verticalScrubVisibility.isAccessibilityHidden)
@@ -126,7 +127,7 @@ struct MangaReaderBottomChrome: View {
             }
         }
         .padding(.top, layout.bottomChromeTopPadding)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
         .padding(.bottom, layout.bottomPadding(forBottomInset: bottomInset))
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeightChange)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -157,7 +158,7 @@ private struct MangaReaderBottomPageSummary: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .readerChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
+            .readerStyledChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
             .frame(maxWidth: .infinity, alignment: .center)
     }
 }
@@ -300,7 +301,7 @@ private struct MangaReaderProgressImagePreview: View {
         }
         .padding(8)
         .frame(width: Self.previewSize.width, height: Self.previewSize.height)
-        .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+        .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 5)
         .task(id: pageID) { @MainActor in
             await loadImage()
@@ -400,6 +401,7 @@ private struct MangaReaderProgressPreviewPageLabel: View {
 }
 
 private struct MangaReaderStaticActionControls: View {
+    private let layout = ReaderBottomChromeLayoutPresentation()
     let isVisible: Bool
     let capsuleCount: Int
     let colorScheme: ColorScheme
@@ -416,8 +418,6 @@ private struct MangaReaderStaticActionControls: View {
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
-
         ReaderChromeCapsuleButton(
             title: commentsTitle,
             systemName: "text.bubble",
@@ -460,16 +460,14 @@ private struct MangaReaderStaticActionControls: View {
         systemName: String,
         handler: @escaping () -> Void
     ) -> some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
-
         return Button(action: handler) {
             Image(systemName: systemName)
-                .font(.headline)
+                .font(.system(size: 22, weight: .medium))
                 .frame(width: layout.actionButtonIconFrame, height: layout.actionButtonIconFrame)
                 .frame(maxWidth: .infinity)
         }
         .buttonBorderShape(.capsule)
-        .readerChromeButtonStyle(tint: appTheme.controlAccent)
+        .readerBottomChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
         .accessibilityLabel(title)

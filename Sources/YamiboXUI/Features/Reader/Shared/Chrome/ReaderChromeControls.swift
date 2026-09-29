@@ -195,6 +195,9 @@ struct ReaderChromeHistoryButton: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarInk) private var toolbarInk
+    @Environment(\.readerToolbarPaper) private var toolbarPaper
     private static let hitTargetSize: CGFloat = 44
     private let iconSize: CGFloat = 19
     private let glassSize: CGFloat = 27
@@ -236,11 +239,12 @@ struct ReaderChromeHistoryButton: View {
     }
 
     private var fillColor: Color {
-        appTheme.controlAccent
+        toolbarStyle.effectiveStyle == .books && isGlassBacked ? toolbarInk : appTheme.controlAccent
     }
 
     private var symbolColor: Color {
-        colorScheme == .dark ? Color.black.opacity(0.82) : Color.white
+        if toolbarStyle.effectiveStyle == .books && isGlassBacked { return toolbarPaper }
+        return colorScheme == .dark ? Color.black.opacity(0.82) : Color.white
     }
 }
 
@@ -253,7 +257,7 @@ private struct ReaderChromeHistoryButtonGlassModifier: ViewModifier {
         if isGlassBacked {
             content
                 .frame(width: size, height: size)
-                .readerChromePanel(cornerRadius: size / 2, tint: tint, isInteractive: true)
+                .readerStyledChromePanel(cornerRadius: size / 2, tint: tint, isInteractive: true)
         } else {
             content
         }
@@ -272,36 +276,39 @@ struct ReaderChromeCapsuleButton: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarInk) private var toolbarInk
+    private let layout = ReaderBottomChromeLayoutPresentation()
 
     var body: some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
         let controlTint = appTheme.controlAccent
 
         Button(action: action) {
             HStack(spacing: 8) {
                 Text(title)
-                    .font(.callout.weight(.semibold))
+                    .font(toolbarStyle.effectiveStyle == .books ? .body : .callout.weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 12)
                 if let trailingText {
                     Text(trailingText)
-                        .font(.callout.weight(.semibold))
+                        .font(toolbarStyle.effectiveStyle == .books ? .body : .callout.weight(.semibold))
                         .monospacedDigit()
                         .lineLimit(1)
                 } else {
                     Image(systemName: systemName)
-                        .font(.callout.weight(.semibold))
+                        .font(.system(size: 22, weight: .medium))
                 }
             }
-            .foregroundStyle(layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary)
+            .foregroundStyle(toolbarStyle.effectiveStyle == .books ? toolbarInk
+                : (layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary))
             .frame(maxWidth: .infinity)
             .frame(height: layout.progressPanelHeight)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 16)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .readerChromePanel(
+        .readerStyledChromePanel(
             cornerRadius: 24,
             tint: readerChromePanelTint(for: colorScheme),
             isInteractive: isEnabled
@@ -352,7 +359,7 @@ struct ReaderPreviewModeBadge: View {
         .minimumScaleFactor(0.8)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .readerChromePanel(cornerRadius: 14, tint: readerChromePanelTint(for: colorScheme))
+        .readerStyledChromePanel(cornerRadius: 14, tint: readerChromePanelTint(for: colorScheme))
     }
 }
 #endif

@@ -3,6 +3,7 @@ import YamiboXCore
 
 /// A separate observation boundary for paging layout and viewport selection.
 struct NovelReaderPagedContent: View {
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: NovelReaderViewModel
     let layout: NovelReaderLayout
@@ -45,7 +46,8 @@ struct NovelReaderPagedContent: View {
             presentation: information, selectedIndex: model.pagedViewportSelectionIndex,
             backgroundStyle: model.settings.backgroundStyle, topInset: topInset, bottomInset: bottomInset,
             titleSidePadding: model.navigation.canNavigateForward ? 128 : 76,
-            titleLift: isPadDevice ? 12 : 0
+            titleLift: isPadDevice ? 12 : 0,
+            toolbarStyle: toolbarStyle
         )
         return Group {
             if effectivePagedSettings.pagedTurnStyle == .pageCurl {

@@ -109,12 +109,25 @@ private struct MangaReaderTopChapterTitle: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+                .modifier(MangaReaderTitleAppearance())
                 .frame(maxWidth: .infinity)
         }
+    }
+}
+
+/// Give glass titles a dark semantic context over the black viewport,
+/// including text composited separately from its plate in UIKit page hosts.
+/// Native glass can still adapt its primary foreground over bright artwork.
+struct MangaReaderTitleAppearance: ViewModifier {
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.environment(\.colorScheme, toolbarStyle.effectiveStyle == .liquidGlass ? .dark : colorScheme)
     }
 }
 #endif

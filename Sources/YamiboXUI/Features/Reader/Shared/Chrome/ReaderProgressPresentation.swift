@@ -182,8 +182,8 @@ public enum ReaderBottomChromeHorizontalAlignment: Equatable, Sendable {
 public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var usesIndependentControls: Bool { true }
     public var panelSpacing: CGFloat { 4 }
-    public var maxChromeWidth: CGFloat { 260 }
-    public var progressPanelHeight: CGFloat { 44 }
+    public var maxChromeWidth: CGFloat { 276 }
+    public var progressPanelHeight: CGFloat { 48 }
     public var actionButtonIconFrame: CGFloat { 34 }
     // Includes the glass button style's padding around the 34pt icon frame.
     public var actionButtonRowHeight: CGFloat { 48 }
@@ -235,7 +235,7 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var horizontalDirectoryContentHiddenWhileScrubbing: Bool { true }
     public var progressCapsulesUseButtonTint: Bool { true }
     public var progressSummaryVisibleWhileScrubbing: Bool { true }
-    public var verticalScrubberWidth: CGFloat { progressPanelHeight }
+    public var verticalScrubberWidth: CGFloat { 44 }
 
     /// Capsules both readers always stack above the action row: 目录, 评论, 设置.
     public var baseStackedCapsuleCount: Int { 3 }

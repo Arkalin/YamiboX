@@ -48,6 +48,8 @@ struct ReaderDirectoryProgressCapsule: View {
     @State private var dragStartProgressFraction: Double?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    private let layout = ReaderBottomChromeLayoutPresentation()
 
     init(
         title: String,
@@ -79,14 +81,14 @@ struct ReaderDirectoryProgressCapsule: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let layout = ReaderBottomChromeLayoutPresentation()
-            let controlTint = appTheme.controlAccent
+            let isBooks = toolbarStyle.effectiveStyle == .books
+            let controlTint = isBooks ? Color.white : appTheme.controlAccent
             let width = max(geometry.size.width, 1)
             let clampedProgress = min(max(progressFraction, 0), 1)
 
             ZStack(alignment: fillAlignment) {
                 Capsule()
-                    .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .fill(Color.secondary.opacity(isBooks ? 0 : (colorScheme == .dark ? 0.18 : 0.12)))
 
                 if showsFill {
                     Rectangle()
@@ -106,25 +108,26 @@ struct ReaderDirectoryProgressCapsule: View {
 
                 HStack(spacing: 8) {
                     Text(title)
-                        .font(.callout.weight(.semibold))
+                        .font(isBooks ? .body : .callout.weight(.semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 12)
                     Image(systemName: iconSystemName)
-                        .font(.callout.weight(.semibold))
+                        .font(.system(size: 22, weight: .medium))
                 }
-                .foregroundStyle(layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary)
+                .foregroundStyle(isBooks ? Color.white : (layout.directoryCapsuleContentUsesAccentColor ? controlTint : Color.primary))
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 16)
                 .opacity(layout.horizontalDirectoryContentHiddenWhileScrubbing && isScrubbing ? 0 : 1)
             }
-            .frame(height: 44)
+            .frame(height: layout.progressPanelHeight)
             .clipShape(Capsule())
             .contentShape(Capsule())
-            .readerChromePanel(
+            .readerStyledChromePanel(
                 cornerRadius: 24,
                 tint: readerChromePanelTint(for: colorScheme),
-                isInteractive: usesNativePressFeedback
+                isInteractive: usesNativePressFeedback,
+                isDirectory: true
             )
             .gesture(scrubGesture(width: width), including: supportsScrub ? .gesture : .subviews)
             .onTapGesture(perform: onTapDirectory)
@@ -132,7 +135,7 @@ struct ReaderDirectoryProgressCapsule: View {
             .accessibilityLabel(title)
             .accessibilityHint(L10n.string("reader.chapters"))
         }
-        .frame(height: ReaderBottomChromeLayoutPresentation().progressPanelHeight)
+        .frame(height: layout.progressPanelHeight)
     }
 
     private func scrubGesture(width: CGFloat) -> some Gesture {
@@ -174,6 +177,7 @@ struct ReaderDirectoryProgressCapsule: View {
 }
 
 struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
+    private let layout = ReaderBottomChromeLayoutPresentation()
     let restingProgressFraction: Double
     let scrubContext: ReaderProgressScrubContext
     let ticks: [ReaderChromeProgressTick]
@@ -224,7 +228,6 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     }
 
     var body: some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
         let preview = scrubState.preview
         let totalWidth = isScrubbing && showsPreview ? previewSize.width + layout.verticalScrubberSideSpacing + layout.verticalScrubberWidth : layout.verticalScrubberWidth
 
@@ -340,13 +343,12 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     }
 
     private func verticalProgressBar(height: CGFloat, thumbY: CGFloat) -> some View {
-        let layout = ReaderBottomChromeLayoutPresentation()
         let controlTint = appTheme.controlAccent
 
         return ZStack(alignment: .topTrailing) {
             Capsule()
                 .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                .readerChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 24, tint: readerChromePanelTint(for: colorScheme))
 
             if layout.verticalScrubberShowsProgressFill {
                 Rectangle()
@@ -435,6 +437,8 @@ private struct ReaderVerticalProgressChapterTickOverlay: View {
 struct ReaderVerticalProgressPreviewCapsule: View {
     let preview: ReaderProgressScrubPreview
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarInk) private var toolbarInk
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
@@ -448,17 +452,18 @@ struct ReaderVerticalProgressPreviewCapsule: View {
 
             Text(L10n.string("reader.page_number_compact", preview.pageNumber))
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(toolbarStyle.effectiveStyle == .books ? toolbarInk.opacity(0.7) : Color.secondary)
                 .lineLimit(1)
                 // Digits roll instead of hard-swapping as the scrub sweeps
                 // through pages.
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.18), value: preview.pageNumber)
         }
+        .foregroundStyle(toolbarStyle.effectiveStyle == .books ? toolbarInk : Color.primary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 16)
         .frame(width: layout.verticalPreviewWidth, height: layout.verticalPreviewHeight)
-        .readerChromePanel(cornerRadius: 24, tint: appTheme.controlAccent.opacity(0.08))
+        .readerStyledChromePanel(cornerRadius: 24, tint: appTheme.controlAccent.opacity(0.08))
         .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
     }
 }

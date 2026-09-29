@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 public struct MangaReaderView: View {
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
     private let context: MangaLaunchContext
     private let dependencies: MangaReaderDependencies
     private let forumDependencies: ForumNavigationDependencies
@@ -113,7 +114,8 @@ public struct MangaReaderView: View {
                 informationLayout: ReaderAttachedInformationConfiguration(
                     topInset: informationTopInset, bottomInset: bottomInset,
                     titleSidePadding: model.canNavigateForward ? 128 : 76,
-                    contentTopInset: pagedContentTopInset
+                    contentTopInset: pagedContentTopInset,
+                    toolbarStyle: toolbarStyle
                 ),
                 presentation: model.presentation,
                 imageLoader: model.imageLoader,

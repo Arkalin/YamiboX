@@ -89,7 +89,7 @@ struct NovelReaderVerticalBoundaryPullBadge: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .readerChromePanel(cornerRadius: 22, tint: badgeTint)
+            .readerStyledChromePanel(cornerRadius: 22, tint: badgeTint)
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(appTheme.controlAccent.opacity(0.22 + 0.38 * progress), lineWidth: 1)
