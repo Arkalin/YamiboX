@@ -9,6 +9,24 @@ struct SettingsReadingView: View {
     var body: some View {
         Form {
             Section {
+                Picker(L10n.string("settings.reader_toolbar.style"), selection: Binding(
+                    get: { viewModel.readerToolbarStyle.effectiveStyle },
+                    set: { viewModel.updateReaderToolbarStyle($0) }
+                )) {
+                    ForEach(ReaderToolbarStyle.allCases, id: \.self) { style in
+                        Text(L10n.string("settings.reader_toolbar.\(style.rawValue)")).tag(style)
+                    }
+                }
+                .disabled(viewModel.isBusy || !ReaderToolbarStyle.supportsLiquidGlass)
+                .accessibilityIdentifier("reader-toolbar-style")
+            } header: {
+                Text(L10n.string("settings.reader_toolbar.title"))
+            } footer: {
+                if !ReaderToolbarStyle.supportsLiquidGlass {
+                    Text(L10n.string("settings.reader_toolbar.unavailable"))
+                }
+            }
+            Section {
                 Toggle(
                     L10n.string("settings.reading_progress.save_normal_thread"),
                     isOn: Binding(

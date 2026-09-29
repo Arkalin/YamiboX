@@ -13,6 +13,7 @@ struct NovelReaderTopChrome: View {
     let onRefresh: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
 
     var body: some View {
         let summary = ReaderChromeProgressSummary(
@@ -97,7 +98,8 @@ struct NovelReaderTopChrome: View {
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .multilineTextAlignment(.center)
-            .foregroundStyle(model.settings.backgroundStyle == .quiet && model.settings.readingMode == .paged
+            .foregroundStyle(model.settings.backgroundStyle == .quiet
+                && (model.settings.readingMode == .paged || toolbarStyle.effectiveStyle == .books)
                 ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
                 : Color.secondary)
 
@@ -105,7 +107,7 @@ struct NovelReaderTopChrome: View {
             text
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
         } else {
             // Bare title, no glass panel: paged mode reserves a fixed top
             // band (`pagedTopBandHeight`) above the text, so the title sits

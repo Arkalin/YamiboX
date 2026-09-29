@@ -39,6 +39,8 @@ struct ReaderAttachedInformationConfiguration: Equatable {
     var titleSidePadding: CGFloat = 76
     var titleLift: CGFloat = 0
     var contentTopInset: CGFloat = 0
+    // UIKit page hosts do not inherit the reader's SwiftUI environment.
+    var toolbarStyle: ReaderToolbarStyle = .liquidGlass
 }
 
 // Hosted pages observe only this presentation channel. Updating chrome must not
@@ -76,6 +78,7 @@ struct ReaderAttachedInformationView: View {
             }
         }
         .modifier(ReaderInformationVisibility(isVisible: configuration.presentation.isVisible))
+        .environment(\.readerToolbarStyle, configuration.toolbarStyle.effectiveStyle)
         .opacity(stationaryZoomCopy == state.usesStationaryZoomInformation ? 1 : 0)
         .allowsHitTesting(false)
         .accessibilityHidden(!visible || isBack || configuration.selectedIndex != itemIndex)
@@ -125,7 +128,7 @@ private struct ReaderAttachedInformationTitle: View {
             ZStack {
                 // Size the single plate independently of the outgoing title.
                 capsuleSize
-                    .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+                    .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
                     .accessibilityHidden(true)
                 text.padding(.horizontal, 14).padding(.vertical, 8)
                     .modifier(ReaderInformationTitleTransition(title: title))
@@ -178,7 +181,7 @@ private struct ReaderAttachedInformationFooterContent: View {
         .multilineTextAlignment(.center)
         if backgroundStyle == nil {
             content.padding(.horizontal, 14).padding(.vertical, 6)
-                .readerChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
         } else {
             content
         }

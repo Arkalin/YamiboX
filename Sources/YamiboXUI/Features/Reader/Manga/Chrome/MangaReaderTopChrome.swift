@@ -112,7 +112,7 @@ private struct MangaReaderTopChapterTitle: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .readerChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
                 .frame(maxWidth: .infinity)
         }
     }

@@ -1591,6 +1591,11 @@
 "test_forum.configuration_title" = "测试论坛配置错误";
 "test_forum.launch_instructions" = "请通过 Xcode 的 Run → Arguments 或 simctl 传入 --forum-base-url <URL> 后重新启动。桌面启动不会沿用上次地址。";
 "test_forum.preparing" = "正在准备测试论坛数据…";
+"settings.reader_toolbar.title" = "阅读器工具栏风格";
+"settings.reader_toolbar.style" = "风格";
+"settings.reader_toolbar.liquidGlass" = "液态玻璃";
+"settings.reader_toolbar.books" = "图书";
+"settings.reader_toolbar.unavailable" = "当前系统不支持液态玻璃，固定使用图书风格。";
 "test_forum.reset_failed" = "测试数据清理未完成，已阻止启动。请排查错误并重新启动以重试。";
 "test_forum.background_unavailable" = "测试版本需要携带论坛地址参数在前台启动，不支持后台快捷指令。";
 "test_forum.invalid_navigation" = "页面直达参数无效。请仅提供一个 --open-page <目标> 或 --open-url <本站链接>，目标列表见 README。";

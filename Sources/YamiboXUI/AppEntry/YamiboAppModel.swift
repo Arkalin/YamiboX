@@ -68,6 +68,7 @@ public final class YamiboAppModel {
     @ObservationIgnored private var claimedForumNavigationRequestID: UUID?
     @ObservationIgnored private var claimedForumSearchRequestID: UUID?
     public private(set) var appThemePreset = AppThemePreset.classic
+    private(set) var readerToolbarStyle = ReaderToolbarStyle.liquidGlass
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
     let forumContentRefresh = ForumContentRefreshState()
 
@@ -199,6 +200,7 @@ public final class YamiboAppModel {
         }
         let state = generation == accountGeneration ? result.bootstrapState : await appContext.bootstrap()
         appThemePreset = state.settings.appearance.themePreset
+        readerToolbarStyle = state.settings.readerToolbarStyle
         bootstrapState = state
         bootstrapErrorMessage = nil
         if generation == accountGeneration { applyRestoredRoute(result.restoredRoute) }
@@ -258,6 +260,7 @@ public final class YamiboAppModel {
 
         let state = await appContext.bootstrap(onProgress: updateBootstrapPhase)
         appThemePreset = state.settings.appearance.themePreset
+        readerToolbarStyle = state.settings.readerToolbarStyle
         bootstrapState = state
         bootstrapErrorMessage = nil
         let restoredRoute = await appContinuity.restoreExplicitly(
@@ -298,6 +301,7 @@ public final class YamiboAppModel {
     public func refreshAppAppearanceSettings() async {
         let settings = await appContext.settingsStore.load()
         appThemePreset = settings.appearance.themePreset
+        readerToolbarStyle = settings.readerToolbarStyle
     }
 
     private func observeAppAppearanceSettings() {

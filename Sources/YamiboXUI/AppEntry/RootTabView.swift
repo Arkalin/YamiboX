@@ -43,6 +43,7 @@ public struct RootTabView: View {
         // instead of hard-swapping frames.
         .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
         .appTheme(.theme(for: appModel.appThemePreset))
+        .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
         .task {
             await appModel.bootstrapIfNeeded()
         }
@@ -270,6 +271,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                         appModel: appModel
                     )
                         .appTheme(AppTheme.theme(for: appModel.appThemePreset))
+                        .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
                         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
                 }
                 // Reader edge pans belong to reading, not modal dismissal.

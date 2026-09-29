@@ -9,6 +9,7 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
     var novelDownload = NovelDownloadSettings()
     var chapterComments = ChapterCommentFilterSettings()
     var readingProgress = ReadingProgressSettings()
+    var readerToolbarStyle = ReaderToolbarStyle.liquidGlass
     var isEditingCommentRule = false
     private(set) var pendingCommentRuleEdits = 0
     let commentFilterEngine = ChapterCommentFilterEngine()
@@ -29,17 +30,26 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
         novelDownload = settings.novelDownload
         chapterComments = settings.chapterComments
         readingProgress = settings.readingProgress
+        readerToolbarStyle = settings.readerToolbarStyle
     }
 
     func restoreDefaultsAfterApplicationReset() {
         novelDownload = NovelDownloadSettings()
         chapterComments = ChapterCommentFilterSettings()
         readingProgress = ReadingProgressSettings()
+        readerToolbarStyle = .liquidGlass
     }
 
     func updateSavesNormalThreadProgress(_ enabled: Bool) {
         persistSettings(\.readingProgress.savesNormalThreadProgress, to: enabled, updateSettings: updateSettings) {
             $0.readingProgress.savesNormalThreadProgress = enabled
+        }
+    }
+
+    func updateReaderToolbarStyle(_ style: ReaderToolbarStyle) {
+        guard ReaderToolbarStyle.supportsLiquidGlass else { return }
+        persistSettings(\.readerToolbarStyle, to: style, updateSettings: updateSettings) {
+            $0.readerToolbarStyle = style
         }
     }
 

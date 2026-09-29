@@ -418,6 +418,8 @@ private struct NovelReaderSearchBottomBar: View {
     @FocusState private var isFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarInk) private var toolbarInk
 
     var body: some View {
         ReaderGlassContainer(spacing: 10) {
@@ -427,7 +429,9 @@ private struct NovelReaderSearchBottomBar: View {
                         .font(.headline)
                     TextField(
                         L10n.string("reader.search.placeholder"),
-                        text: $query
+                        text: $query,
+                        prompt: Text(L10n.string("reader.search.placeholder"))
+                            .foregroundStyle(toolbarStyle.effectiveStyle == .books ? toolbarInk.opacity(0.6) : Color.secondary)
                     )
                     .focused($isFocused)
                     .submitLabel(.search)
@@ -451,7 +455,7 @@ private struct NovelReaderSearchBottomBar: View {
                 .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 52)
-                .readerChromePanel(cornerRadius: 26, tint: readerChromePanelTint(for: colorScheme))
+                .readerStyledChromePanel(cornerRadius: 26, tint: readerChromePanelTint(for: colorScheme))
 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")

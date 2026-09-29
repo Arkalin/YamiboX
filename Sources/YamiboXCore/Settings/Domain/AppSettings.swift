@@ -14,6 +14,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var appearance: AppAppearanceSettings
     public var chapterComments: ChapterCommentFilterSettings
     public var readingProgress: ReadingProgressSettings
+    public var readerToolbarStyle: ReaderToolbarStyle
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -25,7 +26,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
         boardReader: BoardReaderSettings = .init(),
         appearance: AppAppearanceSettings = .init(),
         chapterComments: ChapterCommentFilterSettings = .init(),
-        readingProgress: ReadingProgressSettings = .init()
+        readingProgress: ReadingProgressSettings = .init(),
+        readerToolbarStyle: ReaderToolbarStyle = .liquidGlass
     ) {
         self.novelReader = novelReader
         self.novelDownload = novelDownload
@@ -37,6 +39,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.appearance = appearance
         self.chapterComments = chapterComments
         self.readingProgress = readingProgress
+        self.readerToolbarStyle = readerToolbarStyle
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -50,6 +53,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case appearance
         case chapterComments
         case readingProgress
+        case readerToolbarStyle
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -73,7 +77,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
             boardReader: try container.decode(BoardReaderSettings.self, forKey: .boardReader),
             appearance: try container.decodeIfPresent(AppAppearanceSettings.self, forKey: .appearance) ?? .init(),
             chapterComments: try container.decodeIfPresent(ChapterCommentFilterSettings.self, forKey: .chapterComments) ?? .init(),
-            readingProgress: try container.decodeIfPresent(ReadingProgressSettings.self, forKey: .readingProgress) ?? .init()
+            readingProgress: try container.decodeIfPresent(ReadingProgressSettings.self, forKey: .readingProgress) ?? .init(),
+            readerToolbarStyle: try container.decodeIfPresent(ReaderToolbarStyle.self, forKey: .readerToolbarStyle) ?? .liquidGlass
         )
     }
 
