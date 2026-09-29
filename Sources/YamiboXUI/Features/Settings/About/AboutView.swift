@@ -375,7 +375,9 @@ private enum PlatformAppIcon {
     }
 
     private static var iconNames: [String] {
-        var names = ["AppIcon"]
+        // The Icon Composer asset named "AppIcon" is not a raster image and
+        // can make UIImage(named:) raise an exception. Use its generated PNGs.
+        var names: [String] = []
 
         if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
            let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
