@@ -68,7 +68,6 @@ struct MineLibraryEntriesSection: View {
     let showDownloadManagement: () -> Void
     let showMyLikes: () -> Void
     let showHistory: () -> Void
-    let showBookshelf: () -> Void
 
     var body: some View {
         Section {
@@ -99,11 +98,6 @@ struct MineLibraryEntriesSection: View {
                 action: showDownloadManagement
             )
             .accessibilityValue(L10n.string("mine.download_queue.chapter_count_format", downloadQueueCount))
-            MineEntryButtonRow(
-                title: AppTab.bookshelf.title,
-                systemImage: AppTab.bookshelf.systemImage,
-                action: showBookshelf
-            )
         }
     }
 }

@@ -1127,6 +1127,30 @@
 "settings.favorite_smart_manga_bulk_delete" = "允许批量删除智能漫画收藏";
 "settings.favorite_smart_manga_bulk_delete.footer" = "开启后，可通过收藏卡片菜单、多选工具栏，以及详情页和浏览记录中已点亮的作品星标，确认删除该作品归档下的全部收藏项。关闭后，作品星标会打开“查看归档收藏”，只能在其中逐项删除。";
 "settings.navigation.title" = "导航栏与启动页";
+"settings.navigation.discard_title" = "放弃未保存的修改？";
+"settings.navigation.discard" = "放弃修改";
+"settings.navigation.continue_editing" = "继续编辑";
+"settings.navigation.reset_title" = "恢复默认导航栏和启动页？";
+"settings.navigation.reset" = "恢复默认配置";
+"settings.navigation.reset_message" = "恢复为书架、论坛、收藏、我的，启动时进入书架。保存后生效。";
+"settings.navigation.save_failed" = "保存失败";
+/* %@ is the localized startup tab name. */
+"settings.navigation.preview_format" = "预览 · 启动时进入%@";
+"settings.navigation.preview_hint" = "点击上方图标选择启动页，保存后生效。";
+/* %@ is the localized replacement startup tab name. */
+"settings.navigation.startup_fallback_format" = "原启动页已移除，启动页已改为%@。";
+"settings.navigation.select_startup" = "设为启动页";
+/* %@ is the localized navigation tab name. */
+"settings.navigation.remove_format" = "移除%@";
+"settings.navigation.add_format" = "添加%@";
+"settings.navigation.move_up" = "上移";
+"settings.navigation.move_down" = "下移";
+/* %d is the number of configured navigation tabs (3–5). */
+"settings.navigation.selected_count_format" = "已添加 · %d/5";
+"settings.navigation.reorder_hint" = "拖动右侧手柄调整顺序。论坛、收藏和我的为必选项目。";
+"settings.navigation.available" = "可添加";
+"settings.navigation.limit_hint" = "最多添加 5 项，请先移除一个可选项目。";
+"settings.navigation.available_hint" = "消息、浏览记录和喜欢仍可从「我的」进入。";
 "settings.gamepad" = "手柄";
 "settings.gamepad.capture_prompt" = "请按下手柄按键…";
 "settings.gamepad.capture_rejected" = "该键不可绑定";

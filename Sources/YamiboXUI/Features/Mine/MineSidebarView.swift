@@ -154,12 +154,6 @@ struct MineSidebarView: View {
                 .accessibilityValue(L10n.string("mine.download_queue.chapter_count_format", viewModel.offlineQueue.entryCount))
                 .tag(MineSidebarDetail.downloads)
                 .accessibilityIdentifier("mine.sidebar.downloads")
-                Button {
-                    if !appModel.selectConfiguredTab(.bookshelf) { navigation.show(.bookshelf) }
-                } label: {
-                    Label(AppTab.bookshelf.title, systemImage: AppTab.bookshelf.systemImage)
-                }
-                .tag(MineSidebarDetail.bookshelf)
             }
             Section {
                 sectionLink(.settings, icon: "gearshape.fill")

@@ -165,9 +165,6 @@ public struct MineHomeView: View {
                         // Keep history and its thread pages in the same path
                         // so a thread push preserves the history page below it.
                         navigator.push(.browsingHistory)
-                    },
-                    showBookshelf: {
-                        if !appModel.selectConfiguredTab(.bookshelf) { showsBookshelf = true }
                     }
                 )
                 MineSettingsSection(
