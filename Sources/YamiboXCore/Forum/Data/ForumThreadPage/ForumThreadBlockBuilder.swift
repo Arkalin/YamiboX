@@ -402,7 +402,9 @@ final class ForumThreadBlockBuilder {
             switch character {
             case "\u{00A0}":
                 appendText("\u{3000}")
-            case " ", "\n", "\t", "\u{000C}":
+            // Discuz can emit <br> followed by CRLF. Swift treats CRLF as
+            // one Character; fold it as HTML whitespace, not a second break.
+            case " ", "\n", "\r", "\r\n", "\t", "\u{000C}":
                 appendCollapsibleSpace()
             default:
                 appendText(String(character))
