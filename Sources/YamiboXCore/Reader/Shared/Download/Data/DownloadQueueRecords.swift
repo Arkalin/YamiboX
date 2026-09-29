@@ -526,7 +526,7 @@ extension DownloadStore {
             title: downloadEntryTitle(chapterTitle: work.title, entryKey: work.entryKey),
             progress: DownloadProgress(
                 completedUnitCount: work.completedImageURLs.count,
-                targetUnitCount: work.targetImageURLs.count
+                targetUnitCount: work.readerKind == .attachment ? 1 : work.targetImageURLs.count
             ),
             state: work.state,
             failureMessage: work.failureMessage,

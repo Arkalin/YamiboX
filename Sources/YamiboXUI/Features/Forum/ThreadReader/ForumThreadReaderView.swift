@@ -61,6 +61,9 @@ struct ForumThreadReaderView: View {
             commentPost: model.commentPost,
             onUserTap: onUserTap,
             onURLTap: onURLTap,
+            onAttachmentTap: { attachment in
+                Task { await model.enqueueAttachment(attachment) }
+            },
             onReaderModeSwitch: onReaderModeSwitch,
             isSwitchingReaderMode: isSwitchingReaderMode,
             recommendedReaderKind: model.recommendedReaderKind

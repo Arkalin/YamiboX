@@ -23,6 +23,7 @@ struct ForumThreadPostCard: View {
     let onRatePost: (String, Int, String, Bool) async throws -> String
     let onCommentPost: (String, String) async throws -> String
     let onURLTap: (URL) -> Void
+    let onAttachmentTap: (ForumThreadAttachmentBlock) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -45,7 +46,8 @@ struct ForumThreadPostCard: View {
                 fallbackText: post.contentText,
                 refererURL: refererURL,
                 onImageTap: onImageTap,
-                onURLTap: onURLTap
+                onURLTap: onURLTap,
+                onAttachmentTap: onAttachmentTap
             )
 
             if let lastEditedText = post.lastEditedText {
@@ -73,7 +75,7 @@ struct ForumThreadPostCard: View {
             }
 
             if !post.attachments.isEmpty {
-                ForumThreadFooterAttachmentsView(attachments: post.attachments, onURLTap: onURLTap)
+                ForumThreadFooterAttachmentsView(attachments: post.attachments, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
             }
 
             ForumThreadPostActionRow(

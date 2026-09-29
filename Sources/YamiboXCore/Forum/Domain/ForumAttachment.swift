@@ -7,7 +7,14 @@ public struct ForumAttachmentFile: Equatable, Sendable {
     public init(name: String, data: Data) {
         // Content-Disposition is remote input, never a filesystem path.
         let component = URL(fileURLWithPath: name).lastPathComponent
-        self.name = component.isEmpty || component == "." || component == ".." ? "attachment" : String(component.prefix(180))
+            .components(separatedBy: .controlCharacters).joined()
+        // Filesystem component limits count bytes, not Swift characters.
+        let pathExtension = URL(fileURLWithPath: component).pathExtension
+        let suffix = !pathExtension.isEmpty && pathExtension.utf8.count <= 32 ? "." + pathExtension : ""
+        var stem = String(component.dropLast(suffix.count))
+        while stem.utf8.count + suffix.utf8.count > 180 { stem.removeLast() }
+        let safeName = stem + suffix
+        self.name = safeName.isEmpty || safeName == "." || safeName == ".." ? "attachment" : safeName
         self.data = data
     }
 }

@@ -7,12 +7,13 @@ struct ForumThreadTableBlockView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            ForumThreadTableGrid(rows: rows, refererURL: refererURL, onImageTap: onImageTap, onURLTap: onURLTap)
+            ForumThreadTableGrid(rows: rows, refererURL: refererURL, onImageTap: onImageTap, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
             ScrollView(.horizontal) {
-                ForumThreadTableGrid(rows: rows, refererURL: refererURL, onImageTap: onImageTap, onURLTap: onURLTap)
+                ForumThreadTableGrid(rows: rows, refererURL: refererURL, onImageTap: onImageTap, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -28,6 +29,7 @@ private struct ForumThreadTableGrid: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
     @ScaledMetric(relativeTo: .body) private var minimumColumnWidth: CGFloat = 72
 
     var body: some View {
@@ -35,7 +37,7 @@ private struct ForumThreadTableGrid: View {
         ForumThreadTableLayout(grid: grid, minimumColumnWidth: minimumColumnWidth) {
             ForEach(grid.cells) { placement in
                 ForumThreadTableCellView(cell: placement.cell, refererURL: refererURL,
-                                        onImageTap: onImageTap, onURLTap: onURLTap)
+                                        onImageTap: onImageTap, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
             }
         }
     }
@@ -122,6 +124,7 @@ private struct ForumThreadTableCellView: View {
     let refererURL: URL
     let onImageTap: (String, URL, String?, URL) -> Void
     let onURLTap: (URL) -> Void
+    var onAttachmentTap: ((ForumThreadAttachmentBlock) -> Void)? = nil
 
     var body: some View {
         ForumThreadContentBlocksView(
@@ -129,7 +132,8 @@ private struct ForumThreadTableCellView: View {
             fallbackText: "",
             refererURL: refererURL,
             onImageTap: onImageTap,
-            onURLTap: onURLTap
+            onURLTap: onURLTap,
+            onAttachmentTap: onAttachmentTap
         )
             .fontWeight(cell.isHeader ? .semibold : .regular)
             .padding(8)

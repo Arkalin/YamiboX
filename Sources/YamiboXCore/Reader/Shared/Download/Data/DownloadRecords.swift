@@ -9,6 +9,8 @@ extension DownloadStore {
 
     func removeDownloadGroup(_ id: DownloadGroupID) async throws {
         switch id.readerKind {
+        case .attachment:
+            try await removeAttachmentDownloads(ownerKey: id.ownerKey)
         case .manga:
             try await removeMangaDownloadMemberships(forOwnerName: id.ownerKey)
         case .novel:
@@ -18,6 +20,8 @@ extension DownloadStore {
 
     func removeDownloadEntry(_ id: DownloadEntryID) async throws {
         switch id.readerKind {
+        case .attachment:
+            try await removeAttachmentDownloads(ownerKey: id.ownerKey, entryKey: id.entryKey)
         case .manga:
             try await removeMangaDownloadMembership(ownerName: id.ownerKey, tid: id.entryKey)
         case .novel:

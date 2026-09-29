@@ -39,6 +39,10 @@ final class DownloadManagementViewModel {
         downloadManagementRows.isEmpty
     }
 
+    func attachmentURL(id: DownloadEntryID) async throws -> URL {
+        try await downloadStore.downloadedAttachmentURL(id: id)
+    }
+
     var selectedDownloadGroupCount: Int {
         selectedDownloadGroupIDs.count
     }
