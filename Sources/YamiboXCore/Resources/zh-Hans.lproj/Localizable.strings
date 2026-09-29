@@ -838,7 +838,12 @@
 "mine.offline_queue.cancel_selected_format" = "取消 %d 项";
 "mine.offline_queue.chapter_count_format" = "%d 个未完成项目";
 "mine.offline_queue.continue" = "继续";
-"mine.offline_queue.empty_message" = "未完成、暂停或失败的离线缓存任务会显示在这里。";
+"mine.offline_queue.empty_message" = "在阅读器的缓存页面添加下载，即可在这里查看进度。已完成的内容可在离线缓存管理中查看。";
+"mine.offline_queue.cancel_download" = "取消下载";
+"mine.offline_queue.pause_all" = "暂停全部下载";
+"mine.offline_queue.continue_all" = "继续全部下载";
+"mine.offline_queue.running" = "正在下载";
+"mine.offline_queue.paused" = "下载已暂停";
 "mine.offline_queue.empty_title" = "队列为空";
 "mine.offline_queue.failed" = "失败";
 "mine.offline_queue.image_progress_format" = "%d / %d 张图片";

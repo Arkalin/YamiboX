@@ -61,9 +61,11 @@ struct OfflineCacheQueueChapterRow: Hashable, Identifiable {
     var percentageText: String
     var failureStatusText: String?
     var speedText: String?
+    var state: OfflineCacheWorkState
 
     init(work: OfflineCacheQueueWorkProjection) {
         id = work.id
+        state = work.state
         groupID = work.groupID
         entryID = work.entryID
         readerKind = work.id.readerKind

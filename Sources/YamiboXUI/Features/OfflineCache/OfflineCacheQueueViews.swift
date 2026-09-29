@@ -29,17 +29,18 @@ struct OfflineCacheQueueScreen: View {
                             Task { await viewModel.refresh() }
                         }
                     }
-                    if viewModel.isEmpty && viewModel.loadFailure == nil {
+                    if viewModel.isEmpty && viewModel.loadFailure == nil && !viewModel.isLoading {
                         OfflineCacheQueueEmptyState()
                     } else {
                         if viewModel.showsControls {
                             OfflineCacheQueueControls(viewModel: viewModel)
                         }
 
-                        LazyVStack(spacing: 10) {
+                        LazyVStack(spacing: 12) {
                             ForEach(viewModel.groups) { group in
                                 OfflineCacheQueueOwnerRow(
                                     group: group,
+                                    runState: viewModel.runState,
                                     isSelecting: viewModel.isSelectionMode,
                                     isSelected: viewModel.isOwnerSelected(id: group.id),
                                     open: {
@@ -108,6 +109,7 @@ struct OfflineCacheQueueScreen: View {
                     }
                 }
             }
+            .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: OfflineCacheQueueSelectionActions.cancel(viewModel: viewModel))
@@ -115,7 +117,7 @@ struct OfflineCacheQueueScreen: View {
                 }
             }
             .overlay {
-                if viewModel.isLoading {
+                if viewModel.isLoading && viewModel.isEmpty {
                     ProgressView()
                 }
             }
@@ -147,7 +149,7 @@ private enum OfflineCacheQueueSelectionActions {
         return [
             SelectionToolbarAction(
                 id: "cancel",
-                title: L10n.string("common.cancel"),
+                title: L10n.string("mine.offline_queue.cancel_download"),
                 systemImage: "xmark.circle",
                 role: .destructive,
                 isEnabled: canCancel,
@@ -168,34 +170,50 @@ private struct OfflineCacheQueueControls: View {
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
-        Button {
-            Task {
-                if viewModel.runState == .running {
-                    await viewModel.pauseQueue()
-                } else {
-                    await viewModel.continueQueue()
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: viewModel.runState == .running ? "arrow.down.circle.fill" : "pause.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(appTheme.controlAccent)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.string(viewModel.runState == .running
+                        ? "mine.offline_queue.running" : "mine.offline_queue.paused"))
+                        .font(.headline)
+                    Text(L10n.string("mine.offline_queue.chapter_count_format", viewModel.entryCount))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 0)
             }
-        } label: {
-            Label(controlTitle, systemImage: controlImage)
+            Button {
+                Task {
+                    if viewModel.runState == .running {
+                        await viewModel.pauseQueue()
+                    } else {
+                        await viewModel.continueQueue()
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if viewModel.isCommandRunning { ProgressView() }
+                    Label(controlTitle, systemImage: controlImage)
+                }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(appTheme.controlAccent)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(YamiboColors.SystemSurface.secondaryGroupedBackground)
-                )
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, minHeight: 32)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(appTheme.controlAccent)
+            .disabled(viewModel.isCommandRunning)
         }
-        .buttonStyle(.plain)
-        .disabled(viewModel.isCommandRunning)
+        .padding(16)
+        .background(YamiboColors.SystemSurface.secondaryGroupedBackground, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var controlTitle: String {
         viewModel.runState == .running
-            ? L10n.string("mine.offline_queue.pause")
-            : L10n.string("mine.offline_queue.continue")
+            ? L10n.string("mine.offline_queue.pause_all")
+            : L10n.string("mine.offline_queue.continue_all")
     }
 
     private var controlImage: String {
@@ -205,6 +223,7 @@ private struct OfflineCacheQueueControls: View {
 
 private struct OfflineCacheQueueOwnerRow: View {
     let group: OfflineCacheQueueOwnerGroup
+    let runState: OfflineCacheQueueRunState
     let isSelecting: Bool
     let isSelected: Bool
     let open: () -> Void
@@ -214,9 +233,13 @@ private struct OfflineCacheQueueOwnerRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "books.vertical.fill")
+            Image(systemName: isSelecting ? (isSelected ? "checkmark.circle.fill" : "circle")
+                : (group.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
+                .font(.title3)
                 .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
-                .frame(width: 24)
+                .frame(width: 40, height: 48)
+                .background(dimming.emphasis(appTheme.controlAccent).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -239,29 +262,13 @@ private struct OfflineCacheQueueOwnerRow: View {
                         .lineLimit(1)
                 }
 
-                ProgressView(value: group.progressFraction)
-                    .tint(dimming.isDimmed ? Color.secondary : appTheme.controlAccent)
-
-                HStack(spacing: 8) {
-                    Text(group.progressText)
-                        .font(.caption)
-                        .foregroundStyle(dimming.secondaryColor)
-                        .lineLimit(1)
-
-                    if let currentSpeedText = group.currentSpeedText {
-                        Text(currentSpeedText)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(dimming.secondaryColor)
-                            .lineLimit(1)
-                    }
-
-                    if let failureStatusText = group.failureStatusText {
-                        Text(failureStatusText)
-                            .font(.caption)
-                            .foregroundStyle(dimming.emphasis(.red))
-                            .lineLimit(1)
-                    }
-                }
+                OfflineCacheQueueProgress(
+                    fraction: group.progressFraction,
+                    progressText: group.progressText,
+                    speedText: runState == .running ? group.currentSpeedText : nil,
+                    failureText: group.failureStatusText,
+                    isDimmed: dimming.isDimmed
+                )
             }
 
             Spacer(minLength: 8)
@@ -274,9 +281,11 @@ private struct OfflineCacheQueueOwnerRow: View {
                 .accessibilityHidden(isSelecting)
         }
         .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: rowAction)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive, action: cancel) {
-                Label(L10n.string("common.cancel"), systemImage: "xmark.circle")
+        .contextMenu {
+            if !isSelecting {
+                Button(role: .destructive, action: cancel) {
+                    Label(L10n.string("mine.offline_queue.cancel_download"), systemImage: "xmark.circle")
+                }
             }
         }
     }
@@ -318,6 +327,8 @@ private struct OfflineCacheQueueOwnerScreen: View {
                             ForEach(group.chapters) { chapter in
                                 OfflineCacheQueueChapterRowView(
                                     chapter: chapter,
+                                    runState: viewModel.runState,
+                                    isCommandRunning: viewModel.isCommandRunning,
                                     isSelecting: viewModel.isSelectionMode,
                                     isSelected: viewModel.selectedWorkIDs.contains(chapter.id),
                                     toggleSelection: {
@@ -391,6 +402,7 @@ private struct OfflineCacheQueueOwnerScreen: View {
                     }
                 }
             }
+            .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: OfflineCacheQueueSelectionActions.cancel(viewModel: viewModel))
@@ -398,7 +410,7 @@ private struct OfflineCacheQueueOwnerScreen: View {
                 }
             }
             .overlay {
-                if viewModel.isLoading {
+                if viewModel.isLoading && group == nil {
                     ProgressView()
                 }
             }
@@ -429,6 +441,8 @@ private extension View {
 
 private struct OfflineCacheQueueChapterRowView: View {
     let chapter: OfflineCacheQueueChapterRow
+    let runState: OfflineCacheQueueRunState
+    let isCommandRunning: Bool
     let isSelecting: Bool
     let isSelected: Bool
     let toggleSelection: () -> Void
@@ -436,9 +450,15 @@ private struct OfflineCacheQueueChapterRowView: View {
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
+                        .accessibilityHidden(true)
+                }
                 Text(chapter.title)
+                    .font(.headline)
                     .foregroundStyle(dimming.titleColor)
                     .lineLimit(2)
 
@@ -450,53 +470,101 @@ private struct OfflineCacheQueueChapterRowView: View {
                     .lineLimit(1)
             }
 
-            ProgressView(value: chapter.progressFraction)
-                .tint(dimming.isDimmed ? Color.secondary : appTheme.controlAccent)
+            OfflineCacheQueueProgress(
+                fraction: chapter.progressFraction,
+                progressText: chapter.progressText,
+                speedText: runState == .running ? chapter.speedText : nil,
+                failureText: chapter.failureStatusText,
+                isDimmed: dimming.isDimmed
+            )
 
-            HStack(spacing: 8) {
-                Text(chapter.progressText)
-                    .font(.caption)
-                    .foregroundStyle(dimming.secondaryColor)
-                    .lineLimit(1)
-
-                if let speedText = chapter.speedText {
-                    Text(speedText)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(dimming.secondaryColor)
-                        .lineLimit(1)
-                }
-
-                if let failureStatusText = chapter.failureStatusText {
-                    Text(failureStatusText)
-                        .font(.caption)
-                        .foregroundStyle(dimming.emphasis(.red))
-                        .lineLimit(1)
+            HStack {
+                Label(statusTitle, systemImage: statusImage)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(dimming.emphasis(chapter.state == .failed ? .red : appTheme.controlAccent))
+                Spacer(minLength: 8)
+                if !isSelecting {
+                    Button(role: .destructive, action: cancel) {
+                        Text(L10n.string("mine.offline_queue.cancel_download"))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isCommandRunning)
                 }
             }
         }
-        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: rowAction)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive, action: cancel) {
-                Label(L10n.string("common.cancel"), systemImage: "xmark.circle")
-            }
-        }
+        .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: selectionAction)
+    }
+
+    private var selectionAction: (() -> Void)? {
+        guard isSelecting else { return nil }
+        return { toggleSelection() }
     }
 
     private var dimming: SelectionRowDimming {
         SelectionRowDimming(isSelecting: isSelecting, isSelected: isSelected)
     }
 
-    private func rowAction() {
-        guard isSelecting else { return }
-        toggleSelection()
+    private var statusTitle: String {
+        if chapter.state == .failed { return L10n.string("settings.offline_cache.state.failed") }
+        if runState != .running { return L10n.string("settings.offline_cache.state.paused") }
+        return L10n.string(chapter.state == .running
+            ? "settings.offline_cache.state.running" : "settings.offline_cache.state.queued")
+    }
+
+    private var statusImage: String {
+        if chapter.state == .failed { return "exclamationmark.circle" }
+        if runState != .running { return "pause.circle" }
+        return chapter.state == .running ? "arrow.down.circle" : "clock"
+    }
+}
+
+private struct OfflineCacheQueueProgress: View {
+    let fraction: Double
+    let progressText: String
+    let speedText: String?
+    let failureText: String?
+    let isDimmed: Bool
+    @Environment(\.appTheme) private var appTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ProgressView(value: fraction)
+                .tint(isDimmed ? Color.secondary : appTheme.controlAccent)
+                .accessibilityLabel(progressText)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Text(progressText)
+                    Spacer(minLength: 0)
+                    if let speedText { Text(speedText).monospacedDigit() }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(progressText)
+                    if let speedText { Text(speedText).monospacedDigit() }
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            if let failureText {
+                Label(failureText, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(isDimmed ? Color.secondary : .red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
 private struct OfflineCacheQueueEmptyState: View {
     var body: some View {
-        GroupedEmptyStateCard(
-            title: L10n.string("mine.offline_queue.empty_title"),
-            message: L10n.string("mine.offline_queue.empty_message")
-        )
+        ContentUnavailableView {
+            Label(L10n.string("mine.offline_queue.empty_title"), systemImage: "arrow.down.circle")
+        } description: {
+            Text(L10n.string("mine.offline_queue.empty_message"))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 }
