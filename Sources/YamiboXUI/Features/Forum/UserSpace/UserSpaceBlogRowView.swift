@@ -31,7 +31,7 @@ struct UserSpaceBlogRowView: View {
                         onUserTap(authorID, authorName)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.actionText)
                 }
                 Spacer()
                 if let viewCount = blog.viewCount {

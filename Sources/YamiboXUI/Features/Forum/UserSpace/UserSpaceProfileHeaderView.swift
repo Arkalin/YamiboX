@@ -19,9 +19,9 @@ struct UserSpaceProfileHeaderView: View {
                         .resizable()
                         .scaledToFill()
                 } placeholder: {
-                    Rectangle().fill(theme.accent.opacity(0.24))
+                    Rectangle().fill(theme.decorativeFill.opacity(0.24))
                 } failure: {
-                    Rectangle().fill(theme.accent.opacity(0.24))
+                    Rectangle().fill(theme.decorativeFill.opacity(0.24))
                 }
                 .frame(height: 172)
                 .clipped()
@@ -224,7 +224,7 @@ private struct UserSpaceSignatureView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("user_space.signature"))
                 .font(.headline)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
             Text(signature)
                 .font(.subheadline)
                 .foregroundStyle(theme.secondaryText)
@@ -246,7 +246,7 @@ private struct UserSpaceInfoTableView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.string("user_space.profile"))
                     .font(.headline)
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.supportingText)
                 ForEach(rows) { row in
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(row.label)
@@ -261,7 +261,7 @@ private struct UserSpaceInfoTableView: View {
                                     .expandedHitTarget(width: 0)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(theme.mutedAccent)
+                            .foregroundStyle(theme.actionText)
                         } else {
                             Text(row.value)
                                 .foregroundStyle(theme.primaryText)

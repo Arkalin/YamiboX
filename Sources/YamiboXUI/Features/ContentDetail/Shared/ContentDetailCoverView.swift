@@ -23,7 +23,7 @@ struct ContentDetailCoverView: View {
                             .resizable()
                             .scaledToFill()
                             .frame(width: width, height: width * 112 / 86)
-                            .background(theme.mutedAccent.opacity(0.12))
+                            .background(theme.decoration.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .buttonStyle(.plain)

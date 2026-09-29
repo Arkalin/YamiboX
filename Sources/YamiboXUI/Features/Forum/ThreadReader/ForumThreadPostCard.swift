@@ -128,7 +128,7 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
 
                 Button(action: onComment) {
                     Label(L10n.string("forum.thread.comment"), systemImage: "text.bubble")
@@ -136,7 +136,7 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
 
                 Button {
                     onURLTap(replyURL)
@@ -146,7 +146,7 @@ private struct ForumThreadPostActionRow: View {
                         .expandedHitTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
             }
         }
     }

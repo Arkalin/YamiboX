@@ -88,14 +88,18 @@ private struct ForumThemeMiniPreview: View {
     let theme: ForumTheme
     @Environment(\.colorScheme) private var colorScheme
 
+    private var navigationForeground: Color {
+        theme.usesColoredNavigationBar ? .white : theme.primaryText
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 5) {
                 Circle()
-                    .fill(.white.opacity(0.92))
+                    .fill(navigationForeground.opacity(0.92))
                     .frame(width: 7, height: 7)
                 Capsule()
-                    .fill(.white.opacity(0.72))
+                    .fill(navigationForeground.opacity(0.72))
                     .frame(width: 36, height: 4)
                 Spacer(minLength: 0)
             }
@@ -129,7 +133,7 @@ private struct ForumThemeMiniRow: View {
     var body: some View {
         HStack(spacing: 7) {
             Circle()
-                .fill(theme.mutedAccent)
+                .fill(theme.decoration)
                 .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 4) {

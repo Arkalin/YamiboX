@@ -52,10 +52,10 @@ enum ForumThreadAuthorColorAdapter {
     /// Without such a background the scheme-adaptive theme color is right.
     static func linkColor(onBackgroundHex hex: String?, theme: ForumTheme = .classic) -> Color {
         guard let background = RGBColor(forumThreadHex: hex) else {
-            return theme.mutedAccent
+            return theme.actionText
         }
-        let light = resolved(theme.mutedAccent, style: .light)
-        let dark = resolved(theme.mutedAccent, style: .dark)
+        let light = resolved(theme.actionText, style: .light)
+        let dark = resolved(theme.actionText, style: .dark)
         if background.alpha < 1 {
             let lightSurface = background.composited(over: resolved(theme.pageBackground, style: .light))
             let darkSurface = background.composited(over: resolved(theme.surface, style: .dark))

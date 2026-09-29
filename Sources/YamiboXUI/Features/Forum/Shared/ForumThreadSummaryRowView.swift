@@ -31,7 +31,7 @@ struct ForumThreadSummaryRowView: View {
                     if let description = thread.description {
                         Text(description)
                             .font(.subheadline)
-                            .foregroundStyle(theme.mutedAccent.opacity(0.65))
+                            .foregroundStyle(theme.decoration.opacity(0.65))
                             .lineLimit(3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -176,7 +176,7 @@ private struct ForumThreadSummaryAuthorView: View {
             if let authorName {
                 Text(authorName)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.supportingText)
                     .lineLimit(1)
             }
         }

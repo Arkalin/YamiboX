@@ -38,10 +38,10 @@ struct TransientMessageView: View {
         .frame(maxWidth: 420)
         .background {
             Capsule()
-                .fill(theme.accent)
+                .fill(theme.prominentSurface)
                 .allowsHitTesting(false)
         }
-        .shadow(color: theme.accent.opacity(0.22), radius: 12, x: 0, y: 6)
+        .shadow(color: theme.decorativeFill.opacity(0.22), radius: 12, x: 0, y: 6)
     }
 }
 

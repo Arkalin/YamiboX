@@ -11,7 +11,7 @@ struct ForumThreadRatingBlockView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(ratingTitle)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.supportingText)
                 Spacer(minLength: 0)
                 if let totalScore = block.totalScore {
                     Text(L10n.string("forum.thread.ratings_total_format", totalScore))
@@ -45,7 +45,7 @@ struct ForumThreadRatingBlockView: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
             }
         }
         .padding(12)
