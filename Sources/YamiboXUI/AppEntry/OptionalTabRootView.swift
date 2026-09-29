@@ -51,11 +51,11 @@ struct OptionalTabRootView: View {
                 ForumDestinationScreen(destination: .messageCenter(tab: .privateMessages), navigator: navigator, appModel: appModel)
             } else {
                 ContentUnavailableView {
-                    Label("登录后查看消息", systemImage: "envelope")
+                    Label(L10n.string("messages.login_required_title"), systemImage: "envelope")
                 } description: {
-                    Text("登录账号，查看私信和提醒。")
+                    Text(L10n.string("messages.login_required_message"))
                 } actions: {
-                    Button("登录") { showsLogin = true }.buttonStyle(.borderedProminent)
+                    Button(L10n.string("mine.login")) { showsLogin = true }.buttonStyle(.borderedProminent)
                 }
                 .navigationTitle(tab.title)
                 .navigationBarTitleDisplayMode(.inline)

@@ -76,7 +76,7 @@ enum SettingsSearchRegistry {
                 id: "favorites.grid_card_scale",
                 title: L10n.string("settings.favorite_grid_card_scale"),
                 category: .favorites,
-                keywords: ["卡片", "大小", "缩放", "网格", "瀑布流", "外观"]
+                keywords: localizedKeywords("settings.search.keywords.favorites.grid_card_scale")
             )
             if let backgroundIndex = entries.firstIndex(where: { $0.id == "favorites.background" }) {
                 entries.insert(scaleEntry, at: backgroundIndex + 1)
@@ -92,171 +92,177 @@ enum SettingsSearchRegistry {
             id: "bookshelf.only_favorites",
             title: L10n.string("settings.bookshelf.only_favorites"),
             category: .bookshelf,
-            keywords: ["书架", "主页", "首页", "收藏", "继续阅读", "此前阅读"]
+            keywords: localizedKeywords("settings.search.keywords.bookshelf.only_favorites")
         ),
         SettingsSearchEntry(
             id: "general.navigation",
             title: L10n.string("settings.navigation.title"),
             category: .general,
-            keywords: ["导航栏", "底栏", "排序", "启动页", "书架", "消息", "浏览记录", "喜欢"]
+            keywords: localizedKeywords("settings.search.keywords.general.navigation")
         ),
         SettingsSearchEntry(
             id: "general.appearance",
             title: L10n.string("settings.app_theme"),
             category: .general,
-            keywords: ["主题", "外观", "配色", "简约", "普通", "经典", "青岚", "樱墨", "浅色", "深色"]
+            keywords: localizedKeywords("settings.search.keywords.general.appearance")
         ),
         SettingsSearchEntry(
             id: "forum.auto_sign_in",
             title: L10n.string("settings.auto_sign_in"),
             category: .forum,
-            keywords: ["签到", "自动化", "快捷指令"]
+            keywords: localizedKeywords("settings.search.keywords.forum.auto_sign_in")
         ),
         SettingsSearchEntry(
             id: "forum.enhanced_check_in",
             title: L10n.string("settings.enhanced_check_in"),
             category: .forum,
-            keywords: ["签到", "推广", "WAF"]
+            keywords: localizedKeywords("settings.search.keywords.forum.enhanced_check_in")
         ),
         SettingsSearchEntry(
             id: "forum.board_reader",
             title: L10n.string("settings.section.board_reader"),
             category: .forum,
-            keywords: ["板块", "阅读方式", "漫画", "小说", "智能漫画"]
+            keywords: localizedKeywords("settings.search.keywords.forum.board_reader")
         ),
         SettingsSearchEntry(
             id: "favorites.layout",
             title: L10n.string("favorites.layout"),
             category: .favorites,
-            keywords: ["布局", "网格", "瀑布流", "封面"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.layout")
         ),
         SettingsSearchEntry(
             id: "favorites.sort",
             title: L10n.string("favorites.sort"),
             category: .favorites,
-            keywords: ["排序", "顺序"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.sort")
         ),
         SettingsSearchEntry(
             id: "favorites.item_tap_action",
             title: L10n.string("settings.favorite_item_tap_action"),
             category: .favorites,
-            keywords: ["点击", "小说", "智能漫画", "查看详情", "阅读", "打开"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.item_tap_action")
         ),
         SettingsSearchEntry(
             id: "favorites.background",
             title: L10n.string("settings.favorite_background"),
             category: .favorites,
-            keywords: ["背景", "壁纸", "外观"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.background")
         ),
         SettingsSearchEntry(
             id: "favorites.sync_behavior",
             title: L10n.string("settings.section.favorite_sync_behavior"),
             category: .favorites,
-            keywords: ["同步", "百合会", "上传", "下载"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.sync_behavior")
         ),
         SettingsSearchEntry(
             id: "favorites.updates_interval",
             title: L10n.string("favorites.updates.interval"),
             category: .favorites,
-            keywords: ["更新检查", "自动检查", "后台刷新"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.updates_interval")
         ),
         SettingsSearchEntry(
             id: "favorites.updates_notifications",
             title: L10n.string("favorites.updates.notifications"),
             category: .favorites,
-            keywords: ["通知", "提醒", "推送"]
+            keywords: localizedKeywords("settings.search.keywords.favorites.updates_notifications")
         ),
         SettingsSearchEntry(
             id: "reading.chapter_comments",
             title: L10n.string("settings.chapter_comments.title"),
             category: .reading,
-            keywords: ["评论", "屏蔽", "正则", "评分", "点评", "回复", "过滤"]
+            keywords: localizedKeywords("settings.search.keywords.reading.chapter_comments")
         ),
         SettingsSearchEntry(
             id: "reading.novel_download",
             title: L10n.string("settings.section.novel_download"),
             category: .reading,
-            keywords: ["小说", "离线", "缓存", "内嵌图片", "自动刷新"]
+            keywords: localizedKeywords("settings.search.keywords.reading.novel_download")
         ),
         SettingsSearchEntry(
             id: "peripherals.apple_pencil",
             title: L10n.string("apple_pencil.page_turn"),
             category: .reading,
-            keywords: ["Apple Pencil", "翻页", "iPad"]
+            keywords: localizedKeywords("settings.search.keywords.peripherals.apple_pencil")
         ),
         SettingsSearchEntry(
             id: "peripherals.gamepad",
             title: L10n.string("settings.gamepad"),
             category: .reading,
-            keywords: ["手柄", "控制器", "按键绑定"]
+            keywords: localizedKeywords("settings.search.keywords.peripherals.gamepad")
         ),
         SettingsSearchEntry(
             id: "peripherals.keyboard",
             title: L10n.string("settings.keyboard"),
             category: .reading,
-            keywords: ["键盘", "按键绑定"]
+            keywords: localizedKeywords("settings.search.keywords.peripherals.keyboard")
         ),
         SettingsSearchEntry(
             id: "storage.webdav",
             title: L10n.string("settings.webdav_sync"),
             category: .storage,
-            keywords: ["WebDAV", "备份", "同步"]
+            keywords: localizedKeywords("settings.search.keywords.storage.webdav")
         ),
         SettingsSearchEntry(
             id: "storage.clear_web_reader_cache",
             title: L10n.string("settings.clear_web_reader_cache"),
             category: .storage,
-            keywords: ["清理", "清除", "缓存", "空间", "网页", "论坛", "小说", "漫画", "阅读器"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_web_reader_cache")
         ),
         SettingsSearchEntry(
             id: "storage.clear_image_cache",
             title: L10n.string("settings.clear_image_cache"),
             category: .storage,
-            keywords: ["清除", "缓存", "空间", "图片"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_image_cache")
         ),
         SettingsSearchEntry(
             id: "storage.clear_other_caches",
             title: L10n.string("settings.clear_other_caches"),
             category: .storage,
-            keywords: ["清理", "缓存", "其他", "签到", "收藏更新", "网络"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_other_caches")
         ),
         SettingsSearchEntry(
             id: "storage.clear_content_cover_cache",
             title: L10n.string("settings.clear_content_cover_cache"),
             category: .storage,
-            keywords: ["清理", "缓存", "空间", "封面", "索引"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_content_cover_cache")
         ),
         SettingsSearchEntry(
             id: "storage.clear_reading_progress",
             title: L10n.string("settings.clear_reading_progress"),
             category: .storage,
-            keywords: ["清理", "阅读", "进度"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_reading_progress")
         ),
         SettingsSearchEntry(
             id: "storage.clear_browsing_history",
             title: L10n.string("settings.clear_browsing_history"),
             category: .storage,
-            keywords: ["清理", "清空", "浏览", "记录", "历史"]
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_browsing_history")
         ),
         SettingsSearchEntry(
             id: "storage.manga_directory",
             title: L10n.string("settings.manga_directory.cleanup"),
             category: .storage,
-            keywords: ["漫画", "目录", "索引", "清理", "分组"]
+            keywords: localizedKeywords("settings.search.keywords.storage.manga_directory")
         ),
         SettingsSearchEntry(
             id: "storage.download",
             title: L10n.string("settings.download.cleanup"),
             category: .storage,
-            keywords: ["下载", "离线", "管理", "清理"]
+            keywords: localizedKeywords("settings.search.keywords.storage.download")
         ),
         SettingsSearchEntry(
             id: "storage.reset_application",
             title: L10n.string("settings.reset_application"),
             category: .storage,
-            keywords: ["初始化", "重置", "清空", "恢复出厂"]
+            keywords: localizedKeywords("settings.search.keywords.storage.reset_application")
         )
     ]
+
+    private static func localizedKeywords(_ key: String) -> [String] {
+        L10n.string(key).split(separator: "|")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 
     static func search(_ query: String) -> [SettingsSearchEntry] {
         entries.filter { $0.matches(query) }
