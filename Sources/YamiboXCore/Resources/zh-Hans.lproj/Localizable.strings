@@ -105,6 +105,7 @@
 "common.original_post" = "原帖";
 "common.apply" = "应用";
 "common.refresh" = "刷新";
+"forum.browser.open_in_browser" = "在浏览器中打开";
 "common.retry" = "重试";
 "load_failure.details" = "详情";
 "load_failure.items" = "失败项目";
