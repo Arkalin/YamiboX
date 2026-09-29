@@ -213,7 +213,7 @@ struct ReaderChromeHistoryButton: View {
                 .frame(width: Self.hitTargetSize, height: Self.hitTargetSize)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderBooksPressButtonStyle())
         .accessibilityLabel(title)
     }
 
@@ -306,13 +306,13 @@ struct ReaderChromeCapsuleButton: View {
             .frame(height: layout.progressPanelHeight)
             .padding(.horizontal, 16)
             .contentShape(Capsule())
+            .readerStyledChromePanel(
+                cornerRadius: 24,
+                tint: readerChromePanelTint(for: colorScheme),
+                isInteractive: isEnabled
+            )
         }
-        .buttonStyle(.plain)
-        .readerStyledChromePanel(
-            cornerRadius: 24,
-            tint: readerChromePanelTint(for: colorScheme),
-            isInteractive: isEnabled
-        )
+        .buttonStyle(ReaderBooksPressButtonStyle())
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
