@@ -21,7 +21,7 @@ struct ForumThreadPostHeader: View {
                     }
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.actionText)
                 } else {
                     Text(post.author.name)
                         .font(.subheadline.weight(.semibold))

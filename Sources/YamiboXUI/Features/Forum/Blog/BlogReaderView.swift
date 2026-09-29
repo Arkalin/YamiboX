@@ -204,7 +204,7 @@ private struct BlogReaderAuthorRow: View {
                     }
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.actionText)
                 } else {
                     Text(user.name)
                         .font(.subheadline.weight(.semibold))
@@ -304,7 +304,7 @@ private struct BlogReaderCommentSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.string("blog_reader.comments"))
                 .font(.headline)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
             if comments.isEmpty {
                 ContentUnavailableView(L10n.string("blog_reader.empty_comments"), systemImage: "bubble.left")
                     .frame(maxWidth: .infinity)
@@ -342,7 +342,7 @@ private struct BlogReaderCommentEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.string("blog_reader.write_comment"))
                 .font(.headline)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
 
             TextField(
                 placeholder,
@@ -394,7 +394,7 @@ private struct BlogReaderCommentRow: View {
                             onUserTap(uid, comment.author.name)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(theme.mutedAccent)
+                        .foregroundStyle(theme.actionText)
                     } else {
                         Text(comment.author.name)
                     }

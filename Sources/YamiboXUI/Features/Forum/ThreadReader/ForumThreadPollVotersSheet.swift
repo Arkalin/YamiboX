@@ -196,7 +196,7 @@ private struct ForumThreadPollVoterButton: View {
                     .padding(.vertical, 11)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(theme.mutedAccent)
+            .foregroundStyle(theme.actionText)
             .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
         } else {
             Text(user.name)

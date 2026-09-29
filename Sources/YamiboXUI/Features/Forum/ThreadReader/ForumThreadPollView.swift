@@ -28,7 +28,7 @@ struct ForumThreadPollView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(poll.title, systemImage: "chart.bar.doc.horizontal")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let endTimeText = poll.endTimeText {
@@ -81,7 +81,7 @@ struct ForumThreadPollView: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
             }
         }
         .padding(12)
@@ -139,7 +139,7 @@ private struct ForumThreadPollOptionView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: selectionIconName)
                         .font(.caption)
-                        .foregroundStyle(isVisuallySelected ? theme.mutedAccent : theme.secondaryText)
+                        .foregroundStyle(isVisuallySelected ? theme.actionText : theme.secondaryText)
                     Text(option.title)
                         .font(.callout)
                         .foregroundStyle(theme.primaryText)
@@ -159,7 +159,7 @@ private struct ForumThreadPollOptionView: View {
 
             if showProgress {
                 ProgressView(value: min(max((option.percentage ?? 0) / 100, 0), 1))
-                    .tint(theme.mutedAccent)
+                    .tint(theme.progressFill)
                 if let percentage = option.percentage {
                     Text(percentage.formatted(.number.precision(.fractionLength(0 ... 2))) + "%")
                         .font(.caption2)

@@ -406,7 +406,7 @@ private struct ForumBoardStatsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(theme.prominentSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.white.opacity(0.12), lineWidth: 1)
@@ -550,7 +550,7 @@ private struct ForumSubBoardSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("forum.board.sub_boards"))
                 .font(.headline)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
 
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 10) {
@@ -585,7 +585,7 @@ private struct ForumPinnedSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("forum.board.pinned"))
                 .font(.headline)
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
 
             ForEach(items) { item in
                 ForumPinnedRowView(
@@ -680,7 +680,7 @@ private struct ForumBoardErrorView: View {
                     .font(.caption)
                     .lineSpacing(3)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(theme.mutedAccent.opacity(0.75))
+                    .foregroundStyle(theme.supportingText.opacity(0.75))
 
                 Button(action: retry) {
                     Text(L10n.string("common.retry"))
@@ -697,7 +697,7 @@ private struct ForumBoardErrorView: View {
             .padding(28)
             .frame(maxWidth: 360)
             .background(theme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: theme.accent.opacity(0.14), radius: 12, x: 0, y: 6)
+            .shadow(color: theme.decorativeFill.opacity(0.14), radius: 12, x: 0, y: 6)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

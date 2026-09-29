@@ -10,7 +10,7 @@ struct ForumThreadCommentsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(L10n.string("forum.thread.comments"), systemImage: "text.bubble")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
 
             ForEach(comments) { comment in
                 ForumThreadCommentRow(comment: comment, onUserTap: onUserTap)
@@ -39,11 +39,11 @@ private struct ForumThreadCommentRow: View {
                     }
                     .buttonStyle(.plain)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.mutedAccent)
+                    .foregroundStyle(theme.actionText)
                 } else {
                     Text(comment.author.name)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(theme.mutedAccent)
+                        .foregroundStyle(theme.supportingText)
                 }
 
                 Spacer(minLength: 0)

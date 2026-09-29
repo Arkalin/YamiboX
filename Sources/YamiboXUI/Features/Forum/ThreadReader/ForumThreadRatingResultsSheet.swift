@@ -131,7 +131,7 @@ private struct ForumThreadRatingResultRow: View {
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.actionText)
                 .frame(maxWidth: 120, alignment: .leading)
             } else {
                 Text(rating.user.name)

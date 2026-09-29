@@ -11,7 +11,7 @@ struct ForumThreadFooterAttachmentsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L10n.string("forum.thread.attachments"), systemImage: "paperclip")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.supportingText)
 
             ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
                 ForumThreadAttachmentBlockView(block: attachment, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)
@@ -73,10 +73,10 @@ private struct ForumThreadAttachmentIconView: View {
             image.resizable().scaledToFit()
         } placeholder: {
             Image(systemName: "paperclip")
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.decoration)
         } failure: {
             Image(systemName: "paperclip")
-                .foregroundStyle(theme.mutedAccent)
+                .foregroundStyle(theme.decoration)
         }
         .frame(width: 34, height: 34)
         .padding(6)

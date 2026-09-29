@@ -117,7 +117,7 @@ struct ForumThreadNestedBlockContainer<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             if accented {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(theme.mutedAccent)
+                    .fill(theme.decoration)
                     .frame(width: 4)
             }
 
