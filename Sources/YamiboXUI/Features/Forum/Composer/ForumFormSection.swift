@@ -24,20 +24,32 @@ struct ForumFormSection: View {
         form.fields.filter { ["subject", "message", "typeid", "classid", "friend", "password", "target_names"].contains($0.name) || $0.name.hasPrefix("polloption") }
     }
     private var otherFields: [ForumFormField] {
-        form.fields.filter { field in field.kind != .file && !primaryFields.contains { $0.id == field.id } }
+        form.fields.filter { field in
+            field.kind != .file && (form.kind == .blog
+                ? !ForumBlogEditorFields.fieldNames.contains(field.name)
+                : !primaryFields.contains { $0.id == field.id })
+        }
     }
 
     var body: some View {
-        Section {
-            if !form.instructions.isEmpty {
-                ForumThreadContentBlocksView(
-                    blocks: form.instructions, fallbackText: "", refererURL: form.actionURL,
-                    onImageTap: { _, url, _, _ in onURLTap(url) }, onURLTap: onURLTap
-                )
+        if form.kind != .blog || !form.instructions.isEmpty {
+            Section {
+                if !form.instructions.isEmpty {
+                    ForumThreadContentBlocksView(
+                        blocks: form.instructions, fallbackText: "", refererURL: form.actionURL,
+                        onImageTap: { _, url, _, _ in onURLTap(url) }, onURLTap: onURLTap
+                    )
+                }
+                if form.kind != .blog {
+                    ForEach(isComposer ? primaryFields : form.fields.filter { $0.kind != .file }) { field in
+                        fieldView(field)
+                    }
+                }
             }
-            ForEach(isComposer ? primaryFields : form.fields.filter { $0.kind != .file }) { field in
-                fieldView(field)
-            }
+        }
+        if form.kind == .blog {
+            ForumBlogEditorFields(form: form, values: $values, htmlSourceFields: $htmlSourceFields,
+                                  editorRegistry: editorRegistry, disabled: disabled)
         }
         if !uploads.isEmpty || !attachments.isEmpty || form.fields.contains(where: { $0.kind == .file }) {
             Section(L10n.string("forum.native.attachments")) {
@@ -133,7 +145,7 @@ struct ForumFormSection: View {
     }
 }
 
-private struct ForumFieldView: View {
+struct ForumFieldView: View {
     let field: ForumFormField
     @Binding var values: [String]
     let isComposer: Bool
@@ -167,7 +179,11 @@ private struct ForumFieldView: View {
                     }
                 }
             case .password:
-                LabeledContent(field.label) { SecureField(field.label, text: text) }
+                LabeledContent(field.label) {
+                    SecureField(field.label, text: text)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
             case .multiline:
                 VStack(alignment: .leading, spacing: 8) {
                     Text(field.label).font(.subheadline).foregroundStyle(.secondary)
@@ -184,7 +200,10 @@ private struct ForumFieldView: View {
                     if !field.options.contains(where: { $0.value == (values.first ?? "") }) {
                         Text(L10n.string("forum.native.choose")).tag("")
                     }
-                    ForEach(field.options) { option in Text(option.label).tag(option.value) }
+                    ForEach(field.options) { option in
+                        Text(isBlog && field.name == "classid" && option.value == "0"
+                             ? L10n.string("forum.blog.uncategorized") : option.label).tag(option.value)
+                    }
                 }
             case .multipleChoice:
                 VStack(alignment: .leading, spacing: 10) {

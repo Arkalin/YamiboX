@@ -19,7 +19,7 @@ struct ForumPageClient: Sendable {
         referer: URL? = nil
     ) async throws -> ForumPageResponse {
         guard ForumWebPagePolicy.requiresForumHandling(url) else { throw ForumPageError.invalidURL }
-        var request = YamiboNetworkConfiguration.makeRequest(url: ForumWebPagePolicy.secureURL(url), cachePolicy: .reloadIgnoringLocalCacheData)
+        var request = YamiboNetworkConfiguration.makeRequest(url: documentURL(url), cachePolicy: .reloadIgnoringLocalCacheData)
         if let fields {
             request.httpMethod = "POST"
             if files.isEmpty {
@@ -47,6 +47,19 @@ struct ForumPageClient: Sendable {
         } catch {
             throw LoadDiagnosticError.attaching(to: error, requestContext: request.url?.absoluteString)
         }
+    }
+
+    private func documentURL(_ url: URL) -> URL {
+        let secured = ForumWebPagePolicy.secureURL(url)
+        guard ForumPagePurpose(url: secured) == .blogEditor,
+              var components = URLComponents(url: secured, resolvingAgainstBaseURL: false) else { return secured }
+        // The touch blog form omits privacy controls and upload configuration.
+        // Ask for the complete form without changing the authenticated User-Agent.
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "mobile" }
+        items.append(.init(name: "mobile", value: "no"))
+        components.queryItems = items
+        return components.url ?? secured
     }
 
     private func decode(_ result: YamiboHTTPResponse) throws -> ForumPageResponse {

@@ -685,6 +685,13 @@
 "user_space.view_all_blogs" = "随便看看";
 "user_space.visitors" = "我的访客";
 "user_space.write_blog" = "发表日志";
+"forum.blog.edit" = "编辑日志";
+"forum.blog.organization" = "分类与标签";
+"forum.blog.visibility" = "谁可以看";
+"forum.blog.settings" = "发布设置";
+"forum.blog.friends_hint" = "填写好友用户名，多个用户名用空格分隔。";
+"forum.blog.uncategorized" = "未分类";
+"forum.blog.html_source" = "HTML 源码";
 "forum.home.empty" = "暂无论坛版块";
 "forum.home.empty_message" = "没有找到可显示的论坛版块。";
 "forum.home.refresh_failed" = "刷新失败：%@";

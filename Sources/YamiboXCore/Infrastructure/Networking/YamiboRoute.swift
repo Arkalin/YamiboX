@@ -345,7 +345,7 @@ public enum YamiboRoute: Sendable {
             return Self.makeURL(path: "/home.php", queryItems: [
                 .init(name: "mod", value: "spacecp"),
                 .init(name: "ac", value: "blog"),
-                .init(name: "mobile", value: "2")
+                .init(name: "mobile", value: "no")
             ])
         case let .userSpacePrivateMessages(page):
             return userSpaceURL(uid: nil, doValue: "pm", page: page)
