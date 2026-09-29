@@ -205,14 +205,23 @@ public actor FavoriteUpdateStore {
     }
 
     public func markEventRead(_ id: String, date: Date = .now) async throws {
+        try await markEventsRead([id], date: date)
+    }
+
+    public func markEventsRead(_ ids: Set<String>, date: Date = .now) async throws {
         try await write { db in
-            guard var event = try Self.event(id: id, in: db) else { return false }
-            event.readAt = date
-            try db.execute(
-                sql: "UPDATE favorite_update_events SET event_json = ? WHERE id = ?",
-                arguments: [try Self.encode(event), id]
-            )
-            return true
+            var changed = false
+            for id in ids {
+                guard var event = try Self.event(id: id, in: db),
+                      event.readAt == nil, event.dismissedAt == nil else { continue }
+                event.readAt = date
+                try db.execute(
+                    sql: "UPDATE favorite_update_events SET event_json = ? WHERE id = ?",
+                    arguments: [try Self.encode(event), id]
+                )
+                changed = true
+            }
+            return changed
         }
     }
 

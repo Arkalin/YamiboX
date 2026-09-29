@@ -177,6 +177,10 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.markEventRead(eventID)
     }
 
+    func markEventsRead(_ eventIDs: Set<String>) async {
+        await engine.markEventsRead(eventIDs)
+    }
+
     func dismissEvent(_ eventID: String) async {
         await engine.dismissEvent(eventID)
     }

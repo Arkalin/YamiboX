@@ -185,6 +185,7 @@ struct LocalFavoriteGridEntryCell: View {
                     await organizer.moveCollection(id: collection.id, toCategoryID: categoryID)
                 }
             )
+            .favoriteUpdateIndicator(id: collection.id, isCollection: true)
         case let .card(card):
             LocalFavoriteGridCard(
                 card: card,
@@ -192,6 +193,7 @@ struct LocalFavoriteGridEntryCell: View {
                 selection: selection,
                 actions: actions
             )
+            .favoriteUpdateIndicator(id: card.item.id)
         }
     }
 }

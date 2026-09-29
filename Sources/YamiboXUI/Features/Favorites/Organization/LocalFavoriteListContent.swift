@@ -59,6 +59,7 @@ struct LocalFavoriteListContent: View {
                                 await organizer.moveCollection(id: collection.id, toCategoryID: categoryID)
                             }
                         )
+                        .favoriteUpdateIndicator(id: collection.id, isCollection: true)
                     case let .card(card):
                         LocalFavoriteItemRow(
                             card: card,
@@ -69,6 +70,7 @@ struct LocalFavoriteListContent: View {
                             onToggleSelection: { selection.toggleFavoriteSelection(id: card.id) },
                             actions: .standard(organizer: organizer, selection: selection, routes: routes, onOpen: onOpen)
                         )
+                        .favoriteUpdateIndicator(id: card.item.id)
                     }
                 }
                 .listRowBackground(Color.clear)

@@ -66,6 +66,14 @@ struct LocalFavoritesRootView: View {
         self.appModel = appModel
     }
 
+    private var unreadIndex: FavoriteUnreadIndex {
+        FavoriteUnreadIndex(
+            items: organizer.favoriteItems,
+            directories: organizer.unreadMangaDirectoriesByTID,
+            events: updateMonitor.events
+        )
+    }
+
     var body: some View {
         LocalFavoritesOrganizationView(
             organizer: organizer,
@@ -90,6 +98,8 @@ struct LocalFavoritesRootView: View {
                 )
             }
         )
+        .environment(\.favoriteUnreadIndex, unreadIndex)
+        .environmentObject(updateMonitor)
         .fullScreenCover(item: $threadOverlayItem, onDismiss: { isThreadCoverVisible = false }) { item in
             BookOpeningDestination(source: threadOpeningTransition) {
                 ForumThreadOverlayScreen(
@@ -132,10 +142,12 @@ struct LocalFavoritesRootView: View {
         guard !isOpeningFavorite, !appModel.isReaderCoverVisible else { return }
         isOpeningFavorite = true
         defer { isOpeningFavorite = false }
+        let unreadEventIDs = unreadIndex.favorites[item.id, default: []]
         do {
             guard let target = try await openTargetResolver.openTarget(for: item, mode: mode, mangaScope: mangaScope) else { return }
             guard !Task.isCancelled else { return }
-            await present(target, transition: transition)
+            guard await present(target, transition: transition), !Task.isCancelled else { return }
+            await updateMonitor.markEventsRead(unreadEventIDs)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for favorite \(item.id): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
@@ -149,12 +161,20 @@ struct LocalFavoritesRootView: View {
     /// `cleanBookName` alone (a directory-mode event carries no pointer to
     /// one specific favorite — see `FavoriteUpdateTargetKey.mangaDirectory`).
     private func openMangaDirectoryEvent(directoryID: MangaDirectoryID) async {
+        guard !isOpeningFavorite, !appModel.isReaderCoverVisible else { return }
+        isOpeningFavorite = true
+        defer { isOpeningFavorite = false }
+        let unreadEventIDs = Set(updateMonitor.events.filter {
+            $0.target == .mangaDirectory(directoryID: directoryID) && $0.readAt == nil
+        }.map(\.id))
         do {
             guard let target = try await openTargetResolver.openTarget(forMangaDirectoryID: directoryID) else {
                 organizer.transientFeedback = .failure(L10n.string("favorites.updates.event_target_missing"))
                 return
             }
-            await present(target)
+            guard !Task.isCancelled else { return }
+            guard await present(target), !Task.isCancelled else { return }
+            await updateMonitor.markEventsRead(unreadEventIDs)
         } catch {
             YamiboLog.library.error("Failed to resolve open target for manga directory update \(directoryID.rawValue): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
@@ -164,7 +184,7 @@ struct LocalFavoritesRootView: View {
         }
     }
 
-    private func present(_ target: LocalFavoriteOpenTarget, transition: BookOpeningTransition? = nil) async {
+    private func present(_ target: LocalFavoriteOpenTarget, transition: BookOpeningTransition? = nil) async -> Bool {
         switch target {
         case let .novelDetail(context):
             routes.detail = .novel(context)
@@ -174,6 +194,11 @@ struct LocalFavoritesRootView: View {
             appModel.presentNovelReader(context, bookOpeningTransition: transition)
         case let .mangaReader(context):
             await appModel.requestMangaReader(context, bookOpeningTransition: transition).value
+            // Manga validation can fail after target resolution without ever
+            // presenting a reader. Acknowledgement requires this actual launch.
+            guard let session = appModel.presentedReaderSession, !session.isClosed,
+                  case let .manga(openedContext) = session.content else { return false }
+            return openedContext == context
         case let .nativeThread(url, title):
             // Plain-post favorites open in a full-screen overlay so the
             // favorites tab stays put underneath, mirroring the reader's
@@ -182,6 +207,7 @@ struct LocalFavoritesRootView: View {
             isThreadCoverVisible = true
             threadOverlayItem = ForumThreadOverlayItem(url: url, title: title)
         }
+        return true
     }
 
     private func detailScreen(_ destination: ContentDetailDestination) -> ContentDetailScreen {

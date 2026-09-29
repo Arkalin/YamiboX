@@ -132,6 +132,8 @@ final class FavoriteLibraryOrganizer {
     /// (containingTIDs:)` call — never recomputed per render (the design
     /// doc's performance constraint #2).
     @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
+    /// Includes mode-off members so changing presentation never hides an existing update.
+    var unreadMangaDirectoriesByTID: [String: MangaDirectory] = [:]
     /// Snapshot of the per-board reader configuration taken at the same
     /// load/reload as `mangaDirectoriesByTID`, so the two are always
     /// consistent with each other for a given derivation.

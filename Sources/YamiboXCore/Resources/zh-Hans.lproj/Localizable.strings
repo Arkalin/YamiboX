@@ -441,6 +441,8 @@
 "favorites.updates.manga_interval_footer_mode_off" = "已关闭智能漫画模式的板块，漫画收藏项不检查更新";
 "favorites.updates.manga_interval_footer_read_required" = "智能漫画收藏项需要阅读后才检查更新";
 "favorites.updates.mark_read" = "标为已读";
+"favorites.updates.read_action" = "已读";
+"favorites.updates.unread_indicator" = "有未读更新";
 "favorites.updates.no_events" = "暂无收藏更新";
 "favorites.updates.notifications" = "更新通知";
 "favorites.updates.notifications_blocked" = "通知权限已在系统设置中被关闭，更新通知暂时无法送达。";

@@ -6,12 +6,9 @@ extension FavoriteLibraryOrganizer {
     // MARK: - Manga directory grouping (smart-comic-mode decision #3/#5)
 
     /// Resolves the tid → `MangaDirectory` map virtual favorites grouping
-    /// needs, in one batched read — the design doc's performance
-    /// constraint #1. `items` is first narrowed in memory (no I/O) to
-    /// mode-on `.mangaThread` favorites only, using the *explicit*
-    /// `BoardReaderSettings.isSmartComicModeEnabled(forumID:)` check (never a proxy
-    /// signal — this exact class of bug bit three earlier phases), before
-    /// the `MangaDirectoryBatchReading.directories(containingTIDs:)` call.
+    /// needs, in one batched read. Retain all manga identities for unread
+    /// indicators, then return only mode-on members for virtual grouping.
+    /// Disabling smart presentation must not hide existing unread events.
     /// Called only from `load()`/`reload()`, never from
     /// `refreshDerivedState()` or any SwiftUI-observed computed property —
     /// performance constraint #2.
@@ -19,17 +16,27 @@ extension FavoriteLibraryOrganizer {
         for items: [FavoriteItem],
         boardReaderSettings: BoardReaderSettings
     ) async -> [String: MangaDirectory] {
-        guard let mangaDirectoryStore else { return [:] }
+        guard let mangaDirectoryStore else {
+            unreadMangaDirectoriesByTID = [:]
+            return [:]
+        }
         let candidateTIDs = items.compactMap { item -> String? in
-            guard item.target.kind == .mangaThread,
-                  boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID) else {
+            guard item.target.kind == .mangaThread else {
                 return nil
             }
             return item.target.threadID
         }
-        guard !candidateTIDs.isEmpty else { return [:] }
+        guard !candidateTIDs.isEmpty else {
+            unreadMangaDirectoriesByTID = [:]
+            return [:]
+        }
         do {
-            return try await mangaDirectoryStore.directories(containingTIDs: candidateTIDs)
+            let directories = try await mangaDirectoryStore.directories(containingTIDs: candidateTIDs)
+            unreadMangaDirectoriesByTID = directories
+            let smartTIDs = Set(items.filter {
+                $0.target.kind == .mangaThread && boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
+            }.compactMap(\.target.threadID))
+            return directories.filter { smartTIDs.contains($0.key) }
         } catch {
             YamiboLog.persistence.warning("Failed to resolve manga directories for favorites grouping; showing manga favorites standalone this load: \(error.localizedDescription)")
             return [:]

@@ -11,6 +11,20 @@ struct LocalFavoriteSelectionActionBar: View {
     let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
+    @Environment(\.favoriteUnreadIndex) private var unread
+    @EnvironmentObject private var updateMonitor: FavoriteUpdateMonitor
+    @State private var isMarkingRead = false
+
+    private var selectedUnreadIDs: Set<String> {
+        var ids = Set<String>()
+        for id in organizer.expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs) {
+            ids.formUnion(unread.favorites[id, default: []])
+        }
+        for id in selection.selectedCollectionIDs {
+            ids.formUnion(unread.collections[id, default: []])
+        }
+        return ids
+    }
 
     var body: some View {
         if !actions.isEmpty {
@@ -20,6 +34,17 @@ struct LocalFavoriteSelectionActionBar: View {
 
     private var actions: [SelectionToolbarAction] {
         var actions: [SelectionToolbarAction] = []
+        let unreadIDs = selectedUnreadIDs
+        if !unreadIDs.isEmpty {
+            actions.append(SelectionToolbarAction(id: "markRead", title: L10n.string("favorites.updates.read_action"), systemImage: "checkmark.circle", isEnabled: !isMarkingRead) {
+                guard !isMarkingRead else { return }
+                isMarkingRead = true
+                Task {
+                    await updateMonitor.markEventsRead(unreadIDs)
+                    isMarkingRead = false
+                }
+            })
+        }
         if canMove {
             actions.append(SelectionToolbarAction(id: "move", title: L10n.string("common.move"), systemImage: "folder") {
                 routes.sheet = .selectionMove

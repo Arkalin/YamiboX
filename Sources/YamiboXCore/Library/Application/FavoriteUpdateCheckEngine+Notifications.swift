@@ -71,10 +71,20 @@ extension FavoriteUpdateCheckEngine {
     /// in-app and re-syncs the icon badge to the remaining unread count.
     func cleanUpNotifications(forTargetIDs targetIDs: [String]) async {
         guard let notifier else { return }
-        if !targetIDs.isEmpty {
-            await notifier.removeDelivered(identifiers: targetIDs.map(FavoriteUpdateNotification.identifier(forTargetID:)))
+        do {
+            let state = try await updateStore.loadState()
+            let unread = state.events.filter { $0.readAt == nil && $0.dismissedAt == nil }
+            let unreadTargets = Set(unread.map(\.target.id))
+            // Do not remove a newer notification for the same target that arrived
+            // while the user was acknowledging the captured event IDs.
+            let handledTargets = Set(targetIDs).subtracting(unreadTargets)
+            if !handledTargets.isEmpty {
+                await notifier.removeDelivered(identifiers: handledTargets.map(FavoriteUpdateNotification.identifier(forTargetID:)))
+            }
+            let count = await notificationsEnabled() ? unread.count : 0
+            await notifier.setBadgeCount(count)
+        } catch {
+            reportError(error)
         }
-        guard await notificationsEnabled() else { return }
-        await notifier.setBadgeCount(events.filter { $0.readAt == nil }.count)
     }
 }

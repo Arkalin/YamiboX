@@ -13,6 +13,7 @@ public protocol FavoriteUpdateStatePersisting: Sendable {
     func applyCheckRunResults(trackedTargets: [FavoriteUpdateTrackedTarget], events: [FavoriteUpdateEvent]) async throws
     func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async throws -> Int
     func markEventRead(_ id: String, date: Date) async throws
+    func markEventsRead(_ ids: Set<String>, date: Date) async throws
     func dismissEvent(_ id: String, date: Date) async throws
     func dismissAllEvents(date: Date) async throws
     /// Refresh available filters while preserving persisted enable/disable choices.

@@ -79,7 +79,7 @@ public final class FavoriteUpdateCheckEngine {
     }
     public private(set) var errorDetails: LoadFailureDetails?
 
-    private func reportError(_ error: any Error) {
+    func reportError(_ error: any Error) {
         guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
         errorDetails = LoadFailureDetails(error: error)
         errorMessage = error.localizedDescription
@@ -392,13 +392,18 @@ public final class FavoriteUpdateCheckEngine {
     // MARK: - Events and filters
 
     public func markEventRead(_ eventID: String) async {
-        let targetIDs = events.filter { $0.id == eventID }.map(\.target.id)
+        await markEventsRead([eventID])
+    }
+
+    public func markEventsRead(_ eventIDs: Set<String>) async {
+        guard !eventIDs.isEmpty else { return }
+        let targetIDs = events.filter { eventIDs.contains($0.id) }.map(\.target.id)
         do {
-            try await updateStore.markEventRead(eventID, date: .now)
+            try await updateStore.markEventsRead(eventIDs, date: .now)
             await load()
             await cleanUpNotifications(forTargetIDs: targetIDs)
         } catch {
-            YamiboLog.persistence.error("Failed to mark favorite update event \(eventID) read: \(error.localizedDescription)")
+            YamiboLog.persistence.error("Failed to mark favorite updates read: \(error.localizedDescription)")
             reportError(error)
         }
     }
@@ -583,6 +588,9 @@ public final class FavoriteUpdateCheckEngine {
             reportError(error)
         }
         await reloadEventState()
+        // Reading during a run can update the badge before its newly detected
+        // events are committed. Reconcile once those events are durable.
+        await cleanUpNotifications(forTargetIDs: [])
         guard var terminal = snapshot, terminal.runID == runID else { return }
         // An interrupted run may still fail to persist its results. Surface that
         // failure, but don't otherwise restamp an already-terminated run.
