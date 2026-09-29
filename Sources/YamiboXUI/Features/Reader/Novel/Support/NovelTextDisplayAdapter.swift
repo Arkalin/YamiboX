@@ -160,8 +160,9 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             return
         }
         displayReference.drawBlockBackgrounds(in: context, bounds: self.bounds)
+        let likeHighlights = likeHighlightController?.highlights(for: displayReference) ?? []
         drawLikeHighlights(
-            displayReference: displayReference,
+            highlights: likeHighlights,
             in: context
         )
         drawSearchHighlight(
@@ -175,7 +176,7 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         displayReference.drawText(in: context, bounds: self.bounds)
         // After the glyphs on purpose: `drawText` paints last, so a badge drawn
         // in the highlight pass would end up underneath the text.
-        drawLikeNoteBadges(displayReference: displayReference, in: context)
+        drawLikeNoteBadges(highlights: likeHighlights, in: context)
     }
 
     override var canBecomeFirstResponder: Bool {
@@ -513,11 +514,9 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     }
 
     private func drawLikeHighlights(
-        displayReference: NovelTextViewportDisplayReference,
+        highlights: [NovelLikeHighlightController.ResolvedHighlight],
         in context: CGContext
     ) {
-        guard let likeHighlightController else { return }
-        let highlights = likeHighlightController.highlights(for: displayReference)
         guard !highlights.isEmpty else { return }
         context.saveGState()
         for entry in highlights {
@@ -564,13 +563,12 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     /// outside the bounds there is nothing drawn to erase anyway, so the two
     /// halves meet seamlessly.
     private func drawLikeNoteBadges(
-        displayReference: NovelTextViewportDisplayReference,
+        highlights: [NovelLikeHighlightController.ResolvedHighlight],
         in context: CGContext
     ) {
-        guard let likeHighlightController else { return }
         // `startRect` is nil when the annotation began on another surface,
         // which is exactly when this page must not claim to show its beginning.
-        let annotated = likeHighlightController.highlights(for: displayReference)
+        let annotated = highlights
             .filter { $0.item.hasNote && $0.startRect != nil }
         pruneNoteBadgeViews(keeping: Set(annotated.map(\.item.id)))
         guard !annotated.isEmpty else { return }

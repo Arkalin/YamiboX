@@ -40,6 +40,17 @@ public struct YamiboCookie: Codable, Hashable, Sendable {
         "\(domain.lowercased())|\(path)|\(name)"
     }
 
+    /// Keeps the newest captured cookie for each identity, with later cookies
+    /// winning ties, and returns the result in stable identity order.
+    internal static func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {
+        var byIdentity: [String: YamiboCookie] = [:]
+        for cookie in cookies {
+            if let current = byIdentity[cookie.identity], current.capturedAt > cookie.capturedAt { continue }
+            byIdentity[cookie.identity] = cookie
+        }
+        return byIdentity.values.sorted { $0.identity < $1.identity }
+    }
+
     public func isExpired(at date: Date = .now) -> Bool {
         expiresAt.map { $0 <= date } ?? false
     }
@@ -119,20 +130,11 @@ public struct YamiboRequestCredentials: Hashable, Sendable {
     public let userAgent: String
 
     public init(cookies: [YamiboCookie], userAgent: String) {
-        self.cookies = Self.canonicalCookies(cookies)
+        self.cookies = YamiboCookie.canonicalCookies(cookies)
         self.userAgent = userAgent
     }
 
     public func cookieHeader(for url: URL, at date: Date = .now) -> String {
         YamiboNetworkPolicy.cookieHeader(for: url, credentials: self, at: date)
-    }
-
-    private static func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {
-        var byIdentity: [String: YamiboCookie] = [:]
-        for cookie in cookies {
-            if let current = byIdentity[cookie.identity], current.capturedAt > cookie.capturedAt { continue }
-            byIdentity[cookie.identity] = cookie
-        }
-        return byIdentity.values.sorted { $0.identity < $1.identity }
     }
 }

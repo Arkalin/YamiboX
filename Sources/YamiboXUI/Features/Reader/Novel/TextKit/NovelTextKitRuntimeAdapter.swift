@@ -9,10 +9,6 @@ final class NovelTextViewportLayoutDelegate: NSObject, NSTextViewportLayoutContr
         self.viewportBounds = viewportBounds
     }
 
-    func updateViewportBounds(_ viewportBounds: CGRect) {
-        self.viewportBounds = viewportBounds
-    }
-
     func viewportBounds(
         for textViewportLayoutController: NSTextViewportLayoutController
     ) -> CGRect {
@@ -46,8 +42,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             return NovelTextLayoutRuntimeCandidate(
                 result: result,
                 fullDocumentLayoutPassCount: 0,
-                postIndexCompactionCount: 1,
-                ownsAuthoritativeIndex: input.precomputedResult == nil
+                postIndexCompactionCount: 1
             )
         }
         let reusesSemanticDocument = input.cachedSemanticAttributedDocument != nil
@@ -162,7 +157,6 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             fullDocumentLayoutPassCount: 1,
             postIndexCompactionCount: 1,
             geometryDeviationCount: geometryDeviationCount,
-            ownsAuthoritativeIndex: input.precomputedResult == nil,
             graph: graph
         )
     }

@@ -432,7 +432,7 @@ public final class NovelReadingWorkflow {
               !Task.isCancelled else {
             return nil
         }
-        return try commitRuntimeTransaction(
+        return commitRuntimeTransaction(
             transaction: transaction,
             candidateSession: candidateSession,
             settings: update.settings,
@@ -454,14 +454,14 @@ public final class NovelReadingWorkflow {
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         usesPadPresentation: Bool
-    ) throws -> NovelReadingWorkflowState? {
+    ) -> NovelReadingWorkflowState? {
         guard let currentProjection else { return nil }
         // A runtime update re-presents the same document with new appearance
         // inputs, so the load source and cached-views set are carried over
         // from the current fields by omission. The prefetch pair must still be
         // passed explicitly (its parameters have no carry-over default because
         // nil is a meaningful "drop the prefetch" value there).
-        let preparedTransaction = try makePreparedTransaction(
+        let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
             settings: settings,
@@ -503,16 +503,12 @@ public final class NovelReadingWorkflow {
         prefetchedLoadSource: NovelReaderProjectionLoadSource?,
         currentAuthorID: String?,
         cachedViews: Set<Int>? = nil
-    ) throws -> NovelReadingPreparedTransaction {
+    ) -> NovelReadingPreparedTransaction {
         let settings = settings ?? self.settings
         let layout = layout ?? self.layout
         let usesPadPresentation = usesPadPresentation ?? self.usesPadPresentation
         let currentLoadSource = currentLoadSource ?? self.currentLoadSource
         let snapshot = session.snapshot
-        try viewportRuntime.prepareInitialViewport(
-            for: runtime,
-            around: snapshot.selectedSurfaceOrdinal
-        )
         let structure = makePresentationStructure(snapshot: snapshot, result: runtime.result, generation: runtime.generation)
         let state = NovelReadingWorkflowState(
             snapshot: snapshot,
@@ -887,7 +883,7 @@ public final class NovelReadingWorkflow {
         // Promotion replaces the document dimensions (the prefetched page
         // becomes current, the prefetch slot empties); appearance and the
         // cached-views set carry over from the current fields by omission.
-        let preparedTransaction = try makePreparedTransaction(
+        let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
             currentProjection: nextProjection,
@@ -984,7 +980,7 @@ public final class NovelReadingWorkflow {
         // A fresh load replaces every document dimension plus the cached-views
         // set (just refetched above); appearance carries over from the current
         // fields by omission.
-        let preparedTransaction = try makePreparedTransaction(
+        let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
             currentProjection: projection,

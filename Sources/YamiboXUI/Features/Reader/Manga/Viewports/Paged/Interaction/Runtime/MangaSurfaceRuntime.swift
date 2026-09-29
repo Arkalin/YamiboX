@@ -51,12 +51,8 @@ final class MangaSurfaceRuntime {
 
     var hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> { geometry.hiddenEdges(transform) }
     var isManipulating: Bool { nativeIsInteracting }
-    var canPinch: Bool { availableInputs.contains(.pinch) }
-    var canPan: Bool { availableInputs.contains(.pan) }
-
-    private var availableInputs: Set<MangaContinuousInput> {
-        MangaInteractionPolicy.availableInputs(configuration: configuration, scale: transform.scale, hiddenEdges: hiddenEdges,
-            imageLoaded: imageLoaded && geometry.viewport.width > 0 && geometry.viewport.height > 0, isManipulating: isManipulating)
+    var canPinch: Bool {
+        imageLoaded && geometry.viewport.width > 0 && geometry.viewport.height > 0 && configuration.zoomEnabled
     }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {

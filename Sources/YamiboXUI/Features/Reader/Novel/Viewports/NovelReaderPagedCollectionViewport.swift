@@ -243,8 +243,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                     fallbackSurfaceIndex: itemIndex,
                     settings: parent.settings,
                     refererURL: parent.refererURL,
-                    offlineScope: parent.offlineScope,
-                    onImageTap: parent.onImageTap
+                    offlineScope: parent.offlineScope
                 )
                 .padding(.horizontal, parent.settings.horizontalPadding)
                 .padding(.top, parent.topInset)
@@ -264,8 +263,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                         selectionController: parent.selectionController,
                         likeHighlightController: parent.likeHighlightController,
                         searchHighlightController: parent.searchHighlightController,
-                        likedImageAnchors: parent.likedImageAnchors,
-                        onImageTap: parent.onImageTap
+                        likedImageAnchors: parent.likedImageAnchors
                     )
                 }
             }
@@ -383,10 +381,6 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 didChangeContentIdentity: didChangeContentIdentity,
                 inputs: pagingInputs
             )
-        }
-
-        func reloadDataAndRequestSelectionScroll(in collectionView: UICollectionView, animated: Bool) {
-            pagingDriver.reloadDataAndRequestSelectionScroll(in: collectionView, animated: animated, inputs: pagingInputs)
         }
 
         @discardableResult

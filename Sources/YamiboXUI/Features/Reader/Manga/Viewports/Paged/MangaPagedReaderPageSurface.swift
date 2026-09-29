@@ -32,7 +32,6 @@ struct MangaPagedReaderPageSurface: View {
             if let image = displayedImage {
                 MangaPagedReaderScaledImage(
                     image: image,
-                    pageID: page.id,
                     pageScaleMode: pageScaleMode,
                     initialHorizontalAlignment: initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,

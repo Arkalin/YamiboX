@@ -26,7 +26,6 @@ public struct IOSForumWebView: UIViewRepresentable {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .default()
         let appearance = ForumWebAppearance(theme: theme, colorScheme: context.environment.colorScheme)
-        configuration.userContentController.addUserScript(.yamiboHideChromeScript(appearance, stylesPage: model.currentURL.map(ForumRouteResolver.supportsNativePage) ?? false))
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = true

@@ -151,7 +151,6 @@ package final class NovelTextLayoutRuntimeCandidate {
     package let fullDocumentLayoutPassCount: Int
     package let postIndexCompactionCount: Int
     package let geometryDeviationCount: Int
-    package let ownsAuthoritativeIndex: Bool
     package let graph: (any NovelTextViewportRuntimeGraph)?
 
     package init(
@@ -161,7 +160,6 @@ package final class NovelTextLayoutRuntimeCandidate {
         fullDocumentLayoutPassCount: Int = 1,
         postIndexCompactionCount: Int = 1,
         geometryDeviationCount: Int = 0,
-        ownsAuthoritativeIndex: Bool = false,
         graph: (any NovelTextViewportRuntimeGraph)? = nil
     ) {
         self.result = result
@@ -170,7 +168,6 @@ package final class NovelTextLayoutRuntimeCandidate {
         self.fullDocumentLayoutPassCount = max(0, fullDocumentLayoutPassCount)
         self.postIndexCompactionCount = max(0, postIndexCompactionCount)
         self.geometryDeviationCount = max(0, geometryDeviationCount)
-        self.ownsAuthoritativeIndex = ownsAuthoritativeIndex
         self.graph = graph
     }
 }
@@ -207,7 +204,6 @@ package final class NovelTextViewportRuntimeTransaction {
     let fullDocumentLayoutPassCount: Int
     let postIndexCompactionCount: Int
     private(set) var geometryDeviationCount: Int
-    let ownsAuthoritativeIndex: Bool
     private(set) var graph: (any NovelTextViewportRuntimeGraph)?
     private var state = State.pending
 
@@ -229,7 +225,6 @@ package final class NovelTextViewportRuntimeTransaction {
         fullDocumentLayoutPassCount = candidate.fullDocumentLayoutPassCount
         postIndexCompactionCount = candidate.postIndexCompactionCount
         geometryDeviationCount = candidate.geometryDeviationCount
-        ownsAuthoritativeIndex = candidate.ownsAuthoritativeIndex
         graph = candidate.graph
     }
 
@@ -245,11 +240,6 @@ package final class NovelTextViewportRuntimeTransaction {
         semanticAttributedDocument = nil
         graph = nil
         return true
-    }
-
-    fileprivate func prepareInitialViewport(around surfaceOrdinal: Int) throws {
-        guard ownsAuthoritativeIndex else { return }
-        _ = surfaceOrdinal
     }
 }
 
@@ -440,27 +430,6 @@ package final class NovelTextViewportRuntimeOwner {
         transactionDiagnostics.geometryDeviationCount += transaction.geometryDeviationCount
         peakActivePlusCandidateGraphCount = max(peakActivePlusCandidateGraphCount, activeTextKitGraphCount)
         return true
-    }
-
-    package func prepareInitialViewport(
-        for transaction: NovelTextViewportRuntimeTransaction,
-        around surfaceOrdinal: Int
-    ) throws {
-        guard pendingTransaction === transaction else { return }
-        do {
-            try transaction.prepareInitialViewport(around: surfaceOrdinal)
-        } catch let failure as NovelTextLayoutFailure {
-            _ = transaction.supersede()
-            pendingTransaction = nil
-            recordFailure(failure)
-            throw failure
-        } catch {
-            _ = transaction.supersede()
-            pendingTransaction = nil
-            let failure = NovelTextLayoutFailure.geometryValidation
-            recordFailure(failure)
-            throw failure
-        }
     }
 
     private func reusableSemanticAttributedDocument(

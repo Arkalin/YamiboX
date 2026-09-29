@@ -43,12 +43,24 @@ enum YamiboHTMLPageInspector {
 
     static func pageTitle(from html: String) -> String? {
         if let document = try? KannaSoup.parse(html) {
-            let title = document.title().trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty {
-                return title
-            }
+            return pageTitle(in: document, rawHTML: html)
         }
 
+        return rawPageTitle(from: html)
+    }
+
+    /// Reads a title from an already parsed document and retains the raw HTML
+    /// fallback used when Kanna does not expose a non-blank `<title>`.
+    static func pageTitle(in document: Document, rawHTML html: String) -> String? {
+        let title = document.title().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
+            return title
+        }
+
+        return rawPageTitle(from: html)
+    }
+
+    private static func rawPageTitle(from html: String) -> String? {
         guard let raw = HTMLTextExtractor.firstMatch(
             pattern: #"<title[^>]*>(.*?)</title>"#,
             in: html

@@ -22,7 +22,6 @@ public struct ForumComposerTransaction: Sendable {
 extension ForumComposerDocument {
     @discardableResult
     public mutating func apply(_ command: ForumComposerCommand, parsesEmoticons: Bool = true) throws -> ForumComposerTransaction {
-        let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
         var edits: [ForumComposerSourceEdit] = []
         var selection = ForumComposerSelection()
         switch command {
@@ -30,6 +29,7 @@ extension ForumComposerDocument {
             edits = changes
             selection = finalSelection
         case let .typeVisible(range, text, enabled, disabled):
+            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             let sourceRange = projection.sourceRange(forVisibleRange: range)
             let stack = ancestors(at: sourceRange.location)
             let affected = stack.firstIndex { $0.tag.map(disabled.contains) == true }
@@ -49,10 +49,12 @@ extension ForumComposerDocument {
             edits = [.init(range: range, replacement: text)]
             selection.sourceRange = .init(location: range.location + text.utf16.count)
         case let .replaceVisible(range, text), let .insertMarkup(range, text):
+            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             let edit = replacementEdit(in: range, text: text, projection: projection)
             edits = [edit]
             selection.sourceRange = .init(location: edit.range.location + text.utf16.count)
         case let .format(range, tag, parameter):
+            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             guard !tag.isMainPostOnly, tag.isInline || tag.isParagraph else { throw ForumComposerDocumentError.invalidParameter }
             _ = try ForumComposerSyntax.markup(tag: tag, parameter: parameter)
             var visible = range
@@ -79,9 +81,11 @@ extension ForumComposerDocument {
             }
             selection = mappedSelection(projection.sourceRange(forVisibleRange: visible), through: edits)
         case let .removeFormatting(range):
+            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             edits = removingTags(Set(ForumComposerTag.allCases.filter(\.isFormatting)), in: range, projection: projection)
             selection = mappedSelection(projection.sourceRange(forVisibleRange: range), through: edits)
         case let .removeLink(range):
+            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             edits = removingTags([.url, .email], in: range, projection: projection)
             selection = mappedSelection(projection.sourceRange(forVisibleRange: range), through: edits)
         case let .updateNode(id, parameter, body):

@@ -40,7 +40,6 @@ struct NovelReaderPresentationSpreadContent: View {
     let likeHighlightController: NovelLikeHighlightController?
     let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
-    let onImageTap: (URL, String?) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -68,8 +67,7 @@ struct NovelReaderPresentationSpreadContent: View {
                     fallbackSurfaceIndex: surfaceIndex,
                     settings: settings,
                     refererURL: refererURL,
-                    offlineScope: offlineScope,
-                    onImageTap: onImageTap
+                    offlineScope: offlineScope
                 )
                 .padding(.horizontal, settings.horizontalPadding)
                 .padding(.top, topInset)
@@ -96,7 +94,6 @@ struct NovelReaderViewportSurfaceContent: View {
     let settings: NovelReaderAppearanceSettings
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
-    let onImageTap: (URL, String?) -> Void
 
     init(
         surface: NovelReaderSurface?,
@@ -109,8 +106,7 @@ struct NovelReaderViewportSurfaceContent: View {
         fallbackSurfaceIndex: Int?,
         settings: NovelReaderAppearanceSettings,
         refererURL: URL,
-        offlineScope: YamiboImageOfflineScope?,
-        onImageTap: @escaping (URL, String?) -> Void = { _, _ in }
+        offlineScope: YamiboImageOfflineScope?
     ) {
         self.surface = surface
         self.displayReference = displayReference
@@ -123,7 +119,6 @@ struct NovelReaderViewportSurfaceContent: View {
         self.settings = settings
         self.refererURL = refererURL
         self.offlineScope = offlineScope
-        self.onImageTap = onImageTap
     }
 
     var body: some View {
@@ -151,8 +146,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     isLiked: isImageBlockLiked(block),
                     refererURL: refererURL,
                     offlineScope: offlineScope,
-                    title: surface?.chapterTitle,
-                    onImageTap: onImageTap
+                    title: surface?.chapterTitle
                 )
             }
         }
@@ -173,8 +167,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     isLiked: isImageBlockLiked(block),
                     refererURL: refererURL,
                     offlineScope: offlineScope,
-                    title: surface?.chapterTitle,
-                    onImageTap: onImageTap
+                    title: surface?.chapterTitle
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
@@ -204,13 +197,13 @@ struct NovelReaderViewportSurfaceContent: View {
     static func viewportBlocks(
         surface: NovelReaderSurface?
     ) -> [NovelReaderViewportDisplayBlock] {
-        let externalBlockImages = surface?.externalBlocks.map {
-            NovelReaderViewportDisplayBlock.image($0.url)
-        } ?? []
-        var blocks: [NovelReaderViewportDisplayBlock] = []
         guard let surface else {
-            return externalBlockImages.isEmpty ? [.footer(L10n.string("reader.empty_content"))] : externalBlockImages
+            return [.footer(L10n.string("reader.empty_content"))]
         }
+        let externalBlockImages = surface.externalBlocks.map {
+            NovelReaderViewportDisplayBlock.image($0.url)
+        }
+        var blocks: [NovelReaderViewportDisplayBlock] = []
         if surface.kind == .text {
             blocks.append(.text)
         }
@@ -234,7 +227,6 @@ private struct NovelReaderViewportBlockView: View {
     let refererURL: URL
     let offlineScope: YamiboImageOfflineScope?
     let title: String?
-    let onImageTap: (URL, String?) -> Void
 
     var body: some View {
         switch block {
@@ -256,8 +248,7 @@ private struct NovelReaderViewportBlockView: View {
                 refererURL: refererURL,
                 offlineScope: offlineScope,
                 title: title,
-                isLiked: isLiked,
-                onTap: onImageTap
+                isLiked: isLiked
             )
         case let .footer(text):
             Text(text)

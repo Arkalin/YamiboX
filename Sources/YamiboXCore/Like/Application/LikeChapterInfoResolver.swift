@@ -92,7 +92,7 @@ enum LikeChapterInfoResolver {
     static func mangaChapterInfo(for items: [LikeItem], directory: MangaDirectory?) -> [String: String] {
         var titleByTID: [String: String] = [:]
         for chapter in directory?.chapters ?? [] where titleByTID[chapter.tid] == nil {
-            if let title = trimmedOrNil(chapter.rawTitle) {
+            if let title = LikeItem.normalizedChapterTitle(chapter.rawTitle) {
                 titleByTID[chapter.tid] = title
             }
         }
@@ -128,12 +128,5 @@ enum LikeChapterInfoResolver {
             return snapshot
         }
         _ = try? await store.resolveChapterTitles(snapshots)
-    }
-
-    private static func trimmedOrNil(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
     }
 }

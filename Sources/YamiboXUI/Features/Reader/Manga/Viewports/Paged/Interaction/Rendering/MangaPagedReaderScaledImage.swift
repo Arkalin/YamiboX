@@ -6,7 +6,6 @@ import UIKit
 
 struct MangaPagedReaderScaledImage: View {
     let image: UIImage
-    let pageID: String
     let pageScaleMode: MangaPageScaleMode
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle

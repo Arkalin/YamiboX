@@ -102,13 +102,13 @@ public actor SessionStore: SessionStoring {
         var session = snapshot.session
         let previousSession = session
         let previousAuthentication = session.authenticationCookie
-        let incoming = canonicalCookies(webCookies.filter { !$0.isExpired() })
+        let incoming = YamiboCookie.canonicalCookies(webCookies.filter { !$0.isExpired() })
         let incomingAuthentication = incoming.first { SessionState.isAuthenticationCookieName($0.name) }
         let preservesCurrentAuthentication = session.isLoggedIn && previousAuthentication != nil &&
             (incomingAuthentication == nil || incomingAuthentication?.value != previousAuthentication?.value)
 
         if preservesCurrentAuthentication, let previousAuthentication {
-            session.cookies = canonicalCookies(
+            session.cookies = YamiboCookie.canonicalCookies(
                 incoming.filter { !SessionState.isAuthenticationCookieName($0.name) } + [previousAuthentication]
             )
         } else {
@@ -131,15 +131,6 @@ public actor SessionStore: SessionStoring {
 
         session.lastUpdatedAt = .now
         try await save(session, expectedGeneration: snapshot.generation)
-    }
-
-    private func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {
-        var byIdentity: [String: YamiboCookie] = [:]
-        for cookie in cookies {
-            if let current = byIdentity[cookie.identity], current.capturedAt > cookie.capturedAt { continue }
-            byIdentity[cookie.identity] = cookie
-        }
-        return byIdentity.values.sorted { $0.identity < $1.identity }
     }
 
     public func updateAccountUID(_ accountUID: String?) async throws {

@@ -96,15 +96,19 @@ public actor ChapterCommentFilterEngine {
     }
 
     public func validate(pattern: String) throws {
-        guard !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ChapterCommentPatternError.empty
-        }
-        _ = try NSRegularExpression(pattern: pattern)
+        _ = try compile(pattern: pattern)
     }
 
     public func preview(pattern: String, text: String) throws -> Match {
-        try validate(pattern: pattern)
-        return try match(try NSRegularExpression(pattern: pattern), text: Self.normalized(text))
+        let expression = try compile(pattern: pattern)
+        return try match(expression, text: Self.normalized(text))
+    }
+
+    private func compile(pattern: String) throws -> NSRegularExpression {
+        guard !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChapterCommentPatternError.empty
+        }
+        return try NSRegularExpression(pattern: pattern)
     }
 
     public func filter(_ comments: [ChapterComment], settings: ChapterCommentFilterSettings,

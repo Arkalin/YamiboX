@@ -319,7 +319,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         cell.configure(
             informationState: informationState,
             informationIndex: spreadIndex,
-            spreadID: spread.id,
             usesTwoPageSpread: parent.plan.usesTwoPageSpread,
             leftPageSurface: pageSurface(
                 page: spread.leftPage,

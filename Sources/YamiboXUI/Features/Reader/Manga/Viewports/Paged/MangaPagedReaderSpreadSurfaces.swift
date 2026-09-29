@@ -8,7 +8,6 @@ extension ReaderPagedPageTurnCell {
     func configure(
         informationState: ReaderAttachedInformationState,
         informationIndex: Int,
-        spreadID: String,
         usesTwoPageSpread: Bool,
         leftPageSurface: MangaPagedReaderSpreadPageSurface?,
         rightPageSurface: MangaPagedReaderSpreadPageSurface?,
@@ -26,7 +25,6 @@ extension ReaderPagedPageTurnCell {
         contentView.backgroundColor = pageEdgeFillColor
         contentConfiguration = UIHostingConfiguration {
             MangaPagedReaderSpreadSurface(
-                spreadID: spreadID,
                 usesTwoPageSpread: usesTwoPageSpread,
                 leftPageSurface: leftPageSurface,
                 rightPageSurface: rightPageSurface,
@@ -53,7 +51,6 @@ extension ReaderPagedPageTurnCell {
 }
 
 private struct MangaPagedReaderSpreadSurface: View {
-    let spreadID: String
     let usesTwoPageSpread: Bool
     let leftPageSurface: MangaPagedReaderSpreadPageSurface?
     let rightPageSurface: MangaPagedReaderSpreadPageSurface?
@@ -71,7 +68,6 @@ private struct MangaPagedReaderSpreadSurface: View {
 
             if usesTwoPageSpread {
                 MangaPagedReaderZoomableSpreadSurface(
-                    spreadID: spreadID,
                     leftPageSurface: leftPageSurface,
                     rightPageSurface: rightPageSurface,
                     imageLoader: imageLoader,

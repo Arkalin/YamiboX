@@ -474,10 +474,6 @@ public actor LikeStore: ReaderLikeMutating {
         )
     }
 
-    private static func deleteRow(id: String, in db: Database) throws {
-        try db.execute(sql: "DELETE FROM like_items WHERE id = ?", arguments: [id])
-    }
-
     private static func softDeleteRow(id: String, date: Date, in db: Database) throws {
         var deletions = try SyncDeletionState.load(from: "like_sync_state", in: db)
         deletions.recordDeletion(of: id, at: date)

@@ -98,7 +98,6 @@ public struct BrowsingHistoryEntry: Codable, Hashable, Identifiable, Sendable {
 
 extension String {
     var browsingHistoryTrimmedNonEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        nilIfBlank
     }
 }

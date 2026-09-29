@@ -92,7 +92,9 @@ final class NovelLikeHighlightController {
                 return (range, ResolvedHighlight(
                     item: item,
                     rects: rects,
-                    startRect: startRect(of: range, in: displayReference)
+                    startRect: item.hasNote
+                        ? startRect(of: range, in: displayReference)
+                        : nil
                 ))
             }
             .sorted { $0.range.lowerBound < $1.range.lowerBound }

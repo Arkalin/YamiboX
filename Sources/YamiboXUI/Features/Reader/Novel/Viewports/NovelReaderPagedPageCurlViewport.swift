@@ -564,8 +564,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                     selectionController: parent.selectionController,
                     likeHighlightController: parent.likeHighlightController,
                     searchHighlightController: parent.searchHighlightController,
-                    likedImageAnchors: parent.likedImageAnchors,
-                    onImageTap: parent.onImageTap
+                    likedImageAnchors: parent.likedImageAnchors
                 )
             )
             controllers.add(controller)
@@ -724,7 +723,6 @@ private struct NovelReaderPagedPageCurlLeafView: View {
     let likeHighlightController: NovelLikeHighlightController?
     let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
-    let onImageTap: (URL, String?) -> Void
 
     var body: some View {
         NovelReaderPagedPageSurfaceContainer(settings: settings) {
@@ -742,8 +740,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
                     fallbackSurfaceIndex: surfaceIndex,
                     settings: settings,
                     refererURL: refererURL,
-                    offlineScope: offlineScope,
-                    onImageTap: onImageTap
+                    offlineScope: offlineScope
                 )
                 .padding(.horizontal, settings.horizontalPadding)
                 .padding(.top, topInset)

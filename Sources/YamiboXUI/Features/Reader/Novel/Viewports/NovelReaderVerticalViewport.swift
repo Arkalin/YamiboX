@@ -7,7 +7,6 @@ import UIKit
 private struct NovelReaderVerticalViewportDisplaySurface {
     let identity: NovelReaderSurfaceIdentity
     let surfaceIndex: Int
-    let documentView: Int
     let chapterTitle: String?
     let presentationHeight: CGFloat?
     let blocks: [NovelReaderViewportDisplayBlock]
@@ -217,8 +216,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 offlineScope: parent.offlineScope,
                 imagePipeline: parent.imagePipeline,
                 contentWidth: max(verticalItemWidth(in: collectionView) - parent.settings.horizontalPadding * 2, 1),
-                topPadding: displaySurface.surfaceIndex == 0 ? 16 : 0,
-                onImageTap: parent.onImageTap
+                topPadding: displaySurface.surfaceIndex == 0 ? 16 : 0
             )
             if let attributes = collectionView.layoutAttributesForItem(at: indexPath) {
                 cell.refreshLayout(for: attributes.size)
@@ -525,7 +523,6 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             return NovelReaderVerticalViewportDisplaySurface(
                 identity: surface.identity,
                 surfaceIndex: surface.presentationIndex,
-                documentView: surface.documentView,
                 chapterTitle: surface.chapterTitle,
                 presentationHeight: surface.presentationSize.height > 0 ? surface.presentationSize.height : nil,
                 blocks: NovelReaderViewportSurfaceContent.viewportBlocks(
@@ -573,10 +570,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 }
                 applyTextAnchorRestore(
                     anchorY: anchorY,
-                    request: request,
-                    collectionView: collectionView,
-                    restoredItem: item,
-                    visibleFrame: visibleFrame
+                    collectionView: collectionView
                 )
                 return true
             }
@@ -599,10 +593,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
 
         private func applyTextAnchorRestore(
             anchorY: CGFloat,
-            request: NovelReaderVerticalScrollRequest,
-            collectionView: UICollectionView,
-            restoredItem: Int,
-            visibleFrame: CGRect
+            collectionView: UICollectionView
         ) {
             let referenceLineY = NovelReaderVerticalPositioning.viewportReadingAnchorLineY(in: collectionView.bounds)
             let desiredY = collectionView.contentOffset.y + anchorY - referenceLineY
@@ -673,7 +664,6 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
     private var currentLikedImageAnchors: Set<NovelImageLikeAnchor> = []
     private var currentSurface: NovelReaderSurface?
     private var currentTextHeight: CGFloat?
-    private var currentOnImageTap: (URL, String?) -> Void = { _, _ in }
     private var lastAppliedLayoutSize = CGSize.zero
     private var preferredLayoutSize = CGSize.zero
 
@@ -702,7 +692,6 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         currentLikedImageAnchors = []
         currentSurface = nil
         currentTextHeight = nil
-        currentOnImageTap = { _, _ in }
         lastAppliedLayoutSize = .zero
         preferredLayoutSize = .zero
         removeBlockSubviews()
@@ -743,8 +732,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
             offlineScope: currentOfflineScope,
             imagePipeline: currentImagePipeline,
             contentWidth: currentContentWidth,
-            topPadding: currentTopPadding,
-            onImageTap: currentOnImageTap
+            topPadding: currentTopPadding
         )
     }
 
@@ -762,8 +750,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         offlineScope: YamiboImageOfflineScope?,
         imagePipeline: YamiboUIImagePipeline?,
         contentWidth: CGFloat,
-        topPadding: CGFloat,
-        onImageTap: @escaping (URL, String?) -> Void
+        topPadding: CGFloat
     ) {
         currentPage = page
         currentDisplayReference = displayReference
@@ -779,14 +766,12 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         currentImagePipeline = imagePipeline
         currentContentWidth = contentWidth
         currentTopPadding = topPadding
-        currentOnImageTap = onImageTap
 
         removeBlockSubviews()
 
-        for (blockIndex, block) in page.blocks.enumerated() {
+        for block in page.blocks {
             let blockView = makeBlockView(
                 for: block,
-                blockIndex: blockIndex,
                 page: page,
                 contentWidth: contentWidth,
                 refererURL: refererURL,
@@ -800,8 +785,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                     guard case let .image(url) = block else { return false }
                     return isNovelImageLiked(url, surface: surface, likedAnchors: likedImageAnchors)
                 }(),
-                textHeight: textHeight,
-                onImageTap: onImageTap
+                textHeight: textHeight
             )
             blockViews.append(blockView)
             contentView.addSubview(blockView.view)
@@ -876,7 +860,6 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
 
     private func makeBlockView(
         for block: NovelReaderViewportDisplayBlock,
-        blockIndex: Int,
         page: NovelReaderVerticalViewportDisplaySurface,
         contentWidth: CGFloat,
         refererURL: URL,
@@ -887,8 +870,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         likeHighlightController: NovelLikeHighlightController?,
         searchHighlightController: NovelReaderSearchHighlightController?,
         isLiked: Bool,
-        textHeight: CGFloat?,
-        onImageTap: @escaping (URL, String?) -> Void
+        textHeight: CGFloat?
     ) -> BlockView {
         switch block {
         case .text:
@@ -908,8 +890,7 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
                 imagePipeline: imagePipeline,
                 preferredHeight: textHeight,
                 title: page.chapterTitle,
-                isLiked: isLiked,
-                onImageTap: onImageTap
+                isLiked: isLiked
             )
         case let .footer(text):
             return makeFooterBlockView(text)
@@ -943,16 +924,14 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         imagePipeline: YamiboUIImagePipeline?,
         preferredHeight: CGFloat?,
         title: String?,
-        isLiked: Bool,
-        onImageTap: @escaping (URL, String?) -> Void
+        isLiked: Bool
     ) -> BlockView {
         let height = max(preferredHeight ?? bounds.height, 1)
         let imageView = NovelReaderVerticalViewportImageView(pipeline: imagePipeline)
         imageView.configure(
             source: YamiboImageSource(url: url, refererPageURL: refererURL, offlineScope: offlineScope),
             title: title,
-            isLiked: isLiked,
-            onTap: onImageTap
+            isLiked: isLiked
         )
         return BlockView(view: imageView, height: height, displayReference: nil)
     }
@@ -1124,8 +1103,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
     func configure(
         source: YamiboImageSource,
         title: String?,
-        isLiked: Bool,
-        onTap: @escaping (URL, String?) -> Void
+        isLiked: Bool
     ) {
         self.url = source.url
         self.title = title
@@ -1262,22 +1240,19 @@ struct NovelReaderInlineViewportImage: UIViewRepresentable {
     let offlineScope: YamiboImageOfflineScope?
     let title: String?
     let isLiked: Bool
-    let onTap: (URL, String?) -> Void
 
     init(
         url: URL,
         refererURL: URL,
         offlineScope: YamiboImageOfflineScope?,
         title: String?,
-        isLiked: Bool = false,
-        onTap: @escaping (URL, String?) -> Void
+        isLiked: Bool = false
     ) {
         self.url = url
         self.refererURL = refererURL
         self.offlineScope = offlineScope
         self.title = title
         self.isLiked = isLiked
-        self.onTap = onTap
     }
 
     func makeUIView(context: Context) -> NovelReaderVerticalViewportImageView {
@@ -1289,8 +1264,7 @@ struct NovelReaderInlineViewportImage: UIViewRepresentable {
         uiView.configure(
             source: YamiboImageSource(url: url, refererPageURL: refererURL, offlineScope: offlineScope),
             title: title,
-            isLiked: isLiked,
-            onTap: onTap
+            isLiked: isLiked
         )
     }
 }

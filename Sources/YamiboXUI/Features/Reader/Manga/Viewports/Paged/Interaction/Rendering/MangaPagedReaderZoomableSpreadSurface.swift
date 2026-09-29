@@ -5,7 +5,6 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedReaderZoomableSpreadSurface: View {
-    let spreadID: String
     let leftPageSurface: MangaPagedReaderSpreadPageSurface?
     let rightPageSurface: MangaPagedReaderSpreadPageSurface?
     let imageLoader: MangaReaderPageImageLoader

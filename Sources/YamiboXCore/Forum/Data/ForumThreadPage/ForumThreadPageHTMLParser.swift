@@ -16,7 +16,9 @@ enum ForumThreadPageHTMLParser {
         try YamiboHTMLPageInspector.ensureReadable(html)
 
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        let title = ForumThreadTitleSanitizer.sanitize(YamiboHTMLPageInspector.pageTitle(from: html))
+        let title = ForumThreadTitleSanitizer.sanitize(
+            YamiboHTMLPageInspector.pageTitle(in: document, rawHTML: html)
+        )
             ?? ForumThreadTitleSanitizer.sanitize(fallbackTitle)
             ?? L10n.string("forum.default_title")
         let posts = try ForumThreadPostsParser.posts(in: document)
@@ -61,7 +63,7 @@ enum ForumThreadPageHTMLParser {
         let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
         let page = ForumThreadRatingParser.rateOptionsPage(in: document)
         if page.availableScores.isEmpty && page.defaultReasons.isEmpty,
-           let message = parseMessageText(from: html) {
+           let message = parseMessageText(in: document) {
             throw YamiboError.underlying(message)
         }
         return page
@@ -83,7 +85,7 @@ enum ForumThreadPageHTMLParser {
             ?? options.first?.id
         let voters = ForumThreadPollParser.voters(in: document)
         guard !options.isEmpty || !voters.isEmpty else {
-            if let message = parseMessageText(from: html) {
+            if let message = parseMessageText(in: document) {
                 throw YamiboError.underlying(message)
             }
             throw YamiboError.parsingFailed(context: L10n.string("forum.thread.poll_voters"))
@@ -101,9 +103,12 @@ enum ForumThreadPageHTMLParser {
     static func parsePollVoteResult(from html: String) throws -> String {
         try YamiboHTMLPageInspector.ensureReadable(html)
 
-        if parseMessageText(from: html) != nil {
+        let body = extractCData(from: html) ?? html
+        let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
+        if parseMessageText(in: document) != nil {
             return try parseThreadActionResult(
                 from: html,
+                document: document,
                 context: L10n.string("forum.thread.poll"),
                 requiresExplicitSuccess: true
             )
@@ -111,8 +116,6 @@ enum ForumThreadPageHTMLParser {
 
         // quickforward can return the whole thread instead of a status page.
         // Only the voted poll's acknowledgement is a result message, not body text.
-        let body = extractCData(from: html) ?? html
-        let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
         for element in document.selectAll("#poll, .poll, .polls, .pcht") {
             guard ForumThreadPollParser.poll(in: element)?.status == .voted,
                   let message = HTMLTextExtractor.firstMatch(
@@ -133,7 +136,21 @@ enum ForumThreadPageHTMLParser {
 
         let body = extractCData(from: html) ?? html
         let document = try KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString)
-        let message = parseMessageText(from: html)
+        return try parseThreadActionResult(
+            from: html,
+            document: document,
+            context: context,
+            requiresExplicitSuccess: requiresExplicitSuccess
+        )
+    }
+
+    private static func parseThreadActionResult(
+        from html: String,
+        document: Document,
+        context: String,
+        requiresExplicitSuccess: Bool
+    ) throws -> String {
+        let message = parseMessageText(in: document)
             ?? document.firstText(".jump_c, .alert_info, .messagetext, .showmessage, #messagetext, .wp, body")
         guard let message else {
             throw YamiboError.parsingFailed(context: context)
@@ -162,9 +179,7 @@ enum ForumThreadPageHTMLParser {
     }
 
     /// Human-readable status/error message embedded in a Discuz response, if any.
-    private static func parseMessageText(from html: String) -> String? {
-        let body = extractCData(from: html) ?? html
-        guard let document = try? KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString) else { return nil }
+    private static func parseMessageText(in document: Document) -> String? {
         return document.firstText("#messagetext p")
             ?? document.firstText("#messagetext, .messagetext, .alert_info, .jump_c, .showmessage")
     }

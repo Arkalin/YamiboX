@@ -5,5 +5,3 @@ struct MangaSurfaceTransform: Equatable {
     var scale: CGFloat = 1
     var offset: CGSize = .zero
 }
-
-enum MangaContinuousInput: Hashable { case pan, pinch }
