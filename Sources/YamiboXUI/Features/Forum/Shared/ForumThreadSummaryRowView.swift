@@ -70,7 +70,7 @@ extension View {
     /// Long-press menu for opening one thread with a reader other than the one
     /// its board is configured for. Shared by every row that can open a thread
     /// (summary cards and pinned rows); pass `nil` where no thread is behind
-    /// the row — an announcement links to a web page, which has no reading
+    /// the row — an announcement opens a native document, which has no reading
     /// mode to choose.
     func forumThreadReaderOverrideContextMenu(
         onSelect: ((YamiboThreadReaderOverride) -> Void)?

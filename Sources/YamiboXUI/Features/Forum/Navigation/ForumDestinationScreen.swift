@@ -130,7 +130,7 @@ struct ForumDestinationScreen: View {
                 appModel: appModel
             )
             .forumNavigationBarStyle()
-        case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url):
+        case let .web(url), let .postEditor(url), let .blogEditor(url), let .actionForm(url), let .announcement(url):
             ForumURLDestinationView(url: url, navigator: navigator, appModel: appModel)
             .forumNavigationBarStyle()
         case let .webFallback(url):
@@ -274,7 +274,7 @@ private struct ForumURLDestinationView: View {
 
     private var isNativeForm: Bool {
         switch ForumRouteResolver.resolve(url: url) {
-        case .postEditor, .blogEditor, .actionForm: true
+        case .postEditor, .blogEditor, .actionForm, .announcement: true
         default: false
         }
     }

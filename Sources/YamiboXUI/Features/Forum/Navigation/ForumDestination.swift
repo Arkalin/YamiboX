@@ -25,6 +25,7 @@ enum ForumDestination: Hashable {
     case postEditor(URL)
     case blogEditor(URL)
     case actionForm(URL)
+    case announcement(URL)
 }
 
 /// How a `ForumDestinationNavigator` treats thread links.

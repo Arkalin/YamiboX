@@ -603,7 +603,7 @@ private struct ForumPinnedSectionView: View {
     }
 
     /// Only rows that actually open a thread get the reading-mode menu — an
-    /// announcement row (no `threadID`) opens a web page, so there is nothing
+    /// announcement row (no `threadID`) opens a native document, so there is nothing
     /// for a reader choice to apply to.
     private func readerOverrideTap(for item: ForumPinnedItem) -> ((YamiboThreadReaderOverride) -> Void)? {
         guard item.threadID != nil, let onReaderOverrideTap else { return nil }

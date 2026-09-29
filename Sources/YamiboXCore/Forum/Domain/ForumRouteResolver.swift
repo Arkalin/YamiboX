@@ -23,6 +23,7 @@ public enum ForumResolvedRoute: Equatable, Hashable, Sendable {
     case postEditor(URL)
     case blogEditor(URL)
     case actionForm(URL)
+    case announcement(URL)
     case web(URL)
 }
 
@@ -35,6 +36,11 @@ public enum ForumRouteResolver {
         }
         if ForumWebPagePolicy.requiresConfirmationToLoad(resolvedURL) {
             return .actionForm(resolvedURL)
+        }
+
+        if resolvedURL.path == "/forum.php",
+           URLComponents(url: resolvedURL, resolvingAgainstBaseURL: false)?.queryItems?.value(named: "mod") == "announcement" {
+            return .announcement(resolvedURL)
         }
 
         if let board = boardRoute(from: resolvedURL) {

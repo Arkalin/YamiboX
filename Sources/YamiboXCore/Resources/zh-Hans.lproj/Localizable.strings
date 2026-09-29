@@ -476,6 +476,8 @@
 "forum.board" = "版块";
 "forum.board.all" = "全部";
 "forum.board.announcement" = "公告";
+"forum.announcement.filter" = "按月份查看";
+"forum.announcement.empty" = "暂无公告";
 "forum.board.current_page" = "第 %d 页";
 "forum.board.empty" = "暂无版块内容";
 "forum.board.empty_message" = "未能载入这个版块，请稍后重试。";

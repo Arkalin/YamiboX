@@ -191,6 +191,8 @@ final class ForumDestinationNavigator {
             push(.blogEditor(url))
         case let .actionForm(url):
             push(.actionForm(url))
+        case let .announcement(url):
+            push(.announcement(url))
         case let .web(url):
             push(.web(url))
         }

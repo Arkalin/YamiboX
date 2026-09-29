@@ -54,8 +54,13 @@ struct ForumPageScreen: View {
             case .actionForm:
                 ForumActionFormView(model: model, document: document, editorRegistry: editorRegistry, onURLTap: onURLTap)
             case .document:
-                List { ForumPageStatusSections(document: document, onURLTap: onURLTap) }
-                    .refreshable { await model.refresh() }
+                if let announcements = document.announcements {
+                    ForumAnnouncementView(page: announcements, url: document.url, onURLTap: onURLTap)
+                        .refreshable { await model.refresh() }
+                } else {
+                    List { ForumPageStatusSections(document: document, onURLTap: onURLTap) }
+                        .refreshable { await model.refresh() }
+                }
             }
         } else if model.isLoading {
             ContentLoadingView(layout: .fillsPage)

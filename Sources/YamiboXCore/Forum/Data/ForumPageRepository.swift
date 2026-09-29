@@ -79,14 +79,14 @@ public actor ForumPageRepository: ForumPageLoading {
             switch ForumRouteResolver.resolve(url: response.url) {
             case .web:
                 return .webFallback(response.url)
-            case .postEditor, .blogEditor, .actionForm:
+            case .postEditor, .blogEditor, .actionForm, .announcement:
                 break
             default:
                 return .nativeRedirect(response.url)
             }
         }
         let page = try parse(response)
-        guard !page.forms.isEmpty || page.message != nil || page.file != nil || page.continuationURL != nil else {
+        guard page.announcements != nil || !page.forms.isEmpty || page.message != nil || page.file != nil || page.continuationURL != nil else {
             return .webFallback(response.url)
         }
         return .page(page)
@@ -112,6 +112,10 @@ public actor ForumPageRepository: ForumPageLoading {
             return ForumPageDocument(url: response.url, title: L10n.string("forum.native.continue"), continuationURL: continuationURL)
         }
         if let file = response.file { return ForumPageDocument(url: response.url, title: file.name, file: file) }
+        if case .announcement = ForumRouteResolver.resolve(url: response.url),
+           let page = try ForumAnnouncementParser.parse(html: response.html, url: response.url) {
+            return page
+        }
         return try LoadDiagnosticError.parsing(html: response.html, context: "ForumFormPageParser.parse") {
             try ForumFormPageParser.parse(html: response.html, url: response.url)
         }
