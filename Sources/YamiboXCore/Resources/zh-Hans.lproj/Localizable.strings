@@ -1048,7 +1048,13 @@
 "settings.offline_cache.confirm_single_message" = "将删除“%@”的离线缓存、未完成任务和失败任务。";
 "settings.offline_cache.confirm_single_title" = "确认删除离线缓存";
 "settings.offline_cache.delete_selected_format" = "删除 %d 项";
-"settings.offline_cache.empty_message" = "没有可清理的离线缓存或未完成任务。";
+"settings.offline_cache.empty_message" = "在阅读器中添加缓存后，可在这里查看占用空间并管理已下载内容。";
+"settings.offline_cache.storage_used" = "缓存占用";
+"settings.offline_cache.selected_storage" = "所选缓存大小";
+"settings.offline_cache.cached_count_format" = "%d 项已缓存";
+"settings.offline_cache.contents" = "缓存条目";
+"settings.offline_cache.delete_cache" = "删除缓存";
+"settings.offline_cache.delete_group" = "删除整部缓存";
 "settings.offline_cache.empty_title" = "暂无离线缓存";
 "settings.offline_cache.entry_count_format" = "%d 项";
 "settings.offline_cache.failed_count_format" = "%d 个失败";

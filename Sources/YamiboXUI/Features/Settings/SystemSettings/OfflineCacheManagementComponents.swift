@@ -21,9 +21,25 @@ struct OfflineCacheManagementGroupScreen: View {
                     }
                 }
                 if let row {
-                    ForEach(row.entries) { entry in
-                        OfflineCacheManagementEntryRowView(entry: entry) {
-                            viewModel.requestOfflineCacheEntryDeletion(id: entry.id)
+                    OfflineCacheStorageSummary(rows: [row])
+                    HStack {
+                        Text(L10n.string("settings.offline_cache.contents"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button(role: .destructive) {
+                            viewModel.requestOfflineCacheGroupDeletion(id: row.id)
+                        } label: {
+                            Label(L10n.string("settings.offline_cache.delete_group"), systemImage: "trash")
+                                .font(.subheadline)
+                                .frame(minHeight: 44)
+                        }
+                    }
+                    LazyVStack(spacing: 12) {
+                        ForEach(row.entries) { entry in
+                            OfflineCacheManagementEntryRowView(entry: entry) {
+                                viewModel.requestOfflineCacheEntryDeletion(id: entry.id)
+                            }
                         }
                     }
                 } else if viewModel.loadFailure == nil {
@@ -31,6 +47,7 @@ struct OfflineCacheManagementGroupScreen: View {
                 }
             }
             .padding(16)
+            .disabled(viewModel.activeAction == .clearingOfflineCache)
         }
         .background(YamiboColors.SystemSurface.groupedBackground)
         .navigationTitle(row?.title ?? L10n.string("settings.offline_cache.title"))
@@ -46,8 +63,10 @@ struct OfflineCacheManagementGroupScreen: View {
             dismissIfGroupMissing()
         }
         .overlay {
-            if viewModel.activeAction == .loading || viewModel.activeAction == .clearingOfflineCache {
-                ProgressView()
+            if (viewModel.activeAction == .loading && row == nil) || viewModel.activeAction == .clearingOfflineCache {
+                ProgressView(L10n.string(viewModel.activeAction == .clearingOfflineCache ? "common.deleting" : "common.loading"))
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
         .offlineCacheManagementAlert(viewModel: viewModel)
@@ -68,22 +87,31 @@ struct OfflineCacheManagementGroupRowView: View {
     let select: () -> Void
     let delete: () -> Void
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill")
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: isSelecting ? (isSelected ? "checkmark.circle.fill" : "circle")
+                : (row.readerKind == .manga ? "photo.on.rectangle.angled" : "text.book.closed.fill"))
+                .font(.title3)
                 .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
-                .frame(width: 24)
+                .frame(width: 40, height: 48)
+                .background(dimming.emphasis(appTheme.controlAccent).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(row.title)
+                    .font(.headline)
                     .foregroundStyle(dimming.titleColor)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
-                Text(row.summaryText)
+                Text(row.byteCountLabel)
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .foregroundStyle(dimming.emphasis(appTheme.controlAccent))
+
+                OfflineCacheStatusSummary(cachedCount: row.cachedCount, pendingCount: row.pendingCount, failedCount: row.failedCount)
                     .font(.caption)
                     .foregroundStyle(dimming.secondaryColor)
-                    .lineLimit(2)
             }
 
             Spacer(minLength: 8)
@@ -92,11 +120,18 @@ struct OfflineCacheManagementGroupRowView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .frame(width: 10)
+                .padding(.top, 6)
                 .opacity(isSelecting ? 0 : 1)
                 .accessibilityHidden(isSelecting)
         }
         .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected, onTap: rowAction)
-        .deleteSwipeAction(perform: delete)
+        .contextMenu {
+            if !isSelecting {
+                Button(role: .destructive, action: delete) {
+                    Label(L10n.string("settings.offline_cache.delete_cache"), systemImage: "trash")
+                }
+            }
+        }
     }
 
     private var dimming: SelectionRowDimming {
@@ -116,35 +151,64 @@ private struct OfflineCacheManagementEntryRowView: View {
     let entry: OfflineCacheManagementEntry
     let delete: () -> Void
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.text.image")
-                .foregroundStyle(entry.state == .failed ? Color.red : appTheme.controlAccent)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: entry.id.readerKind == .manga ? "photo" : "doc.text")
+                    .foregroundStyle(appTheme.controlAccent)
+                    .accessibilityHidden(true)
                 Text(entry.title)
+                    .font(.headline)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
-
-                Text(entrySummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
-
-            Spacer(minLength: 8)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Label(stateTitle, systemImage: stateImage)
+                        .foregroundStyle(stateColor)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 0)
+                    Text(byteCountLabel)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(stateTitle, systemImage: stateImage).foregroundStyle(stateColor)
+                    Text(byteCountLabel).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+            .font(.subheadline)
+            Button(role: .destructive, action: delete) {
+                Label(L10n.string("settings.offline_cache.delete_cache"), systemImage: "trash")
+                    .font(.caption.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
         }
         .cardRowChrome()
-        .deleteSwipeAction(perform: delete)
     }
 
-    private var entrySummary: String {
-        [
-            stateTitle,
-            byteCountLabel
-        ].joined(separator: " · ")
+    private var stateColor: Color {
+        switch entry.state {
+        case .failed: .red
+        case .queued, .paused: .secondary
+        case .cached, .running: appTheme.controlAccent
+        }
+    }
+
+    private var stateImage: String {
+        switch entry.state {
+        case .cached: "checkmark.circle.fill"
+        case .queued: "clock"
+        case .running: "arrow.down.circle"
+        case .paused: "pause.circle"
+        case .failed: "exclamationmark.circle"
+        }
     }
 
     private var byteCountLabel: String {
@@ -209,10 +273,13 @@ enum OfflineCacheManagementSelectionActions {
 
 struct OfflineCacheManagementEmptyState: View {
     var body: some View {
-        GroupedEmptyStateCard(
-            title: L10n.string("settings.offline_cache.empty_title"),
-            message: L10n.string("settings.offline_cache.empty_message")
-        )
+        ContentUnavailableView {
+            Label(L10n.string("settings.offline_cache.empty_title"), systemImage: "internaldrive")
+        } description: {
+            Text(L10n.string("settings.offline_cache.empty_message"))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 }
 

@@ -13,10 +13,16 @@ struct OfflineCacheManagementView: View {
                         Task { await viewModel.refreshOfflineCacheManagement() }
                     }
                 }
-                if viewModel.offlineCacheManagementIsEmpty && viewModel.loadFailure == nil {
+                if viewModel.offlineCacheManagementIsEmpty && viewModel.loadFailure == nil && viewModel.activeAction != .loading {
                     OfflineCacheManagementEmptyState()
-                } else {
-                    LazyVStack(spacing: 10) {
+                } else if !viewModel.offlineCacheManagementIsEmpty {
+                    OfflineCacheStorageSummary(
+                        rows: viewModel.isOfflineCacheManagementSelectionMode
+                            ? viewModel.offlineCacheManagementRows.filter { viewModel.selectedOfflineCacheGroupIDs.contains($0.id) }
+                            : viewModel.offlineCacheManagementRows,
+                        isSelecting: viewModel.isOfflineCacheManagementSelectionMode
+                    )
+                    LazyVStack(spacing: 12) {
                         ForEach(viewModel.offlineCacheManagementRows) { row in
                             OfflineCacheManagementGroupRowView(
                                 row: row,
@@ -38,6 +44,7 @@ struct OfflineCacheManagementView: View {
                 }
             }
             .padding(16)
+            .disabled(viewModel.activeAction == .clearingOfflineCache)
         }
         .background(YamiboColors.SystemSurface.groupedBackground)
         .navigationTitle(
@@ -104,7 +111,8 @@ struct OfflineCacheManagementView: View {
             }
         }
         .overlay {
-            if viewModel.activeAction == .loading || viewModel.activeAction == .clearingOfflineCache {
+            if (viewModel.activeAction == .loading && viewModel.offlineCacheManagementIsEmpty)
+                || viewModel.activeAction == .clearingOfflineCache {
                 ProgressView(
                     viewModel.activeAction == .clearingOfflineCache
                         ? L10n.string("common.deleting")
