@@ -58,6 +58,7 @@ public final class ForumBrowserModel: ObservableObject {
 
 public struct ForumBrowserView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.openURL) private var openURL
     @StateObject private var model: ForumBrowserModel
     private let sessionStore: SessionStore
     private let appModel: YamiboAppModel
@@ -102,12 +103,27 @@ public struct ForumBrowserView: View {
                     .frame(width: max(0, min(320, geometry.size.width - 176)))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: model.reload) {
-                        Image(systemName: "arrow.clockwise")
+                    Menu {
+                        Button(action: model.reload) {
+                            Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
+                        }
+                        .accessibilityIdentifier("forum-browser-refresh")
+
+                        Button {
+                            if let url = model.currentURL {
+                                openURL(url)
+                            }
+                        } label: {
+                            Label(L10n.string("forum.browser.open_in_browser"), systemImage: "safari")
+                        }
+                        .disabled(model.currentURL == nil)
+                        .accessibilityIdentifier("forum-browser-open-in-browser")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel(L10n.string("common.refresh"))
-                    .help(L10n.string("common.refresh"))
-                    .accessibilityIdentifier("forum-browser-refresh")
+                    .accessibilityLabel(L10n.string("common.more"))
+                    .help(L10n.string("common.more"))
+                    .accessibilityIdentifier("forum-browser-more")
                 }
             }
         }
