@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import YamiboXCore
 
 struct NovelReaderFontLibraryView: View {
@@ -9,7 +8,7 @@ struct NovelReaderFontLibraryView: View {
     let onSelect: (ReaderFontSelection) -> Void
     @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .body) private var sampleSize = 20.0
-    @State private var showsImporter = false
+    @State private var pickerRequest: ReaderFontDocumentPicker.Request?
     @State private var report: String?
     @State private var pendingDeletion: String?
     @State private var protectionID = UUID()
@@ -30,7 +29,10 @@ struct NovelReaderFontLibraryView: View {
                     }
                 }
                 Section {
-                    Button { showsImporter = true } label: {
+                    Button {
+                        let request = ReaderFontDocumentPicker.Request()
+                        pickerRequest = request
+                    } label: {
                         Label(L10n.string("reader.font.import"), systemImage: "square.and.arrow.down")
                     }
                     .disabled(library.isWorking)
@@ -66,14 +68,13 @@ struct NovelReaderFontLibraryView: View {
             .onDisappear {
                 library.protect(nil, owner: protectionID)
             }
-            .fileImporter(isPresented: $showsImporter, allowedContentTypes: ["ttf", "otf", "ttc", "otc"].compactMap {
-                UTType(filenameExtension: $0)
-            }, allowsMultipleSelection: true) { result in
-                showsImporter = false
-                switch result {
-                case let .success(urls):
-                    Task { report = await library.importFiles(urls).joined(separator: "\n") }
-                case let .failure(error): report = error.localizedDescription
+            .sheet(item: $pickerRequest) { _ in
+                ReaderFontDocumentPicker { urls in
+                    pickerRequest = nil
+                    guard let urls else { return }
+                    Task {
+                        report = await library.importFiles(urls).joined(separator: "\n")
+                    }
                 }
             }
             .alert(L10n.string("reader.font.library"), isPresented: Binding(
