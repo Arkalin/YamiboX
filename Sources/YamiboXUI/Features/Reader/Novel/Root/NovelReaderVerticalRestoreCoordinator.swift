@@ -220,7 +220,7 @@ final class NovelReaderVerticalRestoreCoordinator {
 
     func updateVerticalViewportPosition(model: NovelReaderViewModel) {
         guard model.settings.readingMode == .vertical else { return }
-        guard verticalRestoreController.canSampleViewport(now: CACurrentMediaTime()) else {
+        guard canSampleVerticalViewport() else {
             return
         }
 
@@ -317,7 +317,7 @@ final class NovelReaderVerticalRestoreCoordinator {
     ) {
         guard model.settings.readingMode == .vertical else { return }
         tryAdvanceVerticalRestore(model: model, scrollCoordinator: scrollCoordinator)
-        guard verticalRestoreController.canSampleViewport(now: CACurrentMediaTime()) else {
+        guard canSampleVerticalViewport() else {
             return
         }
         updateVerticalViewportPosition(model: model)
@@ -334,7 +334,18 @@ final class NovelReaderVerticalRestoreCoordinator {
     }
 
     private func refreshVerticalRestorePhase(now: CFTimeInterval = CACurrentMediaTime()) {
-        verticalRestoreController.refresh(now: now)
+        // Mutating an @Observable value in place notifies even when refresh
+        // leaves it unchanged. Scroll ticks must not invalidate the reader's
+        // loading overlay unless the restore state actually transitions.
+        var refreshedController = verticalRestoreController
+        refreshedController.refresh(now: now)
+        guard refreshedController != verticalRestoreController else { return }
+        verticalRestoreController = refreshedController
+    }
+
+    private func canSampleVerticalViewport() -> Bool {
+        refreshVerticalRestorePhase()
+        return !verticalRestoreController.shouldSuppressViewportSampling
     }
 
     func cancelVerticalRestoreForUserScroll() {

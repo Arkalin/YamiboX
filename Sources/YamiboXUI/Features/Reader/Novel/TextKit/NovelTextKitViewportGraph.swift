@@ -322,6 +322,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             }
             if let documentRange {
                 var shouldContinue = true
+                var lineClipRects: [CGRect] = []
                 for lineFragment in fragment.textLineFragments {
                     let lineStart = fragmentStart + lineFragment.characterRange.location
                     let lineEnd = lineStart + lineFragment.characterRange.length
@@ -343,8 +344,14 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
                         width: max(lineBounds.width, 1),
                         height: max(lineBounds.height, 1)
                     ).insetBy(dx: 0, dy: -1)
+                    lineClipRects.append(lineRect)
+                }
+                if !lineClipRects.isEmpty {
+                    // A layout fragment draws its entire paragraph. Drawing it
+                    // once per visible line repeats that work during scrolling;
+                    // clip to the same line rectangles in a single draw instead.
                     context.saveGState()
-                    context.clip(to: lineRect)
+                    context.clip(to: lineClipRects)
                     fragment.draw(
                         at: fragment.layoutFragmentFrame.origin,
                         in: context
