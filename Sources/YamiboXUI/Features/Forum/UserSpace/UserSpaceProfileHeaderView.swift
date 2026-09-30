@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct UserSpaceProfileHeaderView: View {
     @Environment(\.forumTheme) private var theme
+    @State private var avatarBrowserItem: ImageBrowserItem?
     let profile: UserSpaceProfile
     let isSelf: Bool
     let onSectionTap: (UserSpaceSection, UserSpaceSubPage) -> Void
@@ -31,9 +32,24 @@ struct UserSpaceProfileHeaderView: View {
 
                 VStack(spacing: 10) {
                     YamiboRemoteImage(source: profile.avatarURL.map { YamiboImageSource(url: $0) }) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
+                        Button {
+                            guard let url = profile.avatarURL else { return }
+                            avatarBrowserItem = ImageBrowserItem(
+                                id: url.absoluteString,
+                                source: YamiboImageSource(url: url),
+                                title: profile.username
+                            )
+                        } label: {
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 64, height: 64)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(profile.username)
+                        .accessibilityHint(L10n.string("reader.comment_view_image"))
+                        .accessibilityIdentifier("user-space-avatar")
                     } placeholder: {
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
@@ -68,6 +84,11 @@ struct UserSpaceProfileHeaderView: View {
             }
 
             UserSpaceInfoTableView(rows: profile.infoRows, onWebTap: onWebTap)
+        }
+        .fullScreenCover(item: $avatarBrowserItem) { item in
+            ImageBrowserView(items: [item], initialItemID: item.id, mode: .single) {
+                avatarBrowserItem = nil
+            }
         }
     }
 }
