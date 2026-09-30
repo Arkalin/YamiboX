@@ -89,7 +89,9 @@ struct MangaPagedImageSurfaceLayout: Equatable {
 
         let scale = switch fitMode {
         case .fitWidth:
-            containerSize.width / imageSize.width
+            // Width is an upper bound, not permission to hide the top/bottom.
+            // In particular, spread pages cannot pan independently at rest.
+            min(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
         case .fitHeight:
             containerSize.height / imageSize.height
         }
