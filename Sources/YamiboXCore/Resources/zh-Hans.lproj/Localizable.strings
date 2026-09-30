@@ -124,6 +124,7 @@
 "common.save" = "保存";
 "settings.chapter_comments.ratings" = "评分理由";
 "settings.chapter_comments.title" = "章节评论屏蔽";
+"reader.chapter_comments_filter_settings" = "屏蔽设置";
 "settings.chapter_comments.discussions" = "点评与回复";
 "settings.chapter_comments.rule_count" = "%d 条规则";
 "settings.chapter_comments.disabled" = "已关闭";

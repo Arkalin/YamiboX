@@ -219,6 +219,7 @@ struct ReaderChapterCommentsSheet: View {
     @State private var replyRefreshAnchor: String?
     @State private var conversationRefreshAnchor: String?
     @State private var filterModel: ChapterCommentFilterModel
+    @State private var showsFilterSettings = false
 
     init(
         target: ReaderChapterCommentTarget?,
@@ -287,24 +288,22 @@ struct ReaderChapterCommentsSheet: View {
                     )
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    ReaderToolbarIconButton(
-                        systemName: "arrow.clockwise",
-                        title: L10n.string("common.refresh"),
-                        action: refreshCurrent
-                    )
-                    .disabled(target == nil)
+                    moreMenu
                 }
             }
             .navigationDestination(for: ReaderChapterCommentRoute.self) { route in
                 destination(route)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            ReaderToolbarIconButton(systemName: "arrow.clockwise", title: L10n.string("common.refresh"), action: refreshCurrent)
+                            moreMenu
                         }
                     }
             }
         }
         .transientMessage(feedback) { feedback = nil }
+        .sheet(isPresented: $showsFilterSettings) {
+            ChapterCommentFilterSettingsSheet(dependencies: appModel.appContext.settingsDependencies)
+        }
         .sheet(item: $composerTarget, onDismiss: composerDismissed) { composeTarget in
             let accountGeneration = appModel.accountGeneration
             ReaderChapterCommentComposerSheet(
@@ -419,6 +418,23 @@ struct ReaderChapterCommentsSheet: View {
             peripheralInput?.removeHandler(controlHandlerToken)
             controlHandlerToken = nil
         }
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(action: refreshCurrent) {
+                Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
+            }
+            .disabled(target == nil)
+            Button { showsFilterSettings = true } label: {
+                Label(L10n.string("reader.chapter_comments_filter_settings"), systemImage: "line.3.horizontal.decrease")
+            }
+        } label: {
+            Label(L10n.string("common.more"), systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
+        }
+        .accessibilityLabel(L10n.string("common.more"))
+        .accessibilityIdentifier("chapter-comments-more")
     }
 
     @ViewBuilder
