@@ -4,13 +4,20 @@ import UIKit
 
 public struct RootTabView: View {
     private let appModel: YamiboAppModel
+    private let launchScreenDeadline: ContinuousClock.Instant?
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var clipboardForumLinkPasteboardReader = ClipboardForumLinkPasteboardReader()
     @State private var appUpdateLaunchPrompter = AppUpdateLaunchPrompter()
+    @State private var hasCompletedMinimumLaunchDisplay = false
 
-    public init(appModel: YamiboAppModel, initialTab: AppTab = .forum) {
+    public init(
+        appModel: YamiboAppModel,
+        initialTab: AppTab = .forum,
+        launchScreenDeadline: ContinuousClock.Instant? = nil
+    ) {
         self.appModel = appModel
+        self.launchScreenDeadline = launchScreenDeadline
     }
 
     public var body: some View {
@@ -27,35 +34,48 @@ public struct RootTabView: View {
 
             Group {
                 if isShowingBootstrapPlaceholder {
-                    ProgressView {
-                        Text((appModel.bootstrapPhase ?? .loadingSession).startupMessage)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.horizontal, 24)
-                    .transition(.opacity)
+                    AppLaunchScreenView()
                 } else {
                     content
-                        .transition(.opacity)
                 }
             }
         }
-        // Cross-fade from the bootstrap placeholder into the tab content
-        // instead of hard-swapping frames.
-        .animation(.easeInOut(duration: 0.25), value: isShowingBootstrapPlaceholder)
         .appTheme(.theme(for: appModel.appThemePreset))
         .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
         .task {
             await appModel.bootstrapIfNeeded()
         }
+        .task(id: launchScreenDeadline) {
+            guard !hasCompletedMinimumLaunchDisplay else { return }
+            // Carry the original deadline across storage and window preparation;
+            // those stages count toward the minimum rather than adding to it.
+            let deadline = launchScreenDeadline ?? ContinuousClock.now.advanced(by: .seconds(1.7))
+            do {
+                try await ContinuousClock().sleep(until: deadline)
+                guard !Task.isCancelled else { return }
+                hasCompletedMinimumLaunchDisplay = true
+            } catch {
+                // A cancelled view task must not publish a completed launch.
+            }
+        }
         .task {
             await appUpdateLaunchPrompter.checkForUpdateIfNeeded()
         }
         .onChange(of: scenePhase, initial: true) { oldPhase, newPhase in
-            if appModel.scenePhaseDidChange(newPhase), newPhase == .active, oldPhase != newPhase {
+            if appModel.scenePhaseDidChange(newPhase), newPhase == .active, oldPhase != newPhase,
+               !isShowingBootstrapPlaceholder {
                 presentClipboardForumLinkPromptIfNeeded()
             }
         }
-        .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: !appModel.hasActiveReaderPresentation))
+        .onChange(of: isShowingBootstrapPlaceholder) { _, isShowing in
+            if !isShowing, scenePhase == .active {
+                presentClipboardForumLinkPromptIfNeeded()
+            }
+        }
+        .modifier(ClipboardForumLinkPromptAlert(
+            appModel: appModel,
+            isActive: !isShowingBootstrapPlaceholder && !appModel.hasActiveReaderPresentation
+        ))
         .readerTransitionOverlay(
             isPresented: appModel.isOpeningMangaReader,
             title: L10n.string("reader.switching_to_manga"),
@@ -86,7 +106,7 @@ public struct RootTabView: View {
     }
 
     private var isShowingBootstrapPlaceholder: Bool {
-        appModel.bootstrapState == nil
+        appModel.bootstrapState == nil || !hasCompletedMinimumLaunchDisplay
     }
 
     private var content: some View {

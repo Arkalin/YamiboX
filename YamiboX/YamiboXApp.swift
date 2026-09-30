@@ -23,28 +23,7 @@ struct YamiboXApp: App {
 
     var body: some Scene {
         WindowGroup(for: YamiboWindowRequest.self) { request in
-            Group {
-                if let windows = startup.windows {
-                    YamiboAppWindow(windows: windows, initialTab: startup.initialTab, request: request.wrappedValue)
-                } else if let failure = startup.failure {
-                    ContentUnavailableView {
-                        Label(L10n.string(startup.isStorageFailure ? "download.migration_failed" : "test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(startup.isStorageFailure ? failure : failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
-                    } actions: {
-                        if startup.isStorageFailure {
-                            Button(L10n.string("common.retry")) { startup.retryStorage() }
-                        }
-                    }
-                } else {
-                    ProgressView(L10n.string(
-                        YamiboForumEnvironment.current.requiresTestSitePreparation
-                            ? "test_forum.preparing"
-                            : "common.loading"
-                    ))
-                }
-            }
-            .task { await startup.prepare() }
+            YamiboStartupWindow(startup: startup, request: request.wrappedValue)
         }
     }
 }
@@ -368,84 +347,43 @@ private enum YamiboLaunchNavigationArguments {
     }
 }
 
-private struct YamiboAppWindow: View {
-    let windows: YamiboWindowCoordinator
-    let initialTab: AppTab
+private struct YamiboStartupWindow: View {
+    let startup: YamiboAppStartup
     let request: YamiboWindowRequest?
-    @State private var showsLaunchAnimation = true
+    @State private var launchScreenDeadline: ContinuousClock.Instant?
 
     var body: some View {
-        ZStack {
-            YamiboWindowRootView(coordinator: windows, initialTab: initialTab, request: request)
-            if showsLaunchAnimation {
-                LaunchAnimationView { showsLaunchAnimation = false }
-                    .transition(.opacity)
-                    .zIndex(1)
-            }
-        }
-    }
-}
-
-private struct LaunchAnimationView: View {
-    let onCompletion: () -> Void
-
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var isPresented = false
-    @State private var isFinishing = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                backgroundColor
-                    .ignoresSafeArea()
-
-                HStack(spacing: 18) {
-                    Image("LaunchIcon")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: iconSize(for: proxy.size), height: iconSize(for: proxy.size))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                    Text(L10n.string("app.name"))
-                        .font(.system(size: titleSize(for: proxy.size), weight: .medium, design: .rounded))
-                        .foregroundStyle(titleColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+        Group {
+            if let windows = startup.windows {
+                YamiboWindowRootView(
+                    coordinator: windows,
+                    initialTab: startup.initialTab,
+                    request: request,
+                    launchScreenDeadline: launchScreenDeadline
+                )
+            } else if let failure = startup.failure {
+                ContentUnavailableView {
+                    Label(L10n.string(startup.isStorageFailure ? "download.migration_failed" : "test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(startup.isStorageFailure ? failure : failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
+                } actions: {
+                    if startup.isStorageFailure {
+                        Button(L10n.string("common.retry")) {
+                            launchScreenDeadline = ContinuousClock.now.advanced(by: .seconds(1.7))
+                            startup.retryStorage()
+                        }
+                    }
                 }
-                .frame(maxWidth: proxy.size.width * 0.78)
-                .position(x: proxy.size.width / 2, y: proxy.size.height * 0.82)
-                .scaleEffect(isPresented ? 1 : 0.94)
-                .offset(y: isPresented ? 0 : 18)
-                .opacity(isFinishing ? 0 : (isPresented ? 1 : 0))
-                .animation(.spring(response: 0.72, dampingFraction: 0.86), value: isPresented)
-                .animation(.easeOut(duration: 0.35), value: isFinishing)
+            } else {
+                AppLaunchScreenView()
             }
         }
-        .task {
-            isPresented = true
-
-            try? await Task.sleep(for: .seconds(1.35))
-            isFinishing = true
-
-            try? await Task.sleep(for: .seconds(0.35))
-            onCompletion()
+        .onAppear {
+            if launchScreenDeadline == nil {
+                launchScreenDeadline = ContinuousClock.now.advanced(by: .seconds(1.7))
+            }
         }
-    }
-
-    private func iconSize(for size: CGSize) -> CGFloat {
-        min(max(size.width * 0.145, 46), 64)
-    }
-
-    private func titleSize(for size: CGSize) -> CGFloat {
-        min(max(size.width * 0.082, 26), 38)
-    }
-
-    private var backgroundColor: Color {
-        colorScheme == .dark ? .black : .white
-    }
-
-    private var titleColor: Color {
-        colorScheme == .dark ? .white : .black
+        .task { await startup.prepare() }
     }
 }
 
