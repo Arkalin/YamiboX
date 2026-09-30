@@ -75,6 +75,10 @@ public actor ForumPageRepository: ForumPageLoading {
 
     private func classifyGET(_ response: ForumPageResponse) throws -> ForumPageLoadResult {
         if ForumWebPagePolicy.isLoginPage(response.url) { throw YamiboError.notAuthenticated }
+        if response.file == nil, response.continuationURL == nil,
+           let desktopURL = try ForumFormPageParser.desktopFallbackURL(html: response.html, url: response.url) {
+            return .webFallback(desktopURL)
+        }
         if response.file == nil, response.continuationURL == nil {
             switch ForumRouteResolver.resolve(url: response.url) {
             case .web:

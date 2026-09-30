@@ -13,7 +13,13 @@ public final class ForumBrowserModel: ObservableObject {
     private var suppressesNativeRouting: Bool
 
     public init(initialURL: URL, nativeFallback: Bool = false, onNativeNavigation: @escaping @MainActor (URL) -> Void = { _ in }) {
-        self.currentURL = initialURL
+        // Pages without a native destination use the complete desktop template
+        // immediately, rather than Discuz's mobile-template warning screen.
+        if case .web = ForumRouteResolver.resolve(url: initialURL) {
+            self.currentURL = ForumWebPagePolicy.desktopURL(initialURL)
+        } else {
+            self.currentURL = initialURL
+        }
         self.onNativeNavigation = onNativeNavigation
         self.suppressesNativeRouting = nativeFallback
     }

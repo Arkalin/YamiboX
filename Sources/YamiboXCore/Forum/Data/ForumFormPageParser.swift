@@ -2,6 +2,26 @@ import Foundation
 
 /// Extracts native forms and explicit status messages, never general page content.
 enum ForumFormPageParser {
+    static func desktopFallbackURL(html: String, url: URL) throws -> URL? {
+        let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
+        let document = try KannaSoup.parse(payload, baseURL: url.absoluteString)
+        guard let message = document.selectFirst("#messagetext, .jump_c, .showmessage"),
+              ["无手机页面", "無手機頁面", "无手机模板", "無手機模板"].contains(where: message.text().contains),
+              ["电脑版", "電腦版"].contains(where: message.text().contains) else { return nil }
+
+        // Only follow the site's desktop continuation, never its back link or
+        // an arbitrary status-message redirect. Preserve the destination query.
+        let destination = message.select("a[href]").array().compactMap { link -> URL? in
+            guard let target = resolvedURL(link.attr("href"), baseURL: url),
+                  ForumWebPagePolicy.requiresForumHandling(target) else { return nil }
+            let items = URLComponents(url: target, resolvingAgainstBaseURL: true)?.queryItems ?? []
+            return items.contains { ($0.name == "mobile" && $0.value == "no") || ($0.name == "forcemobile" && $0.value == "1") } ? target : nil
+        }.first ?? url
+        let desktopURL = ForumWebPagePolicy.desktopURL(destination)
+        guard !ForumWebPagePolicy.requiresConfirmationToLoad(desktopURL) else { return nil }
+        return desktopURL
+    }
+
     static func parse(html: String, url: URL) throws -> ForumPageDocument {
         let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
         let document = try KannaSoup.parse(payload, baseURL: url.absoluteString)
