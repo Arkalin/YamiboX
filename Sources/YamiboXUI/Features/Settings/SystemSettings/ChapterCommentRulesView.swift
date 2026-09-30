@@ -2,6 +2,60 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
+struct ChapterCommentFilterSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var viewModel: SettingsReadingViewModel
+    @State private var isLoaded = false
+
+    init(dependencies: SettingsDependencies) {
+        _viewModel = State(initialValue: SettingsReadingViewModel(
+            dependencies: dependencies, activity: SystemSettingsActivity()
+        ))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                ForEach(ChapterCommentFilterScope.allCases, id: \.self) { scope in
+                    NavigationLink {
+                        ChapterCommentRulesView(viewModel: viewModel, scope: scope)
+                    } label: {
+                        LabeledContent(scope.title) {
+                            Text(viewModel.chapterComments[scope].isEnabled
+                                 ? L10n.string("settings.chapter_comments.rule_count", viewModel.chapterComments[scope].rules.count)
+                                 : L10n.string("settings.chapter_comments.disabled"))
+                        }
+                    }
+                    .accessibilityIdentifier("chapter-comment-rules-\(scope.rawValue)")
+                }
+            }
+            .disabled(!isLoaded || viewModel.isBusy)
+            .navigationTitle(L10n.string("reader.chapter_comments_filter_settings"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(L10n.string("common.done")) { dismiss() }
+                }
+            }
+            .task {
+                viewModel.applyLoadedSettings(await viewModel.settingsStore.load())
+                isLoaded = true
+            }
+        }
+        .failureAlert(
+            L10n.string("common.operation_failed"),
+            message: viewModel.errorMessage,
+            details: viewModel.errorDetails,
+            isPresented: .presentation(
+                isPresented: { viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
+                clearOnDismiss: { viewModel.errorMessage = nil }
+            )
+        ) {
+            Button(L10n.string("common.ok")) { viewModel.errorMessage = nil }
+        }
+    }
+}
+
 struct ChapterCommentRulesView: View {
     let viewModel: SettingsReadingViewModel
     let scope: ChapterCommentFilterScope
