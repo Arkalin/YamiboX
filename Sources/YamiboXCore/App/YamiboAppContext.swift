@@ -99,6 +99,8 @@ public final class YamiboAppContext: Sendable {
         wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
         httpCache: URLCache = .shared
     ) {
+        // Recover the diagnostic ring and retire old share snapshots off the UI thread.
+        Task { _ = try? await NetworkLogStore.shared.usageBytes() }
         let queueExecutors = DownloadQueueExecutorBox()
         self.downloadQueueExecutorBox = queueExecutors
         nonisolated(unsafe) let profileDefaults = uiDefaults
@@ -254,6 +256,7 @@ public final class YamiboAppContext: Sendable {
                 .init("likes") { [store = self.likeStore] in try await store.clearAll() },
                 .init("likeImages") { [store = self.likeImageStore] in try await store.deleteAll() },
                 .init("bookmarks") { [store = self.bookmarkStore] in try await store.clearAll() },
+                .init("networkLogs") { try await NetworkLogStore.shared.clear() },
             ]
         )
     }

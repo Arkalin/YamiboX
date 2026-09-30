@@ -24,7 +24,7 @@ struct WebDAVClient: Sendable {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         applyHeaders(to: &request, configuration: config)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await NetworkLoggedTransport.data(for: request, using: session, source: .webDAV)
         let statusCode = try statusCode(from: response)
         guard statusCode != 404 else { throw WebDAVSyncError.notFound }
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
@@ -62,7 +62,7 @@ struct WebDAVClient: Sendable {
         }
         applyHeaders(to: &request, configuration: config)
 
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await NetworkLoggedTransport.data(for: request, using: session, source: .webDAV)
         let statusCode = try statusCode(from: response)
         guard statusCode != 412 else { throw WebDAVSyncError.writeConflict }
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
@@ -126,7 +126,7 @@ struct WebDAVClient: Sendable {
         var request = YamiboNetworkConfiguration.makeRequest(url: config.fileURL)
         request.httpMethod = "DELETE"
         applyHeaders(to: &request, configuration: config)
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await NetworkLoggedTransport.data(for: request, using: session, source: .webDAV)
         let status = try statusCode(from: response)
         guard status == 404 || 200 ..< 300 ~= status else { throw WebDAVSyncError.invalidResponse(status) }
     }
@@ -136,7 +136,7 @@ struct WebDAVClient: Sendable {
         request.httpMethod = "MKCOL"
         applyHeaders(to: &request, configuration: configuration)
 
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await NetworkLoggedTransport.data(for: request, using: session, source: .webDAV)
         let statusCode = try statusCode(from: response)
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
         guard 200 ..< 300 ~= statusCode || statusCode == 405 else {

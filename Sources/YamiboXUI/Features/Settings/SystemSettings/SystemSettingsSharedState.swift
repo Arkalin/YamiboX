@@ -124,9 +124,11 @@ final class SettingsStorageUsage {
     private(set) var otherCacheBytes: Int?
     private(set) var readingProgressBytes: Int?
     private(set) var browsingHistoryBytes: Int?
+    private(set) var networkLogBytes: Int?
 
     private let dependencies: SettingsDependencies
     private var refreshGeneration = 0
+    private var networkLogRefreshGeneration = 0
     private var hasLoadedAdditionalUsage = false
 
     init(dependencies: SettingsDependencies) {
@@ -153,6 +155,7 @@ final class SettingsStorageUsage {
     var otherCacheLabel: String { additionalUsageLabel(for: otherCacheBytes) }
     var readingProgressLabel: String { additionalUsageLabel(for: readingProgressBytes) }
     var browsingHistoryLabel: String { additionalUsageLabel(for: browsingHistoryBytes) }
+    var networkLogLabel: String { additionalUsageLabel(for: networkLogBytes) }
 
     var summary: SettingsStorageSummary {
         var categories: [SettingsStorageCategoryUsage] = [
@@ -165,6 +168,7 @@ final class SettingsStorageUsage {
         categories.append(.init(category: .history, bytes: browsingHistoryBytes))
         categories.append(.init(category: .directories, bytes: mangaDirectoryCacheBytes))
         categories.append(.init(category: .downloads, bytes: downloadBytes))
+        categories.append(.init(category: .networkLogs, bytes: networkLogBytes))
         return SettingsStorageSummary(categories: categories, hasLoaded: hasLoadedAdditionalUsage)
     }
 
@@ -203,6 +207,32 @@ final class SettingsStorageUsage {
             browsingHistoryBytes = historyBytes
             hasLoadedAdditionalUsage = true
         }
+        await refreshNetworkLogUsage()
+    }
+
+    func observeNetworkLogUsage() async {
+        let changes = await dependencies.networkLogStore.changes()
+        let clock = ContinuousClock()
+        var lastRefresh: ContinuousClock.Instant?
+        for await _ in changes {
+            guard !Task.isCancelled else { return }
+            if let lastRefresh {
+                do {
+                    try await clock.sleep(until: lastRefresh.advanced(by: .milliseconds(250)))
+                } catch { return }
+            }
+            guard !Task.isCancelled else { return }
+            lastRefresh = clock.now
+            await refreshNetworkLogUsage()
+        }
+    }
+
+    private func refreshNetworkLogUsage() async {
+        networkLogRefreshGeneration += 1
+        let generation = networkLogRefreshGeneration
+        let bytes = try? await dependencies.networkLogStore.usageBytes()
+        guard generation == networkLogRefreshGeneration, !Task.isCancelled else { return }
+        networkLogBytes = bytes.map { Int(clamping: $0) }
     }
 
     /// Application reset zeroes the counters directly instead of re-reading
@@ -210,6 +240,7 @@ final class SettingsStorageUsage {
     /// against it for the same answer.
     func resetToZero() {
         refreshGeneration += 1
+        networkLogRefreshGeneration += 1
         webReaderCacheBytes = 0
         contentCoverCacheBytes = 0
         mangaDirectoryCacheBytes = 0
@@ -218,6 +249,7 @@ final class SettingsStorageUsage {
         otherCacheBytes = 0
         readingProgressBytes = 0
         browsingHistoryBytes = 0
+        networkLogBytes = 0
         hasLoadedAdditionalUsage = true
     }
 

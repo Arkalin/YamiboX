@@ -45,6 +45,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     private var isChangingAccount = false
     private weak var hiddenContainer: UIView?
     private weak var visibleContainer: UIView?
+    private let navigationLogs = WebNavigationLogCapture(source: .webVerification)
 
     public private(set) var presentation: Presentation?
     public let webView: WKWebView
@@ -156,12 +157,48 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        navigationLogs.finish(navigation)
         // Some challenges do not mutate the DOM until after a redirect. Reading
         // the store here complements the direct store observer without using it
         // as the only persistence signal.
         cookieSyncTask?.cancel()
         cookieSyncTask = Task { @MainActor [weak self] in
             await self?.synchronizeCookieSnapshot()
+        }
+    }
+
+    public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        navigationLogs.start(navigation, webView: webView)
+    }
+
+    public func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        navigationLogs.redirect(navigation, webView: webView)
+    }
+
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        navigationLogs.finish(navigation, error: error)
+    }
+
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        navigationLogs.finish(navigation, error: error)
+    }
+
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        navigationLogs.processTerminated()
+    }
+
+    public func webView(
+        _ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+    ) {
+        navigationLogs.receive(navigationResponse)
+        // Match WebKit's default response policy, which applied before this
+        // observation callback was installed.
+        if navigationResponse.canShowMIMEType {
+            decisionHandler(.allow)
+        } else {
+            navigationLogs.cancel(navigationResponse)
+            decisionHandler(.cancel)
         }
     }
 
@@ -178,6 +215,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
                 self?.dismissPresentation()
             }
         } else {
+            navigationLogs.allow(navigationAction)
             decisionHandler(.allow)
         }
     }
@@ -421,6 +459,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
         preparationTask = nil
         restorationTask = nil
         webPreparationTasks.removeAll()
+        navigationLogs.finishAll(error: CancellationError())
         webView.stopLoading()
         finishFlight(with: CancellationError(), restorePreheatCookie: false)
         presentation = nil
@@ -428,6 +467,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     func finishAccountChange(_ session: SessionState) async {
+        navigationLogs.finishAll(error: CancellationError())
         webView.stopLoading()
         let cookies = await cookieStore.allCookies()
         for cookie in cookies where YamiboDomain.containsYamiboDomain(cookie.domain) {

@@ -137,10 +137,10 @@ struct YamiboClient: Sendable {
     ) async throws -> (Data, URLResponse) {
         switch cancellationPolicy {
         case .propagateCancellation:
-            return try await session.data(for: request, delegate: delegate)
+            return try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate)
         case .completeStartedRequest:
             let requestTask = Task {
-                try await session.data(for: request, delegate: delegate)
+                try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate)
             }
             return try await requestTask.value
         }

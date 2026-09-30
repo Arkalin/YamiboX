@@ -67,6 +67,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         private var lastAuthenticationCookie: String?
         private var didObserveAuthentication = false
         private var authenticationObservationTask: Task<Void, Never>?
+        private let navigationLogs = WebNavigationLogCapture(source: .webNavigation)
 
         init(model: ForumBrowserModel, sessionStore: SessionStore) {
             self.model = model
@@ -128,7 +129,12 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            navigationLogs.start(navigation, webView: webView)
             model.sync(with: webView)
+        }
+
+        public func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+            navigationLogs.redirect(navigation, webView: webView)
         }
 
         public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -137,6 +143,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            navigationLogs.finish(navigation)
             model.sync(with: webView)
             guard let url = webView.url, isInternal(url), !isChangingAccount else { return }
             authenticationObservationTask?.cancel()
@@ -156,11 +163,17 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+            navigationLogs.finish(navigation, error: error)
             model.sync(with: webView)
         }
 
         public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+            navigationLogs.finish(navigation, error: error)
             model.sync(with: webView)
+        }
+
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            navigationLogs.processTerminated()
         }
 
         public func webView(
@@ -210,6 +223,7 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             }
 
+            navigationLogs.allow(navigationAction)
             decisionHandler(.allow)
         }
 
@@ -218,9 +232,11 @@ public struct IOSForumWebView: UIViewRepresentable {
             decidePolicyFor navigationResponse: WKNavigationResponse,
             decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
         ) {
+            navigationLogs.receive(navigationResponse)
             guard !isChangingAccount else { decisionHandler(.cancel); return }
             if let url = navigationResponse.response.url,
                model.shouldRouteNatively(url, method: mainNavigationMethod, isMainFrame: navigationResponse.isForMainFrame) {
+                navigationLogs.cancel(navigationResponse)
                 decisionHandler(.cancel)
                 routeNatively(url, webView: webView)
             } else {
@@ -391,6 +407,7 @@ public struct IOSForumWebView: UIViewRepresentable {
                 handoff?.cancel()
                 let authentication = coordinator.authenticationObservationTask
                 authentication?.cancel()
+                coordinator.navigationLogs.finishAll(error: CancellationError())
                 coordinator.webView?.stopLoading()
                 let observation = coordinator.sessionObservationTask
                 let sync = coordinator.sessionSyncTask

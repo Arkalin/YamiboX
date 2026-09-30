@@ -56,6 +56,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         self.dataCache = dataCache
 
         let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
+        fallbackLoader.delegate = ImageFallbackNetworkLogDelegate()
         var configuration = ImagePipeline.Configuration(dataLoader: fallbackLoader)
         configuration.dataCache = dataCache
         configuration.dataCachePolicy = .storeOriginalData
@@ -183,6 +184,7 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         // lets Nuke accumulate the partial data required for resumable
         // downloads; the task retains its delegate until it completes.
         task.delegate = StreamingDeliveryHandler(
+            logToken: NetworkLogRecorder.shared.begin(request: request, source: .image),
             didReceiveData: didReceiveData,
             completion: completion
         )
@@ -217,17 +219,21 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
     }
 
     private final class StreamingDeliveryHandler: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let logToken: NetworkLogToken
         private let didReceiveData: @Sendable (Data, URLResponse) -> Void
         private let completion: @Sendable (Error?) -> Void
         // URLSession delivers a task's delegate callbacks serially; these are
         // only touched from that serial context.
         private var validatedResponse: URLResponse?
         private var validationError: Error?
+        private var duration: TimeInterval?
 
         init(
+            logToken: NetworkLogToken,
             didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
             completion: @escaping @Sendable (Error?) -> Void
         ) {
+            self.logToken = logToken
             self.didReceiveData = didReceiveData
             self.completion = completion
         }
@@ -254,7 +260,11 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             newRequest request: URLRequest,
             completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
-            completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url))
+            let redirectedRequest = YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url)
+            if let redirectedRequest {
+                NetworkLogRecorder.shared.addRedirect(to: logToken, from: response, request: redirectedRequest)
+            }
+            completionHandler(redirectedRequest)
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -262,7 +272,20 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             didReceiveData(data, validatedResponse)
         }
 
+        func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            duration = metrics.taskInterval.duration
+        }
+
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            NetworkLogRecorder.shared.finish(
+                logToken,
+                response: task.response,
+                sentBytes: task.countOfBytesSent,
+                receivedBytes: task.countOfBytesReceived,
+                error: validationError ?? error,
+                finalURL: task.currentRequest?.url,
+                duration: duration
+            )
             if let validationError {
                 completion(validationError)
                 return
@@ -272,6 +295,77 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
                 return
             }
             completion(YamiboURLSessionImageDataLoader.mapNetworkError(error))
+        }
+    }
+}
+
+/// Nuke forwards these callbacks to its retained delegate. Observing them
+/// leaves the fallback loader's validation and delivery behavior unchanged.
+private final class ImageFallbackNetworkLogDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var tokens: [Int: NetworkLogToken] = [:]
+    private var validationErrors: [Int: Error] = [:]
+    private var intervals: [Int: DateInterval] = [:]
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        _ = token(for: task)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let error = DataLoader.validate(response: response) {
+            lock.withLock { validationErrors[dataTask.taskIdentifier] = error }
+        }
+        // Nuke ignores this observer's disposition and runs its own validator.
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        if let token = token(for: task) {
+            NetworkLogRecorder.shared.addRedirect(to: token, from: response, request: request)
+        }
+        completionHandler(request)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let token = token(for: task) else { return }
+        let (validationError, interval) = lock.withLock {
+            tokens.removeValue(forKey: task.taskIdentifier)
+            return (validationErrors.removeValue(forKey: task.taskIdentifier), intervals.removeValue(forKey: task.taskIdentifier))
+        }
+        NetworkLogRecorder.shared.finish(
+            token,
+            response: task.response,
+            sentBytes: task.countOfBytesSent,
+            receivedBytes: task.countOfBytesReceived,
+            error: validationError ?? error,
+            finalURL: task.currentRequest?.url,
+            duration: interval?.duration,
+            startedAt: interval?.start
+        )
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        lock.withLock { intervals[task.taskIdentifier] = metrics.taskInterval }
+    }
+
+    private func token(for task: URLSessionTask) -> NetworkLogToken? {
+        lock.withLock {
+            if let token = tokens[task.taskIdentifier] { return token }
+            guard let request = task.originalRequest ?? task.currentRequest else { return nil }
+            let token = NetworkLogRecorder.shared.begin(request: request, source: .image)
+            tokens[task.taskIdentifier] = token
+            return token
         }
     }
 }

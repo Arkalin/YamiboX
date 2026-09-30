@@ -20,6 +20,7 @@ struct SettingsStorageView: View {
     @State private var showingDownloadManagement = false
     @State private var downloadQueue: DownloadQueueViewModel?
     @State private var showingMangaDirectoryManagement = false
+    @State private var showingNetworkLogs = false
     @State private var pendingConfirmation: SystemSettingsConfirmation?
     @State private var syncSettings = WebDAVSyncSettings()
 
@@ -129,6 +130,17 @@ struct SettingsStorageView: View {
                     )
                 }
                 .disabled(viewModel.isBusy)
+
+                Button {
+                    showingNetworkLogs = true
+                } label: {
+                    SystemSettingsRow(
+                        title: L10n.string("settings.network_log.title"),
+                        value: viewModel.networkLogLabel,
+                        showsChevronAfterValue: true
+                    )
+                }
+                .disabled(viewModel.isBusy)
             }
 
             Section(L10n.string("settings.section.reset")) {
@@ -155,6 +167,7 @@ struct SettingsStorageView: View {
             guard scenePhase == .active else { return }
             await viewModel.refreshStorageUsage()
         }
+        .task { await viewModel.observeNetworkLogUsage() }
         .overlay(content: loadingOverlay)
         .navigationDestination(isPresented: $showingWebDAVSettings) {
             WebDAVSyncSettingsView(dependencies: dependencies.webDAVSync)
@@ -166,6 +179,9 @@ struct SettingsStorageView: View {
         }
         .navigationDestination(isPresented: $showingMangaDirectoryManagement) {
             MangaDirectoryManagementView(viewModel: mangaDirectoryManagement)
+        }
+        .navigationDestination(isPresented: $showingNetworkLogs) {
+            NetworkLogView(store: dependencies.networkLogStore)
         }
         .failureAlert(
             L10n.string("common.operation_failed"),

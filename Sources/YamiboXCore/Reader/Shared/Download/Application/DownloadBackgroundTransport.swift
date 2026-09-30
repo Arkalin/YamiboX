@@ -8,6 +8,8 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     private var sessionStorage: URLSession?
     private var invalidationContinuation: CheckedContinuation<Void, Never>?
     private var pendingDownloads: [Int: PendingDownload] = [:]
+    private var networkLogs: [Int: DownloadNetworkLog] = [:]
+    private var unstartedTaskIdentifiers: Set<Int> = []
     private var backgroundEventCompletionHandlers: [String: () -> Void] = [:]
     private let sessionStore: (any SessionStoring)?
 
@@ -73,6 +75,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                     urlRequest.setValue(refererPageURL.absoluteString, forHTTPHeaderField: "Referer")
                 }
                 let task = session.downloadTask(with: urlRequest)
+                lock.withLock { _ = unstartedTaskIdentifiers.insert(task.taskIdentifier) }
                 task.taskDescription = source.url.absoluteString
                 let admitted = taskBox.admit(task) {
                     guard !Task.isCancelled else { return false }
@@ -80,7 +83,8 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                         taskIdentifier: task.taskIdentifier,
                         task: task,
                         continuation: continuation,
-                        progress: progress
+                        progress: progress,
+                        logToken: NetworkLogRecorder.shared.begin(request: urlRequest, source: .download)
                     )
                     task.resume()
                     return true
@@ -139,6 +143,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         _ session: URLSession, downloadTask: URLSessionDownloadTask,
         didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
     ) {
+        _ = networkLog(for: downloadTask)
         let report = lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.progress }
         report?(DownloadTransferProgress(receivedBytes: totalBytesWritten, expectedBytes: totalBytesExpectedToWrite))
     }
@@ -148,6 +153,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        _ = networkLog(for: downloadTask)
         do {
             let data = try Data(contentsOf: location)
             complete(taskIdentifier: downloadTask.taskIdentifier, result: .success(data))
@@ -161,6 +167,20 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
+        if let log = networkLog(for: task) {
+            _ = lock.withLock { networkLogs.removeValue(forKey: task.taskIdentifier) }
+            NetworkLogRecorder.shared.finish(
+                log.token,
+                response: task.response,
+                sentBytes: task.countOfBytesSent,
+                receivedBytes: task.countOfBytesReceived,
+                error: error,
+                finalURL: task.currentRequest?.url,
+                duration: log.duration,
+                startedAt: log.startedAt
+            )
+        }
+        lock.withLock { _ = unstartedTaskIdentifiers.remove(task.taskIdentifier) }
         guard let error else { return }
         complete(taskIdentifier: task.taskIdentifier, result: .failure(Self.downloadError(from: error)))
     }
@@ -172,7 +192,29 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
-        completionHandler(YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url))
+        let redirectedRequest = YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url)
+        if let redirectedRequest, let log = networkLog(for: task) {
+            NetworkLogRecorder.shared.addRedirect(to: log.token, from: response, request: redirectedRequest)
+        }
+        completionHandler(redirectedRequest)
+    }
+
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let log = networkLog(for: task) else { return }
+        lock.withLock {
+            networkLogs[task.taskIdentifier]?.startedAt = metrics.taskInterval.start
+            networkLogs[task.taskIdentifier]?.duration = metrics.taskInterval.duration
+        }
+        // Background sessions follow redirects without calling the redirect
+        // delegate. Their transaction metrics are the source of actual hops;
+        // foreground sessions already recorded those callbacks above.
+        guard session.configuration.identifier != nil, metrics.redirectCount > 0 else { return }
+        for (transaction, next) in zip(metrics.transactionMetrics, metrics.transactionMetrics.dropFirst()) {
+            guard let response = transaction.response as? HTTPURLResponse,
+                  300 ..< 400 ~= response.statusCode,
+                  response.statusCode != 304 else { continue }
+            NetworkLogRecorder.shared.addRedirect(to: log.token, from: response, request: next.request)
+        }
     }
 
     private var session: URLSession {
@@ -182,6 +224,14 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             }
             let session = sessionFactory(self)
             sessionStorage = session
+            // Restored tasks have no awaiting continuation in this process,
+            // but still represent real transfers and must be logged. Create
+            // their tokens early so a subsequent clear invalidates them too.
+            session.getAllTasks { [weak self] tasks in
+                for task in tasks where task.state != .completed {
+                    _ = self?.networkLog(for: task)
+                }
+            }
             return session
         }
     }
@@ -196,10 +246,24 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         taskIdentifier: Int,
         task: URLSessionTask,
         continuation: CheckedContinuation<Data, any Error>,
-        progress: @escaping @Sendable (DownloadTransferProgress) -> Void
+        progress: @escaping @Sendable (DownloadTransferProgress) -> Void,
+        logToken: NetworkLogToken
     ) {
         lock.withLock {
             pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task, progress: progress)
+            unstartedTaskIdentifiers.remove(taskIdentifier)
+            networkLogs[taskIdentifier] = DownloadNetworkLog(token: logToken)
+        }
+    }
+
+    private func networkLog(for task: URLSessionTask) -> DownloadNetworkLog? {
+        lock.withLock {
+            guard !unstartedTaskIdentifiers.contains(task.taskIdentifier) else { return nil }
+            if let log = networkLogs[task.taskIdentifier] { return log }
+            guard let request = task.originalRequest ?? task.currentRequest else { return nil }
+            let log = DownloadNetworkLog(token: NetworkLogRecorder.shared.begin(request: request, source: .download))
+            networkLogs[task.taskIdentifier] = log
+            return log
         }
     }
 
@@ -224,6 +288,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         }
         return error
     }
+}
+
+private struct DownloadNetworkLog {
+    let token: NetworkLogToken
+    var startedAt: Date?
+    var duration: TimeInterval?
 }
 
 private struct PendingDownload {
