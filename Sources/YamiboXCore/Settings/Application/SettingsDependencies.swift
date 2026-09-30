@@ -7,6 +7,9 @@ public struct SettingsDependencies: Sendable {
     public let sessionStore: SessionStore
     public let settingsStore: SettingsStore
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
+    public let launchBackgroundImageStore: CustomBackgroundImageStore
+    public let favoriteBackgroundPersistence: CustomBackgroundPersistence
+    public let launchBackgroundPersistence: CustomBackgroundPersistence
     public let novelReaderCacheStore: NovelReaderProjectionStore
     public let mangaDirectoryStore: MangaDirectoryStore
     public let mangaReaderProjectionStore: MangaReaderProjectionStore
@@ -28,6 +31,9 @@ public struct SettingsDependencies: Sendable {
         sessionStore: SessionStore,
         settingsStore: SettingsStore,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
+        launchBackgroundImageStore: CustomBackgroundImageStore,
+        favoriteBackgroundPersistence: CustomBackgroundPersistence,
+        launchBackgroundPersistence: CustomBackgroundPersistence,
         novelReaderCacheStore: NovelReaderProjectionStore,
         mangaDirectoryStore: MangaDirectoryStore,
         mangaReaderProjectionStore: MangaReaderProjectionStore,
@@ -47,6 +53,9 @@ public struct SettingsDependencies: Sendable {
         self.sessionStore = sessionStore
         self.settingsStore = settingsStore
         self.favoriteBackgroundImageStore = favoriteBackgroundImageStore
+        self.launchBackgroundImageStore = launchBackgroundImageStore
+        self.favoriteBackgroundPersistence = favoriteBackgroundPersistence
+        self.launchBackgroundPersistence = launchBackgroundPersistence
         self.novelReaderCacheStore = novelReaderCacheStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.mangaReaderProjectionStore = mangaReaderProjectionStore

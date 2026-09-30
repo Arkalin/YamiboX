@@ -16,6 +16,21 @@ struct SettingsGeneralView: View {
             )
 
             Section {
+                CustomBackgroundSettingsRow(
+                    title: L10n.string("settings.launch_background"),
+                    settings: viewModel.launchBackground,
+                    imageStore: viewModel.dependencies.launchBackgroundImageStore,
+                    persistence: viewModel.dependencies.launchBackgroundPersistence,
+                    isBusy: viewModel.isBusy,
+                    onSaved: { viewModel.launchBackground = $0 },
+                    showsFramedPreview: true,
+                    supportsBlur: false,
+                    overlayVisibility: viewModel.launchShowsBrand,
+                    onOverlayVisibilitySaved: { viewModel.launchShowsBrand = $0 }
+                ) { data, settings, referenceSize in
+                    AppLaunchBrandView(settings: settings, imageData: data, referenceSize: referenceSize)
+                }
+
                 Button {
                     Task {
                         let settings = await viewModel.settingsStore.load()

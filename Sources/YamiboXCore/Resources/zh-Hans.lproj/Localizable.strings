@@ -201,6 +201,15 @@
 "favorite_background.change_image" = "选取图片";
 "favorite_background.load_failed" = "无法载入这张图片，请换一张";
 "favorite_background.restore_default" = "恢复默认";
+"custom_background.blur" = "高斯模糊";
+"custom_background.show_icon" = "显示图标";
+"custom_background.change_image" = "选取图片";
+"custom_background.load_failed" = "无法载入这张图片，请换一张";
+"custom_background.restore_default" = "恢复默认";
+"custom_background.custom" = "自定义";
+"custom_background.default" = "默认";
+"settings.launch_background" = "开屏背景";
+"settings.search.keywords.general.launch_background" = "开屏|启动|背景|图片";
 "favorite_store.collection_name_empty" = "合集名称不能为空";
 "favorite_store.save_manga_progress_failed" = "未能保存漫画进度";
 "favorite_store.save_reader_progress_failed" = "未能保存阅读进度";
