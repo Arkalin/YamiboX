@@ -3,7 +3,11 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-public actor FavoriteBackgroundImageStore {
+public actor CustomBackgroundImageStore {
+    public enum Scope: String, Sendable {
+        case favorites = "favorite-background"
+        case launch = "launch-background"
+    }
     public static let defaultJPEGQuality = 0.88
     public static let defaultMaximumLongEdgePixels = 4096
 
@@ -12,14 +16,16 @@ public actor FavoriteBackgroundImageStore {
 
     public init(
         fileManager: FileManager = .default,
-        baseDirectory: URL? = nil
+        baseDirectory: URL? = nil,
+        scope: Scope = .favorites
     ) {
         self.fileManager = fileManager
-        self.baseDirectory = baseDirectory
-            ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("YamiboX", isDirectory: true)
-            .appendingPathComponent("favorite-background", isDirectory: true)
-            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("favorite-background", isDirectory: true)
+        self.baseDirectory = baseDirectory ?? Self.directory(scope: scope, fileManager: fileManager)
+    }
+
+    public nonisolated static func directory(scope: Scope, rootDirectory: URL? = nil, fileManager: FileManager = .default) -> URL {
+        (rootDirectory ?? YamiboDatabase.defaultRootDirectory(fileManager: fileManager))
+            .appendingPathComponent(scope.rawValue, isDirectory: true)
     }
 
     public func loadData(imageID: String?) async -> Data? {
@@ -27,7 +33,7 @@ public actor FavoriteBackgroundImageStore {
         do {
             return try Data(contentsOf: imageURL(for: imageID))
         } catch {
-            YamiboLog.library.warning("Failed to read favorite background image data for id \(imageID, privacy: .public): \(error)")
+            YamiboLog.persistence.warning("Failed to read custom background image data for id \(imageID, privacy: .public): \(error)")
             return nil
         }
     }
@@ -60,7 +66,7 @@ public actor FavoriteBackgroundImageStore {
             do {
                 try fileManager.removeItem(at: url)
             } catch {
-                YamiboLog.library.warning("Failed to remove stale favorite background image \(url.lastPathComponent, privacy: .public): \(error)")
+                YamiboLog.persistence.warning("Failed to remove stale custom background image \(url.lastPathComponent, privacy: .public): \(error)")
             }
         }
     }
@@ -85,11 +91,11 @@ public actor FavoriteBackgroundImageStore {
     }
 }
 
-public enum FavoriteBackgroundImageProcessor {
+public enum CustomBackgroundImageProcessor {
     public static func normalizedJPEGData(
         from sourceData: Data,
-        maximumLongEdgePixels: Int = FavoriteBackgroundImageStore.defaultMaximumLongEdgePixels,
-        compressionQuality: Double = FavoriteBackgroundImageStore.defaultJPEGQuality
+        maximumLongEdgePixels: Int = CustomBackgroundImageStore.defaultMaximumLongEdgePixels,
+        compressionQuality: Double = CustomBackgroundImageStore.defaultJPEGQuality
     ) throws -> Data {
         guard let source = CGImageSourceCreateWithData(sourceData as CFData, nil) else {
             throw YamiboPersistenceError(context: "Invalid image data")
@@ -117,7 +123,7 @@ public enum FavoriteBackgroundImageProcessor {
         }
 
         let destinationOptions: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: FavoriteBackgroundSettings.clampJPEGQuality(compressionQuality)
+            kCGImageDestinationLossyCompressionQuality: CustomBackgroundSettings.clampJPEGQuality(compressionQuality)
         ]
         CGImageDestinationAddImage(destination, image, destinationOptions as CFDictionary)
 
@@ -129,9 +135,9 @@ public enum FavoriteBackgroundImageProcessor {
     }
 }
 
-private extension FavoriteBackgroundSettings {
+private extension CustomBackgroundSettings {
     static func clampJPEGQuality(_ value: Double) -> Double {
-        guard value.isFinite else { return FavoriteBackgroundImageStore.defaultJPEGQuality }
+        guard value.isFinite else { return CustomBackgroundImageStore.defaultJPEGQuality }
         return min(1, max(0, value))
     }
 }

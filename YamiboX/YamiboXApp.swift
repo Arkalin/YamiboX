@@ -31,6 +31,9 @@ struct YamiboXApp: App {
 @MainActor
 @Observable
 private final class YamiboAppStartup {
+    private let settingsStore = SettingsStore()
+    private let launchImageStore = CustomBackgroundImageStore(scope: .launch)
+    let launchBackground: CustomBackgroundState
     var windows: YamiboWindowCoordinator?
     var initialTab: AppTab = .forum
     var failure: String?
@@ -40,6 +43,12 @@ private final class YamiboAppStartup {
     private var initialNavigation: AppNavigationTarget?
 
     init() {
+        // Visibility is cheap to read before the first SwiftUI frame. An async
+        // reload alone would briefly show the brand after the user hid it.
+        launchBackground = CustomBackgroundState(
+            settingsStore: settingsStore, imageStore: launchImageStore, scope: .launch,
+            initialOverlayVisibility: SettingsStore.loadSync().appearance.launchShowsBrand
+        )
         switch YamiboForumEnvironment.launchConfiguration {
         case let .failure(error): failure = error.localizedDescription
         case let .success(environment):
@@ -77,6 +86,7 @@ private final class YamiboAppStartup {
             if YamiboForumEnvironment.current.requiresTestSitePreparation {
                 guard await prepareTestSite() else { return }
             }
+            await launchBackground.reload()
             await startRuntime()
         }
         preparationTask = task
@@ -142,6 +152,8 @@ private final class YamiboAppStartup {
         let downloadCoordinator = DownloadContinuedProcessingCoordinator()
         let appContext = YamiboAppContext(
             sessionStore: sessionStore,
+            settingsStore: settingsStore,
+            launchBackgroundImageStore: launchImageStore,
             ordinaryImageCache: imageMemoryCache,
             downloadRunObserver: downloadCoordinator,
             databasePool: database,
@@ -384,6 +396,7 @@ private struct YamiboStartupWindow: View {
             }
         }
         .task { await startup.prepare() }
+        .environment(\.launchBackgroundState, startup.launchBackground)
     }
 }
 

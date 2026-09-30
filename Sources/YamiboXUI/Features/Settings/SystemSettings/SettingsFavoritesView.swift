@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 import YamiboXCore
@@ -11,10 +10,6 @@ struct SettingsFavoritesView: View {
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
 
     @State private var showingFavoriteRemoteSyncProgress = false
-    @State private var showingFavoriteBackgroundPicker = false
-    @State private var favoriteBackgroundPickerItem: PhotosPickerItem?
-    @State private var favoriteBackgroundPickerPurpose = FavoriteBackgroundPickerPurpose.initial
-    @State private var favoriteBackgroundEditorDraft: FavoriteBackgroundEditorDraft?
 
     init(dependencies: SettingsDependencies, viewModel: SettingsFavoritesViewModel) {
         self.viewModel = viewModel
@@ -87,16 +82,14 @@ struct SettingsFavoritesView: View {
             }
 
             Section {
-                Button {
-                    openFavoriteBackgroundEditorOrPicker()
-                } label: {
-                    SystemSettingsRow(
-                        title: L10n.string("settings.favorite_background"),
-                        value: favoriteBackgroundStatusLabel,
-                        showsChevronAfterValue: true
-                    )
-                }
-                .disabled(viewModel.isBusy)
+                CustomBackgroundSettingsRow(
+                    title: L10n.string("settings.favorite_background"),
+                    settings: viewModel.favoriteBackground,
+                    imageStore: viewModel.dependencies.favoriteBackgroundImageStore,
+                    persistence: viewModel.dependencies.favoriteBackgroundPersistence,
+                    isBusy: viewModel.isBusy,
+                    onSaved: { viewModel.favoriteBackground = $0 }
+                ) { _, _, _ in EmptyView() }
 
                 if isPadDevice {
                     favoriteGridCardScaleRow
@@ -211,35 +204,6 @@ struct SettingsFavoritesView: View {
                 )
             }
         }
-        .photosPicker(
-            isPresented: $showingFavoriteBackgroundPicker,
-            selection: $favoriteBackgroundPickerItem,
-            matching: .images
-        )
-        .onChange(of: favoriteBackgroundPickerItem) { _, item in
-            guard let item else { return }
-            Task {
-                await handleFavoriteBackgroundPickerItem(item)
-                favoriteBackgroundPickerItem = nil
-            }
-        }
-        .fullScreenCover(isPresented: favoriteBackgroundEditorIsPresented) {
-            if favoriteBackgroundEditorDraft != nil {
-                FavoriteBackgroundEditorView(
-                    draft: favoriteBackgroundEditorDraftBinding,
-                    onCancel: {
-                        favoriteBackgroundEditorDraft = nil
-                    },
-                    onChangeImage: {
-                        favoriteBackgroundPickerPurpose = .replacement
-                        showingFavoriteBackgroundPicker = true
-                    },
-                    onApply: { draft in
-                        await applyFavoriteBackgroundDraft(draft)
-                    }
-                )
-            }
-        }
         .failureAlert(
             L10n.string("common.operation_failed"),
             message: viewModel.errorMessage,
@@ -257,12 +221,6 @@ struct SettingsFavoritesView: View {
             isPresented: { viewModel.errorMessage != nil },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
-    }
-
-    private var favoriteBackgroundStatusLabel: String {
-        viewModel.favoriteBackground.isEnabled
-            ? L10n.string("settings.favorite_background.custom")
-            : L10n.string("settings.favorite_background.default")
     }
 
     private var favoriteRemoteSyncStatusLabel: String {
@@ -410,96 +368,4 @@ struct SettingsFavoritesView: View {
         )
     }
 
-    private var favoriteBackgroundEditorIsPresented: Binding<Bool> {
-        Binding(
-            get: { favoriteBackgroundEditorDraft != nil },
-            set: { isPresented in
-                if !isPresented {
-                    favoriteBackgroundEditorDraft = nil
-                }
-            }
-        )
-    }
-
-    private var favoriteBackgroundEditorDraftBinding: Binding<FavoriteBackgroundEditorDraft> {
-        Binding(
-            get: {
-                favoriteBackgroundEditorDraft ?? FavoriteBackgroundEditorDraft(
-                    imageData: nil,
-                    imageSize: .zero,
-                    settings: FavoriteBackgroundSettings()
-                )
-            },
-            set: { favoriteBackgroundEditorDraft = $0 }
-        )
-    }
-
-    private func openFavoriteBackgroundEditorOrPicker() {
-        Task { @MainActor in
-            if viewModel.favoriteBackground.isEnabled,
-               let imageData = await viewModel.loadFavoriteBackgroundImageData(),
-               let draft = FavoriteBackgroundEditorDraft.custom(
-                   imageData: imageData,
-                   settings: viewModel.favoriteBackground
-               ) {
-                favoriteBackgroundEditorDraft = draft
-                return
-            }
-
-            favoriteBackgroundPickerPurpose = .initial
-            showingFavoriteBackgroundPicker = true
-        }
-    }
-
-    private func handleFavoriteBackgroundPickerItem(_ item: PhotosPickerItem) async {
-        do {
-            guard let sourceData = try await item.loadTransferable(type: Data.self) else {
-                viewModel.errorMessage = L10n.string("favorite_background.load_failed")
-                return
-            }
-            let imageData = try viewModel.normalizedFavoriteBackgroundImageData(from: sourceData)
-
-            switch favoriteBackgroundPickerPurpose {
-            case .initial:
-                guard let draft = FavoriteBackgroundEditorDraft.custom(imageData: imageData) else {
-                    viewModel.errorMessage = L10n.string("favorite_background.load_failed")
-                    return
-                }
-                favoriteBackgroundEditorDraft = draft
-            case .replacement:
-                guard var draft = favoriteBackgroundEditorDraft, draft.replaceImage(with: imageData) else {
-                    viewModel.errorMessage = L10n.string("favorite_background.load_failed")
-                    return
-                }
-                favoriteBackgroundEditorDraft = draft
-            }
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                viewModel.errorMessage = L10n.string("favorite_background.load_failed")
-                viewModel.errorDetails = LoadFailureDetails(error: error)
-            }
-        }
-    }
-
-    private func applyFavoriteBackgroundDraft(_ draft: FavoriteBackgroundEditorDraft) async -> Bool {
-        let didApply: Bool
-        if let imageData = draft.imageData {
-            didApply = await viewModel.applyFavoriteBackground(
-                imageData: imageData,
-                draftSettings: draft.settings
-            )
-        } else {
-            didApply = await viewModel.restoreDefaultFavoriteBackground()
-        }
-
-        if didApply {
-            favoriteBackgroundEditorDraft = nil
-        }
-        return didApply
-    }
-}
-
-private enum FavoriteBackgroundPickerPurpose {
-    case initial
-    case replacement
 }

@@ -51,6 +51,16 @@ while IFS= read -r -d '' file; do
             ;;
     esac
     case "$file" in
+        Sources/YamiboXUI/SharedUI/Backgrounds/*)
+            check_symbols "$file" 'FavoriteBackgroundSettings|FavoriteBackgroundLayout|FavoriteBackgroundImageStore|FavoriteBackgroundImageProcessor|SettingsFavoritesViewModel|SettingsGeneralViewModel|ReaderGlassContainer|readerChromePanel|readerChromeButtonStyle' \
+                'Shared backgrounds must not depend on Favorites, Settings page models, or Reader chrome implementations.'
+            ;;
+        Sources/YamiboXCore/Infrastructure/Backgrounds/*)
+            check_symbols "$file" 'FavoriteBackgroundSettings|FavoriteBackgroundLayout|FavoriteBackgroundImageStore|FavoriteLibrarySettings' \
+                'Shared background infrastructure must not depend on Library-owned types.'
+            ;;
+    esac
+    case "$file" in
         Sources/YamiboXCore/Account/Application/*)
             check_symbols "$file" 'KannaSoup|HTMLTextExtractor|YamiboLoginFormParser|YamiboProfileParser|YamiboClient' \
                 'Account workflows must consume typed remote results, not parse HTML or submit transport requests.'

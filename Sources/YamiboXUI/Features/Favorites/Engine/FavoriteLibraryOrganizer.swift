@@ -96,7 +96,7 @@ final class FavoriteLibraryOrganizer {
     private(set) var smartMangaBadgeEnabled = true
     var backgroundSettings: FavoriteBackgroundSettings { background.settings }
     var backgroundImageData: Data? { background.imageData }
-    private let background: FavoriteBackgroundState
+    private let background: CustomBackgroundState
     @ObservationIgnored let covers: FavoriteCoverCoordinator
     var coverLookup: FavoriteCoverCoordinator.Lookup { covers.lookup }
 
@@ -182,7 +182,7 @@ final class FavoriteLibraryOrganizer {
         self.libraryStore = libraryStore
         self.readingProgressStore = readingProgressStore
         self.settingsStore = settingsStore
-        self.background = FavoriteBackgroundState(settingsStore: settingsStore, imageStore: favoriteBackgroundImageStore)
+        self.background = CustomBackgroundState(settingsStore: settingsStore, imageStore: favoriteBackgroundImageStore, scope: .favorites)
         self.covers = FavoriteCoverCoordinator(
             store: contentCoverStore,
             makeRepository: makeForumThreadReaderRepository

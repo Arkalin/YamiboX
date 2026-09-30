@@ -8,6 +8,8 @@ import YamiboXCore
 final class SettingsGeneralViewModel: AppSettingsPersisting {
     var navigation = AppNavigationSettings()
     var themePreset = AppThemePreset.classic
+    var launchBackground = CustomBackgroundSettings()
+    var launchShowsBrand = true
 
     let dependencies: SettingsDependencies
     var settingsStore: SettingsStore { dependencies.settingsStore }
@@ -32,6 +34,8 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     func applyLoadedSettings(_ settings: AppSettings) {
         navigation = settings.system.navigation
         themePreset = settings.appearance.themePreset
+        launchBackground = settings.appearance.launchBackground
+        launchShowsBrand = settings.appearance.launchShowsBrand
     }
 
     func saveNavigation(_ value: AppNavigationSettings) async throws {
@@ -51,5 +55,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     func restoreDefaultsAfterApplicationReset() {
         navigation = AppNavigationSettings()
         themePreset = .classic
+        launchBackground = .init()
+        launchShowsBrand = true
     }
 }

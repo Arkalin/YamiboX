@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public struct FavoriteBackgroundRenderedFrame: Equatable, Sendable {
+public struct CustomBackgroundRenderedFrame: Equatable, Sendable {
     public var size: CGSize
     public var offset: CGSize
 
@@ -11,18 +11,18 @@ public struct FavoriteBackgroundRenderedFrame: Equatable, Sendable {
     }
 }
 
-public enum FavoriteBackgroundLayout {
+public enum CustomBackgroundLayout {
     public static func renderedFrame(
         imageSize: CGSize,
         containerSize: CGSize,
-        settings: FavoriteBackgroundSettings
-    ) -> FavoriteBackgroundRenderedFrame {
+        settings: CustomBackgroundSettings
+    ) -> CustomBackgroundRenderedFrame {
         guard imageSize.width > 0, imageSize.height > 0, containerSize.width > 0, containerSize.height > 0 else {
-            return FavoriteBackgroundRenderedFrame(size: .zero, offset: .zero)
+            return CustomBackgroundRenderedFrame(size: .zero, offset: .zero)
         }
 
         let fillScale = max(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
-        let relativeScale = FavoriteBackgroundSettings.clampScale(settings.scale)
+        let relativeScale = CustomBackgroundSettings.clampScale(settings.scale)
         let renderedSize = CGSize(
             width: imageSize.width * fillScale * relativeScale,
             height: imageSize.height * fillScale * relativeScale
@@ -30,11 +30,11 @@ public enum FavoriteBackgroundLayout {
         let overflowX = max(0, (renderedSize.width - containerSize.width) / 2)
         let overflowY = max(0, (renderedSize.height - containerSize.height) / 2)
         let offset = CGSize(
-            width: overflowX * FavoriteBackgroundSettings.clampOffset(settings.offsetX),
-            height: overflowY * FavoriteBackgroundSettings.clampOffset(settings.offsetY)
+            width: overflowX * CustomBackgroundSettings.clampOffset(settings.offsetX),
+            height: overflowY * CustomBackgroundSettings.clampOffset(settings.offsetY)
         )
 
-        return FavoriteBackgroundRenderedFrame(size: renderedSize, offset: offset)
+        return CustomBackgroundRenderedFrame(size: renderedSize, offset: offset)
     }
 
     public static func normalizedOffsets(
@@ -43,14 +43,14 @@ public enum FavoriteBackgroundLayout {
         scale: Double,
         proposedOffset: CGSize
     ) -> (offsetX: Double, offsetY: Double) {
-        let settings = FavoriteBackgroundSettings(scale: scale)
+        let settings = CustomBackgroundSettings(scale: scale)
         let frame = renderedFrame(imageSize: imageSize, containerSize: containerSize, settings: settings)
         let overflowX = max(0, (frame.size.width - containerSize.width) / 2)
         let overflowY = max(0, (frame.size.height - containerSize.height) / 2)
 
         return (
-            offsetX: overflowX > 0 ? FavoriteBackgroundSettings.clampOffset(proposedOffset.width / overflowX) : 0,
-            offsetY: overflowY > 0 ? FavoriteBackgroundSettings.clampOffset(proposedOffset.height / overflowY) : 0
+            offsetX: overflowX > 0 ? CustomBackgroundSettings.clampOffset(proposedOffset.width / overflowX) : 0,
+            offsetY: overflowY > 0 ? CustomBackgroundSettings.clampOffset(proposedOffset.height / overflowY) : 0
         )
     }
 }

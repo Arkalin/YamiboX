@@ -34,6 +34,9 @@ public final class YamiboAppContext: Sendable {
     public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
     let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
+    let launchBackgroundImageStore: CustomBackgroundImageStore
+    let favoriteBackgroundPersistence: CustomBackgroundPersistence
+    let launchBackgroundPersistence: CustomBackgroundPersistence
     private let likeStore: LikeStore
     private let likeImageStore: LikeImageStore
     private let bookmarkStore: BookmarkStore
@@ -73,6 +76,7 @@ public final class YamiboAppContext: Sendable {
         contentCoverStore: ContentCoverStore? = nil,
         novelReaderCacheStore: NovelReaderProjectionStore? = nil,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore? = nil,
+        launchBackgroundImageStore: CustomBackgroundImageStore? = nil,
         likeStore: LikeStore? = nil,
         likeImageStore: LikeImageStore? = nil,
         bookmarkStore: BookmarkStore? = nil,
@@ -135,6 +139,15 @@ public final class YamiboAppContext: Sendable {
         )
         self.favoriteBackgroundImageStore = favoriteBackgroundImageStore ?? FavoriteBackgroundImageStore(
             baseDirectory: Self.favoriteBackgroundDirectory(rootDirectory: resolvedGRDBRootDirectory)
+        )
+        self.launchBackgroundImageStore = launchBackgroundImageStore ?? CustomBackgroundImageStore(
+            baseDirectory: CustomBackgroundImageStore.directory(scope: .launch, rootDirectory: resolvedGRDBRootDirectory)
+        )
+        self.favoriteBackgroundPersistence = CustomBackgroundPersistence(
+            settingsStore: settingsStore, imageStore: self.favoriteBackgroundImageStore, scope: .favorites
+        )
+        self.launchBackgroundPersistence = CustomBackgroundPersistence(
+            settingsStore: settingsStore, imageStore: self.launchBackgroundImageStore, scope: .launch
         )
         self.likeStore = likeStore ?? LikeStore(databasePool: resolvedGRDBDatabasePool)
         self.likeImageStore = likeImageStore ?? LikeImageStore(
@@ -230,6 +243,7 @@ public final class YamiboAppContext: Sendable {
                 .init("download") { try await resolvedDownloadStore.clearAll() },
                 .init("forumCache") { [store = self.forumCacheStore] in try await store.clearAll() },
                 .init("favoriteBackgrounds") { [store = self.favoriteBackgroundImageStore] in try await store.deleteAll() },
+                .init("launchBackgrounds") { [store = self.launchBackgroundImageStore] in try await store.deleteAll() },
                 .init("ordinaryImageCache") { [pipeline = self.imagePipeline] in
                     await pipeline.clearCache()
                     await ordinaryImageCache?.removeAllCachedData()
@@ -403,6 +417,9 @@ public final class YamiboAppContext: Sendable {
             sessionStore: sessionStore,
             settingsStore: settingsStore,
             favoriteBackgroundImageStore: favoriteBackgroundImageStore,
+            launchBackgroundImageStore: launchBackgroundImageStore,
+            favoriteBackgroundPersistence: favoriteBackgroundPersistence,
+            launchBackgroundPersistence: launchBackgroundPersistence,
             novelReaderCacheStore: novelReaderCacheStore,
             mangaDirectoryStore: mangaDirectoryStore,
             mangaReaderProjectionStore: mangaReaderProjectionStore,

@@ -89,6 +89,12 @@ enum SettingsSearchRegistry {
 
     private static let baseEntries: [SettingsSearchEntry] = [
         SettingsSearchEntry(
+            id: "general.launch_background",
+            title: L10n.string("settings.launch_background"),
+            category: .general,
+            keywords: localizedKeywords("settings.search.keywords.general.launch_background")
+        ),
+        SettingsSearchEntry(
             id: "bookshelf.only_favorites",
             title: L10n.string("settings.bookshelf.only_favorites"),
             category: .bookshelf,
