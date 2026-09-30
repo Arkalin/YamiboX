@@ -42,7 +42,7 @@ enum ForumThreadAttachmentParser {
         let legacyItems = container.selectAll(".pattl, .attach, .t_attach, [id^=attach_]")
             .filter(outsideBody)
             .compactMap(attachment(fromFooterElement:))
-        return touchItems + legacyItems
+        return ForumThreadAttachmentBlock.uniqueFooterAttachments(touchItems + legacyItems)
     }
 
     private static func attachment(fromFooterElement element: Element) -> ForumThreadAttachmentBlock? {

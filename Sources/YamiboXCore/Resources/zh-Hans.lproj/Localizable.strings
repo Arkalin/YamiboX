@@ -149,6 +149,9 @@
 "common.select_all" = "全选";
 "common.share" = "分享";
 "downloads.attachment.enqueued" = "已加入下载队列";
+"downloads.attachment.confirm_title" = "下载附件";
+"downloads.attachment.confirm_action" = "确认下载";
+"downloads.attachment.confirm_message" = "是否将“%@”加入下载队列？";
 "downloads.attachment.queued" = "附件已在下载队列中";
 "downloads.attachment.not_file" = "未能获取附件文件，请检查登录状态、下载权限或附件是否需要购买，然后重试。";
 "downloads.attachment.progress" = "%d / %d 个文件";
