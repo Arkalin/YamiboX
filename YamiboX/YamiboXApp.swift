@@ -37,7 +37,11 @@ struct YamiboXApp: App {
                         }
                     }
                 } else {
-                    ProgressView(L10n.string("test_forum.preparing"))
+                    ProgressView(L10n.string(
+                        YamiboForumEnvironment.current.requiresTestSitePreparation
+                            ? "test_forum.preparing"
+                            : "common.loading"
+                    ))
                 }
             }
             .task { await startup.prepare() }
