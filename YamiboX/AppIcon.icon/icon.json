@@ -4,15 +4,43 @@
   },
   "groups" : [
     {
-      "name" : "Original lily",
+      "name" : "03 Stamens - front",
+      "lighting" : "combined",
       "layers" : [
         {
-          "image-name" : "lily.svg",
-          "name" : "Original flower silhouette"
+          "image-name" : "stamens.svg",
+          "name" : "Original stamens"
         }
       ],
-      "shadow" : { "kind" : "neutral", "opacity" : 0.2 },
+      "shadow" : { "kind" : "neutral", "opacity" : 0.55 },
       "specular" : true,
+      "refractivity" : { "enabled" : true, "strength" : 0.12, "depth" : 0.06 },
+      "translucency" : { "enabled" : false, "value" : 0 }
+    },
+    {
+      "name" : "02 Petals - middle",
+      "lighting" : "individual",
+      "layers" : [
+        { "image-name" : "petal-upper-left.svg", "name" : "Upper left petal" },
+        { "image-name" : "petal-upper-right.svg", "name" : "Upper right petal" },
+        { "image-name" : "petal-bottom.svg", "name" : "Bottom petal" }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.4 },
+      "specular" : true,
+      "refractivity" : { "enabled" : true, "strength" : 0.15, "depth" : 0.08 },
+      "translucency" : { "enabled" : false, "value" : 0 }
+    },
+    {
+      "name" : "01 Petals - back",
+      "lighting" : "individual",
+      "layers" : [
+        { "image-name" : "petal-top.svg", "name" : "Top petal" },
+        { "image-name" : "petal-lower-left.svg", "name" : "Lower left petal" },
+        { "image-name" : "petal-lower-right.svg", "name" : "Lower right petal" }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.3 },
+      "specular" : true,
+      "refractivity" : { "enabled" : true, "strength" : 0.1, "depth" : 0.06 },
       "translucency" : { "enabled" : false, "value" : 0 }
     }
   ],
