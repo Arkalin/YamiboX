@@ -161,6 +161,7 @@ public struct ChapterCommentRatingRequest: Codable, Hashable, Sendable {
 public struct ChapterCommentReply: Hashable, Identifiable, Sendable {
     public var comment: ChapterComment
     public var replyingToName: String?
+    public var replyingToUID: String? = nil
     public var parentCommentID: String
     public var conversationRootID: String
     public var id: String { comment.id }
@@ -266,7 +267,7 @@ public struct ChapterCommentDiscussion: Hashable, Identifiable, Sendable {
             var conversationRoot = comment.id
             while let ancestor = parents[conversationRoot], ancestor != root { conversationRoot = ancestor }
             result[index].replies.append(ChapterCommentReply(
-                comment: child, replyingToName: name,
+                comment: child, replyingToName: name, replyingToUID: name == nil ? nil : parent?.authorUID,
                 parentCommentID: parentID, conversationRootID: conversationRoot
             ))
         }

@@ -28,6 +28,7 @@ struct ReaderChapterCommentsContent: View {
     let retry: (ReaderChapterCommentTarget) -> Void
     let loadNext: () -> Void
     let openOriginalPost: (URL) -> Void
+    var openProfile: (String, String) -> Void = { _, _ in }
     var compose: ((ReaderChapterCommentComposeTarget) -> Void)? = nil
     var openImage: ((ChapterComment, String) -> Void)? = nil
     var emptyTitle = L10n.string("reader.chapter_comments_empty")
@@ -91,6 +92,7 @@ struct ReaderChapterCommentsContent: View {
                             }
                             ForEach(replies) { reply in
                                 commentListRow(reply.comment, target: target, page: page, replyingToName: reply.replyingToName,
+                                               replyingToUID: reply.replyingToUID,
                                                conversationRootID: reply.conversationRootID)
                                     .id(reply.id)
                             }
@@ -116,6 +118,7 @@ struct ReaderChapterCommentsContent: View {
         page: ChapterCommentsPage,
         discussion: ChapterCommentDiscussion? = nil,
         replyingToName: String? = nil,
+        replyingToUID: String? = nil,
         conversationRootID: String? = nil,
         showsDivider: Bool = true
     ) -> some View {
@@ -134,9 +137,11 @@ struct ReaderChapterCommentsContent: View {
                 comment: comment,
                 originalPostURL: comment.originalPostURL(threadID: target.threadID),
                 openOriginalPost: openOriginalPost,
+                openProfile: openProfile,
                 onReply: replyAction,
                 onImageTap: { blockID in openImage?(comment, blockID) },
                 replyingToName: replyingToName,
+                replyingToUID: replyingToUID,
                 navigationAction: navigationAction
             )
         }
@@ -205,6 +210,7 @@ struct ReaderChapterCommentsSheet: View {
     private let discussionWorkTIDs: Set<String>
 
     @State private var threadOverlayItem: ForumThreadOverlayItem?
+    @State private var profileItem: ReaderChapterCommentProfileItem?
     @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
     @State private var scrollTarget: String?
     @State private var replyScrollTarget: String?
@@ -339,6 +345,10 @@ struct ReaderChapterCommentsSheet: View {
                 mode: request.items.count == 1 ? .single : .multiple,
                 onDismiss: { imageBrowserRequest = nil }
             )
+        }
+        .fullScreenCover(item: $profileItem) { item in
+            ReaderChapterCommentProfileScreen(item: item, dependencies: forumDependencies,
+                                              appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
         }
         .task(id: target) {
             actionTask?.cancel()
@@ -487,6 +497,7 @@ struct ReaderChapterCommentsSheet: View {
             failureEventID: failureEventID, clearFailure: clearFailure,
             scrollTarget: conversation != nil ? $conversationScrollTarget : discussion == nil ? $scrollTarget : $replyScrollTarget,
             retry: retry(_:), loadNext: loadNextPage, openOriginalPost: openOriginalPost(_:),
+            openProfile: { profileItem = ReaderChapterCommentProfileItem(uid: $0, name: $1) },
             compose: { composerTarget = $0 }, openImage: openImage(_:blockID:),
             emptyTitle: filterModel.hasHiddenComments ? L10n.string("reader.chapter_comments_filtered_empty") : emptyTitle,
             discussions: filterModel.discussions, selectedDiscussion: discussion, selectedConversation: conversation,
@@ -512,7 +523,7 @@ struct ReaderChapterCommentsSheet: View {
 
     private func handleControlEvent(_ event: ReaderControlEvent) {
         // Presented content owns input; closing must not dismiss this sheet underneath it.
-        guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil else { return }
+        guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil, profileItem == nil else { return }
         switch ReaderControlCommandResolver.commentsCommand(for: event) {
         case .close:
             if !navigationPath.isEmpty { navigationPath.removeLast() } else { dismiss() }
@@ -638,19 +649,31 @@ private struct ReaderChapterCommentRow: View {
     let comment: ChapterComment
     let originalPostURL: URL?
     let openOriginalPost: (URL) -> Void
+    let openProfile: (String, String) -> Void
     let onReply: (() -> Void)?
     let onImageTap: (String) -> Void
     var replyingToName: String? = nil
+    var replyingToUID: String? = nil
     var navigationAction: ReaderChapterCommentNavigationAction? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                ForumAvatarView(url: comment.authorAvatarURL, size: 28, placeholderFont: .system(size: 22))
-                    .accessibilityHidden(true)
-                Text(comment.authorName.isEmpty ? L10n.string("reader.comment_anonymous") : comment.authorName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button {
+                    if let uid = comment.authorUID { openProfile(uid, comment.authorName) }
+                } label: {
+                    HStack(spacing: 8) {
+                        ForumAvatarView(url: comment.authorAvatarURL, size: 28, placeholderFont: .system(size: 22))
+                            .accessibilityHidden(true)
+                        Text(comment.authorName.isEmpty ? L10n.string("reader.comment_anonymous") : comment.authorName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .expandedHitTarget()
+                }
+                .buttonStyle(.plain)
+                .disabled(comment.authorUID == nil)
+                .accessibilityIdentifier("chapter-comment-profile-\(comment.id)")
                 if comment.isThreadAuthor == true {
                     Text(L10n.string("reader.comment_author"))
                         .font(.caption2.weight(.semibold))
@@ -694,7 +717,9 @@ private struct ReaderChapterCommentRow: View {
                     contentBlocks: comment.contentBlocks,
                     imageIdentifierPrefix: "chapter-comment-image-\(comment.id)",
                     onImageTap: onImageTap,
-                    replyingToName: replyingToName
+                    replyingToName: replyingToName,
+                    replyingToUID: replyingToUID,
+                    openProfile: openProfile
                 )
                 .accessibilityIdentifier("chapter-comment-body-\(comment.id)")
             }
@@ -797,12 +822,26 @@ struct ReaderChapterCommentBody: View {
     var imageIdentifierPrefix = "chapter-comment-image"
     var onImageTap: (String) -> Void = { _ in }
     var replyingToName: String? = nil
+    var replyingToUID: String? = nil
+    var openProfile: (String, String) -> Void = { _, _ in }
 
     var body: some View {
+        content
+            .environment(\.openURL, OpenURLAction { url in
+                if let replyingToUID, let replyingToName, url == YamiboRoute.userSpaceProfile(uid: replyingToUID).url {
+                    openProfile(replyingToUID, replyingToName)
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let contentBlocks, !contentBlocks.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 if let first = contentBlocks.first, case .image = first.kind, let replyingToName {
-                    Text(L10n.string("reader.comment_reply_prefix", replyingToName)).font(.body)
+                    ReaderChapterCommentText(attributedText: replyPrefix(replyingToName), refererURL: refererURL)
                 }
                 ForEach(contentBlocks) { block in
                     switch block.kind {
@@ -840,7 +879,52 @@ struct ReaderChapterCommentBody: View {
 
     private func prefixed(_ text: AttributedString, enabled: Bool = true) -> AttributedString {
         guard enabled, let replyingToName else { return text }
-        return AttributedString(L10n.string("reader.comment_reply_prefix", replyingToName)) + text
+        return replyPrefix(replyingToName) + text
+    }
+
+    private func replyPrefix(_ name: String) -> AttributedString {
+        // Locate the interpolation rather than the name: names can contain prefix punctuation.
+        let marker = "\u{FFFC}"
+        let format = L10n.string("reader.comment_reply_prefix", marker)
+        let parts = format.components(separatedBy: marker)
+        var username = AttributedString(name)
+        username.foregroundColor = .secondary
+        if let replyingToUID { username.link = YamiboRoute.userSpaceProfile(uid: replyingToUID).url }
+        return AttributedString(parts[0]) + username + AttributedString(parts.dropFirst().joined(separator: marker))
+    }
+}
+
+private struct ReaderChapterCommentProfileItem: Identifiable {
+    let uid: String
+    let name: String
+    var id: String { uid }
+}
+
+private struct ReaderChapterCommentProfileScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var navigator: ForumDestinationNavigator
+    let item: ReaderChapterCommentProfileItem
+    let appModel: YamiboAppModel
+
+    init(item: ReaderChapterCommentProfileItem, dependencies: ForumNavigationDependencies,
+         appModel: YamiboAppModel, discussionWorkTIDs: Set<String>) {
+        self.item = item
+        self.appModel = appModel
+        _navigator = State(initialValue: ForumDestinationNavigator(dependencies: dependencies, actions: appModel.forumNavigationActions,
+                                                                 mode: .readerOverlay, discussionWorkTIDs: discussionWorkTIDs))
+    }
+
+    var body: some View {
+        ForumDestinationStackView(navigator: navigator, appModel: appModel) {
+            ForumDestinationScreen(destination: .userSpace(uid: item.uid, name: item.name, section: .space, subPage: .profile),
+                                   navigator: navigator, appModel: appModel)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.done"), action: { dismiss() })
+                    }
+                }
+        }
+        .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
     }
 }
 
