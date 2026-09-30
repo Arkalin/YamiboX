@@ -186,6 +186,18 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             }
 
+            if isMainFrame, (navigationAction.request.httpMethod ?? "GET").uppercased() == "GET",
+               case .web = ForumRouteResolver.resolve(url: url) {
+                let desktopURL = ForumWebPagePolicy.desktopURL(url)
+                if desktopURL != url {
+                    var request = navigationAction.request
+                    request.url = desktopURL
+                    decisionHandler(.cancel)
+                    webView.load(request)
+                    return
+                }
+            }
+
             if !["http", "https", "about"].contains(url.scheme?.lowercased() ?? "") {
                 UIApplication.shared.open(url)
                 decisionHandler(.cancel)

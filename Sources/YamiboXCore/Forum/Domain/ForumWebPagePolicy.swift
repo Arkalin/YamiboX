@@ -1,6 +1,6 @@
 import Foundation
 
-/// Only authentication and off-site content belong in a browser. Keep this
+/// Authentication, unsupported forum pages and off-site content use a browser. Keep this
 /// decision shared by URL routing and the WebKit navigation delegate.
 public enum ForumWebPagePolicy {
     public static func isForumPage(_ url: URL) -> Bool {
@@ -21,6 +21,16 @@ public enum ForumWebPagePolicy {
 
     public static func secureURL(_ url: URL) -> URL {
         YamiboForumEnvironment.current.normalizedForumPageURL(url)
+    }
+
+    public static func desktopURL(_ url: URL) -> URL {
+        guard requiresForumHandling(url),
+              var components = URLComponents(url: secureURL(url), resolvingAgainstBaseURL: true) else { return url }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "mobile" || $0.name == "forcemobile" }
+        items.append(.init(name: "mobile", value: "no"))
+        components.queryItems = items
+        return components.url ?? url
     }
 
     /// Discuz has state-changing GET links. Never fetch a token-bearing action
