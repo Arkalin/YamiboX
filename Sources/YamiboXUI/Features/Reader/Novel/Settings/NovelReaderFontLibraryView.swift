@@ -10,7 +10,6 @@ struct NovelReaderFontLibraryView: View {
     @ScaledMetric(relativeTo: .body) private var sampleSize = 20.0
     @State private var pickerRequest: ReaderFontDocumentPicker.Request?
     @State private var report: String?
-    @State private var pendingDeletion: String?
     @State private var protectionID = UUID()
 
     var body: some View {
@@ -36,11 +35,14 @@ struct NovelReaderFontLibraryView: View {
                         Label(L10n.string("reader.font.import"), systemImage: "square.and.arrow.down")
                     }
                     .disabled(library.isWorking)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                     if library.isWorking { ProgressView(L10n.string("reader.font.processing")) }
                     ForEach(library.entries.filter { $0.selection.fileID != nil }) { entry in
                         fontRow(entry)
                             .swipeActions {
-                                Button(role: .destructive) { pendingDeletion = entry.selection.fileID } label: {
+                                Button(role: .destructive) { delete(entry) } label: {
                                     Label(L10n.string("common.delete"), systemImage: "trash")
                                 }
                                 .disabled(library.isWorking)
@@ -82,18 +84,6 @@ struct NovelReaderFontLibraryView: View {
             )) {
                 Button(L10n.string("common.done")) { report = nil }
             } message: { Text(report ?? "") }
-            .confirmationDialog(L10n.string("reader.font.delete_file"), isPresented: Binding(
-                get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
-            ), titleVisibility: .visible) {
-                if let fileID = pendingDeletion {
-                    Button(L10n.string("common.delete"), role: .destructive) {
-                        Task {
-                            do { try await library.deleteFile(fileID, protecting: [selection, currentSelection]) }
-                            catch { report = error.localizedDescription }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -125,12 +115,23 @@ struct NovelReaderFontLibraryView: View {
             }
         }
         .padding(.vertical, 4)
+        // Keep separators aligned to the row, not its text or selection checkmark.
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
     }
 
     private func select(_ entry: ReaderFontEntry) {
         guard entry.availability == .available else { return }
         guard !library.resolve(entry.selection).isFallback else { library.refreshEntries(); return }
         onSelect(entry.selection)
+    }
+
+    private func delete(_ entry: ReaderFontEntry) {
+        guard let fileID = entry.selection.fileID else { return }
+        Task {
+            do { try await library.deleteFile(fileID, protecting: [selection, currentSelection]) }
+            catch { report = error.localizedDescription }
+        }
     }
 
     private func statusText(_ status: ReaderFontAvailability) -> String {
