@@ -53,7 +53,7 @@ enum ForumThreadPostsParser {
                     poll: poll,
                     ratingBlock: ratingBlock,
                     comments: comments,
-                    attachments: attachments,
+                    attachments: ForumThreadAttachmentBlock.uniqueFooterAttachments(attachments, excluding: contentBlocks),
                     isPinned: isPinned(container),
                     manageActions: manageActions
                 )

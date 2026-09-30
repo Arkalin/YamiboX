@@ -540,6 +540,32 @@ public struct ForumThreadImageBlock: Codable, Equatable, Hashable, Sendable {
 }
 
 public struct ForumThreadAttachmentBlock: Codable, Equatable, Hashable, Sendable {
+    /// Fragments do not identify different files; keep query parameters intact.
+    public var downloadIdentity: String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.fragment = nil
+        return components?.url?.absoluteString ?? url.absoluteString
+    }
+
+    public static func uniqueFooterAttachments(
+        _ attachments: [Self], excluding blocks: [ForumThreadContentBlock] = []
+    ) -> [Self] {
+        var seen = Set<String>()
+        func collect(_ blocks: [ForumThreadContentBlock]) {
+            for block in blocks {
+                switch block.kind {
+                case .attachment(let attachment): seen.insert(attachment.downloadIdentity)
+                case .quote(let nested), .indent(let nested), .collapse(_, let nested), .locked(_, let nested): collect(nested)
+                case .table(let rows):
+                    for cell in rows.flatMap({ $0 }) { collect(cell.blocks) }
+                case .text, .image, .code, .horizontalRule: break
+                }
+            }
+        }
+        collect(blocks)
+        return attachments.filter { seen.insert($0.downloadIdentity).inserted }
+    }
+
     public var url: URL
     public var iconURL: URL?
     public var fileName: String

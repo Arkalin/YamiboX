@@ -4,6 +4,7 @@ import YamiboXCore
 struct ForumThreadReaderView: View {
     @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
     @State private var model: ForumThreadReaderViewModel
+    @State private var pendingAttachment: ForumThreadAttachmentBlock?
 
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
@@ -62,7 +63,7 @@ struct ForumThreadReaderView: View {
             onUserTap: onUserTap,
             onURLTap: onURLTap,
             onAttachmentTap: { attachment in
-                Task { await model.enqueueAttachment(attachment) }
+                pendingAttachment = attachment
             },
             onReaderModeSwitch: onReaderModeSwitch,
             isSwitchingReaderMode: isSwitchingReaderMode,
@@ -123,7 +124,20 @@ struct ForumThreadReaderView: View {
             await model.observeBoardReaderSettings()
         }
         .onDisappear {
+            pendingAttachment = nil
             model.flushReadingProgress()
+        }
+        .alert(L10n.string("downloads.attachment.confirm_title"), isPresented: Binding(
+            get: { pendingAttachment != nil },
+            set: { if !$0 { pendingAttachment = nil } }
+        ), presenting: pendingAttachment) { attachment in
+            Button(L10n.string("common.cancel"), role: .cancel) { pendingAttachment = nil }
+            Button(L10n.string("downloads.attachment.confirm_action")) {
+                pendingAttachment = nil
+                Task { await model.enqueueAttachment(attachment) }
+            }
+        } message: { attachment in
+            Text(L10n.string("downloads.attachment.confirm_message", attachment.fileName))
         }
         .transientMessage(model.favoriteActions.transientFeedback ?? model.transientFeedback, bottomPadding: model.page == nil ? 24 : 82) {
             model.clearTransientMessage()
