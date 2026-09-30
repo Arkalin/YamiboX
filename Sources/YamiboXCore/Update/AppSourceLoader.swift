@@ -14,7 +14,7 @@ struct AppSourceLoader: Sendable {
         fetchData = { url in
             var request = YamiboNetworkConfiguration.makeRequest(url: url)
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            return try await session.data(for: request)
+            return try await NetworkLoggedTransport.data(for: request, using: session, source: .update)
         }
     }
 

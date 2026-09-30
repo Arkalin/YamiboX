@@ -95,6 +95,7 @@ private extension SettingsStorageCategory {
         case .history: .cyan
         case .directories: .indigo
         case .downloads: .orange
+        case .networkLogs: .purple
         }
     }
 }

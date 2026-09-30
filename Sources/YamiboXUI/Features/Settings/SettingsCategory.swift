@@ -251,6 +251,12 @@ enum SettingsSearchRegistry {
             keywords: localizedKeywords("settings.search.keywords.storage.download")
         ),
         SettingsSearchEntry(
+            id: "storage.network_logs",
+            title: L10n.string("settings.network_log.title"),
+            category: .storage,
+            keywords: localizedKeywords("settings.search.keywords.storage.network_logs")
+        ),
+        SettingsSearchEntry(
             id: "storage.reset_application",
             title: L10n.string("settings.reset_application"),
             category: .storage,

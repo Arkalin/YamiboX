@@ -32,6 +32,7 @@ private final class SilentWAFRequest: NSObject, WKNavigationDelegate, WKScriptMe
     private var work: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
     private var webView: WKWebView?
+    private let navigationLogs = WebNavigationLogCapture(source: .webVerification)
 
     init(sessionStore: SessionStore, snapshot: AccountSessionSnapshot) {
         self.sessionStore = sessionStore
@@ -126,6 +127,7 @@ private final class SilentWAFRequest: NSObject, WKNavigationDelegate, WKScriptMe
         work?.cancel()
         timeout = nil
         work = nil
+        navigationLogs.finishAll(error: CancellationError())
         webView?.navigationDelegate = nil
         webView?.stopLoading()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "yamiboWAFInteraction")
@@ -138,15 +140,39 @@ private final class SilentWAFRequest: NSObject, WKNavigationDelegate, WKScriptMe
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        navigationLogs.processTerminated()
         finish(.failure(YamiboError.securityVerificationRequired))
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        navigationLogs.finish(navigation, error: error)
         finish(.failure(error))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        navigationLogs.finish(navigation, error: error)
         finish(.failure(error))
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        navigationLogs.start(navigation, webView: webView)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        navigationLogs.redirect(navigation, webView: webView)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        navigationLogs.finish(navigation)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        navigationLogs.receive(navigationResponse)
+        guard navigationResponse.canShowMIMEType else {
+            navigationLogs.cancel(navigationResponse)
+            return .cancel
+        }
+        return .allow
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
@@ -154,6 +180,7 @@ private final class SilentWAFRequest: NSObject, WKNavigationDelegate, WKScriptMe
             finish(.failure(YamiboError.securityVerificationRequired))
             return .cancel
         }
+        navigationLogs.allow(navigationAction)
         return .allow
     }
 }

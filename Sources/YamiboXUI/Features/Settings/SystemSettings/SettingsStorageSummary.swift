@@ -2,7 +2,7 @@ import Foundation
 import YamiboXCore
 
 enum SettingsStorageCategory: String, CaseIterable, Identifiable {
-    case webReader, images, other, covers, progress, history, directories, downloads
+    case webReader, images, other, covers, progress, history, directories, downloads, networkLogs
 
     var id: Self { self }
 

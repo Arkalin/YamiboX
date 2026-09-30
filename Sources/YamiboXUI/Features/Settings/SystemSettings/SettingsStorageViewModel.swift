@@ -40,6 +40,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var otherCacheBytes: Int? { storageUsage.otherCacheBytes }
     var readingProgressBytes: Int? { storageUsage.readingProgressBytes }
     var browsingHistoryBytes: Int? { storageUsage.browsingHistoryBytes }
+    var networkLogBytes: Int? { storageUsage.networkLogBytes }
 
     var webReaderCacheLabel: String { storageUsage.webReaderCacheLabel }
     var contentCoverCacheLabel: String { storageUsage.contentCoverCacheLabel }
@@ -49,10 +50,15 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var otherCacheLabel: String { storageUsage.otherCacheLabel }
     var readingProgressLabel: String { storageUsage.readingProgressLabel }
     var browsingHistoryLabel: String { storageUsage.browsingHistoryLabel }
+    var networkLogLabel: String { storageUsage.networkLogLabel }
     var summary: SettingsStorageSummary { storageUsage.summary }
 
     func refreshStorageUsage() async {
         await storageUsage.refresh()
+    }
+
+    func observeNetworkLogUsage() async {
+        await storageUsage.observeNetworkLogUsage()
     }
 
     // MARK: - Cache clearing
