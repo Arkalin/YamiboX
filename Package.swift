@@ -33,6 +33,9 @@ let package = Package(
             dependencies: [
                 "YamiboXCore",
                 .product(name: "Nuke", package: "Nuke"),
+            ],
+            resources: [
+                .process("Resources")
             ]
         )
     ]

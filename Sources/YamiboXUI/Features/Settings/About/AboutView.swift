@@ -362,7 +362,9 @@ private enum PlatformAppIcon {
     static func load() -> UIImage? {
         for name in iconNames {
             #if canImport(UIKit)
-            if let image = UIImage(named: name) {
+            // The interactive icon always represents the default brown app icon,
+            // even when the system offers a separate dark Home Screen rendition.
+            if let image = UIImage(named: name, in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .light)) {
                 return image
             }
             #endif
@@ -371,9 +373,9 @@ private enum PlatformAppIcon {
     }
 
     private static var iconNames: [String] {
-        // The Icon Composer asset named "AppIcon" is not a raster image and
-        // can make UIImage(named:) raise an exception. Use its generated PNGs.
-        var names: [String] = []
+        // A multi-group Icon Composer asset is an icon stack, not a UIImage.
+        // Loading it by name can raise an Objective-C exception on iOS 27.
+        var names = ["AppIconPreview"]
 
         if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
            let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
