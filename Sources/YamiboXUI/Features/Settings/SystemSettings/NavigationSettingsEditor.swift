@@ -145,11 +145,13 @@ private struct NavigationBarPreview: View {
     let configuration: AppNavigationSettings
     let select: (AppTab) -> Void
     @Environment(\.appTheme) private var theme
+    @State private var selectionFeedbackTrigger = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 20) {
             ForEach(configuration.tabs) { tab in
                 Button {
+                    selectionFeedbackTrigger += 1
                     select(tab)
                 } label: {
                     VStack(spacing: 8) {
@@ -167,6 +169,7 @@ private struct NavigationBarPreview: View {
             }
         }
         .padding(.vertical, 12)
+        .sensoryFeedback(.selection, trigger: selectionFeedbackTrigger)
     }
 }
 
