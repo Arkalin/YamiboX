@@ -1749,3 +1749,9 @@
 "downloads.background.saving" = "正在保存";
 "downloads.background.received" = "已接收 %@";
 "downloads.background.progress" = "已完成 %ld/%ld 项 · %@ · %@";
+
+"forum.tags.title" = "论坛标签";
+"forum.tags.search" = "查找标签名称";
+"forum.tags.empty" = "暂无论坛标签";
+"forum.tags.no_threads" = "暂无关联帖子";
+"forum.tags.related_threads" = "关联帖子";

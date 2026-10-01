@@ -321,6 +321,7 @@ public final class YamiboAppContext: Sendable {
             mangaDirectoryStore: mangaDirectoryStore,
             makeHomeRepository: { [self] in await makeForumRepository() },
             makeBoardRepository: { [self] in await makeForumRepository() },
+            makeTagRepository: { [self] in await makeForumRepository() },
             makeSearchRepository: { [self] in await makeForumRepository() },
             makePageRepository: { [self] in await makeForumRepository().pageRepository() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },

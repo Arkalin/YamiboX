@@ -14,6 +14,7 @@ public enum ForumNavigationSource: String, Codable, Hashable, Sendable {
 
 public enum ForumResolvedRoute: Equatable, Hashable, Sendable {
     case home
+    case tag(target: ForumTagTarget, page: Int)
     case board(fid: String, title: String?, page: Int?)
     case thread(URL)
     case userSpace(uid: String, name: String?)
@@ -41,6 +42,10 @@ public enum ForumRouteResolver {
         if resolvedURL.path == "/forum.php",
            URLComponents(url: resolvedURL, resolvingAgainstBaseURL: false)?.queryItems?.value(named: "mod") == "announcement" {
             return .announcement(resolvedURL)
+        }
+
+        if let tag = tagRoute(from: resolvedURL) {
+            return .tag(target: tag.target, page: tag.page)
         }
 
         if let board = boardRoute(from: resolvedURL) {
@@ -104,6 +109,23 @@ public enum ForumRouteResolver {
 
     public static func blogURL(blogID: String, uid: String?) -> URL {
         YamiboRoute.blog(blogID: blogID, uid: uid, page: 1).url
+    }
+
+    private static func tagRoute(from url: URL) -> (target: ForumTagTarget, page: Int)? {
+        guard url.path == "/misc.php",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let items = components.queryItems ?? []
+        guard items.value(named: "mod") == "tag",
+              Set(items.map(\.name)).count == items.count,
+              items.allSatisfy({ ["mod", "id", "name", "type", "page", "mobile"].contains($0.name) }),
+              items.value(named: "type")?.nilIfBlank == nil || items.value(named: "type") == "thread" else { return nil }
+        let page = max(1, items.value(named: "page").flatMap(Int.init) ?? 1)
+        if let id = items.value(named: "id")?.nilIfBlank, id != "0" {
+            guard id.allSatisfy({ $0.isASCII && $0.isNumber }), Int(id).map({ $0 > 0 }) == true else { return nil }
+            return (.id(id), page)
+        }
+        if let name = items.value(named: "name")?.nilIfBlank { return (.name(name), page) }
+        return (.index, 1)
     }
 
     private static func boardRoute(from url: URL) -> (fid: String, page: Int?)? {

@@ -1,0 +1,48 @@
+# 原生 Discuz 标签页面
+
+## 页面契约与实现范围
+
+依据本机 Discuz X3.5 的 `source/module/misc/misc_tag.php`、
+`template/default/tag/tag.htm`、`tag/tagitem.htm`，以及本地论坛返回的 HTML：
+
+- `misc.php?mod=tag` 列出最近 100 个公开标签，并允许按名称查找。
+- `misc.php?mod=tag&id=<ID>`、`misc.php?mod=tag&name=<名称>` 原生展示关联帖子；请求使用 `type=thread&mobile=no` 和既有桌面标签 User-Agent。
+- `type=thread&page=<页码>` 每页 20 条，解析版块、作者、回复/查看数、最后发表时间和服务器分页器。
+- `type=blog`、`type=countitem`、标签管理、跨站或携带不支持参数的 URL 保持原有路由行为。
+- 标签入口位于论坛首页工具栏。帖子、作者点击复用已有内容分类和原生导航，不增加底栏 Tab，不管理本地收藏标签。
+
+Core 的 `ForumTagPageLoading`/`ForumRepository` 负责请求，`ForumTagHTMLParser` 负责 HTML；
+UI 通过 `ForumDependencies` 使用上述能力。标签按 ID、帖子按 tid 去重。
+缺少标签、没有关联帖子属于空态；登录/权限提示、关闭标签和无法识别的 HTML 属于加载错误。
+刷新和翻页失败保留上次成功内容，重试使用失败请求的页码。
+后续页缺少分页器时最多回到第一页一次，不以 URL 的任意页码推定总页数。
+
+## 回归检查
+
+| 场景 | 预期 |
+| --- | --- |
+| 标签首页、ID 详情、中文名称查找 | 使用原生标签页面；名称完整编码 |
+| 同站链接带 `mobile=2`、负页码、`id=0&name=…` | 转为桌面请求；页码至少为 1；按名称查找 |
+| 跨站、无效 ID、重复参数、blog/countitem/管理链接 | 保留既有网页/操作路由 |
+| 本地 HTML 标签列表与帖子详情 | 提取标签、tid、fid、authorID、统计和活动时间 |
+| 重复标签/帖子行 | 稳定 ID 去重，不出现重复 SwiftUI 行 |
+| 中间页、末页、超范围页或极大页码 | 使用服务器分页；无分页后续页有限次恢复首页，不生成巨大页码菜单 |
+| 无标签、名称不存在、无帖子 | 显示空态，可刷新/返回标签列表 |
+| 登录页、标签关闭、畸形响应 | 显示错误与重试，不误显示为空列表 |
+| 连续相同请求、快速翻页、离开页面、外层取消 | 相同请求合并；取消传播；旧请求不能回写内容/页码/错误/加载状态 |
+| 翻页失败后重试、刷新失败 | 保留内容；重试失败页；成功后清除错误 |
+| 标签内帖子和作者点击、iPad 列表导航 | 沿用既有帖子分类、作者空间和分栏导航 |
+
+任务要求的临时回归程序对实际 Swift 解析/路由及 ViewModel 执行检查，
+使用本地 HTML 快照、受控延迟仓库和环境/诊断适配桩；未新增仓库单元测试文件或 target。
+它不覆盖真实 URLSession、账号 Cookie、SwiftUI 布局或模拟器交互。
+
+## 验证方式与限制
+
+编译使用 `YamiboX-Local`、可用 iOS 模拟器和独立 DerivedData，遵循 [AGENTS.md](../../AGENTS.md)。
+架构与格式检查使用 `bash scripts/check-architecture.sh`、`git diff --check`。
+若后续明确要求交互验收，启动参数与本地论坛准备均参考 [测试 App 启动参数](launch-arguments.md)，
+其中 `--open-url` 已复用此次新增的标签路由。
+
+本任务按用户要求没有安装/启动 App，也没有首屏 smoke、截图或真实设备验收。
+博客标签与标签管理的原生实现不在本次范围内。

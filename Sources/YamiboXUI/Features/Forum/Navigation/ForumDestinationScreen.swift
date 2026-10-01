@@ -46,6 +46,15 @@ struct ForumDestinationScreen: View {
                 }
             )
             .forumNavigationBarStyle()
+        case let .tag(target, page):
+            ForumTagView(
+                model: ForumTagViewModel(target: target, initialPage: page, dependencies: dependencies),
+                onTagTap: { navigator.route($0.url(), source: .external, fromBrowserList: fromBrowserList) },
+                onThreadTap: { navigator.openThread($0, containingFid: $0.fid, fromBrowserList: fromBrowserList) },
+                onAuthorTap: { navigator.openUserSpace(uid: $0, name: $1) }
+            )
+            .id(appModel.accountGeneration)
+            .forumNavigationBarStyle()
         case let .search(fid):
             ForumSearchView(
                 model: ForumSearchViewModel(forumID: fid, dependencies: dependencies),
@@ -262,6 +271,16 @@ private struct ForumHomeDestination: View {
             onBoardTap: { navigator.openBoard($0, fromBrowserList: fromBrowserList) },
             onCarouselTap: { navigator.openCarouselItem($0, fromBrowserList: fromBrowserList) }
         )
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        navigator.route(ForumTagTarget.index.url(), source: .external, fromBrowserList: fromBrowserList)
+                    } label: {
+                        Image(systemName: "tag")
+                    }
+                    .accessibilityLabel(L10n.string("forum.tags.title"))
+                }
+            }
             .navigationTitle(L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
             .forumNavigationBarStyle()

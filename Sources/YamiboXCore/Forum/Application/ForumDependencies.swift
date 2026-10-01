@@ -33,6 +33,7 @@ public struct ForumDependencies: Sendable {
     public let mangaDirectoryStore: any MangaDirectoryPersisting
     public let makeHomeRepository: @Sendable () async -> any ForumHomePageLoading
     public let makeBoardRepository: @Sendable () async -> any ForumBoardPageLoading
+    public let makeTagRepository: @Sendable () async -> any ForumTagPageLoading
     public let makeSearchRepository: @Sendable () async -> any ForumSearchPageLoading
     public let makePageRepository: @Sendable () async -> any ForumPageLoading
     public let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageLoading
@@ -57,6 +58,7 @@ public struct ForumDependencies: Sendable {
         mangaDirectoryStore: any MangaDirectoryPersisting,
         makeHomeRepository: @escaping @Sendable () async -> any ForumHomePageLoading,
         makeBoardRepository: @escaping @Sendable () async -> any ForumBoardPageLoading,
+        makeTagRepository: @escaping @Sendable () async -> any ForumTagPageLoading,
         makeSearchRepository: @escaping @Sendable () async -> any ForumSearchPageLoading,
         makePageRepository: @escaping @Sendable () async -> any ForumPageLoading,
         makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageLoading,
@@ -80,6 +82,7 @@ public struct ForumDependencies: Sendable {
         self.mangaDirectoryStore = mangaDirectoryStore
         self.makeHomeRepository = makeHomeRepository
         self.makeBoardRepository = makeBoardRepository
+        self.makeTagRepository = makeTagRepository
         self.makeSearchRepository = makeSearchRepository
         self.makePageRepository = makePageRepository
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository

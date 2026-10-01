@@ -1,6 +1,6 @@
 import Foundation
 
-public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, ForumSearchPageLoading {
+public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, ForumSearchPageLoading, ForumTagPageLoading {
     private let client: YamiboClient
     private let cacheStore: ForumCacheStore
     private let now: @Sendable () -> Date
@@ -148,6 +148,25 @@ public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, Forum
         return try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseSearchPage") {
             try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
         }
+    }
+
+    public func fetchTagPage(target: ForumTagTarget, page: Int) async throws -> ForumTagPage {
+        let html = try await client.fetchHTML(
+            url: target.url(page: page),
+            userAgent: YamiboNetworkConfiguration.desktopTagUserAgent,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            cancellationPolicy: .propagateCancellation
+        )
+        try Task.checkCancellation()
+        let result = try LoadDiagnosticError.parsing(html: html, context: "ForumTagHTMLParser.parse") {
+            try ForumTagHTMLParser.parse(html, target: target, requestedPage: page)
+        }
+        // Discuz omits its pager for an empty/out-of-range page. Recover once
+        // rather than inventing a total from an arbitrary deep-link page number.
+        if page > 1, result.pageNavigation == nil {
+            return try await fetchTagPage(target: target, page: 1)
+        }
+        return result
     }
 
     private func saveHomeCompletingStartedWork(_ page: ForumHomePage) async throws {

@@ -109,7 +109,7 @@ final class ForumDestinationNavigator {
     var browserListPath: [ForumDestination] {
         Array(path.prefix { destination in
             switch destination {
-            case .home, .board, .search: true
+            case .home, .board, .search, .tag: true
             default: false
             }
         })
@@ -177,6 +177,8 @@ final class ForumDestinationNavigator {
             case .readerOverlay, .contentBrowser:
                 push(.home)
             }
+        case let .tag(target, page):
+            push(.tag(target: target, page: page))
         case let .board(fid, title, page):
             push(.board(fid: fid, title: title, page: page))
         case let .thread(threadURL):

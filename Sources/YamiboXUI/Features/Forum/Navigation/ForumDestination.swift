@@ -3,6 +3,7 @@ import YamiboXCore
 
 enum ForumDestination: Hashable {
     case home
+    case tag(target: ForumTagTarget, page: Int)
     /// The history entry hosted by the Mine navigation stack.
     case browsingHistory
     case board(fid: String, title: String?, page: Int?)

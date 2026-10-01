@@ -9,6 +9,8 @@ public enum YamiboRoute: Sendable {
     case login
     case currentProfile
     case logout(formHash: String)
+    case tagIndex
+    case tagNamed(name: String, page: Int)
     case tag(id: String, page: Int)
     case search(keyword: String, forumID: String)
     case searchPage(searchID: String, page: Int)
@@ -149,13 +151,23 @@ public enum YamiboRoute: Sendable {
                 .init(name: "formhash", value: formHash),
                 .init(name: "mobile", value: "2")
             ])
+        case .tagIndex:
+            return Self.makeURL(path: "/misc.php", queryItems: [
+                .init(name: "mod", value: "tag"), .init(name: "mobile", value: "no")
+            ])
+        case let .tagNamed(name, page):
+            return Self.makeURL(path: "/misc.php", queryItems: [
+                .init(name: "mod", value: "tag"), .init(name: "type", value: "thread"),
+                .init(name: "mobile", value: "no"), .init(name: "name", value: name),
+                .init(name: "page", value: String(max(1, page)))
+            ])
         case let .tag(id, page):
             return Self.makeURL(path: "/misc.php", queryItems: [
                 .init(name: "mod", value: "tag"),
                 .init(name: "type", value: "thread"),
                 .init(name: "mobile", value: "no"),
                 .init(name: "id", value: id),
-                .init(name: "page", value: String(page))
+                .init(name: "page", value: String(max(1, page)))
             ])
         case let .search(keyword, forumID):
             return Self.makeURL(path: "/search.php", percentEncodedQuery: [
