@@ -9,20 +9,36 @@ enum ForumBBCodeTextCodec {
             return NSAttributedString(string: session.source, attributes: [.font: UIFont.monospacedSystemFont(ofSize: session.baseFontSize, weight: .regular), .foregroundColor: UIColor.label])
         }
         let result = NSMutableAttributedString(string: session.projection.text)
+        let nodesByID = nodeIndex(in: session.document)
         for span in session.projection.spans where span.range.length > 0 {
             var attributes = attributes(span.attributes, theme: session.theme, baseFontSize: session.baseFontSize)
-            if span.isAtomic, let attachment = session.attachment(for: span) { attributes[.attachment] = attachment }
+            if span.isAtomic, let node = nodesByID[span.nodeID],
+               let attachment = session.attachment(for: span, node: node) { attributes[.attachment] = attachment }
             result.setAttributes(attributes, range: span.range.nsRange)
         }
         for span in session.projection.spans {
             guard case .listMarker = span.kind,
-                  let attachment = session.attachment(for: span),
+                  let node = nodesByID[span.nodeID],
+                  let attachment = session.attachment(for: span, node: node),
                   let paragraph = (result.attribute(.paragraphStyle, at: span.range.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle else { continue }
             paragraph.headIndent = paragraph.firstLineHeadIndent + attachment.size(maxWidth: 640).width
             let range = (result.string as NSString).paragraphRange(for: span.range.nsRange)
             result.addAttribute(.paragraphStyle, value: paragraph, range: range)
         }
         return result
+    }
+
+    private static func nodeIndex(in document: ForumComposerDocument) -> [String: ForumComposerNode] {
+        var indexedNodes: [String: ForumComposerNode] = [:]
+        func visit(_ nodes: [ForumComposerNode]) {
+            for node in nodes {
+                // Match document.node(id:)'s first depth-first result.
+                if indexedNodes[node.id] == nil { indexedNodes[node.id] = node }
+                visit(node.children)
+            }
+        }
+        visit(document.nodes)
+        return indexedNodes
     }
 
     static func attributes(_ value: ForumComposerTextAttributes, theme: ForumTheme, baseFontSize: CGFloat) -> [NSAttributedString.Key: Any] {
@@ -57,11 +73,12 @@ enum ForumBBCodeTextCodec {
         if code { return NSAttributedString(string: source, attributes: [.font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular), .foregroundColor: UIColor.label]) }
         let document = ForumComposerDocument(source: source)
         let projection = ForumComposerProjection(document: document)
+        let nodesByID = nodeIndex(in: document)
         let result = NSMutableAttributedString(string: "")
         for span in projection.spans {
             let string: String
             if case let .listMarker(marker) = span.kind { string = marker + " " }
-            else if span.isAtomic, let node = document.node(id: span.nodeID) {
+            else if span.isAtomic, let node = nodesByID[span.nodeID] {
                 let content = document.substring(node.contentRange)
                 let imageKey = node.kind == .emoticon ? document.substring(node.range) : content
                 if [.img, .attachimg].contains(node.tag) || node.kind == .emoticon, let image = images[imageKey] {

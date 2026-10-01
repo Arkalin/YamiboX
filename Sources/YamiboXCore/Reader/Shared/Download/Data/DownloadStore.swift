@@ -657,6 +657,45 @@ actor DownloadStore {
         }
     }
 
+    /// A scoped image lookup does not need to hydrate the chapter's image list.
+    /// Keep the source-page validity gate used by full membership reads.
+    static func mangaOfflineImageFileName(
+        imageURLString: String,
+        ownerName: String,
+        tid: String,
+        fileManager: FileManager,
+        mangaSourcePagesDirectory: URL,
+        sourcePageCache: NSCache<NSString, SourcePageCacheEntry>,
+        in db: Database
+    ) throws -> String? {
+        guard let ownerName = ownerName.nilIfBlank, let tid = tid.nilIfBlank else { return nil }
+        let canonicalOwnerName = try canonicalMangaOwnerKey(ownerName, in: db)
+        guard let row = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT entries.tid, entries.source_page_file_name, entries.source_page_schema_version,
+                entries.source_page_fingerprint, entries.byte_count, assets.file_name
+            FROM download_manga_entry_images AS images
+            JOIN download_manga_entries AS entries
+                ON entries.owner_name = images.owner_name AND entries.tid = images.tid
+            JOIN download_image_assets AS assets ON assets.image_url = images.image_url
+            WHERE images.image_url = ? AND images.owner_name = ? AND images.tid = ?
+            LIMIT 1
+            """,
+            arguments: [imageURLString, canonicalOwnerName, tid]
+        ), validSourcePage(
+            fileName: row["source_page_file_name"],
+            schemaVersion: row["source_page_schema_version"],
+            fingerprint: row["source_page_fingerprint"],
+            byteCount: row["byte_count"],
+            tid: row["tid"],
+            fileManager: fileManager,
+            mangaSourcePagesDirectory: mangaSourcePagesDirectory,
+            sourcePageCache: sourcePageCache
+        ) != nil else { return nil }
+        return row["file_name"]
+    }
+
     static func membership(
         ownerName: String,
         tid: String,

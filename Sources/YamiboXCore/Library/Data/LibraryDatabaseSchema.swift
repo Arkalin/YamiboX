@@ -50,6 +50,24 @@ enum LibraryDatabaseSchema: DatabaseSchemaModule {
         migrator.registerMigration("library.v4.cover-sync-deletions") { db in
             try SyncDeletionState.createTable("content_cover_sync_state", in: db)
         }
+        migrator.registerMigration("library.v5.incremental-sync-run-entries") { db in
+            // Existing snapshots remain readable until their next save. New
+            // saves keep small progress metadata separate from growing logs.
+            try db.alter(table: "favorite_sync_runs") { table in
+                table.add(column: "separated_entries", .boolean).notNull().defaults(to: false)
+                table.add(column: "entries_revision", .text)
+                table.add(column: "log_count", .integer).notNull().defaults(to: 0)
+                table.add(column: "warning_count", .integer).notNull().defaults(to: 0)
+                table.add(column: "error_count", .integer).notNull().defaults(to: 0)
+            }
+            try db.create(table: "favorite_sync_run_entries") { table in
+                table.column("run_id", .text).notNull().references("favorite_sync_runs", onDelete: .cascade)
+                table.column("kind", .text).notNull()
+                table.column("position", .integer).notNull()
+                table.column("entry_json", .text).notNull()
+                table.primaryKey(["run_id", "kind", "position"])
+            }
+        }
     }
 
     static func erase(in db: Database) throws {

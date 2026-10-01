@@ -17,7 +17,7 @@ public struct ReaderAnnotationService: Sendable {
         try await Task {
             // Never discard retained bytes before their metadata deletion commits.
             try await likes.delete(ids: items.map(\.id), date: .now)
-            for item in items where item.kind == .image { try await images.delete(id: item.id) }
+            try await images.delete(ids: items.filter { $0.kind == .image }.map(\.id))
         }.value
     }
 

@@ -81,14 +81,9 @@ public actor LikeStore: ReaderLikeMutating {
                 }
                 replacedIDs.append(candidate.id)
             }
-            for replacedID in replacedIDs {
-                // Soft, not physical. A physically deleted row is neither in
-                // `items` nor in `tombstones` on the next WebDAV export, so
-                // the remote snapshot's copy came back as an unseen new item
-                // and the merged-away highlight reappeared, overlapping the
-                // one that subsumed it.
-                try Self.softDeleteRow(id: replacedID, date: date, in: db)
-            }
+            // Keep merged-away highlights as tombstones so an old remote
+            // snapshot cannot restore them over the replacement highlight.
+            try Self.softDeleteRows(ids: replacedIDs, date: date, in: db)
             let previous = try Self.fetchLike(id: id, in: db)
             let createdAt = previous?.createdAt ?? date
             let retainedTitle = existing.first {
@@ -208,9 +203,7 @@ public actor LikeStore: ReaderLikeMutating {
     public func delete(ids: [String], date: Date = .now) async throws {
         guard !ids.isEmpty else { return }
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
-            for id in ids {
-                try Self.softDeleteRow(id: id, date: date, in: db)
-            }
+            try Self.softDeleteRows(ids: ids, date: date, in: db)
         }
     }
 
@@ -238,7 +231,7 @@ public actor LikeStore: ReaderLikeMutating {
                 sql: "SELECT id FROM like_items WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
                 arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
             )
-            for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
+            try Self.softDeleteRows(ids: ids, date: date, in: db)
         }
     }
 
@@ -475,13 +468,20 @@ public actor LikeStore: ReaderLikeMutating {
     }
 
     private static func softDeleteRow(id: String, date: Date, in db: Database) throws {
+        try softDeleteRows(ids: [id], date: date, in: db)
+    }
+
+    private static func softDeleteRows(ids: [String], date: Date, in db: Database) throws {
+        guard !ids.isEmpty else { return }
         var deletions = try SyncDeletionState.load(from: "like_sync_state", in: db)
-        deletions.recordDeletion(of: id, at: date)
+        for id in ids { deletions.recordDeletion(of: id, at: date) }
         try deletions.save(to: "like_sync_state", in: db)
-        try db.execute(
-            sql: "UPDATE like_items SET deleted_at = ?, updated_at = ? WHERE id = ?",
-            arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
-        )
+        for id in ids {
+            try db.execute(
+                sql: "UPDATE like_items SET deleted_at = ?, updated_at = ? WHERE id = ?",
+                arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
+            )
+        }
     }
 
     private static func item(from row: Row) throws -> LikeItem? {

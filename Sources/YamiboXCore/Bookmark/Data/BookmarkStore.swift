@@ -92,9 +92,7 @@ public actor BookmarkStore: ReaderBookmarkMutating {
     public func delete(ids: [String], date: Date = .now) async throws {
         guard !ids.isEmpty else { return }
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
-            for id in ids {
-                try Self.softDeleteRow(id: id, date: date, in: db)
-            }
+            try Self.softDeleteRows(ids: ids, date: date, in: db)
         }
     }
 
@@ -122,7 +120,7 @@ public actor BookmarkStore: ReaderBookmarkMutating {
                 sql: "SELECT id FROM bookmarks WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL",
                 arguments: [workKey.kind.rawValue, try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)]
             )
-            for id in ids { try Self.softDeleteRow(id: id, date: date, in: db) }
+            try Self.softDeleteRows(ids: ids, date: date, in: db)
         }
     }
 
@@ -220,13 +218,20 @@ public actor BookmarkStore: ReaderBookmarkMutating {
     }
 
     private static func softDeleteRow(id: String, date: Date, in db: Database) throws {
+        try softDeleteRows(ids: [id], date: date, in: db)
+    }
+
+    private static func softDeleteRows(ids: [String], date: Date, in db: Database) throws {
+        guard !ids.isEmpty else { return }
         var deletions = try SyncDeletionState.load(from: "bookmark_sync_state", in: db)
-        deletions.recordDeletion(of: id, at: date)
+        for id in ids { deletions.recordDeletion(of: id, at: date) }
         try deletions.save(to: "bookmark_sync_state", in: db)
-        try db.execute(
-            sql: "UPDATE bookmarks SET deleted_at = ?, updated_at = ? WHERE id = ?",
-            arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
-        )
+        for id in ids {
+            try db.execute(
+                sql: "UPDATE bookmarks SET deleted_at = ?, updated_at = ? WHERE id = ?",
+                arguments: [date.timeIntervalSince1970, date.timeIntervalSince1970, id]
+            )
+        }
     }
 
     private static func item(from row: Row) throws -> BookmarkItem? {

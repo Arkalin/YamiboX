@@ -717,9 +717,12 @@ private enum NovelReaderPostHTMLProjectionParser {
         excluding attachmentImageURLs: Set<URL>,
         chapterTitle: String?
     ) -> [ParsedSegment] {
-        images.compactMap { image in
+        let containedReferences = NovelHTMLImageReferenceMatcher.containedReferences(
+            images.map(\.url), in: contentHTML
+        )
+        return images.compactMap { image in
             guard !image.url.isEmpty,
-                  !contentHTML.contains(image.url),
+                  !containedReferences.contains(image.url),
                   let url = HTMLTextExtractor.absoluteURL(from: image.url),
                   !attachmentImageURLs.contains(url),
                   !NovelReaderAttachmentFilter.isFileIcon(url) else {
@@ -774,6 +777,92 @@ private enum NovelReaderPostHTMLProjectionParser {
         "span",
         "font"
     ]
+}
+
+/// Matches the original raw substrings, including references occurring outside
+/// image attributes. Character keys retain String.contains' canonical equality
+/// and grapheme boundaries; decoded/resolved URL or UTF-8 matching would not.
+private enum NovelHTMLImageReferenceMatcher {
+    private struct Node {
+        var transitions: [Character: Int] = [:]
+        var failure = 0
+        var terminal: Int?
+        var output: Int?
+    }
+
+    static func containedReferences(_ references: [String], in html: String) -> Set<String> {
+        var seen = Set<String>()
+        let patterns = references.filter { !$0.isEmpty && seen.insert($0).inserted }
+        guard !patterns.isEmpty else { return [] }
+        if patterns.count == 1 {
+            return html.contains(patterns[0]) ? [patterns[0]] : []
+        }
+
+        var nodes = [Node()]
+        for (index, pattern) in patterns.enumerated() {
+            var state = 0
+            for character in pattern {
+                if let next = nodes[state].transitions[character] {
+                    state = next
+                } else {
+                    let next = nodes.count
+                    nodes.append(Node())
+                    nodes[state].transitions[character] = next
+                    state = next
+                }
+            }
+            nodes[state].terminal = index
+        }
+
+        var queue = Array(nodes[0].transitions.values)
+        var cursor = 0
+        while cursor < queue.count {
+            let state = queue[cursor]
+            cursor += 1
+            for (character, next) in nodes[state].transitions {
+                queue.append(next)
+                var failure = nodes[state].failure
+                while failure != 0, nodes[failure].transitions[character] == nil {
+                    failure = nodes[failure].failure
+                }
+                failure = nodes[failure].transitions[character] ?? 0
+                nodes[next].failure = failure
+                nodes[next].output = nodes[failure].terminal == nil ? nodes[failure].output : failure
+            }
+        }
+
+        // A reference needs only one hit. Compress consumed output chains so
+        // repeated/overlapping matches do not revisit every matching suffix.
+        var consumed = Array(repeating: false, count: nodes.count)
+        var nextOutput = nodes.map(\.output)
+        func unmatchedOutput(from output: Int?) -> Int? {
+            var current = output
+            while let index = current, consumed[index] { current = nextOutput[index] }
+            var previous = output
+            while let index = previous, consumed[index] {
+                let next = nextOutput[index]
+                nextOutput[index] = current
+                previous = next
+            }
+            return current
+        }
+        var matches = Set<String>()
+        var state = 0
+        for character in html {
+            while state != 0, nodes[state].transitions[character] == nil {
+                state = nodes[state].failure
+            }
+            state = nodes[state].transitions[character] ?? 0
+            var output = unmatchedOutput(from: nodes[state].terminal == nil ? nodes[state].output : state)
+            while let index = output {
+                if let terminal = nodes[index].terminal { matches.insert(patterns[terminal]) }
+                consumed[index] = true
+                output = unmatchedOutput(from: index)
+            }
+            if matches.count == patterns.count { break }
+        }
+        return matches
+    }
 }
 
 private enum NovelPostContentProjector {

@@ -72,8 +72,15 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
             if let existing = local.legacyIdentities[alias] { unite(existing, id) }
         }
         let allIDs = Set(remote.names.values).union(remote.legacyIdentities.values).union(remote.redirects.keys).union(remote.redirects.values).union(remote.titles.keys).union(parent.keys).union(parent.values)
+        // Keep the same smallest-alias choice without sorting every alias
+        // again for each identity, including identities with no name alias.
+        var preferredNameByID: [String: String] = [:]
+        for (name, id) in remote.names {
+            if let current = preferredNameByID[id], current <= name { continue }
+            preferredNameByID[id] = name
+        }
         for id in allIDs {
-            let name = remote.names.keys.sorted().first { remote.names[$0] == id } ?? id
+            let name = preferredNameByID[id] ?? id
             try db.execute(sql: "INSERT OR IGNORE INTO manga_identities(id, name) VALUES (?, ?)", arguments: [id, name])
         }
         // Merge cached local directories before publishing redirects so lookups

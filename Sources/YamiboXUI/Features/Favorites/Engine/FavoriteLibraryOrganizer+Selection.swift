@@ -99,6 +99,10 @@ extension FavoriteLibraryOrganizer {
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
         )
+        // Ordinary favorite ids also need a batch lookup. Preserve `first`
+        // for malformed/unnormalized documents containing duplicate ids.
+        let itemsByID = Dictionary(document.items.map { ($0.id, $0) },
+                                   uniquingKeysWith: { first, _ in first })
         var expanded = favoriteIDs
         for id in favoriteIDs {
             if let members = itemsByEffectiveTitle[id] {
@@ -106,7 +110,7 @@ extension FavoriteLibraryOrganizer {
                 expanded.formUnion(members.map(\.id))
                 continue
             }
-            guard let item = document.items.first(where: { $0.id == id }),
+            guard let item = itemsByID[id],
                   item.target.kind == .mangaThread,
                   boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID) else { continue }
             let directory = mangaDirectoriesByTID[item.target.threadID ?? ""]

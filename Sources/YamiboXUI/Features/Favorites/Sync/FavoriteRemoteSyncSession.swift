@@ -193,7 +193,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         guard var snapshot else { return }
         snapshot.isHiddenFromFavoritePage = true
         self.snapshot = snapshot
-        await persistSnapshot(snapshot)
+        await persistHiddenCard(runID: snapshot.runID)
     }
 
     // MARK: - Run
@@ -229,12 +229,19 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     /// Merges an engine-produced snapshot with session-owned presentation
     /// state (card hiding), persists it, then publishes it. Persist-first
     /// keeps the published state from ever running ahead of the stored one.
-    private func applyEngineSnapshot(_ updated: FavoriteRemoteSyncSnapshot) async {
+    private func applyEngineSnapshot(_ updated: FavoriteRemoteSyncSnapshot, appendingAfter previousCounts: FavoriteRemoteSyncEntryCounts? = nil) async {
         var merged = updated
         if let current = snapshot, current.runID == updated.runID {
             merged.isHiddenFromFavoritePage = current.isHiddenFromFavoritePage
         }
-        await persistSnapshot(merged)
+        await persistSnapshot(merged, appendingAfter: previousCounts)
+        // Hiding can arrive during the durable write. Preserve its ownership
+        // without replaying an old UI snapshot's logs/progress into the store.
+        if let current = snapshot, current.runID == merged.runID,
+           current.isHiddenFromFavoritePage && !merged.isHiddenFromFavoritePage {
+            merged.isHiddenFromFavoritePage = true
+            await persistHiddenCard(runID: merged.runID)
+        }
         snapshot = merged
     }
 
@@ -268,6 +275,9 @@ final class FavoriteRemoteSyncSession: ObservableObject {
                 onFailure: { [weak self] details in
                     await self?.retainTerminalFailure(details, runID: snapshot.runID)
                 },
+                persistIncrementally: { [weak self] updated, previousCounts in
+                    await self?.applyEngineSnapshot(updated, appendingAfter: previousCounts)
+                },
                 persist: persist
             )
         }
@@ -294,17 +304,34 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         return snapshot
     }
 
-    private func persistSnapshot(_ snapshot: FavoriteRemoteSyncSnapshot) async {
+    private func persistSnapshot(_ snapshot: FavoriteRemoteSyncSnapshot, appendingAfter previousCounts: FavoriteRemoteSyncEntryCounts? = nil) async {
         // Unstructured task: the terminal snapshot of an interrupted run is
         // written from the cancelled sync task, and GRDB's async accesses
         // honor Task cancellation — the write must not inherit it.
         let runStore = runStore
         do {
             try await Task {
-                try await runStore.save(snapshot)
+                if let previousCounts {
+                    try await runStore.saveAppending(snapshot, after: previousCounts)
+                } else {
+                    try await runStore.save(snapshot)
+                }
             }.value
         } catch {
             YamiboLog.sync.error("Failed to persist favorite sync snapshot for run \(snapshot.runID): \(error.localizedDescription)")
+            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                errorMessage = error.localizedDescription
+                errorDetails = LoadFailureDetails(error: error)
+            }
+        }
+    }
+
+    private func persistHiddenCard(runID: String) async {
+        let runStore = runStore
+        do {
+            try await Task { try await runStore.hideCard(runID: runID) }.value
+        } catch {
+            YamiboLog.sync.error("Failed to persist favorite sync hidden card for run \(runID): \(error.localizedDescription)")
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)

@@ -28,6 +28,9 @@ struct MangaIdentityWebDAVParticipant: WebDAVSyncParticipant {
     var remoteDirectories: [String] { [Self.namespace] }
     var uploadsOnlyWhenMarkedDirty: Bool { base.uploadsOnlyWhenMarkedDirty }
     var uploadsUntrackedContentAutomatically: Bool { true }
+    var localFingerprintDependencies: Set<String> {
+        base.localFingerprintDependencies.union([WebDAVSyncContent.mangaDirectories.rawValue])
+    }
 
     func inspectRemote(_ data: Data) throws -> WebDAVRemotePayloadInfo {
         var info = try base.inspectRemote(data)

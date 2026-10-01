@@ -15,7 +15,7 @@ extension YamiboAppContext {
                 .init(
                     changeID: dataset.changeID,
                     changes: dataset.changes,
-                    onChange: { continuity.localDataChanged() }
+                    onChange: { continuity.localDataChanged(datasetID: dataset.participant.datasetID) }
                 )
             },
             operations: [

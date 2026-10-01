@@ -15,6 +15,11 @@ public actor WebDAVSyncService {
     private let policyModule: WebDAVSyncPolicyModule
     private let migrations: [any WebDAVSyncMigrating]
 
+    private enum LocalChanges: Sendable {
+        case all
+        case datasets(Set<String>)
+    }
+
     init(
         settingsStore: WebDAVSyncSettingsStore,
         sessionStore: SessionStore,
@@ -124,8 +129,30 @@ public actor WebDAVSyncService {
         }
     }
 
+    /// Marks a coalesced local change and makes the automatic-sync decision in
+    /// one coordinator run. Nil means the caller cannot identify the dataset.
+    /// Fingerprints are local to this run; none survive account/receipt changes.
+    func synchronizeAutomatically(
+        afterLocalChangesIn datasetIDs: Set<String>?,
+        bypassingMinimumInterval: Bool = false
+    ) async throws -> WebDAVAutomaticSyncResult {
+        let registeredIDs = Set(participants.map(\.datasetID))
+        let changes: LocalChanges
+        if let datasetIDs, datasetIDs.isSubset(of: registeredIDs) {
+            changes = .datasets(datasetIDs)
+        } else {
+            changes = .all
+        }
+        return try await settingsStore.syncCoordinator.run { [self] run in
+            try await performAutomaticSync(
+                bypassingMinimumInterval: bypassingMinimumInterval, localChanges: changes, run: run
+            )
+        }
+    }
+
     private func performAutomaticSync(
         bypassingMinimumInterval: Bool,
+        localChanges: LocalChanges? = nil,
         run: WebDAVSyncCoordinator.RunToken
     ) async throws -> WebDAVAutomaticSyncResult {
         try await checkCurrent(run)
@@ -135,21 +162,36 @@ public actor WebDAVSyncService {
         try await checkCurrent(run)
         guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return .skipped }
         let sessionState = snapshot.session
-        guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else { return .skipped }
+        guard policyModule.canSynchronizeAutomatically(settings: settings, session: sessionState) else {
+            try await markChangesBeforeSkipping(localChanges, settings: settings, run: run)
+            return .skipped
+        }
         let accountUID = try? currentAccountUID(from: sessionState)
-        guard let accountUID else { return .skipped }
+        guard let accountUID else {
+            try await markChangesBeforeSkipping(localChanges, settings: settings, run: run)
+            return .skipped
+        }
         settings = try await settingsStore.prepareReceiptScope(for: settings, accountUID: accountUID)
         try await checkCurrent(run)
         let disabledContentIDs = settings.disabledContentIDs
         let selectionRevision = settings.contentSelectionRevision
         let participants = enabledParticipants(settings)
         guard !participants.isEmpty else { return .skipped }
+        let (locallyChangedIDs, marksAllLocalChanges) = localChangeScope(localChanges, settings: settings)
+        // Full reconciliation checkpoints still inspect every participant.
+        // A recent-sync local-change round only needs to mark its affected
+        // datasets before returning; unrelated libraries can be arbitrarily large.
+        let skipsNetwork = !bypassingMinimumInterval && settings.lastSyncedAt.map {
+            Date.now.timeIntervalSince($0) < Self.minimumAutomaticSyncInterval
+        } == true
         try await refreshDirtyState(
             at: .now,
             // A missing receipt baseline is not a local edit. Participants
             // opt into first-time uploads; snapshot-only settings must remain
             // eligible to download an existing remote value instead.
-            includeUntracked: false,
+            includeUntracked: marksAllLocalChanges,
+            datasetIDs: localChanges != nil && skipsNetwork ? locallyChangedIDs : nil,
+            includeUntrackedDatasetIDs: locallyChangedIDs,
             using: settings,
             run: run
         )
@@ -280,9 +322,40 @@ public actor WebDAVSyncService {
         participants.filter { !settings.disabledContentIDs.contains($0.datasetID) }
     }
 
+    private func localChangeScope(
+        _ changes: LocalChanges?, settings: WebDAVSyncSettings
+    ) -> (Set<String>, Bool) {
+        let enabled = enabledParticipants(settings)
+        switch changes {
+        case .all:
+            return (Set(enabled.map(\.datasetID)), true)
+        case let .datasets(changed):
+            return (Set(enabled.filter {
+                changed.contains($0.datasetID) || !$0.localFingerprintDependencies.isDisjoint(with: changed)
+            }.map(\.datasetID)), false)
+        case nil:
+            return ([], false)
+        }
+    }
+
+    /// Local marking must also work while logged out or awaiting a valid
+    /// connection, as the old mark-then-sync path did. No network is admitted.
+    private func markChangesBeforeSkipping(
+        _ changes: LocalChanges?, settings: WebDAVSyncSettings, run: WebDAVSyncCoordinator.RunToken
+    ) async throws {
+        guard changes != nil else { return }
+        let (ids, includesAll) = localChangeScope(changes, settings: settings)
+        try await refreshDirtyState(
+            at: .now, includeUntracked: includesAll, datasetIDs: ids,
+            includeUntrackedDatasetIDs: ids, using: settings, run: run
+        )
+    }
+
     private func refreshDirtyState(
         at date: Date,
         includeUntracked: Bool,
+        datasetIDs: Set<String>? = nil,
+        includeUntrackedDatasetIDs: Set<String> = [],
         using snapshot: WebDAVSyncSettings? = nil,
         run: WebDAVSyncCoordinator.RunToken? = nil
     ) async throws {
@@ -292,8 +365,10 @@ public actor WebDAVSyncService {
         guard settings.isAutoSyncEnabled, !enabledParticipants(settings).isEmpty else { return }
         var changed = Set<String>()
         for participant in enabledParticipants(settings) where participant.uploadsOnlyWhenMarkedDirty {
+            guard datasetIDs?.contains(participant.datasetID) ?? true else { continue }
             if let run { try await checkCurrent(run) }
-            guard includeUntracked || settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != nil
+            guard includeUntracked || includeUntrackedDatasetIDs.contains(participant.datasetID)
+                || settings.lastSyncedFingerprintByDatasetID[participant.datasetID] != nil
                 || participant.uploadsUntrackedContentAutomatically else { continue }
             guard let fingerprint = try await participant.readLocalFingerprint() else { continue }
             if let run { try await checkCurrent(run) }

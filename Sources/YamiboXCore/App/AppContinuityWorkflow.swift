@@ -51,6 +51,12 @@ public final class AppContinuityWorkflow: Sendable {
         var foregroundSyncTask: Task<WebDAVAutomaticSyncResult, Never>?
         var foregroundSyncID: UUID?
         var debouncedUploadTask: Task<Void, Never>?
+        var debouncedUploadID: UUID?
+        var pendingChangedDatasetIDs: Set<String> = []
+        var needsFullLocalFingerprint = false
+        var hasFreshLocalChangeSignal = false
+        var isBackgrounded = false
+        var needsBackgroundFlush = false
         var isWebDAVSyncInProgress = false
         var hasRestoredReaderResumeRoute = false
         var isReaderRoutePresented = false
@@ -243,6 +249,10 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     public func foregroundBecameActive() {
+        state.withLock {
+            $0.isBackgrounded = false
+            $0.needsBackgroundFlush = false
+        }
         _ = foregroundSynchronization()
     }
 
@@ -267,40 +277,85 @@ public final class AppContinuityWorkflow: Sendable {
         }
     }
 
-    // `touchesAppSettings` no longer changes behavior (markLocalDataChanged now
-    // fingerprints every dirty-tracked participant unconditionally — see its
-    // doc comment) but the parameter stays for source compatibility with
-    // existing call sites.
+    /// Legacy callers cannot identify their dataset, so retain the conservative
+    /// full fingerprint pass. Registered store notifications use the ID overload.
     public func localDataChanged(touchesAppSettings _: Bool = false) {
-        guard state.withLock({ !$0.isWebDAVSyncInProgress }) else { return }
-        replaceDebouncedUploadTask(
-            with: Task { [weak self] in
-                guard let self else { return }
+        state.withLock {
+            $0.needsFullLocalFingerprint = true
+            $0.hasFreshLocalChangeSignal = true
+        }
+        scheduleDebouncedUpload()
+    }
+
+    func localDataChanged(datasetID: String) {
+        state.withLock {
+            _ = $0.pendingChangedDatasetIDs.insert(datasetID)
+            $0.hasFreshLocalChangeSignal = true
+        }
+        scheduleDebouncedUpload()
+    }
+
+    private struct LocalChangeBatch: Sendable {
+        let datasetIDs: Set<String>?
+    }
+
+    private func scheduleDebouncedUpload() {
+        let previous = state.withLock { mutableState -> Task<Void, Never>? in
+            guard !mutableState.isWebDAVSyncInProgress, !mutableState.isBackgrounded,
+                  mutableState.hasFreshLocalChangeSignal,
+                  mutableState.needsFullLocalFingerprint || !mutableState.pendingChangedDatasetIDs.isEmpty else { return nil }
+            let previous = mutableState.debouncedUploadTask
+            let id = UUID()
+            mutableState.debouncedUploadID = id
+            mutableState.debouncedUploadTask = Task { [weak self] in
                 do {
-                    // Marking + fingerprinting is deferred past the debounce sleep so a
-                    // burst of local changes (e.g. rapid page turns) costs one
-                    // UserDefaults rewrite + fingerprint pass per quiet window instead
-                    // of one per change; `willEnterBackground` marks synchronously
-                    // before its own flush so backgrounding mid-debounce still syncs
-                    // fresh state.
                     try await Task.sleep(for: .seconds(2))
-
-                    let service = appContext.makeWebDAVSyncService()
-                    try await service.markLocalDataChanged()
-
-                    guard beginWebDAVSync() else { return }
-                    defer { endWebDAVSync() }
-
-                    try await service.synchronizeAutomatically()
+                    await self?.synchronizeDebouncedLocalChanges(id: id)
                 } catch {
-                    // Keep local data authoritative until the next foreground or manual sync.
-                    YamiboLog.sync.warning("Debounced local-change WebDAV upload failed: \(error)")
+                    // A newer quiet window or background flush owns the changes.
                 }
             }
-        )
+            return previous
+        }
+        previous?.cancel()
+    }
+
+    private func synchronizeDebouncedLocalChanges(id: UUID) async {
+        let batch = state.withLock { mutableState -> LocalChangeBatch? in
+            guard mutableState.debouncedUploadID == id, !mutableState.isWebDAVSyncInProgress,
+                  !mutableState.isBackgrounded, !Task.isCancelled else { return nil }
+            mutableState.debouncedUploadTask = nil
+            mutableState.debouncedUploadID = nil
+            mutableState.isWebDAVSyncInProgress = true
+            let batch = LocalChangeBatch(datasetIDs: mutableState.needsFullLocalFingerprint ? nil : mutableState.pendingChangedDatasetIDs)
+            mutableState.pendingChangedDatasetIDs.removeAll()
+            mutableState.needsFullLocalFingerprint = false
+            mutableState.hasFreshLocalChangeSignal = false
+            return batch
+        }
+        guard let batch else { return }
+        defer { endWebDAVSync() }
+        do {
+            _ = try await appContext.makeWebDAVSyncService().synchronizeAutomatically(afterLocalChangesIn: batch.datasetIDs)
+        } catch {
+            state.withLock {
+                if let datasetIDs = batch.datasetIDs {
+                    $0.pendingChangedDatasetIDs.formUnion(datasetIDs)
+                } else {
+                    $0.needsFullLocalFingerprint = true
+                }
+            }
+            // Retain failed candidates for the next change signal or full
+            // checkpoint. Requeueing alone must not create a retry timer loop.
+            YamiboLog.sync.warning("Debounced local-change WebDAV upload failed: \(error)")
+        }
     }
 
     public func willEnterBackground() {
+        state.withLock {
+            $0.isBackgrounded = true
+            $0.needsBackgroundFlush = true
+        }
         replaceDebouncedUploadTask(with: nil)
         Task { [weak self] in
             await self?.flushWebDAVSyncBeforeBackground()
@@ -342,6 +397,7 @@ public final class AppContinuityWorkflow: Sendable {
         let previous = state.withLock { mutableState in
             let previous = mutableState.debouncedUploadTask
             mutableState.debouncedUploadTask = task
+            mutableState.debouncedUploadID = nil
             return previous
         }
         previous?.cancel()
@@ -356,7 +412,17 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     private func endWebDAVSync() {
-        state.withLock { $0.isWebDAVSyncInProgress = false }
+        let needsBackgroundFlush = state.withLock {
+            $0.isWebDAVSyncInProgress = false
+            return $0.needsBackgroundFlush
+        }
+        if needsBackgroundFlush {
+            Task { [weak self] in await self?.flushWebDAVSyncBeforeBackground() }
+        } else {
+            // Changes arriving during a read/merge are retained for another
+            // quiet window instead of being discarded by the in-flight guard.
+            scheduleDebouncedUpload()
+        }
     }
 
     private func observeReadingProgress(for route: ReaderResumeRoute?) async -> Result<ReadingProgressRecord?, any Error> {
@@ -385,19 +451,28 @@ public final class AppContinuityWorkflow: Sendable {
     }
 
     private func flushWebDAVSyncBeforeBackground() async {
-        guard beginWebDAVSync() else { return }
+        let admitted = state.withLock { mutableState in
+            guard mutableState.needsBackgroundFlush, !mutableState.isWebDAVSyncInProgress else { return false }
+            mutableState.isWebDAVSyncInProgress = true
+            mutableState.needsBackgroundFlush = false
+            mutableState.pendingChangedDatasetIDs.removeAll()
+            mutableState.needsFullLocalFingerprint = false
+            mutableState.hasFreshLocalChangeSignal = false
+            return true
+        }
+        guard admitted else { return }
         defer { endWebDAVSync() }
 
         do {
-            // Marks dirty state synchronously here (rather than relying on the
-            // debounced task, which this call site's caller already cancelled) so
-            // edits made just before backgrounding aren't left unmarked until some
-            // unrelated later change happens to trigger markLocalDataChanged again.
-            let service = appContext.makeWebDAVSyncService()
-            try await service.markLocalDataChanged()
-            try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+            // Full marking and reconciliation share the coordinator run, even
+            // when backgrounding cancelled the pending debounce before it ran.
+            _ = try await appContext.makeWebDAVSyncService().synchronizeAutomatically(
+                afterLocalChangesIn: nil, bypassingMinimumInterval: true
+            )
         } catch {
-            // Background flush is best effort.
+            // The next checkpoint or change signal must still inspect all
+            // candidates if this full pass failed before marking completed.
+            state.withLock { $0.needsFullLocalFingerprint = true }
             YamiboLog.sync.warning("Background WebDAV sync flush failed: \(error)")
         }
     }

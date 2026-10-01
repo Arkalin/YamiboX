@@ -186,6 +186,21 @@ public struct FavoriteRemoteSyncSnapshot: Codable, Hashable, Identifiable, Senda
     }
 }
 
+/// Baseline for an append-only engine mutation. Counts are stored with the
+/// metadata, so a failed/missing checkpoint can fall back to an exact full save
+/// without reading or comparing the entire previous log on every item.
+public struct FavoriteRemoteSyncEntryCounts: Equatable, Sendable {
+    public let logs: Int
+    public let warnings: Int
+    public let errors: Int
+
+    public init(_ snapshot: FavoriteRemoteSyncSnapshot) {
+        logs = snapshot.logEntries.count
+        warnings = snapshot.warnings.count
+        errors = snapshot.errorMessages.count
+    }
+}
+
 /// How often favorite update checks run automatically (BGAppRefreshTask plus
 /// a foreground catch-up). iOS decides the actual background timing; these
 /// are the earliest-run intervals, mirroring the Android options.

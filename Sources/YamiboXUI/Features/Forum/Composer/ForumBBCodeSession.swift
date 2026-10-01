@@ -359,8 +359,7 @@ final class ForumBBCodeSession {
         updateTypingAttributes()
     }
 
-    func attachment(for span: ForumComposerSpan) -> ForumBBCodeAttachment? {
-        guard let node = document.node(id: span.nodeID) else { return nil }
+    func attachment(for span: ForumComposerSpan, node: ForumComposerNode) -> ForumBBCodeAttachment? {
         let source = document.substring(node.range)
         if let existing = attachmentCache[node.id], existing.source == source, existing.baseFontSize == baseFontSize { return existing }
         let attachment = ForumBBCodeAttachment(node: node, source: source, span: span, session: self)

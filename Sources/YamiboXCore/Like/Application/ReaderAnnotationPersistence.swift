@@ -21,4 +21,11 @@ public protocol ReaderLikeMutating: ImageLikeMetadataPersisting {
 public protocol LikeImageWriting: Sendable {
     func save(_ data: Data, id: String, sourceURL: URL?) async throws
     func delete(id: String) async throws
+    func delete(ids: [String]) async throws
+}
+
+public extension LikeImageWriting {
+    func delete(ids: [String]) async throws {
+        for id in ids { try await delete(id: id) }
+    }
 }

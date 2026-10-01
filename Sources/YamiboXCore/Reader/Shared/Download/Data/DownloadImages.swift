@@ -5,17 +5,37 @@ import Foundation
 extension DownloadStore: YamiboOfflineImageDataProviding {
     func offlineImageData(url: URL, scope: YamiboImageOfflineScope) async -> Data? {
         if let ownerName = scope.ownerName {
-            guard let membership = await mangaDownloadMembership(ownerName: ownerName, tid: scope.tid),
-                  membership.imageURLs.contains(where: { $0.absoluteString == url.absoluteString }) else {
-                return nil
-            }
-            return await offlineImageData(for: url)
+            return await mangaOfflineImageData(for: url, ownerName: ownerName, tid: scope.tid)
         }
         return await novelOfflineImageData(for: url, threadID: scope.tid)
     }
 }
 
 extension DownloadStore {
+    private func mangaOfflineImageData(for imageURL: URL, ownerName: String, tid: String) async -> Data? {
+        await ensureQueueRecoveredBestEffort()
+        let imageURLString = imageURL.absoluteString
+        let fileName: String?
+        do {
+            fileName = try await database.read { db in
+                try Self.mangaOfflineImageFileName(
+                    imageURLString: imageURLString,
+                    ownerName: ownerName,
+                    tid: tid,
+                    fileManager: fileManager,
+                    mangaSourcePagesDirectory: mangaSourcePagesDirectory,
+                    sourcePageCache: sourcePageCache,
+                    in: db
+                )
+            }
+        } catch {
+            YamiboLog.download.error("Failed to resolve manga offline image file name for \(imageURLString): \(error)")
+            return nil
+        }
+        guard let fileName else { return nil }
+        return await offlineImageData(imageURLString: imageURLString, fileName: fileName)
+    }
+
     func offlineImageData(for imageURL: URL) async -> Data? {
         await ensureQueueRecoveredBestEffort()
         let imageURLString = imageURL.absoluteString

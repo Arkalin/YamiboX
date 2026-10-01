@@ -1,6 +1,49 @@
 import Foundation
 
 public enum LocalFavoriteLibraryProjection {
+    /// Reusable display metadata for one document's collections and tags.
+    /// Entries retain their original relative order when sort keys tie,
+    /// including duplicate ids in an unnormalized document.
+    public struct MetadataIndex: Sendable {
+        fileprivate let collections: [LocalFavoriteCollection]
+        fileprivate let tags: [FavoriteTag]
+        fileprivate let collectionsByID: [String: [(rank: Int, name: String)]]
+        fileprivate let tagsByID: [String: [(rank: Int, tag: FavoriteTag)]]
+
+        public init(document: FavoriteLibraryDocument) {
+            collections = document.collections
+            tags = document.tags
+            let orderedCollections = collections.enumerated().sorted { lhs, rhs in
+                if lhs.element.manualOrder != rhs.element.manualOrder {
+                    return lhs.element.manualOrder < rhs.element.manualOrder
+                }
+                if lhs.element.id != rhs.element.id { return lhs.element.id < rhs.element.id }
+                return lhs.offset < rhs.offset
+            }
+            let orderedTags = tags.enumerated().sorted { lhs, rhs in
+                if lhs.element.manualOrder != rhs.element.manualOrder {
+                    return lhs.element.manualOrder < rhs.element.manualOrder
+                }
+                if lhs.element.id != rhs.element.id { return lhs.element.id < rhs.element.id }
+                return lhs.offset < rhs.offset
+            }
+            var collectionLookup: [String: [(rank: Int, name: String)]] = [:]
+            for (rank, entry) in orderedCollections.enumerated() {
+                collectionLookup[entry.element.id, default: []].append((rank, entry.element.name))
+            }
+            var tagLookup: [String: [(rank: Int, tag: FavoriteTag)]] = [:]
+            for (rank, entry) in orderedTags.enumerated() {
+                tagLookup[entry.element.id, default: []].append((rank, entry.element))
+            }
+            collectionsByID = collectionLookup
+            tagsByID = tagLookup
+        }
+
+        fileprivate func matches(_ document: FavoriteLibraryDocument) -> Bool {
+            collections == document.collections && tags == document.tags
+        }
+    }
+
     public static var supportedSortOrders: [LocalFavoriteLibrarySortOrder] {
         LocalFavoriteLibrarySortOrder.allCases
     }
@@ -25,7 +68,8 @@ public enum LocalFavoriteLibraryProjection {
         // from `document.items` itself — still always freshly computed from
         // the CURRENT items, never cached across separate `cards(...)` calls,
         // just no longer rebuilt once per smart card WITHIN this one call.
-        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil,
+        metadataIndex: MetadataIndex? = nil
     ) -> [FavoriteCardProjection] {
         let categoryID = query.categoryID ?? document.defaultCategory.id
         let progressByKey = readingProgressLookup(readingProgress)
@@ -89,7 +133,7 @@ public enum LocalFavoriteLibraryProjection {
 
         let cards = mappedCards(
             from: scopedEntries,
-            in: document,
+            metadata: metadataIndex.flatMap { $0.matches(document) ? $0 : nil } ?? MetadataIndex(document: document),
             query: query,
             isMemberScoped: isMemberScoped,
             progressByKey: progressByKey,
@@ -131,7 +175,8 @@ public enum LocalFavoriteLibraryProjection {
         readingProgress: [ReadingProgressRecord] = [],
         mangaDirectoriesByTID: [String: MangaDirectory] = [:],
         boardReaderSettings: BoardReaderSettings = BoardReaderSettings(),
-        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]? = nil,
+        metadataIndex: MetadataIndex? = nil
     ) -> [FavoriteCardProjection] {
         let progressByKey = readingProgressLookup(readingProgress)
         let trimmedSearch = query.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,7 +192,7 @@ public enum LocalFavoriteLibraryProjection {
         )
         return mappedCards(
             from: entries,
-            in: document,
+            metadata: metadataIndex.flatMap { $0.matches(document) ? $0 : nil } ?? MetadataIndex(document: document),
             query: query,
             isMemberScoped: false,
             progressByKey: progressByKey,
@@ -164,7 +209,7 @@ public enum LocalFavoriteLibraryProjection {
     /// applies to `entries` differently before calling this.
     private static func mappedCards(
         from entries: [GroupedFavoriteEntry],
-        in document: FavoriteLibraryDocument,
+        metadata: MetadataIndex,
         query: LocalFavoriteLibraryQuery,
         isMemberScoped: Bool,
         progressByKey: [String: ReadingProgressRecord],
@@ -238,7 +283,7 @@ public enum LocalFavoriteLibraryProjection {
                     }
                     cardEntry.representativeItem.tagIDs = FavoriteItem.normalizedIDs(unionTagIDs)
                 }
-                return card(for: cardEntry, document: document, progress: resolvedProgress, isModeOnMangaThread: isModeOnMangaThread)
+                return card(for: cardEntry, metadata: metadata, progress: resolvedProgress, isModeOnMangaThread: isModeOnMangaThread)
             }
             .filter { card in
                 guard !trimmedSearch.isEmpty else { return true }
@@ -584,7 +629,7 @@ public enum LocalFavoriteLibraryProjection {
 
     private static func card(
         for entry: GroupedFavoriteEntry,
-        document: FavoriteLibraryDocument,
+        metadata: MetadataIndex,
         progress: ReadingProgressRecord?,
         isModeOnMangaThread: Bool
     ) -> FavoriteCardProjection {
@@ -592,8 +637,8 @@ public enum LocalFavoriteLibraryProjection {
         return FavoriteCardProjection(
             item: item,
             sourceGroupLabel: label(for: item.sourceGroup),
-            collectionNames: collectionNames(for: item, in: document),
-            tags: tags(for: item, in: document),
+            collectionNames: collectionNames(for: item, metadata: metadata),
+            tags: tags(for: item, metadata: metadata),
             recentReadingAt: progress?.lastReadAt,
             // A merged card's "content updated" proxy is the freshest of any
             // member's own content update, not just the representative
@@ -825,24 +870,18 @@ public enum LocalFavoriteLibraryProjection {
         return fields
     }
 
-    private static func collectionNames(for item: FavoriteItem, in document: FavoriteLibraryDocument) -> [String] {
-        let collectionIDs = Set(item.locations.compactMap(\.collectionID))
-        return document.collections
-            .filter { collectionIDs.contains($0.id) }
-            .sorted { $0.manualOrder == $1.manualOrder ? $0.id < $1.id : $0.manualOrder < $1.manualOrder }
+    private static func collectionNames(for item: FavoriteItem, metadata: MetadataIndex) -> [String] {
+        Set(item.locations.compactMap(\.collectionID))
+            .flatMap { metadata.collectionsByID[$0] ?? [] }
+            .sorted { $0.rank < $1.rank }
             .map(\.name)
     }
 
-    private static func tags(for item: FavoriteItem, in document: FavoriteLibraryDocument) -> [FavoriteTag] {
-        let tagIDs = Set(item.tagIDs)
-        return document.tags
-            .filter { tagIDs.contains($0.id) }
-            .sorted { lhs, rhs in
-                if lhs.manualOrder != rhs.manualOrder {
-                    return lhs.manualOrder < rhs.manualOrder
-                }
-                return lhs.id < rhs.id
-        }
+    private static func tags(for item: FavoriteItem, metadata: MetadataIndex) -> [FavoriteTag] {
+        Set(item.tagIDs)
+            .flatMap { metadata.tagsByID[$0] ?? [] }
+            .sorted { $0.rank < $1.rank }
+            .map(\.tag)
     }
 
     /// `.mangaThread` favorites are plain per-thread favorites of one of the

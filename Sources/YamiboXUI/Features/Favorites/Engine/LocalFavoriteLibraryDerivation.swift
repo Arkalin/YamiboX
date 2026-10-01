@@ -71,6 +71,7 @@ enum LocalFavoriteLibraryDerivation {
     final class Cache {
         fileprivate var structuralInputs: Inputs?
         fileprivate var groups: [String: [FavoriteItem]] = [:]
+        fileprivate var metadataIndex: LocalFavoriteLibraryProjection.MetadataIndex?
         fileprivate var previews: [String: [LocalFavoriteCollectionPreviewTile]] = [:]
         fileprivate var globalInputs: Inputs?
         fileprivate var aggregates: [String: CollectionAggregate] = [:]
@@ -118,6 +119,10 @@ enum LocalFavoriteLibraryDerivation {
 
     static func derive(_ inputs: Inputs, cache: Cache = Cache()) -> LocalFavoriteDerivedState {
         let previous = cache.structuralInputs
+        if previous?.document.collections != inputs.document.collections
+            || previous?.document.tags != inputs.document.tags {
+            cache.metadataIndex = LocalFavoriteLibraryProjection.MetadataIndex(document: inputs.document)
+        }
         let structureChanged = previous?.document != inputs.document
             || previous?.mangaDirectoriesByTID != inputs.mangaDirectoriesByTID
             || previous?.boardReaderSettings != inputs.boardReaderSettings
@@ -152,7 +157,8 @@ enum LocalFavoriteLibraryDerivation {
                 memberScopeGroupKey: inputs.memberScopeGroupKey
             ),
             inputs: inputs,
-            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey,
+            metadataIndex: cache.metadataIndex
         )
         // Every category's and every collection's entry count/aggregate
         // needs the exact same (grouped + tag-unioned + source/tag/search-
@@ -184,7 +190,8 @@ enum LocalFavoriteLibraryDerivation {
                 readingProgress: inputs.readingProgress,
                 mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
                 boardReaderSettings: inputs.boardReaderSettings,
-                mangaThreadItemsByGroupKey: cache.groups
+                mangaThreadItemsByGroupKey: cache.groups,
+                metadataIndex: cache.metadataIndex
             )
             cache.aggregates = collectionAggregates(inputs, allCardsAcrossScopes: allCardsAcrossScopes)
             cache.categoryCounts = categoryEntryCounts(
@@ -223,7 +230,8 @@ enum LocalFavoriteLibraryDerivation {
             ),
             categoryEntryCounts: cache.categoryCounts,
             collectionEntryCounts: collectionCounts,
-            sourceFilterEntryCounts: sourceFilterEntryCounts(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey),
+            sourceFilterEntryCounts: sourceFilterEntryCounts(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey,
+                                                          metadataIndex: cache.metadataIndex),
             collectionPreviewTiles: cache.previews
         )
     }
@@ -234,7 +242,8 @@ enum LocalFavoriteLibraryDerivation {
         in document: FavoriteLibraryDocument,
         query: LocalFavoriteLibraryQuery,
         inputs: Inputs,
-        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]],
+        metadataIndex: LocalFavoriteLibraryProjection.MetadataIndex?
     ) -> [FavoriteCardProjection] {
         LocalFavoriteLibraryProjection.cards(
             in: document,
@@ -242,7 +251,8 @@ enum LocalFavoriteLibraryDerivation {
             readingProgress: inputs.readingProgress,
             mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
             boardReaderSettings: inputs.boardReaderSettings,
-            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey,
+            metadataIndex: metadataIndex
         )
         .map { card in
             var card = card
@@ -432,7 +442,8 @@ enum LocalFavoriteLibraryDerivation {
 
     private static func sourceFilterEntryCounts(
         _ inputs: Inputs,
-        mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
+        mangaThreadItemsByGroupKey: [String: [FavoriteItem]],
+        metadataIndex: LocalFavoriteLibraryProjection.MetadataIndex?
     ) -> [LocalFavoriteSourceFilter: Int] {
         let allCards = resolvedCards(
             in: inputs.document,
@@ -445,7 +456,8 @@ enum LocalFavoriteLibraryDerivation {
                 searchText: inputs.filter.searchText
             ),
             inputs: inputs,
-            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
+            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey,
+            metadataIndex: metadataIndex
         )
         return Dictionary(grouping: allCards) { card in
             LocalFavoriteSourceFilter.key(for: card.item)

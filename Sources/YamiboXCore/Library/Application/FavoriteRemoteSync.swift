@@ -120,15 +120,21 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         snapshot initial: FavoriteRemoteSyncSnapshot,
         interruptionReason: @escaping @Sendable () -> FavoriteRemoteSyncWarning? = { nil },
         onFailure: @escaping @Sendable (LoadFailureDetails) async -> Void = { _ in },
+        persistIncrementally: (@Sendable (FavoriteRemoteSyncSnapshot, FavoriteRemoteSyncEntryCounts) async -> Void)? = nil,
         persist: @escaping @Sendable (FavoriteRemoteSyncSnapshot) async -> Void
     ) async -> FavoriteRemoteSyncSnapshot {
         var snapshot = initial
         var pendingOperations: [@Sendable (inout FavoriteLibraryDocument) -> Void] = []
 
         func commit(_ mutate: (inout FavoriteRemoteSyncSnapshot) -> Void) async {
+            let previousCounts = FavoriteRemoteSyncEntryCounts(snapshot)
             mutate(&snapshot)
             snapshot.updatedAt = .now
-            await persist(snapshot)
+            if let persistIncrementally {
+                await persistIncrementally(snapshot, previousCounts)
+            } else {
+                await persist(snapshot)
+            }
         }
 
         /// Queues a mutation for replay onto a freshly-loaded document at save
