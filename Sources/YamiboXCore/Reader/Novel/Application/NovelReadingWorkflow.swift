@@ -126,6 +126,7 @@ private struct NovelReadingPreparedTransaction {
 public final class NovelReadingWorkflow {
     public private(set) var state: NovelReadingWorkflowState?
     public private(set) var runtimeUpdateRequestSequence: UInt64 = 0
+    package var documentRequestRevision: UInt64 { loadRequestSequence }
 
     private let context: NovelLaunchContext
     private var settings: NovelReaderAppearanceSettings
@@ -369,6 +370,7 @@ public final class NovelReadingWorkflow {
         pendingRuntimeUpdateTask?.cancel()
         pendingRuntimeUpdateTask = nil
         let requestSequence = runtimeUpdateRequestSequence
+        let documentRequestSequence = loadRequestSequence
         let projection = currentProjection
         let cachedPreparation = semanticPreparationCache
         let task = Task.detached(priority: .userInitiated) {
@@ -391,10 +393,41 @@ public final class NovelReadingWorkflow {
         }
         pendingRuntimeUpdateTask = task
         do {
-            let prepared = try await task.value
-            if runtimeUpdateRequestSequence == requestSequence {
-                pendingRuntimeUpdateTask = nil
+            var prepared = try await task.value
+            if let (preparedUpdate, semanticInput) = prepared,
+               currentProjection != semanticInput.document {
+                guard requestSequence == runtimeUpdateRequestSequence,
+                      documentRequestSequence == loadRequestSequence,
+                      !Task.isCancelled, session != nil, state != nil,
+                      let currentProjection else {
+                    if runtimeUpdateRequestSequence == requestSequence { pendingRuntimeUpdateTask = nil }
+                    return nil
+                }
+                // A promotion already admitted before this geometry request
+                // can finish while preparation is suspended. Rebase once onto
+                // that document without changing the request's inputs/owner.
+                // New document requests still supersede this pending task.
+                let cachedPreparation = semanticPreparationCache
+                let rebasedTask = Task.detached(priority: .userInitiated) {
+                    () async throws -> (NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)? in
+                    try Task.checkCancellation()
+                    let paginationLayout = preparedUpdate.layout.novelTextBoxLayout(
+                        settings: preparedUpdate.settings,
+                        usesPadPresentation: preparedUpdate.usesPadPresentation
+                    )
+                    let input = try NovelTextLayout.prepareInput(
+                        document: currentProjection,
+                        settings: preparedUpdate.settings,
+                        layout: paginationLayout,
+                        reusing: cachedPreparation
+                    )
+                    try Task.checkCancellation()
+                    return (preparedUpdate, input)
+                }
+                pendingRuntimeUpdateTask = rebasedTask
+                prepared = try await rebasedTask.value
             }
+            if runtimeUpdateRequestSequence == requestSequence { pendingRuntimeUpdateTask = nil }
             guard let (preparedUpdate, semanticInput) = prepared else { return nil }
             return try commitRuntimeUpdateRequest(
                 preparedUpdate,

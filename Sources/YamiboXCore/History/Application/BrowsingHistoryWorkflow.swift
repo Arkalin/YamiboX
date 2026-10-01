@@ -10,6 +10,7 @@ public actor BrowsingHistoryWorkflow {
     private let resolveForumIDs: @Sendable ([String]) async -> [String: String]
     private var isBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var lastNormalizedBoardReaderSettings: BoardReaderSettings?
 
     public init(
         store: any BrowsingHistoryReconciling,
@@ -60,6 +61,11 @@ public actor BrowsingHistoryWorkflow {
         while true {
             try Task.checkCancellation()
             let settings = await settingsStore.loadBoardReaderSettings()
+            // Targeted writes can resolve board ownership without changing
+            // identity, so they cannot preserve proof from another configuration.
+            if settings != lastNormalizedBoardReaderSettings {
+                lastNormalizedBoardReaderSettings = nil
+            }
             let tids = [visit.threadID]
             let directories = try await directoryStore.directories(containingTIDs: tids)
             let directoryTargetID = directories[visit.threadID].map {
@@ -134,11 +140,11 @@ public actor BrowsingHistoryWorkflow {
             }
         }
         await withTaskGroup(of: Void.self) { group in
-            for stream in [settingsChanges, directoryChanges] {
+            for (stream, isSettingsChange) in [(settingsChanges, true), (directoryChanges, false)] {
                 group.addTask { [weak self] in
                     for await _ in stream {
                         guard !Task.isCancelled else { return }
-                        do { _ = try await self?.snapshot() } catch {
+                        do { try await self?.normalizeObservedChange(isSettingsChange: isSettingsChange) } catch {
                             if !LoadDiagnosticError.isCancellation(error) {
                                 YamiboLog.persistence.warning("Failed to normalize browsing history: \(error)")
                             }
@@ -147,6 +153,16 @@ public actor BrowsingHistoryWorkflow {
                 }
             }
         }
+    }
+
+    private func normalizeObservedChange(isSettingsChange: Bool) async throws {
+        await acquire()
+        defer { release() }
+        if isSettingsChange {
+            let settings = await settingsStore.loadBoardReaderSettings()
+            guard settings != lastNormalizedBoardReaderSettings else { return }
+        }
+        _ = try await reconcile()
     }
 
     private func acquire() async {
@@ -159,6 +175,9 @@ public actor BrowsingHistoryWorkflow {
     }
 
     private func reconcile(visit: BrowsingHistoryVisit? = nil, mayCreate: Bool = false) async throws -> BrowsingHistorySnapshot {
+        // Only a completed full normalization proves that unrelated settings
+        // signals can be skipped. A failed read/commit must remain retryable.
+        lastNormalizedBoardReaderSettings = nil
         var mayCreate = mayCreate
         var pendingVisit = visit
         while true {
@@ -242,6 +261,7 @@ public actor BrowsingHistoryWorkflow {
             mayCreate = false
             guard settings == (await settingsStore.loadBoardReaderSettings()),
                   storedDirectories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
+            lastNormalizedBoardReaderSettings = settings
             return BrowsingHistorySnapshot(entries: Array(entries.prefix(BrowsingHistoryTimelinePolicy.maximumRecords)), boardReader: settings)
         }
     }

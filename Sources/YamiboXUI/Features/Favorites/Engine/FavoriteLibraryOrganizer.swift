@@ -221,6 +221,7 @@ final class FavoriteLibraryOrganizer {
     @ObservationIgnored private(set) var smartMangaBulkDeleteEnabled = true
     @ObservationIgnored private var libraryUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var progressUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var progressObservationGeneration: UInt64 = 0
     @ObservationIgnored private var settingsUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var mangaDirectoryUpdatesTask: Task<Void, Never>?
 
@@ -455,22 +456,32 @@ final class FavoriteLibraryOrganizer {
     }
 
     private func observeReadingProgressIfNeeded() {
-        guard progressUpdatesTask == nil else { return }
+        guard !isBookPresentationActive, progressUpdatesTask == nil else { return }
+        progressObservationGeneration &+= 1
+        let generation = progressObservationGeneration
         progressUpdatesTask = Task { @MainActor [weak self, store = readingProgressStore] in
+            guard !Task.isCancelled else { return }
+            let snapshots = await store.snapshots()
+            guard !Task.isCancelled else { return }
             do {
-                for try await snapshot in await store.snapshots() {
-                    guard !Task.isCancelled else { return }
-                    self?.applyReadingProgress(snapshot)
+                for try await snapshot in snapshots {
+                    guard !Task.isCancelled, let self,
+                          self.progressObservationGeneration == generation else { return }
+                    self.applyReadingProgress(snapshot)
                 }
             } catch {
-                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                if !Task.isCancelled, let self,
+                   self.progressObservationGeneration == generation,
+                   !LoadDiagnosticError.isCancellation(error) {
                     // Keep the last valid snapshot on failure. A later load
                     // can subscribe again instead of showing empty progress.
-                    self?.errorMessage = error.localizedDescription
-                    self?.errorDetails = LoadFailureDetails(error: error)
+                    self.errorMessage = error.localizedDescription
+                    self.errorDetails = LoadFailureDetails(error: error)
                 }
             }
-            self?.progressUpdatesTask = nil
+            guard !Task.isCancelled, let self,
+                  self.progressObservationGeneration == generation else { return }
+            self.progressUpdatesTask = nil
         }
     }
 
@@ -924,6 +935,15 @@ final class FavoriteLibraryOrganizer {
 
     func setBookPresentationActive(_ active: Bool) {
         isBookPresentationActive = active
+        if active {
+            // No hidden full-history queries while reading. A fresh initial
+            // snapshot on return also catches deletions and identity changes.
+            progressObservationGeneration &+= 1
+            progressUpdatesTask?.cancel()
+            progressUpdatesTask = nil
+        } else {
+            observeReadingProgressIfNeeded()
+        }
         if active, derivationTask != nil {
             derivationGeneration &+= 1
             derivationTask?.cancel()

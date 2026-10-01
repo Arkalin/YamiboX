@@ -241,26 +241,35 @@ final class NovelReaderRuntimeUpdateCoordinator {
         requestSequence &+= 1
         let sequence = requestSequence
         let surfaceRevision = surfaceAppearanceRevision
-        do {
-            let state = try await workflow.requestRuntimeUpdate(
-                NovelReadingWorkflowRuntimeUpdate(settings: settings, layout: layout, usesPadPresentation: usesPadPresentation),
-                preparation: reading.updatePreparation()
-            )
-            guard requestSequence == sequence, reading.workflow() === workflow,
-                  initialPresentationPhase != .cancelled else { return nil }
-            guard surfaceAppearanceRevision != surfaceRevision else { return state }
-            guard let latestSurfaceAppearanceSettings,
-                  let committedSettings = state?.presentation?.committedSettings else { return nil }
-            var mergedSettings = committedSettings
-            mergedSettings.backgroundStyle = latestSurfaceAppearanceSettings.backgroundStyle
-            mergedSettings.pagedTurnStyle = latestSurfaceAppearanceSettings.pagedTurnStyle
-            mergedSettings.isImmersiveModeEnabled = latestSurfaceAppearanceSettings.isImmersiveModeEnabled
-            mergedSettings.pageTurnDirection = latestSurfaceAppearanceSettings.pageTurnDirection
-            return workflow.commitSurfaceAppearance(mergedSettings)
-        } catch {
-            guard requestSequence == sequence, reading.workflow() === workflow,
-                  initialPresentationPhase != .cancelled else { throw CancellationError() }
-            throw error
+        while true {
+            let documentRevision = workflow.documentRequestRevision
+            do {
+                let state = try await workflow.requestRuntimeUpdate(
+                    NovelReadingWorkflowRuntimeUpdate(settings: settings, layout: layout, usesPadPresentation: usesPadPresentation),
+                    preparation: reading.updatePreparation()
+                )
+                guard requestSequence == sequence, reading.workflow() === workflow,
+                      initialPresentationPhase != .cancelled, !Task.isCancelled else { return nil }
+                // Navigation may supersede the content transaction, but does
+                // not invalidate this still-owned window/settings request.
+                // Each retry requires a new document event, never just nil.
+                if state == nil, workflow.documentRequestRevision != documentRevision { continue }
+                guard surfaceAppearanceRevision != surfaceRevision else { return state }
+                guard let latestSurfaceAppearanceSettings,
+                      let committedSettings = state?.presentation?.committedSettings else { return nil }
+                var mergedSettings = committedSettings
+                mergedSettings.backgroundStyle = latestSurfaceAppearanceSettings.backgroundStyle
+                mergedSettings.pagedTurnStyle = latestSurfaceAppearanceSettings.pagedTurnStyle
+                mergedSettings.isImmersiveModeEnabled = latestSurfaceAppearanceSettings.isImmersiveModeEnabled
+                mergedSettings.pageTurnDirection = latestSurfaceAppearanceSettings.pageTurnDirection
+                return workflow.commitSurfaceAppearance(mergedSettings)
+            } catch {
+                guard requestSequence == sequence, reading.workflow() === workflow,
+                      initialPresentationPhase != .cancelled, !Task.isCancelled else { throw CancellationError() }
+                if error is CancellationError,
+                   workflow.documentRequestRevision != documentRevision { continue }
+                throw error
+            }
         }
     }
 
