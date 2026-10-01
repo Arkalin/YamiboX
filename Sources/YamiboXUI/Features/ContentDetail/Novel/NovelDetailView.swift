@@ -75,7 +75,11 @@ struct NovelDetailView: View {
                 .help(L10n.string("common.more"))
             }
         }
-        .task { await model.load() }
+        .task {
+            model.setVisible(true)
+            await model.load()
+        }
+        .onDisappear { model.setVisible(false) }
         .favoriteActionInterface(model.favoriteActions)
     }
 

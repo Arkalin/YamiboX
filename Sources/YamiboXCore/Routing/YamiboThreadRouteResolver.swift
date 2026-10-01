@@ -11,38 +11,55 @@ public actor YamiboThreadRouteResolver {
     }
 
     public func resolve(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget {
+        try await resolveWithPage(request).target
+    }
+
+    public func resolveWithPage(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteResolution {
         try await resolve(request, allowsAuthenticationFallback: true)
     }
 
     func resolveForFavoriteSync(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget {
         // Background imports cannot hand an authentication failure to a web
         // view; keep the error so the sync engine can stop the run.
-        try await resolve(request, allowsAuthenticationFallback: false)
+        try await resolve(request, allowsAuthenticationFallback: false).target
     }
 
     private func resolve(
         _ request: YamiboThreadRouteRequest,
         allowsAuthenticationFallback: Bool
-    ) async throws -> YamiboThreadRouteTarget {
+    ) async throws -> YamiboThreadRouteResolution {
         let requestURL = URL(string: request.threadURL.absoluteString, relativeTo: YamiboDomain.baseURL)?.absoluteURL
             ?? request.threadURL.absoluteURL
         if !YamiboForumEnvironment.current.allowsThreadResolution(requestURL) {
-            return .webFallback(requestURL)
+            return YamiboThreadRouteResolution(.webFallback(requestURL))
         }
         var canonicalURL = canonicalThreadURL(from: requestURL) ?? requestURL
         let targetPostID = request.targetPostID ?? postID(from: requestURL)
         var baseInitialPage = pageNumber(from: requestURL) ?? pageNumber(from: canonicalURL) ?? 1
         var locationMetadata: YamiboThreadMetadata?
+        var locatedPage: ForumThreadPage?
+        var locationIsForward = false
         if isFindPostURL(requestURL) {
             do {
-                let response = try await ForumPageClient(transport: client).fetchDocument(url: ForumWebPagePolicy.secureURL(requestURL))
+                var locationURL = requestURL
+                if var components = URLComponents(url: requestURL, resolvingAgainstBaseURL: true) {
+                    // Classification may only become known after this response.
+                    // Every native reader uses forward pages, including a plain
+                    // thread reached through contentRoute on a reverse-default thread.
+                    var items = components.queryItems ?? []
+                    items.removeAll { $0.name == "ordertype" }
+                    items.append(.init(name: "ordertype", value: "2"))
+                    components.queryItems = items
+                    locationURL = components.url ?? requestURL
+                }
+                let response = try await ForumPageClient(transport: client).fetchDocument(url: ForumWebPagePolicy.secureURL(locationURL))
                 guard response.continuationURL == nil, response.file == nil,
                       ForumWebPagePolicy.requiresForumHandling(response.url) else {
-                    return .webFallback(requestURL)
+                    return YamiboThreadRouteResolution(.webFallback(requestURL))
                 }
                 let metadata = try YamiboThreadMetadataHTMLParser.parse(from: response.html, url: response.url)
                 guard let tid = metadata.tid ?? threadID(from: canonicalURL) ?? request.threadID else {
-                    return .webFallback(requestURL)
+                    return YamiboThreadRouteResolution(.webFallback(requestURL))
                 }
                 let thread = ThreadIdentity(tid: tid, fid: metadata.fid)
                 let page = try ForumThreadPageHTMLParser.parsePage(from: response.html, thread: thread, fallbackTitle: metadata.title)
@@ -53,12 +70,28 @@ public actor YamiboThreadRouteResolver {
                 baseInitialPage = pageNumber(from: response.url) ?? page.pageNavigation?.currentPage ?? baseInitialPage
                 locationMetadata = metadata
                 locationMetadata?.tid = tid
+                // Only an unfiltered forward touch page can seed the ordinary
+                // reader. A scoped/desktop response still supplies location.
+                let items = URLComponents(url: response.url, resolvingAgainstBaseURL: true)?.queryItems ?? []
+                locationIsForward = items.value(named: "ordertype") == "2"
+                if items.value(named: "mobile") == "2",
+                   items.value(named: "authorid")?.nilIfBlank == nil,
+                   locationIsForward,
+                   items.value(named: "viewpid")?.nilIfBlank == nil,
+                   targetPostID.map({ id in page.posts.contains { $0.postID == id } }) ?? true {
+                    var preloaded = page
+                    preloaded.pageNavigation = ForumPageNavigation(
+                        currentPage: baseInitialPage,
+                        totalPages: page.pageNavigation?.totalPages
+                    )
+                    locatedPage = preloaded
+                }
             } catch {
                 if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
                 let classified = LoadDiagnosticError.classificationError(error)
                 if let yamiboError = classified as? YamiboError,
                    yamiboError == .notAuthenticated || yamiboError == .floodControl || yamiboError == .securityVerificationRequired {
-                    if allowsAuthenticationFallback { return .webFallback(requestURL) }
+                    if allowsAuthenticationFallback { return YamiboThreadRouteResolution(.webFallback(requestURL)) }
                     throw error
                 }
                 if threadID(from: canonicalURL) == nil && request.threadID == nil {
@@ -67,7 +100,7 @@ public actor YamiboThreadRouteResolver {
                         switch error {
                         case .parsingFailed, .underlying, .emptyHTML, .unreadableBody,
                              .invalidResponse(statusCode: 403), .invalidResponse(statusCode: 404):
-                            return .webFallback(requestURL)
+                            return YamiboThreadRouteResolution(.webFallback(requestURL))
                         default: break
                         }
                     }
@@ -79,6 +112,11 @@ public actor YamiboThreadRouteResolver {
 
         // All entry points share the location response before classification.
         if request.intent == .nativeThreadReader || request.readerOverride == .plainThread {
+            // A redirect can discard the requested order. Neither its page
+            // number nor its body is safe to use as a forward location then.
+            if locationMetadata != nil, !locationIsForward {
+                return YamiboThreadRouteResolution(.webFallback(requestURL))
+            }
             let tid = locationMetadata?.tid ?? request.threadID
                 ?? threadID(from: canonicalURL)
                 ?? YamiboForumURLIdentity.threadID(from: canonicalURL.absoluteString)
@@ -87,9 +125,9 @@ public actor YamiboThreadRouteResolver {
                 tid: tid,
                 fid: locationMetadata?.fid ?? request.tapContext.containingFid ?? request.threadFid
             )
-            guard !tid.isEmpty else { return .webFallback(requestURL) }
+            guard !tid.isEmpty else { return YamiboThreadRouteResolution(.webFallback(requestURL)) }
             let initialPage = baseInitialPage
-            return .thread(
+            return YamiboThreadRouteResolution(.thread(
                 YamiboThreadRoutePayload(
                     thread: thread,
                     title: request.title ?? locationMetadata?.title ?? L10n.string("forum.default_title"),
@@ -99,7 +137,7 @@ public actor YamiboThreadRouteResolver {
                     initialPage: initialPage,
                     targetPostID: targetPostID
                 )
-            )
+            ), preloadedPage: locatedPage)
         }
 
         let settings = await settingsStore.load().boardReader
@@ -115,17 +153,20 @@ public actor YamiboThreadRouteResolver {
         // An override already settles the classification, so the metadata
         // round-trip it exists to inform would be pure latency.
         let metadata: YamiboThreadMetadata?
+        var classificationHTML: String?
         if let locationMetadata {
             metadata = locationMetadata
         } else if !isFindPostURL(requestURL), request.readerOverride == nil,
            shouldFetchMetadata(fid: initialFid, knownThreadKind: request.knownThreadKind, settings: settings) {
             do {
-                metadata = try await loadMetadata(
+                let seed = try await loadMetadata(
                     for: canonicalURL, fallbackURL: requestURL,
                     allowsAuthenticationFallback: allowsAuthenticationFallback
                 )
+                metadata = seed.metadata
+                classificationHTML = seed.html
             } catch let fallback as YamiboThreadRouteResolverWebFallback {
-                return .webFallback(fallback.url)
+                return YamiboThreadRouteResolution(.webFallback(fallback.url))
             }
         } else {
             metadata = nil
@@ -136,7 +177,7 @@ public actor YamiboThreadRouteResolver {
             ?? threadID(from: canonicalURL)
             ?? YamiboForumURLIdentity.threadID(from: canonicalURL.absoluteString)
             ?? ""
-        guard !tid.isEmpty else { return .webFallback(requestURL) }
+        guard !tid.isEmpty else { return YamiboThreadRouteResolution(.webFallback(requestURL)) }
         let fid = initialFid ?? metadata?.fid
         let title = request.title ?? metadata?.title
         let authorID = request.authorID ?? metadata?.authorID
@@ -156,7 +197,7 @@ public actor YamiboThreadRouteResolver {
 
         switch kind {
         case .novel:
-            return .novel(
+            return YamiboThreadRouteResolution(.novel(
                 YamiboThreadRoutePayload(
                     thread: thread,
                     title: title ?? L10n.string("reader.title"),
@@ -166,7 +207,7 @@ public actor YamiboThreadRouteResolver {
                     initialPage: baseInitialPage,
                     targetPostID: targetPostID
                 )
-            )
+            ))
         case .manga:
             let payload = YamiboThreadRoutePayload(
                 thread: thread,
@@ -187,12 +228,20 @@ public actor YamiboThreadRouteResolver {
             // user did not configure that way, so it opens the thread on its
             // own exactly like an unconfigured manga thread.
             guard settings.isSmartComicModeEnabled(forumID: fid) else {
-                return .mangaDirect(payload)
+                return YamiboThreadRouteResolution(.mangaDirect(payload))
             }
-            return .manga(payload)
+            return YamiboThreadRouteResolution(.manga(payload))
         case .regular, .unknown:
+            if locationMetadata != nil, !locationIsForward {
+                return YamiboThreadRouteResolution(.webFallback(requestURL))
+            }
             let initialPage = baseInitialPage
-            return .thread(
+            if initialPage == 1, let classificationHTML {
+                locatedPage = try LoadDiagnosticError.parsing(html: classificationHTML, context: canonicalURL.absoluteString) {
+                    try ForumThreadPageHTMLParser.parsePage(from: classificationHTML, thread: thread, fallbackTitle: title)
+                }
+            }
+            return YamiboThreadRouteResolution(.thread(
                 YamiboThreadRoutePayload(
                     thread: thread,
                     title: title ?? L10n.string("forum.default_title"),
@@ -202,7 +251,7 @@ public actor YamiboThreadRouteResolver {
                     initialPage: initialPage,
                     targetPostID: targetPostID
                 )
-            )
+            ), preloadedPage: locatedPage)
         }
     }
 
@@ -222,12 +271,19 @@ public actor YamiboThreadRouteResolver {
 
     private func loadMetadata(
         for url: URL, fallbackURL: URL, allowsAuthenticationFallback: Bool
-    ) async throws -> YamiboThreadMetadata {
+    ) async throws -> (metadata: YamiboThreadMetadata, html: String) {
         do {
-            let html = try await client.fetchHTML(for: .thread(url: url, page: 1, authorID: nil))
-            return try LoadDiagnosticError.parsing(html: html, context: url.absoluteString) {
+            // Probe in the same unfiltered, forward order as the native reader.
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+            var items = components?.queryItems ?? []
+            items.removeAll { ["ordertype", "authorid", "viewpid"].contains($0.name) }
+            items.append(.init(name: "ordertype", value: "2"))
+            components?.queryItems = items
+            let html = try await client.fetchHTML(for: .thread(url: components?.url ?? url, page: 1, authorID: nil))
+            let metadata = try LoadDiagnosticError.parsing(html: html, context: url.absoluteString) {
                 try YamiboThreadMetadataHTMLParser.parse(from: html, url: url)
             }
+            return (metadata, html)
         } catch where allowsAuthenticationFallback && (LoadDiagnosticError.classificationError(error) as? YamiboError) == .notAuthenticated {
             throw YamiboThreadRouteResolverWebFallback(url: fallbackURL)
         } catch where allowsAuthenticationFallback && (LoadDiagnosticError.classificationError(error) as? YamiboError) == .floodControl {

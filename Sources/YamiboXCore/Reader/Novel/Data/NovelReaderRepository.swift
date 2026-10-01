@@ -8,6 +8,8 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
     private let projectionLoader: NovelReaderProjectionLoader
     private let novelOfflineAutoRefreshEnabled: @Sendable () async -> Bool
     private let novelOfflineRetainsInlineImages: @Sendable () async -> Bool
+    private var pendingOfflineRefreshes: [NovelReaderCacheIdentity: NovelReaderProjectionLoadedPage] = [:]
+    private var offlineRefreshTasks: [NovelReaderCacheIdentity: Task<Void, Never>] = [:]
 
     init(
         client: YamiboClient,
@@ -38,6 +40,30 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
 
     public func loadPageResult(_ request: NovelPageRequest) async throws -> NovelReaderProjectionLoad {
         try await loadPage(request, ignoresCache: false)
+    }
+
+    public func projection(from sourcePage: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection {
+        try await projection(from: sourcePage, request: request, sourceLoadedOnline: false)
+    }
+
+    public func projection(
+        from sourcePage: ForumThreadPage,
+        request: NovelPageRequest,
+        sourceLoadedOnline: Bool
+    ) async throws -> NovelReaderProjection {
+        let projection = try await projectionLoader.projection(from: sourcePage, request: request)
+        try Task.checkCancellation()
+        if sourceLoadedOnline,
+           sourcePage.thread.tid == request.threadID,
+           (sourcePage.pageNavigation?.currentPage ?? request.view) == request.view,
+           normalizedAuthorID(projection.resolvedAuthorID) == normalizedAuthorID(request.authorID) {
+            try await client.validateSession?()
+            try Task.checkCancellation()
+            scheduleOfflineRefresh(NovelReaderProjectionLoadedPage(
+                projection: projection, sourcePage: sourcePage, source: .online(sourceLoadedOnline: true)
+            ))
+        }
+        return projection
     }
 
     public func loadPage(threadID: String, view: Int, authorID: String? = nil) async throws -> NovelReaderProjection {
@@ -204,7 +230,8 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             ? try await projectionLoader.loadProjectionIgnoringCache(request)
             : try await projectionLoader.loadProjection(request)
         if case let .online(sourceLoadedOnline) = loaded.source {
-            await autoRefreshNovelDownloadIfNeeded(loaded, sourceLoadedOnline: sourceLoadedOnline)
+            try Task.checkCancellation()
+            if sourceLoadedOnline { scheduleOfflineRefresh(loaded) }
             return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
         }
         if case let .offlineFallback(updatedAt, failure) = loaded.source {
@@ -216,17 +243,39 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
     }
 
-    private func autoRefreshNovelDownloadIfNeeded(
-        _ onlinePage: NovelReaderProjectionLoadedPage,
-        sourceLoadedOnline: Bool
-    ) async {
-        guard sourceLoadedOnline,
+    private func scheduleOfflineRefresh(_ onlinePage: NovelReaderProjectionLoadedPage) {
+        guard downloadStore != nil else { return }
+        let identity = NovelReaderCacheIdentity(
+            threadID: onlinePage.projection.threadID,
+            view: onlinePage.projection.view,
+            authorID: onlinePage.projection.resolvedAuthorID
+        )
+        // One worker per page preserves save ordering. While it is suspended, keep only
+        // the newest source rather than starting competing file/metadata transactions.
+        pendingOfflineRefreshes[identity] = onlinePage
+        guard offlineRefreshTasks[identity] == nil else { return }
+        // Detail owns a temporary repository. Retain it until this finite worker
+        // drains, otherwise returning the projection could discard the refresh.
+        offlineRefreshTasks[identity] = Task(priority: .utility) { [self] in
+            await drainOfflineRefreshes(for: identity)
+        }
+    }
+
+    private func drainOfflineRefreshes(for identity: NovelReaderCacheIdentity) async {
+        defer { offlineRefreshTasks[identity] = nil }
+        while let page = pendingOfflineRefreshes.removeValue(forKey: identity) {
+            await autoRefreshNovelDownloadIfNeeded(page)
+        }
+    }
+
+    private func autoRefreshNovelDownloadIfNeeded(_ onlinePage: NovelReaderProjectionLoadedPage) async {
+        guard !Task.isCancelled,
               let downloadStore,
               await novelOfflineAutoRefreshEnabled(),
               let authorID = normalizedAuthorID(onlinePage.projection.resolvedAuthorID) else {
             return
         }
-        guard let existing = await downloadStore.novelOfflineSourcePageSnapshot(
+        guard let existing = await downloadStore.novelOfflineSourcePageMetadata(
             threadID: onlinePage.projection.threadID,
             view: onlinePage.projection.view,
             authorID: authorID
@@ -245,21 +294,23 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             retainsInlineImages: retainsInlineImages
         )
         do {
-            try await downloadStore.saveNovelOfflineSourcePage(
+            try Task.checkCancellation()
+            try await client.validateSession?()
+            let saved = try await downloadStore.saveNovelOfflineSourcePage(
                 onlinePage.sourcePage,
                 request: request,
+                preparedProjection: onlinePage.projection,
+                existingMetadata: existing,
                 updatedAt: .now,
                 completesMatchingWork: targetImageURLs.isEmpty,
                 preservesExistingImageReferencesWhenEmpty: !retainsInlineImages
             )
+            guard saved else { return }
+        } catch is CancellationError {
+            return
         } catch {
             YamiboLog.download.error("Failed to save auto-refreshed novel offline source page for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
-        }
-        guard retainsInlineImages, !targetImageURLs.isEmpty else { return }
-        do {
-            _ = try await downloadStore.enqueueNovelDownloadUpdateWork(request)
-        } catch {
-            YamiboLog.download.warning("Failed to enqueue novel download update work for thread \(onlinePage.projection.threadID), view \(onlinePage.projection.view): \(error)")
+            return
         }
     }
 

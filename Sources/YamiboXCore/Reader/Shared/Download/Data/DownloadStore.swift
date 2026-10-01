@@ -2,6 +2,13 @@ import CryptoKit
 import Foundation
 @preconcurrency import GRDB
 
+private struct MangaOwnerStateCache: Sendable {
+    var signature: [String]
+    var imageStamp: Date?
+    var sourceStamp: Date?
+    var states: [String: MangaDownloadState]
+}
+
 actor DownloadStore {
     let database: DatabasePool
     nonisolated(unsafe) let fileManager: FileManager
@@ -13,6 +20,7 @@ actor DownloadStore {
     private let updateNotifier = StoreInvalidationBroadcaster<Void>()
     private var didRecoverQueueState = false
     private var queueRecoveryTask: Task<Void, Error>?
+    private var mangaOwnerStateCache: [String: MangaOwnerStateCache] = [:]
     private static let mangaReaderKind = "manga"
     nonisolated(unsafe) let sourcePageCache: NSCache<NSString, SourcePageCacheEntry> = {
         let cache = NSCache<NSString, SourcePageCacheEntry>()
@@ -317,6 +325,60 @@ actor DownloadStore {
         } catch {
             YamiboLog.download.error("Failed to read manga offline download state for tid \(id.tid): \(error)")
             return .notDownloaded
+        }
+    }
+
+    /// The panel needs chapter state, not queue image projections. Read only this
+    /// owner's metadata and reuse validated files until their directory changes.
+    func mangaDownloadStates(ownerName: String) async -> [String: MangaDownloadState] {
+        await ensureQueueRecoveredBestEffort()
+        guard let ownerName = ownerName.nilIfBlank else { return [:] }
+        let previous = mangaOwnerStateCache[ownerName]
+        do {
+            let result = try await database.read { db -> MangaOwnerStateCache in
+                let canonicalOwner = try Self.canonicalMangaOwnerKey(ownerName, in: db)
+                let entries = try Row.fetchAll(db, sql: "SELECT * FROM download_manga_entries WHERE owner_name = ? ORDER BY tid", arguments: [canonicalOwner])
+                let images = try Row.fetchAll(db, sql: """
+                    SELECT i.tid, i.image_url, a.file_name
+                    FROM download_manga_entry_images i
+                    LEFT JOIN download_image_assets a ON a.image_url = i.image_url
+                    WHERE i.owner_name = ? ORDER BY i.tid, i.image_url
+                    """, arguments: [canonicalOwner])
+                let works = try Row.fetchAll(db, sql: "SELECT tid FROM download_works WHERE reader_kind = ? AND owner_name = ? ORDER BY tid", arguments: [DownloadReaderKind.manga.rawValue, canonicalOwner])
+                let imageStamp = (try? fileManager.attributesOfItem(atPath: imagesDirectory.path)[.modificationDate]) as? Date
+                let sourceStamp = (try? fileManager.attributesOfItem(atPath: mangaSourcePagesDirectory.path)[.modificationDate]) as? Date
+                // Row descriptions contain every persisted entry field, including
+                // schema/fingerprint. No source HTML or per-image queries here.
+                let signature = [canonicalOwner] + entries.map { String(describing: $0) }
+                    + images.map { String(describing: $0) } + works.map { String(describing: $0) }
+                if let previous, previous.signature == signature,
+                   imageStamp != nil, sourceStamp != nil,
+                   previous.imageStamp == imageStamp, previous.sourceStamp == sourceStamp {
+                    return previous
+                }
+                var states: [String: MangaDownloadState] = [:]
+                for work in works { states[work["tid"] as String] = .downloading }
+                let imagesByTID = Dictionary(grouping: images, by: { $0["tid"] as String })
+                for entry in entries {
+                    let tid: String = entry["tid"]
+                    guard Self.validSourcePage(
+                        fileName: entry["source_page_file_name"], schemaVersion: entry["source_page_schema_version"],
+                        fingerprint: entry["source_page_fingerprint"], byteCount: entry["byte_count"], tid: tid,
+                        fileManager: fileManager, mangaSourcePagesDirectory: mangaSourcePagesDirectory, sourcePageCache: sourcePageCache
+                    ) != nil, let imageRows = imagesByTID[tid], !imageRows.isEmpty else { continue }
+                    if imageRows.allSatisfy({ row in
+                        guard let name = row["file_name"] as String? else { return false }
+                        return fileManager.fileExists(atPath: imagesDirectory.appendingPathComponent(name).path)
+                    }) { states[tid] = .downloaded }
+                }
+                return MangaOwnerStateCache(signature: signature, imageStamp: imageStamp, sourceStamp: sourceStamp, states: states)
+            }
+            if mangaOwnerStateCache.count >= 32 { mangaOwnerStateCache.removeAll(keepingCapacity: true) }
+            mangaOwnerStateCache[ownerName] = result
+            return result.states
+        } catch {
+            YamiboLog.download.error("Failed to read manga owner download states: \(error)")
+            return [:]
         }
     }
 

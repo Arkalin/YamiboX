@@ -31,9 +31,23 @@ public enum DownloadQueueRunState: String, Codable, Hashable, Sendable {
     case running
 }
 
+public struct DownloadQueueSummary: Equatable, Sendable {
+    public var entryCount: Int
+    public var failedCount: Int
+    public var runState: DownloadQueueRunState
+
+    public init(entryCount: Int, failedCount: Int, runState: DownloadQueueRunState) {
+        self.entryCount = entryCount
+        self.failedCount = failedCount
+        self.runState = runState
+    }
+}
+
 public protocol DownloadQueueStoring: DownloadUpdateObserving {
     /// Empty means no work, never a failed database read or queue recovery.
     func downloadQueueWorks() async throws -> [DownloadQueueWorkProjection]
+    /// Badge/summary read without materializing work targets or completed image URLs.
+    func downloadQueueSummary(readerKind: DownloadReaderKind?) async throws -> DownloadQueueSummary
     /// Nil means absent work, never a failed read or queue recovery.
     func nextDownloadProcessingWork() async throws -> DownloadProcessingWork?
     func downloadProcessingWork(id: DownloadWorkID) async throws -> DownloadProcessingWork?
@@ -57,6 +71,17 @@ public protocol DownloadQueueStoring: DownloadUpdateObserving {
     func clearDownloadQueue() async throws
     func downloadQueueRunState() async throws -> DownloadQueueRunState
     func setDownloadQueueRunState(_ state: DownloadQueueRunState) async throws
+}
+
+public extension DownloadQueueStoring {
+    func downloadQueueSummary(readerKind: DownloadReaderKind? = nil) async throws -> DownloadQueueSummary {
+        let works = try await downloadQueueWorks().filter { readerKind == nil || $0.id.readerKind == readerKind }
+        return DownloadQueueSummary(
+            entryCount: works.count,
+            failedCount: works.filter { $0.state == .failed }.count,
+            runState: try await downloadQueueRunState()
+        )
+    }
 }
 
 public protocol DownloadStoreCore:

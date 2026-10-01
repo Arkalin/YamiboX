@@ -31,6 +31,10 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
     private let queueDependencies: DownloadQueueDependencies
     private let reading: Reading
     private var updatesTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var needsRefresh = false
+    private var countRefreshTask: Task<Void, Never>?
+    private var needsCountRefresh = false
 
     init(
         operationModule: NovelReaderDownloadOperationModule,
@@ -48,14 +52,13 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
             guard let self else { return }
             state.views = viewsSnapshot
             state.operation = operationState
-            Task { [weak self] in
-                await self?.refreshQueueCount()
-            }
         }
     }
 
     deinit {
         updatesTask?.cancel()
+        refreshTask?.cancel()
+        countRefreshTask?.cancel()
     }
 
     var hasOperationSession: Bool {
@@ -70,20 +73,72 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
 
     func refresh() async {
         startObservingDownloadUpdates()
-        operationModule.syncDownloadState(await repository.downloadState(for: reading.operationContext()))
-        await refreshQueueCount()
+        needsRefresh = true
+        if let refreshTask {
+            await refreshTask.value
+            return
+        }
+        // Navigation owns a waiter, not the refresh. Canceling an old navigation
+        // must not strand a newer request that joined this database read.
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await refreshSnapshots()
+        }
+        refreshTask = task
+        await task.value
+    }
+
+    private func refreshSnapshots() async {
+        defer { refreshTask = nil }
+        repeat {
+            needsRefresh = false
+            guard let account = try? await queueDependencies.sessionStore.snapshot() else { return }
+            let context = reading.operationContext()
+            let snapshot = await repository.downloadState(for: context)
+            guard !Task.isCancelled else { return }
+            guard context == reading.operationContext(),
+                  await queueDependencies.sessionStore.isCurrentGeneration(account.generation) else {
+                needsRefresh = true
+                continue
+            }
+            operationModule.syncDownloadState(snapshot)
+            await refreshQueueCount()
+        } while needsRefresh && !Task.isCancelled
     }
 
     func refreshQueueCount() async {
-        do {
-            let count = try await downloadStore.downloadQueueWorks().count
-            try Task.checkCancellation()
-            state.queueEntryCount = count
-        } catch {
-            if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                reading.onError(LoadFailureDetails(error: error))
-            }
+        needsCountRefresh = true
+        if let countRefreshTask {
+            await countRefreshTask.value
+            return
         }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await refreshCountSnapshot()
+        }
+        countRefreshTask = task
+        await task.value
+    }
+
+    private func refreshCountSnapshot() async {
+        defer { countRefreshTask = nil }
+        repeat {
+            needsCountRefresh = false
+            do {
+                let account = try await queueDependencies.sessionStore.snapshot()
+                let count = try await downloadStore.downloadQueueSummary(readerKind: nil).entryCount
+                try Task.checkCancellation()
+                guard await queueDependencies.sessionStore.isCurrentGeneration(account.generation) else {
+                    needsCountRefresh = true
+                    continue
+                }
+                state.queueEntryCount = count
+            } catch {
+                if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
+                    reading.onError(LoadFailureDetails(error: error))
+                }
+            }
+        } while needsCountRefresh && !Task.isCancelled
     }
 
     func selectionState(for selectedViews: Set<Int>) -> NovelReaderDownloadSelectionState {

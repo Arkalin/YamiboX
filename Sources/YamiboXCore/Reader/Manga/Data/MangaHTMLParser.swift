@@ -1,6 +1,29 @@
 import Foundation
 
 enum MangaHTMLParser {
+    struct DirectorySeedFacts {
+        var title: String?
+        var tagIDs: [String]
+        var samePageChapters: [MangaChapter]
+        var firstPostID: String?
+    }
+
+    static func parseDirectorySeed(from html: String, baseURL: URL) -> DirectorySeedFacts {
+        guard let document = try? KannaSoup.parse(html) else {
+            return DirectorySeedFacts(
+                title: YamiboHTMLPageInspector.pageTitle(from: html),
+                tagIDs: findTagIDs(in: html), samePageChapters: [], firstPostID: nil
+            )
+        }
+        let mobileTags = findTagIDsMobile(in: document)
+        return DirectorySeedFacts(
+            title: YamiboHTMLPageInspector.pageTitle(in: document, rawHTML: html)?.nilIfBlank
+                ?? document.select(".view_tit").text().nilIfBlank,
+            tagIDs: mobileTags.isEmpty ? findTagIDs(in: html) : mobileTags,
+            samePageChapters: extractSamePageLinks(in: document, baseURL: baseURL),
+            firstPostID: extractFirstPostID(in: document)
+        )
+    }
     static func findTagIDs(in html: String) -> [String] {
         let matches = HTMLTextExtractor.matches(pattern: #"href=["'][^"']*mod=tag[^"']*id=(\d+)[^"']*["']"#, in: html)
         return Array(Set(matches.compactMap { $0.dropFirst().first })).sorted()
@@ -35,6 +58,10 @@ enum MangaHTMLParser {
 
     static func findTagIDsMobile(in html: String) -> [String] {
         guard let document = try? KannaSoup.parse(html) else { return [] }
+        return findTagIDsMobile(in: document)
+    }
+
+    private static func findTagIDsMobile(in document: Document) -> [String] {
         return Array(Set(document.selectAll("a[href*='mod=tag']").compactMap { element in
             let href = element.attr("href")
             return HTMLTextExtractor.firstMatch(pattern: #"id=(\d+)"#, in: href)?.dropFirst().first
@@ -47,6 +74,10 @@ enum MangaHTMLParser {
         baseURL: URL = YamiboDomain.baseURL
     ) -> [MangaChapter] {
         guard let document = try? KannaSoup.parse(html) else { return [] }
+        return extractSamePageLinks(in: document, baseURL: baseURL)
+    }
+
+    private static func extractSamePageLinks(in document: Document, baseURL: URL) -> [MangaChapter] {
         guard let message = document.selectFirst(".message") else { return [] }
         return message.selectAll("a[href*='tid='], a[href*='thread-']").compactMap { link in
             let href = link.attr("href")
@@ -69,6 +100,10 @@ enum MangaHTMLParser {
 
     static func extractFirstPostID(from html: String) -> String? {
         guard let document = try? KannaSoup.parse(html) else { return nil }
+        return extractFirstPostID(in: document)
+    }
+
+    private static func extractFirstPostID(in document: Document) -> String? {
         let selectors = [
             "[id^=postmessage_]",
             "[id^=pid]",

@@ -36,7 +36,8 @@ enum ForumThreadPageHTMLParser {
             totalReplies: stats.totalReplies,
             forumID: ForumThreadPageMetadataParser.forumID(in: document),
             forumName: ForumThreadPageMetadataParser.forumName(in: document),
-            formHash: DiscuzFormHashParser.formHash(in: document, html: html)
+            formHash: DiscuzFormHashParser.formHash(in: document, html: html),
+            contentParserVersion: ForumThreadHTMLBlockParser.cacheVersion
         )
     }
 

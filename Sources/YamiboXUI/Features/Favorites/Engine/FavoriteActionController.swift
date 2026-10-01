@@ -75,6 +75,8 @@ final class FavoriteActionController {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var storeRevision = 0
     @ObservationIgnored private var needsRefresh = false
+    @ObservationIgnored private var observedBoardReader: BoardReaderSettings?
+    @ObservationIgnored private var observedBulkDelete: Bool?
 
     init(
         threadID: String, type: FavoriteType, defaultTitle: String,
@@ -94,7 +96,7 @@ final class FavoriteActionController {
         self.settingsStore = settingsStore
         directoryStore = mangaDirectoryStore
         self.makeFavoriteRepository = makeFavoriteRepository
-        let streams = [localFavoriteLibraryStore.changes(), settingsStore.changes()]
+        let streams = [localFavoriteLibraryStore.changes()]
             + (mangaDirectoryStore.map { [$0.changes()] } ?? [])
         for stream in streams {
             updates.append(Task { [weak self] in
@@ -109,6 +111,18 @@ final class FavoriteActionController {
                 }
             })
         }
+        let settingsChanges = settingsStore.changes()
+        updates.append(Task { [weak self, settingsStore] in
+            for await _ in settingsChanges {
+                guard !Task.isCancelled, let self else { return }
+                let settings = await settingsStore.load()
+                guard self.observedBoardReader != settings.boardReader
+                    || self.observedBulkDelete != settings.favorites.smartMangaBulkDeleteEnabled else { continue }
+                self.storeRevision += 1
+                if self.isWorking { self.needsRefresh = true; continue }
+                await self.refreshFavorite()
+            }
+        })
     }
 
     deinit { for task in updates { task.cancel() } }
@@ -131,12 +145,17 @@ final class FavoriteActionController {
             )
             guard current == generation, !Task.isCancelled else { return false }
             guard revision == storeRevision else { return await refreshFavorite() }
-            membership = snapshot.membership(for: scope)
+            let resolvedMembership = snapshot.membership(for: scope)
+            let didChange = !isReady || membership != resolvedMembership
+                || bulkDeleteEnabled != settings.favorites.smartMangaBulkDeleteEnabled
+            membership = resolvedMembership
             document = snapshot.document
             favorite = membership?.items.first?.favorite(type: type)
             bulkDeleteEnabled = settings.favorites.smartMangaBulkDeleteEnabled
+            observedBoardReader = settings.boardReader
+            observedBulkDelete = bulkDeleteEnabled
             isReady = true
-            onFavoriteDidChange?()
+            if didChange { onFavoriteDidChange?() }
             return true
         } catch {
             guard current == generation, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return false }

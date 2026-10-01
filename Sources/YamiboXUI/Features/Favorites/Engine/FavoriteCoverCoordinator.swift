@@ -10,7 +10,7 @@ final class FavoriteCoverCoordinator {
         var directories: [MangaDirectory]
     }
 
-    struct Lookup {
+    struct Lookup: Equatable {
         var urlsByKey: [ContentCoverKey: URL] = [:]
         var forcedKeys: Set<ContentCoverKey> = []
 
@@ -23,6 +23,8 @@ final class FavoriteCoverCoordinator {
     private let store: ContentCoverStore
     private let makeRepository: (@Sendable () async -> any ThreadCoverPageResolving)?
     private var revision: UInt64 = 0
+    private var coverRevision: UInt64 = 0
+    private var loadedKeys: Set<ContentCoverKey> = []
     private var observationTask: Task<Void, Never>?
     private var backfillTask: Task<Void, Never>?
     private var attemptedTargetIDs: Set<String> = []
@@ -33,6 +35,10 @@ final class FavoriteCoverCoordinator {
         observationTask = StoreChangeObservation.task(
             changes: { store.changes() }, changeID: { store.changeID }
         ) { [weak self] in
+            // Coalesce bursts, not the whole backfill network lifetime. Manual
+            // edits and completed covers remain visible while later books load.
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            guard !Task.isCancelled else { return }
             await self?.reload()
         }
     }
@@ -50,10 +56,26 @@ final class FavoriteCoverCoordinator {
     private func reload(notifyChanges: Bool = true) async {
         revision &+= 1
         let expectedRevision = revision
-        let keys = context.items.compactMap { ContentCoverKey(target: $0.target) }
-            + context.directories.map { ContentCoverKey.smartManga(directoryID: $0.id) }
-        let snapshot = await load(keys: keys)
+        let keys = Set(context.items.compactMap { ContentCoverKey(target: $0.target) }
+            + context.directories.map { ContentCoverKey.smartManga(directoryID: $0.id) })
+        let changes = store.changedCoverKeys(since: coverRevision, among: keys)
+        let isFullRefresh = !notifyChanges || keys != loadedKeys
+        let requestedKeys = isFullRefresh ? keys : changes.keys
+        guard isFullRefresh || !requestedKeys.isEmpty else {
+            coverRevision = changes.revision
+            return
+        }
+        let changed = await load(keys: Array(requestedKeys))
         guard !Task.isCancelled, revision == expectedRevision else { return }
+        var snapshot = isFullRefresh ? Lookup() : lookup
+        for key in requestedKeys {
+            snapshot.urlsByKey[key] = changed.urlsByKey[key]
+            if changed.forcedKeys.contains(key) { snapshot.forcedKeys.insert(key) }
+            else { snapshot.forcedKeys.remove(key) }
+        }
+        loadedKeys = keys
+        coverRevision = changes.revision
+        guard lookup != snapshot else { return }
         lookup = snapshot
         // Explicit refresh callers publish the document and covers together.
         // Store-driven refreshes notify the organizer independently.
@@ -96,7 +118,10 @@ final class FavoriteCoverCoordinator {
         guard !missing.isEmpty else { return }
         attemptedTargetIDs.formUnion(missing.map { ContentCoverKey.smartManga(directoryID: $0.directory.id).targetID })
         backfillTask = Task { [weak self, store] in
-            defer { self?.backfillTask = nil }
+            defer {
+                self?.backfillTask = nil
+                Task { [weak self] in await self?.reload() }
+            }
             let service = MangaAutomaticCoverService(store: store)
             for group in missing {
                 guard !Task.isCancelled else { return }

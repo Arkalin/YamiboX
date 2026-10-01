@@ -72,7 +72,7 @@ struct DownloadQueueScreen: View {
                 : L10n.string("mine.download_queue")
         )
         .task {
-            await viewModel.load()
+            await viewModel.loadWhileVisible()
         }
         .refreshable {
             await viewModel.refresh()
@@ -420,8 +420,7 @@ private struct DownloadQueueOwnerScreen: View {
         )
         .task {
             viewModel.setSelectionMode(false)
-            await viewModel.refresh()
-            dismissIfGroupIsEmpty()
+            await viewModel.loadWhileVisible()
         }
         .refreshable {
             await viewModel.refresh()

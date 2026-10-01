@@ -10,6 +10,8 @@ public struct ForumThreadPage: Codable, Equatable, Sendable {
     public var forumID: String?
     public var forumName: String?
     public var formHash: String?
+    /// Nil on legacy caches. Only current parser output may skip HTML repair.
+    public var contentParserVersion: Int?
 
     public init(
         thread: ThreadIdentity,
@@ -20,7 +22,8 @@ public struct ForumThreadPage: Codable, Equatable, Sendable {
         totalReplies: Int? = nil,
         forumID: String? = nil,
         forumName: String? = nil,
-        formHash: String? = nil
+        formHash: String? = nil,
+        contentParserVersion: Int? = nil
     ) {
         self.thread = thread
         self.title = title
@@ -31,6 +34,7 @@ public struct ForumThreadPage: Codable, Equatable, Sendable {
         self.forumID = forumID?.nilIfBlank
         self.forumName = forumName?.nilIfBlank
         self.formHash = formHash?.nilIfBlank
+        self.contentParserVersion = contentParserVersion
     }
 }
 

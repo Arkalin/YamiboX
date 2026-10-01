@@ -82,114 +82,77 @@ struct ForumThreadReaderBodyView: View {
     }
 
     private var content: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if let page {
-                        ForEach(page.posts) { post in
-                            let isFirstPost = currentPage == 1
-                                && !isReverseOrder
-                                && post.postID == page.posts.first?.postID
-                            ForumThreadPostCard(
-                                post: post,
-                                isTarget: post.postID == highlightedPostID,
-                                threadTitle: isFirstPost ? page.title : nil,
-                                totalViews: isFirstPost ? page.totalViews : nil,
-                                totalReplies: isFirstPost ? page.totalReplies : nil,
-                                refererURL: YamiboRoute.threadByID(
-                                    tid: page.thread.tid,
-                                    page: currentPage,
-                                    authorID: nil,
-                                    reverse: false
-                                ).url,
-                                threadID: page.thread.tid,
-                                currentPage: currentPage,
-                                onUserTap: onUserTap,
-                                onImageTap: openImageBrowser,
-                                onShowRatingResults: showRatingResults,
-                                onShowPollVoters: showPollVoters,
-                                onVotePoll: votePoll,
-                                onLoadRateOptions: loadRateOptions,
-                                onRatePost: ratePost,
-                                onCommentPost: commentPost,
-                                onURLTap: onURLTap,
-                                onAttachmentTap: onAttachmentTap
-                            )
-                            .id(post.postID)
-                            .onAppear {
-                                visiblePostIDs.insert(post.postID)
-                                reportVisibleAnchor()
-                            }
-                            .onDisappear {
-                                visiblePostIDs.remove(post.postID)
-                                reportVisibleAnchor()
-                            }
-                        }
-
-                        ForumPageNavigationBar(
-                            navigation: pageNavigation,
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                if let page {
+                    ForEach(page.posts) { post in
+                        let isFirstPost = currentPage == 1
+                            && !isReverseOrder
+                            && post.postID == page.posts.first?.postID
+                        ForumThreadPostCard(
+                            post: post,
+                            isTarget: post.postID == highlightedPostID,
+                            threadTitle: isFirstPost ? page.title : nil,
+                            totalViews: isFirstPost ? page.totalViews : nil,
+                            totalReplies: isFirstPost ? page.totalReplies : nil,
+                            refererURL: YamiboRoute.threadByID(
+                                tid: page.thread.tid,
+                                page: currentPage,
+                                authorID: nil,
+                                reverse: false
+                            ).url,
+                            threadID: page.thread.tid,
                             currentPage: currentPage,
-                            goToPage: goToPage,
-                            hidesOnSinglePage: true
+                            onUserTap: onUserTap,
+                            onImageTap: openImageBrowser,
+                            onShowRatingResults: showRatingResults,
+                            onShowPollVoters: showPollVoters,
+                            onVotePoll: votePoll,
+                            onLoadRateOptions: loadRateOptions,
+                            onRatePost: ratePost,
+                            onCommentPost: commentPost,
+                            onURLTap: onURLTap,
+                            onAttachmentTap: onAttachmentTap
                         )
-                    } else if isLoading {
-                        ContentLoadingView()
-                    } else if let errorMessage {
-                        ContentErrorView(message: errorMessage, details: errorDetails, retry: retry)
+                        .id(post.postID)
+                        .onAppear {
+                            visiblePostIDs.insert(post.postID)
+                            reportVisibleAnchor()
+                        }
+                        .onDisappear {
+                            visiblePostIDs.remove(post.postID)
+                            reportVisibleAnchor()
+                        }
                     }
+
+                    ForumPageNavigationBar(
+                        navigation: pageNavigation,
+                        currentPage: currentPage,
+                        goToPage: goToPage,
+                        hidesOnSinglePage: true
+                    )
+                } else if isLoading {
+                    ContentLoadingView()
+                } else if let errorMessage {
+                    ContentErrorView(message: errorMessage, details: errorDetails, retry: retry)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .frame(maxWidth: readableWidth + 32)
-                .frame(maxWidth: .infinity)
             }
-            .id(currentPage)
-            .refreshableWithTopIndicator(isRefreshing: isLoading && page != nil) {
-                await refresh()
-            }
-            .task(id: scrollTaskIdentity(page: page, targetPostID: targetPostID, restoredAnchorPostID: restoredAnchorPostID)) {
-                highlightedPostID = nil
-                guard page != nil else { return }
-                if let targetPostID {
-                    guard page?.posts.contains(where: { $0.postID == targetPostID }) == true else {
-                        return
-                    }
-                    // SwiftUI offers no layout-completion callback for freshly loaded
-                    // LazyVStack content; scrolling immediately targets estimated row
-                    // positions and lands off-target. The 150ms settle delay is an
-                    // empirical workaround, not a synchronization mechanism.
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    guard !Task.isCancelled else { return }
-                    highlightedPostID = targetPostID
-                    withAnimation(.snappy) {
-                        proxy.scrollTo(targetPostID, anchor: .center)
-                    }
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                    highlightedPostID = nil
-                    return
-                }
-                guard let restoredAnchorPostID else { return }
-                if page?.posts.contains(where: { $0.postID == restoredAnchorPostID }) == true {
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.snappy) {
-                        proxy.scrollTo(restoredAnchorPostID, anchor: .center)
-                    }
-                }
-                // Consume whether or not the anchor still exists on this
-                // page — a pending-but-unmatchable anchor would otherwise
-                // suppress anchor capture for the whole session. Deliberately
-                // no immediate re-report here: LazyVStack's realize window
-                // extends above the viewport, so "topmost realized post"
-                // right after the restore scroll sits 1–N floors above the
-                // restored anchor, and re-reporting it would drift the saved
-                // anchor upward on every no-scroll visit. The consume seeds
-                // the live anchor from the restored one; the next real
-                // scroll's onAppear/onDisappear events take over from there.
-                onConsumeRestoredAnchor()
-            }
+            .scrollTargetLayout()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: readableWidth + 32)
+            .frame(maxWidth: .infinity)
         }
+        .id(currentPage)
+        .refreshableWithTopIndicator(isRefreshing: isLoading && page != nil) {
+            await refresh()
+        }
+        .modifier(ForumThreadAnchorScrollModifier(
+            postIDs: page?.posts.map(\.postID), targetPostID: targetPostID,
+            restoredAnchorPostID: restoredAnchorPostID,
+            highlightedPostID: $highlightedPostID,
+            onConsumeRestoredAnchor: onConsumeRestoredAnchor
+        ))
         .forumPageBackground()
         .tint(theme.accentText)
         .safeAreaInset(edge: .bottom) {
@@ -208,14 +171,6 @@ struct ForumThreadReaderBodyView: View {
                 )
             }
         }
-    }
-
-    private func scrollTaskIdentity(page: ForumThreadPage?, targetPostID: String?, restoredAnchorPostID: String?) -> String {
-        [
-            targetPostID ?? "",
-            restoredAnchorPostID ?? "",
-            page?.posts.map(\.postID).joined(separator: ",") ?? ""
-        ].joined(separator: "|")
     }
 
     /// Reports the topmost rendered post (in page order) as the floor-level

@@ -26,6 +26,7 @@ final class NovelReaderLoadingCoordinator {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var loadRevision: UInt64 = 0
     @ObservationIgnored private var followUpTask: Task<Void, Never>?
+    @ObservationIgnored private var downloadRefreshTask: Task<Void, Never>?
 
     private let context: NovelLaunchContext
     private let makeRepository: @Sendable () async -> any NovelReadingPageRepository
@@ -57,13 +58,22 @@ final class NovelReaderLoadingCoordinator {
         self.presentation = presentation
     }
 
-    deinit { followUpTask?.cancel() }
+    deinit {
+        followUpTask?.cancel()
+        downloadRefreshTask?.cancel()
+    }
+
+    private func cancelFollowUps() {
+        followUpTask?.cancel()
+        downloadRefreshTask?.cancel()
+        followUpTask = nil
+        downloadRefreshTask = nil
+    }
 
     func close() {
         isClosed = true
         loadRevision &+= 1
-        followUpTask?.cancel()
-        followUpTask = nil
+        cancelFollowUps()
         workflow?.close()
         workflow = nil
         preparedInitialLoad = nil
@@ -107,7 +117,7 @@ final class NovelReaderLoadingCoordinator {
     func invalidateInitialForRefresh() async -> Bool {
         guard !isClosed, await preparation.invalidateForRefresh(), !isClosed else { return false }
         loadRevision &+= 1
-        followUpTask?.cancel()
+        cancelFollowUps()
         preparedInitialLoad = nil
         forceRefreshInitialLoad = true
         if let repository {
@@ -216,7 +226,7 @@ final class NovelReaderLoadingCoordinator {
         guard let workflow = await ensureWorkflow() else { return false }
         loadRevision &+= 1
         let request = loadRevision
-        followUpTask?.cancel()
+        cancelFollowUps()
         isLoading = true
         presentation.clearFailure()
         defer { if loadRevision == request { isLoading = false } }
@@ -227,10 +237,8 @@ final class NovelReaderLoadingCoordinator {
             isLoading = false
             if refreshDownload {
                 recordVisitIfNeeded()
-                await presentation.refreshDownload()
-                guard admits(request, workflow: workflow) else { return false }
-                scheduleFollowUp(refreshDownload: false)
             }
+            scheduleFollowUp(refreshDownload: refreshDownload)
             return true
         } catch {
             guard admits(request, workflow: workflow) else { return false }
@@ -254,13 +262,34 @@ final class NovelReaderLoadingCoordinator {
         presentation.publish(state)
     }
 
+    func promotePrefetchedDocument(
+        preferredSurfaceOrdinal: Int, resumePoint: NovelResumePoint?
+    ) async throws -> Bool {
+        guard let workflow = await ensureWorkflow() else { return false }
+        loadRevision &+= 1
+        let request = loadRevision
+        cancelFollowUps()
+        guard let state = try await workflow.promotePrefetchedDocument(
+            preferredSurfaceOrdinal: preferredSurfaceOrdinal, resumePoint: resumePoint
+        ), admits(request, workflow: workflow) else { return false }
+        presentation.publish(state)
+        scheduleFollowUp(refreshDownload: true)
+        return true
+    }
+
     private func scheduleFollowUp(refreshDownload: Bool) {
-        followUpTask?.cancel()
+        cancelFollowUps()
         let request = loadRevision
         guard let workflow else { return }
-        followUpTask = Task { [weak self, refresh = presentation.refreshDownload] in
-            if refreshDownload { await refresh() }
-            guard let self, self.admits(request, workflow: workflow), let anchor = self.presentation.prefetchAnchor() else { return }
+        if refreshDownload {
+            downloadRefreshTask = Task { [weak self, refresh = presentation.refreshDownload] in
+                guard let self, self.admits(request, workflow: workflow) else { return }
+                await refresh()
+            }
+        }
+        followUpTask = Task { [weak self] in
+            guard let self, self.admits(request, workflow: workflow) else { return }
+            guard let anchor = self.presentation.prefetchAnchor() else { return }
             await self.prefetch(near: anchor)
         }
     }

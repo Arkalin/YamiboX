@@ -46,6 +46,7 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
     let usesTwoPageSpread: Bool
     let spreads: [MangaPageSpread]
     let currentSpreadIndex: Int?
+    private let spreadIndexesByPage: [Int]
 
     init(
         pages: [MangaReaderPageProjection],
@@ -65,8 +66,32 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
             usesTwoPageSpread: usesTwoPageSpread
         )
         self.spreads = spreads
+        var spreadIndexesByPage = Array(repeating: 0, count: pages.count)
+        for spread in spreads {
+            for pageIndex in spread.pageIndexes {
+                spreadIndexesByPage[pageIndex] = spread.index
+            }
+        }
+        self.spreadIndexesByPage = spreadIndexesByPage
         self.currentSpreadIndex = clampedCurrentPageIndex.flatMap { pageIndex in
-            spreads.first { $0.containsPage(at: pageIndex) }?.index
+            spreadIndexesByPage[pageIndex]
+        } ?? Self.clampedIndex(nil, pageCount: spreads.count)
+    }
+
+    /// Reuse the window's static spreads when only the selected page changes.
+    func selectingPage(at index: Int?) -> Self {
+        Self(base: self, currentPageIndex: index)
+    }
+
+    private init(base: Self, currentPageIndex: Int?) {
+        pages = base.pages
+        pageTurnDirection = base.pageTurnDirection
+        usesTwoPageSpread = base.usesTwoPageSpread
+        spreads = base.spreads
+        spreadIndexesByPage = base.spreadIndexesByPage
+        self.currentPageIndex = Self.clampedIndex(currentPageIndex, pageCount: pages.count)
+        currentSpreadIndex = self.currentPageIndex.flatMap { pageIndex in
+            base.spreadIndexesByPage[pageIndex]
         } ?? Self.clampedIndex(nil, pageCount: spreads.count)
     }
 
@@ -151,7 +176,7 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
 
     func spreadIndex(forPageAt index: Int) -> Int? {
         guard pages.indices.contains(index) else { return nil }
-        return spreads.first { $0.containsPage(at: index) }?.index
+        return spreadIndexesByPage[index]
     }
 
     func clampedPageIndex(_ index: Int?) -> Int? {

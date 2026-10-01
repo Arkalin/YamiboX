@@ -124,8 +124,9 @@ public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, Forum
         let html = try await client.fetchHTML(
             for: .forumSearch(keyword: normalizedQuery, forumID: forumID, formHash: formHash),
             cachePolicy: .reloadIgnoringLocalCacheData,
-            cancellationPolicy: .completeStartedRequest
+            cancellationPolicy: .propagateCancellation
         )
+        try Task.checkCancellation()
         return try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseSearchPage") {
             try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
         }
@@ -141,8 +142,9 @@ public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, Forum
         let html = try await client.fetchHTML(
             for: .forumSearchPage(searchID: normalizedSearchID, page: page),
             cachePolicy: .reloadIgnoringLocalCacheData,
-            cancellationPolicy: .completeStartedRequest
+            cancellationPolicy: .propagateCancellation
         )
+        try Task.checkCancellation()
         return try LoadDiagnosticError.parsing(html: html, context: "ForumHTMLParser.parseSearchPage") {
             try ForumHTMLParser.parseSearchPage(from: html, query: normalizedQuery)
         }

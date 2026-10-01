@@ -11,6 +11,30 @@ extension DownloadStore {
     /// apart.
     private static let workOrderClause = "ORDER BY insertion_index ASC, reader_kind ASC, owner_name ASC, tid ASC"
 
+    func downloadQueueSummary(readerKind: DownloadReaderKind?) async throws -> DownloadQueueSummary {
+        try await ensureQueueRecovered()
+        do {
+            return try await database.read { db in
+                let predicate = readerKind == nil ? "" : " WHERE reader_kind = ?"
+                let arguments = readerKind.map { StatementArguments([$0.rawValue]) } ?? StatementArguments()
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COUNT(*) AS entry_count,
+                           COALESCE(SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+                    FROM download_works\(predicate)
+                    """, arguments: arguments)
+                let rawRunState = try String.fetchOne(db,
+                    sql: "SELECT value FROM download_queue_state WHERE key = 'run_state'")
+                return DownloadQueueSummary(
+                    entryCount: row?["entry_count"] ?? 0,
+                    failedCount: row?["failed_count"] ?? 0,
+                    runState: rawRunState.flatMap(DownloadQueueRunState.init(rawValue:)) ?? .paused
+                )
+            }
+        } catch {
+            throw downloadPersistenceError(from: error)
+        }
+    }
+
     func downloadQueueWorks() async throws -> [DownloadQueueWorkProjection] {
         try await ensureQueueRecovered()
         do {

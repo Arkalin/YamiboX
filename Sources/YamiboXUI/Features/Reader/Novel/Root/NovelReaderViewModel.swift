@@ -98,10 +98,10 @@ public final class NovelReaderViewModel {
     // The three package hooks are test seams (assigned, never rendered),
     // so they stay unobserved like every other non-published property.
     @ObservationIgnored package var runtimeUpdatePreparation: NovelReadingWorkflowRuntimeUpdatePreparation = { $0 }
-    @ObservationIgnored package var novelReaderPageDocumentNavigationOverlayPreparation: (@MainActor () async -> Void) = {
-        await Task.yield()
-        try? await Task.sleep(nanoseconds: 50_000_000)
-    }
+    @ObservationIgnored package var novelReaderPageDocumentNavigationOverlayPreparation: (@MainActor () async -> Void)?
+    private(set) var navigationOverlayRevision: UInt64 = 0
+    @ObservationIgnored private var hasNavigationOverlayReporter = false
+    @ObservationIgnored private var navigationOverlayWaiter: (id: UUID, continuation: CheckedContinuation<Void, Never>)?
     @ObservationIgnored package var novelReaderPageDocumentNavigationStateDidChange: (@MainActor (Bool) -> Void)?
     private let progressSync: ProgressSyncModule
     // The chapter-comments module is built by the composition root
@@ -479,6 +479,7 @@ public final class NovelReaderViewModel {
     }
 
     public func close() {
+        setNavigationOverlayReporter(active: false)
         fontProtectionClosed = true
         fontLibrary.protect(nil, owner: fontProtectionID)
         runtimeUpdates.close()
@@ -635,6 +636,10 @@ public final class NovelReaderViewModel {
         await flushProgress()
     }
 
+    var currentResumeContext: NovelLaunchContext {
+        novelReaderPresentation == nil ? context : resumeContext(for: currentProgressSnapshot())
+    }
+
     public func selectSurface(_ surfaceIndex: Int) {
         selectSurface(surfaceIndex, recordsLinearReading: true)
     }
@@ -660,7 +665,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     package func updateVerticalViewportPosition(surfaceIndex: Int, intraSurfaceProgress: Double, force: Bool = false) {
@@ -688,7 +692,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     func updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample) {
@@ -736,7 +739,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     public func jumpToChapter(_ chapter: NovelReaderChapter) {
@@ -789,6 +791,8 @@ public final class NovelReaderViewModel {
                 navigation.recordLinearReading(direction: direction)
             }
         case let .promotePrefetched(preferredSurfaceOrdinal, resumePoint):
+            // Consume prefetch only after an explicit turn beyond the document,
+            // not when selecting its last surface, which still needs to be read.
             let didPromote = await promotePrefetchedDocument(
                 startingAt: preferredSurfaceOrdinal,
                 preferredResumePoint: resumePoint,
@@ -878,14 +882,13 @@ public final class NovelReaderViewModel {
         reportsError: Bool = true
     ) async -> Bool {
         guard await ensureReadingWorkflow() != nil else { return false }
-        if showsNovelReaderProjectionNavigationOverlay {
-            await beginNovelReaderProjectionNavigation()
-        }
+        let overlayRevision = showsNovelReaderProjectionNavigationOverlay
+            ? await beginNovelReaderProjectionNavigation() : nil
         defer {
-            if showsNovelReaderProjectionNavigationOverlay {
-                setNovelReaderProjectionNavigation(false)
-            }
+            finishNovelReaderProjectionNavigation(revision: overlayRevision)
         }
+        guard !Task.isCancelled, !fontProtectionClosed,
+              overlayRevision == nil || overlayRevision == navigationOverlayRevision else { return false }
         return await loading.load(
             view: view, preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             preferredResumePoint: preferredResumePoint, forceRefresh: forceRefresh,
@@ -987,8 +990,9 @@ public final class NovelReaderViewModel {
     /// navigation coordinator can fall back to a plain view load.
     private func openChapterAnchor(_ anchor: NovelChapterAnchor) async -> Bool? {
         guard await ensureReadingWorkflow() != nil else { return nil }
-        await beginNovelReaderProjectionNavigation()
-        defer { setNovelReaderProjectionNavigation(false) }
+        let revision = await beginNovelReaderProjectionNavigation()
+        defer { finishNovelReaderProjectionNavigation(revision: revision) }
+        guard !Task.isCancelled, !fontProtectionClosed, revision == navigationOverlayRevision else { return false }
         return await loading.loadChapter(anchor)
     }
 
@@ -997,13 +1001,58 @@ public final class NovelReaderViewModel {
         return NovelReaderLinearReadingPageKey(view: currentView, surfaceIndex: selectedSurfaceIndex)
     }
 
-    private func beginNovelReaderProjectionNavigation() async {
+    private func beginNovelReaderProjectionNavigation() async -> UInt64 {
+        navigationOverlayRevision &+= 1
+        let revision = navigationOverlayRevision
         setNovelReaderProjectionNavigation(true)
-        await novelReaderPageDocumentNavigationOverlayPreparation()
+        if let novelReaderPageDocumentNavigationOverlayPreparation {
+            await novelReaderPageDocumentNavigationOverlayPreparation()
+            return revision
+        }
+        guard hasNavigationOverlayReporter, !Task.isCancelled else { return revision }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                navigationOverlayWaiter?.continuation.resume()
+                navigationOverlayWaiter = (id, continuation)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard self?.navigationOverlayWaiter?.id == id else { return }
+                self?.finishNavigationOverlayWait()
+            }
+        }
+        return revision
+    }
+
+    private func finishNovelReaderProjectionNavigation(revision: UInt64?) {
+        guard let revision, revision == navigationOverlayRevision else { return }
+        setNovelReaderProjectionNavigation(false)
+    }
+
+    func setNavigationOverlayReporter(active: Bool) {
+        hasNavigationOverlayReporter = active
+        if !active {
+            navigationOverlayRevision &+= 1
+            setNovelReaderProjectionNavigation(false)
+            finishNavigationOverlayWait()
+        }
+    }
+
+    func navigationOverlayDidDisplay(revision: UInt64) {
+        guard revision == navigationOverlayRevision else { return }
+        finishNavigationOverlayWait()
+    }
+
+    private func finishNavigationOverlayWait() {
+        let waiter = navigationOverlayWaiter
+        navigationOverlayWaiter = nil
+        waiter?.continuation.resume()
     }
 
     private func setNovelReaderProjectionNavigation(_ isNavigating: Bool) {
         guard isNavigatingNovelReaderProjection != isNavigating else { return }
+        if !isNavigating { finishNavigationOverlayWait() }
         isNavigatingNovelReaderProjection = isNavigating
         novelReaderPageDocumentNavigationStateDidChange?(isNavigating)
     }
@@ -1060,31 +1109,6 @@ public final class NovelReaderViewModel {
         guard projection.displayedPageCount > 1 else { return 0 }
         let fraction = Double(projection.displayedPageIndex) / Double(projection.displayedPageCount - 1)
         return Int((min(max(fraction, 0), 1) * 100).rounded())
-    }
-
-    private func promoteIfNeededAfterLocationUpdate() {
-        if settings.readingMode == .paged,
-           isAtPagedDocumentEnd,
-           readingWorkflow?.canPromotePrefetchedDocument(forView: currentView + 1) == true {
-            Task {
-                await promotePrefetchedDocument(
-                    startingAt: 0,
-                    preferredResumePoint: nil,
-                    showsNovelReaderProjectionNavigationOverlay: true
-                )
-            }
-        }
-    }
-
-    private var isAtPagedDocumentEnd: Bool {
-        guard settings.readingMode == .paged,
-              let structure = presentationStructure,
-              let lastSurfaceIndex = structure.surfaceIndexesByView[currentView]?.last else { return false }
-        if isTwoPageSpreadActive {
-            guard let lastSpread = structure.spread(containing: lastSurfaceIndex) else { return false }
-            return pagedViewportSelectionIndex >= lastSpread.index
-        }
-        return selectedSurfaceIndex >= lastSurfaceIndex
     }
 
     private func scheduleProgressSync() {
@@ -1183,22 +1207,18 @@ public final class NovelReaderViewModel {
         showsNovelReaderProjectionNavigationOverlay: Bool = false,
         reportsError: Bool = true
     ) async -> Bool {
-        if showsNovelReaderProjectionNavigationOverlay {
-            await beginNovelReaderProjectionNavigation()
-        }
+        let overlayRevision = showsNovelReaderProjectionNavigationOverlay
+            ? await beginNovelReaderProjectionNavigation() : nil
         defer {
-            if showsNovelReaderProjectionNavigationOverlay {
-                setNovelReaderProjectionNavigation(false)
-            }
+            finishNovelReaderProjectionNavigation(revision: overlayRevision)
         }
         do {
-            guard let workflowState = try await readingWorkflow?.promotePrefetchedDocument(
+            guard !Task.isCancelled, !fontProtectionClosed,
+                  overlayRevision == nil || overlayRevision == navigationOverlayRevision else { return false }
+            return try await loading.promotePrefetchedDocument(
                 preferredSurfaceOrdinal: preferredSurfaceOrdinal,
                 resumePoint: preferredResumePoint
-            ) else { return false }
-            syncFromWorkflowState(workflowState)
-            await prefetchIfNeeded(for: selectedSurfaceIndex)
-            return true
+            )
         } catch {
             if reportsError {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {

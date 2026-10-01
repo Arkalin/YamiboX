@@ -21,6 +21,13 @@ final class ForumSearchViewModel {
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumSearchPageLoading
     @ObservationIgnored private let formHashProvider: @Sendable () async -> String?
     @ObservationIgnored private var generation = 0
+    private struct RequestKey: Equatable {
+        var query: String
+        var forumID: String?
+        var page: Int
+    }
+    @ObservationIgnored private var inFlightKey: RequestKey?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
 
     init(forumID: String?, dependencies: ForumDependencies) {
         self.forumID = forumID
@@ -60,8 +67,6 @@ final class ForumSearchViewModel {
     }
 
     func searchFirstPage() async {
-        currentPage = 1
-        currentSearchID = nil
         await search(pageNumber: 1)
     }
 
@@ -73,10 +78,37 @@ final class ForumSearchViewModel {
 
     private func search(pageNumber: Int) async {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else { return }
-
+        guard !trimmedQuery.isEmpty, !Task.isCancelled else { return }
+        let key = RequestKey(query: trimmedQuery, forumID: forumID, page: pageNumber)
+        guard inFlightKey != key else { return }
+        searchTask?.cancel()
+        inFlightKey = key
         generation += 1
         let requestGeneration = generation
+        let task = Task<Void, Never> { [weak self] in
+            await self?.performSearch(key: key, requestGeneration: requestGeneration)
+        }
+        searchTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if generation == requestGeneration {
+            inFlightKey = nil
+            searchTask = nil
+            isLoading = false
+        }
+    }
+
+    private func performSearch(key: RequestKey, requestGeneration: Int) async {
+        guard !Task.isCancelled, generation == requestGeneration else { return }
+        let trimmedQuery = key.query
+        let pageNumber = key.page
+        if pageNumber == 1 {
+            currentPage = 1
+            currentSearchID = nil
+        }
         isLoading = true
         errorMessage = nil
         defer {
@@ -87,6 +119,7 @@ final class ForumSearchViewModel {
 
         do {
             let repository = await repositoryProvider()
+            try Task.checkCancellation()
             let nextPage: ForumSearchPage
             // Double-optional: outer nil means "leave currentSearchID
             // untouched" (the searchForumPage branch); `.some(nil)` means
@@ -94,10 +127,12 @@ final class ForumSearchViewModel {
             // assignment in the searchForum branch.
             let resolvedSearchID: String??
             if pageNumber == 1 || currentSearchID == nil {
+                let formHash = await formHashProvider()
+                try Task.checkCancellation()
                 nextPage = try await repository.searchForum(
                     query: trimmedQuery,
                     forumID: forumID,
-                    formHash: await formHashProvider()
+                    formHash: formHash
                 )
                 resolvedSearchID = .some(nextPage.searchID)
             } else {
@@ -108,7 +143,7 @@ final class ForumSearchViewModel {
                 )
                 resolvedSearchID = nil
             }
-            guard requestGeneration == generation else { return }
+            guard !Task.isCancelled, requestGeneration == generation else { return }
             if let resolvedSearchID {
                 currentSearchID = resolvedSearchID
             }

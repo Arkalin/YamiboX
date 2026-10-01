@@ -215,6 +215,11 @@ public struct NovelDownloadViewsSnapshot: Codable, Hashable, Sendable {
     }
 }
 
+public struct NovelOfflineSourcePageMetadata: Sendable {
+    public var ownerTitle: String
+    public var updatedAt: Date?
+}
+
 public struct NovelOfflineSourcePageSnapshot: Sendable {
     public var ownerTitle: String
     public var sourcePage: ForumThreadPage

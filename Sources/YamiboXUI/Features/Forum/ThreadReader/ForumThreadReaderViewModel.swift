@@ -39,7 +39,7 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private var hasConsumedLaunchTarget = false
     private(set) var becameReaderCompanion = false
 
-    let context: ThreadNovelLaunchContext
+    private(set) var context: ThreadNovelLaunchContext
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumThreadPageLoading
     @ObservationIgnored private let localFavoriteLibraryStoreProvider: @Sendable () async -> FavoriteLibraryStore?
@@ -52,7 +52,8 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private var latestVisibleAnchorPostID: String?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var handledSubmissionID: UUID?
-    @ObservationIgnored private let resolveReplyTarget: @Sendable (URL) async -> YamiboThreadRoutePayload?
+    @ObservationIgnored private var initialPreloadedPage: ForumThreadPage?
+    @ObservationIgnored private let resolveReplyTarget: @Sendable (URL) async -> YamiboThreadRouteResolution?
     /// The thread starter's uid, needed to scope 只看楼主. Captured from the
     /// first post of an unfiltered forward-ordered page 1 — the only place it
     /// shows up — and resolved on demand when this session never loaded that
@@ -60,7 +61,7 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private var threadAuthorID: String?
     @ObservationIgnored private var enqueueAttachmentRequest: (@Sendable (ForumAttachmentDownloadRequest) async throws -> ForumAttachmentEnqueueResult)?
 
-    convenience init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies) {
+    convenience init(context: ThreadNovelLaunchContext, dependencies: ForumDependencies, preloadedPage: ForumThreadPage? = nil) {
         self.init(
             context: context,
             repositoryProvider: dependencies.makeForumThreadReaderRepository,
@@ -73,10 +74,9 @@ final class ForumThreadReaderViewModel {
             settingsStore: dependencies.settingsStore,
             resolveReplyTarget: { [makeResolver = dependencies.makeThreadRouteResolver] url in
                 let resolver = await makeResolver()
-                if case let .thread(payload) = try? await resolver.resolve(
+                return try? await resolver.resolveWithPage(
                     YamiboThreadRouteRequest(threadURL: url, intent: .nativeThreadReader)
-                ) { return payload }
-                return nil
+                )
             }
         )
         enqueueAttachmentRequest = { request in
@@ -86,6 +86,7 @@ final class ForumThreadReaderViewModel {
             try await executor.continueQueue()
             return result
         }
+        seedInitialPage(preloadedPage)
     }
 
     func enqueueAttachment(_ attachment: ForumThreadAttachmentBlock) async {
@@ -119,7 +120,7 @@ final class ForumThreadReaderViewModel {
         contentCoverStore: ContentCoverStore? = nil,
         mangaDirectoryStore: (any MangaDirectoryPersisting)? = nil,
         settingsStore: SettingsStore,
-        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRoutePayload? = { _ in nil }
+        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRouteResolution? = { _ in nil }
     ) {
         self.init(
             context: context,
@@ -145,7 +146,7 @@ final class ForumThreadReaderViewModel {
         contentCoverStore: ContentCoverStore?,
         mangaDirectoryStore: (any MangaDirectoryPersisting)?,
         settingsStore: SettingsStore,
-        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRoutePayload?
+        resolveReplyTarget: @escaping @Sendable (URL) async -> YamiboThreadRouteResolution?
     ) {
         self.context = context
         favoriteActions = FavoriteActionController(
@@ -249,6 +250,36 @@ final class ForumThreadReaderViewModel {
         isLoading = false
     }
 
+    /// A retained model must accept the newly requested chapter anchor, not
+    /// silently resume its previous floor or author/reverse filter.
+    func prepareForOriginalPost(context: ThreadNovelLaunchContext, preloadedPage: ForumThreadPage?) {
+        guard context.thread.tid == self.context.thread.tid else { return }
+        generation += 1
+        initialPreloadedPage = nil
+        self.context = context
+        isSuspendedForModeSwitch = false
+        hasConsumedLaunchTarget = false
+        isAuthorOnly = false
+        isReverseOrder = false
+        latestVisibleAnchorPostID = nil
+        restoredAnchorPostID = nil
+        errorMessage = nil
+        isLoading = false
+        page = nil
+        currentPage = context.initialPage
+        if let preloadedPage, preloadedPage.thread.tid == context.thread.tid,
+           (preloadedPage.pageNavigation?.currentPage ?? context.initialPage) == context.initialPage {
+            page = preloadedPage
+            captureThreadAuthorIDIfNeeded(from: preloadedPage)
+            handlePageLoadSuccess(previousLoadedPage: nil)
+        }
+    }
+
+    func seedInitialPage(_ page: ForumThreadPage?) {
+        guard self.page == nil else { return }
+        initialPreloadedPage = page
+    }
+
     func load(submissionChange: ForumSubmissionChange? = nil) async {
         isSuspendedForModeSwitch = false
         let change = submissionChange.flatMap { change -> ForumSubmissionChange? in
@@ -266,7 +297,6 @@ final class ForumThreadReaderViewModel {
             return
         }
         guard page == nil else { return }
-        await favoriteActions.refreshFavorite()
         var initialPage = context.initialPage
         // Resume is opt-in. Explicit post/page links still take precedence.
         do {
@@ -283,7 +313,9 @@ final class ForumThreadReaderViewModel {
             }
             return
         }
-        if await loadPage(initialPage, preferCache: change == nil), !Task.isCancelled {
+        let seed = change == nil ? initialPreloadedPage : nil
+        initialPreloadedPage = nil
+        if await loadPage(initialPage, preferCache: change == nil, preloadedPage: seed), !Task.isCancelled {
             handledSubmissionID = change?.id
         }
     }
@@ -297,11 +329,14 @@ final class ForumThreadReaderViewModel {
         defer { if generation == requestGeneration { isLoading = false } }
         let anchor = latestVisibleAnchorPostID ?? restoredAnchorPostID
         var destination: YamiboThreadRoutePayload?
+        var freshPage: ForumThreadPage?
         if case let .post(.reply, _, _, replyURL) = change.kind,
            let replyURL, !isFilteredView {
             let resolved = await resolveReplyTarget(replyURL)
-            if resolved?.thread.tid == context.thread.tid, resolved?.targetPostID != nil {
-                destination = resolved
+            if case let .thread(payload) = resolved?.target,
+               payload.thread.tid == context.thread.tid, payload.targetPostID != nil {
+                destination = payload
+                freshPage = resolved?.preloadedPage
             }
         }
         guard generation == requestGeneration, !Task.isCancelled else { return }
@@ -309,7 +344,8 @@ final class ForumThreadReaderViewModel {
             destination?.initialPage ?? currentPage,
             preferCache: false,
             preservesCurrentContentOnFailure: true,
-            locatingReply: destination?.targetPostID.map { ($0, currentPage) }
+            locatingReply: destination?.targetPostID.map { ($0, currentPage) },
+            preloadedPage: freshPage
         )
         guard loaded, !Task.isCancelled else { return }
         hasConsumedLaunchTarget = true
@@ -606,7 +642,8 @@ final class ForumThreadReaderViewModel {
         preferCache: Bool = true,
         preservesCurrentContentOnFailure: Bool = false,
         usesCachedFallbackOnFailure: Bool = false,
-        locatingReply: (postID: String, fallbackPage: Int)? = nil
+        locatingReply: (postID: String, fallbackPage: Int)? = nil,
+        preloadedPage: ForumThreadPage? = nil
     ) async -> Bool {
         generation += 1
         let requestGeneration = generation
@@ -625,7 +662,11 @@ final class ForumThreadReaderViewModel {
 
         do {
             let repository = await repositoryProvider()
-            var loaded = if preferCache, let cached = await repository.cachedThreadPage(
+            var loaded = if let preloadedPage, !isFilteredView,
+                preloadedPage.thread.tid == context.thread.tid,
+                (preloadedPage.pageNavigation?.currentPage ?? 1) == page {
+                preloadedPage
+            } else if preferCache, let cached = await repository.cachedThreadPage(
                 context: context,
                 page: page,
                 authorID: authorID,
@@ -640,7 +681,7 @@ final class ForumThreadReaderViewModel {
                     reverse: reverse
                 )
             }
-            guard requestGeneration == generation else { return false }
+            guard requestGeneration == generation, !Task.isCancelled else { return false }
             var loadedPageNumber = page
             if let locatingReply, !loaded.posts.contains(where: { $0.postID == locatingReply.postID }),
                page != locatingReply.fallbackPage {
@@ -650,7 +691,7 @@ final class ForumThreadReaderViewModel {
                 loaded = try await repository.fetchThreadPage(
                     context: context, page: locatingReply.fallbackPage, authorID: authorID, reverse: reverse
                 )
-                guard requestGeneration == generation else { return false }
+                guard requestGeneration == generation, !Task.isCancelled else { return false }
                 loadedPageNumber = locatingReply.fallbackPage
             }
             self.page = loaded

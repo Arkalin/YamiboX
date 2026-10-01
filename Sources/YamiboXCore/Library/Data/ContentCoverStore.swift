@@ -101,6 +101,12 @@ public struct ContentCover: Codable, Hashable, Sendable {
 
 public actor ContentCoverStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
+    private nonisolated let keyChanges = ContentCoverKeyChanges()
+    /// A coalescing stream is only a wakeup; this journal retains key changes
+    /// across skipped signals. Bulk writes and identity remapping invalidate all.
+    public nonisolated func changedCoverKeys(since revision: UInt64, among keys: Set<ContentCoverKey>) -> (revision: UInt64, keys: Set<ContentCoverKey>) {
+        keyChanges.changed(since: revision, among: keys)
+    }
     public nonisolated var changeID: String { changeBroadcaster.changeID }
     /// Multicast change feed; each element is the `changeID` of the store
     /// instance that made the change (see `StoreChangeBroadcaster`).
@@ -242,12 +248,13 @@ public actor ContentCoverStore {
         let didChange = try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
             if onlyIfMissing, cover.textCoverForced || cover.resolvedURL != nil { return false }
+            guard cover.automaticCoverURL != normalizedURL else { return false }
             cover.automaticCoverURL = normalizedURL
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
             return true
         }
-        if didChange { postChangeNotification() }
+        if didChange { postChangeNotification(key: key) }
         return didChange
     }
 
@@ -265,7 +272,7 @@ public actor ContentCoverStore {
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
-        postChangeNotification()
+        postChangeNotification(key: key)
         return true
     }
 
@@ -286,7 +293,7 @@ public actor ContentCoverStore {
             return true
         }
         if didClear {
-            postChangeNotification()
+            postChangeNotification(key: key)
         }
         return didClear
     }
@@ -299,7 +306,7 @@ public actor ContentCoverStore {
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
-        postChangeNotification()
+        postChangeNotification(key: key)
     }
 
     /// Toggles the text-placeholder override on or off. Unlike
@@ -315,7 +322,7 @@ public actor ContentCoverStore {
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
-        postChangeNotification()
+        postChangeNotification(key: key)
         return true
     }
 
@@ -484,7 +491,34 @@ public actor ContentCoverStore {
 
     public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
 
-    private nonisolated func postChangeNotification() {
+    private nonisolated func postChangeNotification(key: ContentCoverKey? = nil) {
+        keyChanges.record(key)
         changeBroadcaster.post()
+    }
+}
+
+private final class ContentCoverKeyChanges: @unchecked Sendable {
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var allKeysRevision: UInt64 = 0
+    private var revisions: [ContentCoverKey: UInt64] = [:]
+
+    func record(_ key: ContentCoverKey?) {
+        lock.withLock {
+            revision &+= 1
+            // Smart-manga keys may canonicalize inside the write transaction.
+            guard let key, key.targetType == .thread, revisions.count < 1024 else {
+                allKeysRevision = revision
+                revisions.removeAll(keepingCapacity: true)
+                return
+            }
+            revisions[key] = revision
+        }
+    }
+
+    func changed(since previous: UInt64, among keys: Set<ContentCoverKey>) -> (revision: UInt64, keys: Set<ContentCoverKey>) {
+        lock.withLock {
+            (revision, previous < allKeysRevision ? keys : keys.filter { (revisions[$0] ?? 0) > previous })
+        }
     }
 }

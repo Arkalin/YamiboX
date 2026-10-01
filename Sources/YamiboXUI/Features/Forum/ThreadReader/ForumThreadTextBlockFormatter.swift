@@ -122,7 +122,8 @@ struct ForumThreadTextBlockFormatter {
         }
         for inline in block.inlineImages {
             guard let range = range(inline.start, 1), (result.string as NSString).substring(with: range) == "\u{FFFC}" else { continue }
-            let attachment = NSTextAttachment()
+            let attachment = ForumThreadInlineAttachment()
+            attachment.sourceURL = inline.image.url
             let source = images[inline.image.url] ?? UIImage(systemName: "face.smiling") ?? UIImage()
             attachment.image = ForumThreadInlineTextView.sizedUIImage(source, dimension: imageSize)
             attachment.bounds = CGRect(x: 0, y: -imageSize / 7, width: imageSize, height: imageSize)

@@ -6,6 +6,9 @@ import Foundation
 /// and walks the DOM with `ForumThreadBlockBuilder`. Text blocks follow content
 /// structure rather than an artificial character limit.
 enum ForumThreadHTMLBlockParser {
+    // Bump when cached content blocks need to be rebuilt from their HTML.
+    static let cacheVersion = 1
+
     static func parseBlocks(in body: Element) throws -> [ForumThreadContentBlock] {
         let copy = try KannaSoup.parseBodyFragment(body.html(), baseURL: YamiboDomain.baseURL.absoluteString)
         sanitize(copy.body() ?? copy)

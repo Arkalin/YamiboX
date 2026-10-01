@@ -2,6 +2,8 @@ import SwiftUI
 import YamiboXCore
 
 #if os(iOS)
+import UIKit
+
 private enum ChapterCommentSourcePalette {
     static let action = Color(light: 0x4E2A1B, dark: 0xD6A083)
     static let rating = Color(light: 0x26705C, dark: 0x5FC9A8)
@@ -831,6 +833,9 @@ struct ReaderChapterCommentComposeBar: View {
 }
 
 struct ReaderChapterCommentBody: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @State private var cache = ReaderChapterCommentTextCache()
     let text: String
     let blocks: [ForumThreadTextBlock]?
     let refererURL: URL
@@ -862,7 +867,10 @@ struct ReaderChapterCommentBody: View {
                 ForEach(contentBlocks) { block in
                     switch block.kind {
                     case let .text(text):
-                        ReaderChapterCommentText(attributedText: prefixed(ForumThreadTextBlockFormatter(block: text).attributedText, enabled: block.id == contentBlocks.first?.id), refererURL: refererURL)
+                        ReaderChapterCommentCachedBlock(
+                            block: text, refererURL: refererURL,
+                            prefix: block.id == contentBlocks.first?.id ? replyingToName.map { replyPrefix($0) } : nil
+                        )
                     case .image:
                         Button { onImageTap(block.id) } label: {
                             Label(L10n.string("reader.comment_view_image"), systemImage: "photo")
@@ -884,18 +892,8 @@ struct ReaderChapterCommentBody: View {
     }
 
     var attributedText: AttributedString {
-        guard let blocks, !blocks.isEmpty else { return prefixed(AttributedString(text)) }
-        return prefixed(blocks.reduce(into: AttributedString()) { result, block in
-            if !result.characters.isEmpty {
-                result.append(AttributedString("\n"))
-            }
-            result.append(ForumThreadTextBlockFormatter(block: block).attributedText)
-        })
-    }
-
-    private func prefixed(_ text: AttributedString, enabled: Bool = true) -> AttributedString {
-        guard enabled, let replyingToName else { return text }
-        return replyPrefix(replyingToName) + text
+        cache.text(text, blocks: blocks, prefix: replyingToName.map { replyPrefix($0) },
+                   dynamicTypeSize: dynamicTypeSize, locale: locale)
     }
 
     private func replyPrefix(_ name: String) -> AttributedString {
@@ -941,6 +939,55 @@ private struct ReaderChapterCommentProfileScreen: View {
                 }
         }
         .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
+    }
+}
+
+private struct ReaderChapterCommentCachedBlock: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @State private var cache = ReaderChapterCommentTextCache()
+    let block: ForumThreadTextBlock
+    let refererURL: URL
+    let prefix: AttributedString?
+
+    var body: some View {
+        ReaderChapterCommentText(
+            attributedText: cache.text("", blocks: [block], prefix: prefix,
+                                       dynamicTypeSize: dynamicTypeSize, locale: locale),
+            refererURL: refererURL
+        )
+    }
+}
+
+@MainActor
+private final class ReaderChapterCommentTextCache {
+    private struct Key: Equatable {
+        let text: String
+        let blocks: [ForumThreadTextBlock]?
+        let prefix: AttributedString?
+        let dynamicTypeSize: DynamicTypeSize
+        let pointSize: CGFloat
+        let locale: Locale
+    }
+    private var key: Key?
+    private var attributedText = AttributedString()
+
+    func text(_ text: String, blocks: [ForumThreadTextBlock]?, prefix: AttributedString?, dynamicTypeSize: DynamicTypeSize, locale: Locale) -> AttributedString {
+        let newKey = Key(text: text, blocks: blocks, prefix: prefix, dynamicTypeSize: dynamicTypeSize,
+                         pointSize: UIFont.preferredFont(forTextStyle: .body).pointSize, locale: locale)
+        guard key != newKey else { return attributedText }
+        var result = prefix ?? AttributedString()
+        if let blocks, !blocks.isEmpty {
+            for (index, block) in blocks.enumerated() {
+                if index > 0 { result.append(AttributedString("\n")) }
+                result.append(ForumThreadTextBlockFormatter(block: block).attributedText)
+            }
+        } else {
+            result.append(AttributedString(text))
+        }
+        key = newKey
+        attributedText = result
+        return result
     }
 }
 

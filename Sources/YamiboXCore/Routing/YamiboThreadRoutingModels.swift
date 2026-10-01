@@ -185,3 +185,15 @@ public enum YamiboThreadRouteTarget: Hashable, Sendable {
     case thread(YamiboThreadRoutePayload)
     case webFallback(URL)
 }
+
+/// Ephemeral page data from the same authenticated request that located a post.
+/// Kept out of hashable navigation identities and persisted launch contexts.
+public struct YamiboThreadRouteResolution: Sendable {
+    public let target: YamiboThreadRouteTarget
+    public let preloadedPage: ForumThreadPage?
+
+    init(_ target: YamiboThreadRouteTarget, preloadedPage: ForumThreadPage? = nil) {
+        self.target = target
+        self.preloadedPage = preloadedPage
+    }
+}

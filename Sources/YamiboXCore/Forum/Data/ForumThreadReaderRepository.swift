@@ -93,6 +93,7 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
     /// Reparse only the in-memory copy used by the ordinary thread reader;
     /// leave the saved page and novel/offline projections untouched.
     private func reparsedForThreadReader(_ cached: ForumThreadPage) -> ForumThreadPage {
+        guard cached.contentParserVersion != ForumThreadHTMLBlockParser.cacheVersion else { return cached }
         var page = cached
         for index in page.posts.indices {
             let html = page.posts[index].contentHTML

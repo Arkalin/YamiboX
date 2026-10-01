@@ -77,8 +77,13 @@ final class NovelDetailViewModel {
     @ObservationIgnored private var chapterPageErrorDetails: [Int: LoadFailureDetails] = [:]
     @ObservationIgnored private var totalChapterPages = 1
     @ObservationIgnored private var novelReaderSettings = NovelReaderAppearanceSettings()
-    @ObservationIgnored private var documentPreloadTask: Task<Void, Never>?
     @ObservationIgnored private var readingProgressUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var favoriteRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var coverRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var pageChapterSummaries: [Int: [NovelChapterSummary]] = [:]
+    @ObservationIgnored private var contentGeneration = 0
+    @ObservationIgnored private var isVisible = false
+    @ObservationIgnored private var directoryNeedsRefresh = false
 
     init(
         context: NovelDetailLaunchContext,
@@ -94,12 +99,6 @@ final class NovelDetailViewModel {
             settingsStore: dependencies.settingsStore,
             makeFavoriteRepository: dependencies.makeFavoriteRepository
         )
-        readingProgressUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = dependencies.readingProgressStore] in store.changes() },
-            changeID: { [store = dependencies.readingProgressStore] in store.changeID }
-        ) { [weak self, store = dependencies.readingProgressStore] in
-            await self?.refreshReadingProgress(from: store)
-        }
         favoriteActions.makeAddMetadata = { @MainActor [weak self] in
             guard let self else { return .init(title: context.title) }
             return .init(
@@ -117,8 +116,32 @@ final class NovelDetailViewModel {
     }
 
     deinit {
-        documentPreloadTask?.cancel()
         readingProgressUpdatesTask?.cancel()
+        favoriteRefreshTask?.cancel()
+        coverRefreshTask?.cancel()
+    }
+
+    func setVisible(_ visible: Bool) {
+        isVisible = visible
+        readingProgressUpdatesTask?.cancel()
+        readingProgressUpdatesTask = nil
+        guard visible else { return }
+        if directoryNeedsRefresh { rebuildChapterDirectory() }
+        let store = dependencies.readingProgressStore
+        let threadID = context.thread.tid
+        readingProgressUpdatesTask = Task { [weak self] in
+            do {
+                for try await progress in await store.snapshots(threadID: threadID) {
+                    guard !Task.isCancelled else { return }
+                    guard let self, self.readingProgress != progress else { continue }
+                    self.readingProgress = progress
+                    self.rebuildChapterDirectory()
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.favoriteActions.transientFeedback = .failure(error)
+            }
+        }
     }
 
     var navigationTitle: String {
@@ -188,19 +211,27 @@ final class NovelDetailViewModel {
         isLoading = true
         errorMessage = nil
         favoriteActions.transientMessage = nil
-        documentPreloadTask?.cancel()
+        coverRefreshTask?.cancel()
+        contentGeneration += 1
+        let generation = contentGeneration
+        favoriteRefreshTask?.cancel()
+        favoriteRefreshTask = Task { [weak self] in
+            await self?.favoriteActions.refreshFavorite()
+        }
         document = nil
         defer { isLoading = false }
 
         do {
-            await favoriteActions.refreshFavorite()
-            readingProgress = try await dependencies.readingProgressStore.load(threadID: context.thread.tid)
-            contentCover = await loadContentCover()
-            novelReaderSettings = await dependencies.settingsStore.load().novelReader
+            async let progress = dependencies.readingProgressStore.load(threadID: context.thread.tid)
+            async let cover = loadContentCover()
+            async let settings = dependencies.settingsStore.load()
             favoriteActions.errorMessage = nil
             let threadRepository = await dependencies.makeForumThreadReaderRepository()
             try Task.checkCancellation()
             let initialPages = try await loadInitialPages(repository: threadRepository, preferCache: preferCache)
+            readingProgress = try await progress
+            contentCover = await cover
+            novelReaderSettings = await settings.novelReader
             let headerPage = initialPages.headerPage
             let contentPage = initialPages.contentPage
             let authorID = initialPages.authorID
@@ -214,17 +245,34 @@ final class NovelDetailViewModel {
                 }
             }
             try Task.checkCancellation()
+            let projectionRepository = await dependencies.makeNovelReaderRepository()
+            let projection = try? await projectionRepository.projection(
+                from: contentPage,
+                request: NovelPageRequest(threadID: context.thread.tid, view: 1, authorID: authorID),
+                sourceLoadedOnline: initialPages.contentLoadedOnline
+            )
+            let summaries = if let projection {
+                await Self.summariesOffMainActor(from: contentPage, document: projection, settings: novelReaderSettings)
+            } else {
+                [NovelChapterSummary]()
+            }
+            try Task.checkCancellation()
+            guard contentGeneration == generation else { return }
             resolvedAuthorID = authorID
             threadPage = headerPage
             loadedThreadPages = [1: contentPage]
-            await refreshContentCover(from: headerPage)
+            pageChapterSummaries = [1: summaries]
+            document = projection
             totalChapterPages = Self.totalPages(from: contentPage, fallback: 1)
             chapterPageErrors = [:]
             chapterPageErrorDetails = [:]
             loadingChapterPages = []
             expandedChapterPages = [1]
             rebuildChapterDirectory()
-            preloadReaderDocument()
+            coverRefreshTask = Task { [weak self] in
+                guard let self, self.contentGeneration == generation, !Task.isCancelled else { return }
+                await self.refreshContentCover(from: headerPage)
+            }
         } catch {
             let networkError = error as NSError
             if Task.isCancelled || error is CancellationError ||
@@ -244,6 +292,7 @@ final class NovelDetailViewModel {
                 chapters = []
                 chapterSections = []
                 loadedThreadPages = [:]
+                pageChapterSummaries = [:]
                 resolvedAuthorID = nil
                 chapterPageErrors = [:]
                 chapterPageErrorDetails = [:]
@@ -259,18 +308,18 @@ final class NovelDetailViewModel {
     private func loadInitialPages(
         repository: any NovelDetailThreadPageLoading,
         preferCache: Bool
-    ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext) {
+    ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext, contentLoadedOnline: Bool) {
         if let authorID = context.authorID?.nilIfBlank {
             let scopedContext = authorScopedContext(authorID: authorID)
             let page = try await loadNovelThreadPage(context: scopedContext, page: 1, preferCache: preferCache, repository: repository)
-            return (page, page, authorID, scopedContext)
+            return (page.page, page.page, authorID, scopedContext, page.loadedOnline)
         }
 
         let headerPage = try await loadNovelThreadPage(context: context, page: 1, preferCache: preferCache, repository: repository)
-        let authorID = try Self.resolveAuthorID(context: context, page: headerPage)
+        let authorID = try Self.resolveAuthorID(context: context, page: headerPage.page)
         let contentContext = authorScopedContext(authorID: authorID)
         let contentPage = try await loadNovelThreadPage(context: contentContext, page: 1, preferCache: preferCache, repository: repository)
-        return (headerPage, contentPage, authorID, contentContext)
+        return (headerPage.page, contentPage.page, authorID, contentContext, contentPage.loadedOnline)
     }
 
     private func loadNovelThreadPage(
@@ -278,35 +327,14 @@ final class NovelDetailViewModel {
         page: Int,
         preferCache: Bool,
         repository: any NovelDetailThreadPageLoading
-    ) async throws -> ForumThreadPage {
+    ) async throws -> (page: ForumThreadPage, loadedOnline: Bool) {
         if preferCache,
            let cached = await repository.cachedNovelThreadPage(context: context, page: page) {
-            return cached
+            return (cached, false)
         }
-        return try await repository.fetchNovelThreadPage(context: context, page: page)
+        return (try await repository.fetchNovelThreadPage(context: context, page: page), true)
     }
 
-    private func preloadReaderDocument() {
-        let request = NovelPageRequest(
-            threadID: context.thread.tid,
-            view: 1,
-            authorID: resolvedAuthorID ?? context.authorID
-        )
-        let provider = dependencies.makeNovelReaderRepository
-        documentPreloadTask = Task { [weak self] in
-            do {
-                let repository = await provider()
-                let loaded = try await repository.loadPage(request)
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self?.document = loaded
-                }
-            } catch {
-                YamiboLog.forum.error("Failed to preload reader document for thread \(request.threadID): \(error)")
-                return
-            }
-        }
-    }
 
     func launchContext(for chapter: NovelChapterSummary?) -> NovelLaunchContext {
         NovelLaunchContext(
@@ -359,12 +387,15 @@ final class NovelDetailViewModel {
         }
 
         loadingChapterPages.insert(normalizedPage)
+        let generation = contentGeneration
         chapterPageErrors[normalizedPage] = nil
         chapterPageErrorDetails[normalizedPage] = nil
         rebuildChapterDirectory()
         defer {
-            loadingChapterPages.remove(normalizedPage)
-            rebuildChapterDirectory()
+            if contentGeneration == generation {
+                loadingChapterPages.remove(normalizedPage)
+                rebuildChapterDirectory()
+            }
         }
 
         do {
@@ -377,24 +408,27 @@ final class NovelDetailViewModel {
             } else {
                 try await repository.fetchNovelThreadPage(context: contentContext, page: normalizedPage)
             }
+            let projectionRepository = await dependencies.makeNovelReaderRepository()
+            let projection = try? await projectionRepository.projection(
+                from: loaded,
+                request: NovelPageRequest(threadID: context.thread.tid, view: normalizedPage, authorID: authorID)
+            )
+            let summaries = if let projection {
+                await Self.summariesOffMainActor(from: loaded, document: projection, settings: novelReaderSettings)
+            } else {
+                [NovelChapterSummary]()
+            }
+            try Task.checkCancellation()
+            guard contentGeneration == generation else { return }
             loadedThreadPages[normalizedPage] = loaded
+            pageChapterSummaries[normalizedPage] = summaries
             totalChapterPages = max(totalChapterPages, Self.totalPages(from: loaded, fallback: normalizedPage))
             chapterPageErrors[normalizedPage] = nil
             chapterPageErrorDetails[normalizedPage] = nil
         } catch {
-            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            guard contentGeneration == generation, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             chapterPageErrors[normalizedPage] = error.localizedDescription
             chapterPageErrorDetails[normalizedPage] = LoadFailureDetails(error: error)
-        }
-    }
-
-    private func refreshReadingProgress(from readingProgressStore: ReadingProgressStore) async {
-        do {
-            readingProgress = try await readingProgressStore.load(threadID: context.thread.tid)
-            rebuildChapterDirectory()
-        } catch {
-            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
-            favoriteActions.transientFeedback = .failure(error)
         }
     }
 
@@ -407,19 +441,20 @@ final class NovelDetailViewModel {
         readingProgress: ReadingProgressRecord? = nil,
         favorite: Favorite? = nil,
         novelReaderSettings: NovelReaderAppearanceSettings = .init(),
-        authorID: String? = nil
+        authorID: String? = nil,
+        preparedSummaries: [Int: [NovelChapterSummary]]? = nil
     ) -> [NovelChapterSection] {
         let normalizedTotal = max(1, totalPages)
         return (1...normalizedTotal).map { page in
             let pageDocument = loadedPages[page]
-            let chapters = pageDocument.map {
+            let chapters = preparedSummaries?[page] ?? (preparedSummaries == nil ? pageDocument.map {
                 chapterSummaries(
                     from: $0,
                     page: page,
                     novelReaderSettings: novelReaderSettings,
                     authorID: authorID
                 )
-            } ?? []
+            } ?? [] : [])
             let currentReadIndex = currentReadChapterIndex(
                 in: chapters,
                 readingProgress: readingProgress,
@@ -446,6 +481,11 @@ final class NovelDetailViewModel {
     }
 
     private func rebuildChapterDirectory() {
+        guard isVisible else {
+            directoryNeedsRefresh = true
+            return
+        }
+        directoryNeedsRefresh = false
         chapterSections = Self.chapterSections(
             from: loadedThreadPages,
             totalPages: totalChapterPages,
@@ -455,13 +495,15 @@ final class NovelDetailViewModel {
             readingProgress: readingProgress,
             favorite: favoriteActions.favorite,
             novelReaderSettings: novelReaderSettings,
-            authorID: resolvedAuthorID ?? context.authorID
+            authorID: resolvedAuthorID ?? context.authorID,
+            preparedSummaries: pageChapterSummaries
         )
         chapters = chapterSections.flatMap(\.chapters)
     }
 
     func refreshContentCover(from page: ForumThreadPage) async {
         guard let key = contentCoverKey else { return }
+        let generation = contentGeneration
         if let candidate = ThreadCoverResolver.findThreadCoverCandidate(in: page) {
             do {
                 _ = try await dependencies.contentCoverStore.setAutomaticCover(candidate, for: key)
@@ -470,7 +512,9 @@ final class NovelDetailViewModel {
                 return
             }
         }
-        contentCover = await dependencies.contentCoverStore.cover(for: key)
+        let cover = await dependencies.contentCoverStore.cover(for: key)
+        guard !Task.isCancelled, contentGeneration == generation else { return }
+        contentCover = cover
     }
 
     private static func chapterSummaries(
@@ -494,6 +538,27 @@ final class NovelDetailViewModel {
             YamiboLog.forum.warning("Failed to build novel reader projection for thread \(page.thread.tid) page \(pageNumber); returning empty chapter list")
             return []
         }
+        return summaries(from: page, document: document, settings: novelReaderSettings)
+    }
+
+    private nonisolated static func summariesOffMainActor(
+        from page: ForumThreadPage, document: NovelReaderProjection, settings: NovelReaderAppearanceSettings
+    ) async -> [NovelChapterSummary] {
+        let task = Task.detached {
+            guard !Task.isCancelled else { return [NovelChapterSummary]() }
+            return summaries(from: page, document: document, settings: settings)
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private nonisolated static func summaries(
+        from page: ForumThreadPage, document: NovelReaderProjection, settings: NovelReaderAppearanceSettings
+    ) -> [NovelChapterSummary] {
+        let pageNumber = document.view
         let floorTextByPostID = page.posts.reduce(into: [String: String]()) { partial, post in
             guard let postID = post.postID.nilIfBlank,
                   let floorText = post.floorText else {
@@ -502,7 +567,7 @@ final class NovelDetailViewModel {
             partial[postID] = floorText
         }
         return NovelChapterDirectoryExtractor
-            .entries(from: document, settings: novelReaderSettings)
+            .entries(from: document, settings: settings)
             .map { entry in
                 let postID = entry.ownerPostID
                 return NovelChapterSummary(

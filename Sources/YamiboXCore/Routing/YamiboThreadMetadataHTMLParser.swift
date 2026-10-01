@@ -27,7 +27,7 @@ enum YamiboThreadMetadataHTMLParser {
         try YamiboHTMLPageInspector.ensureReadable(html)
 
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        let title = YamiboHTMLPageInspector.pageTitle(from: html)
+        let title = YamiboHTMLPageInspector.pageTitle(in: document, rawHTML: html)
         let sectionLink = document
             .selectAll("a[href*='mod=forumdisplay'][href*='fid='], a[href*='forum-']")
             .first { !$0.normalizedText().isEmpty }

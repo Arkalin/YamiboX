@@ -51,7 +51,7 @@ public struct MangaReaderView: View {
     @State private var visibleStatusBarTopInset: CGFloat = 0
 
     private let onClose: () -> Void
-    private let onOpenOriginalPost: (URL, MangaLaunchContext) async -> Bool
+    private let onOpenOriginalPost: (URL, MangaLaunchContext, @escaping @MainActor () async -> MangaLaunchContext) async -> Bool
 
     public init(
         context: MangaLaunchContext,
@@ -60,7 +60,7 @@ public struct MangaReaderView: View {
         appModel: YamiboAppModel,
         initialProjection: MangaReaderProjection? = nil,
         onClose: (() -> Void)? = nil,
-        onOpenOriginalPost: ((URL, MangaLaunchContext) async -> Bool)? = nil,
+        onOpenOriginalPost: ((URL, MangaLaunchContext, @escaping @MainActor () async -> MangaLaunchContext) async -> Bool)? = nil,
         onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil
     ) {
         self.context = context
@@ -68,8 +68,10 @@ public struct MangaReaderView: View {
         self.forumDependencies = forumDependencies
         self.appModel = appModel
         self.onClose = onClose ?? { appModel.dismissMangaReader() }
-        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
-            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .manga(context))
+        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context, saveProgress in
+            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .manga(context)) {
+                .manga(await saveProgress())
+            }
         }
         // `State(initialValue:)` evaluates its argument on every init (unlike
         // `StateObject(wrappedValue:)`'s autoclosure), so a view model is now
@@ -572,9 +574,9 @@ public struct MangaReaderView: View {
         guard !isDismissing else { return }
         isDismissing = true
         let url = model.currentForumTargetURL
+        let context = model.currentResumeContext
         Task {
-            let context = await model.saveProgress()
-            if await onOpenOriginalPost(url, context) {
+            if await onOpenOriginalPost(url, context, { await model.saveProgress() }) {
                 model.close()
             } else {
                 isDismissing = false

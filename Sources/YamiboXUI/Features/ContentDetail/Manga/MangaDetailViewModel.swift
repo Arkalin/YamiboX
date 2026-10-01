@@ -41,6 +41,7 @@ final class MangaDetailViewModel {
     @ObservationIgnored private var mangaDirectoryUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var automaticDirectoryUpdateTask: Task<Void, Never>?
     @ObservationIgnored private var automaticCoverResolutionTask: Task<Void, Never>?
+    @ObservationIgnored private var favoriteMembershipTask: Task<Void, Never>?
     @ObservationIgnored private var attemptedAutomaticCoverBookNames: Set<String> = []
     @ObservationIgnored private var directoryTickTask: Task<Void, Never>?
     @ObservationIgnored private let workflowConfiguration: MangaDirectoryWorkflowConfiguration
@@ -120,6 +121,7 @@ final class MangaDetailViewModel {
         mangaDirectoryUpdatesTask?.cancel()
         automaticDirectoryUpdateTask?.cancel()
         automaticCoverResolutionTask?.cancel()
+        favoriteMembershipTask?.cancel()
         directoryTickTask?.cancel()
     }
 
@@ -196,11 +198,9 @@ final class MangaDetailViewModel {
         isLoading = true
         defer { isLoading = false }
         errorMessage = nil
-        await refreshFavoriteMembership()
         favoriteActions.errorMessage = nil
 
         do {
-            readingProgress = try await loadReadingProgress()
             try Task.checkCancellation()
             let loader = await dependencies.makeMangaReaderProjectionLoader()
             let document = try await loader.loadReaderProjection(
@@ -231,10 +231,12 @@ final class MangaDetailViewModel {
 
             currentDocument = document
             directory = resolvedDirectory
-            await refreshFavoriteMembership()
-            // Only now is `directory`'s stable identity known, so only now can
-            // the precise directory-scoped query replace whatever the fuzzy
-            // fetch above (before `directory` was known) happened to find.
+            favoriteMembershipTask?.cancel()
+            favoriteMembershipTask = Task { [weak self] in
+                await self?.refreshFavoriteMembership()
+            }
+            // Progress and membership need the resolved directory identity;
+            // neither should delay the independent initial projection request.
             readingProgress = try await loadReadingProgress()
             contentCover = await loadContentCover()
             if resolution.shouldAutoUpdateAfterInitialLoad {

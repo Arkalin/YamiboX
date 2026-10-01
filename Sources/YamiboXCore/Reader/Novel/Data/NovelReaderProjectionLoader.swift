@@ -18,6 +18,7 @@ struct NovelReaderProjectionLoadedPage: Sendable {
 
 actor NovelReaderProjectionLoader {
     private let loader: ReaderProjectionLoader<ReaderThreadPageProjectionLoadingStrategy<NovelProjectionAdapter>>
+    private let adapter: NovelProjectionAdapter
 
     init(
         client: YamiboClient,
@@ -25,6 +26,7 @@ actor NovelReaderProjectionLoader {
         forumCacheStore: ForumCacheStore = ForumCacheStore(),
         downloadStore: (any NovelDownloadStoring)? = nil
     ) {
+        adapter = NovelProjectionAdapter(client: client, projectionStore: projectionStore, forumCacheStore: forumCacheStore, downloadStore: downloadStore)
         // Uses the `ReaderProjectionLoader` default of not coalescing
         // in-flight requests: the novel workflow loads one web-view document
         // at a time and holds a single prefetched next document that
@@ -42,6 +44,28 @@ actor NovelReaderProjectionLoader {
                 )
             )
         )
+    }
+
+    func projection(from page: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection {
+        try Task.checkCancellation()
+        guard let authorID = request.authorID?.trimmingCharacters(in: .whitespacesAndNewlines), !authorID.isEmpty else {
+            throw YamiboError.parsingFailed(context: adapter.authorScopeErrorContext)
+        }
+        let identity = adapter.makeIdentity(request: request, authorID: authorID)
+        let strategy = ReaderThreadPageProjectionLoadingStrategy(adapter: adapter)
+        let fingerprint = strategy.fingerprint(sourcePage: page, identity: identity)
+        if let cached = await adapter.cachedProjection(for: identity),
+           adapter.isReusableProjection(cached, identity: identity, fingerprint: fingerprint) {
+            return cached
+        }
+        let projection = try adapter.buildProjection(sourcePage: page, identity: identity, fingerprint: fingerprint)
+        try Task.checkCancellation()
+        do {
+            try await adapter.saveProjection(projection)
+        } catch {
+            YamiboLog.forum.warning("Failed to cache detail novel projection for thread \(request.threadID): \(error)")
+        }
+        return projection
     }
 
     func loadProjection(_ request: NovelPageRequest) async throws -> NovelReaderProjectionLoadedPage {

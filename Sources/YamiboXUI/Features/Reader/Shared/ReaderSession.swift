@@ -16,6 +16,11 @@ enum ReaderSessionContent {
     }
 }
 
+private struct ReaderSessionPreparedContent {
+    let content: ReaderSessionContent
+    var threadPage: ForumThreadPage? = nil
+}
+
 struct ReaderSessionDependencies: Sendable {
     let forum: ForumDependencies
     let mangaReaderOpenValidator: MangaReaderOpenValidator
@@ -160,7 +165,11 @@ final class ReaderSession: Identifiable {
     }
 
     @discardableResult
-    func openOriginalPost(url: URL, resumeRoute: ReaderResumeRoute) async -> Bool {
+    func openOriginalPost(
+        url: URL,
+        resumeRoute: ReaderResumeRoute,
+        saveProgress: @escaping @MainActor () async -> ReaderResumeRoute
+    ) async -> Bool {
         guard !isSwitching, !isClosed, acceptsResumeRoute(resumeRoute) else { return false }
         let previousID = contentID
         updateResumeRoute(resumeRoute, contentID: previousID)
@@ -179,30 +188,57 @@ final class ReaderSession: Identifiable {
             forumID = context.forumID
         }
         await transition(title: L10n.string("reader.switching_to_thread")) {
+            // An exit save must finish even when the user cancels the lookup.
+            // It runs alongside resolution, before committing the new mode.
+            let saveTask = Task { await saveProgress() }
+            if let cached = self.cachedOriginalPost(url: url) {
+                let savedRoute = await saveTask.value
+                try Task.checkCancellation()
+                self.updateResumeRoute(savedRoute, contentID: previousID)
+                return cached
+            }
             let resolver = await dependencies.makeThreadRouteResolver()
-            let target = try await resolver.resolve(YamiboThreadRouteRequest(
+            let resolution = try await resolver.resolveWithPage(YamiboThreadRouteRequest(
                 threadURL: url,
                 title: title,
                 authorID: authorID,
                 threadFid: forumID,
                 intent: .nativeThreadReader
             ))
-            switch target {
+            let savedRoute = await saveTask.value
+            try Task.checkCancellation()
+            self.updateResumeRoute(savedRoute, contentID: previousID)
+            switch resolution.target {
             case let .thread(payload), let .novel(payload), let .manga(payload), let .mangaDirect(payload):
                 guard !payload.thread.tid.isEmpty else { throw ReaderSessionError.unavailableThread }
-                return .thread(ThreadNovelLaunchContext(
+                return ReaderSessionPreparedContent(content: .thread(ThreadNovelLaunchContext(
                     thread: payload.thread,
                     title: payload.title,
                     initialPage: payload.initialPage,
                     targetPostID: payload.targetPostID,
                     authorID: payload.authorID,
                     isDiscussionView: true
-                ))
+                )), threadPage: resolution.preloadedPage)
             case .webFallback:
                 throw ReaderSessionError.unavailableThread
             }
         }
         return !isClosed && previousID != contentID
+    }
+
+    private func cachedOriginalPost(url: URL) -> ReaderSessionPreparedContent? {
+        guard YamiboDomain.isForumURL(url),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              items.first(where: { $0.name == "goto" })?.value == "findpost",
+              let tid = items.first(where: { $0.name == "ptid" })?.value,
+              let postID = items.first(where: { $0.name == "pid" })?.value,
+              let model = threadModels[tid], !model.isAuthorOnly, !model.isReverseOrder,
+              let page = model.page, page.posts.contains(where: { $0.postID == postID }) else { return nil }
+        return ReaderSessionPreparedContent(content: .thread(ThreadNovelLaunchContext(
+            thread: model.readerSwitchThread, title: model.navigationTitle,
+            initialPage: model.currentPage, targetPostID: postID,
+            authorID: model.readerSwitchAuthorID, isDiscussionView: true
+        )), threadPage: page)
     }
 
     func openReader(
@@ -224,10 +260,10 @@ final class ReaderSession: Identifiable {
         await transition(title: L10n.string(mode == .manga ? "reader.switching_to_manga" : "reader.switching_to_novel")) {
             switch mode {
             case .novel:
-                if let savedNovel { return .novel(savedNovel) }
-                return .novel(try await resolver.novelContext(
+                if let savedNovel { return ReaderSessionPreparedContent(content: .novel(savedNovel)) }
+                return ReaderSessionPreparedContent(content: .novel(try await resolver.novelContext(
                     thread: thread, title: title, authorID: authorID, isPreview: preview
-                ))
+                )))
             case .manga:
                 let context: MangaLaunchContext
                 if let savedManga {
@@ -235,7 +271,7 @@ final class ReaderSession: Identifiable {
                 } else {
                     context = try await resolver.mangaContext(thread: thread, title: title, isPreview: preview)
                 }
-                return .manga(context)
+                return ReaderSessionPreparedContent(content: .manga(context))
             case .plainThread:
                 throw ReaderSessionError.unavailableThread
             }
@@ -243,7 +279,9 @@ final class ReaderSession: Identifiable {
     }
 
     func openMangaReader(_ context: MangaLaunchContext) async {
-        await transition(title: L10n.string("reader.switching_to_manga")) { .manga(context) }
+        await transition(title: L10n.string("reader.switching_to_manga")) {
+            ReaderSessionPreparedContent(content: .manga(context))
+        }
     }
 
     private func acceptsResumeRoute(_ route: ReaderResumeRoute) -> Bool {
@@ -263,7 +301,7 @@ final class ReaderSession: Identifiable {
         }
     }
 
-    func transition(title: String = L10n.string("reader.switching"), _ resolve: @escaping @MainActor () async throws -> ReaderSessionContent) async {
+    private func transition(title: String = L10n.string("reader.switching"), _ resolve: @escaping @MainActor () async throws -> ReaderSessionPreparedContent) async {
         guard !isSwitching, !isClosed else { return }
         // Dismissing a cover need not trigger the retained column's onAppear.
         // An explicit mode switch restores its ownership before resolving.
@@ -275,7 +313,8 @@ final class ReaderSession: Identifiable {
         let validator = dependencies.mangaReaderOpenValidator
         let task = Task { [weak self] in
             do {
-                let next = try await resolve()
+                let prepared = try await resolve()
+                let next = prepared.content
                 guard !Task.isCancelled, self?.isClosed == false, self?.contentID == expectedID else { return }
                 let mangaProjection: MangaReaderProjection?
                 if case let .manga(context) = next {
@@ -284,6 +323,10 @@ final class ReaderSession: Identifiable {
                     mangaProjection = nil
                 }
                 guard let self, !Task.isCancelled, !self.isClosed, self.contentID == expectedID else { return }
+                if case let .thread(context) = next {
+                    self.threadModel(for: context, dependencies: self.dependencies.forum)
+                        .prepareForOriginalPost(context: context, preloadedPage: prepared.threadPage)
+                }
                 self.present(next, mangaProjection: mangaProjection)
             } catch {
                 guard let self, !Task.isCancelled, !self.isClosed, self.contentID == expectedID else { return }

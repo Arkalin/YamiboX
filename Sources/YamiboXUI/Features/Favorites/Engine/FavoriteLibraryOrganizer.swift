@@ -126,6 +126,9 @@ final class FavoriteLibraryOrganizer {
     private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
 
     @ObservationIgnored private var readingProgress: [ReadingProgressRecord] = []
+    @ObservationIgnored private let derivationWorker = FavoriteLibraryDerivationWorker()
+    @ObservationIgnored private var derivationTask: Task<Void, Never>?
+    @ObservationIgnored private var derivationGeneration: UInt64 = 0
     /// tid → resolved `MangaDirectory`, for virtual favorites grouping
     /// (smart-comic-mode decision #3/#5). Populated only at `load()`/
     /// `reload()` via one batched `MangaDirectoryBatchReading.directories
@@ -226,6 +229,7 @@ final class FavoriteLibraryOrganizer {
     }
 
     deinit {
+        derivationTask?.cancel()
         libraryUpdatesTask?.cancel()
         progressUpdatesTask?.cancel()
         settingsUpdatesTask?.cancel()
@@ -352,6 +356,7 @@ final class FavoriteLibraryOrganizer {
             }
         }
         scheduleMangaCoverBackfill(for: loadedDocument.items)
+        await derivationTask?.value
     }
 
     func reload() async {
@@ -859,6 +864,11 @@ final class FavoriteLibraryOrganizer {
 
     func setBookPresentationActive(_ active: Bool) {
         isBookPresentationActive = active
+        if active, derivationTask != nil {
+            derivationGeneration &+= 1
+            derivationTask?.cancel()
+            needsBookPresentationRefresh = true
+        }
         if !active, needsBookPresentationRefresh {
             needsBookPresentationRefresh = false
             refreshDerivedState()
@@ -892,8 +902,7 @@ final class FavoriteLibraryOrganizer {
             return
         }
         resolveUnresolvedMergedGroupScope()
-        derived = LocalFavoriteLibraryDerivation.derive(
-            LocalFavoriteLibraryDerivation.Inputs(
+        let inputs = LocalFavoriteLibraryDerivation.Inputs(
                 document: document,
                 selectedCategoryID: selectedCategoryID,
                 selectedCollectionID: selectedCollectionID,
@@ -906,7 +915,6 @@ final class FavoriteLibraryOrganizer {
                 memberScopeGroupKey: selectedMergedGroupKey,
                 memberScopeThreadIDs: unresolvedMergedGroupThreadIDs
             )
-        )
         // `derived` can now be scoped by an open merged group even while no
         // collection is open, so the old `selectedCollectionID == nil`
         // shortcut alone is no longer sufficient — it must also gate on
@@ -915,10 +923,9 @@ final class FavoriteLibraryOrganizer {
         // that case (opening a merged group's detail page directly from the
         // root, not from inside a collection) and defeat the whole point of
         // `rootDerived`.
-        rootDerived = isBrowsingUnscopedRoot
-            ? derived
-            : LocalFavoriteLibraryDerivation.derive(
-                LocalFavoriteLibraryDerivation.Inputs(
+        let rootInputs: LocalFavoriteLibraryDerivation.Inputs? = isBrowsingUnscopedRoot
+            ? nil
+            : LocalFavoriteLibraryDerivation.Inputs(
                     document: document,
                     selectedCategoryID: selectedCategoryID,
                     selectedCollectionID: nil,
@@ -930,8 +937,18 @@ final class FavoriteLibraryOrganizer {
                     boardReaderSettings: boardReaderSettings
                     // `memberScopeGroupKey` intentionally omitted (nil
                     // default): `rootDerived` must never narrow to this scope.
-                )
             )
+        derivationGeneration &+= 1
+        let generation = derivationGeneration
+        derivationTask?.cancel()
+        derivationTask = Task { [weak self, derivationWorker] in
+            guard let result = try? await derivationWorker.derive(inputs, rootInputs: rootInputs),
+                  !Task.isCancelled, let self,
+                  self.derivationGeneration == generation else { return }
+            self.derived = result.0
+            self.rootDerived = result.1
+            self.derivationTask = nil
+        }
         selection.prune(
             validFavoriteIDs: Set(document.items.map(\.id)).union(document.items.map { selectionID(for: $0) }),
             validCollectionIDs: Set(document.collections.map(\.id))
