@@ -665,7 +665,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     package func updateVerticalViewportPosition(surfaceIndex: Int, intraSurfaceProgress: Double, force: Bool = false) {
@@ -693,7 +692,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     func updateVerticalViewportPosition(sample: NovelReaderVerticalViewportSample) {
@@ -741,7 +739,6 @@ public final class NovelReaderViewModel {
             await prefetchIfNeeded(for: selectedSurfaceIndex)
         }
 
-        promoteIfNeededAfterLocationUpdate()
     }
 
     public func jumpToChapter(_ chapter: NovelReaderChapter) {
@@ -794,6 +791,8 @@ public final class NovelReaderViewModel {
                 navigation.recordLinearReading(direction: direction)
             }
         case let .promotePrefetched(preferredSurfaceOrdinal, resumePoint):
+            // Consume prefetch only after an explicit turn beyond the document,
+            // not when selecting its last surface, which still needs to be read.
             let didPromote = await promotePrefetchedDocument(
                 startingAt: preferredSurfaceOrdinal,
                 preferredResumePoint: resumePoint,
@@ -1110,31 +1109,6 @@ public final class NovelReaderViewModel {
         guard projection.displayedPageCount > 1 else { return 0 }
         let fraction = Double(projection.displayedPageIndex) / Double(projection.displayedPageCount - 1)
         return Int((min(max(fraction, 0), 1) * 100).rounded())
-    }
-
-    private func promoteIfNeededAfterLocationUpdate() {
-        if settings.readingMode == .paged,
-           isAtPagedDocumentEnd,
-           readingWorkflow?.canPromotePrefetchedDocument(forView: currentView + 1) == true {
-            Task {
-                await promotePrefetchedDocument(
-                    startingAt: 0,
-                    preferredResumePoint: nil,
-                    showsNovelReaderProjectionNavigationOverlay: true
-                )
-            }
-        }
-    }
-
-    private var isAtPagedDocumentEnd: Bool {
-        guard settings.readingMode == .paged,
-              let structure = presentationStructure,
-              let lastSurfaceIndex = structure.surfaceIndexesByView[currentView]?.last else { return false }
-        if isTwoPageSpreadActive {
-            guard let lastSpread = structure.spread(containing: lastSurfaceIndex) else { return false }
-            return pagedViewportSelectionIndex >= lastSpread.index
-        }
-        return selectedSurfaceIndex >= lastSurfaceIndex
     }
 
     private func scheduleProgressSync() {
