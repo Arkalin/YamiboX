@@ -73,6 +73,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
     private let parsesEmoticons: Bool
     private let sourceRevision: UInt64
     private let rootNodeID: String?
+    private let hasConditionalBoundaries: Bool
     public let text: String
     public let spans: [ForumComposerSpan]
 
@@ -83,6 +84,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
         sourceRevision = document.revision
         rootNodeID = document.nodes.first?.id
         if !parsesBBCode {
+            hasConditionalBoundaries = false
             text = document.source
             spans = [.init(range: .init(location: 0, length: text.utf16.count), sourceRange: .init(location: 0, length: text.utf16.count),
                            nodeID: "source", ancestors: [], attributes: .init(), kind: .text)]
@@ -91,6 +93,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
         var result = ""
         var spans: [ForumComposerSpan] = []
         var offset = 0
+        var hasConditionalBoundaries = false
         func append(_ text: String, range: ForumComposerRange, node: ForumComposerNode,
                     ancestors: [ForumComposerNode], attributes: ForumComposerTextAttributes, kind: ForumComposerSpan.Kind) {
             spans.append(.init(range: .init(location: offset, length: text.utf16.count), sourceRange: range,
@@ -99,6 +102,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
             offset += text.utf16.count
         }
         func boundary(_ node: ForumComposerNode, at location: Int, ancestors: [ForumComposerNode], attributes: ForumComposerTextAttributes) {
+            hasConditionalBoundaries = true
             guard !result.isEmpty, !result.hasSuffix("\n") else { return }
             append("\n", range: .init(location: location), node: node, ancestors: ancestors, attributes: attributes, kind: .boundary)
         }
@@ -138,6 +142,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
         walk(document.nodes, ancestors: [], attributes: .init())
         text = result
         self.spans = spans
+        self.hasConditionalBoundaries = hasConditionalBoundaries
     }
 
     func matches(_ document: ForumComposerDocument, parsesEmoticons: Bool) -> Bool {
@@ -150,11 +155,13 @@ public struct ForumComposerProjection: Equatable, Sendable {
     }
 
     /// TextKit typing can reuse a projection when a delimiter-free edit kept
-    /// the same text leaf. Paragraph boundaries and text-derived links still
-    /// rebuild through the full projection so their semantics remain intact.
+    /// the same text leaf. Projections with conditional block boundaries must
+    /// rebuild even when a boundary was previously suppressed by a newline.
+    /// Text-derived links also rebuild so their semantics remain intact.
     public func updating(after transaction: ForumComposerTransaction, document: ForumComposerDocument,
                          parsesBBCode: Bool = true, parsesEmoticons: Bool = true) -> Self {
         guard self.parsesBBCode, parsesBBCode, self.parsesEmoticons == parsesEmoticons,
+              !hasConditionalBoundaries,
               document.revision == sourceRevision &+ 1,
               transaction.edits.count == 1, let edit = transaction.edits.first,
               let splice = document.lastTextSplice, splice.edit == edit, splice.sourceBefore == source,
@@ -200,6 +207,7 @@ public struct ForumComposerProjection: Equatable, Sendable {
         sourceRevision = document.revision
         rootNodeID = document.nodes.first?.id
         parsesBBCode = true
+        hasConditionalBoundaries = false
         self.parsesEmoticons = parsesEmoticons
         self.text = text
         self.spans = spans
