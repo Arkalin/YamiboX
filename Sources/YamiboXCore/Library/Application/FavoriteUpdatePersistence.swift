@@ -12,6 +12,10 @@ public protocol FavoriteUpdateStatePersisting: Sendable {
     /// Merge concurrent read/dismiss decisions and commit the results atomically.
     func applyCheckRunResults(trackedTargets: [FavoriteUpdateTrackedTarget], events: [FavoriteUpdateEvent]) async throws
     func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async throws -> Int
+    /// A consecutive detection replaces this raw target's undismissed run events
+    /// and appends `event`. Missing/skipped sequences must use the full snapshot.
+    func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent], replacingWith event: FavoriteUpdateEvent, runID: String, sequence: UInt64) async throws -> Int
+    func endNotificationBadgeRun(runID: String) async
     func markEventRead(_ id: String, date: Date) async throws
     func markEventsRead(_ ids: Set<String>, date: Date) async throws
     func dismissEvent(_ id: String, date: Date) async throws
@@ -26,4 +30,12 @@ public protocol FavoriteUpdateLibraryAccessing: Sendable {
     func load() async throws -> FavoriteLibraryDocument
     /// Re-read and patch atomically; never recreate an item deleted during a check.
     func healUnknownSourceGroup(for target: FavoriteItemTarget, forumID: String, forumName: String?) async throws
+}
+
+extension FavoriteUpdateStatePersisting {
+    public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent], replacingWith event: FavoriteUpdateEvent, runID: String, sequence: UInt64) async throws -> Int {
+        try await unreadEventCount(mergingRunEvents: runEvents)
+    }
+
+    public func endNotificationBadgeRun(runID: String) async {}
 }

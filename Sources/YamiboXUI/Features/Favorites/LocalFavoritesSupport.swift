@@ -44,6 +44,10 @@ enum FavoriteTagSortOrder: String, CaseIterable, Identifiable {
     case associationCountDescending
 
     var id: String { rawValue }
+
+    var usesAssociationCounts: Bool {
+        self == .associationCount || self == .associationCountDescending
+    }
 }
 
 struct FavoriteTagEditorDraft: Identifiable {
@@ -75,10 +79,9 @@ func canReorderFavoriteTags(sortOrder: FavoriteTagSortOrder, searchText: String)
 
 func sortedFavoriteTags(
     _ tags: [FavoriteTag],
-    favorites: [FavoriteItem],
+    associationCounts: [String: Int],
     sortOrder: FavoriteTagSortOrder
 ) -> [FavoriteTag] {
-    let associationCounts = tagAssociationCounts(from: favorites)
     return tags.sorted { lhs, rhs in
         switch sortOrder {
         case .manual:
@@ -122,7 +125,7 @@ func sortedFavoriteTags(
     }
 }
 
-private func tagAssociationCounts(from favorites: [FavoriteItem]) -> [String: Int] {
+func tagAssociationCounts(from favorites: [FavoriteItem]) -> [String: Int] {
     var counts: [String: Int] = [:]
     for favorite in favorites {
         for tagID in Set(favorite.tagIDs) {

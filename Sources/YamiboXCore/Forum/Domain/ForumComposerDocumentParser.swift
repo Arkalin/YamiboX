@@ -15,15 +15,43 @@ enum ForumComposerDocumentParser {
     private static let expression = try! NSRegularExpression(pattern: #"\[/?(?:[a-zA-Z][a-zA-Z0-9]*(?:=[^\]\r\n]*)?|\*|#[0-9]+(?:,[0-9]+)?)\]|\{:[^{}\s]+:\}"#)
     private static let emoticons = Set(ForumEmoticonCatalog.categories.flatMap(\.items).map(\.code))
 
+    private static func tokenRanges(in source: String, text: NSString) -> [NSRange] {
+        guard source.utf8.contains(0x5B) else { // No [ openings to mask.
+            return expression.matches(in: source, range: NSRange(location: 0, length: text.length)).map(\.range)
+        }
+        // A parameter may itself contain [, so an unterminated line tail
+        // makes the regex retry that whole tail at every [. None of those
+        // openings can form a token. Mask them only in the matching input;
+        // extract every token's raw spelling from the unchanged source below.
+        // _ and [ are both ordinary body characters in the emoticon branch,
+        // so emoticons spanning a masked opening retain their exact ranges.
+        var hasClosingBracket = false
+        var matchingUTF16 = Array(source.utf16)
+        var maskedOpening = false
+        for offset in matchingUTF16.indices.reversed() {
+            let character = matchingUTF16[offset]
+            if character == 0x0D || character == 0x0A {
+                hasClosingBracket = false
+            } else if character == 0x5D { // ]
+                hasClosingBracket = true
+            } else if character == 0x5B, !hasClosingBracket { // [
+                matchingUTF16[offset] = 0x5F // _
+                maskedOpening = true
+            }
+        }
+        let matchingSource = maskedOpening ? String(decoding: matchingUTF16, as: UTF16.self) : source
+        return expression.matches(in: matchingSource, range: NSRange(location: 0, length: text.length)).map(\.range)
+    }
+
     static func parse(_ source: String) -> Result {
         let text = source as NSString
-        let tokens = expression.matches(in: source, range: NSRange(location: 0, length: text.length)).map { match -> Token in
-            let raw = text.substring(with: match.range)
+        let tokens = tokenRanges(in: source, text: text).map { range -> Token in
+            let raw = text.substring(with: range)
             let inner = String(raw.dropFirst().dropLast())
             let closing = inner.hasPrefix("/")
             let body = closing ? String(inner.dropFirst()) : inner
             let parts = body.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            return Token(range: match.range, raw: raw,
+            return Token(range: range, raw: raw,
                          name: body.hasPrefix("#") ? "#" : String(parts[0]).lowercased(),
                          parameter: body.hasPrefix("#") ? String(body.dropFirst()) : (parts.count == 2 ? String(parts[1]) : ""),
                          closing: closing, emoticon: emoticons.contains(raw))

@@ -9,6 +9,16 @@ private struct MangaOwnerStateCache: Sendable {
     var states: [String: MangaDownloadState]
 }
 
+final class MangaMissingImageCacheEntry: Sendable {
+    let manualOrder: Int
+    let imageURL: String
+
+    init(manualOrder: Int, imageURL: String) {
+        self.manualOrder = manualOrder
+        self.imageURL = imageURL
+    }
+}
+
 actor DownloadStore {
     let database: DatabasePool
     nonisolated(unsafe) let fileManager: FileManager
@@ -25,6 +35,13 @@ actor DownloadStore {
     nonisolated(unsafe) let sourcePageCache: NSCache<NSString, SourcePageCacheEntry> = {
         let cache = NSCache<NSString, SourcePageCacheEntry>()
         cache.countLimit = 128
+        return cache
+    }()
+    // A missing asset is only a hint: the writer validates its current
+    // chapter reference and absence before skipping a completeness check.
+    nonisolated(unsafe) let missingMangaImageCache: NSCache<NSString, MangaMissingImageCacheEntry> = {
+        let cache = NSCache<NSString, MangaMissingImageCacheEntry>()
+        cache.countLimit = 32
         return cache
     }()
 

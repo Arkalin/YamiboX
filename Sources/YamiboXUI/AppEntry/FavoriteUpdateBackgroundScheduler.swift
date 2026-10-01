@@ -59,7 +59,7 @@ public enum FavoriteUpdateBackgroundScheduler {
         await monitor.load()
         task.expirationHandler = {
             Task { @MainActor in
-                await monitor.interrupt()
+                await monitor.interruptOwnedRun()
             }
         }
         // Background-task budget is tight — cap non-tag smart-manga
@@ -67,10 +67,12 @@ public enum FavoriteUpdateBackgroundScheduler {
         // flood-control) to just one per run, unlike the foreground
         // catch-up's more generous cap.
         let started = await monitor.startCheckIfDue(nonTagMangaDirectoryCheckCap: 1)
-        if started {
+        let result = if started {
             await monitor.waitForCompletion()
+        } else {
+            monitor.snapshot
         }
-        task.setTaskCompleted(success: monitor.snapshot?.status != .failed)
+        task.setTaskCompleted(success: result?.status != .failed)
         scheduleNextIfNeeded(appContext: appContext)
     }
 

@@ -25,6 +25,11 @@ public actor BrowsingHistoryStore {
     private var deletedThreads: [String: Date] = [:]
     private var lastClearTime = Date.distantPast
 
+    private struct LocalVisitKey: Hashable {
+        let id: String
+        let lastVisitTime: Date
+    }
+
     public init(databasePool: DatabasePool? = nil, syncSettingsStore: WebDAVSyncSettingsStore = WebDAVSyncSettingsStore()) {
         self.database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "BrowsingHistoryStore")
         self.syncSettingsStore = syncSettingsStore
@@ -431,11 +436,16 @@ public actor BrowsingHistoryStore {
             try BrowsingHistorySyncRecord.save(snapshot.records, in: db)
             try snapshot.deletions.save(to: "browsing_history_sync_state", in: db)
             let existing = try Self.snapshotEntries(in: db)
+            var localVisits: [LocalVisitKey: BrowsingHistoryEntry] = [:]
+            for local in existing {
+                let key = LocalVisitKey(id: BrowsingHistorySyncRecord(local).id, lastVisitTime: local.lastVisitTime)
+                if localVisits[key] == nil { localVisits[key] = local }
+            }
             var byID: [String: BrowsingHistoryEntry] = [:]
             for record in snapshot.records {
                 // Keep locally derived position fields until the workflow refreshes them.
                 var entry = record.entry
-                if let local = existing.first(where: { BrowsingHistorySyncRecord($0).id == record.id && $0.lastVisitTime == record.lastVisitTime }) {
+                if let local = localVisits[LocalVisitKey(id: record.id, lastVisitTime: record.lastVisitTime)] {
                     entry.target = local.target
                     entry.title = local.target.mangaCleanBookName ?? record.title
                     entry.pageIndex = local.pageIndex

@@ -150,6 +150,17 @@ extension FavoriteLibraryDocument {
         date: Date = .now
     ) {
         guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
+        updateRemoteMapping(at: index, yamiboFavoriteID: yamiboFavoriteID, yamiboRemoteOrder: yamiboRemoteOrder, date: date)
+    }
+
+    /// The sync engine resolves positions with an index scoped to this exact
+    /// document. Public single-item callers retain their linear lookup above.
+    mutating func updateRemoteMapping(
+        at index: Int,
+        yamiboFavoriteID: String?,
+        yamiboRemoteOrder: Int?,
+        date: Date = .now
+    ) {
         var mapping = items[index].remoteMapping ?? FavoriteRemoteMapping()
         mapping.yamiboFavoriteID = FavoriteRemoteIdentity.normalizedID(yamiboFavoriteID)
             ?? FavoriteRemoteIdentity.normalizedID(mapping.yamiboFavoriteID)
@@ -219,6 +230,10 @@ extension FavoriteLibraryDocument {
 
     public mutating func addLocation(_ location: FavoriteLocation, to target: FavoriteItemTarget, date: Date = .now) {
         guard let index = items.firstIndex(where: { $0.target.id == target.id }) else { return }
+        addLocation(location, at: index, date: date)
+    }
+
+    mutating func addLocation(_ location: FavoriteLocation, at index: Int, date: Date = .now) {
         let isNewLocation = !items[index].locations.contains(location)
         items[index].locations = FavoriteItem.normalizedLocations(items[index].locations + [location])
         items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections, tags: tags)

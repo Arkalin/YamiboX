@@ -11,6 +11,10 @@ public actor FavoriteUpdateStore {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    // Transfer the sole cached reference into one database read at a time.
+    // Keeping a second struct snapshot would copy its dictionaries on every delta.
+    private var notificationBadge: FavoriteUpdateNotificationBadge?
+    private var notificationBadgeEpoch: UInt64 = 0
 
     /// Convenience for tests/previews, mirroring `FavoriteLibraryStore`:
     /// `.standard` resolves the shared `yamibox.sqlite` pool; any other
@@ -145,6 +149,57 @@ public actor FavoriteUpdateStore {
         return merged
             .filter { $0.readAt == nil && $0.dismissedAt == nil }
             .count
+    }
+
+    /// Fast path for the check engine's remove-undismissed/append detection delta.
+    /// Any event or identity writer changes the transactional revision, including
+    /// writers outside this actor. Rebase under that same read snapshot before
+    /// counting; a failed read never installs an optimistic cached baseline.
+    public func unreadEventCount(
+        mergingRunEvents runEvents: [FavoriteUpdateEvent],
+        replacingWith event: FavoriteUpdateEvent,
+        runID: String,
+        sequence: UInt64
+    ) async throws -> Int {
+        notificationBadgeEpoch &+= 1
+        let epoch = notificationBadgeEpoch
+        let previous = notificationBadge
+        notificationBadge = nil
+        let result = try await database.read { db -> (FavoriteUpdateNotificationBadge?, Int) in
+            guard try db.tableExists("favorite_update_notification_revision"),
+                  let revision = try String.fetchOne(db, sql: "SELECT revision FROM favorite_update_notification_revision WHERE id = 1") else {
+                // Isolated callers can inject an older/minimal schema. Preserve
+                // their existing authoritative behavior until it is migrated.
+                let merged = try Self.mergingRunEvents(runEvents, in: db)
+                return (nil, merged.filter { $0.readAt == nil && $0.dismissedAt == nil }.count)
+            }
+            if let previous, previous.runID == runID, previous.revision == revision,
+               previous.sequence &+ 1 == sequence,
+               try previous.replaceUndismissed(with: event, runEventCount: runEvents.count, sequence: sequence,
+                                               canonicalize: { try Self.canonicalEvent($0, in: db) }) {
+                return (previous, previous.unreadCount)
+            }
+            let stored = try Self.events(in: db).map { try Self.canonicalEvent($0, in: db) }
+            guard let rebased = try FavoriteUpdateNotificationBadge(
+                runID: runID, sequence: sequence, revision: revision, runEvents: runEvents, storedEvents: stored,
+                canonicalize: { try Self.canonicalEvent($0, in: db) }
+            ) else {
+                let canonicalRun = try runEvents.map { try Self.canonicalEvent($0, in: db) }
+                let merged = Self.mergingRunEvents(canonicalRun, intoStored: stored)
+                return (nil, merged.filter { $0.readAt == nil && $0.dismissedAt == nil }.count)
+            }
+            return (rebased, rebased.unreadCount)
+        }
+        // Reentrant/concurrent reads may finish out of order. Only the newest
+        // admitted call may retain its baseline; every caller still gets its
+        // own correct database snapshot result.
+        if epoch == notificationBadgeEpoch { notificationBadge = result.0 }
+        return result.1
+    }
+
+    public func endNotificationBadgeRun(runID: String) async {
+        notificationBadgeEpoch &+= 1
+        if notificationBadge?.runID == runID { notificationBadge = nil }
     }
 
     private static func mergingRunEvents(

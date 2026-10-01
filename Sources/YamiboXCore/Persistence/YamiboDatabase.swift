@@ -103,6 +103,7 @@ enum YamiboDatabase {
         MangaIdentityMigrationV1.register(in: &migrator)
         DownloadNamingMigration.register(in: &migrator)
         ForumAttachmentDownloadSchema.register(in: &migrator)
+        FavoriteUpdateDatabaseSchema.registerNotificationBadgeMigration(in: &migrator)
         try migrator.migrate(writer)
     }
 

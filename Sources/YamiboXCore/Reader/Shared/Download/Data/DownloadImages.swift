@@ -191,9 +191,14 @@ extension DownloadStore {
                     arguments: [imageURLString]
                 )
                 for row in candidateOwnerTIDs {
+                    let ownerName = try Self.canonicalMangaOwnerKey(row["owner_name"], in: db)
+                    let tid: String = row["tid"]
+                    if try Self.hasMissingMangaImage(
+                        ownerName: ownerName, tid: tid, cache: missingMangaImageCache, in: db
+                    ) { continue }
                     guard let membership = try Self.membership(
-                        ownerName: row["owner_name"],
-                        tid: row["tid"],
+                        ownerName: ownerName,
+                        tid: tid,
                         fileManager: fileManager,
                         mangaSourcePagesDirectory: mangaSourcePagesDirectory,
                         sourcePageCache: sourcePageCache,
@@ -210,6 +215,48 @@ extension DownloadStore {
         } catch {
             throw downloadPersistenceError(from: error)
         }
+    }
+
+    /// A known absent asset proves this chapter cannot be complete. Keep one
+    /// bounded hint, rather than hydrating all chapter URLs after every image.
+    /// The final check still validates the source page and every asset file.
+    private static func hasMissingMangaImage(
+        ownerName: String,
+        tid: String,
+        cache: NSCache<NSString, MangaMissingImageCacheEntry>,
+        in db: Database
+    ) throws -> Bool {
+        let key = "\(ownerName.utf8.count):\(ownerName)\(tid)" as NSString
+        if let missing = cache.object(forKey: key),
+           try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(
+                SELECT 1 FROM download_manga_entry_images
+                WHERE owner_name = ? AND tid = ? AND manual_order = ? AND image_url = ?
+                    AND NOT EXISTS(
+                        SELECT 1 FROM download_image_assets WHERE image_url = ?
+                    )
+            )
+            """, arguments: [ownerName, tid, missing.manualOrder, missing.imageURL, missing.imageURL]) == true {
+            return true
+        }
+        cache.removeObject(forKey: key)
+        let missing = try Row.fetchOne(db, sql: """
+            SELECT images.image_url, images.manual_order
+            FROM download_manga_entry_images AS images
+            LEFT JOIN download_image_assets AS assets ON assets.image_url = images.image_url
+            WHERE images.owner_name = ? AND images.tid = ? AND assets.image_url IS NULL
+            ORDER BY images.manual_order DESC
+            LIMIT 1
+            """, arguments: [ownerName, tid])
+        // Full membership reads parse and normalize URL strings. Preserve
+        // that fallback for legacy rows not written as URL.absoluteString.
+        guard let missing else { return false }
+        let missingURL: String = missing["image_url"]
+        guard URL(string: missingURL)?.absoluteString == missingURL else { return false }
+        cache.setObject(MangaMissingImageCacheEntry(
+            manualOrder: missing["manual_order"], imageURL: missingURL
+        ), forKey: key)
+        return true
     }
 
     func mangaDownloadDiskUsageByOwner() async -> [MangaDownloadOwnerUsage] {

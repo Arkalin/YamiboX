@@ -41,7 +41,10 @@ struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
 @Observable
 final class FavoriteLibraryOrganizer {
     private(set) var document = FavoriteLibraryDocument() {
-        didSet { refreshDerivedState() }
+        didSet {
+            cachedTagAssociationCounts = nil
+            refreshDerivedState()
+        }
     }
     var selectedCategoryID = FavoriteCategory.defaultID {
         didSet {
@@ -255,11 +258,19 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// All favorite items, for tag-association-count sorting in the tag
-    /// picker. Views go through the organizer's own surface rather than
-    /// reaching into `document` directly.
-    var favoriteItems: [FavoriteItem] {
-        document.items
+    /// Current items also feed the root's visible-cover prefetch snapshot.
+    var favoriteItems: [FavoriteItem] { document.items }
+
+    @ObservationIgnored private var cachedTagAssociationCounts: [String: Int]?
+
+    /// Selection and search do not change associations. Reuse the counts
+    /// until the organizer receives another document, including after sync.
+    var favoriteTagAssociationCounts: [String: Int] {
+        let items = document.items // Keep the observable document dependency.
+        if let cachedTagAssociationCounts { return cachedTagAssociationCounts }
+        let counts = tagAssociationCounts(from: items)
+        cachedTagAssociationCounts = counts
+        return counts
     }
 
     var currentCategoryCollections: [LocalFavoriteCollection] {

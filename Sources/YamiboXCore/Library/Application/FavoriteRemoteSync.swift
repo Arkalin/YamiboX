@@ -124,7 +124,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         persist: @escaping @Sendable (FavoriteRemoteSyncSnapshot) async -> Void
     ) async -> FavoriteRemoteSyncSnapshot {
         var snapshot = initial
-        var pendingOperations: [@Sendable (inout FavoriteLibraryDocument) -> Void] = []
+        var pendingOperations: [@Sendable (inout FavoriteLibraryDocument, inout FavoriteLibraryItemIndex) -> Void] = []
 
         func commit(_ mutate: (inout FavoriteRemoteSyncSnapshot) -> Void) async {
             let previousCounts = FavoriteRemoteSyncEntryCounts(snapshot)
@@ -143,7 +143,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         /// next to `workingDocument`) instead wherever possible — raw `record`
         /// is only for the import case whose first application must throw
         /// while its replay is tolerant.
-        func record(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument) -> Void) {
+        func record(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument, inout FavoriteLibraryItemIndex) -> Void) {
             pendingOperations.append(operation)
         }
 
@@ -161,8 +161,11 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             // cancellation — the write must not inherit it.
             let merged = try await Task { () -> FavoriteLibraryDocument in
                 try await libraryStore.update { fresh in
+                    // Never replay positions from the working snapshot: local
+                    // edits may have removed, reordered or retargeted items.
+                    var freshIndex = FavoriteLibraryItemIndex(fresh)
                     for operation in operations {
-                        operation(&fresh)
+                        operation(&fresh, &freshIndex)
                     }
                     return fresh
                 }
@@ -176,6 +179,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             try Task.checkCancellation()
             await commit { $0.phase = .preparing }
             var workingDocument = try await libraryStore.load()
+            var workingIndex = FavoriteLibraryItemIndex(workingDocument)
 
             /// Single write path for this run's document mutations: applies
             /// the operation to the in-memory working copy and queues the
@@ -183,8 +187,8 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             /// both copies is what keeps them from drifting — previously
             /// every mutation was written twice by hand, and forgetting
             /// either half meant "visible but never saved" (or the reverse).
-            func apply(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument) -> Void) {
-                operation(&workingDocument)
+            func apply(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument, inout FavoriteLibraryItemIndex) -> Void) {
+                operation(&workingDocument, &workingIndex)
                 record(operation)
             }
             guard workingDocument.categories.contains(where: { $0.id == snapshot.targetCategoryID }) else {
@@ -286,15 +290,20 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 let label = Self.postLabel(threadID: entry.threadID, title: entry.title)
                 await commit { $0.logEntries.append(.importingItem(index: offset + 1, total: importTotal, title: label)) }
 
-                if let existing = workingDocument.items.first(where: { $0.target.threadID == entry.threadID }) {
+                if let position = workingIndex.firstPositionByThreadID[entry.threadID] {
+                    let existing = workingDocument.items[position]
                     let alreadyMapped = FavoriteRemoteIdentity.normalizedID(existing.remoteMapping?.yamiboFavoriteID) != nil
                     let existingTarget = existing.target
                     if !alreadyMapped {
-                        apply { doc in doc.addLocation(targetLocation, to: existingTarget) }
+                        apply { doc, index in
+                            guard let position = index.firstPositionByTargetID[existingTarget.id] else { return }
+                            doc.addLocation(targetLocation, at: position)
+                        }
                     }
-                    apply { doc in
+                    apply { doc, index in
+                        guard let position = index.firstPositionByTargetID[existingTarget.id] else { return }
                         doc.updateRemoteMapping(
-                            for: existingTarget,
+                            at: position,
                             yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                             yamiboRemoteOrder: entry.remoteOrder
                         )
@@ -332,12 +341,17 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     // no merged-directory kind left to special-case (the old
                     // dedicated `importMangaChapterFavorite` mechanism was
                     // removed — see smart-comic-mode Phase A decision #3/#9).
-                    let importedItem = try workingDocument.importThreadFavorite(
-                        probeResult: probeResult,
-                        location: targetLocation,
-                        remoteMapping: mapping
-                    )
-                    record { doc in
+                    let importedItem: FavoriteItem
+                    do {
+                        defer { workingIndex = FavoriteLibraryItemIndex(workingDocument) }
+                        importedItem = try workingDocument.importThreadFavorite(
+                            probeResult: probeResult,
+                            location: targetLocation,
+                            remoteMapping: mapping
+                        )
+                    }
+                    record { doc, index in
+                        defer { index = FavoriteLibraryItemIndex(doc) }
                         do {
                             _ = try doc.importThreadFavorite(
                                 probeResult: probeResult,
@@ -401,6 +415,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             }
             if let merged = try await saveDocumentIfDirty() {
                 workingDocument = merged
+                workingIndex = FavoriteLibraryItemIndex(workingDocument)
             }
 
             // Phase 4: uploading
@@ -448,12 +463,14 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 do {
                     let allEntries = try await fetchAllPages()
                     for entry in allEntries {
-                        guard let target = workingDocument.items.first(where: { $0.target.threadID == entry.threadID })?.target else {
+                        guard let position = workingIndex.firstPositionByThreadID[entry.threadID] else {
                             continue
                         }
-                        apply { doc in
+                        let target = workingDocument.items[position].target
+                        apply { doc, index in
+                            guard let position = index.firstPositionByTargetID[target.id] else { return }
                             doc.updateRemoteMapping(
-                                for: target,
+                                at: position,
                                 yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                                 yamiboRemoteOrder: entry.remoteOrder
                             )
@@ -461,6 +478,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                     }
                     if let merged = try await saveDocumentIfDirty() {
                         workingDocument = merged
+                        workingIndex = FavoriteLibraryItemIndex(workingDocument)
                     }
                 } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
                     throw error

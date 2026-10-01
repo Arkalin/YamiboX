@@ -36,6 +36,9 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
     /// this page refreshes the shared usage model rather than a private
     /// counter.
     private let storageUsage: SettingsStorageUsage
+    @ObservationIgnored private var isDeletingDirectories = false
+    @ObservationIgnored private var needsDirectoryRefresh = false
+    @ObservationIgnored private var directoryRefreshGeneration = 0
 
     init(
         dependencies: SettingsDependencies,
@@ -74,8 +77,14 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
     // MARK: - Loading
 
     func refreshMangaDirectoryManagement() async {
+        guard !isDeletingDirectories else {
+            needsDirectoryRefresh = true
+            return
+        }
         activeAction = .loading
-        defer { activeAction = nil }
+        defer {
+            if activeAction == .loading { activeAction = nil }
+        }
 
         await refreshMangaDirectoryManagementRows()
     }
@@ -146,11 +155,17 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
     /// `selectedMangaDirectoryIDs` to reality, rather than assuming the whole
     /// batch either fully succeeded or fully no-opped.
     private func clearMangaDirectories(ids: [String]) async -> Bool {
+        guard !isDeletingDirectories else { return false }
         let normalizedIDs = normalizedMangaDirectoryIDs(ids)
         guard !normalizedIDs.isEmpty else { return false }
 
+        isDeletingDirectories = true
+        directoryRefreshGeneration &+= 1 // Invalidate reads started before deletion.
         activeAction = .clearingMangaDirectory
-        defer { activeAction = nil }
+        defer {
+            isDeletingDirectories = false
+            activeAction = nil
+        }
 
         var deletionError: Error?
         for id in normalizedIDs {
@@ -163,11 +178,18 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
 
         pendingMangaDirectoryManagementConfirmation = nil
-        await storageUsage.refresh()
-        await refreshMangaDirectoryManagementRows()
-        if selectedMangaDirectoryIDs.isEmpty {
-            isMangaDirectoryManagementSelectionMode = false
-        }
+        // Reconcile partial success even when the command's task was cancelled.
+        // Invalidations during the final read request a follow-up snapshot.
+        await Task { @MainActor [self] in
+            await storageUsage.refresh()
+            repeat {
+                needsDirectoryRefresh = false
+                await refreshMangaDirectoryManagementRows(afterDeletion: true)
+            } while needsDirectoryRefresh
+            if selectedMangaDirectoryIDs.isEmpty {
+                isMangaDirectoryManagementSelectionMode = false
+            }
+        }.value
 
         if let deletionError {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(deletionError) {
@@ -179,8 +201,15 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         return true
     }
 
-    private func refreshMangaDirectoryManagementRows() async {
+    private func refreshMangaDirectoryManagementRows(afterDeletion: Bool = false) async {
+        guard !isDeletingDirectories || afterDeletion else {
+            needsDirectoryRefresh = true
+            return
+        }
+        directoryRefreshGeneration &+= 1
+        let generation = directoryRefreshGeneration
         let summaries = await dependencies.mangaDirectoryStore.allDirectorySummaries()
+        guard generation == directoryRefreshGeneration else { return }
         mangaDirectoryManagementRows = summaries
             .map(MangaDirectoryManagementRow.init(summary:))
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }

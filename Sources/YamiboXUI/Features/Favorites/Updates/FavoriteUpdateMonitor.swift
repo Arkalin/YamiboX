@@ -31,14 +31,17 @@ final class FavoriteUpdateMonitor: ObservableObject {
 
     private let engine: FavoriteUpdateCheckEngine
 
-    /// Process-wide run-liveness registry shared by every monitor instance
-    /// (favorites tab, settings page, background refresh task). This is the
-    /// composition point all `FavoriteUpdateMonitor` construction sites flow
-    /// through, so sharing the registry here preserves the original
-    /// cross-instance orphan-detection semantics that the old
-    /// `static var activeRunIDs` provided — while the mutable state itself
-    /// now lives as plain instance state inside the registry/engine.
-    private static let sharedRunRegistry = FavoriteUpdateActiveRunRegistry()
+    /// Shared admission, progress, completion, and account-transition gate
+    /// for monitors using the same update store (windows and background tasks).
+    private static let sharedRunRegistry = FavoriteUpdateActiveRunRegistry.shared
+
+    static func prepareForAccountChange(updateStore: FavoriteUpdateStore) async {
+        await sharedRunRegistry.prepareForAccountChange(storeID: updateStore.changeID)
+    }
+
+    static func finishAccountChange(updateStore: FavoriteUpdateStore) {
+        sharedRunRegistry.finishAccountChange(storeID: updateStore.changeID)
+    }
 
     /// Foreground and background checks share assembly, not monitor lifetime.
     static func makeForLibrary(
@@ -130,8 +133,14 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.interrupt()
     }
 
+    /// Expiration belongs only to the monitor that admitted this run.
+    func interruptOwnedRun() async {
+        await engine.interrupt(ifOwned: true)
+    }
+
     /// Waits for an in-flight check to finish (background refresh completion).
-    func waitForCompletion() async {
+    @discardableResult
+    func waitForCompletion() async -> FavoriteUpdateRunSnapshot? {
         await engine.waitForCompletion()
     }
 

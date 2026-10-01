@@ -57,10 +57,18 @@ extension FavoriteUpdateCheckEngine {
     /// detections, and the in-memory list is missing read/dismiss marks the
     /// user applied since the run snapshotted it.
     func deliverNotificationIfEnabled(for event: FavoriteUpdateEvent, runEvents: [FavoriteUpdateEvent]) async {
+        notificationBadgeSequence &+= 1
+        let sequence = notificationBadgeSequence
+        let runID = snapshot?.runID
         guard let notifier, await notificationsEnabled() else { return }
         guard await notifier.authorization() == .granted else { return }
         do {
-            let unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents)
+            let unreadCount: Int
+            if let runID {
+                unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents, replacingWith: event, runID: runID, sequence: sequence)
+            } else {
+                unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents)
+            }
             await notifier.deliver(FavoriteUpdateNotification(event: event, badgeCount: unreadCount))
         } catch {
             YamiboLog.persistence.error("Failed to read favorite update notification badge: \(error)")

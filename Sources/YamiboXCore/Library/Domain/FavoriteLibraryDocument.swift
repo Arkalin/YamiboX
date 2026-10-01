@@ -171,9 +171,11 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         // Codable decoding bypasses this initializer, but every programmatic
         // (re)construction runs through here, so sync payloads routed through
         // the initializer cannot re-introduce duplicate targets.
+        guard !items.isEmpty else { return [] }
+        let index = ItemNormalizationIndex(categories: categories, collections: collections, tags: tags)
         var newestByID: [String: FavoriteItem] = [:]
         for item in items {
-            let normalized = normalizedItem(item, categories: categories, collections: collections, tags: tags)
+            let normalized = normalizedItem(item, index: index)
             if let existing = newestByID[normalized.id], existing.updatedAt >= normalized.updatedAt {
                 continue
             }
@@ -191,6 +193,25 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         collections: [LocalFavoriteCollection],
         tags: [FavoriteTag]
     ) -> FavoriteItem {
+        normalizedItem(item, index: ItemNormalizationIndex(categories: categories, collections: collections, tags: tags))
+    }
+
+    private struct ItemNormalizationIndex {
+        let validCategoryIDs: Set<String>
+        let validCollectionIDsByCategory: [String: Set<String>]
+        let defaultCategoryID: String
+        let validTagIDs: Set<String>
+
+        init(categories: [FavoriteCategory], collections: [LocalFavoriteCollection], tags: [FavoriteTag]) {
+            validCategoryIDs = Set(categories.map(\.id))
+            validCollectionIDsByCategory = Dictionary(grouping: collections, by: \.categoryID)
+                .mapValues { Set($0.map(\.id)) }
+            defaultCategoryID = categories.first(where: \.isDefault)?.id ?? FavoriteCategory.defaultID
+            validTagIDs = Set(tags.map(\.id))
+        }
+    }
+
+    private static func normalizedItem(_ item: FavoriteItem, index: ItemNormalizationIndex) -> FavoriteItem {
         var item = item
         let forumMetadata = FavoriteSourceGroup.normalizedForumMetadata(
             sourceGroup: item.sourceGroup,
@@ -200,15 +221,12 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         item.sourceGroup = forumMetadata.sourceGroup
         item.forumID = forumMetadata.forumID
         item.forumName = forumMetadata.forumName
-        let validCategoryIDs = Set(categories.map(\.id))
-        let validCollectionIDsByCategory = Dictionary(grouping: collections, by: \.categoryID)
-            .mapValues { Set($0.map(\.id)) }
         let filtered = item.locations.filter { location in
-            guard validCategoryIDs.contains(location.categoryID) else { return false }
+            guard index.validCategoryIDs.contains(location.categoryID) else { return false }
             guard let collectionID = location.collectionID else { return true }
-            return validCollectionIDsByCategory[location.categoryID, default: []].contains(collectionID)
+            return index.validCollectionIDsByCategory[location.categoryID, default: []].contains(collectionID)
         }
-        item.locations = filtered.isEmpty ? [.category(categories.first(where: \.isDefault)?.id ?? FavoriteCategory.defaultID)] : filtered
+        item.locations = filtered.isEmpty ? [.category(index.defaultCategoryID)] : filtered
         // Cross-validated against `tags`, not just deduplicated, mirroring
         // `locations`'s validity filter above: a tag deleted (and tombstoned)
         // on one device can still win the `tagIDs` last-writer-wins merge on
@@ -216,8 +234,7 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         // this filter, the now-nonexistent tag id would persist as a dangling
         // reference on that item forever (invisible in the UI, but sitting in
         // the data) instead of being dropped like a dangling location is.
-        let validTagIDs = Set(tags.map(\.id))
-        item.tagIDs = FavoriteItem.normalizedIDs(item.tagIDs).filter { validTagIDs.contains($0) }
+        item.tagIDs = FavoriteItem.normalizedIDs(item.tagIDs).filter { index.validTagIDs.contains($0) }
         return item
     }
 }

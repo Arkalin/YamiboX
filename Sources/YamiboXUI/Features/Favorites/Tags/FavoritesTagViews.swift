@@ -260,7 +260,11 @@ struct FavoriteTagPickerView: View {
     }
 
     private var orderedTags: [FavoriteTag] {
-        sortedFavoriteTags(organizer.tags, favorites: organizer.favoriteItems, sortOrder: currentSortOrder)
+        sortedFavoriteTags(
+            organizer.tags,
+            associationCounts: currentSortOrder.usesAssociationCounts ? organizer.favoriteTagAssociationCounts : [:],
+            sortOrder: currentSortOrder
+        )
     }
 
     private var visibleTags: [FavoriteTag] {

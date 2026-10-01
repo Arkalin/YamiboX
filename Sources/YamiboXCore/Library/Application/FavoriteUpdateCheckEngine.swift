@@ -1,30 +1,5 @@
 import Foundation
 
-/// Process-wide bookkeeping of which favorite-update run IDs currently have a
-/// live driving task. Plain instance state — the composition root shares one
-/// instance across every `FavoriteUpdateCheckEngine` in the process so that a
-/// persisted run marked `.running` is only downgraded to interrupted when NO
-/// engine in the process is actually driving it (this used to be a hidden
-/// `static var` on the UI monitor).
-@MainActor
-public final class FavoriteUpdateActiveRunRegistry {
-    private var activeRunIDs: Set<String> = []
-
-    public init() {}
-
-    public func isActive(_ runID: String) -> Bool {
-        activeRunIDs.contains(runID)
-    }
-
-    public func register(_ runID: String) {
-        activeRunIDs.insert(runID)
-    }
-
-    public func unregister(_ runID: String) {
-        activeRunIDs.remove(runID)
-    }
-}
-
 /// State machine for favorite update detection: walks tracked threads,
 /// compares fingerprints against the stored baseline, and records update
 /// events plus per-forum and per-category filters.
@@ -55,7 +30,12 @@ public final class FavoriteUpdateCheckEngine {
     public var onStateChange: ((StateChange) -> Void)?
 
     public private(set) var snapshot: FavoriteUpdateRunSnapshot? {
-        didSet { onStateChange?(.snapshot) }
+        didSet {
+            onStateChange?(.snapshot)
+            if let ownedRun, snapshot?.runID == ownedRun.snapshot.runID, let snapshot {
+                runRegistry.publish(snapshot, for: ownedRun)
+            }
+        }
     }
     public private(set) var events: [FavoriteUpdateEvent] = [] {
         didSet { onStateChange?(.events) }
@@ -103,7 +83,11 @@ public final class FavoriteUpdateCheckEngine {
     let makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)?
     private let runRegistry: FavoriteUpdateActiveRunRegistry
 
-    private var checkTask: Task<Void, Never>?
+    private var ownedRun: FavoriteUpdateActiveRunRegistry.Run?
+    private var observedRun: FavoriteUpdateActiveRunRegistry.Run?
+    private let observerID = UUID()
+    // The badge fast path requires a gap-free delivery sequence within a run.
+    var notificationBadgeSequence: UInt64 = 0
     private var storeUpdatesTask: Task<Void, Never>?
     private var finishingRunIDs: Set<String> = []
 
@@ -111,10 +95,8 @@ public final class FavoriteUpdateCheckEngine {
         runRegistry.isActive(runID)
     }
 
-    /// - Parameter runRegistry: Run-liveness bookkeeping. Defaults to a fresh
-    ///   private registry (fine for tests and single-engine setups); pass a
-    ///   shared instance when several engines coexist in one process so they
-    ///   keep the original cross-instance orphan-detection semantics.
+    /// Runs are shared by store.changeID, including their preparation and completion.
+    /// A separate injected registry can isolate an independent composition.
     public init(
         updateStore: any FavoriteUpdateStatePersisting,
         libraryStore: any FavoriteUpdateLibraryAccessing,
@@ -123,7 +105,7 @@ public final class FavoriteUpdateCheckEngine {
         notifier: (any FavoriteUpdateNotifying)? = nil,
         mangaDirectoryStore: (any MangaDirectoryBatchReading)? = nil,
         makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)? = nil,
-        runRegistry: FavoriteUpdateActiveRunRegistry = FavoriteUpdateActiveRunRegistry()
+        runRegistry: FavoriteUpdateActiveRunRegistry = .shared
     ) {
         self.updateStore = updateStore
         self.libraryStore = libraryStore
@@ -133,6 +115,15 @@ public final class FavoriteUpdateCheckEngine {
         self.mangaDirectoryStore = mangaDirectoryStore
         self.makeMangaDirectoryWorkflow = makeMangaDirectoryWorkflow
         self.runRegistry = runRegistry
+        runRegistry.observe(storeID: updateStore.changeID, observerID: observerID) { [weak self] incoming in
+            guard let self, ownedRun?.snapshot.runID != incoming.runID else { return }
+            snapshot = incoming
+        } onFinished: { [weak self] incoming in
+            guard let self, ownedRun?.snapshot.runID != incoming.runID else { return }
+            // Results can commit after interrupt published its early terminal
+            // snapshot. Reload once when the shared driver actually finishes.
+            Task { [weak self] in await self?.reloadEventState() }
+        }
         storeUpdatesTask = Task { @MainActor [weak self, store = updateStore] in
             for await changeID in store.changes() {
                 guard !Task.isCancelled else { return }
@@ -143,30 +134,31 @@ public final class FavoriteUpdateCheckEngine {
                 guard changeID == store.changeID else {
                     continue
                 }
-                // Skip while this instance is actively driving its own check
-                // run — its explicit updateSnapshot/reloadEventState calls
-                // already keep it current, so reloading here would just be
-                // redundant churn. Once idle, any store change (including
-                // one from a different engine instance, e.g. a background
-                // refresh task) must be picked up so the UI never sits on
-                // stale background-detected results.
-                guard self.snapshot?.status != .running else { continue }
+                // Shared progress comes directly from the registry. Avoid
+                // hydrating the full event state in every observing engine
+                // for each progress write; the driver's finish callback
+                // refreshes observers once after results have committed.
+                // Outside a run, store changes still refresh the full state.
+                guard self.runRegistry.run(storeID: store.changeID) == nil else { continue }
                 await self.reloadFromExternalChange()
             }
         }
     }
 
-    deinit {
-        checkTask?.cancel()
+    isolated deinit {
         storeUpdatesTask?.cancel()
+        runRegistry.removeObserver(storeID: updateStore.changeID, observerID: observerID)
     }
 
     /// Reloads the persisted run, events, and filters. A run still marked
     /// running whose task no longer exists is downgraded to interrupted.
     public func load() async {
         do {
+            let previous = snapshot
             let latest = try await fetchLatestRunDowngradingIfOrphaned()
-            if snapshot?.status != .running || snapshot.map({ !isRunActive($0.runID) }) == true {
+            if let run = runRegistry.run(storeID: updateStore.changeID) {
+                snapshot = run.snapshot
+            } else if snapshot == previous {
                 snapshot = latest
             }
         } catch {
@@ -243,60 +235,88 @@ public final class FavoriteUpdateCheckEngine {
     ///   which, it only enforces whatever cap it's given.
     @discardableResult
     public func startCheck(nonTagMangaDirectoryCheckCap: Int = 1) async -> String? {
-        if snapshot?.status == .running {
-            return snapshot?.runID
+        guard !Task.isCancelled else { return nil }
+        if let run = runRegistry.run(storeID: updateStore.changeID) {
+            return await join(run)
         }
         let now = Date()
         let startedSnapshot = FavoriteUpdateRunSnapshot(
-            status: .running,
-            phase: .preparing,
-            startedAt: now,
-            updatedAt: now
+            status: .running, phase: .preparing, startedAt: now, updatedAt: now
         )
+        guard let run = runRegistry.begin(storeID: updateStore.changeID, snapshot: startedSnapshot) else { return nil }
+        ownedRun = run
+        observedRun = run
         snapshot = startedSnapshot
-        runRegistry.register(startedSnapshot.runID)
+        notificationBadgeSequence = 0
+        // Install both tasks before the first await. A joining caller can wait
+        // even while the initial durable running row is still being written.
+        let preparation = Task { @MainActor [self] in
+            await prepareRun(run)
+        }
+        run.preparation = preparation
+        run.driver = Task { @MainActor [self, runRegistry] in
+            if await preparation.value {
+                await runCheck(runID: run.snapshot.runID, nonTagMangaDirectoryCheckCap: nonTagMangaDirectoryCheckCap)
+            }
+            runRegistry.finish(run)
+            if ownedRun === run { ownedRun = nil }
+        }
+        run.interrupt = { [weak self, weak run] in
+            guard let self, let run, ownedRun === run else { return }
+            await interruptOwnedRun(run)
+        }
+        return await join(run)
+    }
+
+    private func join(_ run: FavoriteUpdateActiveRunRegistry.Run) async -> String? {
+        observedRun = run
+        snapshot = run.snapshot
+        guard await run.preparation?.value == true else { return nil }
+        return run.snapshot.runID
+    }
+
+    private func prepareRun(_ run: FavoriteUpdateActiveRunRegistry.Run) async -> Bool {
         do {
-            try await updateStore.saveRun(startedSnapshot)
+            try Task.checkCancellation()
+            try await updateStore.saveRun(run.snapshot)
+            try Task.checkCancellation()
+            return true
         } catch {
-            runRegistry.unregister(startedSnapshot.runID)
-            YamiboLog.persistence.error("Failed to persist initial running snapshot for favorite update run \(startedSnapshot.runID): \(error.localizedDescription)")
-            guard snapshot?.runID == startedSnapshot.runID else { return nil }
-            var failed = startedSnapshot
-            failed.status = .failed
-            failed.phase = .failed
+            YamiboLog.persistence.error("Failed to prepare favorite update run \(run.snapshot.runID): \(error.localizedDescription)")
+            guard ownedRun === run else { return false }
+            var failed = run.snapshot
+            failed.status = LoadDiagnosticError.isCancellation(error) ? .interrupted : .failed
+            failed.phase = failed.status == .interrupted ? .interrupted : .failed
             failed.finishedAt = .now
             failed.errorMessage = error.localizedDescription
             snapshot = failed
             reportError(error)
-            return nil
-        }
-        guard snapshot?.runID == startedSnapshot.runID, snapshot?.status == .running else {
-            runRegistry.unregister(startedSnapshot.runID)
-            return nil
-        }
-        checkTask?.cancel()
-        checkTask = Task { @MainActor [weak self, runRegistry] in
-            // If `self` is already gone by the time this body runs,
-            // `runCheck()` never executes, so its `defer` never removes the
-            // entry inserted just below — remove it here instead, or it
-            // orphans the registry entry forever and `isRunActive` never
-            // downgrades the stale "running" snapshot to interrupted.
-            guard let self else {
-                runRegistry.unregister(startedSnapshot.runID)
-                return
+            // A cancelled preparation may already have persisted .running.
+            // Stamp its terminal result without inheriting that cancellation.
+            if LoadDiagnosticError.isCancellation(error) {
+                await Task { try? await updateStore.saveRun(failed) }.value
             }
-            await self.runCheck(runID: startedSnapshot.runID, nonTagMangaDirectoryCheckCap: nonTagMangaDirectoryCheckCap)
+            return false
         }
-        return startedSnapshot.runID
     }
 
-    public func interrupt() async {
-        guard snapshot?.status == .running else { return }
-        // The final commit has begun: let it publish its durable outcome rather
-        // than race a second terminal write against it.
-        guard let runID = snapshot?.runID, !finishingRunIDs.contains(runID) else { return }
-        checkTask?.cancel()
-        await updateSnapshot { snapshot in
+    /// Manual interruption can control the shared run shown by this monitor.
+    /// Background expiration only has authority over a run this engine started.
+    public func interrupt(ifOwned: Bool = false) async {
+        guard let run = runRegistry.run(storeID: updateStore.changeID) ?? observedRun else { return }
+        if ifOwned, ownedRun !== run { return }
+        await run.interrupt?()
+    }
+
+    private func interruptOwnedRun(_ run: FavoriteUpdateActiveRunRegistry.Run) async {
+        guard ownedRun === run, snapshot?.status == .running,
+              !finishingRunIDs.contains(run.snapshot.runID) else { return }
+        run.preparation?.cancel()
+        run.driver?.cancel()
+        // During preparation its cancellation stamps the terminal state after
+        // the initial write joins. Do not race another write against that row.
+        guard await run.preparation?.value == true else { return }
+        await updateSnapshot(runID: run.snapshot.runID) { snapshot in
             snapshot.status = .interrupted
             snapshot.phase = .interrupted
             snapshot.finishedAt = .now
@@ -304,9 +324,14 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Waits for an in-flight check to finish (background refresh completion).
-    public func waitForCompletion() async {
-        await checkTask?.value
+    /// Joins the admitted run, including preparation and terminal persistence.
+    /// The receipt remains valid if another engine has already begun a new run.
+    @discardableResult
+    public func waitForCompletion() async -> FavoriteUpdateRunSnapshot? {
+        guard let run = observedRun ?? runRegistry.run(storeID: updateStore.changeID) else { return nil }
+        await run.driver?.value
+        if snapshot?.runID == run.snapshot.runID { snapshot = run.snapshot }
+        return run.snapshot
     }
 
     /// Configured automatic check interval, or nil without a settings store.
@@ -376,6 +401,9 @@ public final class FavoriteUpdateCheckEngine {
         guard let interval = await configuredInterval(),
               let delay = interval.nextDelay(hasRecentEvents: hasRecentEvents) else {
             return false
+        }
+        if let run = runRegistry.run(storeID: updateStore.changeID) {
+            return await join(run) != nil
         }
         guard snapshot?.status != .running else { return false }
         // Throttle on elapsed time regardless of how the last run ended: a
@@ -455,14 +483,15 @@ public final class FavoriteUpdateCheckEngine {
     // MARK: - Check run
 
     private func runCheck(runID: String, nonTagMangaDirectoryCheckCap: Int) async {
-        defer { runRegistry.unregister(runID) }
         // Accumulated in memory across the whole loop and committed to
         // `updateStore` at most once (`commitCheckResults`, on every exit
         // path below) instead of per favorite — see that method's doc.
         var trackedTargets: [String: FavoriteUpdateTrackedTarget] = [:]
         var events: [FavoriteUpdateEvent] = []
         do {
+            try Task.checkCancellation()
             let document = try await libraryStore.load()
+            try Task.checkCancellation()
             let candidates = Self.candidates(in: document)
             try await refreshFilters(candidates: candidates, document: document)
             let scopedCandidates = try await scopedCandidates(candidates)
@@ -591,6 +620,7 @@ public final class FavoriteUpdateCheckEngine {
         // Reading during a run can update the badge before its newly detected
         // events are committed. Reconcile once those events are durable.
         await cleanUpNotifications(forTargetIDs: [])
+        await updateStore.endNotificationBadgeRun(runID: runID)
         guard var terminal = snapshot, terminal.runID == runID else { return }
         // An interrupted run may still fail to persist its results. Surface that
         // failure, but don't otherwise restamp an already-terminated run.
@@ -885,6 +915,7 @@ public final class FavoriteUpdateCheckEngine {
             throw FavoriteActionError.missingFavoriteThreadID
         }
         let repository = await makeForumThreadReaderRepository()
+        try Task.checkCancellation()
         let fid: String? = if case let .forumBoard(id, _) = item.sourceGroup { id } else { nil }
         let thread = ThreadIdentity(tid: tid, fid: fid)
         let context = ThreadNovelLaunchContext(thread: thread, title: item.resolvedDisplayTitle)

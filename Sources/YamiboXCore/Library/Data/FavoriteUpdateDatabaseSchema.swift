@@ -50,6 +50,31 @@ enum FavoriteUpdateDatabaseSchema: DatabaseSchemaModule {
         }
     }
 
+    /// Register after the identity schema so fresh databases can observe both
+    /// direct event writers and redirect changes made by other feature stores.
+    static func registerNotificationBadgeMigration(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("favorite_update.v2.notification-revision") { db in
+            try db.execute(sql: """
+                CREATE TABLE favorite_update_notification_revision (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), revision TEXT NOT NULL
+                );
+                INSERT INTO favorite_update_notification_revision VALUES (1, lower(hex(randomblob(16))));
+                """)
+            for table in ["favorite_update_events", "manga_identity_redirects"] {
+                for operation in ["INSERT", "UPDATE", "DELETE"] {
+                    try db.execute(sql: """
+                        CREATE TRIGGER favorite_update_badge_\(table)_\(operation.lowercased())
+                        AFTER \(operation) ON \(table)
+                        BEGIN
+                            UPDATE favorite_update_notification_revision
+                            SET revision = lower(hex(randomblob(16))) WHERE id = 1;
+                        END
+                        """)
+                }
+            }
+        }
+    }
+
     static func erase(in db: Database) throws {
         try db.execute(sql: "DELETE FROM favorite_update_events")
         try db.execute(sql: "DELETE FROM favorite_update_tracked_targets")
