@@ -41,10 +41,63 @@ public actor BrowsingHistoryWorkflow {
     /// metadata comes from the existing visit; all position fields come from
     /// the canonical target's independent progress record.
     public func refreshPosition(threadID: String, reader: BrowsingHistoryCategory, title: String = "", date: Date = .now) async {
+        await acquire()
+        defer { release() }
         do {
-            try await updateActivity(BrowsingHistoryVisit(threadID: threadID, title: title, reader: reader, date: date))
+            let visit = BrowsingHistoryVisit(threadID: threadID, title: title, reader: reader, date: date)
+            if try await !refreshCanonicalPosition(visit) {
+                _ = try await reconcile(visit: visit, mayCreate: false)
+            }
         } catch {
             YamiboLog.persistence.warning("Failed to refresh canonical browsing history: \(error)")
+        }
+    }
+
+    /// The common progress path only reads one canonical target. Identity
+    /// changes still use full reconciliation; configuration observers also
+    /// retain that path for changes affecting the entire timeline.
+    private func refreshCanonicalPosition(_ visit: BrowsingHistoryVisit) async throws -> Bool {
+        while true {
+            try Task.checkCancellation()
+            let settings = await settingsStore.loadBoardReaderSettings()
+            let tids = [visit.threadID]
+            let directories = try await directoryStore.directories(containingTIDs: tids)
+            let directoryTargetID = directories[visit.threadID].map {
+                FavoriteContentTarget(mangaID: $0.favoriteIdentity, mangaCleanBookName: $0.cleanBookName).id
+            }
+            let candidates = try await store.positionEntries(threadID: visit.threadID, directoryTargetID: directoryTargetID)
+            if candidates.isEmpty {
+                guard settings == (await settingsStore.loadBoardReaderSettings()),
+                      directories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
+                return true
+            }
+            guard candidates.count == 1, let existing = candidates.first else { return false }
+            guard visit.date >= existing.lastVisitTime else { return true }
+            var incoming = existing
+            incoming.lastVisitTime = visit.date
+            incoming.lastVisitedThreadID = visit.threadID
+            incoming.lastVisitedThreadTitle = visit.title.browsingHistoryTrimmedNonEmpty
+                ?? (existing.lastVisitedThreadID == visit.threadID ? existing.lastVisitedThreadTitle : nil)
+                ?? directories[visit.threadID]?.chapters.first(where: { $0.tid == visit.threadID })?.rawTitle
+                ?? existing.lastVisitedThreadTitle ?? visit.threadID
+            let forumIDs = existing.forumID == nil ? await resolveForumIDs(tids) : [:]
+            let target = Self.canonical(incoming, settings: settings, directories: directories, forumIDs: forumIDs, progress: [:]).target
+            guard target == existing.target else { return false }
+            let position = try await progressStore.load(for: target)
+            let progress = position.map { [$0.id: $0] } ?? [:]
+            let updated = Self.canonical(incoming, settings: settings, directories: directories, forumIDs: forumIDs, progress: progress)
+            guard try await store.canRecord(visit, targetID: updated.id) else { return true }
+            // Keep both pre-commit and post-commit checks: directory changes
+            // during either database await must be normalized before returning.
+            guard settings == (await settingsStore.loadBoardReaderSettings()),
+                  directories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
+            guard try await store.applyPositionEntry(updated, replacing: existing, visit: visit) else { continue }
+            guard settings == (await settingsStore.loadBoardReaderSettings()),
+                  directories == (try await directoryStore.directories(containingTIDs: tids)) else {
+                _ = try await reconcile()
+                return true
+            }
+            return true
         }
     }
 

@@ -11,6 +11,20 @@ public protocol NovelDownloadStoring: DownloadUpdateObserving {
         completesMatchingWork: Bool,
         preservesExistingImageReferencesWhenEmpty: Bool
     ) async throws
+    func saveNovelOfflineSourcePage(
+        _ sourcePage: ForumThreadPage,
+        request: NovelDownloadWorkRequest,
+        preparedProjection: NovelReaderProjection,
+        existingMetadata: NovelOfflineSourcePageMetadata?,
+        updatedAt: Date,
+        completesMatchingWork: Bool,
+        preservesExistingImageReferencesWhenEmpty: Bool
+    ) async throws -> Bool
+    func novelOfflineSourcePageMetadata(
+        threadID: String,
+        view: Int,
+        authorID: String?
+    ) async -> NovelOfflineSourcePageMetadata?
     func novelOfflineSourcePage(
         ownerTitle: String,
         threadID: String,

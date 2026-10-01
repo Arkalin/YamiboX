@@ -528,8 +528,14 @@ public final class YamiboAppModel {
         isReaderCoverVisible = false
     }
 
-    func switchReaderToOriginalPost(url: URL, resumeRoute: ReaderResumeRoute) async -> Bool {
-        await (currentReaderSession ?? presentedReaderSession)?.openOriginalPost(url: url, resumeRoute: resumeRoute) ?? false
+    func switchReaderToOriginalPost(
+        url: URL,
+        resumeRoute: ReaderResumeRoute,
+        saveProgress: @escaping @MainActor () async -> ReaderResumeRoute
+    ) async -> Bool {
+        await (currentReaderSession ?? presentedReaderSession)?.openOriginalPost(
+            url: url, resumeRoute: resumeRoute, saveProgress: saveProgress
+        ) ?? false
     }
 
     public func dismissNovelReader(

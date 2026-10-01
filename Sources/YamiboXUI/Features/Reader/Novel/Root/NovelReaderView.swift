@@ -57,7 +57,7 @@ public struct NovelReaderView: View {
     private let dependencies: NovelReaderDependencies
     private let forumDependencies: ForumNavigationDependencies
     private let onClose: () -> Void
-    private let onOpenOriginalPost: (URL, NovelLaunchContext) async -> Bool
+    private let onOpenOriginalPost: (URL, NovelLaunchContext, @escaping @MainActor () async -> NovelLaunchContext) async -> Bool
 
     public init(
         context: NovelLaunchContext,
@@ -65,7 +65,7 @@ public struct NovelReaderView: View {
         forumDependencies: ForumNavigationDependencies,
         appModel: YamiboAppModel,
         onClose: (() -> Void)? = nil,
-        onOpenOriginalPost: ((URL, NovelLaunchContext) async -> Bool)? = nil,
+        onOpenOriginalPost: ((URL, NovelLaunchContext, @escaping @MainActor () async -> NovelLaunchContext) async -> Bool)? = nil,
         onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil
     ) {
         let initialSettings = appModel.bootstrapState?.settings.novelReader
@@ -99,8 +99,10 @@ public struct NovelReaderView: View {
         self.dependencies = dependencies
         self.forumDependencies = forumDependencies
         self.onClose = onClose ?? { appModel.dismissNovelReader() }
-        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context in
-            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .novel(context))
+        self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context, saveProgress in
+            await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .novel(context)) {
+                .novel(await saveProgress())
+            }
         }
     }
 
@@ -255,9 +257,16 @@ public struct NovelReaderView: View {
 
                 if loadingOverlayPresentation.isPresented {
                     readerLoadingOverlay
+                        .background {
+                            NovelReaderNavigationOverlayDisplayProbe(
+                                revision: model.navigationOverlayRevision,
+                                didDisplay: model.navigationOverlayDidDisplay
+                            )
+                        }
                         .zIndex(1)
                 }
             }
+            .onAppear { model.setNavigationOverlayReporter(active: true) }
             .disabled(hasPresentedOverlay)
             // Hide only the reading surface's bar, not a presented panel's commands.
             .toolbar(.hidden, for: .navigationBar)
@@ -369,6 +378,7 @@ public struct NovelReaderView: View {
                 model.handleMemoryPressure()
             },
             onDisappear: {
+                model.setNavigationOverlayReporter(active: false)
                 appModel.peripheralInput.removeHandler(controlHandlerToken)
                 controlHandlerToken = nil
                 verticalRestore.cancelPendingRestoreWork()
@@ -693,9 +703,9 @@ public struct NovelReaderView: View {
         searchHighlightController.clear()
         syncVerticalViewportBeforeSave()
         let url = model.currentForumTargetURL
+        let context = model.currentResumeContext
         Task {
-            let context = await model.saveProgress()
-            if await onOpenOriginalPost(url, context) {
+            if await onOpenOriginalPost(url, context, { await model.saveProgress() }) {
                 model.close()
             } else {
                 isDismissing = false

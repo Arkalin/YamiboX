@@ -96,6 +96,7 @@ private struct MangaReaderLoadedContent: View {
     let onTap: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pagedCache = MangaPagedContentCache()
 
     /// Reduce Motion downgrades the 3D page-curl transition to the already
     /// available quick-fade style; direct-manipulation slide stays as is.
@@ -135,10 +136,9 @@ private struct MangaReaderLoadedContent: View {
                         isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
                         availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
                     )
-                    let plan = MangaPagedReadingPlan(
-                        pages: loaded.pages,
-                        currentPageIndex: loaded.currentPageIndex,
-                        pageTurnDirection: settings.pageTurnDirection,
+                    let plan = pagedCache.plan(
+                        loaded: loaded,
+                        direction: settings.pageTurnDirection,
                         usesTwoPageSpread: usesTwoPageSpread
                     )
                     if effectiveSettings.pagedTurnStyle == .pageCurl {
@@ -206,12 +206,62 @@ private struct MangaReaderLoadedContent: View {
         result.presentation = ReaderPageInformationPresentation(isPaged: true,
             isImmersive: settings.isImmersiveModeEnabled, isChromeVisible: isChromeVisible)
         result.selectedIndex = plan.currentSpreadIndex ?? 0
-        result.pages = MangaAttachedPageInformation.pages(plan: plan, workTitle: loaded.directoryTitle,
-            information: result.presentation) { page in
-                let rawTitle = loaded.directoryPanel.displayChapters.first { $0.tid == page.tid }?.rawTitle ?? page.chapterTitle
-                return MangaChapterDisplayFormatter.readerHeaderTitle(rawTitle: rawTitle, cleanBookName: loaded.directoryTitle)
-            }
+        result.pages = pagedCache.informationPages(isImmersive: settings.isImmersiveModeEnabled,
+                                                  isChromeVisible: isChromeVisible)
         return result
+    }
+}
+
+/// View-lifetime memoization, not observable state: selection and chrome reads
+/// reuse immutable window data without scheduling a second layout pass.
+@MainActor
+private final class MangaPagedContentCache {
+    private var basePlan: MangaPagedReadingPlan?
+    private var chapters: [MangaChapter] = []
+    private var workTitle = ""
+    private var informationVariants: [Int: [[ReaderAttachedPageInformation]]] = [:]
+
+    func plan(loaded: MangaReaderLoadedPresentation, direction: MangaPageTurnDirection,
+              usesTwoPageSpread: Bool) -> MangaPagedReadingPlan {
+        let structureChanged = basePlan?.pages != loaded.pages
+            || basePlan?.pageTurnDirection != direction
+            || basePlan?.usesTwoPageSpread != usesTwoPageSpread
+        if structureChanged {
+            basePlan = MangaPagedReadingPlan(pages: loaded.pages, currentPageIndex: nil,
+                pageTurnDirection: direction, usesTwoPageSpread: usesTwoPageSpread)
+        }
+        if structureChanged || chapters != loaded.directoryPanel.displayChapters || workTitle != loaded.directoryTitle {
+            chapters = loaded.directoryPanel.displayChapters
+            workTitle = loaded.directoryTitle
+            var titles: [String: String] = [:]
+            for chapter in chapters where titles[chapter.tid] == nil {
+                titles[chapter.tid] = MangaChapterDisplayFormatter.readerHeaderTitle(
+                    rawTitle: chapter.rawTitle, cleanBookName: workTitle)
+            }
+            for page in loaded.pages where titles[page.tid] == nil {
+                titles[page.tid] = MangaChapterDisplayFormatter.readerHeaderTitle(
+                    rawTitle: page.chapterTitle, cleanBookName: workTitle)
+            }
+            if let basePlan {
+                for immersive in [false, true] {
+                    for chrome in [false, true] {
+                        informationVariants[key(immersive, chrome)] = MangaAttachedPageInformation.pages(
+                            plan: basePlan, workTitle: workTitle,
+                            information: ReaderPageInformationPresentation(isPaged: true,
+                                isImmersive: immersive, isChromeVisible: chrome)) { titles[$0.tid] ?? $0.chapterTitle }
+                    }
+                }
+            }
+        }
+        return basePlan!.selectingPage(at: loaded.currentPageIndex)
+    }
+
+    func informationPages(isImmersive: Bool, isChromeVisible: Bool) -> [[ReaderAttachedPageInformation]] {
+        informationVariants[key(isImmersive, isChromeVisible)] ?? []
+    }
+
+    private func key(_ immersive: Bool, _ chrome: Bool) -> Int {
+        (immersive ? 2 : 0) + (chrome ? 1 : 0)
     }
 }
 

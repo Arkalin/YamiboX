@@ -12,6 +12,11 @@ final class ForumDestinationNavigator {
             if oldValue != path {
                 browserOpenID = nil
                 pathRevision = UUID()
+                let retained = Set(path.compactMap { destination -> ThreadNovelLaunchContext? in
+                    if case let .threadReader(context) = destination { return context }
+                    return nil
+                })
+                preloadedThreadPages = preloadedThreadPages.filter { retained.contains($0.key) }
             }
         }
     }
@@ -24,6 +29,12 @@ final class ForumDestinationNavigator {
     var transientFeedback: TransientFeedback?
     private(set) var isOpeningContent = false
     @ObservationIgnored private var contentOpenTask: Task<Void, Never>?
+    @ObservationIgnored private var preloadedThreadPages: [ThreadNovelLaunchContext: (generation: UUID, page: ForumThreadPage)] = [:]
+
+    func preloadedPage(for context: ThreadNovelLaunchContext) -> ForumThreadPage? {
+        guard let seed = preloadedThreadPages[context], seed.generation == actions.accountGeneration() else { return nil }
+        return seed.page
+    }
 
     @ObservationIgnored let dependencies: ForumNavigationDependencies
     @ObservationIgnored private let actions: ForumNavigationActions
@@ -232,10 +243,11 @@ final class ForumDestinationNavigator {
         let replacesDetail = fromBrowserList && browserUsesSplitNavigation
         let openID = UUID()
         if fromBrowserList { browserOpenID = openID }
+        let accountGeneration = actions.accountGeneration()
         return Task {
             do {
                 let resolver = await dependencies.forum.makeThreadRouteResolver()
-                let target = try await resolver.resolve(
+                let resolution = try await resolver.resolveWithPage(
                     YamiboThreadRouteRequest(
                         threadURL: url,
                         title: title,
@@ -245,11 +257,13 @@ final class ForumDestinationNavigator {
                     )
                 )
                 try Task.checkCancellation()
+                guard accountGeneration == actions.accountGeneration() else { return }
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
                 if replacesDetail { path = sourceListPath }
-                openYamiboThreadRouteTarget(target, isDiscussionView: isDiscussionView)
+                openYamiboThreadRouteTarget(resolution.target, preloadedPage: resolution.preloadedPage, isDiscussionView: isDiscussionView)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                   accountGeneration == actions.accountGeneration(),
                    !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
@@ -278,10 +292,11 @@ final class ForumDestinationNavigator {
         let replacesDetail = fromBrowserList && browserUsesSplitNavigation
         let openID = UUID()
         if fromBrowserList { browserOpenID = openID }
+        let accountGeneration = actions.accountGeneration()
         return Task {
             do {
                 let resolver = await dependencies.forum.makeThreadRouteResolver()
-                let target = try await resolver.resolve(
+                let resolution = try await resolver.resolveWithPage(
                     YamiboThreadRouteRequest(
                         threadURL: thread.url,
                         threadID: thread.tid,
@@ -293,11 +308,13 @@ final class ForumDestinationNavigator {
                     )
                 )
                 try Task.checkCancellation()
+                guard accountGeneration == actions.accountGeneration() else { return }
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
                 if replacesDetail { path = sourceListPath }
-                openYamiboThreadRouteTarget(target)
+                openYamiboThreadRouteTarget(resolution.target, preloadedPage: resolution.preloadedPage)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                   accountGeneration == actions.accountGeneration(),
                    !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
@@ -434,7 +451,9 @@ final class ForumDestinationNavigator {
                 )
                 switch destination {
                 case .normalThread:
-                    push(.threadReader(ThreadNovelLaunchContext(thread: thread, title: page.title)))
+                    let context = ThreadNovelLaunchContext(thread: thread, title: page.title)
+                    push(.threadReader(context))
+                    preloadedThreadPages[context] = (generation, page)
                 case .novelDetail:
                     push(.novelDetail(novelContext))
                 case .mangaDetail:
@@ -490,7 +509,7 @@ final class ForumDestinationNavigator {
         contentOpenTask?.cancel()
     }
 
-    private func openYamiboThreadRouteTarget(_ target: YamiboThreadRouteTarget, isDiscussionView: Bool = false) {
+    private func openYamiboThreadRouteTarget(_ target: YamiboThreadRouteTarget, preloadedPage: ForumThreadPage? = nil, isDiscussionView: Bool = false) {
         switch target {
         case let .novel(payload):
             let context = NovelDetailLaunchContext(
@@ -540,6 +559,9 @@ final class ForumDestinationNavigator {
                 isDiscussionView: isDiscussionView
             )
             push(.threadReader(context))
+            if let preloadedPage {
+                preloadedThreadPages[context] = (actions.accountGeneration(), preloadedPage)
+            }
         case let .webFallback(url):
             push(.webFallback(url))
         }

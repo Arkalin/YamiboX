@@ -24,6 +24,7 @@ final class DownloadQueueViewModel {
     var runState = DownloadQueueRunState.paused
     var groups: [DownloadQueueOwnerGroup] = []
     var entryCount = 0
+    private var summaryFailedCount = 0
     var isLoading = false
     var isCommandRunning = false
     var selectedWorkIDs: Set<DownloadWorkID> = []
@@ -42,6 +43,9 @@ final class DownloadQueueViewModel {
     @ObservationIgnored private var needsRefresh = false
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var displayedGeneration: UUID?
+    @ObservationIgnored private var visibleConsumers = 0
+    @ObservationIgnored private var directoryCache: [String: MangaDirectory] = [:]
+    @ObservationIgnored private var loadedDirectoryKeys: Set<String> = []
 
     init(
         dependencies: DownloadQueueDependencies,
@@ -65,7 +69,7 @@ final class DownloadQueueViewModel {
         !isEmpty
     }
 
-    var failedCount: Int { groups.reduce(0) { $0 + $1.chapters.filter { $0.state == .failed }.count } }
+    var failedCount: Int { summaryFailedCount }
 
     var summaryText: String {
         if loadFailure != nil { return L10n.string("common.load_failed") }
@@ -84,6 +88,22 @@ final class DownloadQueueViewModel {
     func load() async {
         startObservingUpdates()
         await refresh()
+    }
+
+    /// A view task owns heavy queue projection only for its visible lifetime.
+    /// A nested owner screen can overlap the root screen without stopping updates.
+    func loadWhileVisible() async {
+        visibleConsumers += 1
+        defer {
+            visibleConsumers -= 1
+            if visibleConsumers == 0 { revision += 1 }
+        }
+        await load()
+        do {
+            while !Task.isCancelled {
+                try await Task.sleep(for: .seconds(3_600))
+            }
+        } catch {}
     }
 
     func refresh() async {
@@ -107,9 +127,27 @@ final class DownloadQueueViewModel {
         do {
             let account = try await dependencies.sessionStore.snapshot()
             let store = dependencies.downloadStore
+            if displayedGeneration != account.generation {
+                directoryCache = [:]
+                loadedDirectoryKeys = []
+                groups = []
+                setSelectionMode(false)
+                errorMessage = nil
+            }
+            if visibleConsumers == 0 {
+                let summary = try await store.downloadQueueSummary(readerKind: nil)
+                try Task.checkCancellation()
+                guard await dependencies.sessionStore.isCurrentGeneration(account.generation), refreshRevision == revision else { return }
+                displayedGeneration = account.generation
+                entryCount = summary.entryCount
+                summaryFailedCount = summary.failedCount
+                runState = summary.runState
+                loadFailure = nil
+                return
+            }
             let works = try await store.downloadQueueWorks()
             let nextRunState = try await store.downloadQueueRunState()
-            let directoriesByOwnerName = await directoriesByOwnerName(for: works)
+            let directoriesByOwnerName = await directoriesByOwnerName(for: works, refreshRevision: refreshRevision)
             try Task.checkCancellation()
             guard await dependencies.sessionStore.isCurrentGeneration(account.generation), refreshRevision == revision else { return }
             if displayedGeneration != account.generation {
@@ -124,6 +162,7 @@ final class DownloadQueueViewModel {
             // Publish only after every required read succeeds.
             groups = projection.groups.map(DownloadQueueOwnerGroup.init(group:))
             entryCount = projection.unfinishedCount
+            summaryFailedCount = works.filter { $0.state == .failed }.count
             runState = nextRunState
             loadFailure = nil
 
@@ -289,8 +328,11 @@ final class DownloadQueueViewModel {
         let directoryUpdates = dependencies.mangaDirectoryStore.changes()
         directoryUpdatesTask = Task { @MainActor [weak self] in
             for await _ in directoryUpdates {
-                guard !Task.isCancelled else { return }
-                await self?.refresh()
+                guard !Task.isCancelled, let self else { return }
+                directoryCache = [:]
+                loadedDirectoryKeys = []
+                revision += 1
+                if visibleConsumers > 0 { await refresh() }
             }
         }
         let sessionChanges = dependencies.sessionStore.changes()
@@ -301,7 +343,10 @@ final class DownloadQueueViewModel {
                 guard generation != displayedGeneration else { continue }
                 revision += 1
                 groups = []
+                directoryCache = [:]
+                loadedDirectoryKeys = []
                 entryCount = 0
+                summaryFailedCount = 0
                 setSelectionMode(false)
                 loadFailure = nil
                 errorMessage = nil
@@ -311,18 +356,27 @@ final class DownloadQueueViewModel {
     }
 
     private func directoriesByOwnerName(
-        for works: [DownloadQueueWorkProjection]
+        for works: [DownloadQueueWorkProjection],
+        refreshRevision: Int
     ) async -> [String: MangaDirectory] {
         var directoriesByOwnerName: [String: MangaDirectory] = [:]
         for work in works.sorted(by: { $0.insertionIndex < $1.insertionIndex }) {
             guard work.groupID.readerKind == .manga else { continue }
             guard directoriesByOwnerName[work.groupID.ownerKey] == nil else { continue }
+            let key = work.groupID.ownerKey
+            if loadedDirectoryKeys.contains(key) {
+                directoriesByOwnerName[key] = directoryCache[key]
+                continue
+            }
             do {
-                if let directory = try await dependencies.mangaDirectoryStore.directory(
+                let directory = try await dependencies.mangaDirectoryStore.directory(
                     id: MangaDirectoryID(rawValue: work.groupID.ownerKey))
-                {
-                    directoriesByOwnerName[work.groupID.ownerKey] = directory
+                guard refreshRevision == revision, !Task.isCancelled else { return [:] }
+                if let directory {
+                    directoriesByOwnerName[key] = directory
+                    directoryCache[key] = directory
                 }
+                loadedDirectoryKeys.insert(key)
             } catch {
                 YamiboLog.download.warning("Failed to load manga directory metadata for offline download queue owner: \(error)")
             }

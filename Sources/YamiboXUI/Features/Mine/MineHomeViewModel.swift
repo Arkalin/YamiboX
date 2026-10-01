@@ -27,6 +27,7 @@ final class MineHomeViewModel {
     private let dependencies: AccountDependencies
     @ObservationIgnored private let checkInService: any YamiboCheckInServicing
     @ObservationIgnored private var lastAutomaticProfileRefreshCredential: String?
+    @ObservationIgnored private var queueLoadTask: Task<Void, Never>?
 
     init(
         dependencies: AccountDependencies,
@@ -53,6 +54,10 @@ final class MineHomeViewModel {
         session.isLoggedIn && SessionState.hasAuthenticationCookie(session.cookie)
     }
 
+    deinit {
+        queueLoadTask?.cancel()
+    }
+
     var isBusy: Bool {
         isLoading || isLoggingIn || isSigningOut || isCheckingIn
     }
@@ -62,8 +67,12 @@ final class MineHomeViewModel {
         isLoading = true
         defer { isLoading = false }
 
+        queueLoadTask?.cancel()
+        queueLoadTask = Task { [weak offlineQueue] in
+            guard let offlineQueue else { return }
+            await offlineQueue.load()
+        }
         await reloadAccountSnapshot()
-        await offlineQueue.load()
 
         guard isLoggedIn,
               let credential = SessionState.authenticationCookieValue(in: session.cookie) else {

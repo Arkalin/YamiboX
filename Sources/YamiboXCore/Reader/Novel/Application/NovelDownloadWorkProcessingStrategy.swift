@@ -2,6 +2,7 @@ import Foundation
 
 struct NovelDownloadPreparedPayload: Sendable {
     var sourcePage: ForumThreadPage
+    var projection: NovelReaderProjection
     var request: NovelDownloadWorkRequest
 }
 
@@ -37,6 +38,7 @@ struct NovelDownloadWorkProcessingStrategy: DownloadWorkProcessingStrategy {
             ).url,
             payload: NovelDownloadPreparedPayload(
                 sourcePage: prepared.sourcePage,
+                projection: prepared.projection,
                 request: sourcePageRequest
             )
         )
@@ -44,9 +46,11 @@ struct NovelDownloadWorkProcessingStrategy: DownloadWorkProcessingStrategy {
 
     func persistPreparedSource(_ preparedWork: DownloadPreparedWork<NovelDownloadPreparedPayload>) async throws {
         let request = preparedWork.payload.request
-        try await store.saveNovelOfflineSourcePage(
+        _ = try await store.saveNovelOfflineSourcePage(
             preparedWork.payload.sourcePage,
             request: request,
+            preparedProjection: preparedWork.payload.projection,
+            existingMetadata: nil,
             updatedAt: .now,
             completesMatchingWork: preparedWork.targetImageURLs.isEmpty,
             preservesExistingImageReferencesWhenEmpty: preparedWork.targetImageURLs.isEmpty && !request.retainsInlineImages

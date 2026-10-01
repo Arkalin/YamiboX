@@ -34,12 +34,17 @@ struct ReaderSessionDestinationView: View {
     let navigator: ForumDestinationNavigator
     let appModel: YamiboAppModel
 
-    init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator, appModel: YamiboAppModel) {
+    init(context: ThreadNovelLaunchContext, navigator: ForumDestinationNavigator, appModel: YamiboAppModel, preloadedPage: ForumThreadPage? = nil) {
         self.navigator = navigator
         self.appModel = appModel
-        _session = State(initialValue: appModel.makeReaderSession(
+        let session = appModel.makeReaderSession(
             content: .thread(context), presentation: .embeddedThread
-        ))
+        )
+        if let preloadedPage {
+            session.threadModel(for: context, dependencies: navigator.dependencies.forum)
+                .seedInitialPage(preloadedPage)
+        }
+        _session = State(initialValue: session)
     }
 
     var body: some View {
@@ -111,9 +116,11 @@ private struct ReaderSessionContentView: View {
                 forumDependencies: navigator.dependencies,
                 appModel: appModel,
                 onClose: { session.close() },
-                onOpenOriginalPost: { url, context in
+                onOpenOriginalPost: { url, context, saveProgress in
                     guard session.contentID == contentID else { return false }
-                    return await session.openOriginalPost(url: url, resumeRoute: .novel(context))
+                    return await session.openOriginalPost(url: url, resumeRoute: .novel(context)) {
+                        .novel(await saveProgress())
+                    }
                 },
                 onResumeRouteChange: { route in session.updateResumeRoute(route, contentID: contentID) }
             )
@@ -127,9 +134,11 @@ private struct ReaderSessionContentView: View {
                 appModel: appModel,
                 initialProjection: session.preparedMangaProjection,
                 onClose: { session.close() },
-                onOpenOriginalPost: { url, context in
+                onOpenOriginalPost: { url, context, saveProgress in
                     guard session.contentID == contentID else { return false }
-                    return await session.openOriginalPost(url: url, resumeRoute: .manga(context))
+                    return await session.openOriginalPost(url: url, resumeRoute: .manga(context)) {
+                        .manga(await saveProgress())
+                    }
                 },
                 onResumeRouteChange: { route in session.updateResumeRoute(route, contentID: contentID) }
             )

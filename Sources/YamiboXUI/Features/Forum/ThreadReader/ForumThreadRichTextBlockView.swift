@@ -20,8 +20,7 @@ struct ForumThreadRichTextBlockView: View {
 
     var body: some View {
         ForumThreadNativeTextView(
-            text: ForumThreadTextBlockFormatter(block: block, theme: theme).nativeText(images: images, imageSize: imageSize),
-            annotationColor: UIColor(theme.secondaryText), hasRuby: !block.rubies.isEmpty,
+            block: block, theme: theme, images: images, imageSize: imageSize,
             dynamicTypeSize: dynamicTypeSize, onURLTap: onURLTap
         )
         .frame(maxWidth: .infinity, alignment: block.alignment.swiftUIFrameAlignment)
@@ -71,6 +70,10 @@ extension NSAttributedString.Key {
     static let forumRuby = NSAttributedString.Key("yamibo.forum.ruby")
 }
 
+final class ForumThreadInlineAttachment: NSTextAttachment {
+    var sourceURL: URL?
+}
+
 final class ForumThreadRubyAnnotation: NSObject {
     let text: String
     let range: NSRange
@@ -89,9 +92,10 @@ final class ForumThreadRubyAnnotation: NSObject {
 }
 
 private struct ForumThreadNativeTextView: UIViewRepresentable {
-    let text: NSAttributedString
-    let annotationColor: UIColor
-    let hasRuby: Bool
+    let block: ForumThreadTextBlock
+    let theme: ForumTheme
+    let images: [URL: UIImage]
+    let imageSize: CGFloat
     let dynamicTypeSize: DynamicTypeSize
     let onURLTap: (URL) -> Void
 
@@ -121,15 +125,45 @@ private struct ForumThreadNativeTextView: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onURLTap = onURLTap
         if let layout = view.layoutManager as? ForumThreadRubyLayoutManager {
-            layout.annotationColor = annotationColor
+            layout.annotationColor = UIColor(theme.secondaryText)
         }
-        let inset = hasRuby ? UIFont.preferredFont(forTextStyle: .caption2).lineHeight + 2 : 0
-        view.textContainerInset = UIEdgeInsets(top: inset, left: 0, bottom: 0, right: 0)
-        if !view.attributedText.isEqual(to: text) {
+        let inset = block.rubies.isEmpty ? 0 : UIFont.preferredFont(forTextStyle: .caption2).lineHeight + 2
+        let insets = UIEdgeInsets(top: inset, left: 0, bottom: 0, right: 0)
+        if view.textContainerInset != insets { view.textContainerInset = insets }
+        let coordinator = context.coordinator
+        let pointSize = UIFont.preferredFont(forTextStyle: .body).pointSize
+        if coordinator.block != block || coordinator.themeID != theme.id
+            || coordinator.dynamicTypeSize != dynamicTypeSize || coordinator.pointSize != pointSize
+            || coordinator.imageSize != imageSize {
+            let text = ForumThreadTextBlockFormatter(block: block, theme: theme).nativeText(images: images, imageSize: imageSize)
             let selection = view.selectedRange
             view.attributedText = text
             if NSMaxRange(selection) <= text.length { view.selectedRange = selection }
+            coordinator.block = block
+            coordinator.themeID = theme.id
+            coordinator.dynamicTypeSize = dynamicTypeSize
+            coordinator.pointSize = pointSize
+            coordinator.imageSize = imageSize
+            coordinator.images = images
+            coordinator.attachments = [:]
+            // Capture TextKit's actual attachment instances once. Frame changes
+            // mutate only their images, never the selectable text or its metrics.
+            view.textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                guard let attachment = value as? ForumThreadInlineAttachment,
+                      let url = attachment.sourceURL else { return }
+                coordinator.attachments[url, default: []].append((attachment, range))
+            }
             view.invalidateIntrinsicContentSize()
+        } else {
+            for (url, attachments) in coordinator.attachments where coordinator.images[url] !== images[url] {
+                let source = images[url] ?? UIImage(systemName: "face.smiling") ?? UIImage()
+                let image = ForumThreadInlineTextView.sizedUIImage(source, dimension: imageSize)
+                for (attachment, range) in attachments {
+                    attachment.image = image
+                    view.layoutManager.invalidateDisplay(forCharacterRange: range)
+                }
+            }
+            coordinator.images = images
         }
         view.setNeedsDisplay()
     }
@@ -142,6 +176,13 @@ private struct ForumThreadNativeTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var onURLTap: (URL) -> Void
+        var block: ForumThreadTextBlock?
+        var themeID: String?
+        var dynamicTypeSize: DynamicTypeSize?
+        var pointSize: CGFloat?
+        var imageSize: CGFloat?
+        var images: [URL: UIImage] = [:]
+        var attachments: [URL: [(NSTextAttachment, NSRange)]] = [:]
         init(onURLTap: @escaping (URL) -> Void) { self.onURLTap = onURLTap }
 
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {

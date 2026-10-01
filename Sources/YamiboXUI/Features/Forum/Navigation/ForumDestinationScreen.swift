@@ -117,7 +117,7 @@ struct ForumDestinationScreen: View {
         case let .mangaDetail(context):
             detailScreen(.manga(context))
         case let .threadReader(context):
-            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel)
+            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel, preloadedPage: navigator.preloadedPage(for: context))
             .forumNavigationBarStyle()
         case let .threadLink(url, title, containingFid, authorID, isDiscussionView):
             ForumThreadLinkScreen(
@@ -172,7 +172,7 @@ struct ForumThreadLinkScreen: View {
 
     private enum Resolution {
         case resolving
-        case thread(ThreadNovelLaunchContext)
+        case thread(ThreadNovelLaunchContext, ForumThreadPage?)
         case web(URL)
         case failed(LoadFailureDetails)
     }
@@ -194,8 +194,8 @@ struct ForumThreadLinkScreen: View {
             )
             .navigationTitle(title ?? L10n.string("forum.default_title"))
             .yamiboInlineNavigationTitleDisplayMode()
-        case let .thread(context):
-            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel)
+        case let .thread(context, page):
+            ForumThreadDestinationView(context: context, navigator: navigator, appModel: appModel, preloadedPage: page)
         case let .web(webURL):
             ForumURLDestinationView(url: webURL, navigator: navigator, appModel: appModel, fallback: true)
         case let .failed(details):
@@ -213,8 +213,9 @@ struct ForumThreadLinkScreen: View {
     private func resolveIfNeeded() async {
         guard case .resolving = resolution else { return }
         let resolver = await navigator.dependencies.forum.makeThreadRouteResolver()
+        let accountGeneration = appModel.accountGeneration
         do {
-            let target = try await resolver.resolve(
+            let resolved = try await resolver.resolveWithPage(
                 YamiboThreadRouteRequest(
                     threadURL: url,
                     title: title,
@@ -223,20 +224,23 @@ struct ForumThreadLinkScreen: View {
                     tapContext: YamiboThreadTapContext(containingFid: containingFid)
                 )
             )
-            switch target {
+            try Task.checkCancellation()
+            guard accountGeneration == appModel.accountGeneration else { return }
+            switch resolved.target {
             case let .thread(payload), let .novel(payload), let .manga(payload), let .mangaDirect(payload):
                 guard !payload.thread.tid.isEmpty else {
                     resolution = .web(url)
                     return
                 }
                 resolution = .thread(
-                    navigator.threadLinkLaunchContext(for: payload, isDiscussionView: isDiscussionView)
+                    navigator.threadLinkLaunchContext(for: payload, isDiscussionView: isDiscussionView), resolved.preloadedPage
                 )
             case let .webFallback(fallbackURL):
                 resolution = .web(fallbackURL)
             }
         } catch {
-            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
+                  accountGeneration == appModel.accountGeneration else { return }
             resolution = .failed(LoadFailureDetails(error: error, requestContext: url.absoluteString))
         }
     }
@@ -322,17 +326,18 @@ private struct ForumThreadDestinationView: View {
     let context: ThreadNovelLaunchContext
     let navigator: ForumDestinationNavigator
     let appModel: YamiboAppModel
+    var preloadedPage: ForumThreadPage? = nil
 
     var body: some View {
         if navigator.mode == .readerOverlay {
             ForumThreadReaderView(
-                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies.forum),
+                model: ForumThreadReaderViewModel(context: context, dependencies: navigator.dependencies.forum, preloadedPage: preloadedPage),
                 submissionChange: appModel.forumContentRefresh.threadChange(context.thread.tid),
                 onUserTap: { navigator.openUserSpace(uid: $0, name: $1) },
                 onURLTap: { navigator.route($0, source: .external) }
             )
         } else {
-            ReaderSessionDestinationView(context: context, navigator: navigator, appModel: appModel)
+            ReaderSessionDestinationView(context: context, navigator: navigator, appModel: appModel, preloadedPage: preloadedPage)
         }
     }
 }

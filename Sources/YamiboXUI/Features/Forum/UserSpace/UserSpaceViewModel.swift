@@ -31,10 +31,18 @@ final class UserSpaceViewModel {
     }
     private(set) var addFriendErrorDetails: LoadFailureDetails?
     var addFriendResultMessage: String?
-    var errorMessage: String? {
-        didSet { errorDetails = nil }
+    private var contentErrorMessage: String? {
+        didSet { contentErrorDetails = nil }
     }
-    private(set) var errorDetails: LoadFailureDetails?
+    private var contentErrorDetails: LoadFailureDetails?
+    private var profileErrorMessage: String?
+    private var profileErrorDetails: LoadFailureDetails?
+    var errorMessage: String? {
+        selectedSubPage == .profile ? profileErrorMessage : contentErrorMessage
+    }
+    var errorDetails: LoadFailureDetails? {
+        selectedSubPage == .profile ? profileErrorDetails : contentErrorDetails
+    }
 
     let uid: String?
     let titleHint: String?
@@ -146,11 +154,13 @@ final class UserSpaceViewModel {
 
     func load() async {
         await resolveIsSelf()
-        if profile == nil {
-            await loadProfile()
+        guard !Task.isCancelled else { return }
+        if selectedSubPage == .profile {
+            if profile == nil { await loadProfile() }
+        } else {
+            // List endpoints depend on uid, not the profile response.
+            await loadSelectedSubPage(page: currentPage)
         }
-        guard selectedSubPage != .profile else { return }
-        await loadSelectedSubPage(page: currentPage)
     }
 
     func refresh() async {
@@ -183,7 +193,7 @@ final class UserSpaceViewModel {
         selectedSubPage = subPage
         selectedSection = subPage.section
         currentPage = 1
-        errorMessage = nil
+        contentErrorMessage = nil
         content = nil
         if subPage == .profile {
             if profile == nil {
@@ -286,10 +296,12 @@ final class UserSpaceViewModel {
     }
 
     private func loadProfile() async {
+        guard !Task.isCancelled else { return }
         profileGeneration += 1
         let requestGeneration = profileGeneration
         isLoadingProfile = true
-        errorMessage = nil
+        profileErrorMessage = nil
+        profileErrorDetails = nil
         defer {
             if requestGeneration == profileGeneration {
                 isLoadingProfile = false
@@ -298,23 +310,26 @@ final class UserSpaceViewModel {
 
         do {
             let repository = await repositoryProvider()
-            let loadedProfile = try await repository.fetchProfile(uid: uid, titleHint: titleHint)
+            try Task.checkCancellation()
             guard requestGeneration == profileGeneration else { return }
+            let loadedProfile = try await repository.fetchProfile(uid: uid, titleHint: titleHint)
+            guard !Task.isCancelled, requestGeneration == profileGeneration else { return }
             profile = loadedProfile
         } catch {
             guard requestGeneration == profileGeneration else { return }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
+                profileErrorMessage = error.localizedDescription
+                profileErrorDetails = LoadFailureDetails(error: error)
             }
         }
     }
 
     private func loadSelectedSubPage(page: Int) async {
+        guard !Task.isCancelled else { return }
         contentGeneration += 1
         let requestGeneration = contentGeneration
         isLoadingContent = true
-        errorMessage = nil
+        contentErrorMessage = nil
         defer {
             if requestGeneration == contentGeneration {
                 isLoadingContent = false
@@ -323,6 +338,8 @@ final class UserSpaceViewModel {
 
         do {
             let repository = await repositoryProvider()
+            try Task.checkCancellation()
+            guard requestGeneration == contentGeneration else { return }
             let loadedContent: Content?
             switch selectedSubPage {
             case .profile:
@@ -346,7 +363,7 @@ final class UserSpaceViewModel {
             case .traces:
                 loadedContent = .friends(try await repository.fetchFriendPage(type: .myTrace, page: page))
             }
-            guard requestGeneration == contentGeneration else { return }
+            guard !Task.isCancelled, requestGeneration == contentGeneration else { return }
             content = loadedContent
             currentPage = pageNavigation?.currentPage ?? page
         } catch {
@@ -354,8 +371,8 @@ final class UserSpaceViewModel {
             content = nil
             currentPage = page
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
-                errorMessage = error.localizedDescription
-                errorDetails = LoadFailureDetails(error: error)
+                contentErrorMessage = error.localizedDescription
+                contentErrorDetails = LoadFailureDetails(error: error)
             }
         }
     }

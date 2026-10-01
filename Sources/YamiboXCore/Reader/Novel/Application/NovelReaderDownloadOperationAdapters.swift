@@ -109,8 +109,8 @@ struct NovelOfflineStoreReaderDownloadOperationAdapter: NovelReaderDownloadOpera
     }
 
     private func continueDownloadQueueIfAllowed() async throws {
-        let works = try await store.downloadQueueWorks()
-        guard works.allSatisfy({ $0.state != .failed }) else { return }
+        let summary = try await store.downloadQueueSummary(readerKind: nil)
+        guard summary.failedCount == 0 else { return }
         try await continueDownloadQueue?()
     }
 }

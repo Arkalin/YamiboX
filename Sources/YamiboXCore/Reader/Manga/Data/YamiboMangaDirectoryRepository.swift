@@ -16,7 +16,8 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
             let html = try await client.fetchThreadById(tid: tid)
             try MangaReaderDataSupport.validateReadableMangaHTML(html)
 
-            let rawTitle = MangaHTMLParser.extractThreadTitle(from: html)?.nilIfBlank ?? tid
+            let facts = MangaHTMLParser.parseDirectorySeed(from: html, baseURL: normalizedURL)
+            let rawTitle = facts.title?.nilIfBlank ?? tid
             let cleanedThreadTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).nilIfBlank
                 ?? rawTitle.nilIfBlank
                 ?? tid
@@ -29,19 +30,17 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                 chapterNumber: MangaTitleCleaner.extractChapterNumber(rawTitle),
                 view: 1
             )
-            let mobileTagIDs = MangaHTMLParser.findTagIDsMobile(in: html)
-            let tagIDs = mobileTagIDs.isEmpty ? MangaHTMLParser.findTagIDs(in: html) : mobileTagIDs
             let samePageChapters = deduplicatedSamePageChapters(
-                MangaHTMLParser.extractSamePageLinks(from: html, baseURL: normalizedURL),
+                facts.samePageChapters,
                 excluding: tid
             )
 
             return MangaDirectorySeed(
                 currentChapter: currentChapter,
-                tagIDs: tagIDs,
+                tagIDs: facts.tagIDs,
                 samePageChapters: samePageChapters,
                 cleanBookName: cleanBookName,
-                firstPostID: MangaHTMLParser.extractFirstPostID(from: html)
+                firstPostID: facts.firstPostID
             )
         }
     }

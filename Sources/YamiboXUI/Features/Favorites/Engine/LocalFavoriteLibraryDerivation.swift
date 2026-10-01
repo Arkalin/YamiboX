@@ -1,9 +1,8 @@
 import Foundation
 import YamiboXCore
 
-/// Filter and sort inputs for the favorites library. Any change to this value
-/// triggers one full re-derivation of `LocalFavoriteDerivedState`.
-struct LocalFavoriteFilterState: Equatable {
+/// Filter and sort inputs for the favorites library's visible slice.
+struct LocalFavoriteFilterState: Equatable, Sendable {
     var selectedSourceFilters: Set<LocalFavoriteSourceFilter> = []
     var selectedTagIDs: Set<String> = []
     var sortOrder: LocalFavoriteLibrarySortOrder = .organization
@@ -41,14 +40,14 @@ struct FavoriteLibraryDisplayState: Equatable {
 /// collection as more merged than its own card list actually shows.
 /// `LocalFavoriteLibraryDerivation.collectionPreviewTiles(_:mangaThreadItemsByGroupKey:)`
 /// is what performs the resolved-directory collapsing.
-struct LocalFavoriteCollectionPreviewTile: Equatable {
+struct LocalFavoriteCollectionPreviewTile: Equatable, Sendable {
     let coverURL: URL?
     let title: String
 }
 
 /// Everything the favorites UI renders that is computed from the library
 /// document plus filter state. Produced only by `LocalFavoriteLibraryDerivation`.
-struct LocalFavoriteDerivedState: Equatable {
+struct LocalFavoriteDerivedState: Equatable, Sendable {
     var cards: [FavoriteCardProjection] = []
     var visibleCollections: [LocalFavoriteCollection] = []
     /// Collections and cards merged into the order the list/grid renders —
@@ -66,10 +65,18 @@ struct LocalFavoriteDerivedState: Equatable {
 }
 
 /// Pure computation: (document, navigation, filter, progress, covers) -> derived state.
-/// This is the single data flow for card rebuilding; there are no incremental
-/// update paths.
+/// Structural data is reused while filter-dependent display slices are rebuilt.
 enum LocalFavoriteLibraryDerivation {
-    struct Inputs {
+    /// Owned by a shelf, not global: no account or isolated-store crossover.
+    final class Cache {
+        fileprivate var structuralInputs: Inputs?
+        fileprivate var groups: [String: [FavoriteItem]] = [:]
+        fileprivate var previews: [String: [LocalFavoriteCollectionPreviewTile]] = [:]
+        fileprivate var globalInputs: Inputs?
+        fileprivate var aggregates: [String: CollectionAggregate] = [:]
+        fileprivate var categoryCounts: [String: Int] = [:]
+    }
+    struct Inputs: Sendable {
         var document: FavoriteLibraryDocument
         var selectedCategoryID: String
         var selectedCollectionID: String?
@@ -109,25 +116,23 @@ enum LocalFavoriteLibraryDerivation {
         var memberScopeThreadIDs: Set<String>? = nil
     }
 
-    static func derive(_ inputs: Inputs) -> LocalFavoriteDerivedState {
-        // Computed once per `derive(_:)` call and threaded into every one of
-        // this single derive's several internal `resolvedCards`/
-        // `cardsAcrossAllScopes` calls (the main `cards` call below, the one
-        // `allCardsAcrossScopes` call backing both `categoryEntryCounts` and
-        // `collectionAggregates`, and `sourceFilterEntryCounts`'s call) —
-        // without this, each of those calls would independently rebuild the
-        // same grouping from `inputs.document.items`, and
-        // `LocalFavoriteLibraryProjection.cards(...)` would additionally
-        // rebuild it once per smart card on top of that. Always freshly
-        // computed here, at the top of every `derive(_:)` call, from the
-        // CURRENT `inputs.document.items` — never hoisted up into
-        // `FavoriteLibraryOrganizer` or cached across separate `derive(_:)`
-        // calls, since `document.items` can change on every commit.
-        var mangaThreadItemsByGroupKey = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
+    static func derive(_ inputs: Inputs, cache: Cache = Cache()) -> LocalFavoriteDerivedState {
+        let previous = cache.structuralInputs
+        let structureChanged = previous?.document != inputs.document
+            || previous?.mangaDirectoriesByTID != inputs.mangaDirectoriesByTID
+            || previous?.boardReaderSettings != inputs.boardReaderSettings
+        if structureChanged {
+            cache.groups = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: inputs.document.items,
             mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
             boardReaderSettings: inputs.boardReaderSettings
-        )
+            )
+        }
+        if structureChanged || previous?.coverURLsByKey != inputs.coverURLsByKey {
+            cache.previews = collectionPreviewTiles(inputs, mangaThreadItemsByGroupKey: cache.groups)
+        }
+        cache.structuralInputs = inputs
+        var mangaThreadItemsByGroupKey = cache.groups
         if let key = inputs.memberScopeGroupKey, let threadIDs = inputs.memberScopeThreadIDs {
             mangaThreadItemsByGroupKey[key] = inputs.document.items.filter {
                 $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID ?? "") &&
@@ -163,19 +168,32 @@ enum LocalFavoriteLibraryDerivation {
         // NOT run through `resolvedCards`'s cover overlay — neither a count
         // nor `FavoriteCollectionSortSummary` reads `coverURL`/
         // `textCoverForced`, so overlaying it here would be pure waste.
-        let allCardsAcrossScopes = LocalFavoriteLibraryProjection.cardsAcrossAllScopes(
-            in: inputs.document,
-            query: LocalFavoriteLibraryQuery(
-                selectedSourceFilters: inputs.filter.selectedSourceFilters,
-                selectedTagIDs: inputs.filter.selectedTagIDs,
-                searchText: inputs.filter.searchText
-            ),
-            readingProgress: inputs.readingProgress,
-            mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
-            boardReaderSettings: inputs.boardReaderSettings,
-            mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey
-        )
-        let aggregates = collectionAggregates(inputs, allCardsAcrossScopes: allCardsAcrossScopes)
+        let globalChanged = structureChanged
+            || cache.globalInputs?.filter.selectedSourceFilters != inputs.filter.selectedSourceFilters
+            || cache.globalInputs?.filter.selectedTagIDs != inputs.filter.selectedTagIDs
+            || cache.globalInputs?.filter.searchText != inputs.filter.searchText
+            || cache.globalInputs?.readingProgress != inputs.readingProgress
+        if globalChanged {
+            let allCardsAcrossScopes = LocalFavoriteLibraryProjection.cardsAcrossAllScopes(
+                in: inputs.document,
+                query: LocalFavoriteLibraryQuery(
+                    selectedSourceFilters: inputs.filter.selectedSourceFilters,
+                    selectedTagIDs: inputs.filter.selectedTagIDs,
+                    searchText: inputs.filter.searchText
+                ),
+                readingProgress: inputs.readingProgress,
+                mangaDirectoriesByTID: inputs.mangaDirectoriesByTID,
+                boardReaderSettings: inputs.boardReaderSettings,
+                mangaThreadItemsByGroupKey: cache.groups
+            )
+            cache.aggregates = collectionAggregates(inputs, allCardsAcrossScopes: allCardsAcrossScopes)
+            cache.categoryCounts = categoryEntryCounts(
+                inputs, collectionEntryCounts: cache.aggregates.mapValues(\.entryCount),
+                allCardsAcrossScopes: allCardsAcrossScopes
+            )
+            cache.globalInputs = inputs
+        }
+        let aggregates = cache.aggregates
         let collectionCounts = aggregates.mapValues(\.entryCount)
         let collections = visibleCollections(
             in: inputs.document,
@@ -203,14 +221,10 @@ enum LocalFavoriteLibraryDerivation {
                 sortOrder: inputs.filter.sortOrder,
                 descending: inputs.filter.sortDescending
             ),
-            categoryEntryCounts: categoryEntryCounts(
-                inputs,
-                collectionEntryCounts: collectionCounts,
-                allCardsAcrossScopes: allCardsAcrossScopes
-            ),
+            categoryEntryCounts: cache.categoryCounts,
             collectionEntryCounts: collectionCounts,
             sourceFilterEntryCounts: sourceFilterEntryCounts(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey),
-            collectionPreviewTiles: collectionPreviewTiles(inputs, mangaThreadItemsByGroupKey: mangaThreadItemsByGroupKey)
+            collectionPreviewTiles: cache.previews
         )
     }
 
@@ -280,7 +294,7 @@ enum LocalFavoriteLibraryDerivation {
         })
     }
 
-    private struct CollectionAggregate {
+    fileprivate struct CollectionAggregate {
         var entryCount: Int
         var sortSummary: FavoriteCollectionSortSummary
     }
@@ -323,9 +337,15 @@ enum LocalFavoriteLibraryDerivation {
         _ inputs: Inputs,
         mangaThreadItemsByGroupKey: [String: [FavoriteItem]]
     ) -> [String: [LocalFavoriteCollectionPreviewTile]] {
-        Dictionary(uniqueKeysWithValues: inputs.document.collections.map { collection in
+        var membersByLocation: [FavoriteLocation: [FavoriteItem]] = [:]
+        for item in inputs.document.items {
+            for location in item.locations {
+                if case .collection = location { membersByLocation[location, default: []].append(item) }
+            }
+        }
+        return Dictionary(uniqueKeysWithValues: inputs.document.collections.map { collection in
             let location = FavoriteLocation.collection(categoryID: collection.categoryID, collectionID: collection.id)
-            let members = inputs.document.items.filter { $0.locations.contains(location) }
+            let members = membersByLocation[location] ?? []
 
             // Every member gets a tile — image-backed when a cover resolves,
             // otherwise its own title for a text-fallback tile — EXCEPT a
@@ -397,9 +417,14 @@ enum LocalFavoriteLibraryDerivation {
                 candidates.append(CollectionPreviewCandidate(sortDate: sortDate, coverURL: coverURL, title: effectiveTitle))
             }
 
-            let tiles = candidates
-                .sorted { $0.sortDate > $1.sortDate }
-                .prefix(4)
+            // Stable bounded selection, avoiding sorting all collection members.
+            var newest: [CollectionPreviewCandidate] = []
+            for candidate in candidates {
+                let index = newest.firstIndex { $0.sortDate < candidate.sortDate } ?? newest.endIndex
+                if index < 4 { newest.insert(candidate, at: index) }
+                if newest.count > 4 { newest.removeLast() }
+            }
+            let tiles = newest
                 .map { LocalFavoriteCollectionPreviewTile(coverURL: $0.coverURL, title: $0.title) }
             return (collection.id, Array(tiles))
         })
@@ -459,5 +484,20 @@ enum LocalFavoriteLibraryDerivation {
                 }
                 return lhs.id < rhs.id
             }
+    }
+}
+
+/// Serial ownership of reusable derivation data off the UI actor. Old requests
+/// may finish computation, but only the organizer's latest generation publishes.
+actor FavoriteLibraryDerivationWorker {
+    private let cache = LocalFavoriteLibraryDerivation.Cache()
+
+    func derive(_ inputs: LocalFavoriteLibraryDerivation.Inputs,
+                rootInputs: LocalFavoriteLibraryDerivation.Inputs?) throws -> (LocalFavoriteDerivedState, LocalFavoriteDerivedState) {
+        try Task.checkCancellation()
+        let scoped = LocalFavoriteLibraryDerivation.derive(inputs, cache: cache)
+        try Task.checkCancellation()
+        let root = rootInputs.map { LocalFavoriteLibraryDerivation.derive($0, cache: cache) } ?? scoped
+        return (scoped, root)
     }
 }

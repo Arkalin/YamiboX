@@ -9,6 +9,7 @@ public actor FavoriteLibraryStore {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    private var decodedDocument: (json: String?, document: FavoriteLibraryDocument)?
 
     public init(
         defaults: UserDefaults = .standard,
@@ -29,9 +30,14 @@ public actor FavoriteLibraryStore {
     /// which reads and writes the current document in one transaction.
     public func load() async throws -> FavoriteLibraryDocument {
         do {
-            return try await database.read { db in
-                try Self.loadDocument(in: db)
+            let json = try await database.read { db in
+                try String.fetchOne(db, sql: "SELECT document_json FROM favorite_library_document WHERE id = 1")
             }
+            if let cached = decodedDocument, cached.json == json { return cached.document }
+            let document = try json.map { try JSONDecoder().decode(FavoriteLibraryDocument.self, from: Data($0.utf8)) }
+                ?? FavoriteLibraryDocument()
+            decodedDocument = (json, document)
+            return document
         } catch is CancellationError {
             throw CancellationError()
         } catch {

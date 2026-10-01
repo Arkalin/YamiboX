@@ -24,6 +24,7 @@ final class DownloadManagementViewModel {
     @ObservationIgnored private var needsRefresh = false
     @ObservationIgnored private var displayedGeneration: UUID?
     @ObservationIgnored private var loadingID: UUID?
+    @ObservationIgnored private var displayedSnapshot: DownloadManagementSnapshot?
 
     init(
         downloadStore: any DownloadManagementStoring,
@@ -62,6 +63,7 @@ final class DownloadManagementViewModel {
 
     func restoreDefaultsAfterApplicationReset() {
         revision += 1
+        displayedSnapshot = nil
         downloadManagementRows = []
         selectedDownloadGroupIDs = []
         isDownloadManagementSelectionMode = false
@@ -251,8 +253,14 @@ final class DownloadManagementViewModel {
             return
         }
         loadFailure = nil
-        downloadManagementRows = snapshot.groups
-            .map(DownloadManagementRow.init(group:))
+        guard snapshot != displayedSnapshot else { return }
+        let oldGroups = Dictionary(uniqueKeysWithValues: (displayedSnapshot?.groups ?? []).map { ($0.id, $0) })
+        let oldRows = Dictionary(uniqueKeysWithValues: downloadManagementRows.map { ($0.id, $0) })
+        let nextRows = snapshot.groups
+            .map { group in
+                if oldGroups[group.id] == group, let row = oldRows[group.id] { return row }
+                return DownloadManagementRow(group: group)
+            }
             .filter { !$0.entries.isEmpty }
             .sorted { lhs, rhs in
                 let titleComparison = lhs.title.localizedStandardCompare(rhs.title)
@@ -261,6 +269,8 @@ final class DownloadManagementViewModel {
                 }
                 return lhs.id.ownerKey.localizedStandardCompare(rhs.id.ownerKey) == .orderedAscending
             }
+        displayedSnapshot = snapshot
+        if nextRows != downloadManagementRows { downloadManagementRows = nextRows }
 
         let visibleIDs = Set(downloadManagementRows.map(\.id))
         selectedDownloadGroupIDs.formIntersection(visibleIDs)

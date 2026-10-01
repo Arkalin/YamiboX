@@ -99,7 +99,7 @@ struct BrowsingHistoryView: View {
             if let categorySelection, categorySelection.wrappedValue != model.selectedFilter {
                 categorySelection.wrappedValue = model.selectedFilter
             }
-            Task { await model.reload() }
+            model.applyFilter()
         }
         .onChange(of: categorySelection?.wrappedValue, initial: true) { _, selected in
             if let selected, model.selectedFilter != selected {
@@ -107,7 +107,7 @@ struct BrowsingHistoryView: View {
             }
         }
         .onChange(of: model.searchText) {
-            model.scheduleReload()
+            model.scheduleFilter()
         }
         .transientMessage(model.transientFeedback, bottomPadding: 24) {
             model.clearTransientMessage()

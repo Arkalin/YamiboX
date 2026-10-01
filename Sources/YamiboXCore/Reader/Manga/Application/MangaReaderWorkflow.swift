@@ -305,10 +305,9 @@ public final class MangaReaderWorkflow {
     public nonisolated(nonsending) func prefetchAdjacentChaptersIfNeeded(around globalIndex: Int) async -> MangaReaderPresentation? {
         guard let window else { return nil }
 
-        let pages = MangaReaderPageProjection.projections(from: window)
         let deltas = adjacentPrefetchPolicy.triggeredDeltas(
             globalIndex: globalIndex,
-            pageCount: pages.count
+            pageCount: window.pages.count
         )
         guard !deltas.isEmpty else { return nil }
 

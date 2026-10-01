@@ -9,10 +9,42 @@ extension DownloadStore {
         completesMatchingWork: Bool = true,
         preservesExistingImageReferencesWhenEmpty: Bool = false
     ) async throws {
+        _ = try await persistNovelOfflineSourcePage(
+            sourcePage, request: request, preparedProjection: nil, existingMetadata: nil, updatedAt: updatedAt,
+            completesMatchingWork: completesMatchingWork,
+            preservesExistingImageReferencesWhenEmpty: preservesExistingImageReferencesWhenEmpty
+        )
+    }
+
+    func saveNovelOfflineSourcePage(
+        _ sourcePage: ForumThreadPage,
+        request: NovelDownloadWorkRequest,
+        preparedProjection: NovelReaderProjection,
+        existingMetadata: NovelOfflineSourcePageMetadata?,
+        updatedAt: Date,
+        completesMatchingWork: Bool,
+        preservesExistingImageReferencesWhenEmpty: Bool
+    ) async throws -> Bool {
+        try await persistNovelOfflineSourcePage(
+            sourcePage, request: request, preparedProjection: preparedProjection, existingMetadata: existingMetadata, updatedAt: updatedAt,
+            completesMatchingWork: completesMatchingWork,
+            preservesExistingImageReferencesWhenEmpty: preservesExistingImageReferencesWhenEmpty
+        )
+    }
+
+    private func persistNovelOfflineSourcePage(
+        _ sourcePage: ForumThreadPage,
+        request: NovelDownloadWorkRequest,
+        preparedProjection: NovelReaderProjection?,
+        existingMetadata: NovelOfflineSourcePageMetadata?,
+        updatedAt: Date,
+        completesMatchingWork: Bool,
+        preservesExistingImageReferencesWhenEmpty: Bool
+    ) async throws -> Bool {
         try await ensureQueueRecovered()
         do {
+            try Task.checkCancellation()
             let normalized = try Self.normalizedNovelWorkRequest(request)
-            let sourceData = try Self.encodeJSONData(sourcePage, context: "novel offline source page")
             let sourceFingerprint = try novelSourcePageFingerprint(for: sourcePage)
             let sourceFileName = novelPayloadFileName(
                 prefix: "source",
@@ -24,7 +56,7 @@ extension DownloadStore {
                 : normalized.title
 
             // Auto-refresh replays this on every online page load for views that are already
-            // downloadsd, so resolve whether anything would actually change before paying
+            // downloaded, so resolve whether anything would actually change before paying
             // for a full re-encode + atomic file rewrite + metadata upsert.
             let sourceUnchanged = try await database.read { db -> Bool in
                 let resolvedImageURLs = try Self.imageURLsForNovelSourcePageMetadata(
@@ -46,6 +78,27 @@ extension DownloadStore {
             }
 
             guard !sourceUnchanged else {
+                if existingMetadata != nil {
+                    let result = try await database.write { db -> (saved: Bool, changed: Bool) in
+                        guard try Self.novelSourcePageUnchanged(
+                            entryKey: normalized.entryKey, ownerTitle: normalized.ownerTitle,
+                            title: requestedTitle, sourceFingerprint: sourceFingerprint,
+                            resolvedImageURLs: Self.imageURLsForNovelSourcePageMetadata(
+                                request: normalized, imageURLs: normalized.targetImageURLs,
+                                preservesExistingImageReferencesWhenEmpty: preservesExistingImageReferencesWhenEmpty, in: db
+                            ), fileManager: fileManager, novelSourcePagesDirectory: novelSourcePagesDirectory, in: db
+                        ) else { return (false, false) }
+                        if completesMatchingWork {
+                            try Self.deleteWork(readerKind: DownloadReaderKind.novel.rawValue,
+                                                ownerName: normalized.groupKey, tid: normalized.entryKey, in: db)
+                        } else {
+                            try Self.enqueueAutoRefreshImagesIfNeeded(normalized, in: db)
+                        }
+                        return (true, db.changesCount > 0)
+                    }
+                    if result.changed { notifyDownloadDidChange() }
+                    return result.saved
+                }
                 var deletedMatchingWork = false
                 if completesMatchingWork {
                     deletedMatchingWork = try await database.write { db -> Bool in
@@ -61,18 +114,36 @@ extension DownloadStore {
                 if deletedMatchingWork {
                     notifyDownloadDidChange()
                 }
-                return
+                return true
             }
 
+            try Task.checkCancellation()
+            let sourceData = try Self.encodeJSONData(sourcePage, context: "novel offline source page")
+            let projection: NovelReaderProjection
+            if let preparedProjection,
+               preparedProjection.threadID == normalized.threadID,
+               preparedProjection.view == normalized.view,
+               preparedProjection.resolvedAuthorID?.nilIfBlank == normalized.authorID?.nilIfBlank {
+                projection = preparedProjection
+            } else {
+                projection = try Self.projectionDocument(from: sourcePage, request: normalized)
+            }
             try ensureNovelSourcePagesDirectoryExists()
-            try sourceData.write(to: sourceURL, options: [.atomic])
-            let projection = try Self.projectionDocument(
-                from: sourcePage,
-                request: normalized
-            )
             let documentJSON = try Self.encodeNovelDocument(projection)
 
-            let previousFiles = try await database.write { db in
+            let previousFiles = try await database.write { db -> NovelPayloadFileNames? in
+                if let existingMetadata {
+                    guard let row = try Row.fetchOne(
+                        db, sql: "SELECT owner_title, updated_at FROM download_novel_entries WHERE entry_key = ?",
+                        arguments: [normalized.entryKey]
+                    ), (row["owner_title"] as String?) == existingMetadata.ownerTitle,
+                       novelPayloadOptionalDate(from: row["updated_at"] as Double?) == existingMetadata.updatedAt else {
+                        return nil
+                    }
+                }
+                // The existing-entry check and file replacement are serialized with deletion
+                // in this transaction, so background refresh cannot recreate a removed entry.
+                try sourceData.write(to: sourceURL, options: [.atomic])
                 // Resolved inside the write transaction: the actor can interleave other work
                 // at the awaits above, so a list captured during the earlier read could merge
                 // against stale state and overwrite image references written concurrently.
@@ -100,15 +171,35 @@ extension DownloadStore {
                         tid: normalized.entryKey,
                         in: db
                     )
+                } else if existingMetadata != nil {
+                    try Self.enqueueAutoRefreshImagesIfNeeded(normalized, in: db)
                 }
                 return previousFiles
             }
+            guard let previousFiles else { return false }
             removeNovelPayloadFiles(NovelPayloadFileNames(
                 sourcePageFileNames: previousFiles.sourcePageFileNames.subtracting([sourceFileName])
             ))
             notifyDownloadDidChange()
+            return true
         } catch {
             throw novelPayloadPersistenceError(from: error)
+        }
+    }
+
+    private static func enqueueAutoRefreshImagesIfNeeded(_ request: NovelDownloadWorkRequest, in db: Database) throws {
+        guard request.retainsInlineImages, !request.targetImageURLs.isEmpty else { return }
+        if let work = try rawWork(readerKind: .novel, ownerKey: request.groupKey, entryKey: request.entryKey, in: db) {
+            var updatedWork = work
+            updatedWork.ownerTitle = request.ownerTitle
+            updatedWork.title = request.title
+            updatedWork.updatedAt = .now
+            try save(updatedWork, replacing: work, in: db)
+        } else {
+            _ = try enqueueNewWork(readerKind: .novel, ownerKey: request.groupKey, ownerTitle: request.ownerTitle,
+                                   entryKey: request.entryKey, title: request.title,
+                                   targetImageURLs: request.targetImageURLs,
+                                   retainsInlineImages: request.retainsInlineImages, in: db)
         }
     }
 
@@ -201,6 +292,37 @@ extension DownloadStore {
             fileManager: fileManager,
             as: ForumThreadPage.self
         )
+    }
+
+    /// The auto-refresh path needs identity and existence, not a decoded old body.
+    func novelOfflineSourcePageMetadata(
+        threadID: String,
+        view: Int,
+        authorID: String?
+    ) async -> NovelOfflineSourcePageMetadata? {
+        await ensureQueueRecoveredBestEffort()
+        guard let identity = novelEntryLookup(ownerTitle: "", threadID: threadID, view: view, authorID: authorID) else {
+            return nil
+        }
+        do {
+            return try await database.read { db in
+                guard let row = try Row.fetchOne(
+                    db,
+                    sql: "SELECT owner_title, source_page_file_name, updated_at FROM download_novel_entries WHERE entry_key = ?",
+                    arguments: [identity.entryKey]
+                ), let fileName = row["source_page_file_name"] as String?,
+                   Self.payloadFileExists(fileName: fileName, directory: novelSourcePagesDirectory, fileManager: fileManager) else {
+                    return nil
+                }
+                return NovelOfflineSourcePageMetadata(
+                    ownerTitle: (row["owner_title"] as String?) ?? identity.ownerTitle,
+                    updatedAt: novelPayloadOptionalDate(from: row["updated_at"] as Double?)
+                )
+            }
+        } catch {
+            YamiboLog.download.error("Failed to fetch novel offline metadata for entry \(identity.entryKey): \(error)")
+            return nil
+        }
     }
 
     func novelOfflineSourcePageSnapshot(

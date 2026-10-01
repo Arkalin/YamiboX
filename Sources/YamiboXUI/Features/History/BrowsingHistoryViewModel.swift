@@ -48,8 +48,10 @@ final class BrowsingHistoryViewModel {
     @ObservationIgnored private let openTargetResolver: BrowsingHistoryOpenTargetResolver
     /// Debounces the reload storms this page is exposed to: store change
     /// signals fire every ~350ms while a reader opened from here keeps
-    /// saving positions, and the search field fires per keystroke.
+    /// saving positions. Search has a separate in-memory filter debounce.
     @ObservationIgnored private var pendingReloadTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingFilterTask: Task<Void, Never>?
+    @ObservationIgnored private var unfilteredEntries: [BrowsingHistoryEntry] = []
     /// Drops stale reload results when a newer reload has since started.
     @ObservationIgnored private var reloadGeneration = 0
 
@@ -81,7 +83,6 @@ final class BrowsingHistoryViewModel {
     func reload() async {
         reloadGeneration += 1
         let generation = reloadGeneration
-        let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let settings = await settingsStore.load()
         let snapshot: BrowsingHistorySnapshot
         let favorites: FavoriteMembershipSnapshot
@@ -112,13 +113,28 @@ final class BrowsingHistoryViewModel {
         let scopedEntries = showsPreviousReading
             ? BookshelfShelf(entries: loadedEntries, boardReader: boardReader, favorites: settings.system.homeShowsOnlyFavorites ? favorites : nil).readingEntries
             : loadedEntries
-        entries = scopedEntries.filter { entry in
+        unfilteredEntries = scopedEntries
+        applyFilter()
+        await refreshCovers(for: scopedEntries, generation: generation)
+    }
+
+    func applyFilter() {
+        let searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        entries = unfilteredEntries.filter { entry in
             if !searchQuery.isEmpty,
                !entry.title.localizedStandardContains(searchQuery) { return false }
             guard let selectedCategory else { return true }
-            return entry.category(boardReader: boardReader) == selectedCategory
+            return entry.category(boardReader: boardReaderSettings) == selectedCategory
         }
-        await refreshCovers(for: entries, generation: generation)
+    }
+
+    func scheduleFilter() {
+        pendingFilterTask?.cancel()
+        pendingFilterTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            self?.applyFilter()
+        }
     }
 
     func effectiveCategory(for entry: BrowsingHistoryEntry) -> BrowsingHistoryCategory {
@@ -165,6 +181,8 @@ final class BrowsingHistoryViewModel {
     }
 
     func delete(_ entry: BrowsingHistoryEntry) async {
+        reloadGeneration += 1
+        unfilteredEntries.removeAll { $0.id == entry.id }
         entries.removeAll { $0.id == entry.id }
         do {
             try await browsingHistoryWorkflow.delete(entry)
@@ -178,6 +196,8 @@ final class BrowsingHistoryViewModel {
     }
 
     func clearAll() async {
+        reloadGeneration += 1
+        unfilteredEntries = []
         entries = []
         do {
             try await browsingHistoryStore.clearAllForSync()

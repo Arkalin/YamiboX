@@ -252,16 +252,19 @@ extension DownloadStore {
     ) throws -> Bool {
         guard membership.sourcePage.thread.tid == membership.tid else { return false }
         guard !membership.imageURLs.isEmpty else { return false }
-        for imageURL in membership.imageURLs {
-            guard let fileName = try String.fetchOne(
-                db,
-                sql: "SELECT file_name FROM download_image_assets WHERE image_url = ?",
-                arguments: [imageURL.absoluteString]
-            ) else {
-                return false
+        let urlStrings = Array(Set(membership.imageURLs.map(\.absoluteString)))
+        for start in stride(from: 0, to: urlStrings.count, by: 200) {
+            let chunk = Array(urlStrings[start ..< min(start + 200, urlStrings.count)])
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+            let rows = try Row.fetchAll(db,
+                sql: "SELECT file_name FROM download_image_assets WHERE image_url IN (\(placeholders))",
+                arguments: StatementArguments(chunk))
+            guard rows.count == chunk.count else { return false }
+            for row in rows {
+                let fileName: String = row["file_name"]
+                let fileURL = imagesDirectory.appendingPathComponent(fileName, isDirectory: false)
+                guard fileManager.fileExists(atPath: fileURL.path) else { return false }
             }
-            let fileURL = imagesDirectory.appendingPathComponent(fileName, isDirectory: false)
-            guard fileManager.fileExists(atPath: fileURL.path) else { return false }
         }
         return true
     }

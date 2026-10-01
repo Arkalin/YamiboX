@@ -42,6 +42,9 @@ public final class MangaReaderDownloadViewModel: ObservableObject {
     private let downloadStore: any MangaDownloadStoring & DownloadQueueStoring
     private let downloadQueueControllerProvider: (@Sendable () async -> any DownloadQueueControlling)?
     private var downloadUpdatesTask: Task<Void, Never>?
+    private var pendingRowsRefreshTask: Task<Void, Never>?
+    private var isRefreshingRows = false
+    private var needsRowsRefresh = false
 
     public init(
         context: MangaLaunchContext,
@@ -59,6 +62,7 @@ public final class MangaReaderDownloadViewModel: ObservableObject {
 
     deinit {
         downloadUpdatesTask?.cancel()
+        pendingRowsRefreshTask?.cancel()
     }
 
     public var allChapterTIDs: Set<String> {
@@ -72,28 +76,42 @@ public final class MangaReaderDownloadViewModel: ObservableObject {
     }
 
     public func refreshRows() async {
-        await refreshChapterRows()
-        await refreshDownloadQueueEntryCount()
+        guard !Task.isCancelled else { return }
+        guard !isRefreshingRows else { needsRowsRefresh = true; return }
+        isRefreshingRows = true
+        defer {
+            isRefreshingRows = false
+            // A new caller can request a refresh while a cancelled load is
+            // still unwinding. Hand it to a fresh task, not that cancelled task.
+            if needsRowsRefresh {
+                needsRowsRefresh = false
+                pendingRowsRefreshTask = Task { @MainActor [weak self] in
+                    await self?.refreshRows()
+                }
+            }
+        }
+        repeat {
+            needsRowsRefresh = false
+            await refreshChapterRows()
+            guard !Task.isCancelled else { return }
+            await refreshDownloadQueueEntryCount()
+        } while needsRowsRefresh && !Task.isCancelled
     }
 
     private func refreshChapterRows() async {
-        let ownerName = downloadOwnerName
-        var nextRows: [MangaReaderDownloadRow] = []
-        for chapter in panel.displayChapters {
-            let state: MangaDownloadState
-            if let ownerName {
-                state = await downloadStore.mangaDownloadState(ownerName: ownerName, tid: chapter.tid)
-            } else {
-                state = .notDownloaded
-            }
-            nextRows.append(MangaReaderDownloadRow(chapter: chapter, state: state))
+        let states = if let ownerName = downloadOwnerName {
+            await downloadStore.mangaDownloadStates(ownerName: ownerName)
+        } else { [String: MangaDownloadState]() }
+        guard !Task.isCancelled else { return }
+        let nextRows = panel.displayChapters.map {
+            MangaReaderDownloadRow(chapter: $0, state: states[$0.tid] ?? .notDownloaded)
         }
-        rows = nextRows
+        if rows != nextRows { rows = nextRows }
     }
 
     private func refreshDownloadQueueEntryCount() async {
         do {
-            let count = try await mangaQueueWorks().count
+            let count = try await downloadStore.downloadQueueSummary(readerKind: .manga).entryCount
             try Task.checkCancellation()
             downloadQueueEntryCount = count
         } catch {
@@ -197,14 +215,10 @@ public final class MangaReaderDownloadViewModel: ObservableObject {
     }
 
     private func continueDownloadQueueIfAllowed() async throws {
-        let works = try await mangaQueueWorks()
-        guard works.allSatisfy({ $0.state != .failed }) else { return }
+        let summary = try await downloadStore.downloadQueueSummary(readerKind: .manga)
+        guard summary.failedCount == 0 else { return }
         guard let controller = await downloadController() else { return }
         try await controller.continueQueue()
-    }
-
-    private func mangaQueueWorks() async throws -> [DownloadQueueWorkProjection] {
-        (try await downloadStore.downloadQueueWorks()).filter { $0.id.readerKind == .manga }
     }
 
     private func downloadController() async -> (any DownloadQueueControlling)? {

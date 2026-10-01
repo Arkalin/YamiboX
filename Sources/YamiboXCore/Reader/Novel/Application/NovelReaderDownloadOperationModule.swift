@@ -160,6 +160,8 @@ public final class NovelReaderDownloadOperationModule {
     public var onChange: (@MainActor (NovelDownloadViewsSnapshot, NovelReaderDownloadOperationState) -> Void)?
 
     private var operationTask: Task<Void, Never>?
+    private var lastEmittedViews: NovelDownloadViewsSnapshot?
+    private var lastEmittedState: NovelReaderDownloadOperationState?
 
     public init() {}
 
@@ -361,13 +363,14 @@ public final class NovelReaderDownloadOperationModule {
     }
 
     private func emitChange() {
-        onChange?(
-            NovelDownloadViewsSnapshot(
+        let views = NovelDownloadViewsSnapshot(
                 downloadedViews: downloadedViews,
                 downloadingViews: downloadingViews,
                 updateTimesByView: downloadedViewUpdateTimes
-            ),
-            state
         )
+        guard views != lastEmittedViews || state != lastEmittedState else { return }
+        lastEmittedViews = views
+        lastEmittedState = state
+        onChange?(views, state)
     }
 }

@@ -24,8 +24,12 @@ public enum MangaChapterWindowMutationResult: Hashable, Sendable {
 
 public struct MangaChapterWindow: Hashable, Sendable {
     public private(set) var directory: MangaDirectory
-    public private(set) var documents: [MangaReaderProjection]
+    public private(set) var documents: [MangaReaderProjection] {
+        didSet { rebuildPageIndex() }
+    }
     public private(set) var position: MangaReadingPosition?
+    public private(set) var pages: [MangaReaderPageProjection] = []
+    private var chapterOffsets: [String: Int] = [:]
     private let maxLoadedDocuments: Int
 
     public init(
@@ -39,6 +43,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         self.position = nil
         self.maxLoadedDocuments = max(1, maxLoadedDocuments)
         self.position = clampedPosition(position)
+        rebuildPageIndex()
     }
 
     public init?(
@@ -59,6 +64,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         self.position = clampedPosition(position)
         trimDocuments(preserving: self.position?.tid ?? self.documents.first?.tid)
         self.position = clampedPosition(self.position)
+        rebuildPageIndex()
     }
 
     public var snapshot: MangaChapterWindowSnapshot {
@@ -207,18 +213,22 @@ public struct MangaChapterWindow: Hashable, Sendable {
     }
 
     private func positionForLoadedPage(at pageIndex: Int) -> MangaReadingPosition? {
-        var positions: [MangaReadingPosition] = []
-        positions.reserveCapacity(documents.reduce(0) { $0 + $1.imageURLs.count })
+        guard !pages.isEmpty else { return nil }
+        let page = pages[min(max(pageIndex, 0), pages.count - 1)]
+        return MangaReadingPosition(tid: page.tid, localIndex: page.localIndex)
+    }
 
-        for document in documents {
-            for localIndex in document.imageURLs.indices {
-                positions.append(MangaReadingPosition(tid: document.tid, localIndex: localIndex))
-            }
+    public var resolvedPageIndex: Int? {
+        guard let position, let offset = chapterOffsets[position.tid] else { return nil }
+        return offset + position.localIndex
+    }
+
+    private mutating func rebuildPageIndex() {
+        pages = MangaReaderPageProjection.projections(from: documents)
+        chapterOffsets = [:]
+        for page in pages where chapterOffsets[page.tid] == nil {
+            chapterOffsets[page.tid] = page.globalIndex
         }
-
-        guard !positions.isEmpty else { return nil }
-        let clampedIndex = min(max(pageIndex, 0), positions.count - 1)
-        return positions[clampedIndex]
     }
 
     private func isAdjacentToLoadedRange(_ tid: String) -> Bool {

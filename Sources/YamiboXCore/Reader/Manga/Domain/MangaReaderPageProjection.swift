@@ -35,10 +35,14 @@ public struct MangaReaderPageProjection: Hashable, Identifiable, Sendable {
     }
 
     public static func projections(from window: MangaChapterWindow) -> [MangaReaderPageProjection] {
-        var pages: [MangaReaderPageProjection] = []
-        pages.reserveCapacity(window.documents.reduce(0) { $0 + $1.imageURLs.count })
+        window.pages
+    }
 
-        for document in window.documents {
+    static func projections(from documents: [MangaReaderProjection]) -> [MangaReaderPageProjection] {
+        var pages: [MangaReaderPageProjection] = []
+        pages.reserveCapacity(documents.reduce(0) { $0 + $1.imageURLs.count })
+
+        for document in documents {
             for (localIndex, imageURL) in document.imageURLs.enumerated() {
                 pages.append(
                     MangaReaderPageProjection(
@@ -69,9 +73,6 @@ public struct MangaReaderPageProjection: Hashable, Identifiable, Sendable {
     }
 
     public static func resolvedPageIndex(for window: MangaChapterWindow) -> Int? {
-        resolvedPageIndex(
-            for: window.resolvedPosition,
-            in: projections(from: window)
-        )
+        window.resolvedPageIndex
     }
 }

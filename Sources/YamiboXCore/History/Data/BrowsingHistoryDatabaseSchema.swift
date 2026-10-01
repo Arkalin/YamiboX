@@ -71,6 +71,9 @@ enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
             )
             try BrowsingHistorySyncRecord.save(snapshot.records, in: db)
         }
+        migrator.registerMigration("history.v4.source-index") { db in
+            try db.create(index: "browsing_history_source_idx", on: "browsing_history", columns: ["last_visited_thread_id"])
+        }
     }
 
     static func erase(in db: Database) throws {

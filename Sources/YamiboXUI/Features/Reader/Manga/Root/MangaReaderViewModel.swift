@@ -919,6 +919,10 @@ public final class MangaReaderViewModel {
         return snapshot.resumeContext
     }
 
+    var currentResumeContext: MangaLaunchContext {
+        progressSnapshot(from: presentation)?.resumeContext ?? context
+    }
+
     // MARK: - Adjacent prefetch
 
     private func scheduleAdjacentPrefetch(around globalIndex: Int) {

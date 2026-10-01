@@ -36,7 +36,7 @@ public struct FavoriteMembership: Equatable, Sendable {
 public struct FavoriteMembershipSnapshot: Sendable {
     public let document: FavoriteLibraryDocument
     public let boardReader: BoardReaderSettings
-    private let directories: [String: MangaDirectory]
+    private var directories: [String: MangaDirectory]
     private let itemsByThread: [String: [FavoriteItem]]
     private let archivedItemsByTitle: [String: [FavoriteItem]]
 
@@ -60,7 +60,10 @@ public struct FavoriteMembershipSnapshot: Sendable {
         let tids = Array(Set(document.items.compactMap { $0.target.threadID } + additionalThreadIDs)).filter { !$0.isEmpty }
         let directories = try await directoryStore?.directories(containingTIDs: tids) ?? [:]
         try Task.checkCancellation()
-        return Self(document: document, directories: directories, boardReader: boardReader)
+        return await FavoriteMembershipSnapshotCache.shared.snapshot(
+            storeID: libraryStore.changeID, document: document,
+            directories: directories, boardReader: boardReader
+        )
     }
 
     public func membership(for scope: FavoriteMembershipScope) -> FavoriteMembership {
@@ -94,5 +97,39 @@ public struct FavoriteMembershipSnapshot: Sendable {
 
     public func membership(for entry: BrowsingHistoryEntry) -> FavoriteMembership {
         membership(for: FavoriteMembershipScope(entry: entry, boardReader: boardReader))
+    }
+
+    fileprivate func withDirectories(_ directories: [String: MangaDirectory]) -> Self {
+        var snapshot = self
+        snapshot.directories = directories
+        return snapshot
+    }
+}
+
+/// Reuses grouping across concurrently mounted favorite controls. The database
+/// reads remain authoritative, including identity migrations and sibling writers.
+private actor FavoriteMembershipSnapshotCache {
+    static let shared = FavoriteMembershipSnapshotCache()
+    private struct Entry {
+        var document: FavoriteLibraryDocument
+        var directories: [String: MangaDirectory]
+        var boardReader: BoardReaderSettings
+        var snapshot: FavoriteMembershipSnapshot
+    }
+    private var entries: [String: Entry] = [:]
+
+    func snapshot(storeID: String, document: FavoriteLibraryDocument,
+                  directories: [String: MangaDirectory], boardReader: BoardReaderSettings) -> FavoriteMembershipSnapshot {
+        let memberTIDs = Set(document.items.compactMap { $0.target.threadID })
+        let memberDirectories = directories.filter { memberTIDs.contains($0.key) }
+        if let entry = entries[storeID], entry.document == document,
+           entry.directories == memberDirectories, entry.boardReader == boardReader {
+            return entry.snapshot.withDirectories(directories)
+        }
+        let snapshot = FavoriteMembershipSnapshot(document: document, directories: memberDirectories, boardReader: boardReader)
+        // Bound lifetime even when isolated local stores are frequently created.
+        if entries.count >= 16, entries[storeID] == nil { entries.removeAll(keepingCapacity: true) }
+        entries[storeID] = Entry(document: document, directories: memberDirectories, boardReader: boardReader, snapshot: snapshot)
+        return snapshot.withDirectories(directories)
     }
 }

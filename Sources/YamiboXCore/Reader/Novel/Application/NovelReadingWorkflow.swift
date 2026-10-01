@@ -831,9 +831,15 @@ public final class NovelReadingWorkflow {
             authorID: currentAuthorID ?? currentProjection.resolvedAuthorID ?? context.authorID
         )
         guard let nextLoad = try? await repository.loadPageResult(nextRequest) else {
+            guard !Task.isCancelled, surfaceIdentity.generation == viewportRuntime.currentGeneration,
+                  self.currentProjection?.view == currentProjection.view else { return nil }
             prefetchCooldown = (view: targetView, until: now().addingTimeInterval(Self.prefetchFailureCooldownInterval))
             return nil
         }
+        // Navigation, re-layout or close may supersede a request while the
+        // repository finishes filling its cache. Never install that stale page.
+        guard !Task.isCancelled, surfaceIdentity.generation == viewportRuntime.currentGeneration,
+              self.currentProjection?.view == currentProjection.view else { return nil }
         prefetchCooldown = nil
 
         let nextProjection = nextLoad.projection

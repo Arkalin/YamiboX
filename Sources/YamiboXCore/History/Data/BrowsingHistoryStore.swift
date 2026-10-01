@@ -179,6 +179,35 @@ public actor BrowsingHistoryStore {
         }
     }
 
+    public func positionEntries(threadID: String, directoryTargetID: String?) async throws -> [BrowsingHistoryEntry] {
+        try await database.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM browsing_history WHERE last_visited_thread_id = ? OR thread_id = ? OR id = ? ORDER BY last_visit_time DESC, id ASC", arguments: [threadID, threadID, directoryTargetID])
+                .compactMap(Self.entry(from:))
+        }
+    }
+
+    /// Compare just the affected row under the write lock. No insert is
+    /// permitted here: a concurrent delete must never be undone by progress.
+    public func applyPositionEntry(_ entry: BrowsingHistoryEntry, replacing expected: BrowsingHistoryEntry, visit: BrowsingHistoryVisit) async throws -> Bool {
+        guard entry.id == expected.id, try await canRecord(visit, targetID: entry.id) else { return false }
+        let applied = try await database.write { db in
+            guard try Self.canonicalEntryID(expected.id, in: db) == expected.id else { return false }
+            let current = try Row.fetchOne(db, sql: "SELECT * FROM browsing_history WHERE id = ?", arguments: [expected.id]).flatMap(Self.entry(from:))
+            guard current == expected else { return false }
+            let deletions = try SyncDeletionState.load(from: "browsing_history_local_deletions", in: db)
+                .merging(SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
+            guard !deletions.containsDeletion(of: entry.id, updatedAt: visit.date),
+                  !deletions.containsDeletion(of: "source:\(visit.threadID)", updatedAt: visit.date) else { return false }
+            if entry != expected {
+                try Self.upsert(entry, in: db)
+                try Self.recordSyncVisit(entry, in: db)
+            }
+            return true
+        }
+        if applied, entry != expected { postChangeNotification() }
+        return applied
+    }
+
     public func entry(forID id: String) async -> BrowsingHistoryEntry? {
         do {
             return try await database.read { db in

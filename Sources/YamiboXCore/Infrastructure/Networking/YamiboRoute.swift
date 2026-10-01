@@ -235,14 +235,13 @@ public enum YamiboRoute: Sendable {
             var items: [URLQueryItem] = [
                 .init(name: "mobile", value: "2"),
                 .init(name: "mod", value: "viewthread"),
+                // An omitted order inherits the thread's reverse-default bit.
+                .init(name: "ordertype", value: reverse ? "1" : "2"),
                 .init(name: "page", value: String(max(1, page))),
                 .init(name: "tid", value: tid.trimmingCharacters(in: .whitespacesAndNewlines))
             ]
             if let authorID = authorID?.trimmingCharacters(in: .whitespacesAndNewlines), !authorID.isEmpty {
                 items.append(.init(name: "authorid", value: authorID))
-            }
-            if reverse {
-                items.append(.init(name: "ordertype", value: "1"))
             }
             return Self.makeURL(path: "/forum.php", queryItems: items.sorted { $0.name < $1.name })
         case .forumHome:

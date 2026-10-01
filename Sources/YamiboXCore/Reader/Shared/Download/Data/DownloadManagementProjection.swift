@@ -98,8 +98,12 @@ extension DownloadStore {
             recordGroupTitle(ownerTitle, updatedAt: work.updatedAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
+        var groupURLStrings: [DownloadGroupID: Set<String>] = [:]
+        var groupEntryBytes: [DownloadGroupID: Int] = [:]
         let entries = try builders.values.map { builder in
-            try builder.entry(byteCount: builder.byteCount + imageAssetByteCount(forImageURLStrings: builder.imageURLStrings, in: db))
+            groupURLStrings[builder.id.groupID, default: []].formUnion(builder.imageURLStrings)
+            groupEntryBytes[builder.id.groupID, default: 0] += builder.byteCount
+            return try builder.entry(byteCount: builder.byteCount + imageAssetByteCount(forImageURLStrings: builder.imageURLStrings, in: db))
         }
         let grouped = Dictionary(grouping: entries, by: \.id.groupID)
         let groups = try grouped.map { groupID, entries in
@@ -110,13 +114,8 @@ extension DownloadStore {
                 }
                 return lhs.id.entryKey.localizedStandardCompare(rhs.id.entryKey) == .orderedAscending
             }
-            let groupURLStrings = builders.values
-                .filter { $0.id.groupID == groupID }
-                .reduce(into: Set<String>()) { $0.formUnion($1.imageURLStrings) }
-            let groupEntryBytes = builders.values
-                .filter { $0.id.groupID == groupID }
-                .reduce(0) { $0 + $1.byteCount }
-            let byteCount = try groupEntryBytes + imageAssetByteCount(forImageURLStrings: groupURLStrings, in: db)
+            let byteCount = try (groupEntryBytes[groupID] ?? 0)
+                + imageAssetByteCount(forImageURLStrings: groupURLStrings[groupID] ?? [], in: db)
             let pendingCount = sortedEntries.filter { [.queued, .running, .paused].contains($0.state) }.count
             let failedCount = sortedEntries.filter { $0.state == .failed }.count
             let downloadedCount = sortedEntries.filter { $0.state == .downloaded }.count

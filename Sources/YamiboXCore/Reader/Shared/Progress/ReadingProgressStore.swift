@@ -30,6 +30,19 @@ public actor ReadingProgressStore {
         snapshotObservation.values(bufferingPolicy: .bufferingNewest(1))
     }
 
+    /// Observe only this work's resume record, not the complete progress history.
+    public func snapshots(threadID: String) -> some AsyncSequence<ReadingProgressRecord?, any Error> & Sendable {
+        ValueObservation.tracking { db in
+            try Self.fetchRecord(in: db, sql: """
+                SELECT * FROM reading_progress
+                WHERE (thread_id = ? OR manga_chapter_thread_id = ?) AND kind != ?
+                ORDER BY updated_at DESC, id ASC LIMIT 1
+                """, arguments: [threadID, threadID, ReadingProgressKind.thread.rawValue])
+        }
+        .removeDuplicates()
+        .values(in: database, bufferingPolicy: .bufferingNewest(1))
+    }
+
     public init(
         defaults: UserDefaults = .standard,
         key: String = "yamibox.readingProgress.records"

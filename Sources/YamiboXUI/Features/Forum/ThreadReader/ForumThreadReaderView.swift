@@ -45,7 +45,7 @@ struct ForumThreadReaderView: View {
             errorMessage: model.errorMessage,
             errorDetails: model.errorDetails,
             isFavorited: model.isFavorited,
-            isFavoriteWorking: model.favoriteActions.isWorking,
+            isFavoriteWorking: !model.favoriteActions.canAct,
             isReverseOrder: model.isReverseOrder,
             refresh: refresh,
             retry: model.retry,
@@ -79,7 +79,7 @@ struct ForumThreadReaderView: View {
                 Menu {
                     Button {
                         Task {
-                            await model.refresh()
+                            await refresh()
                         }
                     } label: {
                         Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
@@ -121,6 +121,9 @@ struct ForumThreadReaderView: View {
             await model.load(submissionChange: submissionChange)
         }
         .task {
+            await model.favoriteActions.refreshFavorite()
+        }
+        .task {
             await model.observeBoardReaderSettings()
         }
         .onDisappear {
@@ -145,7 +148,9 @@ struct ForumThreadReaderView: View {
     }
 
     private func refresh() async {
+        async let favoriteRefreshed = model.favoriteActions.refreshFavorite()
         await model.refresh()
+        _ = await favoriteRefreshed
     }
 
     private func goToPage(_ page: Int) {
