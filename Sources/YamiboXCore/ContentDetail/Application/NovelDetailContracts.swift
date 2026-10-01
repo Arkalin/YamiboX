@@ -4,9 +4,15 @@ import Foundation
 public protocol NovelDetailDocumentLoading: Sendable {
     func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection
     func projection(from page: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection
+    /// Freshness belongs to the author-scoped source fetch, not the later cache lookup.
+    func projection(from page: ForumThreadPage, request: NovelPageRequest, sourceLoadedOnline: Bool) async throws -> NovelReaderProjection
 }
 
 extension NovelDetailDocumentLoading {
+    public func projection(from page: ForumThreadPage, request: NovelPageRequest, sourceLoadedOnline: Bool) async throws -> NovelReaderProjection {
+        try await projection(from: page, request: request)
+    }
+
     public func projection(from page: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection {
         let task = Task.detached {
             try Task.checkCancellation()

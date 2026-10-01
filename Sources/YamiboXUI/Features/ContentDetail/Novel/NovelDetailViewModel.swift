@@ -248,7 +248,8 @@ final class NovelDetailViewModel {
             let projectionRepository = await dependencies.makeNovelReaderRepository()
             let projection = try? await projectionRepository.projection(
                 from: contentPage,
-                request: NovelPageRequest(threadID: context.thread.tid, view: 1, authorID: authorID)
+                request: NovelPageRequest(threadID: context.thread.tid, view: 1, authorID: authorID),
+                sourceLoadedOnline: initialPages.contentLoadedOnline
             )
             let summaries = if let projection {
                 await Self.summariesOffMainActor(from: contentPage, document: projection, settings: novelReaderSettings)
@@ -307,18 +308,18 @@ final class NovelDetailViewModel {
     private func loadInitialPages(
         repository: any NovelDetailThreadPageLoading,
         preferCache: Bool
-    ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext) {
+    ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext, contentLoadedOnline: Bool) {
         if let authorID = context.authorID?.nilIfBlank {
             let scopedContext = authorScopedContext(authorID: authorID)
             let page = try await loadNovelThreadPage(context: scopedContext, page: 1, preferCache: preferCache, repository: repository)
-            return (page, page, authorID, scopedContext)
+            return (page.page, page.page, authorID, scopedContext, page.loadedOnline)
         }
 
         let headerPage = try await loadNovelThreadPage(context: context, page: 1, preferCache: preferCache, repository: repository)
-        let authorID = try Self.resolveAuthorID(context: context, page: headerPage)
+        let authorID = try Self.resolveAuthorID(context: context, page: headerPage.page)
         let contentContext = authorScopedContext(authorID: authorID)
         let contentPage = try await loadNovelThreadPage(context: contentContext, page: 1, preferCache: preferCache, repository: repository)
-        return (headerPage, contentPage, authorID, contentContext)
+        return (headerPage.page, contentPage.page, authorID, contentContext, contentPage.loadedOnline)
     }
 
     private func loadNovelThreadPage(
@@ -326,12 +327,12 @@ final class NovelDetailViewModel {
         page: Int,
         preferCache: Bool,
         repository: any NovelDetailThreadPageLoading
-    ) async throws -> ForumThreadPage {
+    ) async throws -> (page: ForumThreadPage, loadedOnline: Bool) {
         if preferCache,
            let cached = await repository.cachedNovelThreadPage(context: context, page: page) {
-            return cached
+            return (cached, false)
         }
-        return try await repository.fetchNovelThreadPage(context: context, page: page)
+        return (try await repository.fetchNovelThreadPage(context: context, page: page), true)
     }
 
 

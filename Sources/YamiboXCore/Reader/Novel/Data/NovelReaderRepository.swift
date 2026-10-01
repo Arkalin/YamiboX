@@ -43,7 +43,27 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
     }
 
     public func projection(from sourcePage: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection {
-        try await projectionLoader.projection(from: sourcePage, request: request)
+        try await projection(from: sourcePage, request: request, sourceLoadedOnline: false)
+    }
+
+    public func projection(
+        from sourcePage: ForumThreadPage,
+        request: NovelPageRequest,
+        sourceLoadedOnline: Bool
+    ) async throws -> NovelReaderProjection {
+        let projection = try await projectionLoader.projection(from: sourcePage, request: request)
+        try Task.checkCancellation()
+        if sourceLoadedOnline,
+           sourcePage.thread.tid == request.threadID,
+           (sourcePage.pageNavigation?.currentPage ?? request.view) == request.view,
+           normalizedAuthorID(projection.resolvedAuthorID) == normalizedAuthorID(request.authorID) {
+            try await client.validateSession?()
+            try Task.checkCancellation()
+            scheduleOfflineRefresh(NovelReaderProjectionLoadedPage(
+                projection: projection, sourcePage: sourcePage, source: .online(sourceLoadedOnline: true)
+            ))
+        }
+        return projection
     }
 
     public func loadPage(threadID: String, view: Int, authorID: String? = nil) async throws -> NovelReaderProjection {
@@ -234,8 +254,10 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
         // the newest source rather than starting competing file/metadata transactions.
         pendingOfflineRefreshes[identity] = onlinePage
         guard offlineRefreshTasks[identity] == nil else { return }
-        offlineRefreshTasks[identity] = Task(priority: .utility) { [weak self] in
-            await self?.drainOfflineRefreshes(for: identity)
+        // Detail owns a temporary repository. Retain it until this finite worker
+        // drains, otherwise returning the projection could discard the refresh.
+        offlineRefreshTasks[identity] = Task(priority: .utility) { [self] in
+            await drainOfflineRefreshes(for: identity)
         }
     }
 
