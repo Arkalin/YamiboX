@@ -133,14 +133,15 @@ struct YamiboClient: Sendable {
     private func data(
         for request: URLRequest,
         cancellationPolicy: YamiboRequestCancellationPolicy,
-        delegate: (any URLSessionTaskDelegate)? = nil
+        delegate: (any URLSessionTaskDelegate)? = nil,
+        bodyPolicy: NetworkResponseBodyPolicy? = nil
     ) async throws -> (Data, URLResponse) {
         switch cancellationPolicy {
         case .propagateCancellation:
-            return try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate)
+            return try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate, bodyPolicy: bodyPolicy)
         case .completeStartedRequest:
             let requestTask = Task {
-                try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate)
+                try await NetworkLoggedTransport.data(for: request, using: session, delegate: delegate, bodyPolicy: bodyPolicy)
             }
             return try await requestTask.value
         }
@@ -165,14 +166,15 @@ struct YamiboClient: Sendable {
         userAgent: String? = nil,
         cancellationPolicy: YamiboRequestCancellationPolicy = .propagateCancellation,
         delegate: (any URLSessionTaskDelegate)? = nil,
-        allowsWAFReplay: Bool = true
+        allowsWAFReplay: Bool = true,
+        bodyPolicy: NetworkResponseBodyPolicy? = nil
     ) async throws -> YamiboHTTPResponse {
         let userAgent = userAgent ?? self.userAgent
         var request = unsignedRequest
         applyCredentials(credentials, to: &request, userAgent: userAgent)
         do {
             try await validateSession?()
-            let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy, delegate: delegate)
+            let (initialData, response) = try await data(for: request, cancellationPolicy: cancellationPolicy, delegate: delegate, bodyPolicy: bodyPolicy)
             try await validateSession?()
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
@@ -223,7 +225,7 @@ struct YamiboClient: Sendable {
             var retry = request
             retry.cachePolicy = .reloadIgnoringLocalCacheData
             applyCredentials(refreshedCredentials, to: &retry, userAgent: userAgent)
-            let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy, delegate: delegate)
+            let (retryData, retryResponse) = try await data(for: retry, cancellationPolicy: cancellationPolicy, delegate: delegate, bodyPolicy: bodyPolicy)
             try await validateSession?()
             guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)

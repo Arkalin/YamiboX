@@ -43,6 +43,7 @@ final class FavoriteLibraryOrganizer {
     private(set) var document = FavoriteLibraryDocument() {
         didSet {
             cachedTagAssociationCounts = nil
+            cachedSourceFilterLabels = nil
             refreshDerivedState()
         }
     }
@@ -143,26 +144,29 @@ final class FavoriteLibraryOrganizer {
     /// Snapshot of the per-board reader configuration taken at the same
     /// load/reload as `mangaDirectoriesByTID`, so the two are always
     /// consistent with each other for a given derivation.
-    var boardReaderSettings = BoardReaderSettings()
+    var boardReaderSettings = BoardReaderSettings() {
+        didSet { cachedSourceFilterLabels = nil }
+    }
+    @ObservationIgnored private var cachedSourceFilterLabels: FavoriteSourceFilterLabels?
+
+    private var sourceFilterLabels: FavoriteSourceFilterLabels {
+        let items = document.items // Keep the observable document dependency on warm reads.
+        if let cachedSourceFilterLabels { return cachedSourceFilterLabels }
+        let labels = FavoriteSourceFilterLabels(items: items)
+        cachedSourceFilterLabels = labels
+        return labels
+    }
 
     func sourceFilterLabel(_ filter: LocalFavoriteSourceFilter) -> String {
-        guard case let .forumBoard(id, label) = filter else { return filter.displayLabel }
-        func usableName(_ value: String?) -> String? {
-            guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty, name != id else { return nil }
-            return name
-        }
-        // Filter identity ignores labels, so a grouped key or selected chip may
-        // retain an old ID-only label even when another favorite has the name.
-        for item in document.items where filter.matches(item) {
-            if let name = usableName(item.forumName) ?? usableName(item.sourceGroup.forumName) {
-                return name
-            }
-        }
-        return usableName(boardReaderSettings.entry(forumID: id)?.boardName)
-            ?? usableName(label)
-            ?? usableName(BoardReaderSettings.factoryDefault.entry(forumID: id)?.boardName)
-            ?? L10n.string("settings.board_reader.board_placeholder", id)
+        guard case .forumBoard = filter else { return filter.displayLabel }
+        return sourceFilterLabels.label(for: filter, boardReaderSettings: boardReaderSettings)
+    }
+
+    func sortedSourceFilters<S: Sequence>(_ filters: S) -> [LocalFavoriteSourceFilter]
+    where S.Element == LocalFavoriteSourceFilter {
+        filters.map { (filter: $0, label: sourceFilterLabel($0)) }
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+            .map(\.filter)
     }
     /// Snapshot of `settings.favorites.smartMangaBulkDeleteEnabled`, kept
     /// live alongside `boardReaderSettings` (see `settingsUpdatesTask`) so

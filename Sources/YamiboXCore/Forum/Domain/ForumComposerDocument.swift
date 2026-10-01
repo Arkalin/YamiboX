@@ -199,8 +199,23 @@ public struct ForumComposerDocument: Equatable, Sendable {
             if index > 0, edits[index - 1].range.end > edit.range.location { throw ForumComposerDocumentError.overlappingEdits }
         }
         if edits.allSatisfy({ substring($0.range) == $0.replacement }) { return }
-        var changedUTF16 = sourceUTF16
-        for edit in edits.reversed() { changedUTF16.replaceSubrange(edit.range.location..<edit.range.end, with: edit.replacement.utf16) }
+        var changedUTF16: [UInt16]
+        if edits.count == 1, let edit = edits.first {
+            changedUTF16 = sourceUTF16
+            changedUTF16.replaceSubrange(edit.range.location..<edit.range.end, with: edit.replacement.utf16)
+        } else {
+            // Edits are in original-source coordinates. Append each unchanged
+            // run once instead of shifting the growing suffix for every edit.
+            changedUTF16 = []
+            changedUTF16.reserveCapacity(sourceUTF16.count + edits.reduce(0) { $0 + $1.delta })
+            var cursor = 0
+            for edit in edits {
+                changedUTF16.append(contentsOf: sourceUTF16[cursor..<edit.range.location])
+                changedUTF16.append(contentsOf: edit.replacement.utf16)
+                cursor = edit.range.end
+            }
+            changedUTF16.append(contentsOf: sourceUTF16[cursor...])
+        }
         let changed = String(decoding: changedUTF16, as: UTF16.self)
 
         let leafID = edits.count == 1 ? edits.first.flatMap { spliceLeaf($0, in: nodes) } : nil
@@ -212,10 +227,10 @@ public struct ForumComposerDocument: Equatable, Sendable {
         } else {
             let parsed = ForumComposerDocumentParser.parse(changed)
             var identities: [String: String] = [:]
+            let offsetMap = SourceEditOffsetMap(edits)
             func record(_ nodes: [ForumComposerNode]) {
                 for node in nodes {
-                    var offset = node.range.location
-                    for edit in edits.reversed() { offset = edit.map(offset, affinity: .downstream) }
+                    let offset = offsetMap.downstreamOffset(node.range.location)
                     identities[identityKey(node, offset: offset)] = node.id
                     record(node.children)
                 }
@@ -235,6 +250,45 @@ public struct ForumComposerDocument: Equatable, Sendable {
         sourceUTF16 = changedUTF16
         if leafID == nil { indexDelimiterFreeTextNodes() }
         revision &+= 1
+    }
+
+    /// Equivalent to applying the validated, nonoverlapping edits in reverse
+    /// order with downstream affinity. Earlier edits only add their deltas;
+    /// the last opening at/before an offset owns replacement and insertion ties.
+    private struct SourceEditOffsetMap {
+        private struct Entry {
+            let start: Int
+            let end: Int
+            let replacementEnd: Int
+            let deltaBefore: Int
+            let deltaAfter: Int
+        }
+        private let entries: [Entry]
+
+        init(_ edits: [ForumComposerSourceEdit]) {
+            var entries: [Entry] = []
+            entries.reserveCapacity(edits.count)
+            var delta = 0
+            for edit in edits {
+                let length = edit.replacement.utf16.count
+                entries.append(Entry(start: edit.range.location, end: edit.range.end,
+                                     replacementEnd: edit.range.location + length,
+                                     deltaBefore: delta, deltaAfter: delta + length - edit.range.length))
+                delta += length - edit.range.length
+            }
+            self.entries = entries
+        }
+
+        func downstreamOffset(_ offset: Int) -> Int {
+            var low = 0, high = entries.count
+            while low < high {
+                let middle = (low + high) / 2
+                if entries[middle].start <= offset { low = middle + 1 } else { high = middle }
+            }
+            guard low > 0 else { return offset }
+            let entry = entries[low - 1]
+            return offset <= entry.end ? entry.replacementEnd + entry.deltaBefore : offset + entry.deltaAfter
+        }
     }
 
     private func identityKey(_ node: ForumComposerNode, offset: Int) -> String {

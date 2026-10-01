@@ -29,10 +29,56 @@ enum BookmarkDatabaseSchema: DatabaseSchemaModule {
         migrator.registerMigration("bookmark.v2.sync-deletions") { db in
             try SyncDeletionState.migrateSoftDeletions(from: "bookmarks", to: "bookmark_sync_state", in: db)
         }
+        migrator.registerMigration("bookmark.v3.position-revisions") { db in
+            try db.execute(sql: """
+                CREATE TABLE bookmark_position_revisions (
+                    work_kind TEXT NOT NULL, work_id TEXT NOT NULL, revision TEXT NOT NULL,
+                    PRIMARY KEY (work_kind, work_id)
+                );
+                INSERT INTO bookmark_position_revisions (work_kind, work_id, revision)
+                SELECT work_kind, work_id, lower(hex(randomblob(16))) FROM bookmarks
+                GROUP BY work_kind, work_id;
+                """)
+            for (operation, row) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+                try db.execute(sql: """
+                    CREATE TRIGGER bookmark_position_\(operation.lowercased())
+                    AFTER \(operation) ON bookmarks
+                    BEGIN
+                        INSERT INTO bookmark_position_revisions (work_kind, work_id, revision)
+                        VALUES (\(row).work_kind, \(row).work_id, lower(hex(randomblob(16))))
+                        ON CONFLICT(work_kind, work_id) DO UPDATE SET revision = excluded.revision;
+                    END
+                    """)
+            }
+            // REPLACE's implicit deletion does not fire DELETE triggers unless
+            // recursive_triggers is enabled. Invalidate a displaced old work
+            // before the conflicting ID disappears, including direct SQL.
+            try db.execute(sql: """
+                CREATE TRIGGER bookmark_position_replaced
+                BEFORE INSERT ON bookmarks
+                BEGIN
+                    INSERT INTO bookmark_position_revisions (work_kind, work_id, revision)
+                    SELECT work_kind, work_id, lower(hex(randomblob(16))) FROM bookmarks
+                    WHERE id = NEW.id AND (work_kind != NEW.work_kind OR work_id != NEW.work_id)
+                    ON CONFLICT(work_kind, work_id) DO UPDATE SET revision = excluded.revision;
+                END
+                """)
+            try db.execute(sql: """
+                CREATE TRIGGER bookmark_position_moved
+                AFTER UPDATE ON bookmarks
+                WHEN OLD.work_kind != NEW.work_kind OR OLD.work_id != NEW.work_id
+                BEGIN
+                    INSERT INTO bookmark_position_revisions (work_kind, work_id, revision)
+                    VALUES (OLD.work_kind, OLD.work_id, lower(hex(randomblob(16))))
+                    ON CONFLICT(work_kind, work_id) DO UPDATE SET revision = excluded.revision;
+                END
+                """)
+        }
     }
 
     static func erase(in db: Database) throws {
         try db.execute(sql: "DELETE FROM bookmarks")
         try db.execute(sql: "DELETE FROM bookmark_sync_state")
+        try db.execute(sql: "DELETE FROM bookmark_position_revisions")
     }
 }

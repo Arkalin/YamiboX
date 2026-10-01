@@ -10,6 +10,7 @@ struct ForumPageResponse: Sendable {
 /// Adapts native forum documents to the shared authenticated HTTP transport.
 /// Form encoding, attachment classification and action safety belong to Forum.
 struct ForumPageClient: Sendable {
+    private static let maximumFileBytes = 50 * 1024 * 1024
     let transport: YamiboClient
 
     func fetchDocument(
@@ -44,7 +45,11 @@ struct ForumPageClient: Sendable {
             let response = try await transport.performRequest(
                 request,
                 delegate: delegate,
-                allowsWAFReplay: allowsWAFReplay
+                allowsWAFReplay: allowsWAFReplay,
+                bodyPolicy: NetworkResponseBodyPolicy(prefixByteCount: 512) { response, prefix in
+                    guard 200..<300 ~= response.statusCode, Self.isFile(response: response, prefix: prefix) else { return nil }
+                    return NetworkResponseBodyLimit(maximumBytes: Self.maximumFileBytes, error: ForumPageError.fileTooLarge)
+                }
             )
             return try decode(response)
         } catch {
@@ -76,8 +81,20 @@ struct ForumPageClient: Sendable {
             // credentials or automatic account actions.
             return ForumPageResponse(html: "", url: response.url ?? YamiboDomain.baseURL, continuationURL: url)
         }
+        if Self.isFile(response: response, prefix: Data(data.prefix(512))) {
+            guard 200..<300 ~= response.statusCode else { throw YamiboError.invalidResponse(statusCode: response.statusCode) }
+            guard data.count <= Self.maximumFileBytes else { throw ForumPageError.fileTooLarge }
+            return ForumPageResponse(
+                html: "", url: response.url ?? YamiboDomain.baseURL,
+                file: ForumAttachmentFile(name: response.suggestedFilename ?? "attachment", data: data)
+            )
+        }
+        return ForumPageResponse(html: try result.decodeHTML(), url: response.url ?? YamiboDomain.baseURL)
+    }
+
+    private static func isFile(response: HTTPURLResponse, prefix data: Data) -> Bool {
         let mime = response.mimeType?.lowercased() ?? "text/html"
-        let prefix = String(decoding: data.prefix(512), as: UTF8.self).lowercased()
+        let prefix = String(decoding: data, as: UTF8.self).lowercased()
         let isHTML = mime.contains("html") || mime.contains("xml") || prefix.contains("<html") || prefix.contains("<!doctype html") || prefix.contains("<root")
         // Text responses from upload endpoints are numeric IDs / JSON, not
         // downloaded files. Attachments and plain-text documents carry a
@@ -86,15 +103,7 @@ struct ForumPageClient: Sendable {
             || mime.hasPrefix("image/") || mime.hasPrefix("audio/") || mime.hasPrefix("video/")
             || ["application/pdf", "application/octet-stream", "application/zip", "application/epub+zip"].contains(mime)
             || (mime == "text/plain" && response.url?.pathExtension.lowercased() == "txt")
-        if isFile, !isHTML {
-            guard 200..<300 ~= response.statusCode else { throw YamiboError.invalidResponse(statusCode: response.statusCode) }
-            guard data.count <= 50 * 1024 * 1024 else { throw ForumPageError.fileTooLarge }
-            return ForumPageResponse(
-                html: "", url: response.url ?? YamiboDomain.baseURL,
-                file: ForumAttachmentFile(name: response.suggestedFilename ?? "attachment", data: data)
-            )
-        }
-        return ForumPageResponse(html: try result.decodeHTML(), url: response.url ?? YamiboDomain.baseURL)
+        return isFile && !isHTML
     }
 }
 

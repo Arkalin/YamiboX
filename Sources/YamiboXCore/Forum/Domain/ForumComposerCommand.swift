@@ -19,6 +19,40 @@ public struct ForumComposerTransaction: Sendable {
     public let selection: ForumComposerSelection
 }
 
+/// One temporary index for the repeated ancestor-boundary queries in a tool
+/// transaction. Keep the original first-span/atomic affinity rules at ties.
+private struct ForumComposerSourceOffsetIndex {
+    let projection: ForumComposerProjection
+    let rangesAreOrdered: Bool
+
+    init(_ projection: ForumComposerProjection) {
+        self.projection = projection
+        rangesAreOrdered = zip(projection.spans, projection.spans.dropFirst()).allSatisfy {
+            $0.sourceRange.location <= $1.sourceRange.location && $0.sourceRange.end <= $1.sourceRange.end
+        }
+    }
+
+    func visibleOffset(forSourceOffset offset: Int, affinity: ForumComposerSelection.Affinity = .upstream) -> Int {
+        // Preserve the linear reference semantics if a future projection ever
+        // emits source ranges out of order or with overlapping extents.
+        guard rangesAreOrdered else { return projection.visibleOffset(forSourceOffset: offset, affinity: affinity) }
+        let spans = projection.spans
+        var low = 0, high = spans.count
+        while low < high {
+            let middle = (low + high) / 2
+            if spans[middle].sourceRange.end < offset { low = middle + 1 } else { high = middle }
+        }
+        guard low < spans.count else { return projection.text.utf16.count }
+        let span = spans[low]
+        guard span.sourceRange.location <= offset else { return span.range.location }
+        if span.isAtomic {
+            return offset == span.sourceRange.location || affinity == .downstream && offset < span.sourceRange.end
+                ? span.range.location : span.range.end
+        }
+        return span.range.location + min(max(0, offset - span.sourceRange.location), span.range.length)
+    }
+}
+
 extension ForumComposerDocument {
     @discardableResult
     public mutating func apply(_ command: ForumComposerCommand, parsesEmoticons: Bool = true,
@@ -135,11 +169,12 @@ extension ForumComposerDocument {
     }
 
     private func balancedSourceRange(for visible: ForumComposerRange, projection: ForumComposerProjection) -> ForumComposerRange {
+        let offsets = ForumComposerSourceOffsetIndex(projection)
         var range = projection.sourceRange(forVisibleRange: visible)
         for span in projection.spans(in: visible) {
             for node in span.ancestors {
-                let start = projection.visibleOffset(forSourceOffset: node.contentRange.location, affinity: .downstream)
-                let end = projection.visibleOffset(forSourceOffset: node.contentRange.end)
+                let start = offsets.visibleOffset(forSourceOffset: node.contentRange.location, affinity: .downstream)
+                let end = offsets.visibleOffset(forSourceOffset: node.contentRange.end)
                 if visible.location <= start && visible.end >= end {
                     let lower = min(range.location, node.range.location), upper = max(range.end, node.range.end)
                     range = .init(location: lower, length: upper - lower)
@@ -150,12 +185,13 @@ extension ForumComposerDocument {
     }
 
     private func removingTags(_ tags: Set<ForumComposerTag>, in visible: ForumComposerRange, projection: ForumComposerProjection) -> [ForumComposerSourceEdit] {
+        let offsets = ForumComposerSourceOffsetIndex(projection)
         let spans = projection.spans(in: visible).filter { $0.kind != .boundary }
         var wholeNodes: [String: ForumComposerNode] = [:]
         for span in spans {
             for node in span.ancestors where node.tag.map(tags.contains) == true && !node.isSystem {
-                let start = projection.visibleOffset(forSourceOffset: node.contentRange.location, affinity: .downstream)
-                let end = projection.visibleOffset(forSourceOffset: node.contentRange.end)
+                let start = offsets.visibleOffset(forSourceOffset: node.contentRange.location, affinity: .downstream)
+                let end = offsets.visibleOffset(forSourceOffset: node.contentRange.end)
                 if visible.location <= start && visible.end >= end { wholeNodes[node.id] = node }
             }
         }

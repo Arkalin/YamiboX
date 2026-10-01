@@ -141,6 +141,28 @@ extension FavoriteLibraryDocument {
         deletedItemIDs[target.id] = date
     }
 
+    /// Applies an ordered deletion batch to this document, keeping the single
+    /// item API's first-deletion clock and missing-target behavior. Only the
+    /// requested identities are carried across a remote wait; callers invoke
+    /// this on the fresh document inside the store's write transaction.
+    public mutating func removeItems(
+        targets: [FavoriteItemTarget],
+        now: () -> Date = { .now }
+    ) {
+        guard !targets.isEmpty else { return }
+        let liveIDs = Set(items.map { $0.target.id })
+        var dates: [String: Date] = [:]
+        for target in targets {
+            let date = now()
+            let id = target.id
+            guard liveIDs.contains(id), dates[id] == nil else { continue }
+            dates[id] = date
+        }
+        guard !dates.isEmpty else { return }
+        items.removeAll { dates[$0.target.id] != nil }
+        deletedItemIDs.merge(dates, uniquingKeysWith: { _, new in new })
+    }
+
     /// Refreshes the Yamibo remote mapping after a sync run saw the item on
     /// the website. Passing nil keeps the previously known value.
     public mutating func updateRemoteMapping(

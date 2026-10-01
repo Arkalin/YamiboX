@@ -56,7 +56,7 @@ extension FavoriteUpdateCheckEngine {
     /// right mid-run: the store is missing this run's not-yet-committed
     /// detections, and the in-memory list is missing read/dismiss marks the
     /// user applied since the run snapshotted it.
-    func deliverNotificationIfEnabled(for event: FavoriteUpdateEvent, runEvents: [FavoriteUpdateEvent]) async {
+    func deliverNotificationIfEnabled(for event: FavoriteUpdateEvent, runEvents: FavoriteUpdateRunEventAccumulator) async {
         notificationBadgeSequence &+= 1
         let sequence = notificationBadgeSequence
         let runID = snapshot?.runID
@@ -65,9 +65,13 @@ extension FavoriteUpdateCheckEngine {
         do {
             let unreadCount: Int
             if let runID {
-                unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents, replacingWith: event, runID: runID, sequence: sequence)
+                let captured = runEvents.snapshot()
+                unreadCount = try await updateStore.unreadEventCount(
+                    runEventCount: captured.count, materializeRunEvents: captured.materialize,
+                    replacingWith: event, runID: runID, sequence: sequence
+                )
             } else {
-                unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents)
+                unreadCount = try await updateStore.unreadEventCount(mergingRunEvents: runEvents.materialize())
             }
             await notifier.deliver(FavoriteUpdateNotification(event: event, badgeCount: unreadCount))
         } catch {

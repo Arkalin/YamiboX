@@ -82,12 +82,8 @@ extension FavoriteCommands {
             case .currentLocation(let location):
                 document.removeItems(ids: Set(items.map(\.id)), from: location)
             case .everywhere:
-                for item in items {
-                    document.removeItem(target: item.target)
-                }
-                for collectionID in request.collectionIDs {
-                    document.dissolveCollection(id: collectionID)
-                }
+                document.removeItems(targets: items.map(\.target))
+                document.dissolveCollections(ids: Array(request.collectionIDs))
             }
             return document
         }

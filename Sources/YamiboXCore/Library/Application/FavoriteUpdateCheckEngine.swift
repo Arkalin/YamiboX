@@ -284,17 +284,36 @@ public final class FavoriteUpdateCheckEngine {
         } catch {
             YamiboLog.persistence.error("Failed to prepare favorite update run \(run.snapshot.runID): \(error.localizedDescription)")
             guard ownedRun === run else { return false }
+            // This store preserves GRDB's CancellationError under its
+            // persistence wrapper. Classify that source locally; a cancelled
+            // caller alone must never hide a genuine SQL/encoding failure.
+            let preparationError = (error as? YamiboPersistenceError)?.underlying ?? error
+            let wasCancelled = LoadDiagnosticError.isCancellation(preparationError)
             var failed = run.snapshot
-            failed.status = LoadDiagnosticError.isCancellation(error) ? .interrupted : .failed
+            failed.status = wasCancelled ? .interrupted : .failed
             failed.phase = failed.status == .interrupted ? .interrupted : .failed
             failed.finishedAt = .now
-            failed.errorMessage = error.localizedDescription
+            failed.errorMessage = wasCancelled ? preparationError.localizedDescription : error.localizedDescription
             snapshot = failed
             reportError(error)
             // A cancelled preparation may already have persisted .running.
             // Stamp its terminal result without inheriting that cancellation.
-            if LoadDiagnosticError.isCancellation(error) {
-                await Task { try? await updateStore.saveRun(failed) }.value
+            if wasCancelled {
+                let interrupted = failed
+                await Task { @MainActor [self] in
+                    do {
+                        try await updateStore.saveRun(interrupted)
+                    } catch {
+                        guard ownedRun === run else { return }
+                        var terminalFailure = interrupted
+                        terminalFailure.status = .failed
+                        terminalFailure.phase = .failed
+                        terminalFailure.updatedAt = .now
+                        terminalFailure.errorMessage = error.localizedDescription
+                        reportError(error)
+                        snapshot = terminalFailure
+                    }
+                }.value
             }
             return false
         }
@@ -487,7 +506,7 @@ public final class FavoriteUpdateCheckEngine {
         // `updateStore` at most once (`commitCheckResults`, on every exit
         // path below) instead of per favorite — see that method's doc.
         var trackedTargets: [String: FavoriteUpdateTrackedTarget] = [:]
-        var events: [FavoriteUpdateEvent] = []
+        var events = FavoriteUpdateRunEventAccumulator()
         do {
             try Task.checkCancellation()
             let document = try await libraryStore.load()
@@ -505,7 +524,7 @@ public final class FavoriteUpdateCheckEngine {
 
             let initialState = try await updateStore.loadState()
             trackedTargets = Dictionary(uniqueKeysWithValues: initialState.trackedTargets.map { ($0.id, $0) })
-            events = initialState.events
+            events = FavoriteUpdateRunEventAccumulator(initialState.events)
 
             var detectedCount = 0
             for (index, item) in scopedCandidates.enumerated() {
@@ -600,13 +619,35 @@ public final class FavoriteUpdateCheckEngine {
     private func finishRun(
         runID: String,
         trackedTargets: [String: FavoriteUpdateTrackedTarget],
-        events: [FavoriteUpdateEvent],
+        events: FavoriteUpdateRunEventAccumulator,
         status: FavoriteUpdateRunStatus,
         errorMessage: String? = nil,
         onlyIfStillRunning: Bool = false
     ) async {
         guard finishingRunIDs.insert(runID).inserted else { return }
         defer { finishingRunIDs.remove(runID) }
+        // Terminal persistence must finish even when the network driver was
+        // cancelled, or is cancelled while this write is suspended. This
+        // unstructured task has a fresh cancellation state; the driver still
+        // joins it before the registry releases this run or changes accounts.
+        // Only the bounded commit/cleanup runs here, never more network work.
+        await Task { @MainActor [self] in
+            await persistFinishedRun(
+                runID: runID, trackedTargets: trackedTargets, events: events,
+                status: status, errorMessage: errorMessage,
+                onlyIfStillRunning: onlyIfStillRunning
+            )
+        }.value
+    }
+
+    private func persistFinishedRun(
+        runID: String,
+        trackedTargets: [String: FavoriteUpdateTrackedTarget],
+        events: FavoriteUpdateRunEventAccumulator,
+        status: FavoriteUpdateRunStatus,
+        errorMessage: String?,
+        onlyIfStillRunning: Bool
+    ) async {
         var terminalStatus = status
         var terminalErrorMessage = errorMessage
         do {
@@ -624,19 +665,23 @@ public final class FavoriteUpdateCheckEngine {
         guard var terminal = snapshot, terminal.runID == runID else { return }
         // An interrupted run may still fail to persist its results. Surface that
         // failure, but don't otherwise restamp an already-terminated run.
-        if onlyIfStillRunning, terminal.status != .running, terminalStatus != .failed { return }
-        let phase: FavoriteUpdateRunPhase = switch terminalStatus {
-        case .completed: .completed
-        case .interrupted: .interrupted
-        case .canceled: .canceled
-        case .failed, .running: .failed
+        let preserveEarlyTerminal = onlyIfStillRunning && terminal.status != .running && terminalStatus != .failed
+        if !preserveEarlyTerminal {
+            let phase: FavoriteUpdateRunPhase = switch terminalStatus {
+            case .completed: .completed
+            case .interrupted: .interrupted
+            case .canceled: .canceled
+            case .failed, .running: .failed
+            }
+            terminal.status = terminalStatus
+            terminal.phase = phase
+            terminal.finishedAt = .now
+            terminal.updatedAt = .now
+            terminal.progress = nil
+            if let terminalErrorMessage { terminal.errorMessage = terminalErrorMessage }
         }
-        terminal.status = terminalStatus
-        terminal.phase = phase
-        terminal.finishedAt = .now
-        terminal.updatedAt = .now
-        terminal.progress = nil
-        if let terminalErrorMessage { terminal.errorMessage = terminalErrorMessage }
+        // Preserve interrupt's original timestamp, but ensure its early
+        // terminal row is durable even if that caller's write was cancelled.
         do {
             try await updateStore.saveRun(terminal)
         } catch {
@@ -660,10 +705,10 @@ public final class FavoriteUpdateCheckEngine {
     /// so it never writes an empty first-run result over existing state.
     private func commitCheckResults(
         trackedTargets: [String: FavoriteUpdateTrackedTarget],
-        events: [FavoriteUpdateEvent]
+        events: FavoriteUpdateRunEventAccumulator
     ) async throws {
         guard !trackedTargets.isEmpty else { return }
-        try await updateStore.applyCheckRunResults(trackedTargets: Array(trackedTargets.values), events: events)
+        try await updateStore.applyCheckRunResults(trackedTargets: Array(trackedTargets.values), events: events.materialize())
     }
 
     func updateSnapshot(
@@ -789,7 +834,7 @@ public final class FavoriteUpdateCheckEngine {
     private func checkUpdate(
         for item: FavoriteItem,
         trackedTargets: inout [String: FavoriteUpdateTrackedTarget],
-        events: inout [FavoriteUpdateEvent]
+        events: inout FavoriteUpdateRunEventAccumulator
     ) async -> CheckResult {
         var target = trackedTargets[item.target.id] ?? FavoriteUpdateTrackedTarget(
             target: .favorite(item.target),
@@ -853,7 +898,7 @@ public final class FavoriteUpdateCheckEngine {
             return .checked(detected: 0)
         }
 
-        let existingEvent = events.first { $0.target == .favorite(item.target) && $0.dismissedAt == nil }
+        let existingEvent = events.firstUndismissed(for: .favorite(item.target))
         let summary = Self.mergedSummary(
             existing: existingEvent?.summary,
             new: FavoriteUpdateFingerprint.summary(from: previous, to: fingerprint)
@@ -869,8 +914,7 @@ public final class FavoriteUpdateCheckEngine {
             detectedAt: .now,
             ambiguous: fingerprint.latestPostID == nil
         )
-        events.removeAll { $0.target == event.target && $0.dismissedAt == nil }
-        events.append(event)
+        events.replaceUndismissed(with: event)
         trackedTargets[item.target.id] = target
         await deliverNotificationIfEnabled(for: event, runEvents: events)
         return .checked(detected: 1)

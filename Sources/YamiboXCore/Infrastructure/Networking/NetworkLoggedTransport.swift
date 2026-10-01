@@ -7,15 +7,34 @@ enum NetworkLoggedTransport {
         using session: URLSession,
         source: NetworkLogSource = .http,
         delegate: (any URLSessionTaskDelegate)? = nil,
+        bodyPolicy: NetworkResponseBodyPolicy? = nil,
         recorder: NetworkLogRecorder = .shared
     ) async throws -> (Data, URLResponse) {
         let token = recorder.begin(request: request, source: source)
+        let receiver = bodyPolicy.map(NetworkResponseBodyReceiver.init(policy:))
         let observer = AttemptDelegate(
             token: token,
             recorder: recorder,
             delegate: delegate,
-            sessionDelegate: session.delegate as? any URLSessionTaskDelegate
+            sessionDelegate: session.delegate as? any URLSessionTaskDelegate,
+            receiver: receiver
         )
+        if let receiver {
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let task = session.dataTask(with: request)
+                    task.delegate = observer
+                    // Plain task creation precedes assigning the per-task delegate.
+                    observer.urlSession(session, didCreateTask: task)
+                    if !receiver.start(task, continuation: continuation) {
+                        task.cancel()
+                        observer.completeBody(error: CancellationError())
+                    }
+                }
+            } onCancel: {
+                receiver.cancel()
+            }
+        }
         do {
             let result = try await session.data(for: request, delegate: observer)
             observer.finish(response: result.1, receivedBytes: Int64(result.0.count), error: nil)
@@ -26,7 +45,7 @@ enum NetworkLoggedTransport {
         }
     }
 
-    private final class AttemptDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private final class AttemptDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         private let token: NetworkLogToken
         private let recorder: NetworkLogRecorder
         private let delegate: (any URLSessionTaskDelegate)?
@@ -34,26 +53,57 @@ enum NetworkLoggedTransport {
         private let lock = NSLock()
         private var task: URLSessionTask?
         private var duration: TimeInterval?
+        private let receiver: NetworkResponseBodyReceiver?
 
         init(
             token: NetworkLogToken,
             recorder: NetworkLogRecorder,
             delegate: (any URLSessionTaskDelegate)?,
-            sessionDelegate: (any URLSessionTaskDelegate)?
+            sessionDelegate: (any URLSessionTaskDelegate)?,
+            receiver: NetworkResponseBodyReceiver?
         ) {
             self.token = token
             self.recorder = recorder
             self.delegate = delegate
             self.sessionDelegate = sessionDelegate
+            self.receiver = receiver
         }
 
         func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-            lock.withLock { self.task = task }
+            let created = lock.withLock {
+                guard self.task !== task else { return false }
+                self.task = task
+                return true
+            }
+            guard created else { return }
             if let callback = delegate?.urlSession(_:didCreateTask:) {
                 callback(session, task)
             } else {
                 sessionDelegate?.urlSession?(session, didCreateTask: task)
             }
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                        didReceive response: URLResponse,
+                        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
+            receiver?.receive(response)
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            if receiver?.receive(data) == false { dataTask.cancel() }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+            completeBody(error: error)
+        }
+
+        func completeBody(error: (any Error)?) {
+            guard let completion = receiver?.complete(error: error) else { return }
+            let failure: (any Error)?
+            if case let .failure(error) = completion.result { failure = error } else { failure = nil }
+            finish(response: completion.response, receivedBytes: completion.receivedBytes, error: failure)
+            completion.continuation.resume(with: completion.result)
         }
 
         func urlSession(
@@ -62,9 +112,13 @@ enum NetworkLoggedTransport {
             newRequest request: URLRequest,
             completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
-            let completion: @Sendable (URLRequest?) -> Void = { [token, recorder] admitted in
+            let completion: @Sendable (URLRequest?) -> Void = { [token, recorder, receiver] admitted in
                 if let admitted {
                     recorder.addRedirect(to: token, from: response, request: admitted)
+                } else {
+                    // A denied redirect may complete without a data-delegate
+                    // response callback. Preserve its explicit continuation URL.
+                    receiver?.receive(response)
                 }
                 completionHandler(admitted)
             }

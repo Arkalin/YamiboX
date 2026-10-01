@@ -308,9 +308,7 @@ extension FavoriteLibraryOrganizer {
         let collectionIDs = selection.selectedCollectionIDs
         guard !collectionIDs.isEmpty else { return }
         let committed: Void? = await commit { document in
-            for collectionID in collectionIDs {
-                document.dissolveCollection(id: collectionID)
-            }
+            document.dissolveCollections(ids: Array(collectionIDs))
         }
         guard committed != nil else { return }
         selection.exitSelectionMode()

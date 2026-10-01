@@ -10,8 +10,7 @@ struct LocalFavoriteActiveFilterStrip: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                let selectedSourceFilters = organizer.filter.selectedSourceFilters
-                    .sorted { organizer.sourceFilterLabel($0).localizedCaseInsensitiveCompare(organizer.sourceFilterLabel($1)) == .orderedAscending }
+                let selectedSourceFilters = organizer.sortedSourceFilters(organizer.filter.selectedSourceFilters)
                 ForEach(selectedSourceFilters, id: \.self) { sourceFilter in
                     LocalFavoriteFilterChip(
                         title: organizer.sourceFilterLabel(sourceFilter),

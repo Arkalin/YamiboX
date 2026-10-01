@@ -15,6 +15,15 @@ public protocol FavoriteUpdateStatePersisting: Sendable {
     /// A consecutive detection replaces this raw target's undismissed run events
     /// and appends `event`. Missing/skipped sequences must use the full snapshot.
     func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent], replacingWith event: FavoriteUpdateEvent, runID: String, sequence: UInt64) async throws -> Int
+    /// Count and provider describe the same captured run snapshot. The provider
+    /// is evaluated within this call only, when a full rebase is needed.
+    func unreadEventCount(
+        runEventCount: Int,
+        materializeRunEvents: @escaping @Sendable () -> [FavoriteUpdateEvent],
+        replacingWith event: FavoriteUpdateEvent,
+        runID: String,
+        sequence: UInt64
+    ) async throws -> Int
     func endNotificationBadgeRun(runID: String) async
     func markEventRead(_ id: String, date: Date) async throws
     func markEventsRead(_ ids: Set<String>, date: Date) async throws
@@ -33,6 +42,16 @@ public protocol FavoriteUpdateLibraryAccessing: Sendable {
 }
 
 extension FavoriteUpdateStatePersisting {
+    public func unreadEventCount(
+        runEventCount: Int,
+        materializeRunEvents: @escaping @Sendable () -> [FavoriteUpdateEvent],
+        replacingWith event: FavoriteUpdateEvent,
+        runID: String,
+        sequence: UInt64
+    ) async throws -> Int {
+        try await unreadEventCount(mergingRunEvents: materializeRunEvents(), replacingWith: event, runID: runID, sequence: sequence)
+    }
+
     public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent], replacingWith event: FavoriteUpdateEvent, runID: String, sequence: UInt64) async throws -> Int {
         try await unreadEventCount(mergingRunEvents: runEvents)
     }

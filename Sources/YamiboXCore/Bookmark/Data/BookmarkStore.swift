@@ -14,6 +14,10 @@ public actor BookmarkStore: ReaderBookmarkMutating {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    // One immutable, lightweight work index. Its revision is checked in the
+    // same read snapshot as the winning row, including writes by other stores.
+    private var positionIndex: BookmarkPositionIndex?
+    private var positionReadEpoch: UInt64 = 0
 
     public init(databasePool: DatabasePool? = nil) {
         self.database = databasePool
@@ -48,7 +52,46 @@ public actor BookmarkStore: ReaderBookmarkMutating {
     /// bookmarked" test — see `NovelBookmarkAnchor.neighborhoodCharacterRadius`
     /// for why the novel neighborhood is deliberately narrow.
     public func bookmark(marking anchor: BookmarkAnchorPayload, in workKey: ReadingWorkKey) async throws -> BookmarkItem? {
-        try await bookmarks(for: workKey).first { $0.anchor.marksSamePlace(as: anchor) }
+        positionReadEpoch &+= 1
+        let epoch = positionReadEpoch
+        let previous = positionIndex
+        let result = try await database.read { db -> (BookmarkPositionIndex?, BookmarkItem?) in
+            var canonicalWork = workKey
+            canonicalWork.id = try MangaDirectoryIdentityDatabase.canonicalWorkID(workKey, in: db)
+            guard try db.tableExists("bookmark_position_revisions"),
+                  let revision = try String.fetchOne(db,
+                    sql: "SELECT revision FROM bookmark_position_revisions WHERE work_kind = ? AND work_id = ?",
+                    arguments: [canonicalWork.kind.rawValue, canonicalWork.id]) else {
+                // Minimal injected schemas and empty/reset works retain the
+                // authoritative query rather than reusing an untracked cache.
+                return (nil, try Self.fetchBookmarks(workKey: workKey, in: db)
+                    .first { $0.anchor.marksSamePlace(as: anchor) })
+            }
+            let index: BookmarkPositionIndex
+            if let previous, previous.workKey == canonicalWork, previous.revision == revision {
+                index = previous
+            } else {
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT id, anchor_json FROM bookmarks
+                    WHERE work_kind = ? AND work_id = ? AND deleted_at IS NULL
+                    ORDER BY sort_key ASC, created_at ASC, id ASC
+                    """, arguments: [canonicalWork.kind.rawValue, canonicalWork.id])
+                index = BookmarkPositionIndex(workKey: canonicalWork, revision: revision,
+                    entries: rows.compactMap { row in
+                        guard let payload = try? JSONDecoder().decode(BookmarkAnchorPayload.self,
+                            from: Data((row["anchor_json"] as String).utf8)) else { return nil }
+                        return (id: row["id"] as String, anchor: payload)
+                    })
+            }
+            guard let id = index.firstID(marking: anchor),
+                  let row = try Row.fetchOne(db, sql: Self.selectColumns + " WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [id]), let item = try Self.item(from: row) else { return (index, nil) }
+            return (index, item)
+        }
+        // Reentrant reads can finish out of order. Every caller gets its own
+        // snapshot result, while only the latest admission retains a cache.
+        if epoch == positionReadEpoch { positionIndex = result.0 }
+        return result.1
     }
 
     /// Adds a bookmark at `anchor`, or removes the one already marking that
@@ -128,6 +171,9 @@ public actor BookmarkStore: ReaderBookmarkMutating {
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
             try db.execute(sql: "DELETE FROM bookmarks")
             try db.execute(sql: "DELETE FROM bookmark_sync_state")
+            if try db.tableExists("bookmark_position_revisions") {
+                try db.execute(sql: "DELETE FROM bookmark_position_revisions")
+            }
         }
     }
 

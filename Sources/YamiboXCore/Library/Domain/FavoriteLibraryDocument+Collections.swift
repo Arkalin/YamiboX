@@ -89,4 +89,74 @@ extension FavoriteLibraryDocument {
             return item
         }
     }
+
+    /// Preserves the order of the former per-collection operations while
+    /// visiting the item array once. Decoded documents may contain duplicate
+    /// collection IDs, so the first collection still determines its parent.
+    public mutating func dissolveCollections(
+        ids collectionIDs: [String],
+        now: () -> Date = { .now }
+    ) {
+        guard !collectionIDs.isEmpty else { return }
+        struct Step {
+            let order: Int
+            let location: FavoriteLocation
+            let parent: FavoriteLocation
+            let date: Date
+        }
+        let firstByID = Dictionary(collections.map { ($0.id, $0) },
+                                   uniquingKeysWith: { first, _ in first })
+        var removedIDs: Set<String> = []
+        var steps: [FavoriteLocation: Step] = [:]
+        for (order, id) in collectionIDs.enumerated() {
+            let date = now()
+            guard let collection = firstByID[id], removedIDs.insert(id).inserted else { continue }
+            let location = FavoriteLocation.collection(categoryID: collection.categoryID, collectionID: id)
+            steps[location] = Step(order: order, location: location,
+                                   parent: .category(collection.categoryID), date: date)
+            deletedCollectionIDs[id] = date
+        }
+        guard !removedIDs.isEmpty else { return }
+        collections.removeAll { removedIDs.contains($0.id) }
+        items = items.map { original in
+            var matches: [Step] = []
+            var seenOrders: Set<Int> = []
+            var remaining: [FavoriteLocation] = []
+            for location in original.locations {
+                if let step = steps[location] {
+                    if seenOrders.insert(step.order).inserted { matches.append(step) }
+                } else {
+                    remaining.append(location)
+                }
+            }
+            guard !matches.isEmpty else { return original }
+            matches.sort { $0.order < $1.order }
+
+            // Normalization deduplicates by location.id, not enum equality.
+            // Unusual decoded IDs containing ":collection:" can make two
+            // different locations collide. Replay only this affected item so
+            // an earlier normalization cannot revive a suppressed parent or
+            // advance a later clock for a location that no longer exists.
+            var firstLocationByID: [String: FavoriteLocation] = [:]
+            let hasIDCollision = (original.locations + matches.map(\.parent)).contains { location in
+                if let first = firstLocationByID[location.id] { return first != location }
+                firstLocationByID[location.id] = location
+                return false
+            }
+            var item = original
+            if hasIDCollision {
+                for step in matches where item.locations.contains(step.location) {
+                    item.locations.removeAll { $0 == step.location }
+                    item.locations = FavoriteItem.normalizedLocations(item.locations + [step.parent])
+                    item.locationsUpdatedAt = step.date
+                    item.updatedAt = step.date
+                }
+            } else {
+                item.locations = FavoriteItem.normalizedLocations(remaining + matches.map(\.parent))
+                item.locationsUpdatedAt = matches.last!.date
+                item.updatedAt = matches.last!.date
+            }
+            return item
+        }
+    }
 }

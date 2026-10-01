@@ -79,7 +79,7 @@ extension FavoriteUpdateCheckEngine {
         nonTagCheckCap: Int,
         runID: String,
         trackedTargets: inout [String: FavoriteUpdateTrackedTarget],
-        events: inout [FavoriteUpdateEvent]
+        events: inout FavoriteUpdateRunEventAccumulator
     ) async {
         guard !groups.isEmpty else { return }
         let existingByDirectoryID: [MangaDirectoryID: FavoriteUpdateTrackedTarget] = Dictionary(
@@ -205,7 +205,7 @@ extension FavoriteUpdateCheckEngine {
         group: MangaDirectoryCandidate,
         existing: FavoriteUpdateTrackedTarget,
         trackedTargets: inout [String: FavoriteUpdateTrackedTarget],
-        events: inout [FavoriteUpdateEvent]
+        events: inout FavoriteUpdateRunEventAccumulator
     ) async -> MangaDirectoryCheckResult {
         guard let makeMangaDirectoryWorkflow else { return .skippedCircuitBreaker }
         var target = existing
@@ -248,7 +248,7 @@ extension FavoriteUpdateCheckEngine {
             }
 
             let key = FavoriteUpdateTargetKey.mangaDirectory(directoryID: group.directory.id)
-            let existingEvent = events.first { $0.target == key && $0.dismissedAt == nil }
+            let existingEvent = events.firstUndismissed(for: key)
             let summary = Self.mergedSummary(
                 existing: existingEvent?.summary,
                 new: .newChapters(count: newTIDs.count)
@@ -264,8 +264,7 @@ extension FavoriteUpdateCheckEngine {
                 detectedAt: .now,
                 ambiguous: false
             )
-            events.removeAll { $0.target == event.target && $0.dismissedAt == nil }
-            events.append(event)
+            events.replaceUndismissed(with: event)
             trackedTargets[target.id] = target
             await deliverNotificationIfEnabled(for: event, runEvents: events)
             return .checked(detected: 1)

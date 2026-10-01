@@ -161,6 +161,19 @@ public actor FavoriteUpdateStore {
         runID: String,
         sequence: UInt64
     ) async throws -> Int {
+        try await unreadEventCount(
+            runEventCount: runEvents.count, materializeRunEvents: { runEvents },
+            replacingWith: event, runID: runID, sequence: sequence
+        )
+    }
+
+    public func unreadEventCount(
+        runEventCount: Int,
+        materializeRunEvents: @escaping @Sendable () -> [FavoriteUpdateEvent],
+        replacingWith event: FavoriteUpdateEvent,
+        runID: String,
+        sequence: UInt64
+    ) async throws -> Int {
         notificationBadgeEpoch &+= 1
         let epoch = notificationBadgeEpoch
         let previous = notificationBadge
@@ -170,15 +183,16 @@ public actor FavoriteUpdateStore {
                   let revision = try String.fetchOne(db, sql: "SELECT revision FROM favorite_update_notification_revision WHERE id = 1") else {
                 // Isolated callers can inject an older/minimal schema. Preserve
                 // their existing authoritative behavior until it is migrated.
-                let merged = try Self.mergingRunEvents(runEvents, in: db)
+                let merged = try Self.mergingRunEvents(materializeRunEvents(), in: db)
                 return (nil, merged.filter { $0.readAt == nil && $0.dismissedAt == nil }.count)
             }
             if let previous, previous.runID == runID, previous.revision == revision,
                previous.sequence &+ 1 == sequence,
-               try previous.replaceUndismissed(with: event, runEventCount: runEvents.count, sequence: sequence,
+               try previous.replaceUndismissed(with: event, runEventCount: runEventCount, sequence: sequence,
                                                canonicalize: { try Self.canonicalEvent($0, in: db) }) {
                 return (previous, previous.unreadCount)
             }
+            let runEvents = materializeRunEvents()
             let stored = try Self.events(in: db).map { try Self.canonicalEvent($0, in: db) }
             guard let rebased = try FavoriteUpdateNotificationBadge(
                 runID: runID, sequence: sequence, revision: revision, runEvents: runEvents, storedEvents: stored,

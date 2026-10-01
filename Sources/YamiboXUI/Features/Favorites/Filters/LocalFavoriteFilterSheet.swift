@@ -81,9 +81,7 @@ struct LocalFavoriteFilterSheet: View {
     }
 
     private var availableSourceFilters: [LocalFavoriteSourceFilter] {
-        organizer.derived.sourceFilterEntryCounts.keys.sorted {
-            organizer.sourceFilterLabel($0).localizedCaseInsensitiveCompare(organizer.sourceFilterLabel($1)) == .orderedAscending
-        }
+        organizer.sortedSourceFilters(organizer.derived.sourceFilterEntryCounts.keys)
     }
 
     private func toggleSourceFilter(_ sourceFilter: LocalFavoriteSourceFilter) {
