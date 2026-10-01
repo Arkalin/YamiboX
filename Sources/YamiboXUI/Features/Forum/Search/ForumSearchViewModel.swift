@@ -28,6 +28,7 @@ final class ForumSearchViewModel {
     }
     @ObservationIgnored private var inFlightKey: RequestKey?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var currentSearchQuery: String?
 
     init(forumID: String?, dependencies: ForumDependencies) {
         self.forumID = forumID
@@ -113,7 +114,9 @@ final class ForumSearchViewModel {
         guard !Task.isCancelled, generation == requestGeneration else { return }
         let trimmedQuery = key.query
         let pageNumber = key.page
-        let searchID = currentSearchID
+        // Retained results belong to their committed query, not the editable
+        // input or a replacement first-page request that is still pending.
+        let searchID = currentSearchQuery == trimmedQuery ? currentSearchID : nil
         isLoading = true
         errorMessage = nil
         defer {
@@ -151,6 +154,7 @@ final class ForumSearchViewModel {
             guard !Task.isCancelled, requestGeneration == generation else { return }
             if let resolvedSearchID {
                 currentSearchID = resolvedSearchID
+                currentSearchQuery = trimmedQuery
             }
             page = nextPage
             currentPage = nextPage.pageNavigation?.currentPage ?? pageNumber
@@ -160,7 +164,10 @@ final class ForumSearchViewModel {
                   !LoadDiagnosticError.isCancellation(error) else { return }
             page = nil
             currentPage = pageNumber
-            if pageNumber == 1 { currentSearchID = nil }
+            if pageNumber == 1 {
+                currentSearchID = nil
+                currentSearchQuery = nil
+            }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
