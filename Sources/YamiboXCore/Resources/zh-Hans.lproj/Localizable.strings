@@ -1034,6 +1034,11 @@
 "reader.no_downloadable_pages" = "当前没有可下载的网页页码";
 "reader.page_number_compact" = "第%d页";
 "reader.immersive_mode" = "沉浸模式";
+"reader.swap_page_turn_tap_zones" = "交换翻页手势区域";
+"reader.previous_page" = "上一页";
+"reader.next_page" = "下一页";
+"reader.tap_zones.left_previous" = "左侧上一页，右侧下一页；中间显示或隐藏菜单";
+"reader.tap_zones.left_next" = "左侧下一页，右侧上一页；中间显示或隐藏菜单";
 "reader.chapter_pages_remaining" = "本章还剩 %d 页";
 "reader.chapter_last_page" = "本章最后一页";
 "reader.page_number_spaced" = "第 %d 页";

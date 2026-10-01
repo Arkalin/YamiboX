@@ -25,6 +25,7 @@ enum MangaReadingDirection {
 struct MangaNavigationConfiguration: Equatable {
     let direction: MangaReadingDirection
     let surface: MangaInteractionConfiguration
+    var swapsPageTurnTapZones = false
 }
 
 enum MangaNavigationRequest {

@@ -385,7 +385,9 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             }
 
             let zone = ReaderPagedTapZone.zone(for: location, in: containerView.bounds)
-            let directionalZone = parent.settings.pageTurnDirection.directionalTapZone(for: zone)
+            let directionalZone = parent.settings.pageTurnDirection.directionalTapZone(
+                for: zone, swapped: parent.settings.swapsPageTurnTapZones
+            )
             let onPageTapZone = parent.onPageTapZone
             callbackScheduler.publish {
                 onPageTapZone(directionalZone)

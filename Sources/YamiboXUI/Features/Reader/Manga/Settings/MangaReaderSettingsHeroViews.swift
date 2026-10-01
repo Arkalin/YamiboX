@@ -27,6 +27,7 @@ struct MangaReaderSettingsHero: View {
     let topInset: CGFloat
     let height: CGFloat
     let usesTwoPageSpread: Bool
+    let tapZonesPreviewRequestID: Int
     let onClose: () -> Void
     let onConfirm: () -> Void
 
@@ -37,7 +38,8 @@ struct MangaReaderSettingsHero: View {
                 palette: palette,
                 usesTwoPageSpread: usesTwoPageSpread,
                 height: height,
-                contentTopPadding: topInset + 78
+                contentTopPadding: topInset + 78,
+                tapZonesPreviewRequestID: tapZonesPreviewRequestID
             )
 
             MangaReaderSettingsHeader(
@@ -91,6 +93,7 @@ private struct MangaReaderSettingsPreviewSpread: View {
     let usesTwoPageSpread: Bool
     let height: CGFloat
     let contentTopPadding: CGFloat
+    let tapZonesPreviewRequestID: Int
 
     private var selectedMode: ReaderSettingsReadingModeOption {
         ReaderSettingsReadingModeOption(settings)
@@ -148,10 +151,48 @@ private struct MangaReaderSettingsPreviewSpread: View {
             }
 
             MangaReaderBrightnessPreviewOverlay(brightness: settings.brightness)
+
+            if selectedMode != .scroll {
+                MangaReaderSettingsPageTurnZonesPreview(
+                    settings: settings,
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    tapZonesPreviewRequestID: tapZonesPreviewRequestID
+                )
+                .padding(.top, contentTopPadding)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18)
+            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .clipShape(UnevenRoundedRectangle(cornerRadii: frameCornerRadii, style: .continuous))
+    }
+}
+
+private struct MangaReaderSettingsPageTurnZonesPreview: View {
+    let settings: MangaReaderSettings
+    let usesTwoPageSpread: Bool
+    let tapZonesPreviewRequestID: Int
+
+    var body: some View {
+        GeometryReader { proxy in
+            let pageCount: CGFloat = usesTwoPageSpread ? 2 : 1
+            let spacing: CGFloat = usesTwoPageSpread ? 12 : 0
+            let pageHeight = max(0, min(proxy.size.height, (proxy.size.width - spacing) / (0.72 * pageCount)))
+            let pageWidth = pageHeight * 0.72
+
+            // Match the visible foreground spread, not the full-width hero or its duplicate sheets.
+            ReaderSettingsPageTurnZonesPreview(
+                direction: settings.pageTurnDirection == .leftToRight ? .leftToRight : .rightToLeft,
+                swapped: settings.swapsPageTurnTapZones,
+                requestID: tapZonesPreviewRequestID,
+                isEnabled: settings.readingMode == .paged,
+                usesCompactLabels: true
+            )
+            .frame(width: pageWidth * pageCount + spacing, height: pageHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
     }
 }
 

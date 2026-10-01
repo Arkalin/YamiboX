@@ -16,6 +16,7 @@ struct MangaReaderSettingsSheet: View {
     @State private var draftSettings = MangaReaderSettings()
     @State private var hasLoadedDraft = false
     @State private var isPeripheralSettingsPresented = false
+    @State private var tapZonesPreviewRequestID = 0
 
     private var isPadDevice: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -48,6 +49,7 @@ struct MangaReaderSettingsSheet: View {
                         topInset: topInset,
                         height: heroHeight,
                         usesTwoPageSpread: usesTwoPageSpread,
+                        tapZonesPreviewRequestID: tapZonesPreviewRequestID,
                         onClose: { dismiss() },
                         onConfirm: commitDraft
                     )
@@ -56,6 +58,10 @@ struct MangaReaderSettingsSheet: View {
                         settings: $draftSettings,
                         palette: palette,
                         usesTwoPageSpread: usesTwoPageSpread,
+                        onSwapPageTurnTapZonesChange: { value in
+                            draftSettings.swapsPageTurnTapZones = value
+                            tapZonesPreviewRequestID += 1
+                        },
                         onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                     )
                 }

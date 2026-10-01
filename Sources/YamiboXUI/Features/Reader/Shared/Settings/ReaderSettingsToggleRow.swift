@@ -26,7 +26,7 @@ struct ReaderSettingsToggleRow<Palette: ReaderSettingsPalette>: View {
 
             Spacer(minLength: 8)
 
-            Toggle("", isOn: $isOn)
+            Toggle(title, isOn: $isOn)
                 .labelsHidden()
         }
     }

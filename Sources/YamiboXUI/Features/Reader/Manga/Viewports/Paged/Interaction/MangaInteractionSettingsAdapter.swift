@@ -4,7 +4,8 @@ extension MangaNavigationConfiguration {
     init(settings: MangaReaderSettings, chromeVisible: Bool, zoomEnabled: Bool, usesTwoPages: Bool) {
         self.init(direction: settings.pageTurnDirection == .leftToRight ? .leftToRight : .rightToLeft,
             surface: MangaInteractionConfiguration(chromeVisible: chromeVisible,
-                zoomEnabled: zoomEnabled, allowsUnzoomedPan: !usesTwoPages))
+                zoomEnabled: zoomEnabled, allowsUnzoomedPan: !usesTwoPages),
+            swapsPageTurnTapZones: settings.swapsPageTurnTapZones)
     }
 }
 

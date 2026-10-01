@@ -8,20 +8,17 @@ struct MangaReaderSettingsSections: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
+    let onSwapPageTurnTapZonesChange: (Bool) -> Void
     let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(spacing: 22) {
-                MangaReaderSettingsDisplaySection(
-                    settings: $settings,
-                    palette: palette
-                )
-
                 MangaReaderSettingsPagingSection(
                     settings: $settings,
                     palette: palette,
-                    usesTwoPageSpread: usesTwoPageSpread
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    onSwapPageTurnTapZonesChange: onSwapPageTurnTapZonesChange
                 )
 
                 MangaReaderSettingsOtherSection(
@@ -38,33 +35,19 @@ struct MangaReaderSettingsSections: View {
     }
 }
 
-private struct MangaReaderSettingsDisplaySection: View {
-    @Binding var settings: MangaReaderSettings
-    let palette: MangaReaderSettingsPalette
-
-    var body: some View {
-        ReaderSettingsSection(
-            title: L10n.string("manga.settings.section.display"),
-            palette: palette
-        ) {
-            MangaReaderBrightnessRow(
-                value: $settings.brightness,
-                palette: palette
-            )
-        }
-    }
-}
-
 struct MangaReaderSettingsPagingSection: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
+    let onSwapPageTurnTapZonesChange: (Bool) -> Void
 
     var body: some View {
         ReaderSettingsSection(
-            title: L10n.string("manga.settings.section.paging"),
+            title: L10n.string("reader.section.display"),
             palette: palette
         ) {
+            MangaReaderBrightnessRow(value: $settings.brightness, palette: palette)
+            ReaderSettingsDivider(palette: palette)
             ReaderSettingsModePicker(
                 selection: ReaderSettingsReadingModeOption(settings),
                 pagedTurnStyle: settings.pagedTurnStyle,
@@ -84,6 +67,16 @@ struct MangaReaderSettingsPagingSection: View {
                 ) { direction in
                     settings.pageTurnDirection = direction
                 }
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
+                    title: L10n.string("reader.swap_page_turn_tap_zones"),
+                    palette: palette,
+                    isOn: Binding(
+                        get: { settings.swapsPageTurnTapZones },
+                        set: { onSwapPageTurnTapZonesChange($0) }
+                    )
+                )
+                .accessibilityIdentifier("manga.settings.swapsPageTurnTapZones")
                 ReaderSettingsDivider(palette: palette)
                 MangaReaderPagedDisplaySettings(
                     settings: $settings,

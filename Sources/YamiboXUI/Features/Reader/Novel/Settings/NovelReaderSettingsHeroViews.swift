@@ -26,6 +26,7 @@ struct NovelReaderHeroSection: View {
     let previewText: String
     let topInset: CGFloat
     let height: CGFloat
+    let tapZonesPreviewRequestID: Int
     let onClose: () -> Void
     let onConfirm: () -> Void
 
@@ -44,6 +45,14 @@ struct NovelReaderHeroSection: View {
                 previewText: previewText,
                 contentHeight: max(160, height - topInset - 122)
             )
+            .overlay {
+                ReaderSettingsPageTurnZonesPreview(
+                    direction: settings.pageTurnDirection,
+                    swapped: settings.swapsPageTurnTapZones,
+                    requestID: tapZonesPreviewRequestID,
+                    isEnabled: settings.readingMode == .paged
+                )
+            }
         }
         .padding(.top, topInset + 12)
         .padding(.bottom, 28)
