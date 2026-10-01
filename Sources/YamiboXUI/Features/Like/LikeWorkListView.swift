@@ -273,40 +273,68 @@ struct LikeWorkListView: View {
     private func load() async {
         loadGeneration += 1
         let generation = loadGeneration
+        let accountGeneration = appModel.accountGeneration
         loadFailure = nil
         async let fetchedSummaries = likeDependencies.likeStore.workSummaries()
         async let favoriteDocument = try? favoriteLibraryStore.load()
         let summaries: [LikeWorkSummary]
         do { summaries = try await fetchedSummaries }
         catch {
-            guard generation == loadGeneration, !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            guard isCurrentLoad(generation, accountGeneration: accountGeneration), !LoadDiagnosticError.isCancellation(error) else { return }
             loadFailure = LoadFailureDetails(error: error)
             annotationOperations.report(error)
             return
         }
         let document = await favoriteDocument ?? FavoriteLibraryDocument()
+        guard isCurrentLoad(generation, accountGeneration: accountGeneration) else { return }
+
+        let novelTIDs = Set(summaries.filter { $0.workKey.kind == .novel }.map(\.workKey.id))
+        var firstFavoriteTitlesByTID: [String: String] = [:]
+        if !novelTIDs.isEmpty {
+            for item in document.items {
+                guard let tid = item.target.threadID, novelTIDs.contains(tid) else { continue }
+                if firstFavoriteTitlesByTID[tid] == nil {
+                    firstFavoriteTitlesByTID[tid] = item.resolvedDisplayTitle
+                }
+                if firstFavoriteTitlesByTID.count == novelTIDs.count { break }
+            }
+        }
+        let coverKeys = summaries.map { summary in
+            switch summary.workKey.kind {
+            case .novel: ContentCoverKey.thread(tid: summary.workKey.id)
+            case .manga: ContentCoverKey.smartManga(directoryID: MangaDirectoryID(rawValue: summary.workKey.id))
+            }
+        }
+        async let fetchedCovers = contentCoverStore.bestEffortCovers(for: coverKeys)
 
         var titles: [ReadingWorkKey: String] = [:]
-        var covers: [ReadingWorkKey: URL] = [:]
         for summary in summaries {
+            guard isCurrentLoad(generation, accountGeneration: accountGeneration) else { return }
             let key = summary.workKey
             switch key.kind {
             case .novel:
                 // Like Items don't persist a work title (unlike
                 // implementation-design.md §1); best-effort resolve it from a
                 // matching favorite, falling back to the raw tid.
-                titles[key] = document.items.first(where: { $0.target.threadID == key.id })?.resolvedDisplayTitle
-                covers[key] = await contentCoverStore.cover(for: .thread(tid: key.id))?.resolvedURL
+                titles[key] = firstFavoriteTitlesByTID[key.id]
             case .manga:
                 titles[key] = try? await likeDependencies.mangaDirectoryStore.identityName(id: MangaDirectoryID(rawValue: key.id))
-                covers[key] = await contentCoverStore.cover(for: .smartManga(directoryID: MangaDirectoryID(rawValue: key.id)))?.resolvedURL
             }
         }
-        guard generation == loadGeneration, !Task.isCancelled else { return }
+        let fetched = await fetchedCovers
+        guard isCurrentLoad(generation, accountGeneration: accountGeneration) else { return }
+        var covers: [ReadingWorkKey: URL] = [:]
+        for (summary, coverKey) in zip(summaries, coverKeys) {
+            covers[summary.workKey] = fetched[coverKey]?.resolvedURL
+        }
         self.summaries = summaries
         titlesByWorkKey = titles
         coverURLsByWorkKey = covers
         hasLoaded = true
+    }
+
+    private func isCurrentLoad(_ generation: Int, accountGeneration: UUID) -> Bool {
+        generation == loadGeneration && accountGeneration == appModel.accountGeneration && !Task.isCancelled
     }
 
     private func openAnchor(_ anchor: LikeAnchorPayload, work: ReadingWorkKey) {

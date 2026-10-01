@@ -61,18 +61,20 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
             fraction: preparedWork.targetImageURLs.isEmpty ? 0.95 : 0.05
         ))
         try await strategy.persistPreparedSource(preparedWork)
+        try Task.checkCancellation()
 
         guard !preparedWork.targetImageURLs.isEmpty else {
             try await strategy.finish(preparedWork)
             return
         }
 
-        var completedImageURLs = await reconciledCompletedImageURLs(preparedWork.targetImageURLs)
+        var completedImageURLs = try await reconciledCompletedImageURLs(preparedWork.targetImageURLs)
         try await store.prepareDownloadWorkForRun(
             id: preparedWork.workID,
             targetImageURLs: preparedWork.targetImageURLs,
             completedImageURLs: completedImageURLs
         )
+        try Task.checkCancellation()
         let tracker = DownloadImageProgressTracker(
             urls: preparedWork.targetImageURLs,
             completed: completedImageURLs,
@@ -94,19 +96,24 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         guard try await store.containsDownloadWork(id: preparedWork.workID) else {
             throw CancellationError()
         }
+        try Task.checkCancellation()
         progress(DownloadWorkProgress(phase: .saving, fraction: 0.95))
         try await strategy.finish(preparedWork)
     }
 
-    private func reconciledCompletedImageURLs(_ targetImageURLs: [URL]) async -> [URL] {
+    private func reconciledCompletedImageURLs(_ targetImageURLs: [URL]) async throws -> [URL] {
         var completed: [URL] = []
         for imageURL in targetImageURLs {
+            try Task.checkCancellation()
             // Existence check only — loading the image bytes here would read
             // every already-downloaded image of the work into memory per run.
-            if await store.hasOfflineImage(for: imageURL) {
+            let hasOfflineImage = await store.hasOfflineImage(for: imageURL)
+            try Task.checkCancellation()
+            if hasOfflineImage {
                 completed.append(imageURL)
             }
         }
+        try Task.checkCancellation()
         return completed
     }
 

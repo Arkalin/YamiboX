@@ -16,14 +16,22 @@ final class FavoriteUpdateMonitor: ObservableObject {
     }
     /// `events` already publishes invalidation; progress never changes this revision.
     private(set) var eventsRevision: UInt64 = 0
-    @Published private(set) var fidFilters: [FavoriteUpdateFidFilter] = []
-    @Published private(set) var categoryFilters: [FavoriteUpdateCategoryFilter] = []
+    @Published private(set) var fidFilters: [FavoriteUpdateFidFilter] = [] {
+        didSet { scopeRevision &+= 1 }
+    }
+    @Published private(set) var categoryFilters: [FavoriteUpdateCategoryFilter] = [] {
+        didSet { scopeRevision &+= 1 }
+    }
     /// The authoritative per-target category scope, keyed by
     /// `FavoriteUpdateTargetKey`. UI category-filter matching for a
     /// `.mangaDirectory` event must read this rather than guessing from
     /// `FavoriteItem.target.id` equality (that lookup is `.favorite`-only by
     /// construction — a directory event's target id never matches one).
-    @Published private(set) var trackedTargets: [FavoriteUpdateTrackedTarget] = []
+    @Published private(set) var trackedTargets: [FavoriteUpdateTrackedTarget] = [] {
+        didSet { scopeRevision &+= 1 }
+    }
+    /// Scope inputs publish their own invalidation; check progress leaves this unchanged.
+    private(set) var scopeRevision: UInt64 = 0
     /// Mirrors the engine's error state, but stays independently settable so
     /// a view can clear a shown alert (`errorMessage = nil`) without that
     /// clear being resurrected by unrelated engine state changes — the engine

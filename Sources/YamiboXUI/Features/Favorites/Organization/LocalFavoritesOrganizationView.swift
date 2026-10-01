@@ -15,6 +15,7 @@ struct LocalFavoritesOrganizationView: View {
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     @ObservedObject private var selection: LocalFavoriteBrowseSession
     @ObservedObject private var routes: LocalFavoritesRoutes
+    @State private var updateEventScopeCache = FavoriteUpdateEventScopeCache()
     let detailScreen: (ContentDetailDestination) -> ContentDetailScreen
     let isBookPresented: Bool
 
@@ -190,7 +191,7 @@ struct LocalFavoritesOrganizationView: View {
             FavoriteUpdatesPage(
                 updateMonitor: updateMonitor,
                 routes: routes,
-                isEventVisible: isEventInFilterScope,
+                eventScope: { scopedUpdateEvents },
                 onOpen: { event in
                     switch event.target {
                     case .favorite:
@@ -453,52 +454,26 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     private var unreadUpdateCount: Int {
-        updateMonitor.events.filter { $0.readAt == nil && isEventInFilterScope($0) }.count
+        scopedUpdateEvents.unreadCount
     }
 
-    /// Whether `event` still falls within the currently-enabled fid/category
-    /// filters. The bell badge and the updates page's event list must agree
-    /// with what a fresh check run would actually surface — otherwise
-    /// disabling a forum's filter leaves its stale events still counted and
-    /// listed as if nothing changed.
-    private func isEventInFilterScope(_ event: FavoriteUpdateEvent) -> Bool {
-        let fidFilters = updateMonitor.fidFilters
-        let categoryFilters = updateMonitor.categoryFilters
-        let disabledFidsExist = fidFilters.contains { !$0.enabled }
-        let disabledCategoriesExist = categoryFilters.contains { !$0.enabled }
-        guard disabledFidsExist || disabledCategoriesExist else { return true }
-
-        let fidMatches: Bool
-        if disabledFidsExist, let fid = event.fid {
-            fidMatches = fidFilters.first { $0.fid == fid }?.enabled ?? true
-        } else {
-            fidMatches = true
-        }
-
-        let categoryMatches: Bool
-        if disabledCategoriesExist {
-            // `.favorite` reads live category membership off the favorite
-            // itself (never stale); `.mangaDirectory` has no single favorite
-            // to read, so it reads the tracked target's own `categoryIDs` —
-            // the authoritative per-directory field the check run already
-            // maintains, not a proxy inferred from unrelated state.
-            let itemCategoryIDs: Set<String>
-            switch event.target {
-            case .favorite:
-                itemCategoryIDs = Set(
-                    organizer.favoriteItems.first(where: { $0.target.id == event.target.id })?
-                        .locations.compactMap(\.categoryID) ?? []
-                )
-            case .mangaDirectory:
-                itemCategoryIDs = updateMonitor.trackedTargets.first(where: { $0.target == event.target })?.categoryIDs ?? []
-            }
-            let enabledCategoryIDs = Set(categoryFilters.filter(\.enabled).map(\.categoryID))
-            categoryMatches = itemCategoryIDs.isEmpty || !itemCategoryIDs.isDisjoint(with: enabledCategoryIDs)
-        } else {
-            categoryMatches = true
-        }
-
-        return fidMatches && categoryMatches
+    /// Category changes use live favorite membership; directory events use the
+    /// tracked target's authoritative category scope. Progress reuses the result.
+    private var scopedUpdateEvents: FavoriteUpdateEventScope {
+        updateEventScopeCache.value(
+            revision: .init(
+                organizer: ObjectIdentifier(organizer),
+                monitor: ObjectIdentifier(updateMonitor),
+                items: organizer.unreadItemsRevision,
+                events: updateMonitor.eventsRevision,
+                scope: updateMonitor.scopeRevision
+            ),
+            items: organizer.favoriteItems,
+            events: updateMonitor.events,
+            fidFilters: updateMonitor.fidFilters,
+            categoryFilters: updateMonitor.categoryFilters,
+            trackedTargets: updateMonitor.trackedTargets
+        )
     }
 
     private var statusCards: some View {

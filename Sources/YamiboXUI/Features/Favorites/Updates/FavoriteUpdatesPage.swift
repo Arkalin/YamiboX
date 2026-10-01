@@ -7,7 +7,7 @@ import YamiboXCore
 struct FavoriteUpdatesPage: View {
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     let routes: LocalFavoritesRoutes
-    let isEventVisible: (FavoriteUpdateEvent) -> Bool
+    let eventScope: () -> FavoriteUpdateEventScope
     let onOpen: (FavoriteUpdateEvent) async -> Void
 
     @State private var isDismissAllConfirmationPresented = false
@@ -81,14 +81,10 @@ struct FavoriteUpdatesPage: View {
         }
     }
 
-    private var visibleEvents: [FavoriteUpdateEvent] {
-        updateMonitor.events.filter(isEventVisible)
-    }
-
     @ViewBuilder
     private var eventsSection: some View {
+        let events = eventScope().events
         Section {
-            let events = visibleEvents
             if events.isEmpty {
                 Text(L10n.string("favorites.updates.no_events"))
                     .foregroundStyle(.secondary)
@@ -112,7 +108,7 @@ struct FavoriteUpdatesPage: View {
             HStack {
                 Text(L10n.string("favorites.updates.events"))
                 Spacer()
-                if !visibleEvents.isEmpty {
+                if !events.isEmpty {
                     Button(L10n.string("favorites.updates.dismiss_all")) {
                         isDismissAllConfirmationPresented = true
                     }

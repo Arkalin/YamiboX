@@ -150,48 +150,69 @@ public actor ContentCoverStore {
         let validKeys = Array(Set(keys.filter { !$0.targetID.isEmpty }))
         guard !validKeys.isEmpty else { return [:] }
         do {
-            return try await database.read { db in
-                var covers: [ContentCoverKey: ContentCover] = [:]
-                // 200 keys * 2 bind parameters stays well under SQLite's
-                // 999-parameter limit.
-                for chunk in stride(from: 0, to: validKeys.count, by: 200).map({ Array(validKeys[$0..<min($0 + 200, validKeys.count)]) }) {
-                    let condition = Array(repeating: "(target_type = ? AND target_id = ?)", count: chunk.count)
-                        .joined(separator: " OR ")
-                    let arguments = try chunk.flatMap { key in
-                        let canonical = try Self.canonicalKey(key, in: db)
-                        return [canonical.targetType.rawValue, canonical.targetID]
-                    }
-                    let rows = try Row.fetchAll(
-                        db,
-                        sql: """
-                        SELECT target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
-                        FROM content_cover
-                        WHERE \(condition)
-                        """,
-                        arguments: StatementArguments(arguments)
-                    )
-                    for row in rows {
-                        guard let targetType = ContentCoverTargetType(rawValue: row["target_type"] as String) else { continue }
-                        let key = ContentCoverKey(targetType: targetType, targetID: row["target_id"])
-                        covers[key] = ContentCover(
-                            key: key,
-                            automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
-                            manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
-                            dynamicEnabled: row["dynamic_enabled"],
-                            textCoverForced: row["text_cover_forced"],
-                            updatedAt: Date(timeIntervalSince1970: row["updated_at"])
-                        )
-                    }
-                }
-                for key in validKeys {
-                    if let cover = covers[try Self.canonicalKey(key, in: db)] { covers[key] = cover }
-                }
-                return covers
-            }
+            return try await database.read { db in try Self.fetchCovers(for: validKeys, in: db) }
         } catch {
             YamiboLog.library.warning("Failed to batch-read \(validKeys.count) content covers: \(error)")
             return [:]
         }
+    }
+
+    /// Lists that previously read each key independently retain successful
+    /// lookups if a batch fails. Normal reads still use one transaction.
+    public func bestEffortCovers(for keys: [ContentCoverKey]) async -> [ContentCoverKey: ContentCover] {
+        let validKeys = Array(Set(keys.filter { !$0.targetID.isEmpty }))
+        guard !validKeys.isEmpty, !Task.isCancelled else { return [:] }
+        do {
+            return try await database.read { db in try Self.fetchCovers(for: validKeys, in: db) }
+        } catch {
+            guard !Task.isCancelled else { return [:] }
+            YamiboLog.library.warning("Failed to batch-read \(validKeys.count) content covers; retrying individual keys: \(error)")
+            var covers: [ContentCoverKey: ContentCover] = [:]
+            for key in validKeys {
+                guard !Task.isCancelled else { return covers }
+                covers[key] = await cover(for: key)
+            }
+            return covers
+        }
+    }
+
+    private static func fetchCovers(for validKeys: [ContentCoverKey], in db: Database) throws -> [ContentCoverKey: ContentCover] {
+        var covers: [ContentCoverKey: ContentCover] = [:]
+        // 200 keys * 2 bind parameters stays well under SQLite's
+        // 999-parameter limit.
+        for chunk in stride(from: 0, to: validKeys.count, by: 200).map({ Array(validKeys[$0..<min($0 + 200, validKeys.count)]) }) {
+            let condition = Array(repeating: "(target_type = ? AND target_id = ?)", count: chunk.count)
+                .joined(separator: " OR ")
+            let arguments = try chunk.flatMap { key in
+                let canonical = try Self.canonicalKey(key, in: db)
+                return [canonical.targetType.rawValue, canonical.targetID]
+            }
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
+                FROM content_cover
+                WHERE \(condition)
+                """,
+                arguments: StatementArguments(arguments)
+            )
+            for row in rows {
+                guard let targetType = ContentCoverTargetType(rawValue: row["target_type"] as String) else { continue }
+                let key = ContentCoverKey(targetType: targetType, targetID: row["target_id"])
+                covers[key] = ContentCover(
+                    key: key,
+                    automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
+                    manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
+                    dynamicEnabled: row["dynamic_enabled"],
+                    textCoverForced: row["text_cover_forced"],
+                    updatedAt: Date(timeIntervalSince1970: row["updated_at"])
+                )
+            }
+        }
+        for key in validKeys {
+            if let cover = covers[try Self.canonicalKey(key, in: db)] { covers[key] = cover }
+        }
+        return covers
     }
 
     /// Full-table snapshot in a stable (target_type, target_id) order, for the

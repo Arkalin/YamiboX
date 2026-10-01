@@ -58,7 +58,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
         fallbackLoader.delegate = ImageFallbackNetworkLogDelegate()
         var configuration = ImagePipeline.Configuration(dataLoader: fallbackLoader)
-        configuration.dataCache = dataCache
+        configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
         self.pipeline = ImagePipeline(

@@ -7,7 +7,15 @@ enum ForumComposerMarkupParser {
         let name: String
         let isClosing: Bool
         let parameter: String
-        let element: Element?
+        let isHTML: Bool
+
+        // Only attribute-consuming branches need a DOM. Keep the same HTML
+        // parser for those attributes without parsing br, simple formatting,
+        // or literal bodies whose elements are never read.
+        var element: Element? {
+            guard isHTML, !isClosing else { return nil }
+            return try? KannaSoup.parseBodyFragment(raw).selectFirst(name)
+        }
     }
 
     private static let emoticons = Dictionary(uniqueKeysWithValues: ForumEmoticonCatalog.categories.flatMap(\.items).map { ($0.code, $0.imageURL) })
@@ -34,10 +42,7 @@ enum ForumComposerMarkupParser {
             let body = isClosing ? String(inner.dropFirst()) : inner
             let name = String(body.prefix { $0.isLetter || $0.isNumber }).lowercased()
             let parameter = body.firstIndex(of: "=").map { String(body[body.index(after: $0)...]) } ?? ""
-            // Reuse the project's HTML parser for attributes/entities, never
-            // evaluate HTML or use WebKit's attributed-string importer.
-            let element = format == .html && !isClosing ? (try? KannaSoup.parseBodyFragment(raw).selectFirst(name)) : nil
-            return Token(range: range, raw: raw, name: name, isClosing: isClosing, parameter: parameter, element: element ?? nil)
+            return Token(range: range, raw: raw, name: name, isClosing: isClosing, parameter: parameter, isHTML: format == .html)
         }
         var matching: [Int: Int] = [:]
         var stack: [Int] = []
