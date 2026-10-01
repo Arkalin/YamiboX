@@ -147,6 +147,7 @@ public final class NovelReadingWorkflow {
     private let viewportRuntime: NovelTextViewportRuntimeOwner
     private var semanticPreparationCache: NovelTextLayoutPreparedInput?
     private var pendingRuntimeUpdateTask: Task<(NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)?, Error>?
+    private var loadRequestSequence: UInt64 = 0
     private var prefetchInFlightView: Int?
     private var prefetchCooldown: (view: Int, until: Date)?
     private let now: @Sendable () -> Date
@@ -737,6 +738,7 @@ public final class NovelReadingWorkflow {
     }
 
     public func close() {
+        loadRequestSequence &+= 1
         supersedePendingRuntimeUpdate()
         viewportRuntime.release()
         semanticPreparationCache = nil
@@ -856,6 +858,7 @@ public final class NovelReadingWorkflow {
         preferredSurfaceOrdinal: Int,
         resumePoint: NovelResumePoint?
     ) async throws -> NovelReadingWorkflowState? {
+        loadRequestSequence &+= 1
         supersedePendingRuntimeUpdate()
         guard let nextProjection = prefetchedProjection,
               var candidateSession = session else {
@@ -908,6 +911,8 @@ public final class NovelReadingWorkflow {
         forceRefresh: Bool,
         preparedPageLoad: NovelReaderProjectionLoad? = nil
     ) async throws -> NovelReadingWorkflowState {
+        loadRequestSequence &+= 1
+        let requestSequence = loadRequestSequence
         supersedePendingRuntimeUpdate()
         let targetView = max(1, view)
         let preferredAuthorID = preferredResumePoint?.view == targetView
@@ -959,12 +964,45 @@ public final class NovelReadingWorkflow {
         let skippedHiddenPage = projection.view != targetView
         let preservedResumePoint = skippedHiddenPage ? nil : preferredResumePoint ?? captureNovelReadingPosition()
         let nextAuthorID = Self.normalizedAuthorID(projection.resolvedAuthorID) ?? requestedAuthorID
-        let transaction = try prepareRuntimeTransaction(
-            projection: projection,
-            settings: settings,
-            layout: layout,
-            usesPadPresentation: usesPadPresentation
-        )
+        var preparedInput: NovelTextLayoutPreparedInput
+        var preparedUpdate: NovelReadingWorkflowRuntimeUpdate
+        while true {
+            let update = NovelReadingWorkflowRuntimeUpdate(
+                settings: settings,
+                layout: layout,
+                usesPadPresentation: usesPadPresentation
+            )
+            let paginationLayout = update.layout.novelTextBoxLayout(
+                settings: update.settings,
+                usesPadPresentation: update.usesPadPresentation
+            )
+            let cachedPreparation = semanticPreparationCache
+            let preparationTask = Task.detached(priority: .userInitiated) {
+                try NovelTextLayout.prepareInput(
+                    document: projection, settings: update.settings, layout: paginationLayout,
+                    reusing: cachedPreparation
+                )
+            }
+            let candidateInput = try await withTaskCancellationHandler {
+                try await preparationTask.value
+            } onCancel: {
+                preparationTask.cancel()
+            }
+            try Task.checkCancellation()
+            guard loadRequestSequence == requestSequence else { throw CancellationError() }
+            // A runtime update may commit while semantic preparation is suspended.
+            // Retry with its new settings and geometry rather than publishing stale pagination.
+            guard update == NovelReadingWorkflowRuntimeUpdate(
+                settings: settings,
+                layout: layout,
+                usesPadPresentation: usesPadPresentation
+            ) else { continue }
+            preparedInput = candidateInput
+            preparedUpdate = update
+            break
+        }
+        let transaction = try viewportRuntime.prepareTransaction(preparedInput: preparedInput)
+        semanticPreparationCache = preparedInput
         let candidateSession = try NovelReadingSession(
             validating: projection,
             layoutResult: transaction.result,
@@ -972,34 +1010,48 @@ public final class NovelReadingWorkflow {
             resumePoint: preservedResumePoint,
             currentAuthorID: nextAuthorID,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
-                settings: settings,
-                layout: layout,
-                usesPadPresentation: usesPadPresentation
+                settings: preparedUpdate.settings,
+                layout: preparedUpdate.layout,
+                usesPadPresentation: preparedUpdate.usesPadPresentation
             ),
-            pageTurnDirection: settings.pageTurnDirection
+            pageTurnDirection: preparedUpdate.settings.pageTurnDirection
         )
-        let projectionCacheContext = NovelReadingCacheContext(authorID: nextAuthorID)
-        let cachedViews = await repository.cachedViews(
-            for: context.threadID,
-            authorID: projectionCacheContext.authorID
-        )
-        // A fresh load replaces every document dimension plus the cached-views
-        // set (just refetched above); appearance carries over from the current
-        // fields by omission.
+        // Cached-view metadata is not needed to render this document. A
+        // follow-up refresh fills it after the first presentation is committed.
         let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
+            settings: preparedUpdate.settings,
+            layout: preparedUpdate.layout,
+            usesPadPresentation: preparedUpdate.usesPadPresentation,
             currentProjection: projection,
             prefetchedProjection: nil,
             currentLoadSource: pageLoad.source,
             prefetchedLoadSource: nil,
             currentAuthorID: candidateSession.snapshot.currentAuthorID ?? nextAuthorID,
-            cachedViews: cachedViews
+            cachedViews: []
         )
         guard let nextState = commit(preparedTransaction) else {
             throw NovelTextLayoutFailure.textKitIndexing
         }
         return nextState
+    }
+
+    /// Cache metadata must never delay the first rendered page or overwrite a
+    /// newer document. It does not affect presentation, so update only this
+    /// field on the latest state after the repository finishes enumerating.
+    package nonisolated(nonsending) func refreshCachedViewsForCurrentDocument() async {
+        guard let currentView = state?.snapshot.currentView, currentProjection != nil else { return }
+        let generation = viewportRuntime.currentGeneration
+        let authorID = cacheContext(forView: currentView).authorID
+        let cachedViews = await repository.cachedViews(for: context.threadID, authorID: authorID)
+        guard !Task.isCancelled,
+              viewportRuntime.currentGeneration == generation,
+              currentProjection?.view == currentView,
+              var currentState = state,
+              currentState.presentation?.generation == generation else { return }
+        currentState.cachedViews = cachedViews
+        state = currentState
     }
 
     /// Returns nil when the session was torn down while this call was

@@ -27,6 +27,7 @@ final class NovelReaderLoadingCoordinator {
     @ObservationIgnored private var loadRevision: UInt64 = 0
     @ObservationIgnored private var followUpTask: Task<Void, Never>?
     @ObservationIgnored private var downloadRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var cachedViewsRefreshTask: Task<Void, Never>?
 
     private let context: NovelLaunchContext
     private let makeRepository: @Sendable () async -> any NovelReadingPageRepository
@@ -61,13 +62,16 @@ final class NovelReaderLoadingCoordinator {
     deinit {
         followUpTask?.cancel()
         downloadRefreshTask?.cancel()
+        cachedViewsRefreshTask?.cancel()
     }
 
     private func cancelFollowUps() {
         followUpTask?.cancel()
         downloadRefreshTask?.cancel()
+        cachedViewsRefreshTask?.cancel()
         followUpTask = nil
         downloadRefreshTask = nil
+        cachedViewsRefreshTask = nil
     }
 
     func close() {
@@ -80,7 +84,7 @@ final class NovelReaderLoadingCoordinator {
         isLoading = false
     }
 
-    func ensureWorkflow() async -> NovelReadingWorkflow? {
+    func ensureWorkflow(resolvedSettings: NovelReaderAppearanceSettings? = nil) async -> NovelReadingWorkflow? {
         guard !isClosed else { return nil }
         if let workflow { return workflow }
         if repository == nil {
@@ -89,7 +93,11 @@ final class NovelReaderLoadingCoordinator {
             if self.repository == nil { self.repository = repository }
         }
         if workflow == nil, let repository {
-            let resolvedSettings = await presentation.resolveFonts(presentation.settings())
+            let resolvedSettings = if let resolvedSettings {
+                resolvedSettings
+            } else {
+                await presentation.resolveFonts(presentation.settings())
+            }
             guard !isClosed, !Task.isCancelled else { return nil }
             if workflow == nil {
                 runtime.bootstrapSettings = resolvedSettings
@@ -138,20 +146,28 @@ final class NovelReaderLoadingCoordinator {
             }
         }
         do {
+            var bootstrap: (settings: NovelReaderAppearanceSettings, progress: ReadingProgressRecord?)?
             if repository == nil {
-                let repository = await makeRepository()
-                try Task.checkCancellation()
-                guard preparation.isCurrent(sequence), !isClosed else { return }
+                async let repository = makeRepository()
+                async let progress = progressStore.load(threadID: context.threadID)
                 let settings = await settingsStore.load()
+                async let resolvedSettings = presentation.resolveFonts(settings.novelReader)
+                let (readyRepository, readySettings, readyProgress) = try await (repository, resolvedSettings, progress)
                 try Task.checkCancellation()
                 guard preparation.isCurrent(sequence), !isClosed else { return }
-                self.repository = repository
-                runtime.bootstrapSettings = settings.novelReader
+                self.repository = readyRepository
+                runtime.bootstrapSettings = readySettings
                 runtime.applePencilPageTurnSettings = settings.system.applePencilPageTurn
+                bootstrap = (readySettings, readyProgress)
             }
-            guard let workflow = await ensureWorkflow() else { return }
+            guard let workflow = await ensureWorkflow(resolvedSettings: bootstrap?.settings) else { return }
             if preparedInitialLoad == nil, workflow.state == nil {
-                let progress = try await progressStore.load(threadID: context.threadID)
+                let progress: ReadingProgressRecord?
+                if let bootstrap {
+                    progress = bootstrap.progress
+                } else {
+                    progress = try await progressStore.load(threadID: context.threadID)
+                }
                 try Task.checkCancellation()
                 guard preparation.isCurrent(sequence), !isClosed else { return }
                 let prepared = try await workflow.prepareInitialLoad(initial: NovelReadingInitialPosition(
@@ -286,6 +302,10 @@ final class NovelReaderLoadingCoordinator {
                 guard let self, self.admits(request, workflow: workflow) else { return }
                 await refresh()
             }
+        }
+        cachedViewsRefreshTask = Task { [weak self] in
+            guard let self, self.admits(request, workflow: workflow) else { return }
+            await workflow.refreshCachedViewsForCurrentDocument()
         }
         followUpTask = Task { [weak self] in
             guard let self, self.admits(request, workflow: workflow) else { return }
