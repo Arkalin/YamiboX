@@ -28,6 +28,32 @@ struct FavoriteUnreadIndex {
     }
 }
 
+/// Progress changes may re-evaluate the root without changing any unread inputs.
+/// Revisions avoid comparing or deriving the full library on those warm reads.
+@MainActor
+final class FavoriteUnreadIndexCache {
+    struct Revision: Equatable {
+        let items: UInt64
+        let directories: UInt64
+        let events: UInt64
+    }
+
+    private var revision: Revision?
+    private var index = FavoriteUnreadIndex()
+
+    func value(
+        revision: Revision,
+        items: @autoclosure () -> [FavoriteItem],
+        directories: @autoclosure () -> [String: MangaDirectory],
+        events: @autoclosure () -> [FavoriteUpdateEvent]
+    ) -> FavoriteUnreadIndex {
+        guard self.revision != revision else { return index }
+        index = FavoriteUnreadIndex(items: items(), directories: directories(), events: events())
+        self.revision = revision
+        return index
+    }
+}
+
 extension EnvironmentValues {
     @Entry var favoriteUnreadIndex = FavoriteUnreadIndex()
 }

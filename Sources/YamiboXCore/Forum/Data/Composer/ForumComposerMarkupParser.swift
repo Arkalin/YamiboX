@@ -19,12 +19,16 @@ enum ForumComposerMarkupParser {
             return [.init(text: source, source: ForumComposerMarkup.escapeHTML(source))]
         }
         let text = source as NSString
-        let pattern = format == .html
-            ? #"<!--[\s\S]*?-->|<(?:[^>"']|"[^"]*"|'[^']*')+>"#
-            : #"\[/?[a-zA-Z][a-zA-Z0-9]*(?:=[^\]\r\n]*)?\]|\{:[^{}\s]+:\}"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [.init(text: source, source: source)] }
-        let tokens = expression.matches(in: source, range: NSRange(location: 0, length: text.length)).map { match -> Token in
-            let raw = text.substring(with: match.range)
+        let ranges: [NSRange]
+        if format == .html {
+            ranges = htmlTokenRanges(in: source)
+        } else {
+            let pattern = #"\[/?[a-zA-Z][a-zA-Z0-9]*(?:=[^\]\r\n]*)?\]|\{:[^{}\s]+:\}"#
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { return [.init(text: source, source: source)] }
+            ranges = expression.matches(in: source, range: NSRange(location: 0, length: text.length)).map(\.range)
+        }
+        let tokens = ranges.map { range -> Token in
+            let raw = text.substring(with: range)
             let inner = String(raw.dropFirst().dropLast())
             let isClosing = inner.hasPrefix("/")
             let body = isClosing ? String(inner.dropFirst()) : inner
@@ -33,7 +37,7 @@ enum ForumComposerMarkupParser {
             // Reuse the project's HTML parser for attributes/entities, never
             // evaluate HTML or use WebKit's attributed-string importer.
             let element = format == .html && !isClosing ? (try? KannaSoup.parseBodyFragment(raw).selectFirst(name)) : nil
-            return Token(range: match.range, raw: raw, name: name, isClosing: isClosing, parameter: parameter, element: element ?? nil)
+            return Token(range: range, raw: raw, name: name, isClosing: isClosing, parameter: parameter, element: element ?? nil)
         }
         var matching: [Int: Int] = [:]
         var stack: [Int] = []
@@ -110,6 +114,64 @@ enum ForumComposerMarkupParser {
         }
         walk(from: 0, to: tokens.count, lower: 0, upper: text.length, wrappers: [], depth: 0)
         return runs
+    }
+
+    private static func htmlTokenRanges(in source: String) -> [NSRange] {
+        guard source.utf16.contains(60) else { return [] }
+        let units = Array(source.utf16)
+        guard units.count > 2 else { return [] }
+        // Preserve the old body's grammar: non-quote/non-'>' characters
+        // (including '<') or a complete single/double-quoted segment. Each
+        // suffix records its first unquoted '>', or -1 if a quote never closes.
+        // Failed opening candidates can then share the suffix calculation.
+        var bodyEnds = Array(repeating: -1, count: units.count + 1)
+        var nextSingleQuote: Int?
+        var nextDoubleQuote: Int?
+        for index in units.indices.reversed() {
+            switch units[index] {
+            case 62: bodyEnds[index] = index // >
+            case 39: // '
+                if let nextSingleQuote { bodyEnds[index] = bodyEnds[nextSingleQuote + 1] }
+                nextSingleQuote = index
+            case 34: // "
+                if let nextDoubleQuote { bodyEnds[index] = bodyEnds[nextDoubleQuote + 1] }
+                nextDoubleQuote = index
+            default: bodyEnds[index] = bodyEnds[index + 1]
+            }
+        }
+
+        var ranges: [NSRange] = []
+        var cursor = 0
+        var commentSearch = 0
+        var commentEnd: Int?
+        while cursor < units.count - 2 {
+            guard units[cursor] == 60 else { cursor += 1; continue } // <
+            var end = bodyEnds[cursor + 1]
+            if cursor + 3 < units.count, units[cursor + 1] == 33,
+               units[cursor + 2] == 45, units[cursor + 3] == 45 {
+                // Comments take precedence and close at the first '-->'. This
+                // search only advances, even when every comment is truncated.
+                let minimumClose = cursor + 4
+                if let current = commentEnd, current < minimumClose { commentEnd = nil }
+                if commentEnd == nil {
+                    commentSearch = max(commentSearch, minimumClose)
+                    while commentSearch + 2 < units.count {
+                        let candidate = commentSearch
+                        commentSearch += 1
+                        if units[candidate] == 45, units[candidate + 1] == 45, units[candidate + 2] == 62 {
+                            commentEnd = candidate
+                            break
+                        }
+                    }
+                }
+                if let commentEnd { end = commentEnd + 2 }
+            }
+            // '+' in the old regex requires a nonempty body, so '<>' is text.
+            guard end > cursor + 1 else { cursor += 1; continue }
+            ranges.append(NSRange(location: cursor, length: end - cursor + 1))
+            cursor = end + 1
+        }
+        return ranges
     }
 
     private static func wrapper(_ token: Token, closing: String, inner: String, format: ForumComposerFormat) -> ForumComposerWrapper? {

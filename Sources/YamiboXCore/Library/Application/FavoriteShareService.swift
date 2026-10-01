@@ -307,9 +307,14 @@ public struct FavoriteShareService: Sendable {
         let package = try FavoriteShareCodec.decode(data)
         let document = try await libraryStore.load()
         let boardReaderSettings = await settingsStore.load().boardReader
+        let itemIndex = ImportItemIndex(document: document)
         let folders = package.folders.map { folder in
             let analyses = folder.items.map {
-                analyze($0, document: document, boardReaderSettings: boardReaderSettings)
+                Self.analyze(
+                    $0,
+                    existingItem: itemIndex.existingItem(for: $0, document: document),
+                    boardReaderSettings: boardReaderSettings
+                )
             }
             return FavoriteShareFolderPreview(
                 name: folder.name,
@@ -405,17 +410,9 @@ public struct FavoriteShareService: Sendable {
         )
     }
 
-    private func analyze(
-        _ item: FavoriteSharePackage.Item,
-        document: FavoriteLibraryDocument,
-        boardReaderSettings: BoardReaderSettings
-    ) -> ItemAnalysis {
-        Self.analyze(item, document: document, boardReaderSettings: boardReaderSettings)
-    }
-
     private static func analyze(
         _ item: FavoriteSharePackage.Item,
-        document: FavoriteLibraryDocument,
+        existingItem: FavoriteItem?,
         boardReaderSettings: BoardReaderSettings
     ) -> ItemAnalysis {
         let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -434,8 +431,7 @@ public struct FavoriteShareService: Sendable {
         case .tagManga, .rssSearch:
             return .unsupported
         }
-        let existing = document.items.first { $0.target.threadID == target.threadID }
-        return .valid(AnalyzedItem(source: item, target: target, title: title), existingItem: existing)
+        return .valid(AnalyzedItem(source: item, target: target, title: title), existingItem: existingItem)
     }
 
     private static func importAsNewFolders(
@@ -453,23 +449,37 @@ public struct FavoriteShareService: Sendable {
             invalidCount: 0
         )
         var covers: [ImportedCover] = []
+        var itemIndex = ImportItemIndex(document: document)
 
         for folder in package.folders {
             let category = document.createCategory(name: uniqueCategoryName(folder.name, document: document))
             result.createdFolderCount += 1
             let location = FavoriteLocation.category(category.id)
+            let normalizationIndex = FavoriteLibraryDocument.ItemNormalizationIndex(
+                categories: document.categories, collections: document.collections, tags: document.tags
+            )
             for sourceItem in folder.items {
-                switch analyze(sourceItem, document: document, boardReaderSettings: boardReaderSettings) {
+                switch analyze(
+                    sourceItem,
+                    existingItem: itemIndex.existingItem(for: sourceItem, document: document),
+                    boardReaderSettings: boardReaderSettings
+                ) {
                 case .invalid:
                     result.invalidCount += 1
                 case .unsupported:
                     result.unsupportedCount += 1
                 case let .valid(analyzed, existingItem):
                     if let existingItem {
-                        document.addLocation(location, to: existingItem.target, date: date)
+                        itemIndex.addLocation(
+                            location,
+                            to: existingItem.target,
+                            document: &document,
+                            normalizationIndex: normalizationIndex,
+                            date: date
+                        )
                         result.reusedItemCount += 1
                     } else if let item = makeFavoriteItem(analyzed, locations: [location], date: date) {
-                        document.upsertItem(item)
+                        itemIndex.append(item, document: &document, normalizationIndex: normalizationIndex)
                         result.createdItemCount += 1
                         if let cover = importedCover(from: analyzed.source, target: item.target) {
                             covers.append(cover)
@@ -480,6 +490,7 @@ public struct FavoriteShareService: Sendable {
                 }
             }
         }
+        itemIndex.finish(document: &document)
         return ImportMutation(result: result, covers: covers)
     }
 
@@ -509,13 +520,21 @@ public struct FavoriteShareService: Sendable {
             invalidCount: 0
         )
         var covers: [ImportedCover] = []
+        var itemIndex = ImportItemIndex(document: document)
+        let normalizationIndex = FavoriteLibraryDocument.ItemNormalizationIndex(
+            categories: document.categories, collections: document.collections, tags: document.tags
+        )
         var seenKeys: Set<SharedItemKey> = []
         let items = package.folders.flatMap(\.items).filter { source in
             seenKeys.insert(SharedItemKey(source)).inserted
         }
 
         for sourceItem in items {
-            switch analyze(sourceItem, document: document, boardReaderSettings: boardReaderSettings) {
+            switch analyze(
+                sourceItem,
+                existingItem: itemIndex.existingItem(for: sourceItem, document: document),
+                boardReaderSettings: boardReaderSettings
+            ) {
             case .invalid:
                 result.invalidCount += 1
             case .unsupported:
@@ -529,13 +548,14 @@ public struct FavoriteShareService: Sendable {
                     result.invalidCount += 1
                     continue
                 }
-                document.upsertItem(item)
+                itemIndex.append(item, document: &document, normalizationIndex: normalizationIndex)
                 result.createdItemCount += 1
                 if let cover = importedCover(from: analyzed.source, target: item.target) {
                     covers.append(cover)
                 }
             }
         }
+        itemIndex.finish(document: &document)
         return ImportMutation(result: result, covers: covers)
     }
 
@@ -617,6 +637,78 @@ public struct FavoriteShareService: Sendable {
 }
 
 private extension FavoriteShareService {
+    /// Positions belong to the fresh document inside this import transaction.
+    /// Appends have a new thread ID, so existing positions stay valid until finish.
+    struct ImportItemIndex {
+        private var firstByThreadID: [String: Int] = [:]
+        private var hasAppendedItems = false
+
+        init(document: FavoriteLibraryDocument) {
+            for (position, item) in document.items.enumerated() {
+                if let threadID = item.target.threadID, firstByThreadID[threadID] == nil {
+                    firstByThreadID[threadID] = position
+                }
+            }
+        }
+
+        func existingItem(for source: FavoriteSharePackage.Item, document: FavoriteLibraryDocument) -> FavoriteItem? {
+            firstByThreadID[String(source.targetId)].map { document.items[$0] }
+        }
+
+        mutating func append(
+            _ item: FavoriteItem,
+            document: inout FavoriteLibraryDocument,
+            normalizationIndex: FavoriteLibraryDocument.ItemNormalizationIndex
+        ) {
+            // The old single-item upsert sorted the entire array after the first
+            // insertion. Reproduce its new first-by-thread choice without moving
+            // the array: stable id ordering keeps the original first for equal ids.
+            // A decoded document may contain duplicate targets; keep all of them.
+            if !hasAppendedItems {
+                for (position, existing) in document.items.enumerated() {
+                    guard let threadID = existing.target.threadID,
+                          let first = firstByThreadID[threadID],
+                          existing.id < document.items[first].id else { continue }
+                    firstByThreadID[threadID] = position
+                }
+                hasAppendedItems = true
+            }
+            if let threadID = item.target.threadID {
+                firstByThreadID[threadID] = document.items.count
+            }
+            document.items.append(
+                FavoriteLibraryDocument.normalizedItem(item, index: normalizationIndex)
+            )
+            document.deletedItemIDs.removeValue(forKey: item.target.id)
+        }
+
+        func addLocation(
+            _ location: FavoriteLocation,
+            to target: FavoriteItemTarget,
+            document: inout FavoriteLibraryDocument,
+            normalizationIndex: FavoriteLibraryDocument.ItemNormalizationIndex,
+            date: Date
+        ) {
+            guard let threadID = target.threadID, let position = firstByThreadID[threadID] else { return }
+            let isNewLocation = !document.items[position].locations.contains(location)
+            document.items[position].locations = FavoriteItem.normalizedLocations(
+                document.items[position].locations + [location]
+            )
+            document.items[position] = FavoriteLibraryDocument.normalizedItem(
+                document.items[position], index: normalizationIndex
+            )
+            guard isNewLocation else { return }
+            document.items[position].locationsUpdatedAt = date
+            document.items[position].updatedAt = date
+        }
+
+        func finish(document: inout FavoriteLibraryDocument) {
+            if hasAppendedItems {
+                document.items.sort { $0.id < $1.id }
+            }
+        }
+    }
+
     enum WireTargetType: String, Sendable {
         case threadNormal = "ThreadNormal"
         case threadNovel = "ThreadNovel"

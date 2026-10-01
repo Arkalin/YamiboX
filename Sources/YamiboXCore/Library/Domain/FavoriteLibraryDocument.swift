@@ -196,7 +196,9 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         normalizedItem(item, index: ItemNormalizationIndex(categories: categories, collections: collections, tags: tags))
     }
 
-    private struct ItemNormalizationIndex {
+    /// Shared with transaction-scoped batch imports so the same organization
+    /// sets can validate each item without rebuilding them for every write.
+    struct ItemNormalizationIndex {
         let validCategoryIDs: Set<String>
         let validCollectionIDsByCategory: [String: Set<String>]
         let defaultCategoryID: String
@@ -211,7 +213,7 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         }
     }
 
-    private static func normalizedItem(_ item: FavoriteItem, index: ItemNormalizationIndex) -> FavoriteItem {
+    static func normalizedItem(_ item: FavoriteItem, index: ItemNormalizationIndex) -> FavoriteItem {
         var item = item
         let forumMetadata = FavoriteSourceGroup.normalizedForumMetadata(
             sourceGroup: item.sourceGroup,

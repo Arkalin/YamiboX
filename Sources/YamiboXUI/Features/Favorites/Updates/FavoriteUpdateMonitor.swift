@@ -11,7 +11,11 @@ import YamiboXCore
 @MainActor
 final class FavoriteUpdateMonitor: ObservableObject {
     @Published private(set) var snapshot: FavoriteUpdateRunSnapshot?
-    @Published private(set) var events: [FavoriteUpdateEvent] = []
+    @Published private(set) var events: [FavoriteUpdateEvent] = [] {
+        didSet { eventsRevision &+= 1 }
+    }
+    /// `events` already publishes invalidation; progress never changes this revision.
+    private(set) var eventsRevision: UInt64 = 0
     @Published private(set) var fidFilters: [FavoriteUpdateFidFilter] = []
     @Published private(set) var categoryFilters: [FavoriteUpdateCategoryFilter] = []
     /// The authoritative per-target category scope, keyed by

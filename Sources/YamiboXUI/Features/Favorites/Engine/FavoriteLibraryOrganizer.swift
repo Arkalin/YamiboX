@@ -42,11 +42,14 @@ struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
 final class FavoriteLibraryOrganizer {
     private(set) var document = FavoriteLibraryDocument() {
         didSet {
+            unreadItemsRevision &+= 1
             cachedTagAssociationCounts = nil
             cachedSourceFilterLabels = nil
             refreshDerivedState()
         }
     }
+    /// Tracks assignments and nested value mutations, including same-count replacements.
+    private(set) var unreadItemsRevision: UInt64 = 0
     var selectedCategoryID = FavoriteCategory.defaultID {
         didSet {
             selection.clearSelection()
@@ -140,7 +143,10 @@ final class FavoriteLibraryOrganizer {
     /// doc's performance constraint #2).
     @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
     /// Includes mode-off members so changing presentation never hides an existing update.
-    var unreadMangaDirectoriesByTID: [String: MangaDirectory] = [:]
+    var unreadMangaDirectoriesByTID: [String: MangaDirectory] = [:] {
+        didSet { unreadDirectoriesRevision &+= 1 }
+    }
+    private(set) var unreadDirectoriesRevision: UInt64 = 0
     /// Snapshot of the per-board reader configuration taken at the same
     /// load/reload as `mangaDirectoriesByTID`, so the two are always
     /// consistent with each other for a given derivation.

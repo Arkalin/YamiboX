@@ -9,6 +9,7 @@ struct LocalFavoritesRootView: View {
     @State private var favoriteShare: FavoriteShareFlowModel
     @StateObject private var remoteSync: FavoriteRemoteSyncSession
     @StateObject private var updateMonitor: FavoriteUpdateMonitor
+    @State private var unreadIndexCache = FavoriteUnreadIndexCache()
     @State private var threadOverlayItem: ForumThreadOverlayItem?
     @State private var threadOpeningTransition: BookOpeningTransition?
     @State private var isThreadCoverVisible = false
@@ -67,7 +68,12 @@ struct LocalFavoritesRootView: View {
     }
 
     private var unreadIndex: FavoriteUnreadIndex {
-        FavoriteUnreadIndex(
+        unreadIndexCache.value(
+            revision: .init(
+                items: organizer.unreadItemsRevision,
+                directories: organizer.unreadDirectoriesRevision,
+                events: updateMonitor.eventsRevision
+            ),
             items: organizer.favoriteItems,
             directories: organizer.unreadMangaDirectoriesByTID,
             events: updateMonitor.events

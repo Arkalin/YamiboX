@@ -187,9 +187,22 @@ public final class YamiboAppContext: Sendable {
             resolveForumIDs: { tids in
                 guard !tids.isEmpty else { return [:] }
                 let items = (try? await historyLibraryStore.load())?.items ?? []
+                let requestedTIDs = Set(tids)
+                var firstForumIDs: [String: String] = [:]
+                firstForumIDs.reserveCapacity(requestedTIDs.count)
+                // Preserve the first non-nil source across reader kinds for
+                // each requested thread, without rescanning the library.
+                for item in items {
+                    guard let tid = item.target.threadID,
+                          requestedTIDs.contains(tid),
+                          firstForumIDs[tid] == nil,
+                          let fid = item.forumID else { continue }
+                    firstForumIDs[tid] = fid
+                    if firstForumIDs.count == requestedTIDs.count { break }
+                }
                 var result: [String: String] = [:]
                 for tid in tids {
-                    if let fid = items.first(where: { $0.target.threadID == tid && $0.forumID != nil })?.forumID {
+                    if let fid = firstForumIDs[tid] {
                         result[tid] = fid
                     } else if let page = await historyForumCache.loadThreadPage(thread: ThreadIdentity(tid: tid), allowExpired: true) {
                         result[tid] = page.forumID ?? page.thread.fid
