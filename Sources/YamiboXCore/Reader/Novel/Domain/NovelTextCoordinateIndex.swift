@@ -105,6 +105,8 @@ package struct NovelRuntimeTextSemantics: Sendable {
 package struct NovelRuntimeInlineTextStyle: Hashable, Sendable {
     package var style: NovelInlineTextStyle
     package var range: NSRange
+    package var colorHex: String? = nil
+    package var rubyText: String? = nil
 }
 
 package struct NovelRuntimeBlockTextStyle: Hashable, Sendable {

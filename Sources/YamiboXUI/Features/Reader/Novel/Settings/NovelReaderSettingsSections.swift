@@ -176,19 +176,15 @@ struct NovelReaderDisplaySection: View {
 
 struct NovelReaderMiscSection: View {
     let palette: NovelReaderSheetPalette
-    let loadsInlineImages: Bool
-    let onLoadsInlineImagesChange: (Bool) -> Void
+    let onOpenForumFormat: () -> Void
     let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
         ReaderSettingsSection(title: L10n.string("reader.section.other"), palette: palette) {
-            ReaderSettingsToggleRow(
-                title: L10n.string("reader.inline_images"),
+            ReaderSettingsNavigationRow(
+                title: L10n.string("reader.forum_format"),
                 palette: palette,
-                isOn: Binding(
-                    get: { loadsInlineImages },
-                    set: { onLoadsInlineImagesChange($0) }
-                )
+                action: onOpenForumFormat
             )
             ReaderSettingsDivider(palette: palette)
             ReaderSettingsNavigationRow(
@@ -197,6 +193,62 @@ struct NovelReaderMiscSection: View {
                 action: onOpenPeripheralSettings
             )
         }
+    }
+}
+
+struct NovelReaderForumFormatSheet: View {
+    @Binding var settings: NovelReaderAppearanceSettings
+    let controlAccent: Color
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = NovelReaderSheetPalette(settings: settings, colorScheme: colorScheme, controlAccent: controlAccent)
+        NavigationStack {
+            ScrollView {
+                ReaderSettingsSection(title: L10n.string("reader.forum_format"), palette: palette) {
+                    formatToggle("reader.forum_format.bold", palette: palette, isOn: $settings.forumFormat.bold)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.italic", palette: palette, isOn: $settings.forumFormat.italic)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.underline", palette: palette, isOn: $settings.forumFormat.underline)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.strikethrough", palette: palette, isOn: $settings.forumFormat.strikethrough)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.text_color", palette: palette, isOn: $settings.forumFormat.textColor)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.background_color", palette: palette, isOn: $settings.forumFormat.backgroundColor)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.ruby", palette: palette, isOn: $settings.forumFormat.ruby)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.quote", palette: palette, isOn: $settings.forumFormat.quote)
+                    formatDivider(palette)
+                    formatToggle("reader.forum_format.images", palette: palette, isOn: $settings.loadsInlineImages)
+                }
+                .padding(20)
+            }
+            .background(palette.bodyBackground.ignoresSafeArea())
+            .navigationTitle(L10n.string("reader.forum_format"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("common.done")) { dismiss() }
+                }
+            }
+        }
+        .tint(controlAccent)
+    }
+
+    private func formatToggle(
+        _ key: String,
+        palette: NovelReaderSheetPalette,
+        isOn: Binding<Bool>
+    ) -> some View {
+        ReaderSettingsToggleRow(title: L10n.string(key), palette: palette, isOn: isOn)
+    }
+
+    private func formatDivider(_ palette: NovelReaderSheetPalette) -> some View {
+        ReaderSettingsDivider(palette: palette)
     }
 }
 

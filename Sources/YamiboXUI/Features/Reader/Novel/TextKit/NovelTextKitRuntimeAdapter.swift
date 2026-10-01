@@ -73,11 +73,13 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             width: contentWidth,
             height: max(input.layout.readableFrame.height, 1)
         )
+        let rubyHeadroom = ceil(NovelAttributedTextFactory.defaultBaseFontSize * input.settings.fontScale * 0.6) + 2
         var surfaceRanges = try Self.indexSurfaceRanges(
             attributedDocument: attributedDocument,
             contentStorage: contentStorage,
             layoutManager: layoutManager,
             surfaceSize: surfaceSize,
+            rubyHeadroom: rubyHeadroom,
             semanticBreakOffsets: input.settings.readingMode == .paged
                 ? Self.semanticSurfaceBreakOffsets(for: input.preparedInput)
                 : []
@@ -88,7 +90,8 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                 breakOffsets: Self.semanticSurfaceBreakOffsets(for: input.preparedInput),
                 attributedDocument: attributedDocument,
                 contentStorage: contentStorage,
-                layoutManager: layoutManager
+                layoutManager: layoutManager,
+                rubyHeadroom: rubyHeadroom
             )
         }
         var result = try input.precomputedResult ?? NovelTextLayout.result(
@@ -103,7 +106,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
             ProcessInfo.processInfo.operatingSystemVersionString,
             platformName,
         ].joined(separator: "|")
-        result.fingerprints.textKitImplementation = "NSTextLayoutManager-TextKit2-UTF16-v2"
+        result.fingerprints.textKitImplementation = "NSTextLayoutManager-TextKit2-UTF16-v3"
         let initialClipRect = surfaceRanges
             .prefix(2)
             .compactMap(\.frozenGeometry)
@@ -166,6 +169,7 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         contentStorage: NSTextContentStorage,
         layoutManager: NSTextLayoutManager,
         surfaceSize: CGSize,
+        rubyHeadroom: CGFloat,
         semanticBreakOffsets: Set<NovelDocumentUTF16Offset> = []
     ) throws -> [NovelTextViewportDocumentSurfaceRange] {
         guard surfaceSize.width >= NovelReaderLayout.minimumTextLayoutWidth, surfaceSize.height > 0 else {
@@ -196,11 +200,19 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                       ) else {
                     continue
                 }
-                guard let rect = validatedLineRect(
+                guard var rect = validatedLineRect(
                     fragmentFrame: fragment.layoutFragmentFrame,
                     typographicBounds: lineFragment.typographicBounds
                 ) else {
                     continue
+                }
+                var hasRuby = false
+                attributedDocument.enumerateAttribute(.novelRuby, in: characterRange) { value, _, stop in
+                    if value != nil { hasRuby = true; stop.pointee = true }
+                }
+                if hasRuby {
+                    rect.origin.y -= rubyHeadroom
+                    rect.size.height += rubyHeadroom
                 }
                 segments.append(
                     NovelTextSurfaceLayoutFragment(
@@ -270,7 +282,8 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         breakOffsets: Set<NovelDocumentUTF16Offset>,
         attributedDocument: NSAttributedString,
         contentStorage: NSTextContentStorage,
-        layoutManager: NSTextLayoutManager
+        layoutManager: NSTextLayoutManager,
+        rubyHeadroom: CGFloat
     ) -> [NovelTextViewportDocumentSurfaceRange] {
         guard !surfaceRanges.isEmpty, !breakOffsets.isEmpty else { return surfaceRanges }
         var splitRanges: [NovelTextViewportDocumentSurfaceRange] = []
@@ -292,7 +305,8 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                     endOffset: endOffset.rawValue,
                     attributedDocument: attributedDocument,
                     contentStorage: contentStorage,
-                    layoutManager: layoutManager
+                    layoutManager: layoutManager,
+                    rubyHeadroom: rubyHeadroom
                 ),
                     let splitRange = viewportDocumentPageRange(
                         from: attributedDocument,
@@ -313,7 +327,8 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         endOffset: Int,
         attributedDocument: NSAttributedString,
         contentStorage: NSTextContentStorage,
-        layoutManager: NSTextLayoutManager
+        layoutManager: NSTextLayoutManager,
+        rubyHeadroom: CGFloat
     ) -> CGRect? {
         guard startOffset >= 0, endOffset > startOffset,
               let startLocation = contentStorage.location(
@@ -348,11 +363,20 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
                 ) else {
                     continue
                 }
-                guard let rect = validatedLineRect(
+                guard var rect = validatedLineRect(
                     fragmentFrame: fragment.layoutFragmentFrame,
                     typographicBounds: lineFragment.typographicBounds
                 ) else {
                     continue
+                }
+                let characterRange = NSRange(location: lineStart, length: lineFragment.characterRange.length)
+                var hasRuby = false
+                attributedDocument.enumerateAttribute(.novelRuby, in: characterRange) { value, _, stop in
+                    if value != nil { hasRuby = true; stop.pointee = true }
+                }
+                if hasRuby {
+                    rect.origin.y -= rubyHeadroom
+                    rect.size.height += rubyHeadroom
                 }
                 clipRect = clipRect.union(rect)
             }

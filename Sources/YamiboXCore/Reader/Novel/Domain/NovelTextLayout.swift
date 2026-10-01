@@ -403,6 +403,8 @@ public enum NovelTextLayout {
                     inlineStyle.style.rawValue,
                     String(inlineStyle.range.location),
                     String(inlineStyle.range.length),
+                    inlineStyle.colorHex ?? "",
+                    inlineStyle.rubyText ?? "",
                 ].joined(separator: ":")
             }.joined(separator: ",")
             let blockStyles = (segment.semantics?.blockTextStyles ?? []).map { blockStyle in
@@ -430,6 +432,15 @@ public enum NovelTextLayout {
             String(settings.characterSpacingScale),
             String(settings.usesJustifiedText),
             String(settings.indentsParagraphFirstLine),
+            String(settings.forumFormat.bold),
+            String(settings.forumFormat.italic),
+            String(settings.forumFormat.underline),
+            String(settings.forumFormat.strikethrough),
+            String(settings.forumFormat.textColor),
+            String(settings.forumFormat.backgroundColor),
+            String(settings.forumFormat.ruby),
+            String(settings.forumFormat.quote),
+            settings.backgroundStyle.rawValue,
             settings.readingMode.rawValue,
             String(describing: layout.containerSize),
             String(describing: layout.safeAreaInsets),
@@ -795,39 +806,39 @@ public enum NovelTextLayout {
         let source = NovelTextCoordinateIndex(text)
         let inline = semantics?.inlineTextStyles ?? []
         let blocks = semantics?.blockTextStyles ?? []
-        // Keep the existing transformation runs: title styling must not change
-        // the context supplied to the transliterator.
         let ranges = (inline.map(\.range) + blocks.map(\.range)).compactMap(source.utf16Range)
-        let boundaries = Set([0, source.utf16Count] + ranges.flatMap { [$0.location, NSMaxRange($0)] }).sorted()
-        var output = ""
-        var outputLength = 0
-        var transformedOffsets: [Int: Int] = [0: 0]
-        if mode == .none {
-            output = text
-            for boundary in boundaries { transformedOffsets[boundary] = boundary }
-        } else {
-            for (start, end) in zip(boundaries, boundaries.dropFirst()) {
-                let run = NovelTextTransformer.transform(source.text(in: start..<end) ?? "", mode: mode)
-                transformedOffsets[start] = outputLength
-                output.append(run)
-                outputLength += run.utf16.count
-                transformedOffsets[end] = outputLength
-            }
-        }
-        // Map title edges without introducing new transformation runs, which
-        // would change the transliterator's context and the displayed text.
-        if let title = semantics?.chapterTitleRange.flatMap(source.utf16Range) {
-            for edge in [title.location, NSMaxRange(title)] where transformedOffsets[edge] == nil {
-                if mode == .none {
-                    transformedOffsets[edge] = edge
-                } else if let runStart = boundaries.last(where: { $0 < edge }),
-                          let outputStart = transformedOffsets[runStart] {
-                    let prefix = source.text(in: runStart..<edge) ?? ""
-                    transformedOffsets[edge] = outputStart + NovelTextTransformer.transform(prefix, mode: mode).utf16.count
-                }
-            }
-        }
+        let titleRange = semantics?.chapterTitleRange.flatMap(source.utf16Range)
+        let titleEdges = titleRange.map { [$0.location, NSMaxRange($0)] } ?? []
+        let boundaries = Set([0, source.utf16Count] + titleEdges
+                             + ranges.flatMap { [$0.location, NSMaxRange($0)] }).sorted()
+        // Transform the complete segment so phrase-sensitive conversions cannot
+        // change meaning at an otherwise invisible formatting boundary.
+        let output = NovelTextTransformer.transform(text, mode: mode)
         let coordinates = mode == .none ? source : NovelTextCoordinateIndex(output)
+        let outputLength = output.utf16.count
+        var transformedOffsets: [Int: Int] = [:]
+        if mode == .none {
+            for boundary in boundaries { transformedOffsets[boundary] = boundary }
+        } else if source.characterCount == coordinates.characterCount {
+            // Chinese script conversion normally replaces graphemes one for
+            // one. Map their ordinals directly, including UTF-16 width changes.
+            for boundary in boundaries {
+                let character = source.characterOffset(forUTF16Offset: boundary)
+                transformedOffsets[boundary] = coordinates.utf16Offset(forCharacterOffset: character)
+            }
+        } else {
+            // Fall back to prefix lengths if conversion changes the grapheme
+            // count. They map positions only; the displayed text retains its
+            // full-phrase conversion above.
+            var previousOffset = 0
+            for boundary in boundaries {
+                let prefix = source.text(in: 0..<boundary) ?? ""
+                let convertedLength = NovelTextTransformer.transform(prefix, mode: mode).utf16.count
+                let offset = min(max(convertedLength, previousOffset), outputLength)
+                transformedOffsets[boundary] = offset
+                previousOffset = offset
+            }
+        }
         func mappedRange(_ range: NovelCharacterRange) -> NSRange? {
             guard let original = source.utf16Range(forCharacterRange: range),
                   let start = transformedOffsets[original.location],
@@ -841,7 +852,10 @@ public enum NovelTextLayout {
                 textSegmentIdentity: semantics.textSegmentIdentity,
                 chapterTitleRange: semantics.chapterTitleRange.flatMap(mappedRange),
                 inlineTextStyles: inline.compactMap { style in
-                    mappedRange(style.range).map { NovelRuntimeInlineTextStyle(style: style.style, range: $0) }
+                    mappedRange(style.range).map {
+                        NovelRuntimeInlineTextStyle(style: style.style, range: $0,
+                                                    colorHex: style.colorHex, rubyText: style.rubyText)
+                    }
                 },
                 blockTextStyles: blocks.compactMap { style in
                     mappedRange(style.range).map { NovelRuntimeBlockTextStyle(style: style.style, range: $0) }

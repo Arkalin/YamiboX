@@ -14,6 +14,7 @@ struct NovelReaderSettingsSheet: View {
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
     @State private var isPeripheralSettingsPresented = false
+    @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
     @State private var fontProtectionID = UUID()
     private static let fallbackPreviewText = L10n.string("reader.settings.preview_fallback")
@@ -70,6 +71,9 @@ struct NovelReaderSettingsSheet: View {
                 settingsStore: settingsStore,
                 peripheralInput: peripheralInput
             )
+        }
+        .sheet(isPresented: $isForumFormatPresented) {
+            NovelReaderForumFormatSheet(settings: $draftSettings, controlAccent: controlAccent)
         }
     }
 
@@ -139,8 +143,7 @@ struct NovelReaderSettingsSheet: View {
 
                 NovelReaderMiscSection(
                     palette: palette,
-                    loadsInlineImages: draftSettings.loadsInlineImages,
-                    onLoadsInlineImagesChange: setImageLoading,
+                    onOpenForumFormat: { isForumFormatPresented = true },
                     onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                 )
             }
@@ -179,5 +182,4 @@ struct NovelReaderSettingsSheet: View {
     }
     private func setPageTurnDirection(_ value: ReaderPageTurnDirection) { draftSettings.pageTurnDirection = value }
     private func setTranslationMode(_ value: ReaderTranslationMode) { draftSettings.translationMode = value }
-    private func setImageLoading(_ value: Bool) { draftSettings.loadsInlineImages = value }
 }
