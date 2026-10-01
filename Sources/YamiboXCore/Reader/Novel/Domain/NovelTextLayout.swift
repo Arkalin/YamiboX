@@ -13,6 +13,8 @@ package struct NovelTextLayoutPreparedInput: Sendable {
     package let layout: NovelReaderLayout
     package let annotatedSegments: [NovelAnnotatedSegment]
     package let viewportContextSeed: NovelTextViewportContext
+    package let semanticFingerprint: String
+    package let textFingerprint: String
 }
 
 public enum NovelTextLayoutFailureStage: String, Equatable, Sendable {
@@ -68,6 +70,7 @@ public enum NovelTextLayout {
         layout: NovelReaderLayout,
         reusing previous: NovelTextLayoutPreparedInput? = nil
     ) throws -> NovelTextLayoutPreparedInput {
+        try Task.checkCancellation()
         if let previous, previous.document == document,
            previous.settings.translationMode == settings.translationMode,
            previous.settings.loadsInlineImages == settings.loadsInlineImages {
@@ -76,10 +79,11 @@ public enum NovelTextLayout {
             context.identity.layout = layout
             return NovelTextLayoutPreparedInput(
                 document: document, settings: settings, layout: layout,
-                annotatedSegments: previous.annotatedSegments, viewportContextSeed: context
+                annotatedSegments: previous.annotatedSegments, viewportContextSeed: context,
+                semanticFingerprint: previous.semanticFingerprint, textFingerprint: previous.textFingerprint
             )
         }
-        let annotatedSegments = annotatedSegments(from: document, settings: settings)
+        let annotatedSegments = try annotatedSegments(from: document, settings: settings)
         guard annotatedSegments.contains(where: { annotatedSegment in
             switch annotatedSegment.segment {
             case let .text(text, _):
@@ -90,7 +94,7 @@ public enum NovelTextLayout {
         }) else {
             throw NovelTextLayoutFailure.semanticDocumentPreparation
         }
-        let viewportContext = makeViewportContext(
+        let viewportContext = try makeViewportContext(
             annotatedSegments: annotatedSegments,
             projection: document,
             settings: settings,
@@ -100,12 +104,15 @@ public enum NovelTextLayout {
             annotatedSegments: annotatedSegments,
             viewportDocument: viewportContext.document
         )
+        try Task.checkCancellation()
         return NovelTextLayoutPreparedInput(
             document: document,
             settings: settings,
             layout: layout,
             annotatedSegments: annotatedSegments,
-            viewportContextSeed: viewportContext
+            viewportContextSeed: viewportContext,
+            semanticFingerprint: semanticFingerprint(annotatedSegments: annotatedSegments),
+            textFingerprint: stableFingerprint(viewportContext.document.text)
         )
     }
 
@@ -119,6 +126,8 @@ public enum NovelTextLayout {
             settings: preparedInput.settings,
             layout: preparedInput.layout,
             viewportContextSeed: preparedInput.viewportContextSeed,
+            semanticFingerprint: preparedInput.semanticFingerprint,
+            textFingerprint: preparedInput.textFingerprint,
             viewportSurfaceLayout: { _, _, _ in surfaceRanges }
         )
         let hasVisibleText = result.viewportIndex.surfaces.contains { !$0.ranges.isEmpty }
@@ -184,6 +193,8 @@ public enum NovelTextLayout {
             settings: settings,
             layout: layout,
             viewportContextSeed: preparedInput.viewportContextSeed,
+            semanticFingerprint: preparedInput.semanticFingerprint,
+            textFingerprint: preparedInput.textFingerprint,
             viewportSurfaceLayout: viewportSurfaceLayout
         )
         let hasVisibleText = result.viewportIndex.surfaces.contains { !$0.ranges.isEmpty }
@@ -214,6 +225,8 @@ public enum NovelTextLayout {
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
         viewportContextSeed: NovelTextViewportContext,
+        semanticFingerprint: String,
+        textFingerprint: String,
         viewportSurfaceLayout: (NovelTextViewportContext, NovelReaderAppearanceSettings, NovelReaderLayout) throws -> [NovelTextViewportDocumentSurfaceRange]
     ) throws -> NovelTextLayoutResult {
         var indexSurfaces: [NovelTextViewportIndexSurface] = []
@@ -383,8 +396,8 @@ public enum NovelTextLayout {
                 layout: layout
             ),
             fingerprints: fingerprints(
-                annotatedSegments: annotatedSegments,
-                viewportDocument: viewportContext.document,
+                semanticFingerprint: semanticFingerprint,
+                textFingerprint: textFingerprint,
                 settings: settings,
                 layout: layout
             )
@@ -392,11 +405,33 @@ public enum NovelTextLayout {
     }
 
     private static func fingerprints(
-        annotatedSegments: [NovelAnnotatedSegment],
-        viewportDocument: NovelTextViewportDocument,
+        semanticFingerprint: String,
+        textFingerprint: String,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout
     ) -> NovelTextLayoutFingerprints {
+        let layoutPayload = [
+            settings.fontSelection.stableID,
+            settings.resolvedFont?.fingerprint ?? "unresolved",
+            String(settings.fontScale),
+            String(settings.lineHeightScale),
+            String(settings.characterSpacingScale),
+            String(settings.usesJustifiedText),
+            String(settings.indentsParagraphFirstLine),
+            settings.readingMode.rawValue,
+            String(describing: layout.containerSize),
+            String(describing: layout.safeAreaInsets),
+            String(describing: layout.contentInsets),
+            String(describing: layout.chromeInsets),
+        ].joined(separator: "|")
+        return NovelTextLayoutFingerprints(
+            semantic: semanticFingerprint,
+            text: textFingerprint,
+            layout: stableFingerprint(layoutPayload)
+        )
+    }
+
+    private static func semanticFingerprint(annotatedSegments: [NovelAnnotatedSegment]) -> String {
         let semanticPayload = annotatedSegments.map { segment in
             let inlineStyles = (segment.semantics?.inlineTextStyles ?? []).map { inlineStyle in
                 [
@@ -422,25 +457,7 @@ public enum NovelTextLayout {
                 segment.textContent,
             ].joined(separator: "\u{1f}")
         }.joined(separator: "\u{1e}")
-        let layoutPayload = [
-            settings.fontSelection.stableID,
-            settings.resolvedFont?.fingerprint ?? "unresolved",
-            String(settings.fontScale),
-            String(settings.lineHeightScale),
-            String(settings.characterSpacingScale),
-            String(settings.usesJustifiedText),
-            String(settings.indentsParagraphFirstLine),
-            settings.readingMode.rawValue,
-            String(describing: layout.containerSize),
-            String(describing: layout.safeAreaInsets),
-            String(describing: layout.contentInsets),
-            String(describing: layout.chromeInsets),
-        ].joined(separator: "|")
-        return NovelTextLayoutFingerprints(
-            semantic: stableFingerprint(semanticPayload),
-            text: stableFingerprint(viewportDocument.text),
-            layout: stableFingerprint(layoutPayload)
-        )
+        return stableFingerprint(semanticPayload)
     }
 
     private static func stableFingerprint(_ value: String) -> String {
@@ -513,7 +530,7 @@ public enum NovelTextLayout {
         projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout
-    ) -> NovelTextViewportContext {
+    ) throws -> NovelTextViewportContext {
         var composedText = ""
         var textRangesBySegment: [Int: NovelDocumentTextRange] = [:]
         var insertedSeparatorRanges: [NovelDocumentTextRange] = []
@@ -526,7 +543,8 @@ public enum NovelTextLayout {
         var externalBlocks: [NovelTextViewportExternalBlock] = []
         var lastTextSegmentIndex: Int?
 
-        for annotatedSegment in annotatedSegments {
+        for (position, annotatedSegment) in annotatedSegments.enumerated() {
+            if position.isMultiple(of: 32) { try Task.checkCancellation() }
             switch annotatedSegment.segment {
             case let .text(text, _):
                 if !composedText.isEmpty {
@@ -694,7 +712,7 @@ public enum NovelTextLayout {
     private static func annotatedSegments(
         from projection: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings
-    ) -> [NovelAnnotatedSegment] {
+    ) throws -> [NovelAnnotatedSegment] {
         var results: [NovelAnnotatedSegment] = []
         var currentChapterIdentity: NovelChapterIdentity?
         var currentChapterTitle: String?
@@ -705,7 +723,9 @@ public enum NovelTextLayout {
             projection.segments.indices,
             zip(projection.segments, zip(projection.segmentSemantics, projection.segmentSources))
         )
-        for (index, input) in segmentInputs {
+        for (position, element) in segmentInputs.enumerated() {
+            if position.isMultiple(of: 32) { try Task.checkCancellation() }
+            let (index, input) = element
             let (segment, semanticAndSource) = input
             let (semantics, source) = semanticAndSource
             if source?.isAuthorReplyToOther == true {

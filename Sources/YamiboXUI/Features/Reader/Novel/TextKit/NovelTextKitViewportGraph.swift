@@ -16,6 +16,9 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     private let textContainer: NSTextContainer
     private let textViewportLayoutController: NSTextViewportLayoutController
     private let textViewportLayoutDelegate: NovelTextViewportLayoutDelegate
+    private let pagesByOrdinal: [Int: NovelTextViewportIndexSurface]
+    private let quoteStyles: [NovelRuntimeBlockTextStyle]
+    private let quotePrefixMaxEnd: [Int]
 
     init(
         result: NovelTextLayoutResult,
@@ -37,6 +40,18 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         self.textContainer = textContainer
         self.textViewportLayoutController = textViewportLayoutController
         self.textViewportLayoutDelegate = textViewportLayoutDelegate
+        pagesByOrdinal = Dictionary(
+            uniqueKeysWithValues: result.viewportIndex.surfaces.map { ($0.surfaceOrdinal, $0) }
+        )
+        let sortedQuoteStyles = result.viewportContext.document.blockTextStyles
+            .filter { $0.style == .quote }
+            .sorted { $0.range.location < $1.range.location }
+        quoteStyles = sortedQuoteStyles
+        var maxEnd = 0
+        quotePrefixMaxEnd = sortedQuoteStyles.map { style in
+            maxEnd = max(maxEnd, NSMaxRange(style.range))
+            return maxEnd
+        }
     }
 
     func viewportSample(
@@ -111,7 +126,8 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     ) -> NovelDocumentUTF16Offset? {
         guard let surfaceOriginY = surfaceOriginY(page: page),
               let fragment = closestLayoutFragment(
-                  to: CGPoint(x: referencePoint.x, y: surfaceOriginY + referencePoint.y)
+                  to: CGPoint(x: referencePoint.x, y: surfaceOriginY + referencePoint.y),
+                  in: page
               ) else {
             return nil
         }
@@ -229,7 +245,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         context.clip(to: pageClipRect)
         context.translateBy(x: bounds.minX, y: bounds.minY - surfaceOriginY)
         context.setFillColor(quoteBlockBackgroundColor().cgColor)
-        for blockStyle in result.viewportContext.document.blockTextStyles where blockStyle.style == .quote {
+        for blockStyle in visibleQuoteStyles(in: pageDocumentRange) {
             let quoteRange = NovelDocumentUTF16Offset(blockStyle.range.location)..<NovelDocumentUTF16Offset(NSMaxRange(blockStyle.range))
             guard let visibleQuoteRange = intersection(quoteRange, pageDocumentRange),
                   let utf16Range = utf16Range(for: visibleQuoteRange),
@@ -368,7 +384,25 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     }
 
     private func page(forSurfaceOrdinal surfaceOrdinal: Int) -> NovelTextViewportIndexSurface? {
-        result.viewportIndex.surfaces.first(where: { $0.surfaceOrdinal == surfaceOrdinal })
+        pagesByOrdinal[surfaceOrdinal]
+    }
+
+    private func visibleQuoteStyles(in documentRange: Range<NovelDocumentUTF16Offset>) -> ArraySlice<NovelRuntimeBlockTextStyle> {
+        var low = 0
+        var high = quotePrefixMaxEnd.count
+        while low < high {
+            let mid = (low + high) / 2
+            if quotePrefixMaxEnd[mid] <= documentRange.lowerBound.rawValue {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        let start = low
+        while low < quoteStyles.count, quoteStyles[low].range.location < documentRange.upperBound.rawValue {
+            low += 1
+        }
+        return quoteStyles[start..<low]
     }
 
     private func surfaceOriginY(page: NovelTextViewportIndexSurface) -> CGFloat? {
@@ -393,15 +427,26 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         return firstFragment.layoutFragmentFrame.minY + firstLineFragment.typographicBounds.minY
     }
 
-    private func closestLayoutFragment(to point: CGPoint) -> NSTextLayoutFragment? {
+    private func closestLayoutFragment(
+        to point: CGPoint,
+        in page: NovelTextViewportIndexSurface
+    ) -> NSTextLayoutFragment? {
         if let fragment = textLayoutManager.textLayoutFragment(for: point) {
             return fragment
         }
+        guard let start = pageStartLocation(page: page),
+              let pageRange = documentRange(for: page) else { return nil }
         var best: (distance: CGFloat, fragment: NSTextLayoutFragment)?
         textLayoutManager.enumerateTextLayoutFragments(
-            from: textContentStorage.documentRange.location,
+            from: start,
             options: []
         ) { fragment in
+            let fragmentStart = textContentStorage.offset(
+                from: textContentStorage.documentRange.location,
+                to: fragment.rangeInElement.location
+            )
+            guard fragmentStart != NSNotFound,
+                  fragmentStart < pageRange.upperBound.rawValue else { return false }
             let frame = fragment.layoutFragmentFrame
             let dx = max(frame.minX - point.x, 0, point.x - frame.maxX)
             let dy = max(frame.minY - point.y, 0, point.y - frame.maxY)

@@ -100,11 +100,22 @@ struct ReaderProjectionSourcePageLoad<SourcePage: Sendable>: Sendable {
     var sourcePage: SourcePage
     var loadedOnline: Bool
     var sourceHTML: String?
+    var cacheWrite: (@Sendable () async -> Void)?
 
-    init(sourcePage: SourcePage, loadedOnline: Bool, sourceHTML: String? = nil) {
+    init(
+        sourcePage: SourcePage,
+        loadedOnline: Bool,
+        sourceHTML: String? = nil,
+        cacheWrite: (@Sendable () async -> Void)? = nil
+    ) {
         self.sourcePage = sourcePage
         self.loadedOnline = loadedOnline
         self.sourceHTML = sourceHTML
+        self.cacheWrite = cacheWrite
+    }
+
+    func persistSourceIfNeeded() async {
+        await cacheWrite?()
     }
 }
 
@@ -125,7 +136,10 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
     private let coalescesInFlightRequests: Bool
     private var inFlightTasks: [ReaderProjectionLoadKey<Strategy.Identity>: Task<ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage>, Error>] = [:]
 
-    init(strategy: Strategy, coalescesInFlightRequests: Bool = false) {
+    init(
+        strategy: Strategy,
+        coalescesInFlightRequests: Bool = false
+    ) {
         self.strategy = strategy
         self.coalescesInFlightRequests = coalescesInFlightRequests
     }
@@ -168,15 +182,21 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
         }
 
         let task = Task<ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage>, Error> {
+            try Task.checkCancellation()
             let sourceLoad = try await strategy.onlineSourcePage(
                 for: request,
                 identity: identity,
                 ignoresCache: ignoresCache
             )
+            // The novel path overlaps source persistence with projection
+            // derivation, but both writes finish before a load reports success.
+            async let sourceCacheWrite: Void = sourceLoad.persistSourceIfNeeded()
+            try Task.checkCancellation()
             let fingerprint = strategy.fingerprint(sourcePage: sourceLoad.sourcePage, identity: identity)
             if !ignoresCache,
                let cached = await strategy.cachedProjection(for: identity),
                strategy.isReusableProjection(cached, identity: identity, fingerprint: fingerprint) {
+                await sourceCacheWrite
                 return ReaderProjectionPreparedSourcePage(
                     projection: cached,
                     sourcePage: sourceLoad.sourcePage,
@@ -194,11 +214,13 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             } catch {
                 throw LoadDiagnosticError.attaching(to: error, html: sourceLoad.sourceHTML)
             }
+            try Task.checkCancellation()
             do {
                 try await strategy.saveProjection(projection)
             } catch {
                 YamiboLog.offlineCache.warning("loadOnline: failed to cache freshly-derived projection; subsequent loads will re-derive from scratch: \(error)")
             }
+            await sourceCacheWrite
             return ReaderProjectionPreparedSourcePage(
                 projection: projection,
                 sourcePage: sourceLoad.sourcePage,
@@ -213,7 +235,14 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
                 inFlightTasks.removeValue(forKey: taskKey)
             }
         }
-        return try await task.value
+        if coalescesInFlightRequests {
+            return try await task.value
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func loadOfflineFallback(

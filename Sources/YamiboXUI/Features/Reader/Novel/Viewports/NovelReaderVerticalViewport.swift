@@ -43,8 +43,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     private var contentIdentity: NovelReaderVerticalViewportContentIdentity {
         NovelReaderVerticalViewportContentIdentity(
             structureID: structureID,
-            settings: settings,
-            refererURL: refererURL
+            settings: settings
         )
     }
 
@@ -212,7 +211,11 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 surface: verticalSurface(for: indexPath.item),
                 textHeight: displaySurface.presentationHeight,
                 settings: parent.settings,
-                refererURL: parent.refererURL,
+                refererURL: NovelReaderViewportReferer.url(
+                    for: verticalSurface(for: indexPath.item),
+                    fallbackURL: parent.refererURL,
+                    offlineScope: parent.offlineScope
+                ),
                 offlineScope: parent.offlineScope,
                 imagePipeline: parent.imagePipeline,
                 contentWidth: max(verticalItemWidth(in: collectionView) - parent.settings.horizontalPadding * 2, 1),
@@ -487,13 +490,14 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         }
 
         private func verticalItemHeight(for item: Int, in collectionView: UICollectionView) -> CGFloat {
-            guard let displaySurface = verticalDisplaySurface(for: item) else {
+            guard let surface = verticalSurface(for: item) else {
                 return max(collectionView.bounds.height, 1)
             }
-            let topPadding = displaySurface.surfaceIndex == 0 ? CGFloat(16) : 0
-            if let presentationHeight = displaySurface.presentationHeight {
-                return max(ceil(presentationHeight + topPadding), 1)
+            let topPadding = surface.presentationIndex == 0 ? CGFloat(16) : 0
+            if surface.presentationSize.height > 0 {
+                return max(ceil(surface.presentationSize.height + topPadding), 1)
             }
+            guard let displaySurface = verticalDisplaySurface(for: item) else { return 1 }
             let blockHeights = displaySurface.blocks.map { block -> CGFloat in
                 switch block {
                 case .text:
@@ -1303,6 +1307,11 @@ extension UIView {
 private struct NovelReaderVerticalViewportContentIdentity: Hashable {
     var structureID: UUID?
     var settings: NovelReaderAppearanceSettings
-    var refererURL: URL
+
+    init(structureID: UUID?, settings: NovelReaderAppearanceSettings) {
+        self.structureID = structureID
+        self.settings = settings
+        self.settings.isImmersiveModeEnabled = false
+    }
 }
 #endif

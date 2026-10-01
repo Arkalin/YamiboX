@@ -146,6 +146,12 @@ public final class NovelReadingWorkflow {
     private var usesPadPresentation: Bool
     private let viewportRuntime: NovelTextViewportRuntimeOwner
     private var semanticPreparationCache: NovelTextLayoutPreparedInput?
+    private var prefetchedSemanticPreparation: (
+        projection: NovelReaderProjection,
+        settings: NovelReaderAppearanceSettings,
+        layout: NovelReaderLayout,
+        task: Task<NovelTextLayoutPreparedInput, Error>
+    )?
     private var pendingRuntimeUpdateTask: Task<(NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)?, Error>?
     private var loadRequestSequence: UInt64 = 0
     private var prefetchInFlightView: Int?
@@ -321,12 +327,14 @@ public final class NovelReadingWorkflow {
     @discardableResult
     public func commitSurfaceAppearance(_ settings: NovelReaderAppearanceSettings) -> NovelReadingWorkflowState? {
         guard let state,
-              let session,
+              var session,
               let structure = state.presentationStructure,
               state.presentation?.generation == viewportRuntime.currentGeneration else {
             self.settings = settings
             return nil
         }
+        session.updatePageTurnDirection(settings.pageTurnDirection)
+        self.session = session
         self.settings = settings
         let revision = (state.presentation?.revision ?? 0) + 1
         let nextState = NovelReadingWorkflowState(
@@ -734,6 +742,8 @@ public final class NovelReadingWorkflow {
 
     public func handleMemoryPressure() {
         semanticPreparationCache = nil
+        prefetchedSemanticPreparation?.task.cancel()
+        prefetchedSemanticPreparation = nil
         viewportRuntime.handleMemoryPressure()
     }
 
@@ -742,6 +752,8 @@ public final class NovelReadingWorkflow {
         supersedePendingRuntimeUpdate()
         viewportRuntime.release()
         semanticPreparationCache = nil
+        prefetchedSemanticPreparation?.task.cancel()
+        prefetchedSemanticPreparation = nil
         session = nil
         currentProjection = nil
         prefetchedProjection = nil
@@ -838,19 +850,38 @@ public final class NovelReadingWorkflow {
             prefetchCooldown = (view: targetView, until: now().addingTimeInterval(Self.prefetchFailureCooldownInterval))
             return nil
         }
-        // Navigation, re-layout or close may supersede a request while the
-        // repository finishes filling its cache. Never install that stale page.
-        guard !Task.isCancelled, surfaceIdentity.generation == viewportRuntime.currentGeneration,
-              self.currentProjection?.view == currentProjection.view else { return nil }
+        // A re-layout changes the viewport generation, not the next page's
+        // content. Retain a fetched projection when the source document is
+        // still current instead of downloading it again on the next turn.
+        guard !Task.isCancelled, self.currentProjection == currentProjection else { return nil }
         prefetchCooldown = nil
 
         let nextProjection = nextLoad.projection
         prefetchedProjection = nextProjection
         prefetchedLoadSource = nextLoad.source
-        if nextProjection.maxView > (session?.snapshot.maxView ?? 0) {
-            session?.updateMaximumView(nextProjection.maxView)
-        }
+        startPrefetchedSemanticPreparation(for: nextProjection)
+        guard nextProjection.maxView > (session?.snapshot.maxView ?? 0) else { return nil }
+        session?.updateMaximumView(nextProjection.maxView)
         return await updateStateFromSession(refreshCachedViews: false)
+    }
+
+    private func startPrefetchedSemanticPreparation(for projection: NovelReaderProjection) {
+        prefetchedSemanticPreparation?.task.cancel()
+        let currentSettings = settings
+        let paginationLayout = layout.novelTextBoxLayout(
+            settings: currentSettings,
+            usesPadPresentation: usesPadPresentation
+        )
+        let cachedPreparation = semanticPreparationCache
+        let task = Task.detached(priority: .utility) {
+            try NovelTextLayout.prepareInput(
+                document: projection,
+                settings: currentSettings,
+                layout: paginationLayout,
+                reusing: cachedPreparation
+            )
+        }
+        prefetchedSemanticPreparation = (projection, currentSettings, paginationLayout, task)
     }
 
     @discardableResult
@@ -859,9 +890,10 @@ public final class NovelReadingWorkflow {
         resumePoint: NovelResumePoint?
     ) async throws -> NovelReadingWorkflowState? {
         loadRequestSequence &+= 1
+        let requestSequence = loadRequestSequence
         supersedePendingRuntimeUpdate()
         guard let nextProjection = prefetchedProjection,
-              var candidateSession = session else {
+              session != nil else {
             return nil
         }
         let effectiveResumePoint = resumePoint?.view == nextProjection.view ? resumePoint : nil
@@ -871,21 +903,88 @@ public final class NovelReadingWorkflow {
         ) else {
             return nil
         }
-        let transaction = try prepareRuntimeTransaction(
-            projection: nextProjection,
-            settings: settings,
-            layout: layout,
-            usesPadPresentation: usesPadPresentation
-        )
+        var preparedInput: NovelTextLayoutPreparedInput
+        var preparedUpdate: NovelReadingWorkflowRuntimeUpdate
+        while true {
+            let update = NovelReadingWorkflowRuntimeUpdate(
+                settings: settings, layout: layout, usesPadPresentation: usesPadPresentation
+            )
+            let paginationLayout = update.layout.novelTextBoxLayout(
+                settings: update.settings, usesPadPresentation: update.usesPadPresentation
+            )
+            let cachedPreparation = semanticPreparationCache
+            let prefetch = prefetchedSemanticPreparation
+            let reusablePrefetch = prefetch?.projection == nextProjection &&
+                prefetch?.settings.translationMode == update.settings.translationMode &&
+                prefetch?.settings.loadsInlineImages == update.settings.loadsInlineImages
+            let preparationTask: Task<NovelTextLayoutPreparedInput, Error>
+            if reusablePrefetch, let prefetch {
+                preparationTask = prefetch.task
+            } else {
+                preparationTask = Task.detached(priority: .userInitiated) {
+                    try NovelTextLayout.prepareInput(
+                        document: nextProjection, settings: update.settings, layout: paginationLayout,
+                        reusing: cachedPreparation
+                    )
+                }
+            }
+            let candidateInput: NovelTextLayoutPreparedInput
+            do {
+                candidateInput = try await withTaskCancellationHandler {
+                    try await preparationTask.value
+                } onCancel: {
+                    preparationTask.cancel()
+                }
+            } catch is CancellationError {
+                guard !Task.isCancelled, loadRequestSequence == requestSequence,
+                      prefetchedProjection == nextProjection else { throw CancellationError() }
+                if reusablePrefetch {
+                    prefetchedSemanticPreparation = nil
+                    continue
+                }
+                throw CancellationError()
+            }
+            try Task.checkCancellation()
+            guard loadRequestSequence == requestSequence,
+                  prefetchedProjection == nextProjection else { throw CancellationError() }
+            let adjustedInput: NovelTextLayoutPreparedInput
+            if candidateInput.settings == update.settings && candidateInput.layout == paginationLayout {
+                adjustedInput = candidateInput
+            } else {
+                let adjustmentTask = Task.detached(priority: .userInitiated) {
+                    try NovelTextLayout.prepareInput(
+                        document: nextProjection, settings: update.settings, layout: paginationLayout,
+                        reusing: candidateInput
+                    )
+                }
+                adjustedInput = try await withTaskCancellationHandler {
+                    try await adjustmentTask.value
+                } onCancel: {
+                    adjustmentTask.cancel()
+                }
+                try Task.checkCancellation()
+                guard loadRequestSequence == requestSequence,
+                      prefetchedProjection == nextProjection else { throw CancellationError() }
+            }
+            guard update == NovelReadingWorkflowRuntimeUpdate(
+                settings: settings, layout: layout, usesPadPresentation: usesPadPresentation
+            ) else { continue }
+            preparedInput = adjustedInput
+            preparedUpdate = update
+            break
+        }
+        guard var candidateSession = session else { throw CancellationError() }
+        let transaction = try viewportRuntime.prepareTransaction(preparedInput: preparedInput)
+        semanticPreparationCache = preparedInput
         try candidateSession.promotePrefetchedDocument(
             document: nextProjection,
             layoutResult: transaction.result,
             preferredSurfaceOrdinal: preferredSurfaceOrdinal,
             resumePoint: effectiveResumePoint,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
-                settings: settings,
-                layout: layout,
-                usesPadPresentation: usesPadPresentation
+                settings: preparedUpdate.settings,
+                layout: preparedUpdate.layout,
+                usesPadPresentation: preparedUpdate.usesPadPresentation
             )
         )
         let nextAuthorID = nextProjection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
@@ -895,13 +994,21 @@ public final class NovelReadingWorkflow {
         let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
+            settings: preparedUpdate.settings,
+            layout: preparedUpdate.layout,
+            usesPadPresentation: preparedUpdate.usesPadPresentation,
             currentProjection: nextProjection,
             prefetchedProjection: nil,
             currentLoadSource: prefetchedLoadSource ?? .online,
             prefetchedLoadSource: nil,
             currentAuthorID: candidateSession.snapshot.currentAuthorID ?? nextAuthorID
         )
-        return commit(preparedTransaction)
+        let state = commit(preparedTransaction)
+        if state != nil {
+            prefetchedSemanticPreparation?.task.cancel()
+            prefetchedSemanticPreparation = nil
+        }
+        return state
     }
 
     private nonisolated(nonsending) func load(
@@ -942,6 +1049,8 @@ public final class NovelReadingWorkflow {
                 ? try await repository.loadPageIgnoringCacheResult(request)
                 : try await repository.loadPageResult(request)
         }
+        try Task.checkCancellation()
+        guard loadRequestSequence == requestSequence else { throw CancellationError() }
         var visitedViews: Set<Int> = [pageLoad.projection.view]
         var direction = preferredSurfaceOrdinal == .max || preferredResumePoint != nil ? -1 : 1
         let knownMaxView = pageLoad.projection.maxView
@@ -959,6 +1068,7 @@ public final class NovelReadingWorkflow {
             let nextRequest = NovelPageRequest(threadID: context.threadID, view: next, authorID: requestedAuthorID)
             pageLoad = forceRefresh ? try await repository.loadPageIgnoringCacheResult(nextRequest)
                 : try await repository.loadPageResult(nextRequest)
+            guard loadRequestSequence == requestSequence else { throw CancellationError() }
         }
         let projection = pageLoad.projection
         let skippedHiddenPage = projection.view != targetView
@@ -1034,6 +1144,8 @@ public final class NovelReadingWorkflow {
         guard let nextState = commit(preparedTransaction) else {
             throw NovelTextLayoutFailure.textKitIndexing
         }
+        prefetchedSemanticPreparation?.task.cancel()
+        prefetchedSemanticPreparation = nil
         return nextState
     }
 
@@ -1137,21 +1249,4 @@ public final class NovelReadingWorkflow {
         }
     }
 
-    private func prepareRuntimeTransaction(
-        projection: NovelReaderProjection,
-        settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout,
-        usesPadPresentation: Bool
-    ) throws -> NovelTextViewportRuntimeTransaction {
-        let paginationLayout = layout.novelTextBoxLayout(
-            settings: settings,
-            usesPadPresentation: usesPadPresentation
-        )
-        let prepared = try NovelTextLayout.prepareInput(
-            document: projection, settings: settings, layout: paginationLayout,
-            reusing: semanticPreparationCache
-        )
-        semanticPreparationCache = prepared
-        return try viewportRuntime.prepareTransaction(preparedInput: prepared)
-    }
 }

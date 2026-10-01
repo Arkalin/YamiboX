@@ -19,6 +19,7 @@ public struct NovelReaderView: View {
     // coordinator's init only zero-fills state and starts no work).
     @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // The five boolean-presented sheets are mutually exclusive (every setter
     // is a chrome button, and chrome is disabled while any overlay is up),
@@ -32,7 +33,7 @@ public struct NovelReaderView: View {
     @State private var searchPresentation: NovelReaderSearchPresentation?
     @State private var chromeState = NovelReaderChromeState()
     @State private var isVerticalProgressScrubbing = false
-    @State private var verticalTapSuppressionUntil: CFTimeInterval = 0
+    @State private var verticalTapSuppression = NovelReaderVerticalTapSuppression()
     @State private var verticalBoundaryPullState = NovelReaderVerticalBoundaryPullState.idle
     @State private var isHandlingVerticalBoundaryPull = false
     @State private var isDismissing = false
@@ -58,6 +59,7 @@ public struct NovelReaderView: View {
     private let forumDependencies: ForumNavigationDependencies
     private let onClose: () -> Void
     private let onOpenOriginalPost: (URL, NovelLaunchContext, @escaping @MainActor () async -> NovelLaunchContext) async -> Bool
+    private let persistResumeRouteBeforeBackground: (@MainActor @Sendable (ReaderResumeRoute) -> Void)?
 
     public init(
         context: NovelLaunchContext,
@@ -66,7 +68,8 @@ public struct NovelReaderView: View {
         appModel: YamiboAppModel,
         onClose: (() -> Void)? = nil,
         onOpenOriginalPost: ((URL, NovelLaunchContext, @escaping @MainActor () async -> NovelLaunchContext) async -> Bool)? = nil,
-        onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil
+        onResumeRouteChange: ReaderResumeRouteChangeHandler? = nil,
+        onResumeRouteChangeImmediately: (@MainActor @Sendable (ReaderResumeRoute) -> Void)? = nil
     ) {
         let initialSettings = appModel.bootstrapState?.settings.novelReader
         // `State(initialValue:)` evaluates its argument on every init (unlike
@@ -99,6 +102,15 @@ public struct NovelReaderView: View {
         self.dependencies = dependencies
         self.forumDependencies = forumDependencies
         self.onClose = onClose ?? { appModel.dismissNovelReader() }
+        if let onResumeRouteChangeImmediately {
+            self.persistResumeRouteBeforeBackground = onResumeRouteChangeImmediately
+        } else if onResumeRouteChange == nil {
+            self.persistResumeRouteBeforeBackground = { [appModel] route in
+                appModel.updateReaderResumeRoute(route)
+            }
+        } else {
+            self.persistResumeRouteBeforeBackground = nil
+        }
         self.onOpenOriginalPost = onOpenOriginalPost ?? { url, context, saveProgress in
             await appModel.switchReaderToOriginalPost(url: url, resumeRoute: .novel(context)) {
                 .novel(await saveProgress())
@@ -345,6 +357,15 @@ public struct NovelReaderView: View {
             ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
             : (colorScheme == .dark ? .white : .black))
         .annotationOperationFeedback(annotations.operations)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active, model.novelReaderPresentation != nil else { return }
+            syncVerticalViewportBeforeSave()
+            guard let route = model.resumeRouteForBackground() else { return }
+            // The default continuation store is synchronous. Flush it before
+            // iOS can suspend the scene; the async save also flushes progress.
+            persistResumeRouteBeforeBackground?(route)
+            Task { await model.saveProgress() }
+        }
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {
@@ -488,7 +509,7 @@ public struct NovelReaderView: View {
                 verticalScrollCoordinator: verticalScrollCoordinator,
                 annotations: annotations,
                 searchHighlightController: searchHighlightController,
-                verticalTapSuppressionUntil: $verticalTapSuppressionUntil,
+                verticalTapSuppression: verticalTapSuppression,
                 handleVerticalBoundaryPullRelease: handleVerticalBoundaryPullRelease,
                 updateVerticalBoundaryPullState: updateVerticalBoundaryPullState,
                 handleVerticalTap: handleVerticalTap,
@@ -887,8 +908,8 @@ public struct NovelReaderView: View {
     private func handleVerticalTap() {
         guard !model.novelReaderSurfaces.isEmpty else { return }
         let now = CACurrentMediaTime()
-        if now <= verticalTapSuppressionUntil {
-            verticalTapSuppressionUntil = now + 0.35
+        if now <= verticalTapSuppression.until {
+            verticalTapSuppression.until = now + 0.35
             _ = verticalScrollCoordinator.interruptScrollingIfNeeded()
             return
         }
@@ -896,7 +917,7 @@ public struct NovelReaderView: View {
             return
         }
         if verticalScrollCoordinator.interruptScrollingIfNeeded() {
-            verticalTapSuppressionUntil = now + 0.35
+            verticalTapSuppression.until = now + 0.35
             return
         }
         toggleChrome()
@@ -1191,18 +1212,18 @@ public struct NovelReaderView: View {
     private func beginVerticalProgressScrub() {
         guard !isVerticalProgressScrubbing else { return }
         isVerticalProgressScrubbing = true
-        verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
+        verticalTapSuppression.until = CACurrentMediaTime() + 0.5
     }
 
     private func commitVerticalProgressScrub(_ target: Int) {
         navigationPresentation.perform { model.jumpToSurface(target) }
-        verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
+        verticalTapSuppression.until = CACurrentMediaTime() + 0.5
     }
 
     private func endVerticalProgressScrub() {
         guard isVerticalProgressScrubbing else { return }
         isVerticalProgressScrubbing = false
-        verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
+        verticalTapSuppression.until = CACurrentMediaTime() + 0.5
     }
 
     private func syncVerticalViewportBeforeSave() {

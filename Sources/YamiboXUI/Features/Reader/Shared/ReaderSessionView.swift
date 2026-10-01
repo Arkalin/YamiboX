@@ -122,7 +122,8 @@ private struct ReaderSessionContentView: View {
                         .novel(await saveProgress())
                     }
                 },
-                onResumeRouteChange: { route in session.updateResumeRoute(route, contentID: contentID) }
+                onResumeRouteChange: { route in session.updateResumeRoute(route, contentID: contentID) },
+                onResumeRouteChangeImmediately: { route in session.updateResumeRoute(route, contentID: contentID) }
             )
             .id(contentID)
             .ignoresSafeArea()

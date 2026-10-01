@@ -82,9 +82,11 @@ public enum NovelReaderProjectionBuilder {
         var result = NovelReaderParsedContent()
         var textOccurrenceByChapter: [NovelChapterIdentity: Int] = [:]
         var imageOccurrenceByChapter: [NovelChapterIdentity: Int] = [:]
+        let hasCurrentContentBlocks = page.contentParserVersion == ForumThreadHTMLBlockParser.cacheVersion
 
         for post in page.posts {
-            let projected = try projectedPost(for: post)
+            try Task.checkCancellation()
+            let projected = try projectedPost(for: post, hasCurrentContentBlocks: hasCurrentContentBlocks)
             guard !projected.segments.isEmpty else { continue }
 
             let chapterIdentity = chapterIdentity(
@@ -121,7 +123,14 @@ public enum NovelReaderProjectionBuilder {
         return result
     }
 
-    private static func projectedPost(for post: ForumThreadPost) throws -> NovelReaderProjectedPost {
+    private static func projectedPost(
+        for post: ForumThreadPost,
+        hasCurrentContentBlocks: Bool
+    ) throws -> NovelReaderProjectedPost {
+        if canReuseContentBlocks(for: post, hasCurrentContentBlocks: hasCurrentContentBlocks) {
+            let projected = projectedPost(from: post.contentBlocks, post: post)
+            if !projected.segments.isEmpty { return projected }
+        }
         if !post.contentHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return try NovelReaderPostHTMLProjectionParser.project(post: post)
         }
@@ -131,6 +140,33 @@ public enum NovelReaderProjectionBuilder {
         }
 
         let blocks = try readerBlocks(for: post)
+        return projectedPost(from: blocks, post: post)
+    }
+
+    private static func canReuseContentBlocks(
+        for post: ForumThreadPost,
+        hasCurrentContentBlocks: Bool
+    ) -> Bool {
+        // Separate forum text blocks have trimmed edges, so joining them can
+        // erase paragraph breaks that the novel HTML parser preserves.
+        // Older cached blocks may also contain text from an outdated parser.
+        // The forum parser maps NBSP to an ideographic space, unlike the novel parser.
+        guard hasCurrentContentBlocks, post.contentBlocks.count == 1, post.images.isEmpty,
+              case let .text(textBlock) = post.contentBlocks[0].kind,
+              !textBlock.text.contains("\u{3000}") else { return false }
+
+        // The forum block model intentionally simplifies some HTML structures.
+        // Keep the novel-specific parser for images, attachment cards, icons and
+        // quote markers so their rendering and reply filtering stay intact.
+        return ["<img", "<i", "attach", "tattl", "<blockquote", "<table", "quote"].allSatisfy {
+            post.contentHTML.range(of: $0, options: .caseInsensitive) == nil
+        }
+    }
+
+    private static func projectedPost(
+        from blocks: [ForumThreadContentBlock],
+        post: ForumThreadPost
+    ) -> NovelReaderProjectedPost {
         let chapterTitle = NovelChapterTitleNormalizer.normalize(firstNonEmptyLine(in: blocks))
         let projected = NovelPostContentProjector.project(
             post: post,
@@ -1034,9 +1070,10 @@ private enum NovelPostContentProjector {
     ) {
         switch block.kind {
         case let .text(textBlock):
+            let novelText = textExcludingInlineEmoticons(in: textBlock)
             buffer.append(
-                textBlock.text,
-                inlineStyles: boldRanges(in: textBlock),
+                novelText.text,
+                inlineStyles: novelText.boldRanges,
                 isQuote: isQuote
             )
 
@@ -1123,19 +1160,46 @@ private enum NovelPostContentProjector {
         chapterTitle: String?,
         emittedImageURLs: inout Set<String>
     ) {
+        let containedReferences = NovelHTMLImageReferenceMatcher.containedReferences(
+            images.map(\.url), in: contentHTML
+        )
         for image in images {
-            guard !contentHTML.contains(image.url) else { continue }
+            guard !containedReferences.contains(image.url) else { continue }
             guard let url = HTMLTextExtractor.absoluteURL(from: image.url) else { continue }
             appendImage(url, to: &projected, chapterTitle: chapterTitle, emittedImageURLs: &emittedImageURLs)
         }
     }
 
-    private static func boldRanges(in textBlock: ForumThreadTextBlock) -> [NovelInlineTextStyleRange] {
+    private static func textExcludingInlineEmoticons(
+        in textBlock: ForumThreadTextBlock
+    ) -> (text: String, boldRanges: [NovelInlineTextStyleRange]) {
+        let removedIndexes = Set(textBlock.inlineImages.map(\.start))
+        guard !removedIndexes.isEmpty else {
+            return (textBlock.text, boldRanges(in: textBlock, removedBefore: { _ in 0 }))
+        }
+        var text = ""
+        var removedPrefix = [Int](repeating: 0, count: textBlock.text.count + 1)
+        for (index, character) in textBlock.text.enumerated() {
+            removedPrefix[index + 1] = removedPrefix[index] + (removedIndexes.contains(index) ? 1 : 0)
+            if !removedIndexes.contains(index) { text.append(character) }
+        }
+        return (text, boldRanges(in: textBlock) { offset in
+            removedPrefix[min(max(offset, 0), removedPrefix.count - 1)]
+        })
+    }
+
+    private static func boldRanges(
+        in textBlock: ForumThreadTextBlock,
+        removedBefore: (Int) -> Int
+    ) -> [NovelInlineTextStyleRange] {
         textBlock.styleRuns.compactMap { run in
             guard run.style.isBold, run.length > 0 else { return nil }
+            let start = run.start - removedBefore(run.start)
+            let end = run.start + run.length - removedBefore(run.start + run.length)
+            guard end > start else { return nil }
             return NovelInlineTextStyleRange(
                 style: .bold,
-                range: NovelCharacterRange(location: run.start, length: run.length)
+                range: NovelCharacterRange(location: start, length: end - start)
             )
         }
     }
@@ -1146,7 +1210,7 @@ private enum NovelPostContentProjector {
     ) -> [String] {
         switch block.kind {
         case let .text(text):
-            return [text.text]
+            return [textExcludingInlineEmoticons(in: text).text]
         case .attachment:
             return []
         case let .quote(blocks):

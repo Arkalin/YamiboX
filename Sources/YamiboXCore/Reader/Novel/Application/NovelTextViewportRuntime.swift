@@ -254,6 +254,7 @@ package final class NovelTextViewportRuntimeOwner {
     private var activeGeneration: UInt64 = 0
     private var nextGeneration: UInt64 = 1
     private var result: NovelTextLayoutResult?
+    private var activeSurfaceByOrdinal: [Int: NovelTextViewportIndexSurface] = [:]
     private var projection: NovelReaderProjection?
     private var settings = NovelReaderAppearanceSettings()
     private var layout = NovelReaderLayout(width: 1, height: 1)
@@ -310,6 +311,21 @@ package final class NovelTextViewportRuntimeOwner {
         guard let projection, let result else { return nil }
         let document = result.viewportContext.document
         let viewportIndex = result.viewportIndex
+        var rangesBySegment: [Int: [NovelReaderSearchSurfaceRange]] = [:]
+        for surface in viewportIndex.surfaces {
+            var seenSegments: Set<Int> = []
+            for range in surface.ranges where seenSegments.insert(range.segmentIndex).inserted {
+                rangesBySegment[range.segmentIndex, default: []].append(
+                    NovelReaderSearchSurfaceRange(
+                        startOffset: range.startOffset,
+                        endOffset: range.endOffset,
+                        surfaceOrdinal: surface.surfaceOrdinal,
+                        chapterOrdinal: surface.chapterOrdinal ?? 0,
+                        chapterTitle: surface.chapterTitle
+                    )
+                )
+            }
+        }
         let segments = document.textRangesBySegment
             .sorted { $0.value.startOffset < $1.value.startOffset }
             .compactMap { segmentIndex, documentRange -> NovelReaderSearchSegment? in
@@ -320,25 +336,13 @@ package final class NovelTextViewportRuntimeOwner {
                       let segmentText = document.coordinates.text(in: documentRange.startOffset.rawValue..<documentRange.endOffset.rawValue) else {
                     return nil
                 }
-                let surfaceRanges = viewportIndex.surfaces.compactMap { surface -> NovelReaderSearchSurfaceRange? in
-                    guard let range = surface.ranges.first(where: { $0.segmentIndex == segmentIndex }) else {
-                        return nil
-                    }
-                    return NovelReaderSearchSurfaceRange(
-                        startOffset: range.startOffset,
-                        endOffset: range.endOffset,
-                        surfaceOrdinal: surface.surfaceOrdinal,
-                        chapterOrdinal: surface.chapterOrdinal ?? 0,
-                        chapterTitle: surface.chapterTitle
-                    )
-                }
                 return NovelReaderSearchSegment(
                     text: segmentText,
                     coordinates: coordinates,
                     chapterIdentity: semantics.chapterIdentity,
                     textSegmentIdentity: textSegmentIdentity,
                     fallbackChapterTitle: projection.segments[segmentIndex].chapterTitle,
-                    surfaceRanges: surfaceRanges
+                    surfaceRanges: rangesBySegment[segmentIndex] ?? []
                 )
             }
 
@@ -415,6 +419,9 @@ package final class NovelTextViewportRuntimeOwner {
         pendingTransaction = nil
         activeGeneration = transaction.generation
         result = transaction.result
+        activeSurfaceByOrdinal = Dictionary(
+            uniqueKeysWithValues: transaction.result.viewportIndex.surfaces.map { ($0.surfaceOrdinal, $0) }
+        )
         projection = transaction.projection
         settings = transaction.settings
         layout = transaction.layout
@@ -447,6 +454,7 @@ package final class NovelTextViewportRuntimeOwner {
         supersedePendingTransaction()
         pendingTransaction = nil
         result = nil
+        activeSurfaceByOrdinal.removeAll(keepingCapacity: false)
         projection = nil
         visibleSurfaceOrdinals.removeAll(keepingCapacity: false)
         semanticAttributedDocumentCache = nil
@@ -479,7 +487,7 @@ package final class NovelTextViewportRuntimeOwner {
     package func updateVisibleSurfaceIdentities(_ surfaceIdentities: [NovelReaderSurfaceIdentity]) {
         let visibleOrdinals = Set<Int>(surfaceIdentities.compactMap { surfaceIdentity -> Int? in
             guard surfaceIdentity.generation == activeGeneration,
-                  result?.viewportIndex.surfaces.contains(where: { $0.surfaceOrdinal == surfaceIdentity.ordinal }) == true else {
+                  activeSurfaceByOrdinal[surfaceIdentity.ordinal] != nil else {
                 return nil
             }
             return surfaceIdentity.ordinal
@@ -492,13 +500,12 @@ package final class NovelTextViewportRuntimeOwner {
     }
 
     private func preheatedSurfaceOrdinals(around visibleOrdinals: Set<Int>) -> Set<Int> {
-        guard let pages = result?.viewportIndex.surfaces, !visibleOrdinals.isEmpty else { return [] }
-        let validOrdinals = Set(pages.map(\.surfaceOrdinal))
-        var preheated = visibleOrdinals.intersection(validOrdinals)
-        if let first = visibleOrdinals.min(), validOrdinals.contains(first - 1) {
+        guard !visibleOrdinals.isEmpty else { return [] }
+        var preheated = Set(visibleOrdinals.filter { activeSurfaceByOrdinal[$0] != nil })
+        if let first = visibleOrdinals.min(), activeSurfaceByOrdinal[first - 1] != nil {
             preheated.insert(first - 1)
         }
-        if let last = visibleOrdinals.max(), validOrdinals.contains(last + 1) {
+        if let last = visibleOrdinals.max(), activeSurfaceByOrdinal[last + 1] != nil {
             preheated.insert(last + 1)
         }
         return preheated
@@ -513,9 +520,7 @@ package final class NovelTextViewportRuntimeOwner {
 
     package func isCurrent(_ surfaceIdentity: NovelReaderSurfaceIdentity) -> Bool {
         surfaceIdentity.generation == activeGeneration &&
-            result?.viewportIndex.surfaces.contains(where: {
-                $0.surfaceOrdinal == surfaceIdentity.ordinal
-            }) == true
+            activeSurfaceByOrdinal[surfaceIdentity.ordinal] != nil
     }
 
     package func viewportSample(
@@ -734,8 +739,7 @@ package final class NovelTextViewportRuntimeOwner {
         }
         drawingAccessCount += 1
         lastDrawnSurfaceIdentity = surfaceIdentity
-        lastDrawnDocumentRange = result?.viewportIndex.surfaces
-            .first(where: { $0.surfaceOrdinal == surfaceIdentity.ordinal })?
+        lastDrawnDocumentRange = activeSurfaceByOrdinal[surfaceIdentity.ordinal]?
             .frozenGeometry
             .map { $0.documentStartOffset.rawValue..<$0.documentEndOffset.rawValue }
     }

@@ -19,21 +19,18 @@ struct NovelReaderPagedPageSurfaceContainer<Content: View>: View {
 struct NovelReaderPagedViewportContentIdentity: Equatable {
     var structureID: UUID?
     var settings: NovelReaderAppearanceSettings
-    var refererURL: URL
     var topInset: CGFloat
     var bottomInset: CGFloat
 
     init(
         structureID: UUID?,
         settings: NovelReaderAppearanceSettings,
-        refererURL: URL,
         topInset: CGFloat,
         bottomInset: CGFloat
     ) {
         self.structureID = structureID
         self.settings = settings
         self.settings.isImmersiveModeEnabled = false
-        self.refererURL = refererURL
         self.topInset = topInset
         self.bottomInset = bottomInset
     }

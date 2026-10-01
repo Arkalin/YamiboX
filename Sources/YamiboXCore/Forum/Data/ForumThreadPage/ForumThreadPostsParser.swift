@@ -11,6 +11,7 @@ enum ForumThreadPostsParser {
         var posts: [ForumThreadPost] = []
 
         for container in containers {
+            try Task.checkCancellation()
             guard let body = postBody(in: container),
                   let postID = postID(from: container, body: body),
                   seen.insert(postID).inserted else {

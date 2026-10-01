@@ -30,6 +30,8 @@ final class NovelReaderRuntimeUpdateCoordinator {
     @ObservationIgnored private(set) var usesPadPresentation = false
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
     @ObservationIgnored private var requestSequence: UInt64 = 0
+    @ObservationIgnored private var surfaceAppearanceRevision: UInt64 = 0
+    @ObservationIgnored private var latestSurfaceAppearanceSettings: NovelReaderAppearanceSettings?
     private let reading: Reading
 
     init(reading: Reading) {
@@ -148,6 +150,8 @@ final class NovelReaderRuntimeUpdateCoordinator {
         }
 
         if oldSettings.isSurfaceOnlyAppearanceChange(to: newSettings) {
+            surfaceAppearanceRevision &+= 1
+            latestSurfaceAppearanceSettings = newSettings
             applePencilPageTurnSettings = newApplePencilPageTurnSettings
             if let state = reading.workflow()?.commitSurfaceAppearance(newSettings) {
                 reading.publish(state)
@@ -171,6 +175,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
         }
 
         let applicationSequence = beginApplyingAppearanceSettings()
+        let surfaceRevision = surfaceAppearanceRevision
         defer { finishApplyingAppearanceSettings(applicationSequence) }
 
         do {
@@ -180,17 +185,22 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 usesPadPresentation: usesPadPresentation
             ) else { return }
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
+            if surfaceAppearanceRevision == surfaceRevision {
+                applePencilPageTurnSettings = newApplePencilPageTurnSettings
+            }
             reading.publish(state)
-            bootstrapSettings = newSettings
+            let committedSettings = state.presentation?.committedSettings ?? newSettings
+            bootstrapSettings = committedSettings
             persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
+                novelReaderSettings: committedSettings,
+                applePencilPageTurnSettings: applePencilSettingsChanged ? applePencilPageTurnSettings : nil
             )
         } catch is CancellationError {
         } catch {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
-            applePencilPageTurnSettings = oldApplePencilPageTurnSettings
+            if surfaceAppearanceRevision == surfaceRevision {
+                applePencilPageTurnSettings = oldApplePencilPageTurnSettings
+            }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 reading.reportFailure(error)
             }
@@ -207,6 +217,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
         guard initialPresentationPhase != .cancelled, let workflow = reading.workflow() else { return nil }
         requestSequence &+= 1
         let sequence = requestSequence
+        let surfaceRevision = surfaceAppearanceRevision
         do {
             let state = try await workflow.requestRuntimeUpdate(
                 NovelReadingWorkflowRuntimeUpdate(settings: settings, layout: layout, usesPadPresentation: usesPadPresentation),
@@ -214,7 +225,15 @@ final class NovelReaderRuntimeUpdateCoordinator {
             )
             guard requestSequence == sequence, reading.workflow() === workflow,
                   initialPresentationPhase != .cancelled else { return nil }
-            return state
+            guard surfaceAppearanceRevision != surfaceRevision else { return state }
+            guard let latestSurfaceAppearanceSettings,
+                  let committedSettings = state?.presentation?.committedSettings else { return nil }
+            var mergedSettings = committedSettings
+            mergedSettings.backgroundStyle = latestSurfaceAppearanceSettings.backgroundStyle
+            mergedSettings.pagedTurnStyle = latestSurfaceAppearanceSettings.pagedTurnStyle
+            mergedSettings.isImmersiveModeEnabled = latestSurfaceAppearanceSettings.isImmersiveModeEnabled
+            mergedSettings.pageTurnDirection = latestSurfaceAppearanceSettings.pageTurnDirection
+            return workflow.commitSurfaceAppearance(mergedSettings)
         } catch {
             guard requestSequence == sequence, reading.workflow() === workflow,
                   initialPresentationPhase != .cancelled else { throw CancellationError() }
@@ -257,8 +276,11 @@ private extension NovelReaderAppearanceSettings {
         rhs.pagedTurnStyle = .slide
         lhs.isImmersiveModeEnabled = false
         rhs.isImmersiveModeEnabled = false
+        lhs.pageTurnDirection = .leftToRight
+        rhs.pageTurnDirection = .leftToRight
         return lhs == rhs &&
             (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle
-                || isImmersiveModeEnabled != other.isImmersiveModeEnabled)
+                || isImmersiveModeEnabled != other.isImmersiveModeEnabled
+                || pageTurnDirection != other.pageTurnDirection)
     }
 }

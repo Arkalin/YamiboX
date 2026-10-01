@@ -104,6 +104,7 @@ public final class NovelReaderViewModel {
     @ObservationIgnored private var navigationOverlayWaiter: (id: UUID, continuation: CheckedContinuation<Void, Never>)?
     @ObservationIgnored package var novelReaderPageDocumentNavigationStateDidChange: (@MainActor (Bool) -> Void)?
     private let progressSync: ProgressSyncModule
+    @ObservationIgnored private var pendingResumeRouteTask: Task<Void, Never>?
     // The chapter-comments module is built by the composition root
     // (`NovelReaderDependencies`); the view model only sinks its snapshots.
     // It is driven exclusively from this main-actor view model, so its
@@ -479,6 +480,8 @@ public final class NovelReaderViewModel {
     }
 
     public func close() {
+        pendingResumeRouteTask?.cancel()
+        pendingResumeRouteTask = nil
         setNavigationOverlayReporter(active: false)
         fontProtectionClosed = true
         fontLibrary.protect(nil, owner: fontProtectionID)
@@ -636,6 +639,13 @@ public final class NovelReaderViewModel {
         await flushProgress()
     }
 
+    func resumeRouteForBackground() -> ReaderResumeRoute? {
+        guard !context.isPreview, novelReaderPresentation != nil else { return nil }
+        pendingResumeRouteTask?.cancel()
+        pendingResumeRouteTask = nil
+        return .novel(resumeContext(for: currentProgressSnapshot()))
+    }
+
     var currentResumeContext: NovelLaunchContext {
         novelReaderPresentation == nil ? context : resumeContext(for: currentProgressSnapshot())
     }
@@ -650,14 +660,13 @@ public final class NovelReaderViewModel {
             return
         }
         let oldSurfaceIndex = selectedSurfaceIndex
-        if let state = readingWorkflow?.selectSurface(
+        guard let state = readingWorkflow?.selectSurface(
             presentation.surfaces[surfaceIndex].identity,
             presentationRevision: presentation.revision
-        ) {
-            syncFromWorkflowState(state)
-            if recordsLinearReading {
-                navigation.recordLinearReading(direction: surfaceIndex >= oldSurfaceIndex ? .forward : .backward)
-            }
+        ) else { return }
+        syncFromWorkflowState(state)
+        if recordsLinearReading {
+            navigation.recordLinearReading(direction: surfaceIndex >= oldSurfaceIndex ? .forward : .backward)
         }
         scheduleProgressSync()
 
@@ -1114,8 +1123,14 @@ public final class NovelReaderViewModel {
     private func scheduleProgressSync() {
         guard !context.isPreview, novelReaderPresentation != nil else { return }
         let snapshot = currentProgressSnapshot()
-        Task { [weak self, progressSync] in
-            await self?.persistNovelResumeRoute(snapshot)
+        let resumeContext = resumeContext(for: snapshot)
+        pendingResumeRouteTask?.cancel()
+        pendingResumeRouteTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await self?.persistNovelResumeRoute(resumeContext)
+        }
+        Task { [progressSync] in
             await progressSync.queue(.novel(snapshot))
         }
     }
@@ -1126,13 +1141,11 @@ public final class NovelReaderViewModel {
         let snapshot = currentProgressSnapshot()
         let resumeContext = resumeContext(for: snapshot)
         guard !context.isPreview else { return resumeContext }
+        pendingResumeRouteTask?.cancel()
+        pendingResumeRouteTask = nil
         await persistNovelResumeRoute(resumeContext)
         try? await progressSync.flush(.novel(snapshot))
         return resumeContext
-    }
-
-    private func persistNovelResumeRoute(_ snapshot: NovelReadingPosition) async {
-        await persistNovelResumeRoute(resumeContext(for: snapshot))
     }
 
     private func persistNovelResumeRoute(_ resumeContext: NovelLaunchContext) async {

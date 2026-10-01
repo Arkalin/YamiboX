@@ -190,7 +190,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             content: NovelReaderPagedViewportContentIdentity(
                 structureID: structureID,
                 settings: settings,
-                refererURL: refererURL,
                 topInset: topInset,
                 bottomInset: bottomInset
             )

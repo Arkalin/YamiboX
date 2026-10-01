@@ -199,6 +199,10 @@ package struct NovelReadingSession: Sendable {
         )
     }
 
+    package mutating func updatePageTurnDirection(_ direction: ReaderPageTurnDirection) {
+        pageTurnDirection = direction
+    }
+
     public mutating func consumeCommittedLayoutResult(
         _ layoutResult: NovelTextLayoutResult,
         for projection: NovelReaderProjection,

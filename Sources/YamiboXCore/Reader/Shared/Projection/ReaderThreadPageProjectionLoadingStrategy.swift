@@ -39,6 +39,7 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
     typealias SourcePage = ForumThreadPage
 
     let adapter: Adapter
+    var overlapsSourceCacheWrite = false
 
     func identity(for request: Request, ignoresCache: Bool) async throws -> Identity {
         if let authorID = Self.normalizedAuthorID(request.authorID) {
@@ -61,6 +62,7 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
                     fallbackTitle: nil
                 )
             }
+            try Task.checkCancellation()
             do {
                 try await adapter.forumCacheStore.saveThreadPage(
                     discoveryPage,
@@ -108,20 +110,31 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
             view: identity.view,
             authorID: identity.authorID
         )
+        try Task.checkCancellation()
         let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
             try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
         }
-        do {
-            try await adapter.forumCacheStore.saveThreadPage(
-                parsed,
-                thread: thread,
-                pageNumber: identity.view,
-                authorID: identity.authorID
-            )
-        } catch {
-            YamiboLog.forum.warning("onlineSourcePage(for:identity:ignoresCache:): failed to cache thread page tid=\(thread.tid, privacy: .public) page=\(identity.view, privacy: .public): \(error)")
+        try Task.checkCancellation()
+        let cacheStore = adapter.forumCacheStore
+        let saveToCache: @Sendable () async -> Void = {
+            do {
+                try await cacheStore.saveThreadPage(
+                    parsed,
+                    thread: thread,
+                    pageNumber: identity.view,
+                    authorID: identity.authorID
+                )
+            } catch {
+                YamiboLog.forum.warning("onlineSourcePage(for:identity:ignoresCache:): failed to cache thread page tid=\(thread.tid, privacy: .public) page=\(identity.view, privacy: .public): \(error)")
+            }
         }
-        return ReaderProjectionSourcePageLoad(sourcePage: parsed, loadedOnline: true, sourceHTML: html)
+        if !overlapsSourceCacheWrite { await saveToCache() }
+        return ReaderProjectionSourcePageLoad(
+            sourcePage: parsed,
+            loadedOnline: true,
+            sourceHTML: html,
+            cacheWrite: overlapsSourceCacheWrite ? saveToCache : nil
+        )
     }
 
     func offlineSourcePage(

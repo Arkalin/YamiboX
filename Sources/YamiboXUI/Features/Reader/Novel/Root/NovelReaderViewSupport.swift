@@ -1,6 +1,11 @@
 import SwiftUI
 import YamiboXCore
 
+@MainActor
+final class NovelReaderVerticalTapSuppression {
+    var until: CFTimeInterval = 0
+}
+
 enum NovelReaderLoadingOverlayReason: Equatable, Sendable {
     case appearanceSettingsApply
     case verticalRestore

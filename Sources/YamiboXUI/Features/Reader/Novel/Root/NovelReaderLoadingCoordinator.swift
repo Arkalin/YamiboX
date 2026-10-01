@@ -28,6 +28,7 @@ final class NovelReaderLoadingCoordinator {
     @ObservationIgnored private var followUpTask: Task<Void, Never>?
     @ObservationIgnored private var downloadRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var cachedViewsRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var activeLoadTask: Task<NovelReadingWorkflowState?, Error>?
 
     private let context: NovelLaunchContext
     private let makeRepository: @Sendable () async -> any NovelReadingPageRepository
@@ -63,6 +64,7 @@ final class NovelReaderLoadingCoordinator {
         followUpTask?.cancel()
         downloadRefreshTask?.cancel()
         cachedViewsRefreshTask?.cancel()
+        activeLoadTask?.cancel()
     }
 
     private func cancelFollowUps() {
@@ -77,6 +79,8 @@ final class NovelReaderLoadingCoordinator {
     func close() {
         isClosed = true
         loadRevision &+= 1
+        activeLoadTask?.cancel()
+        activeLoadTask = nil
         cancelFollowUps()
         workflow?.close()
         workflow = nil
@@ -125,6 +129,8 @@ final class NovelReaderLoadingCoordinator {
     func invalidateInitialForRefresh() async -> Bool {
         guard !isClosed, await preparation.invalidateForRefresh(), !isClosed else { return false }
         loadRevision &+= 1
+        activeLoadTask?.cancel()
+        activeLoadTask = nil
         cancelFollowUps()
         preparedInitialLoad = nil
         forceRefreshInitialLoad = true
@@ -237,17 +243,32 @@ final class NovelReaderLoadingCoordinator {
 
     private func performLoad(
         reportsError: Bool, refreshDownload: Bool,
-        operation: @MainActor (NovelReadingWorkflow) async throws -> NovelReadingWorkflowState
+        operation: @escaping @MainActor (NovelReadingWorkflow) async throws -> NovelReadingWorkflowState
     ) async -> Bool {
         guard let workflow = await ensureWorkflow() else { return false }
         loadRevision &+= 1
         let request = loadRevision
+        activeLoadTask?.cancel()
+        let loadTask = Task<NovelReadingWorkflowState?, Error> {
+            try await operation(workflow)
+        }
+        activeLoadTask = loadTask
         cancelFollowUps()
         isLoading = true
         presentation.clearFailure()
-        defer { if loadRevision == request { isLoading = false } }
+        defer {
+            if loadRevision == request {
+                activeLoadTask = nil
+                isLoading = false
+            }
+        }
         do {
-            let state = try await operation(workflow)
+            let loadedState = try await withTaskCancellationHandler {
+                try await loadTask.value
+            } onCancel: {
+                loadTask.cancel()
+            }
+            guard let state = loadedState else { return false }
             guard admits(request, workflow: workflow) else { return false }
             presentation.publish(state)
             isLoading = false
@@ -284,10 +305,21 @@ final class NovelReaderLoadingCoordinator {
         guard let workflow = await ensureWorkflow() else { return false }
         loadRevision &+= 1
         let request = loadRevision
+        activeLoadTask?.cancel()
         cancelFollowUps()
-        guard let state = try await workflow.promotePrefetchedDocument(
-            preferredSurfaceOrdinal: preferredSurfaceOrdinal, resumePoint: resumePoint
-        ), admits(request, workflow: workflow) else { return false }
+        let loadTask = Task<NovelReadingWorkflowState?, Error> {
+            try await workflow.promotePrefetchedDocument(
+                preferredSurfaceOrdinal: preferredSurfaceOrdinal, resumePoint: resumePoint
+            )
+        }
+        activeLoadTask = loadTask
+        defer { if loadRevision == request { activeLoadTask = nil } }
+        let loadedState = try await withTaskCancellationHandler {
+            try await loadTask.value
+        } onCancel: {
+            loadTask.cancel()
+        }
+        guard let state = loadedState, admits(request, workflow: workflow) else { return false }
         presentation.publish(state)
         scheduleFollowUp(refreshDownload: true)
         return true

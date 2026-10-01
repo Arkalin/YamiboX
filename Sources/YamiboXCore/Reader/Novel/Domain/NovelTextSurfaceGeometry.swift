@@ -31,6 +31,8 @@ package enum NovelTextSurfaceFragmentPartitioner {
         var surfaces: [NovelTextSurfaceLayoutSlice] = []
         var currentRange: NSRange?
         var currentClipRect: CGRect?
+        let orderedBreakOffsets = breakOffsets.sorted()
+        var nextBreakIndex = 0
         for segment in segments {
             guard let existingRange = currentRange,
                   let existingClipRect = currentClipRect else {
@@ -38,10 +40,12 @@ package enum NovelTextSurfaceFragmentPartitioner {
                 currentClipRect = segment.rect
                 continue
             }
-            if breakOffsets.contains(where: { breakOffset in
-                breakOffset > existingRange.location &&
-                    breakOffset <= segment.characterRange.location
-            }) {
+            while nextBreakIndex < orderedBreakOffsets.count,
+                  orderedBreakOffsets[nextBreakIndex] <= existingRange.location {
+                nextBreakIndex += 1
+            }
+            if nextBreakIndex < orderedBreakOffsets.count,
+               orderedBreakOffsets[nextBreakIndex] <= segment.characterRange.location {
                 surfaces.append(
                     NovelTextSurfaceLayoutSlice(
                         characterRange: existingRange,

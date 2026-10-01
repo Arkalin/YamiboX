@@ -27,6 +27,22 @@ struct NovelReaderPagedHostingSafeAreaModifier: ViewModifier {
     }
 }
 
+enum NovelReaderViewportReferer {
+    static func url(
+        for surface: NovelReaderSurface?,
+        fallbackURL: URL,
+        offlineScope: YamiboImageOfflineScope?
+    ) -> URL {
+        guard let surface, let threadID = offlineScope?.tid else { return fallbackURL }
+        return YamiboRoute.threadByID(
+            tid: threadID,
+            page: surface.documentView,
+            authorID: surface.resolvedAuthorID,
+            reverse: false
+        ).url
+    }
+}
+
 struct NovelReaderPresentationSpreadContent: View {
     let spread: NovelReaderPresentationSpread
     let surfaces: [NovelReaderSurface]
@@ -53,9 +69,9 @@ struct NovelReaderPresentationSpreadContent: View {
     private func spreadColumn(surfaceIndex: Int?) -> some View {
         Group {
             if let surfaceIndex {
-                let surface = surfaces.first {
-                    $0.presentationIndex == surfaceIndex
-                }
+                let surface = surfaces.indices.contains(surfaceIndex) &&
+                    surfaces[surfaceIndex].presentationIndex == surfaceIndex
+                    ? surfaces[surfaceIndex] : nil
                 NovelReaderViewportSurfaceContent(
                     surface: surface,
                     displayReference: surface.flatMap { displayReferenceProvider($0.identity) },
@@ -66,7 +82,9 @@ struct NovelReaderPresentationSpreadContent: View {
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: surfaceIndex,
                     settings: settings,
-                    refererURL: refererURL,
+                    refererURL: NovelReaderViewportReferer.url(
+                        for: surface, fallbackURL: refererURL, offlineScope: offlineScope
+                    ),
                     offlineScope: offlineScope
                 )
                 .padding(.horizontal, settings.horizontalPadding)
@@ -144,7 +162,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     likeHighlightController: likeHighlightController,
                     searchHighlightController: searchHighlightController,
                     isLiked: isImageBlockLiked(block),
-                    refererURL: refererURL,
+                    refererURL: surfaceRefererURL,
                     offlineScope: offlineScope,
                     title: surface?.chapterTitle
                 )
@@ -165,7 +183,7 @@ struct NovelReaderViewportSurfaceContent: View {
                     likeHighlightController: likeHighlightController,
                     searchHighlightController: searchHighlightController,
                     isLiked: isImageBlockLiked(block),
-                    refererURL: refererURL,
+                    refererURL: surfaceRefererURL,
                     offlineScope: offlineScope,
                     title: surface?.chapterTitle
                 )
@@ -182,6 +200,12 @@ struct NovelReaderViewportSurfaceContent: View {
 
     private var viewportBlocks: [NovelReaderViewportDisplayBlock] {
         Self.viewportBlocks(surface: surface)
+    }
+
+    private var surfaceRefererURL: URL {
+        NovelReaderViewportReferer.url(
+            for: surface, fallbackURL: refererURL, offlineScope: offlineScope
+        )
     }
 
     private var centersExternalBlockInPagedMode: Bool {

@@ -13,7 +13,7 @@ struct NovelReaderVerticalContent: View {
     let verticalScrollCoordinator: NovelReaderVerticalScrollCoordinator
     let annotations: NovelReaderAnnotationCoordinator
     let searchHighlightController: NovelReaderSearchHighlightController
-    @Binding var verticalTapSuppressionUntil: CFTimeInterval
+    let verticalTapSuppression: NovelReaderVerticalTapSuppression
     let handleVerticalBoundaryPullRelease: (NovelReaderVerticalBoundaryDirection) async -> Void
     let updateVerticalBoundaryPullState: (NovelReaderVerticalBoundaryPullState) -> Void
     let handleVerticalTap: () -> Void
@@ -118,10 +118,10 @@ struct NovelReaderVerticalContent: View {
         DragGesture(minimumDistance: 4)
             .onChanged { _ in
                 verticalRestore.cancelVerticalRestoreForUserScroll()
-                verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
+                verticalTapSuppression.until = CACurrentMediaTime() + 0.5
             }
             .onEnded { _ in
-                verticalTapSuppressionUntil = CACurrentMediaTime() + 0.5
+                verticalTapSuppression.until = CACurrentMediaTime() + 0.5
             }
     }
 }
