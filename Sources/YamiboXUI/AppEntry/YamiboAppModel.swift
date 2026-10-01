@@ -78,6 +78,7 @@ public final class YamiboAppModel {
     private(set) var mineNavigationRequest: MineNavigationRequest?
     private(set) var favoriteUpdatesRequestID: UUID?
     @ObservationIgnored private var initialNavigation: AppNavigationTarget?
+    @ObservationIgnored private var readerRestorationRevision = UUID()
     @ObservationIgnored private var claimedForumNavigationRequestID: UUID?
     @ObservationIgnored private var claimedForumSearchRequestID: UUID?
     public private(set) var appThemePreset = AppThemePreset.classic
@@ -186,47 +187,85 @@ public final class YamiboAppModel {
     public func bootstrapIfNeeded() async {
         guard bootstrapState == nil, !isBootstrapping else { return }
         let generation = accountGeneration
+        let restorationRevision = readerRestorationRevision
         isBootstrapping = true
         defer {
             isBootstrapping = false
             bootstrapPhase = nil
         }
 
-        let result: AppContinuityLaunchResult
+        let preparation: AppContinuityLaunchPreparation
+        let windowRestore: AppContinuityReaderRestorePreparation?
         if let windowCoordinator {
-            let shared = await windowCoordinator.bootstrap(onProgress: updateBootstrapPhase)
-            let route = await appContinuity.restoreExplicitly(
-                canRestoreReaderRoute: canRestoreReaderRoute,
-                onProgress: updateBootstrapPhase
-            )
-            let legacyRoute = windowCoordinator.claimLegacyResumeRoute(windowID: windowID)
-            result = AppContinuityLaunchResult(
-                bootstrapState: shared.bootstrapState,
-                restoredRoute: route ?? legacyRoute
-            )
+            // Capture this window's position before starting/awaiting the shared
+            // startup round, so a merge before a failed PUT is still detected.
+            windowRestore = await appContinuity.prepareReaderRestore()
+            preparation = await windowCoordinator.bootstrap(onProgress: updateBootstrapPhase)
         } else {
+            windowRestore = nil
             await configureAccountTransitions()
-            result = await appContinuity.launchIfNeeded(
+            preparation = await appContinuity.prepareLaunch(
                 canRestoreReaderRoute: canRestoreReaderRoute,
                 onProgress: updateBootstrapPhase
             )
         }
-        let state = generation == accountGeneration ? result.bootstrapState : await appContext.bootstrap()
-        let latestSettings = await appContext.settingsStore.load()
-        navigationSettings = latestSettings.system.navigation
-        // Explicit navigation may arrive during bootstrap (e.g. a new-window URL).
-        if forumNavigationRequest == nil, forumSearchRequest == nil, mineNavigationRequest == nil,
-           favoriteUpdatesRequestID == nil {
-            selectedTab = AppTabLaunchResolver.resolveInitialTab(navigation: navigationSettings)
-        }
-        appThemePreset = state.settings.appearance.themePreset
-        readerToolbarStyle = state.settings.readerToolbarStyle
-        bootstrapState = state
-        bootstrapErrorMessage = nil
-        if generation == accountGeneration { applyRestoredRoute(result.restoredRoute) }
+        await publishLocalBootstrap(preparation.bootstrapState, generation: generation, restorationRevision: restorationRevision)
+        isBootstrapping = false
+        bootstrapPhase = nil
         if let target = initialNavigation {
             initialNavigation = nil
             open(target)
+        }
+
+        // Publishing the local shell is independent of WebDAV GET/PUT. The
+        // task is app-owned; cancelling this window only drops its late restore.
+        let completion = await preparation.completion.value
+        guard !Task.isCancelled, generation == accountGeneration else { return }
+        let legacyRoute = windowCoordinator?.claimLegacyResumeRoute(windowID: windowID, completion: completion)
+        let mayRestore = restorationRevision == readerRestorationRevision && canRestoreReaderRoute
+        let route: ReaderResumeRoute?
+        if let windowRestore {
+            route = await appContinuity.completeReaderRestore(
+                windowRestore,
+                canRestoreReaderRoute: mayRestore,
+                synchronizationResult: completion.synchronizationResult
+            )
+        } else {
+            route = completion.restoredRoute
+        }
+        guard mayRestore, !Task.isCancelled, generation == accountGeneration,
+              restorationRevision == readerRestorationRevision else { return }
+        applyRestoredRoute(route ?? legacyRoute)
+    }
+
+    private func publishLocalBootstrap(
+        _ initialState: YamiboBootstrapState, generation: UUID, restorationRevision: UUID
+    ) async {
+        var state = initialState
+        var stateGeneration = generation
+        while true {
+            // A cached shared launch belongs to its original account. Account
+            // changes during either await must reload before publishing a shell.
+            if stateGeneration != accountGeneration {
+                stateGeneration = accountGeneration
+                state = await appContext.bootstrap()
+            }
+            let latestSettings = await appContext.settingsStore.load()
+            guard stateGeneration == accountGeneration else { continue }
+            applyNavigationSettings(latestSettings.system.navigation)
+            if restorationRevision == readerRestorationRevision,
+               forumNavigationRequest == nil, forumSearchRequest == nil, mineNavigationRequest == nil,
+               favoriteUpdatesRequestID == nil {
+                selectedTab = AppTabLaunchResolver.resolveInitialTab(navigation: navigationSettings)
+            }
+            appThemePreset = latestSettings.appearance.themePreset
+            readerToolbarStyle = latestSettings.readerToolbarStyle
+            bootstrapState = YamiboBootstrapState(
+                session: state.session, profile: state.profile, settings: latestSettings,
+                localFavoriteLibrary: state.localFavoriteLibrary
+            )
+            bootstrapErrorMessage = nil
+            return
         }
     }
 
@@ -256,6 +295,7 @@ public final class YamiboAppModel {
     }
 
     func publishAccountChange() {
+        readerRestorationRevision = UUID()
         cancelMangaReaderOpen()
         suspendedNovelContext = nil
         suspendedMangaContext = nil
@@ -272,6 +312,7 @@ public final class YamiboAppModel {
 
     public func bootstrap() async {
         let generation = accountGeneration
+        let restorationRevision = readerRestorationRevision
         isBootstrapping = true
         defer {
             isBootstrapping = false
@@ -288,7 +329,9 @@ public final class YamiboAppModel {
             canRestoreReaderRoute: canRestoreReaderRoute,
             onProgress: updateBootstrapPhase
         )
-        if generation == accountGeneration { applyRestoredRoute(restoredRoute) }
+        if generation == accountGeneration, restorationRevision == readerRestorationRevision {
+            applyRestoredRoute(restoredRoute)
+        }
     }
 
     private func updateBootstrapPhase(_ phase: AppBootstrapPhase) async {
@@ -324,6 +367,12 @@ public final class YamiboAppModel {
         appThemePreset = settings.appearance.themePreset
         applyNavigationSettings(settings.system.navigation)
         readerToolbarStyle = settings.readerToolbarStyle
+        if let state = bootstrapState {
+            bootstrapState = YamiboBootstrapState(
+                session: state.session, profile: state.profile, settings: settings,
+                localFavoriteLibrary: state.localFavoriteLibrary
+            )
+        }
     }
 
     private func applyNavigationSettings(_ settings: AppNavigationSettings) {
@@ -366,6 +415,7 @@ public final class YamiboAppModel {
 
     public func selectTab(_ tab: AppTab) {
         guard navigationSettings.tabs.contains(tab) else { return }
+        readerRestorationRevision = UUID()
         if tab != selectedTab { cancelMangaReaderOpen() }
         selectedTab = tab
         restoreSuspendedNovelIfNeeded(for: tab)
@@ -395,6 +445,7 @@ public final class YamiboAppModel {
 
     @discardableResult
     func requestMangaReader(_ context: MangaLaunchContext, bookOpeningTransition: BookOpeningTransition?) -> Task<Void, Never> {
+        readerRestorationRevision = UUID()
         if let session = presentedReaderSession ?? currentReaderSession,
            session.presentation == .fullScreen, !session.isClosed {
             return Task { await session.openMangaReader(context) }
@@ -437,6 +488,7 @@ public final class YamiboAppModel {
         mangaProjection: MangaReaderProjection? = nil,
         bookOpeningTransition: BookOpeningTransition? = nil
     ) {
+        readerRestorationRevision = UUID()
         let activeFullScreenSession = currentReaderSession.flatMap {
             $0.presentation == .fullScreen ? $0 : nil
         }
@@ -575,6 +627,7 @@ public final class YamiboAppModel {
     }
 
     public func openForumURL(_ url: URL) {
+        readerRestorationRevision = UUID()
         cancelMangaReaderOpen()
         appContinuity.readerRouteDismissed()
         if activeNovelContext != nil {
@@ -593,6 +646,7 @@ public final class YamiboAppModel {
     }
 
     private func open(_ target: AppNavigationTarget) {
+        readerRestorationRevision = UUID()
         if case let .tab(tab) = target, !navigationSettings.tabs.contains(tab),
            let destination = AppMineDestination(rawValue: tab.rawValue) {
             open(.mine(destination))
@@ -628,6 +682,7 @@ public final class YamiboAppModel {
     }
 
     public func openNativeForumThread(url: URL, title: String?) {
+        readerRestorationRevision = UUID()
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url, source: .readerOrigin, title: title)
     }
@@ -649,6 +704,7 @@ public final class YamiboAppModel {
     }
 
     public func openForumSearch() {
+        readerRestorationRevision = UUID()
         cancelMangaReaderOpen()
         appContinuity.readerRouteDismissed()
         if activeNovelContext != nil {
@@ -680,7 +736,9 @@ public final class YamiboAppModel {
     }
 
     private var canRestoreReaderRoute: Bool {
-        initialNavigation == nil && !hasActiveReaderPresentation && forumNavigationRequest == nil && forumSearchRequest == nil
+        initialNavigation == nil && !hasActiveReaderPresentation && !isOpeningMangaReader &&
+            forumNavigationRequest == nil && forumSearchRequest == nil && mineNavigationRequest == nil &&
+            favoriteUpdatesRequestID == nil
     }
 
     private func applyRestoredRoute(_ route: ReaderResumeRoute?) {

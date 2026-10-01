@@ -281,9 +281,11 @@ private struct MangaReaderProgressImagePreview: View {
 
     @State private var loadedImage: UIImage?
     @State private var loadedPageID: String?
+    @State private var loadedPixelSize: Int?
     @State private var loadingPageID: String?
     @State private var failedPageID: String?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         let pageID = page?.id
@@ -303,18 +305,27 @@ private struct MangaReaderProgressImagePreview: View {
         .frame(width: Self.previewSize.width, height: Self.previewSize.height)
         .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 5)
-        .task(id: pageID) { @MainActor in
+        .task(id: PreviewLoadIdentity(pageID: pageID, pixelSize: previewPixelSize)) { @MainActor in
             await loadImage()
         }
     }
 
     private var displayedImage: UIImage? {
         guard let page else { return nil }
-        if let cachedImage = imageLoader?.cachedImage(for: page) {
+        if let cachedImage = imageLoader?.cachedPreviewImage(for: page, maxPixelSize: previewPixelSize) {
             return cachedImage
         }
-        guard loadedPageID == page.id else { return nil }
+        guard loadedPageID == page.id, loadedPixelSize == previewPixelSize else { return nil }
         return loadedImage
+    }
+
+    private struct PreviewLoadIdentity: Hashable {
+        let pageID: String?
+        let pixelSize: Int
+    }
+
+    private var previewPixelSize: Int {
+        Int(ceil(max(Self.previewSize.width, Self.previewSize.height) * max(displayScale, 1)))
     }
 
     @MainActor
@@ -322,14 +333,17 @@ private struct MangaReaderProgressImagePreview: View {
         guard let page, let imageLoader else {
             loadedImage = nil
             loadedPageID = nil
+            loadedPixelSize = nil
             loadingPageID = nil
             failedPageID = nil
             return
         }
 
-        if let cachedImage = imageLoader.cachedImage(for: page) {
+        let pixelSize = previewPixelSize
+        if let cachedImage = imageLoader.cachedPreviewImage(for: page, maxPixelSize: pixelSize) {
             loadedImage = cachedImage
             loadedPageID = page.id
+            loadedPixelSize = pixelSize
             loadingPageID = nil
             failedPageID = nil
             return
@@ -339,10 +353,11 @@ private struct MangaReaderProgressImagePreview: View {
         failedPageID = nil
 
         do {
-            let image = try await imageLoader.image(for: page)
+            let image = try await imageLoader.previewImage(for: page, maxPixelSize: pixelSize)
             guard !Task.isCancelled else { return }
             loadedImage = image
             loadedPageID = page.id
+            loadedPixelSize = pixelSize
             loadingPageID = nil
             failedPageID = nil
         } catch {

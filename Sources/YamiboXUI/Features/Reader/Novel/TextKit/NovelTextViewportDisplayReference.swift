@@ -11,6 +11,12 @@ public final class NovelTextViewportDisplayReference {
     var surfaceOrdinal: Int { surfaceIdentity.ordinal }
     public var generation: UInt64 { surfaceIdentity.generation }
 
+    var runtimeIdentity: UUID? { runtimeOwner?.identity }
+
+    var surfaceDocumentRange: Range<NovelDocumentUTF16Offset>? {
+        runtimeOwner?.surfaceDocumentRange(for: surfaceIdentity)
+    }
+
     private weak var runtimeOwner: NovelTextViewportRuntimeOwner?
 
     init(

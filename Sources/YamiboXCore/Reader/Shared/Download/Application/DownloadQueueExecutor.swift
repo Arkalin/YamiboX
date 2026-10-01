@@ -440,9 +440,9 @@ public actor DownloadQueueExecutor {
     }
 
     private func refreshRunProgress(generation: Int) async throws {
-        let works = try await store.downloadQueueWorks()
+        let count = try await store.downloadQueueWorkCount()
         try checkRun(generation)
-        remainingWorkCount = works.count
+        remainingWorkCount = count
         if let id = runID {
             await runObserver?.queueRunDidUpdateProgress(id: id, progress: progressSnapshot)
         }

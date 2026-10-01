@@ -621,11 +621,12 @@ actor DownloadStore {
         ownerName: String,
         tid: String,
         imageURLs: [URL],
+        manualOrders: [Int]? = nil,
         in db: Database
     ) throws {
         var desiredByPosition: [Int: String] = [:]
         for (index, imageURL) in imageURLs.enumerated() {
-            desiredByPosition[index] = imageURL.absoluteString
+            desiredByPosition[manualOrders?[index] ?? index] = imageURL.absoluteString
         }
 
         var existingByPosition: [Int: String] = [:]

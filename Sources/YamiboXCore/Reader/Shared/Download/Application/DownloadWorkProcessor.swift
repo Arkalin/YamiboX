@@ -50,7 +50,7 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         progress: @escaping @Sendable (DownloadWorkProgress) -> Void
     ) async throws {
         try Task.checkCancellation()
-        guard try await store.downloadProcessingWork(id: work.id) != nil else {
+        guard try await store.containsDownloadWork(id: work.id) else {
             throw CancellationError()
         }
 
@@ -91,7 +91,7 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         }
 
         try Task.checkCancellation()
-        guard try await store.downloadProcessingWork(id: preparedWork.workID) != nil else {
+        guard try await store.containsDownloadWork(id: preparedWork.workID) else {
             throw CancellationError()
         }
         progress(DownloadWorkProgress(phase: .saving, fraction: 0.95))
@@ -118,21 +118,20 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         tracker: DownloadImageProgressTracker
     ) async throws -> [URL] {
         var completedKeys = Set(completedImageURLs.map(\.absoluteString))
-        var completed = targetImageURLs.filter { completedKeys.contains($0.absoluteString) }
-        let pending = targetImageURLs.filter { !completedKeys.contains($0.absoluteString) }
+        let pending = targetImageURLs.enumerated().filter { !completedKeys.contains($0.element.absoluteString) }
 
         try await withThrowingTaskGroup(of: DownloadImageTransferResult.self) { group in
             var pendingIterator = pending.makeIterator()
             var activeCount = 0
 
             func submitNext() {
-                guard activeCount < maxConcurrentImageTransfers, let imageURL = pendingIterator.next() else {
+                guard activeCount < maxConcurrentImageTransfers, let (targetIndex, imageURL) = pendingIterator.next() else {
                     return
                 }
                 activeCount += 1
                 group.addTask { [store, imageAcquirer] in
                     try Task.checkCancellation()
-                    guard try await store.downloadProcessingWork(id: workID) != nil else {
+                    guard try await store.containsDownloadWork(id: workID) else {
                         throw CancellationError()
                     }
                     let startedAt = Date()
@@ -144,12 +143,13 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
                         throw YamiboError.invalidResponse(statusCode: nil)
                     }
                     try Task.checkCancellation()
-                    guard try await store.downloadProcessingWork(id: workID) != nil else {
+                    guard try await store.containsDownloadWork(id: workID) else {
                         throw CancellationError()
                     }
                     try await store.saveOfflineImageData(acquisition.data, for: imageURL)
                     return DownloadImageTransferResult(
                         imageURL: imageURL,
+                        targetIndex: targetIndex,
                         bytesPerSecond: Self.bytesPerSecond(byteCount: acquisition.data.count, startedAt: startedAt)
                     )
                 }
@@ -161,20 +161,18 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
 
             while let result = try await group.next() {
                 activeCount -= 1
+                try Task.checkCancellation()
                 completedKeys.insert(result.imageURL.absoluteString)
-                completed = targetImageURLs.filter { completedKeys.contains($0.absoluteString) }
-                try await store.updateDownloadWorkProgress(
-                    id: workID,
-                    targetImageURLs: targetImageURLs,
-                    completedImageURLs: completed,
+                guard try await store.recordCompletedDownloadImage(
+                    id: workID, imageURL: result.imageURL, targetIndex: result.targetIndex,
                     currentBytesPerSecond: result.bytesPerSecond
-                )
+                ) else { throw CancellationError() }
                 tracker.finish(url: result.imageURL)
                 submitNext()
             }
         }
 
-        return completed
+        return targetImageURLs.filter { completedKeys.contains($0.absoluteString) }
     }
 
     private static func bytesPerSecond(byteCount: Int, startedAt: Date) -> Int {
@@ -185,6 +183,7 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
 
 private struct DownloadImageTransferResult: Sendable {
     var imageURL: URL
+    var targetIndex: Int
     var bytesPerSecond: Int
 }
 
@@ -195,6 +194,7 @@ private final class DownloadImageProgressTracker: @unchecked Sendable {
     private let count: Int
     private var completed: Set<URL>
     private var transfers: [URL: DownloadTransferProgress] = [:]
+    private var completedBytes: Int64 = 0
     private let report: @Sendable (DownloadWorkProgress) -> Void
 
     init(urls: [URL], completed: [URL], report: @escaping @Sendable (DownloadWorkProgress) -> Void) {
@@ -213,7 +213,10 @@ private final class DownloadImageProgressTracker: @unchecked Sendable {
 
     func finish(url: URL) {
         lock.withLock {
-            completed.insert(url)
+            guard completed.insert(url).inserted else { return }
+            if let transfer = transfers.removeValue(forKey: url) {
+                completedBytes += max(0, transfer.receivedBytes)
+            }
             report(snapshot)
         }
     }
@@ -221,14 +224,13 @@ private final class DownloadImageProgressTracker: @unchecked Sendable {
     func publish() { lock.withLock { report(snapshot) } }
 
     private var snapshot: DownloadWorkProgress {
-        let partial = transfers.filter { !completed.contains($0.key) }
-        let fraction = (Double(completed.count) + partial.values.reduce(0) { $0 + ($1.fraction ?? 0) })
+        let fraction = (Double(completed.count) + transfers.values.reduce(0) { $0 + ($1.fraction ?? 0) })
             / Double(max(1, count))
         return DownloadWorkProgress(
             phase: .transferring,
             fraction: 0.05 + 0.9 * fraction,
-            receivedBytes: transfers.values.reduce(0) { $0 + max(0, $1.receivedBytes) },
-            hasUnknownLength: partial.values.contains { $0.fraction == nil }
+            receivedBytes: completedBytes + transfers.values.reduce(0) { $0 + max(0, $1.receivedBytes) },
+            hasUnknownLength: transfers.values.contains { $0.fraction == nil }
         )
     }
 }

@@ -11,7 +11,16 @@ public actor NetworkLogStore {
     }
 
     private struct ClearState: Codable {
-        let clearedAt: Date
+        var clearedAt: Date?
+        // Batch eviction leaves spare capacity. Remember its oldest retained
+        // time so late completions cannot refill that space with older history.
+        var retainedSince: Date?
+    }
+
+    private struct RecordKey: Hashable {
+        var startedAt: Date
+        var id: UUID
+        init(_ record: Record) { startedAt = record.entry.startedAt; id = record.entry.id }
     }
 
     private struct Segment {
@@ -25,10 +34,6 @@ public actor NetworkLogStore {
             bytes = records.reduce(0) { $0 + Int64($1.data.count) }
         }
 
-        mutating func removeRecord(at index: Int) {
-            bytes -= Int64(records[index].data.count)
-            records.remove(at: index)
-        }
     }
 
     private let directoryURL: URL
@@ -39,6 +44,8 @@ public actor NetworkLogStore {
     private var loaded = false
     private var startupExportCleanupPerformed = false
     private var stateBytes: Int64 = 0
+    private var clearedAt: Date?
+    private var retainedSince: Date?
     private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
     // Space for the bounded clear watermark and its atomic replacement. This
     // keeps even metadata writes within the strict on-disk capacity.
@@ -84,12 +91,9 @@ public actor NetworkLogStore {
         defer { publishChange() }
         do {
             try loadIfNeeded()
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .millisecondsSince1970
-            let state = try encoder.encode(ClearState(clearedAt: clearedAt))
-            guard state.count <= stateReservationBytes / 2 else { throw NetworkLogStoreError.invalidState }
-            try state.write(to: stateURL, options: .atomic)
-            stateBytes = Int64(state.count)
+            self.clearedAt = clearedAt
+            retainedSince = nil
+            try writeState()
             for segment in segments { try FileManager.default.removeItem(at: segment.url) }
             segments.removeAll()
         } catch {
@@ -139,25 +143,15 @@ public actor NetworkLogStore {
         var data = try encoder.encode(entry)
         data.append(10)
         guard Int64(data.count) <= logCapacityBytes else { return }
+        guard retainedSince.map({ entry.startedAt >= $0 }) ?? true else { return }
         let record = Record(entry: entry, data: data)
 
         let requiredBytes = logBytes + Int64(data.count) - logCapacityBytes
         if requiredBytes > 0 {
-            let eligibleBytes = segments.flatMap(\.records)
-                .filter { $0.entry.startedAt <= entry.startedAt }
-                .reduce(Int64(0)) { $0 + Int64($1.data.count) }
-            guard eligibleBytes >= requiredBytes else { return }
-        }
-
-        while logBytes + Int64(data.count) > logCapacityBytes {
-            guard let oldest = oldestRecordLocation() else { break }
-            segments[oldest.segment].removeRecord(at: oldest.record)
-            if segments[oldest.segment].records.isEmpty {
-                try FileManager.default.removeItem(at: segments[oldest.segment].url)
-                segments.remove(at: oldest.segment)
-            } else {
-                try rewriteSegment(at: oldest.segment)
-            }
+            // Drop about one segment's worth in a batch, in startedAt order.
+            // The oldest boundary may retain fewer records than a byte-perfect
+            // FIFO; no record newer than this request is eligible for eviction.
+            guard try evictOldestRecords(requiredBytes: requiredBytes, notNewerThan: entry.startedAt) else { return }
         }
 
         if let last = segments.last, last.bytes + Int64(data.count) <= segmentCapacityBytes {
@@ -197,11 +191,15 @@ public actor NetworkLogStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         stateBytes = 0
+        clearedAt = nil
+        retainedSince = nil
         if fileManager.fileExists(atPath: stateURL.path) {
             let stateData = try Data(contentsOf: stateURL)
             if stateData.count <= stateReservationBytes / 2,
                let state = try? decoder.decode(ClearState.self, from: stateData) {
-                generation.restoreClearDate(state.clearedAt)
+                if let date = state.clearedAt { generation.restoreClearDate(date) }
+                clearedAt = state.clearedAt
+                retainedSince = state.retainedSince
                 stateBytes = Int64(stateData.count)
             } else {
                 try fileManager.removeItem(at: stateURL)
@@ -222,7 +220,8 @@ public actor NetworkLogStore {
                 let line = data[start...index]
                 if let entry = try? decoder.decode(NetworkLogEntry.self, from: Data(line.dropLast())),
                    entry.formatVersion == 1,
-                   generation.accepts(currentGeneration, startedAt: entry.startedAt) {
+                   generation.accepts(currentGeneration, startedAt: entry.startedAt),
+                   retainedSince.map({ entry.startedAt >= $0 }) ?? true {
                     records.append(Record(entry: entry, data: Data(line)))
                 }
                 start = data.index(after: index)
@@ -240,14 +239,7 @@ public actor NetworkLogStore {
             }
         }
         while logBytes > logCapacityBytes {
-            guard let oldest = oldestRecordLocation() else { break }
-            segments[oldest.segment].removeRecord(at: oldest.record)
-            if segments[oldest.segment].records.isEmpty {
-                try fileManager.removeItem(at: segments[oldest.segment].url)
-                segments.remove(at: oldest.segment)
-            } else {
-                try rewriteSegment(at: oldest.segment)
-            }
+            guard try evictOldestRecords(requiredBytes: logBytes - logCapacityBytes, notNewerThan: nil) else { break }
         }
         loaded = true
     }
@@ -259,18 +251,52 @@ public actor NetworkLogStore {
         }
     }
 
-    private func oldestRecordLocation() -> (segment: Int, record: Int)? {
-        var result: (segment: Int, record: Int)?
-        for segment in segments.indices {
-            for record in segments[segment].records.indices {
-                guard let previous = result else { result = (segment, record); continue }
-                if segments[segment].records[record].entry.startedAt
-                    < segments[previous.segment].records[previous.record].entry.startedAt {
-                    result = (segment, record)
-                }
+    /// Evict oldest records once per batch and rewrite each affected segment
+    /// at most once. Equal startedAt values remain admissible, matching the
+    /// previous timestamp-only admission rule, including after restoration.
+    private func evictOldestRecords(requiredBytes: Int64, notNewerThan date: Date?) throws -> Bool {
+        let targetBytes = max(requiredBytes, segmentCapacityBytes)
+        var retiring: [Record] = []
+        var retiringBytes: Int64 = 0
+        let ordered = orderedRecords()
+        for record in ordered {
+            if let date, record.entry.startedAt > date { break }
+            retiring.append(record)
+            retiringBytes += Int64(record.data.count)
+            if retiringBytes >= targetBytes { break }
+        }
+        guard retiringBytes >= requiredBytes, let boundary = retiring.last?.entry.startedAt else { return false }
+        let keys = Set(retiring.map(RecordKey.init))
+        let earliestRemaining = ordered.first { !keys.contains(RecordKey($0)) }?.entry.startedAt
+        // Also retain the arriving request when it is older than every record
+        // left after eviction. The watermark follows the oldest retained time,
+        // not the last removed time, so removed boundary rows stay rejected.
+        let oldestRetained = [date, earliestRemaining].compactMap { $0 }.min() ?? boundary
+        retainedSince = max(retainedSince ?? oldestRetained, oldestRetained)
+        // Persist before deleting so an interrupted batch cannot restore older
+        // history. Metadata + its atomic replacement use reserved capacity.
+        try writeState()
+        for index in segments.indices.reversed() {
+            let retained = segments[index].records.filter { !keys.contains(RecordKey($0)) }
+            guard retained.count != segments[index].records.count else { continue }
+            if retained.isEmpty {
+                try FileManager.default.removeItem(at: segments[index].url)
+                segments.remove(at: index)
+            } else {
+                segments[index] = Segment(url: segments[index].url, records: retained)
+                try rewriteSegment(at: index)
             }
         }
-        return result
+        return true
+    }
+
+    private func writeState() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        let data = try encoder.encode(ClearState(clearedAt: clearedAt, retainedSince: retainedSince))
+        guard data.count <= stateReservationBytes / 2 else { throw NetworkLogStoreError.invalidState }
+        try data.write(to: stateURL, options: .atomic)
+        stateBytes = Int64(data.count)
     }
 
     private func rewriteSegment(at index: Int) throws {

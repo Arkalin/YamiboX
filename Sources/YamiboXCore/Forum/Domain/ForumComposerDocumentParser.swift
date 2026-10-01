@@ -30,7 +30,25 @@ enum ForumComposerDocumentParser {
         }
         var pairs: [Int: Int] = [:]
         var crossed: [Int: Int] = [:]
+        // Literal bodies use the nearest closing tag, even when their contents
+        // contain markup. Index it once rather than searching every suffix.
+        var literalClosings: [Int: Int] = [:]
+        var nextClosingByName: [String: Int] = [:]
+        for index in tokens.indices.reversed() {
+            let token = tokens[index]
+            if token.closing { nextClosingByName[token.name] = index }
+            else if token.tag?.isLiteralBody == true {
+                literalClosings[index] = nextClosingByName[token.name]
+            }
+        }
         var stack: [Int] = []
+        var positionsByName: [String: [Int]] = [:]
+        func removeStackSuffix(from position: Int) {
+            for opening in stack[position...] {
+                positionsByName[tokens[opening].name]?.removeLast()
+            }
+            stack.removeSubrange(position...)
+        }
         var index = 0
         while index < tokens.count {
             let token = tokens[index]
@@ -38,19 +56,22 @@ enum ForumComposerDocumentParser {
             if token.closing {
                 if let last = stack.last, tokens[last].name == token.name {
                     pairs[last] = index
-                    stack.removeLast()
-                } else if let position = stack.lastIndex(where: { tokens[$0].name == token.name }) {
+                    removeStackSuffix(from: stack.count - 1)
+                } else if let position = positionsByName[token.name]?.last {
                     let first = stack[position]
                     crossed[first] = index
                     for opening in stack[position...] { pairs[opening] = nil }
-                    stack.removeSubrange(position...)
+                    removeStackSuffix(from: position)
                 }
             } else if token.tag?.isLiteralBody == true,
-                      let close = tokens[(index + 1)...].firstIndex(where: { $0.closing && $0.name == token.name }) {
+                      let close = literalClosings[index] {
                 pairs[index] = close
                 index = close + 1
                 continue
-            } else { stack.append(index) }
+            } else {
+                positionsByName[token.name, default: []].append(stack.count)
+                stack.append(index)
+            }
             index += 1
         }
 

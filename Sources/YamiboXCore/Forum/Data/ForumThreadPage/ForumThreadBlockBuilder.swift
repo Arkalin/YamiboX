@@ -28,6 +28,7 @@ final class ForumThreadBlockBuilder {
 
     private var blocks: [ForumThreadContentBlock] = []
     private var text = ""
+    private var textCharacterCount = 0
     private var links: [PendingTextLink] = []
     private var styleRuns: [PendingTextStyleRun] = []
     private var rubies: [PendingRubyText] = []
@@ -315,9 +316,9 @@ final class ForumThreadBlockBuilder {
             return
         }
 
-        let start = text.count
+        let start = textCharacterCount
         try parseChildren(of: element)
-        guard text.count > start else { return }
+        guard textCharacterCount > start else { return }
         let baseText = String(text.dropFirst(start))
         rubies.append(
             PendingRubyText(
@@ -376,7 +377,7 @@ final class ForumThreadBlockBuilder {
             height: Self.imageDimension(element.attr("height"))
         )
         if image.isEmoticon {
-            inlineImages.append(ForumThreadInlineImage(start: text.count, image: image))
+            inlineImages.append(ForumThreadInlineImage(start: textCharacterCount, image: image))
             appendText("\u{FFFC}")
         } else {
             commitText()
@@ -416,14 +417,23 @@ final class ForumThreadBlockBuilder {
         // Kanna already decoded text nodes. Decoding again corrupts literal &lt; examples.
         let decoded = value
         guard !decoded.isEmpty else { return }
-        let start = text.count
+        let start = textCharacterCount
+        let decodedCount = decoded.count
+        // Only the trailing grapheme can change when concatenating text. Account
+        // for cross-node combining marks, CRLF and emoji joins without recounting
+        // the entire accumulated run. Recorded spans keep their original offsets.
+        if let last = text.last {
+            textCharacterCount += (String(last) + decoded).count - 1
+        } else {
+            textCharacterCount = decodedCount
+        }
         text += decoded
-        appendCurrentStyleRun(start: start, length: decoded.count)
+        appendCurrentStyleRun(start: start, length: decodedCount)
         if let url = currentLinkURL {
             if let last = links.last, last.url == url, last.start + last.length == start {
-                links[links.count - 1].length += decoded.count
+                links[links.count - 1].length += decodedCount
             } else {
-                links.append(PendingTextLink(start: start, length: decoded.count, url: url))
+                links.append(PendingTextLink(start: start, length: decodedCount, url: url))
             }
         }
     }
@@ -448,6 +458,7 @@ final class ForumThreadBlockBuilder {
         let normalized = normalizedResult.text
         guard !normalized.isEmpty else {
             text = ""
+            textCharacterCount = 0
             links = []
             styleRuns = []
             rubies = []
@@ -490,6 +501,7 @@ final class ForumThreadBlockBuilder {
             seed: "text-\(normalized.prefix(64))"
         )
         text = ""
+        textCharacterCount = 0
         links = []
         styleRuns = []
         rubies = []

@@ -129,11 +129,18 @@ public enum ForumComposerDocumentError: Error, Equatable, Sendable {
 
 /// Source is authoritative. Native previews and persistence never serialize TextKit attributes.
 public struct ForumComposerDocument: Equatable, Sendable {
+    struct TextSplice: Equatable, Sendable {
+        let nodeID: String
+        let edit: ForumComposerSourceEdit
+        let sourceBefore: String
+    }
+    private(set) var lastTextSplice: TextSplice?
     public private(set) var source: String
     private var sourceUTF16: [UInt16]
     public private(set) var nodes: [ForumComposerNode]
     public private(set) var diagnostics: [ForumComposerDiagnostic]
     public private(set) var revision: UInt64 = 0
+    private var delimiterFreeTextNodeIDs: Set<String> = []
 
     public init(source: String = "") {
         self.source = source
@@ -141,6 +148,12 @@ public struct ForumComposerDocument: Equatable, Sendable {
         let parsed = ForumComposerDocumentParser.parse(source)
         nodes = parsed.nodes
         diagnostics = parsed.diagnostics
+        indexDelimiterFreeTextNodes()
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.sourceUTF16 == rhs.sourceUTF16
+            && lhs.nodes == rhs.nodes && lhs.diagnostics == rhs.diagnostics && lhs.revision == rhs.revision
     }
 
     public func substring(_ range: ForumComposerRange) -> String {
@@ -190,7 +203,8 @@ public struct ForumComposerDocument: Equatable, Sendable {
         for edit in edits.reversed() { changedUTF16.replaceSubrange(edit.range.location..<edit.range.end, with: edit.replacement.utf16) }
         let changed = String(decoding: changedUTF16, as: UTF16.self)
 
-        if edits.count == 1, let edit = edits.first, let leafID = spliceLeaf(edit, in: nodes) {
+        let leafID = edits.count == 1 ? edits.first.flatMap { spliceLeaf($0, in: nodes) } : nil
+        if let edit = edits.first, let leafID {
             nodes = nodes.map { splice($0, edit: edit, leafID: leafID) }
             diagnostics = diagnostics.map { diagnostic in
                 .init(range: shifted(diagnostic.range, by: edit), reason: diagnostic.reason)
@@ -216,8 +230,10 @@ public struct ForumComposerDocument: Equatable, Sendable {
             nodes = parsed.nodes.map(retainingIDs)
             diagnostics = parsed.diagnostics
         }
+        lastTextSplice = leafID.flatMap { nodeID in edits.first.map { TextSplice(nodeID: nodeID, edit: $0, sourceBefore: source) } }
         source = changed
         sourceUTF16 = changedUTF16
+        if leafID == nil { indexDelimiterFreeTextNodes() }
         revision &+= 1
     }
 
@@ -230,16 +246,37 @@ public struct ForumComposerDocument: Equatable, Sendable {
         return !(0xDC00...0xDFFF).contains(sourceUTF16[offset])
     }
 
+    /// Check before combining history edits so a structural edit keeps its
+    /// original sequence of reparses and node identity retention.
+    func canSpliceSingle(_ edit: ForumComposerSourceEdit, nodeID: String) -> Bool {
+        guard edit.range.location >= 0, edit.range.end <= sourceUTF16.count,
+              validBoundary(edit.range.location), validBoundary(edit.range.end) else { return false }
+        return spliceLeaf(edit, in: nodes) == nodeID
+    }
+
     private func spliceLeaf(_ edit: ForumComposerSourceEdit, in nodes: [ForumComposerNode]) -> String? {
         let delimiters = CharacterSet(charactersIn: "[]{}")
         guard edit.replacement.rangeOfCharacter(from: delimiters) == nil,
               substring(edit.range).rangeOfCharacter(from: delimiters) == nil else { return nil }
         for node in nodes where node.range.contains(edit.range) {
             // A delimiter-free leaf cannot become a tag by joining its neighbors.
-            if node.kind == .text, substring(node.range).rangeOfCharacter(from: delimiters) == nil { return node.id }
+            if node.kind == .text, delimiterFreeTextNodeIDs.contains(node.id) { return node.id }
             if let id = spliceLeaf(edit, in: node.children) { return id }
         }
         return nil
+    }
+
+    private mutating func indexDelimiterFreeTextNodes() {
+        var ids: Set<String> = []
+        let delimiters = CharacterSet(charactersIn: "[]{}")
+        func visit(_ nodes: [ForumComposerNode]) {
+            for node in nodes {
+                if node.kind == .text, substring(node.range).rangeOfCharacter(from: delimiters) == nil { ids.insert(node.id) }
+                visit(node.children)
+            }
+        }
+        visit(nodes)
+        delimiterFreeTextNodeIDs = ids
     }
 
     private func shifted(_ range: ForumComposerRange, by edit: ForumComposerSourceEdit) -> ForumComposerRange {

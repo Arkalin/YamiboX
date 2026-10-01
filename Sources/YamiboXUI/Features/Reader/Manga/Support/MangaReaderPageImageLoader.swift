@@ -23,6 +23,14 @@ final class MangaReaderPageImageLoader {
         uiImagePipeline.cachedImage(for: imageSource(page))
     }
 
+    func cachedPreviewImage(for page: MangaReaderPageProjection, maxPixelSize: Int) -> UIImage? {
+        uiImagePipeline.cachedPreviewImage(for: imageSource(page), maxPixelSize: maxPixelSize)
+    }
+
+    func previewImage(for page: MangaReaderPageProjection, maxPixelSize: Int) async throws -> UIImage {
+        try await uiImagePipeline.previewImage(for: imageSource(page), maxPixelSize: maxPixelSize)
+    }
+
     func imageSources(for pages: [MangaReaderPageProjection]) -> [YamiboImageSource] {
         pages.map(imageSource)
     }

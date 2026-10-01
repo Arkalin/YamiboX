@@ -11,23 +11,50 @@ public struct AppContinuityLaunchResult: Sendable {
     }
 }
 
+/// Local startup state is ready independently of synchronization and reader restore.
+/// The completion belongs to the app, so cancelling one window's waiter does not
+/// cancel a shared WebDAV round.
+public struct AppContinuityLaunchPreparation: Sendable {
+    public let bootstrapState: YamiboBootstrapState
+    public let completion: Task<AppContinuityLaunchCompletion, Never>
+
+    public init(bootstrapState: YamiboBootstrapState, completion: Task<AppContinuityLaunchCompletion, Never>) {
+        self.bootstrapState = bootstrapState
+        self.completion = completion
+    }
+}
+
+public struct AppContinuityLaunchCompletion: Sendable {
+    public let restoredRoute: ReaderResumeRoute?
+    public let synchronizationResult: WebDAVAutomaticSyncResult
+
+    public init(restoredRoute: ReaderResumeRoute?, synchronizationResult: WebDAVAutomaticSyncResult) {
+        self.restoredRoute = restoredRoute
+        self.synchronizationResult = synchronizationResult
+    }
+}
+
+/// Captured before startup synchronization; each window owns its own route and
+/// progress baseline, while all windows may await the same synchronization.
+public struct AppContinuityReaderRestorePreparation: Sendable {
+    fileprivate let route: ReaderResumeRoute?
+    fileprivate let routeGeneration: UUID
+    fileprivate let accountGeneration: UUID?
+    fileprivate let progress: Result<ReadingProgressRecord?, any Error>
+}
+
 /// Thread-agnostic: mutable state sits behind an unfair lock so the
 /// fire-and-forget lifecycle entry points stay synchronous and, for any single
 /// caller, strictly ordered (presented → position changed → dismissed).
 public final class AppContinuityWorkflow: Sendable {
     private struct MutableState {
-        var foregroundSyncTask: Task<Void, Never>?
+        var foregroundSyncTask: Task<WebDAVAutomaticSyncResult, Never>?
+        var foregroundSyncID: UUID?
         var debouncedUploadTask: Task<Void, Never>?
         var isWebDAVSyncInProgress = false
         var hasRestoredReaderResumeRoute = false
         var isReaderRoutePresented = false
         var readerRouteGeneration = UUID()
-    }
-
-    private struct StartupReaderRestore {
-        let route: ReaderResumeRoute?
-        let routeGeneration: UUID
-        let accountGeneration: UUID?
     }
 
     private let appContext: YamiboAppContext
@@ -39,27 +66,78 @@ public final class AppContinuityWorkflow: Sendable {
         self.readerResumeRouteStore = readerResumeRouteStore ?? appContext.readerResumeRouteStore
     }
 
+    public func prepareLaunch(
+        canRestoreReaderRoute: Bool,
+        onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
+    ) async -> AppContinuityLaunchPreparation {
+        let startup = await prepareReaderRestore()
+        let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
+        let completion = Task { [self] in
+            let synchronizationResult = await foregroundSynchronization().value
+            let restoredRoute = await completeReaderRestore(
+                startup,
+                canRestoreReaderRoute: canRestoreReaderRoute,
+                synchronizationResult: synchronizationResult
+            )
+            return AppContinuityLaunchCompletion(
+                restoredRoute: restoredRoute, synchronizationResult: synchronizationResult
+            )
+        }
+        return AppContinuityLaunchPreparation(bootstrapState: bootstrapState, completion: completion)
+    }
+
+    /// Compatibility for callers that need the complete startup result.
     public func launchIfNeeded(
         canRestoreReaderRoute: Bool,
-        onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
+        onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> AppContinuityLaunchResult {
+        let prepared = await prepareLaunch(canRestoreReaderRoute: canRestoreReaderRoute, onProgress: onProgress)
+        let completion = await prepared.completion.value
+        return AppContinuityLaunchResult(bootstrapState: prepared.bootstrapState, restoredRoute: completion.restoredRoute)
+    }
+
+    public func prepareReaderRestore() async -> AppContinuityReaderRestorePreparation {
         let (route, routeGeneration) = state.withLock { mutableState in
             (readerResumeRouteStore.loadSync(), mutableState.readerRouteGeneration)
         }
         let accountGeneration = try? await appContext.sessionStore.snapshot().generation
-        let startup = StartupReaderRestore(route: route, routeGeneration: routeGeneration, accountGeneration: accountGeneration)
-        let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
-        await onProgress(.synchronizingWebDAV)
-        let shouldReconcileReadingProgress = await synchronizeWebDAVForStartup(
-            route: canRestoreReaderRoute ? route : nil
+        let progress = await observeReadingProgress(for: route)
+        return AppContinuityReaderRestorePreparation(
+            route: route, routeGeneration: routeGeneration, accountGeneration: accountGeneration, progress: progress
         )
-        let restoredRoute = await restoreReaderRoute(
+    }
+
+    public func completeReaderRestore(
+        _ startup: AppContinuityReaderRestorePreparation,
+        canRestoreReaderRoute: Bool,
+        synchronizationResult: WebDAVAutomaticSyncResult
+    ) async -> ReaderResumeRoute? {
+        guard await isCurrentAccount(for: startup) else { return nil }
+        guard canRestoreReaderRoute else {
+            // Explicit navigation consumes this window's one startup restore
+            // without reading progress or changing its saved route.
+            return await restoreReaderRoute(
+                canRestoreReaderRoute: false, reconcilesWithReadingProgress: false,
+                startup: startup, onProgress: { _ in }
+            )
+        }
+        let after = await observeReadingProgress(for: startup.route)
+        let shouldReconcileReadingProgress: Bool
+        // A local merge may commit before a failed PUT. Compare the window's
+        // own progress even when the overall sync reports skipped after failure.
+        if case let .success(previous) = startup.progress,
+           case let .success(current?) = after,
+           let route = startup.route, current.hasReadingProgress(for: route) {
+            shouldReconcileReadingProgress = previous != current
+        } else {
+            shouldReconcileReadingProgress = synchronizationResult == .downloaded
+        }
+        return await restoreReaderRoute(
             canRestoreReaderRoute: canRestoreReaderRoute,
             reconcilesWithReadingProgress: shouldReconcileReadingProgress,
             startup: startup,
-            onProgress: onProgress
+            onProgress: { _ in }
         )
-        return AppContinuityLaunchResult(bootstrapState: bootstrapState, restoredRoute: restoredRoute)
     }
 
     public func restoreExplicitly(
@@ -78,7 +156,7 @@ public final class AppContinuityWorkflow: Sendable {
     private func restoreReaderRoute(
         canRestoreReaderRoute: Bool,
         reconcilesWithReadingProgress: Bool,
-        startup: StartupReaderRestore?,
+        startup: AppContinuityReaderRestorePreparation?,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void
     ) async -> ReaderResumeRoute? {
         guard await isCurrentAccount(for: startup) else { return nil }
@@ -153,23 +231,40 @@ public final class AppContinuityWorkflow: Sendable {
         }
     }
 
-    private func isCurrentRoute(for startup: StartupReaderRestore?, state: MutableState) -> Bool {
+    private func isCurrentRoute(for startup: AppContinuityReaderRestorePreparation?, state: MutableState) -> Bool {
         guard let startup else { return true }
         return state.readerRouteGeneration == startup.routeGeneration
             && readerResumeRouteStore.loadSync() == startup.route
     }
 
-    private func isCurrentAccount(for startup: StartupReaderRestore?) async -> Bool {
+    private func isCurrentAccount(for startup: AppContinuityReaderRestorePreparation?) async -> Bool {
         guard let generation = startup?.accountGeneration else { return true }
         return await appContext.sessionStore.isCurrentGeneration(generation)
     }
 
     public func foregroundBecameActive() {
-        replaceForegroundSyncTask(
-            with: Task { [weak self] in
-                _ = await self?.synchronizeWebDAVSilently()
+        _ = foregroundSynchronization()
+    }
+
+    private func foregroundSynchronization() -> Task<WebDAVAutomaticSyncResult, Never> {
+        state.withLock { mutableState in
+            if let task = mutableState.foregroundSyncTask { return task }
+            let id = UUID()
+            let task = Task { [weak self] in
+                guard let self else { return WebDAVAutomaticSyncResult.skipped }
+                let result = await synchronizeWebDAVSilently()
+                state.withLock { current in
+                    if current.foregroundSyncID == id {
+                        current.foregroundSyncTask = nil
+                        current.foregroundSyncID = nil
+                    }
+                }
+                return result
             }
-        )
+            mutableState.foregroundSyncID = id
+            mutableState.foregroundSyncTask = task
+            return task
+        }
     }
 
     // `touchesAppSettings` no longer changes behavior (markLocalDataChanged now
@@ -243,15 +338,6 @@ public final class AppContinuityWorkflow: Sendable {
         }
     }
 
-    private func replaceForegroundSyncTask(with task: Task<Void, Never>?) {
-        let previous = state.withLock { mutableState in
-            let previous = mutableState.foregroundSyncTask
-            mutableState.foregroundSyncTask = task
-            return previous
-        }
-        previous?.cancel()
-    }
-
     private func replaceDebouncedUploadTask(with task: Task<Void, Never>?) {
         let previous = state.withLock { mutableState in
             let previous = mutableState.debouncedUploadTask
@@ -271,21 +357,6 @@ public final class AppContinuityWorkflow: Sendable {
 
     private func endWebDAVSync() {
         state.withLock { $0.isWebDAVSyncInProgress = false }
-    }
-
-    private func synchronizeWebDAVForStartup(route: ReaderResumeRoute?) async -> Bool {
-        replaceForegroundSyncTask(with: nil)
-        let before = await observeReadingProgress(for: route)
-        let result = await synchronizeWebDAVSilently()
-        let after = await observeReadingProgress(for: route)
-        // A merge commits locally before PUT, so even a failed upload can
-        // change the resume position. Unrelated datasets must not move it.
-        if case let .success(previous) = before,
-           case let .success(current?) = after,
-           let route, current.hasReadingProgress(for: route) {
-            return previous != current
-        }
-        return result == .downloaded
     }
 
     private func observeReadingProgress(for route: ReaderResumeRoute?) async -> Result<ReadingProgressRecord?, any Error> {

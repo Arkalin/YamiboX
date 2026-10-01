@@ -32,9 +32,9 @@ public final class YamiboWindowCoordinator {
     @ObservationIgnored private var models: [String: WeakModel] = [:]
     @ObservationIgnored private var phases: [String: ScenePhase] = [:]
     @ObservationIgnored private var sceneIdentifiers: [String: String] = [:]
-    @ObservationIgnored private var bootstrapTask: Task<AppContinuityLaunchResult, Never>?
+    @ObservationIgnored private var bootstrapTask: Task<AppContinuityLaunchPreparation, Never>?
     @ObservationIgnored private var accountEpoch = UUID()
-    @ObservationIgnored private var legacyResumeRoute: ReaderResumeRoute?
+    @ObservationIgnored private var hasClaimedLegacyResumeRoute = false
     @ObservationIgnored private var legacyWindowID: String?
     @ObservationIgnored private var pendingSearchSceneID: String?
     @ObservationIgnored private var hasPendingSearch = false
@@ -101,29 +101,31 @@ public final class YamiboWindowCoordinator {
 
     func bootstrap(
         onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void
-    ) async -> AppContinuityLaunchResult {
+    ) async -> AppContinuityLaunchPreparation {
         if let bootstrapTask { return await bootstrapTask.value }
         let epoch = accountEpoch
         let task = Task { [self] in
             await configureAccountTransitions()
-            let result = await synchronization.launchIfNeeded(canRestoreReaderRoute: true, onProgress: onProgress)
+            let result = await synchronization.prepareLaunch(canRestoreReaderRoute: true, onProgress: onProgress)
             guard epoch == accountEpoch else {
-                return AppContinuityLaunchResult(bootstrapState: await appContext.bootstrap(), restoredRoute: nil)
+                return AppContinuityLaunchPreparation(
+                    bootstrapState: await appContext.bootstrap(),
+                    completion: Task { AppContinuityLaunchCompletion(restoredRoute: nil, synchronizationResult: .skipped) }
+                )
             }
-            legacyResumeRoute = result.restoredRoute
             return result
         }
         bootstrapTask = task
         return await task.value
     }
 
-    func claimLegacyResumeRoute(windowID: String?) -> ReaderResumeRoute? {
-        guard windowID == legacyWindowID else { return nil }
-        defer {
-            legacyResumeRoute = nil
-            synchronization.readerRouteDismissed()
-        }
-        return legacyResumeRoute
+    func claimLegacyResumeRoute(
+        windowID: String?, completion: AppContinuityLaunchCompletion
+    ) -> ReaderResumeRoute? {
+        guard windowID == legacyWindowID, !hasClaimedLegacyResumeRoute else { return nil }
+        hasClaimedLegacyResumeRoute = true
+        synchronization.readerRouteDismissed()
+        return completion.restoredRoute
     }
 
     @discardableResult
@@ -256,7 +258,7 @@ public final class YamiboWindowCoordinator {
         for key in restorationDefaults.dictionaryRepresentation().keys where key.hasPrefix(Self.restorationPrefix) {
             restorationDefaults.removeObject(forKey: key)
         }
-        legacyResumeRoute = nil
+        hasClaimedLegacyResumeRoute = false
         synchronization.readerRouteDismissed()
     }
 

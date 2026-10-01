@@ -18,7 +18,7 @@ final class ReaderImagePrefetchCoordinator {
     convenience init(pipeline: YamiboUIImagePipeline) {
         self.init(
             isCached: { pipeline.cachedImage(for: $0) != nil },
-            load: { _ = try await pipeline.image(for: $0, priority: .low) }
+            load: { try await pipeline.prefetchImage(for: $0) }
         )
     }
 

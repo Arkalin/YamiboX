@@ -256,6 +256,27 @@ class Element: Node {
             return selectorParts.flatMap { selectSingleSelector($0, in: searchable) }
         }
 
+        // libxml's XPath union deduplicates underlying nodes and returns document
+        // order. Avoid matching every result against every independently wrapped
+        // candidate (including their sibling paths) just to recover that order.
+        let isRoot: Bool
+        if searchable is any Kanna.XMLElement {
+            // Kanna scopes the document root like the document itself, whereas
+            // other elements search descendants of their current context only.
+            if case let .Number(count) = searchable.xpath("count(. | /*)") {
+                isRoot = count == 1
+            } else {
+                isRoot = false
+            }
+        } else {
+            isRoot = true
+        }
+        let paths = selectorParts.compactMap { compatibilityXPath(for: $0, isRoot: isRoot) }
+        if paths.count == selectorParts.count {
+            return searchable.xpath(paths.joined(separator: " | ")).map { Element(rawNode: $0) }
+        }
+
+        // Preserve the existing fallback for CSS syntax Kanna cannot translate.
         let selected = selectorParts.flatMap { selectSingleSelector($0, in: searchable) }
         let broadSelector = selectorParts.map(broadSelectorForOrdering).joined(separator: ", ")
         let orderedCandidates = searchable.css(broadSelector).map { Element(rawNode: $0) }
@@ -263,6 +284,29 @@ class Element: Node {
         return orderedCandidates.filter { candidate in
             selected.contains { $0.isSameDOMNode(as: candidate) }
         }
+    }
+
+    private static func compatibilityXPath(for selector: String, isRoot: Bool) -> String? {
+        // Adjacent attribute tests need the existing Swift filtering adapter.
+        // Also leave quoted commas/apostrophes to its fallback: Kanna splits
+        // commas and interpolates single-quoted XPath literals without escaping.
+        guard selector.filter({ $0 == "[" }).count <= 1, !selector.contains(","),
+              !attributeConditions(in: selector).contains(where: { $0.value.contains("'") }) else {
+            return nil
+        }
+        if !containsTopLevelCombinator(selector) {
+            let descendants = splitDescendantSelector(selector)
+            if descendants.count > 1 {
+                let paths = descendants.enumerated().compactMap { index, part in
+                    compatibilityXPath(for: part, isRoot: index == 0 ? isRoot : false)
+                }
+                guard paths.count == descendants.count else { return nil }
+                return paths.enumerated().map { index, path in
+                    index == 0 ? path : String(path.dropFirst())
+                }.joined()
+            }
+        }
+        return try? CSS.toXPath(selector, isRoot: isRoot)
     }
 
     private static func selectSingleSelector(_ selector: String, in searchable: any Kanna.Searchable) -> [Element] {

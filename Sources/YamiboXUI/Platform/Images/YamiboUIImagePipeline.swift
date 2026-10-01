@@ -3,6 +3,7 @@ import YamiboXCore
 import UIKit
 import Nuke
 import Combine
+import ImageIO
 
 typealias YamiboPlatformImage = UIImage
 
@@ -56,6 +57,7 @@ struct YamiboDisplayImage {
 /// what that rule misses and drops what it over-keeps.
 struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
     let base: any ImageDecoding
+    var preservesAnimatedData = true
 
     var isAsynchronous: Bool {
         base.isAsynchronous
@@ -63,7 +65,7 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
 
     func decode(_ data: Data) throws -> ImageContainer {
         var container = try base.decode(data)
-        container.data = YamiboAnimatedImage.isAnimated(data) ? data : nil
+        container.data = preservesAnimatedData && YamiboAnimatedImage.isAnimated(data) ? data : nil
         return container
     }
 
@@ -82,7 +84,9 @@ public final class YamiboUIImagePipeline {
 
     let dataLoader: any YamiboImageDataLoading
     private let pipeline: ImagePipeline
+    private let memoryCache: ImageCache
     private let loadedImages = PassthroughSubject<(String, YamiboDisplayImage), Never>()
+    private let prefetchedBytes = PassthroughSubject<String, Never>()
 
     /// Recover failed views when another consumer loads the same image, even
     /// when its decoded size exceeds the memory cache's single-entry limit.
@@ -91,6 +95,10 @@ public final class YamiboUIImagePipeline {
             .filter { $0.0 == source.cacheKey }
             .map { $0.1 }
             .eraseToAnyPublisher()
+    }
+
+    func prefetchedDataAvailable(for source: YamiboImageSource) -> AnyPublisher<Void, Never> {
+        prefetchedBytes.filter { $0 == source.cacheKey }.map { _ in () }.eraseToAnyPublisher()
     }
 
     convenience init(
@@ -106,13 +114,14 @@ public final class YamiboUIImagePipeline {
 
     public init(core: any YamiboImageDataLoading, memoryCache: YamiboUIImageMemoryCache) {
         self.dataLoader = core
+        self.memoryCache = memoryCache.cache
         self.pipeline = ImagePipeline {
             $0.imageCache = memoryCache.cache
             $0.dataCache = nil
             $0.isResumableDataEnabled = true
             $0.makeImageDecoder = { context in
                 guard let decoder = ImageDecoderRegistry.shared.decoder(for: context) else { return nil }
-                return YamiboAnimatedDataPreservingDecoder(base: decoder)
+                return YamiboAnimatedDataPreservingDecoder(base: decoder, preservesAnimatedData: context.request.thumbnail == nil)
             }
         }
     }
@@ -130,6 +139,66 @@ public final class YamiboUIImagePipeline {
 
     func cachedDisplayImage(for source: YamiboImageSource) -> YamiboDisplayImage? {
         pipeline.cache.cachedImage(for: nukeRequest(for: source)).map(YamiboDisplayImage.init(container:))
+    }
+
+    /// A preview has its own decoded key, while the Core request still uses
+    /// the same source/byte-cache key as the original image.
+    func cachedPreviewImage(for source: YamiboImageSource, maxPixelSize: Int) -> UIImage? {
+        pipeline.cache.cachedImage(for: nukeRequest(for: source, maxPixelSize: maxPixelSize))?.image
+    }
+
+    func previewImage(for source: YamiboImageSource, maxPixelSize: Int) async throws -> UIImage {
+        do {
+            let request = nukeRequest(for: source, maxPixelSize: maxPixelSize)
+            return try await pipeline.imageTask(with: request).response.image
+        } catch {
+            throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
+        }
+    }
+
+    /// Do not speculatively decode images that cannot survive the decoded
+    /// cache's entry limit. The original bytes are still warmed for display;
+    /// the visible page alone pays for its full-resolution decode.
+    func prefetchImage(for source: YamiboImageSource) async throws {
+        guard cachedImage(for: source) == nil else { return }
+        let data = try await dataLoader.data(for: source)
+        try Task.checkCancellation()
+        let entryLimit = Double(memoryCache.costLimit) * min(max(memoryCache.entryCostLimit, 0), 1)
+        let shouldDecode = await Task.detached(priority: .utility) {
+            Self.shouldDecodeForPrefetch(data: data, entryLimit: entryLimit)
+        }.value
+        try Task.checkCancellation()
+        guard shouldDecode else {
+            // A failed inline view may be in the novel prefetch window. Let
+            // that consumer retry from the warmed bytes, without decoding an
+            // uncacheable original just to discard it here.
+            prefetchedBytes.send(source.cacheKey)
+            return
+        }
+        var request = nukeRequest(for: source, preparedData: data)
+        request.priority = .low
+        do {
+            let response = try await pipeline.imageTask(with: request).response
+            loadedImages.send((source.cacheKey, YamiboDisplayImage(container: response.container)))
+        } catch {
+            throw Self.mapImagePipelineError(error)
+        }
+    }
+
+    nonisolated static func shouldDecodeForPrefetch(data: Data, entryLimit: Double) -> Bool {
+        guard entryLimit.isFinite, entryLimit > 0,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Double,
+              let height = properties[kCGImagePropertyPixelHeight] as? Double,
+              width > 0, height > 0 else { return false }
+        // Reserve a conservative 64-byte row alignment and RGBA output even
+        // for grayscale input. Multi-frame payloads also retain their bytes.
+        let depth = properties[kCGImagePropertyDepth] as? Double ?? 8
+        let bytesPerPixel = max(4, 4 * ceil(depth / 8))
+        let rowBytes = ceil(width * bytesPerPixel / 64) * 64
+        let dataCost = CGImageSourceGetCount(source) > 1 ? Double(data.count) : 0
+        return rowBytes * height + dataCost < entryLimit
     }
 
     func displayImage(
@@ -158,11 +227,14 @@ public final class YamiboUIImagePipeline {
         pipeline.cache.removeAll()
     }
 
-    private func nukeRequest(for source: YamiboImageSource) -> ImageRequest {
+    private func nukeRequest(for source: YamiboImageSource, maxPixelSize: Int? = nil, preparedData: Data? = nil) -> ImageRequest {
         let core = dataLoader
         var imageRequest = ImageRequest(
             id: source.cacheKey,
-            data: { try await core.data(for: source) },
+            data: {
+                if let preparedData { return preparedData }
+                return try await core.data(for: source)
+            },
             options: [.disableDiskCache]
         )
         // UIScreen.main is deprecated; the current trait collection carries
@@ -170,6 +242,9 @@ public final class YamiboUIImagePipeline {
         // unspecified case, matching every current iPhone floor).
         let displayScale = UITraitCollection.current.displayScale
         imageRequest.scale = Float(displayScale > 0 ? displayScale : 2)
+        if let maxPixelSize {
+            imageRequest.thumbnail = ImageRequest.ThumbnailOptions(maxPixelSize: Float(max(maxPixelSize, 1)))
+        }
         return imageRequest
     }
 
@@ -263,6 +338,11 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             loadedIdentity = requestIdentity
             didFail = false
         }
+        .onReceive(prefetchedDataAvailable) {
+            guard didFail else { return }
+            didFail = false
+            attempt += 1
+        }
         .environment(\.yamiboRemoteImageSize, image?.size)
     }
 
@@ -276,6 +356,13 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             return Empty().eraseToAnyPublisher()
         }
         return pipeline.successfulLoads(for: source)
+    }
+
+    private var prefetchedDataAvailable: AnyPublisher<Void, Never> {
+        guard let source, let pipeline = injectedPipeline ?? environmentPipeline else {
+            return Empty().eraseToAnyPublisher()
+        }
+        return pipeline.prefetchedDataAvailable(for: source)
     }
 
     private var taskIdentity: String {

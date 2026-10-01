@@ -250,6 +250,7 @@ private extension NovelTextViewportRuntimeTransaction {
 }
 
 package final class NovelTextViewportRuntimeOwner {
+    package let identity = UUID()
     private var activeGeneration: UInt64 = 0
     private var nextGeneration: UInt64 = 1
     private var result: NovelTextLayoutResult?
@@ -554,6 +555,23 @@ package final class NovelTextViewportRuntimeOwner {
             generation: surfaceIdentity.generation,
             documentOffset: documentOffset
         )
+    }
+
+    package func surfaceDocumentRange(
+        for surfaceIdentity: NovelReaderSurfaceIdentity
+    ) -> Range<NovelDocumentUTF16Offset>? {
+        guard isCurrent(surfaceIdentity), let result,
+              let surface = result.viewportIndex.surfaces.first(where: { $0.surfaceOrdinal == surfaceIdentity.ordinal }) else { return nil }
+        if let geometry = surface.frozenGeometry,
+           geometry.documentEndOffset > geometry.documentStartOffset {
+            return geometry.documentStartOffset..<geometry.documentEndOffset
+        }
+        let ranges = surface.ranges.compactMap {
+            result.viewportContext.document.documentOffsets(forSurfaceRange: $0)
+        }
+        guard let lower = ranges.map(\.lowerBound).min(),
+              let upper = ranges.map(\.upperBound).max(), upper > lower else { return nil }
+        return lower..<upper
     }
 
     package func selectionRects(

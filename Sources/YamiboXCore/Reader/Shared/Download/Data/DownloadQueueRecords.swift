@@ -69,6 +69,61 @@ extension DownloadStore {
         }
     }
 
+    func downloadQueueWorkCount() async throws -> Int {
+        try await ensureQueueRecovered()
+        do {
+            return try await database.read { db in
+                // Match allRawWorks' compactMap: unknown future reader kinds
+                // are excluded, without hydrating any image lists.
+                let kinds = DownloadReaderKind.allCases.map(\.rawValue)
+                let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+                return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM download_works WHERE reader_kind IN (\(placeholders))",
+                    arguments: StatementArguments(kinds)) ?? 0
+            }
+        } catch { throw downloadPersistenceError(from: error) }
+    }
+
+    func containsDownloadWork(id: DownloadWorkID) async throws -> Bool {
+        try await ensureQueueRecovered()
+        guard let workID = id.rawValue.nilIfBlank else { return false }
+        do {
+            return try await database.read { db in
+                try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM download_works WHERE reader_kind = ? AND work_id = ?)",
+                    arguments: [id.readerKind.rawValue, workID]) ?? false
+            }
+        } catch { throw downloadPersistenceError(from: error) }
+    }
+
+    func recordCompletedDownloadImage(id: DownloadWorkID, imageURL: URL, targetIndex: Int, currentBytesPerSecond: Int) async throws -> Bool {
+        try await ensureQueueRecovered()
+        guard let workID = id.rawValue.nilIfBlank, targetIndex >= 0 else { return false }
+        do {
+            let recorded = try await database.write { db in
+                // Resolve the current owner through work_id in this transaction.
+                // A deleted/replaced work or a changed target never gets revived.
+                guard let row = try Row.fetchOne(db, sql: """
+                    SELECT w.owner_name, w.tid FROM download_works w
+                    JOIN download_work_images i
+                      ON i.reader_kind = w.reader_kind AND i.owner_name = w.owner_name AND i.tid = w.tid
+                    WHERE w.reader_kind = ? AND w.work_id = ? AND i.manual_order = ? AND i.image_url = ?
+                    """, arguments: [id.readerKind.rawValue, workID, targetIndex, imageURL.absoluteString]) else { return false }
+                let owner: String = row["owner_name"]
+                let tid: String = row["tid"]
+                try db.execute(sql: """
+                    INSERT OR REPLACE INTO download_completed_images (reader_kind, owner_name, tid, manual_order, image_url)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, arguments: [id.readerKind.rawValue, owner, tid, targetIndex, imageURL.absoluteString])
+                try db.execute(sql: """
+                    UPDATE download_works SET current_bytes_per_second = ?, updated_at = ?
+                    WHERE reader_kind = ? AND work_id = ?
+                    """, arguments: [max(0, currentBytesPerSecond), downloadTimeInterval(from: Date()), id.readerKind.rawValue, workID])
+                return true
+            }
+            if recorded { notifyDownloadDidChange() }
+            return recorded
+        } catch { throw downloadPersistenceError(from: error) }
+    }
+
     func enqueueNovelDownloadWork(_ request: NovelDownloadWorkRequest) async throws -> NovelDownloadEnqueueResult {
         try await enqueueNovelDownloadWork(request, skipsExistingDownloadedEntry: true)
     }
@@ -392,14 +447,18 @@ extension DownloadStore {
             to: work.targetImageURLs,
             in: db
         )
-        try syncImageList(
-            table: "download_completed_images",
-            readerKind: work.readerKind.rawValue,
-            ownerName: work.ownerKey,
-            tid: work.entryKey,
-            from: previous?.completedImageURLs,
-            to: work.completedImageURLs,
-            in: db
+        // Completed positions follow the target list, including gaps. This
+        // makes out-of-order single-image completion an idempotent indexed
+        // insert. Legacy dense lists are normalized on prepare/full saves.
+        let targetPositions = Dictionary(work.targetImageURLs.enumerated().map { ($0.element.absoluteString, $0.offset) },
+            uniquingKeysWith: min)
+        let completedPositions = work.completedImageURLs.enumerated().map {
+            targetPositions[$0.element.absoluteString] ?? (work.targetImageURLs.count + $0.offset)
+        }
+        try replaceImageList(
+            table: "download_completed_images", readerKind: work.readerKind.rawValue,
+            ownerName: work.ownerKey, tid: work.entryKey, imageURLs: work.completedImageURLs,
+            manualOrders: completedPositions, in: db
         )
     }
 

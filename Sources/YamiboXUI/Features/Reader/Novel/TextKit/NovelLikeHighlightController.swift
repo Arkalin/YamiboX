@@ -15,9 +15,24 @@ final class NovelLikeHighlightController {
     private var annotations: ReaderAnnotationService?
     private var onFailure: ((any Error) -> Void)?
     private var changeObserverTask: Task<Void, Never>?
-    private var items: [LikeItem] = []
+    private var itemsByID: [String: LikeItem] = [:]
     private var rangesByItemID: [String: NovelTextSelectionRange] = [:]
-    private var cachedGeneration: UInt64?
+    private struct DocumentKey: Equatable {
+        let runtime: UUID
+        let generation: UInt64
+    }
+    private struct IndexedRange {
+        let itemID: String
+        let range: NovelTextSelectionRange
+        let maximumUpperBound: NovelDocumentUTF16Offset
+    }
+    private var cachedDocument: DocumentKey?
+    private var indexedRanges: [IndexedRange] = []
+    private var surfaceHighlights: [NovelReaderSurfaceIdentity: [ResolvedHighlight]] = [:]
+    private var surfaceCacheOrder: [NovelReaderSurfaceIdentity] = []
+    private static let maximumCachedSurfaces = 8
+    private var configurationID = UUID()
+    private var reloadRevision: UInt64 = 0
 
     deinit {
         changeObserverTask?.cancel()
@@ -27,6 +42,10 @@ final class NovelLikeHighlightController {
         workKey: ReadingWorkKey, likeStore: LikeStore,
         annotations: ReaderAnnotationService, onFailure: @escaping (any Error) -> Void
     ) {
+        configurationID = UUID()
+        reloadRevision &+= 1
+        itemsByID.removeAll()
+        invalidateRanges()
         self.workKey = workKey
         self.likeStore = likeStore
         self.annotations = annotations
@@ -45,7 +64,8 @@ final class NovelLikeHighlightController {
                 await self.reload()
             }
         }
-        Task { await reload() }
+        repaintRegisteredViews()
+        Task { [weak self] in await self?.reload() }
     }
 
     func register(_ view: NovelTextViewportReferenceUIView) {
@@ -83,22 +103,46 @@ final class NovelLikeHighlightController {
     func highlights(
         for displayReference: NovelTextViewportDisplayReference
     ) -> [ResolvedHighlight] {
+        guard !displayReference.isStale else { return [] }
         refreshIfNeeded(using: displayReference)
-        return rangesByItemID
-            .compactMap { itemID, range -> (range: NovelTextSelectionRange, resolved: ResolvedHighlight)? in
-                guard let item = items.first(where: { $0.id == itemID }) else { return nil }
-                let rects = displayReference.selectionRects(for: range)
-                guard !rects.isEmpty else { return nil }
-                return (range, ResolvedHighlight(
-                    item: item,
-                    rects: rects,
-                    startRect: item.hasNote
-                        ? startRect(of: range, in: displayReference)
-                        : nil
-                ))
+        let surface = displayReference.surfaceIdentity
+        if let cached = surfaceHighlights[surface] { return cached }
+        let surfaceRange = displayReference.surfaceDocumentRange
+        // Prefix maximum ends keep long annotations that begin on an earlier
+        // surface in the candidate set, including overlapping annotations.
+        var first = 0
+        if let surfaceRange {
+            var upper = indexedRanges.count
+            while first < upper {
+                let middle = first + (upper - first) / 2
+                if indexedRanges[middle].maximumUpperBound <= surfaceRange.lowerBound { first = middle + 1 }
+                else { upper = middle }
             }
-            .sorted { $0.range.lowerBound < $1.range.lowerBound }
-            .map(\.resolved)
+        }
+        var highlights: [ResolvedHighlight] = []
+        for indexed in indexedRanges.dropFirst(first) {
+            let range = indexed.range
+            if let surfaceRange {
+                if range.lowerBound >= surfaceRange.upperBound { break }
+                guard range.upperBound > surfaceRange.lowerBound else { continue }
+            }
+            guard let item = itemsByID[indexed.itemID] else { continue }
+            let rects = displayReference.selectionRects(for: range)
+            guard !rects.isEmpty else { continue }
+            highlights.append(ResolvedHighlight(
+                item: item,
+                rects: rects,
+                startRect: item.hasNote
+                    ? startRect(of: range, in: displayReference)
+                    : nil
+            ))
+        }
+        if surfaceCacheOrder.count == Self.maximumCachedSurfaces {
+            surfaceHighlights.removeValue(forKey: surfaceCacheOrder.removeFirst())
+        }
+        surfaceCacheOrder.append(surface)
+        surfaceHighlights[surface] = highlights
+        return highlights
     }
 
     /// Probes a synthetic one-character range at the annotation's first
@@ -139,14 +183,20 @@ final class NovelLikeHighlightController {
     }
 
     func remove(_ item: LikeItem) async {
+        let expectedConfiguration = configurationID
         do { try await annotations?.removeLikes([item]) }
-        catch { onFailure?(error) }
+        catch {
+            guard configurationID == expectedConfiguration else { return }
+            onFailure?(error)
+        }
     }
 
     func updateStyle(_ item: LikeItem, to style: LikeStyle) async {
+        let expectedConfiguration = configurationID
         do { try await annotations?.updateStyle(id: item.id, style: style) }
         catch {
-            if items.first(where: { $0.id == item.id })?.style == style {
+            guard configurationID == expectedConfiguration else { return }
+            if itemsByID[item.id]?.style == style {
                 applyStyleOptimistically(itemID: item.id, style: item.style)
             }
             onFailure?(error)
@@ -158,11 +208,11 @@ final class NovelLikeHighlightController {
     /// lands a frame or more later, which would make the colour lag the touch.
     /// The eventual `reload()` reconciles.
     func applyStyleOptimistically(itemID: String, style: LikeStyle) {
-        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
-        items[index].style = style
-        for view in registeredViews.allObjects {
-            view.setNeedsDisplay()
-        }
+        guard itemsByID[itemID] != nil else { return }
+        reloadRevision &+= 1
+        itemsByID[itemID]?.style = style
+        invalidateSurfaces()
+        repaintRegisteredViews()
     }
 
     /// Optimistically paints a just-captured like on the same runloop tick as
@@ -171,20 +221,20 @@ final class NovelLikeHighlightController {
     /// visual from the haptic. The eventual `reload()` reconciles.
     func applyCapturedItem(_ item: LikeItem) {
         guard item.kind == .text else { return }
-        items.removeAll { $0.id == item.id }
-        items.append(item)
-        cachedGeneration = nil
-        rangesByItemID.removeAll()
-        for view in registeredViews.allObjects {
-            view.setNeedsDisplay()
-        }
+        reloadRevision &+= 1
+        itemsByID[item.id] = item
+        invalidateRanges()
+        repaintRegisteredViews()
     }
 
     private func refreshIfNeeded(using displayReference: NovelTextViewportDisplayReference) {
-        guard cachedGeneration != displayReference.generation else { return }
-        cachedGeneration = displayReference.generation
+        guard let runtime = displayReference.runtimeIdentity, !displayReference.isStale else { return }
+        let key = DocumentKey(runtime: runtime, generation: displayReference.generation)
+        guard cachedDocument != key else { return }
+        invalidateRanges()
+        cachedDocument = key
         rangesByItemID.removeAll()
-        for item in items {
+        for item in itemsByID.values {
             // Each endpoint resolves through its OWN segment identity, which
             // is what lets one annotation span the illustration that split its
             // text into two segments.
@@ -194,6 +244,14 @@ final class NovelLikeHighlightController {
                       to: resumePoint(for: anchor, endpoint: anchor.end)
                   ) else { continue }
             rangesByItemID[item.id] = range
+        }
+        var maximumUpperBound: NovelDocumentUTF16Offset = 0
+        indexedRanges = rangesByItemID.sorted {
+            $0.value.lowerBound == $1.value.lowerBound
+                ? $0.key < $1.key : $0.value.lowerBound < $1.value.lowerBound
+        }.map { itemID, range in
+            maximumUpperBound = max(maximumUpperBound, range.upperBound)
+            return IndexedRange(itemID: itemID, range: range, maximumUpperBound: maximumUpperBound)
         }
         backfillExcerptContexts(using: displayReference)
     }
@@ -206,7 +264,7 @@ final class NovelLikeHighlightController {
     private func backfillExcerptContexts(using displayReference: NovelTextViewportDisplayReference) {
         guard let likeStore else { return }
         var contexts: [String: (prefix: String?, suffix: String?)] = [:]
-        for item in items where item.excerptPrefix == nil && item.excerptSuffix == nil {
+        for item in itemsByID.values where item.excerptPrefix == nil && item.excerptSuffix == nil {
             guard let range = rangesByItemID[item.id],
                   let surrounding = displayReference.surroundingText(for: range, radius: 80) else {
                 continue
@@ -239,17 +297,37 @@ final class NovelLikeHighlightController {
 
     private func reload() async {
         guard let workKey, let likeStore else { return }
+        let expectedConfiguration = configurationID
+        reloadRevision &+= 1
+        let expectedRevision = reloadRevision
         let fetched: [LikeItem]
         do { fetched = try await likeStore.likes(for: workKey) }
         catch {
+            guard configurationID == expectedConfiguration, reloadRevision == expectedRevision else { return }
             onFailure?(error)
             return
         }
-        items = fetched.filter { $0.kind == .text }
+        guard configurationID == expectedConfiguration, reloadRevision == expectedRevision else { return }
+        itemsByID = Dictionary(fetched.filter { $0.kind == .text }.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         // Generation didn't change, so `refreshIfNeeded` won't recompute on
         // its own next call; force it and repaint every registered surface.
-        cachedGeneration = nil
+        invalidateRanges()
+        repaintRegisteredViews()
+    }
+
+    private func invalidateRanges() {
+        cachedDocument = nil
         rangesByItemID.removeAll()
+        indexedRanges.removeAll()
+        invalidateSurfaces()
+    }
+
+    private func invalidateSurfaces() {
+        surfaceHighlights.removeAll()
+        surfaceCacheOrder.removeAll()
+    }
+
+    private func repaintRegisteredViews() {
         for view in registeredViews.allObjects {
             view.setNeedsDisplay()
         }

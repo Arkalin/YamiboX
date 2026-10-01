@@ -68,10 +68,20 @@ public struct ForumComposerSpan: Equatable, Sendable {
 
 /// A platform-independent projection supplies TextKit's text and exact source anchors.
 public struct ForumComposerProjection: Equatable, Sendable {
+    private let source: String
+    private let parsesBBCode: Bool
+    private let parsesEmoticons: Bool
+    private let sourceRevision: UInt64
+    private let rootNodeID: String?
     public let text: String
     public let spans: [ForumComposerSpan]
 
     public init(document: ForumComposerDocument, parsesBBCode: Bool = true, parsesEmoticons: Bool = true) {
+        source = document.source
+        self.parsesBBCode = parsesBBCode
+        self.parsesEmoticons = parsesEmoticons
+        sourceRevision = document.revision
+        rootNodeID = document.nodes.first?.id
         if !parsesBBCode {
             text = document.source
             spans = [.init(range: .init(location: 0, length: text.utf16.count), sourceRange: .init(location: 0, length: text.utf16.count),
@@ -127,6 +137,71 @@ public struct ForumComposerProjection: Equatable, Sendable {
         }
         walk(document.nodes, ancestors: [], attributes: .init())
         text = result
+        self.spans = spans
+    }
+
+    func matches(_ document: ForumComposerDocument, parsesEmoticons: Bool) -> Bool {
+        parsesBBCode && self.parsesEmoticons == parsesEmoticons && source == document.source
+            && sourceRevision == document.revision && rootNodeID == document.nodes.first?.id
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.text == rhs.text && lhs.spans == rhs.spans
+    }
+
+    /// TextKit typing can reuse a projection when a delimiter-free edit kept
+    /// the same text leaf. Paragraph boundaries and text-derived links still
+    /// rebuild through the full projection so their semantics remain intact.
+    public func updating(after transaction: ForumComposerTransaction, document: ForumComposerDocument,
+                         parsesBBCode: Bool = true, parsesEmoticons: Bool = true) -> Self {
+        guard self.parsesBBCode, parsesBBCode, self.parsesEmoticons == parsesEmoticons,
+              document.revision == sourceRevision &+ 1,
+              transaction.edits.count == 1, let edit = transaction.edits.first,
+              let splice = document.lastTextSplice, splice.edit == edit, splice.sourceBefore == source,
+              let index = spans.firstIndex(where: { $0.nodeID == splice.nodeID && $0.kind == .text }),
+              !spans[index].attributes.literal,
+              spans[index].sourceRange.contains(edit.range),
+              spans[index].range.length + edit.delta > 0,
+              spans[index].ancestors.allSatisfy({ node in
+                  guard let tag = node.tag else { return true }
+                  return !tag.isParagraph && tag != .url && tag != .email
+              }),
+              edit.replacement.rangeOfCharacter(from: .newlines) == nil,
+              (source as NSString).substring(with: edit.range.nsRange).rangeOfCharacter(from: .newlines) == nil else {
+            return Self(document: document, parsesBBCode: parsesBBCode, parsesEmoticons: parsesEmoticons)
+        }
+        let visibleEdit = ForumComposerRange(location: spans[index].range.location + edit.range.location - spans[index].sourceRange.location,
+                                             length: edit.range.length)
+        var units = Array(text.utf16)
+        units.replaceSubrange(visibleEdit.location..<visibleEdit.end, with: edit.replacement.utf16)
+        var nodesByID: [String: ForumComposerNode] = [:]
+        func indexNodes(_ nodes: [ForumComposerNode]) {
+            for node in nodes { nodesByID[node.id] = node; indexNodes(node.children) }
+        }
+        if spans.contains(where: { !$0.ancestors.isEmpty }) { indexNodes(document.nodes) }
+        let updatedSpans = spans.enumerated().map { spanIndex, old -> ForumComposerSpan in
+            var span = old
+            if spanIndex == index {
+                span.range.length += edit.delta
+                span.sourceRange.length += edit.delta
+            } else if spanIndex > index {
+                if span.range.location >= visibleEdit.end { span.range.location += edit.delta }
+                if span.sourceRange.location >= edit.range.end { span.sourceRange.location += edit.delta }
+            }
+            span.ancestors = old.ancestors.map { nodesByID[$0.id] ?? $0 }
+            return span
+        }
+        return Self(document: document, text: String(decoding: units, as: UTF16.self), spans: updatedSpans,
+                    parsesEmoticons: parsesEmoticons)
+    }
+
+    private init(document: ForumComposerDocument, text: String, spans: [ForumComposerSpan], parsesEmoticons: Bool) {
+        source = document.source
+        sourceRevision = document.revision
+        rootNodeID = document.nodes.first?.id
+        parsesBBCode = true
+        self.parsesEmoticons = parsesEmoticons
+        self.text = text
         self.spans = spans
     }
 

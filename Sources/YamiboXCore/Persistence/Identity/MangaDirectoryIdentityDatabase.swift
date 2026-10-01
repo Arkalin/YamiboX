@@ -76,9 +76,16 @@ enum MangaDirectoryIdentityDatabase {
         try db.execute(sql: "INSERT OR IGNORE INTO manga_identity_aliases(kind, alias, directory_id) VALUES (?, ?, ?)", arguments: [kind, alias, id])
     }
 
-    static func snapshot(in db: Database) throws -> MangaDirectoryIdentitySnapshot {
+    /// Batch readers only need redirects to resolve stable IDs. Names and
+    /// aliases remain live database reads when a transaction registers content.
+    static func redirectSnapshot(in db: Database) throws -> MangaDirectoryIdentitySnapshot {
         var result = MangaDirectoryIdentitySnapshot()
         for row in try Row.fetchAll(db, sql: "SELECT id, canonical_id FROM manga_identity_redirects") { result.redirects[row["id"]] = row["canonical_id"] }
+        return result
+    }
+
+    static func snapshot(in db: Database) throws -> MangaDirectoryIdentitySnapshot {
+        var result = try redirectSnapshot(in: db)
         var names: [String: Set<String>] = [:]
         var identities: [String: Set<String>] = [:]
         for row in try Row.fetchAll(db, sql: "SELECT kind, alias, directory_id FROM manga_identity_aliases") {

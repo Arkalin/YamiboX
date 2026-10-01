@@ -21,7 +21,9 @@ public struct ForumComposerTransaction: Sendable {
 
 extension ForumComposerDocument {
     @discardableResult
-    public mutating func apply(_ command: ForumComposerCommand, parsesEmoticons: Bool = true) throws -> ForumComposerTransaction {
+    public mutating func apply(_ command: ForumComposerCommand, parsesEmoticons: Bool = true,
+                               projection existingProjection: ForumComposerProjection? = nil) throws -> ForumComposerTransaction {
+        let existingProjection = existingProjection.flatMap { $0.matches(self, parsesEmoticons: parsesEmoticons) ? $0 : nil }
         var edits: [ForumComposerSourceEdit] = []
         var selection = ForumComposerSelection()
         switch command {
@@ -29,7 +31,7 @@ extension ForumComposerDocument {
             edits = changes
             selection = finalSelection
         case let .typeVisible(range, text, enabled, disabled):
-            let projection = ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
+            let projection = existingProjection ?? ForumComposerProjection(document: self, parsesEmoticons: parsesEmoticons)
             let sourceRange = projection.sourceRange(forVisibleRange: range)
             let stack = ancestors(at: sourceRange.location)
             let affected = stack.firstIndex { $0.tag.map(disabled.contains) == true }

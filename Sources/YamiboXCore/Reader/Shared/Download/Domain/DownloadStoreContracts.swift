@@ -49,6 +49,11 @@ public protocol DownloadQueueStoring: DownloadUpdateObserving {
     /// Badge/summary read without materializing work targets or completed image URLs.
     func downloadQueueSummary(readerKind: DownloadReaderKind?) async throws -> DownloadQueueSummary
     /// Nil means absent work, never a failed read or queue recovery.
+    func downloadQueueWorkCount() async throws -> Int
+    func containsDownloadWork(id: DownloadWorkID) async throws -> Bool
+    /// Records one completed target without replacing either image list. False
+    /// means the work or target is no longer current; never recreates a work.
+    func recordCompletedDownloadImage(id: DownloadWorkID, imageURL: URL, targetIndex: Int, currentBytesPerSecond: Int) async throws -> Bool
     func nextDownloadProcessingWork() async throws -> DownloadProcessingWork?
     func downloadProcessingWork(id: DownloadWorkID) async throws -> DownloadProcessingWork?
     func retryFailedDownloadWorks() async throws
@@ -74,6 +79,18 @@ public protocol DownloadQueueStoring: DownloadUpdateObserving {
 }
 
 public extension DownloadQueueStoring {
+    func downloadQueueWorkCount() async throws -> Int { try await downloadQueueWorks().count }
+    func containsDownloadWork(id: DownloadWorkID) async throws -> Bool { try await downloadProcessingWork(id: id) != nil }
+
+    func recordCompletedDownloadImage(id: DownloadWorkID, imageURL: URL, targetIndex: Int, currentBytesPerSecond: Int) async throws -> Bool {
+        guard let work = try await downloadProcessingWork(id: id),
+              work.targetImageURLs.indices.contains(targetIndex), work.targetImageURLs[targetIndex] == imageURL else { return false }
+        let keys = Set((work.completedImageURLs + [imageURL]).map(\.absoluteString))
+        try await updateDownloadWorkProgress(id: id, targetImageURLs: nil,
+            completedImageURLs: work.targetImageURLs.filter { keys.contains($0.absoluteString) }, currentBytesPerSecond: currentBytesPerSecond)
+        return true
+    }
+
     func downloadQueueSummary(readerKind: DownloadReaderKind? = nil) async throws -> DownloadQueueSummary {
         let works = try await downloadQueueWorks().filter { readerKind == nil || $0.id.readerKind == readerKind }
         return DownloadQueueSummary(

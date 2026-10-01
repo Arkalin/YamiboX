@@ -124,7 +124,7 @@ final class ForumBBCodeSession {
         let command: ForumComposerCommand = isVisual
             ? .typeVisible(difference.range, difference.replacement, enabled: enabled, disabled: disabled)
             : .replaceSource(difference.range, difference.replacement)
-        perform(command, typing: true, render: false)
+        perform(command, typing: true, render: false, publishes: false)
         if projection.text == text {
             selection.sourceRange = isVisual ? projection.sourceRange(forVisibleRange: .init(visibleSelection)) : .init(visibleSelection)
             updateTypingAttributes()
@@ -133,14 +133,15 @@ final class ForumBBCodeSession {
     }
 
     @discardableResult
-    func perform(_ command: ForumComposerCommand, typing: Bool = false, render shouldRender: Bool = true) -> Bool {
+    func perform(_ command: ForumComposerCommand, typing: Bool = false, render shouldRender: Bool = true, publishes: Bool = true) -> Bool {
         do {
-            let transaction = try history.perform(command, in: &document, selection: selection, typing: typing, parsesEmoticons: parsesEmoticons)
+            let transaction = try history.perform(command, in: &document, selection: selection, typing: typing,
+                                                  parsesEmoticons: parsesEmoticons, projection: isVisual ? projection : nil)
             mapAnchors(transaction.edits.sorted { $0.range.location > $1.range.location })
             selection = transaction.selection
-            projection = ForumComposerProjection(document: document, parsesBBCode: isVisual, parsesEmoticons: parsesEmoticons)
+            projection = projection.updating(after: transaction, document: document, parsesBBCode: isVisual, parsesEmoticons: parsesEmoticons)
             if shouldRender { render(force: false) }
-            publish()
+            if publishes { publish() }
             return true
         } catch { errorMessage = L10n.string("forum.composer.invalid_edit"); return false }
     }
