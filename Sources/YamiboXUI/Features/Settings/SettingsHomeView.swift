@@ -15,6 +15,7 @@ public struct SettingsHomeView: View {
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
     @Environment(\.appTheme) private var appTheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
 
     public init(
         dependencies: SettingsDependencies,
@@ -106,7 +107,9 @@ public struct SettingsHomeView: View {
         .yamiboInlineNavigationTitleDisplayMode()
         .searchable(text: $searchText, prompt: L10n.string("settings.search.placeholder"))
         .navigationDestination(isPresented: $isAccountManagementPushed) {
-            if let accountSwitcher = state.accountSwitcher { AccountManagementView(switcher: accountSwitcher) }
+            if let accountSwitcher = state.accountSwitcher {
+                AccountManagementView(switcher: accountSwitcher, imagePipeline: imagePipeline?.dataLoader)
+            }
         }
         .navigationDestination(isPresented: $isAboutPushed) {
             AboutView()

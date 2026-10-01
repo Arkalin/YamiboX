@@ -178,6 +178,7 @@ private struct SettingsSidebarDestinationRow<Content: View>: View {
 }
 
 struct SettingsSidebarDetail: View {
+    @Environment(\.yamiboImagePipeline) private var imagePipeline
     let destination: SettingsSidebarDestination?
     let dependencies: SettingsDependencies
     let viewModel: SystemSettingsViewModel
@@ -208,7 +209,9 @@ struct SettingsSidebarDetail: View {
         case .about:
             AboutView()
         case .accounts:
-            if let accountSwitcher { AccountManagementView(switcher: accountSwitcher) }
+            if let accountSwitcher {
+                AccountManagementView(switcher: accountSwitcher, imagePipeline: imagePipeline?.dataLoader)
+            }
         case nil:
             ContentUnavailableView(L10n.string("settings.title"), systemImage: "gearshape")
         }

@@ -79,9 +79,16 @@ struct AccountManagementView: View {
     @Environment(\.dismiss) private var dismiss
     private let avatarLoader: YamiboProfileAvatarLoader
 
-    init(switcher: AccountSwitchCoordinator) {
+    init(switcher: AccountSwitchCoordinator, imagePipeline: (any YamiboImageDataLoading)? = nil) {
         model = AccountManagementViewModel(switcher: switcher)
-        avatarLoader = YamiboProfileAvatarLoader(sessionStore: switcher.sessionStore)
+        if let imagePipeline {
+            avatarLoader = YamiboProfileAvatarLoader(
+                sessionStore: switcher.sessionStore,
+                imageData: { source in try await imagePipeline.data(for: source) }
+            )
+        } else {
+            avatarLoader = YamiboProfileAvatarLoader(sessionStore: switcher.sessionStore)
+        }
     }
 
     var body: some View {

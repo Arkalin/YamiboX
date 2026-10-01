@@ -27,23 +27,29 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     convenience init(
         dataCacheName: String = YamiboImageDataPipeline.defaultDataCacheName,
-        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
+        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes,
+        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys = { [] }
     ) {
-        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes, coverCacheKeys: coverCacheKeys) {
             try DataCache(name: dataCacheName)
         }
     }
 
     convenience init(
         dataCacheDirectory: URL,
-        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
+        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes,
+        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys = { [] }
     ) {
-        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes, coverCacheKeys: coverCacheKeys) {
             try DataCache(path: dataCacheDirectory)
         }
     }
 
-    private init(dataCacheLimitBytes: Int, makeDataCache: () throws -> DataCache) {
+    private init(
+        dataCacheLimitBytes: Int,
+        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys,
+        makeDataCache: () throws -> DataCache
+    ) {
         let dataCache: DataCache?
         do {
             dataCache = try makeDataCache()
@@ -52,13 +58,15 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
             YamiboLog.persistence.error("Image disk cache unavailable; continuing without disk caching: \(error)")
             dataCache = nil
         }
+        // Disable the startup sweep before constructing the network loader.
+        dataCache?.isSweepEnabled = false
         dataCache?.sizeLimit = dataCacheLimitBytes
         self.dataCache = dataCache
 
         let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
         fallbackLoader.delegate = ImageFallbackNetworkLogDelegate()
         var configuration = ImagePipeline.Configuration(dataLoader: fallbackLoader)
-        configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0) }
+        configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0, coverCacheKeys: coverCacheKeys) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
         self.pipeline = ImagePipeline(
@@ -93,7 +101,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         // a refresh immediately after clearing cannot report the old files.
         return await Task.detached(priority: .utility) { [dataCache] in
             dataCache.flush()
-            return dataCache.totalSize
+            return dataCache.queue.sync { dataCache.totalAllocatedSize }
         }.value
     }
 

@@ -212,7 +212,7 @@ public final class YamiboAppContext: Sendable {
             }
         )
         self.imagePipeline = YamiboImagePipeline(
-            engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory),
+            engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory, contentCoverStore: self.contentCoverStore),
             sessionStore: sessionStore,
             imageSession: imageSession,
             offlineImages: resolvedDownloadStore
@@ -672,10 +672,14 @@ public final class YamiboAppContext: Sendable {
         await ordinaryImageCache?.removeAllCachedData()
     }
 
-    private static func makeImageDataPipeline(cachesRootDirectory: URL?) -> YamiboImageDataPipeline {
-        guard let cachesRootDirectory else { return YamiboImageDataPipeline() }
+    private static func makeImageDataPipeline(cachesRootDirectory: URL?, contentCoverStore: ContentCoverStore) -> YamiboImageDataPipeline {
+        let coverCacheKeys: YamiboMaintainedImageDataCache.CoverCacheKeys = {
+            Set(try await contentCoverStore.allCovers().compactMap { $0.resolvedURL?.absoluteString })
+        }
+        guard let cachesRootDirectory else { return YamiboImageDataPipeline(coverCacheKeys: coverCacheKeys) }
         return YamiboImageDataPipeline(
-            dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true)
+            dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true),
+            coverCacheKeys: coverCacheKeys
         )
     }
 
