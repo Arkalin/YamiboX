@@ -346,10 +346,14 @@ public final class NovelReaderViewModel {
         characterCount: Int,
         fallback: String
     ) -> String {
-        let sourceText = readingWorkflow?.currentPreviewSourceText().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let previewSource = sourceText.isEmpty ? fallback : sourceText
+        let previewSource = previewSourceText(fallback: fallback)
         let transformed = NovelTextTransformer.transform(previewSource, mode: translationMode)
         return String(transformed.prefix(max(characterCount, 0)))
+    }
+
+    func previewSourceText(fallback: String) -> String {
+        let sourceText = readingWorkflow?.currentPreviewSourceText().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return sourceText.isEmpty ? fallback : sourceText
     }
 
     var surfaceCount: Int {

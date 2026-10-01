@@ -5,6 +5,7 @@ struct ForumThreadReaderView: View {
     @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
     @State private var model: ForumThreadReaderViewModel
     @State private var pendingAttachment: ForumThreadAttachmentBlock?
+    @State private var readTask: Task<Void, Never>?
 
     let onUserTap: (String, String?) -> Void
     let onURLTap: (URL) -> Void
@@ -48,7 +49,7 @@ struct ForumThreadReaderView: View {
             isFavoriteWorking: !model.favoriteActions.canAct,
             isReverseOrder: model.isReverseOrder,
             refresh: refresh,
-            retry: model.retry,
+            retry: { startRead { await model.refresh() } },
             goToPage: goToPage,
             toggleFavorite: toggleFavorite,
             presentFavoriteLocationPicker: presentFavoriteLocationPicker,
@@ -78,7 +79,7 @@ struct ForumThreadReaderView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
-                        Task {
+                        startRead {
                             await refresh()
                         }
                     } label: {
@@ -127,6 +128,9 @@ struct ForumThreadReaderView: View {
             await model.observeBoardReaderSettings()
         }
         .onDisappear {
+            readTask?.cancel()
+            readTask = nil
+            model.cancelPageLoad()
             pendingAttachment = nil
             model.flushReadingProgress()
         }
@@ -154,8 +158,16 @@ struct ForumThreadReaderView: View {
     }
 
     private func goToPage(_ page: Int) {
-        Task {
+        startRead {
             await model.goToPage(page)
+        }
+    }
+
+    private func startRead(_ operation: @escaping @MainActor () async -> Void) {
+        readTask?.cancel()
+        readTask = Task {
+            guard !Task.isCancelled else { return }
+            await operation()
         }
     }
 
@@ -180,7 +192,7 @@ struct ForumThreadReaderView: View {
                 model.isAuthorOnly
             },
             set: { isEnabled in
-                Task {
+                startRead {
                     await model.setAuthorOnly(isEnabled)
                 }
             }
@@ -193,7 +205,7 @@ struct ForumThreadReaderView: View {
                 model.isReverseOrder
             },
             set: { isEnabled in
-                Task {
+                startRead {
                     await model.setReverseOrder(isEnabled)
                 }
             }

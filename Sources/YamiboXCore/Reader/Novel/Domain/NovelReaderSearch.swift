@@ -140,19 +140,25 @@ package struct NovelReaderSearchMatch: Identifiable, Hashable, Sendable {
 
 package enum NovelReaderSearchEngine {
     private static let excerptRadius = 56
+    private static let batchSize = 32
 
+    @concurrent
     package static func search(
         snapshot: NovelReaderSearchSnapshot,
         query: String,
-        onMatch: @escaping @Sendable (NovelReaderSearchMatch) async -> Void
+        onMatches: @escaping @Sendable ([NovelReaderSearchMatch]) async -> Void
     ) async {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return }
+        var batch: [NovelReaderSearchMatch] = []
+        batch.reserveCapacity(batchSize)
+        var hasDeliveredFirstMatch = false
 
         for segment in snapshot.segments {
             guard !Task.isCancelled else { return }
             let text = segment.text as NSString
             let coordinates = segment.coordinates
+            var surfaceCursor = SurfaceRangeCursor(ranges: segment.surfaceRanges)
             var searchStart = 0
 
             while searchStart < text.length {
@@ -164,7 +170,7 @@ package enum NovelReaderSearchEngine {
                 let endOffset = NovelSegmentUTF16Offset(aligned.upperBound)
                 let startCharacter = coordinates.characterOffset(forUTF16Offset: aligned.lowerBound)
                 let endCharacter = coordinates.characterOffset(forUTF16Offset: aligned.upperBound)
-                let surfaceRange = segment.surfaceRange(containing: startOffset)
+                let surfaceRange = surfaceCursor.range(containing: startOffset)
                 let chapterOrdinal = surfaceRange?.chapterOrdinal ?? 0
                 let chapterTitle = surfaceRange?.chapterTitle ?? segment.fallbackChapterTitle
                 let surfaceOrdinal = surfaceRange?.surfaceOrdinal ?? 0
@@ -197,7 +203,7 @@ package enum NovelReaderSearchEngine {
                     readingModeHint: snapshot.readingMode
                 )
                 let excerpt = excerptParts(coordinates: coordinates, start: startCharacter, end: endCharacter)
-                await onMatch(NovelReaderSearchMatch(
+                batch.append(NovelReaderSearchMatch(
                     id: NovelReaderSearchMatchID(
                         generation: snapshot.generation,
                         textSegmentIdentity: segment.textSegmentIdentity,
@@ -217,8 +223,52 @@ package enum NovelReaderSearchEngine {
                 ))
 
                 searchStart = endOffset.rawValue
-                await Task.yield()
+                // Show the first result promptly, then avoid one actor hop and
+                // observable collection invalidation for every remaining hit.
+                if !hasDeliveredFirstMatch || batch.count == batchSize {
+                    await onMatches(batch)
+                    batch.removeAll(keepingCapacity: true)
+                    hasDeliveredFirstMatch = true
+                    await Task.yield()
+                }
             }
+        }
+        if !batch.isEmpty, !Task.isCancelled {
+            await onMatches(batch)
+        }
+    }
+
+    private struct SurfaceRangeCursor {
+        let ranges: [NovelReaderSearchSurfaceRange]
+        let canAdvanceInOrder: Bool
+        var nextIndex = 0
+
+        init(ranges: [NovelReaderSearchSurfaceRange]) {
+            self.ranges = ranges
+            // Runtime ranges normally follow document order without overlaps.
+            // Keep the original first-containing/nearest behavior for any
+            // irregular snapshot, including empty or overlapping ranges.
+            canAdvanceInOrder = ranges.allSatisfy { $0.endOffset > $0.startOffset }
+                && zip(ranges, ranges.dropFirst()).allSatisfy { $0.0.endOffset <= $0.1.startOffset }
+        }
+
+        mutating func range(containing offset: NovelSegmentUTF16Offset) -> NovelReaderSearchSurfaceRange? {
+            guard canAdvanceInOrder else {
+                return ranges.first(where: { $0.contains(offset) })
+                    ?? ranges.min(by: { $0.distance(to: offset) < $1.distance(to: offset) })
+            }
+            // Search matches advance monotonically in UTF-16 coordinates, so
+            // each page range is visited at most once for the entire segment.
+            while nextIndex < ranges.count, ranges[nextIndex].endOffset <= offset {
+                nextIndex += 1
+            }
+            let next = nextIndex < ranges.count ? ranges[nextIndex] : nil
+            if let next, next.contains(offset) { return next }
+            let previous = nextIndex > 0 ? ranges[nextIndex - 1] : nil
+            guard let previous else { return next }
+            guard let next else { return previous }
+            // The old min(by:) keeps the first range when distances tie.
+            return previous.distance(to: offset) <= next.distance(to: offset) ? previous : next
         }
     }
 

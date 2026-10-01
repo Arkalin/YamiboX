@@ -80,7 +80,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         informationState.update(parent.attachedInformation)
         prefetchAdjacentImages()
         let nextIdentity = MangaPagedReaderContentIdentity(
-            spreadIDs: parent.plan.spreads.map(\.id),
+            spreadIDs: parent.plan.spreadIDs,
             pageScaleMode: parent.effectivePageScaleMode,
             pagedTurnStyle: parent.settings.pagedTurnStyle,
             pageTurnDirection: parent.settings.pageTurnDirection,

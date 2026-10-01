@@ -189,13 +189,7 @@ public struct MangaReaderView: View {
                     isVisible: isChromeVisible,
                     isPreview: context.isPreview,
                     imageLoader: model.imageLoader,
-                    summary: chromeSummaryMemo.summary(
-                        presentation: model.presentation,
-                        usesTwoPageSpread: usesTwoPageSpread,
-                        compute: { presentation, spread in
-                            mangaChromeSummary(from: presentation, usesTwoPageSpread: spread)
-                        }
-                    ),
+                    summary: mangaChromeSummary(from: model.presentation, usesTwoPageSpread: usesTwoPageSpread),
                     readingMode: model.presentation.settings.readingMode,
                     isImmersive: model.presentation.settings.isImmersiveModeEnabled,
                     pageTurnDirection: model.presentation.settings.pageTurnDirection,
@@ -758,43 +752,36 @@ public struct MangaReaderView: View {
         let currentIndex = min(max(currentPage.localIndex, 0), itemCount - 1)
         let progressFraction = itemCount > 1 ? Double(currentIndex) / Double(maxIndex) : 0
         let percentText = "\(Int((progressFraction * 100).rounded()))%"
-        let readingPlan = MangaPagedReadingPlan(
-            pages: pages,
+        let readingPlan = chromeSummaryMemo.plan(
+            loaded: loaded,
             currentPageIndex: currentPageIndex,
             pageTurnDirection: presentation.settings.pageTurnDirection,
             usesTwoPageSpread: usesTwoPageSpread
         )
         let pageLabel = readingPlan.currentChapterPageLabel
         let pageSummary = L10n.string("manga.preview_page_label", pageLabel, itemCount)
-        let rawTitle = loaded.directoryPanel.displayChapters
-            .first { $0.tid == currentPage.tid }?
-            .rawTitle ?? currentPage.chapterTitle
-        let headerTitle = MangaChapterDisplayFormatter.readerHeaderTitle(
-            rawTitle: rawTitle,
-            cleanBookName: loaded.directoryTitle
-        )
-        let pagePreviewTargets = pages.reduce(into: [Int: MangaReaderPageProjection]()) { result, page in
-            guard page.tid == currentPage.tid else { return }
-            result[page.localIndex] = page
-        }
+        let headerTitle = chromeSummaryMemo.headerTitle(for: currentPage, loaded: loaded)
+        let pagePreviewTargets = chromeSummaryMemo.previewTargets(for: currentPage.tid)
         let capsuleTitleKey = context.isSmartModeEnabled ? "manga.directory" : "manga.progress"
         let capsuleIconSystemName = context.isSmartModeEnabled ? "list.bullet" : "chart.bar.fill"
+        var progress = ReaderChromeProgress(
+            itemCount: itemCount,
+            currentIndex: currentIndex,
+            progressFraction: progressFraction,
+            percentText: percentText,
+            primaryText: L10n.string(capsuleTitleKey) + " · \(percentText)",
+            secondaryText: pageSummary,
+            ticks: [],
+            iconSystemName: capsuleIconSystemName,
+            scrubTargetIndexes: [0]
+        )
+        progress.useValidatedScrubTargetIndexes(chromeSummaryMemo.scrubTargets(itemCount: itemCount))
 
         return MangaReaderChromeSummary(
             headerTitle: headerTitle,
             pageSummary: pageSummary,
             pagePreviewTargets: pagePreviewTargets,
-            progress: ReaderChromeProgress(
-                itemCount: itemCount,
-                currentIndex: currentIndex,
-                progressFraction: progressFraction,
-                percentText: percentText,
-                primaryText: L10n.string(capsuleTitleKey) + " · \(percentText)",
-                secondaryText: pageSummary,
-                ticks: [],
-                iconSystemName: capsuleIconSystemName,
-                scrubTargetIndexes: Array(0 ..< itemCount)
-            ),
+            progress: progress,
             spreadPageSummaries: readingPlan.spreadPageSummaries,
             spreadWorkTitle: usesTwoPageSpread ? loaded.directoryTitle : nil,
             spreadPageNumbers: readingPlan.spreadPageNumbers,
@@ -804,34 +791,65 @@ public struct MangaReaderView: View {
     }
 }
 
-/// Body-eval memo for the chrome summary: computing it walks every loaded
-/// page, but the shell's body re-evaluates far more often (chrome toggles,
-/// sheet flags, inset changes) than the presentation actually changes. A
-/// reference box lets body reuse the previous reduction without scheduling
-/// another render pass.
+/// Keep window indexes separate from the selected page. Page turns and chrome
+/// toggles only derive the small position summary, not spreads or preview maps.
 @MainActor
 private final class MangaChromeSummaryMemo {
-    private var presentation: MangaReaderPresentation?
-    private var usesTwoPageSpread: Bool?
-    private var cached: MangaReaderChromeSummary?
+    private var basePlan: MangaPagedReadingPlan?
+    private var previewsByChapter: [String: [Int: MangaReaderPageProjection]] = [:]
+    private var chapters: [MangaChapter] = []
+    private var rawTitles: [String: String] = [:]
+    private var headerKey: [String] = []
+    private var cachedHeader = ""
+    private var cachedScrubTargets: [Int] = []
 
     // `@State`'s initial value is built in the view's nonisolated init; the
     // box only becomes main-actor-bound once body starts using it.
     nonisolated init() {}
 
-    func summary(
-        presentation: MangaReaderPresentation,
-        usesTwoPageSpread: Bool,
-        compute: (MangaReaderPresentation, Bool) -> MangaReaderChromeSummary?
-    ) -> MangaReaderChromeSummary? {
-        if self.presentation == presentation, self.usesTwoPageSpread == usesTwoPageSpread {
-            return cached
+    func plan(loaded: MangaReaderLoadedPresentation, currentPageIndex: Int?,
+              pageTurnDirection: MangaPageTurnDirection, usesTwoPageSpread: Bool) -> MangaPagedReadingPlan {
+        let pagesChanged = basePlan?.pages != loaded.pages
+        if pagesChanged {
+            previewsByChapter = [:]
+            for page in loaded.pages {
+                previewsByChapter[page.tid, default: [:]][page.localIndex] = page
+            }
         }
-        let value = compute(presentation, usesTwoPageSpread)
-        self.presentation = presentation
-        self.usesTwoPageSpread = usesTwoPageSpread
-        cached = value
-        return value
+        if pagesChanged || basePlan?.pageTurnDirection != pageTurnDirection
+            || basePlan?.usesTwoPageSpread != usesTwoPageSpread {
+            basePlan = MangaPagedReadingPlan(pages: loaded.pages, currentPageIndex: nil,
+                pageTurnDirection: pageTurnDirection, usesTwoPageSpread: usesTwoPageSpread)
+        }
+        return basePlan!.selectingPage(at: currentPageIndex)
+    }
+
+    func previewTargets(for tid: String) -> [Int: MangaReaderPageProjection] {
+        previewsByChapter[tid] ?? [:]
+    }
+
+    func scrubTargets(itemCount: Int) -> [Int] {
+        if cachedScrubTargets.count != itemCount { cachedScrubTargets = Array(0 ..< itemCount) }
+        return cachedScrubTargets
+    }
+
+    func headerTitle(for page: MangaReaderPageProjection, loaded: MangaReaderLoadedPresentation) -> String {
+        if chapters != loaded.directoryPanel.displayChapters {
+            chapters = loaded.directoryPanel.displayChapters
+            rawTitles = [:]
+            for chapter in chapters where rawTitles[chapter.tid] == nil {
+                rawTitles[chapter.tid] = chapter.rawTitle
+            }
+        }
+        let rawTitle = rawTitles[page.tid] ?? page.chapterTitle
+        let key = [rawTitle, loaded.directoryTitle, Locale.current.identifier,
+                   L10n.bundle.preferredLocalizations.joined(separator: ",")]
+        if headerKey != key {
+            headerKey = key
+            cachedHeader = MangaChapterDisplayFormatter.readerHeaderTitle(
+                rawTitle: rawTitle, cleanBookName: loaded.directoryTitle)
+        }
+        return cachedHeader
     }
 }
 

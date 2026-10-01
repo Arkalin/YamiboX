@@ -96,17 +96,17 @@ final class NovelReaderSearchCoordinator {
 
         let snapshot = snapshot
         searchTask = Task { [weak self] in
-            await NovelReaderSearchEngine.search(snapshot: snapshot, query: query) { [weak self] match in
-                await self?.accept(match, revision: revision)
+            await NovelReaderSearchEngine.search(snapshot: snapshot, query: query) { [weak self] matches in
+                await self?.accept(matches, revision: revision)
             }
             guard !Task.isCancelled else { return }
             self?.finish(revision: revision)
         }
     }
 
-    private func accept(_ match: NovelReaderSearchMatch, revision: UInt64) {
+    private func accept(_ batch: [NovelReaderSearchMatch], revision: UInt64) {
         guard revision == searchRevision, !Task.isCancelled else { return }
-        matches.append(match)
+        matches.append(contentsOf: batch)
     }
 
     private func finish(revision: UInt64) {

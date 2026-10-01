@@ -14,8 +14,7 @@ struct FavoriteMemberManagementSheet: View {
                     FavoriteLocationMembershipList(
                         categories: actions.document.categories,
                         collections: actions.document.collections,
-                        itemCount: actions.members.count,
-                        state: actions.locationState,
+                        membership: LocalFavoriteLocationMembershipSnapshot(items: actions.members),
                         onSetLocation: { location, included in
                             Task { await actions.setMemberLocation(location, included: included) }
                         }
@@ -92,15 +91,14 @@ struct FavoriteMemberManagementSheet: View {
 struct FavoriteLocationMembershipList: View {
     let categories: [FavoriteCategory]
     let collections: [LocalFavoriteCollection]
-    let itemCount: Int
-    let state: (FavoriteLocation) -> LocalFavoriteLocationTriState
+    let membership: LocalFavoriteLocationMembershipSnapshot
     let onSetLocation: (FavoriteLocation, Bool) -> Void
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         List {
             Section {
-                Text(L10n.string("favorites.location.selected_items", itemCount))
+                Text(L10n.string("favorites.location.selected_items", membership.itemCount))
                     .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(categories.manualOrderSorted) { category in
@@ -125,10 +123,10 @@ struct FavoriteLocationMembershipList: View {
     }
 
     private func row(title: String, symbol: String, tint: Color? = nil, location: FavoriteLocation) -> some View {
-        let membership = state(location)
-        let image = membership == .none ? "circle" : membership == .all ? "checkmark.circle.fill" : "minus.circle.fill"
+        let state = membership.state(location)
+        let image = state == .none ? "circle" : state == .all ? "checkmark.circle.fill" : "minus.circle.fill"
         return Button {
-            onSetLocation(location, membership != .all)
+            onSetLocation(location, state != .all)
         } label: {
             HStack {
                 Label {
@@ -138,10 +136,10 @@ struct FavoriteLocationMembershipList: View {
                 }
                 Spacer()
                 Image(systemName: image)
-                    .foregroundStyle(membership == .none ? Color.secondary : appTheme.controlAccent)
+                    .foregroundStyle(state == .none ? Color.secondary : appTheme.controlAccent)
             }
         }
-        .accessibilityValue(L10n.string(membership == .all ? "favorites.work.location_all" : membership == .some ? "favorites.work.location_some" : "favorites.work.location_none"))
+        .accessibilityValue(L10n.string(state == .all ? "favorites.work.location_all" : state == .some ? "favorites.work.location_some" : "favorites.work.location_none"))
     }
 }
 

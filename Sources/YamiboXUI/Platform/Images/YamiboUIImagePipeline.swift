@@ -35,6 +35,27 @@ enum YamiboUIImageLoadingError: Error {
 struct YamiboUIImageRequestIdentity: Hashable {
     let cacheKey: String?
     let pipelineID: ObjectIdentifier?
+    var thumbnail: YamiboImageThumbnail? = nil
+}
+
+/// Decode to cover the display box, not merely to fit its longest edge.
+/// Round up in pixels so nearby layout sizes reuse a sharp decoded variant.
+struct YamiboImageThumbnail: Hashable, Sendable {
+    let widthPixels: Int
+    let heightPixels: Int
+
+    init?(pointSize: CGSize, displayScale: CGFloat) {
+        let width = pointSize.width * displayScale
+        let height = pointSize.height * displayScale
+        guard width.isFinite, height.isFinite, width > 0, height > 0,
+              width < CGFloat(Int.max / 2), height < CGFloat(Int.max / 2) else { return nil }
+        widthPixels = Int(ceil(width / 32)) * 32
+        heightPixels = Int(ceil(height / 32)) * 32
+    }
+
+    var options: ImageRequest.ThumbnailOptions {
+        .init(size: CGSize(width: widthPixels, height: heightPixels), unit: .pixels, contentMode: .aspectFill)
+    }
 }
 
 /// A decoded image ready to display, plus the original bytes when the payload
@@ -85,15 +106,15 @@ public final class YamiboUIImagePipeline {
     let dataLoader: any YamiboImageDataLoading
     private let pipeline: ImagePipeline
     private let memoryCache: ImageCache
-    private let loadedImages = PassthroughSubject<(String, YamiboDisplayImage), Never>()
+    private let loadedImages = PassthroughSubject<(String, YamiboImageThumbnail?, YamiboDisplayImage), Never>()
     private let prefetchedBytes = PassthroughSubject<String, Never>()
 
     /// Recover failed views when another consumer loads the same image, even
     /// when its decoded size exceeds the memory cache's single-entry limit.
-    func successfulLoads(for source: YamiboImageSource) -> AnyPublisher<YamiboDisplayImage, Never> {
+    func successfulLoads(for source: YamiboImageSource, thumbnail: YamiboImageThumbnail? = nil) -> AnyPublisher<YamiboDisplayImage, Never> {
         loadedImages
-            .filter { $0.0 == source.cacheKey }
-            .map { $0.1 }
+            .filter { $0.0 == source.cacheKey && $0.1 == thumbnail }
+            .map { $0.2 }
             .eraseToAnyPublisher()
     }
 
@@ -137,8 +158,8 @@ public final class YamiboUIImagePipeline {
         try await displayImage(for: source, priority: priority).image
     }
 
-    func cachedDisplayImage(for source: YamiboImageSource) -> YamiboDisplayImage? {
-        pipeline.cache.cachedImage(for: nukeRequest(for: source)).map(YamiboDisplayImage.init(container:))
+    func cachedDisplayImage(for source: YamiboImageSource, thumbnail: YamiboImageThumbnail? = nil) -> YamiboDisplayImage? {
+        pipeline.cache.cachedImage(for: nukeRequest(for: source, thumbnail: thumbnail)).map(YamiboDisplayImage.init(container:))
     }
 
     /// A preview has its own decoded key, while the Core request still uses
@@ -179,7 +200,8 @@ public final class YamiboUIImagePipeline {
         request.priority = .low
         do {
             let response = try await pipeline.imageTask(with: request).response
-            loadedImages.send((source.cacheKey, YamiboDisplayImage(container: response.container)))
+            loadedImages.send((source.cacheKey, nil, YamiboDisplayImage(container: response.container)))
+            prefetchedBytes.send(source.cacheKey)
         } catch {
             throw Self.mapImagePipelineError(error)
         }
@@ -203,19 +225,23 @@ public final class YamiboUIImagePipeline {
 
     func displayImage(
         for source: YamiboImageSource,
+        thumbnail: YamiboImageThumbnail? = nil,
         priority: ImageRequest.Priority = .normal
     ) async throws -> YamiboDisplayImage {
-        if let cached = cachedDisplayImage(for: source) {
-            loadedImages.send((source.cacheKey, cached))
+        if let cached = cachedDisplayImage(for: source, thumbnail: thumbnail) {
+            loadedImages.send((source.cacheKey, thumbnail, cached))
             return cached
         }
 
         do {
-            var request = nukeRequest(for: source)
+            var request = nukeRequest(for: source, thumbnail: thumbnail)
             request.priority = priority
             let response = try await pipeline.imageTask(with: request).response
             let image = YamiboDisplayImage(container: response.container)
-            loadedImages.send((source.cacheKey, image))
+            loadedImages.send((source.cacheKey, thumbnail, image))
+            // Other failed variants may retry the shared bytes, but must not
+            // adopt this variant's decoded image (especially a cover poster).
+            prefetchedBytes.send(source.cacheKey)
             return image
         } catch {
             throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
@@ -227,7 +253,7 @@ public final class YamiboUIImagePipeline {
         pipeline.cache.removeAll()
     }
 
-    private func nukeRequest(for source: YamiboImageSource, maxPixelSize: Int? = nil, preparedData: Data? = nil) -> ImageRequest {
+    private func nukeRequest(for source: YamiboImageSource, maxPixelSize: Int? = nil, thumbnail: YamiboImageThumbnail? = nil, preparedData: Data? = nil) -> ImageRequest {
         let core = dataLoader
         var imageRequest = ImageRequest(
             id: source.cacheKey,
@@ -242,7 +268,9 @@ public final class YamiboUIImagePipeline {
         // unspecified case, matching every current iPhone floor).
         let displayScale = UITraitCollection.current.displayScale
         imageRequest.scale = Float(displayScale > 0 ? displayScale : 2)
-        if let maxPixelSize {
+        if let thumbnail {
+            imageRequest.thumbnail = thumbnail.options
+        } else if let maxPixelSize {
             imageRequest.thumbnail = ImageRequest.ThumbnailOptions(maxPixelSize: Float(max(maxPixelSize, 1)))
         }
         return imageRequest
@@ -263,6 +291,7 @@ public final class YamiboUIImagePipeline {
 struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View {
     private let source: YamiboImageSource?
     private let animates: Bool
+    private let thumbnail: YamiboImageThumbnail?
     private let injectedPipeline: YamiboUIImagePipeline?
     @Environment(\.yamiboImagePipeline) private var environmentPipeline
     private let content: (Image) -> Content
@@ -278,6 +307,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     init(
         source: YamiboImageSource?,
         animates: Bool = false,
+        thumbnail: YamiboImageThumbnail? = nil,
         pipeline: YamiboUIImagePipeline? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder,
@@ -285,6 +315,8 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     ) {
         self.source = source
         self.animates = animates
+        // Thumbnail decodes are static posters; playback needs original bytes.
+        self.thumbnail = animates ? nil : thumbnail
         self.injectedPipeline = pipeline
         self.content = content
         self.placeholder = placeholder
@@ -294,6 +326,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     init(
         source: YamiboImageSource?,
         animates: Bool = false,
+        thumbnail: YamiboImageThumbnail? = nil,
         pipeline: YamiboUIImagePipeline? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder,
@@ -301,6 +334,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     ) {
         self.source = source
         self.animates = animates
+        self.thumbnail = animates ? nil : thumbnail
         self.injectedPipeline = pipeline
         self.content = content
         self.placeholder = placeholder
@@ -355,7 +389,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         guard let source, let pipeline = injectedPipeline ?? environmentPipeline else {
             return Empty().eraseToAnyPublisher()
         }
-        return pipeline.successfulLoads(for: source)
+        return pipeline.successfulLoads(for: source, thumbnail: thumbnail)
     }
 
     private var prefetchedDataAvailable: AnyPublisher<Void, Never> {
@@ -370,7 +404,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     }
 
     private var requestIdentity: YamiboUIImageRequestIdentity {
-        .init(cacheKey: source?.cacheKey, pipelineID: (injectedPipeline ?? environmentPipeline).map(ObjectIdentifier.init))
+        .init(cacheKey: source?.cacheKey, pipelineID: (injectedPipeline ?? environmentPipeline).map(ObjectIdentifier.init), thumbnail: thumbnail)
     }
 
     private func load() async {
@@ -389,7 +423,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             didFail = true
             return
         }
-        if let cached = pipeline.cachedDisplayImage(for: source) {
+        if let cached = pipeline.cachedDisplayImage(for: source, thumbnail: thumbnail) {
             apply(cached)
             loadedIdentity = identity
             didFail = false
@@ -399,7 +433,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         apply(nil)
         didFail = false
         do {
-            let loaded = try await pipeline.displayImage(for: source)
+            let loaded = try await pipeline.displayImage(for: source, thumbnail: thumbnail)
             guard !Task.isCancelled else { return }
             apply(loaded)
             loadedIdentity = identity

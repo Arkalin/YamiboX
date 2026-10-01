@@ -295,6 +295,19 @@ public actor DownloadQueueExecutor {
         try await cancelSelection { try await self.store.cancelDownloadWork(id: id) }
     }
 
+    public func cancelWorks(ids: [DownloadWorkID]) async throws {
+        guard !ids.isEmpty else { return }
+        try await cancelSelection {
+            var removedIDs: Set<DownloadWorkID> = []
+            for id in ids where removedIDs.insert(id).inserted {
+                // Account invalidation may arrive while an earlier deletion is
+                // suspended. Never start another write for that retired session.
+                try await self.ensureExternalCommandAllowed()
+                try await self.store.cancelDownloadWork(id: id)
+            }
+        }
+    }
+
     public func cancelGroup(id: DownloadGroupID) async throws {
         try await cancelSelection { try await self.store.cancelDownloadGroup(id) }
     }
@@ -303,14 +316,17 @@ public actor DownloadQueueExecutor {
         try await beginExternalCommand()
         defer { finishExternalCommand() }
         try await ensureExternalCommandAllowed()
+        var shouldRestoreRun = false
         do {
             let wasRunning = try await store.downloadQueueRunState() == .running
             try await ensureExternalCommandAllowed()
             cancelActiveRun()
             await joinRetiringRuns()
             try await ensureExternalCommandAllowed()
+            shouldRestoreRun = wasRunning
             try await remove()
             try await ensureExternalCommandAllowed()
+            shouldRestoreRun = false
             if wasRunning {
                 // Removing an item keeps the logical run and its completed
                 // count, but never manufactures another user-initiated request.
@@ -319,7 +335,24 @@ public actor DownloadQueueExecutor {
                 await endSession(success: false)
             }
         } catch {
-            await endSession(success: false)
+            if shouldRestoreRun {
+                // Earlier deletions may already have committed. Resume the
+                // remaining work once, while reporting the original error.
+                do {
+                    try await continueQueueAfterAdmission(submitsUserInitiatedRun: false)
+                } catch {
+                    await endSession(success: false)
+                    YamiboLog.download.error("Could not resume queue after cancellation failed: \(error)")
+                    do {
+                        try await ensureExternalCommandAllowed()
+                        try await store.setDownloadQueueRunState(.paused)
+                    } catch {
+                        YamiboLog.download.error("Could not pause queue after cancellation recovery failed: \(error)")
+                    }
+                }
+            } else {
+                await endSession(success: false)
+            }
             throw error
         }
     }

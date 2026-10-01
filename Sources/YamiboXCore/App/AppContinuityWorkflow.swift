@@ -74,10 +74,14 @@ public final class AppContinuityWorkflow: Sendable {
 
     public func prepareLaunch(
         canRestoreReaderRoute: Bool,
+        includingFavoriteLibrary: Bool = true,
         onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> AppContinuityLaunchPreparation {
         let startup = await prepareReaderRestore()
-        let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
+        let bootstrapState = await appContext.bootstrap(
+            includingFavoriteLibrary: includingFavoriteLibrary,
+            onProgress: onProgress
+        )
         let completion = Task { [self] in
             let synchronizationResult = await foregroundSynchronization().value
             let restoredRoute = await completeReaderRestore(

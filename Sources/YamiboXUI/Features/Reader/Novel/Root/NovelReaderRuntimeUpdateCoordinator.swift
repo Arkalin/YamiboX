@@ -30,6 +30,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
     @ObservationIgnored private(set) var usesPadPresentation = false
     @ObservationIgnored private var appearanceSettingsApplicationSequence: UInt64 = 0
     @ObservationIgnored private var requestSequence: UInt64 = 0
+    @ObservationIgnored private var layoutRequestOwnershipSequence: UInt64 = 0
     @ObservationIgnored private var surfaceAppearanceRevision: UInt64 = 0
     @ObservationIgnored private var latestSurfaceAppearanceSettings: NovelReaderAppearanceSettings?
     private let reading: Reading
@@ -52,6 +53,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
     func close() {
         activity = .closed
         requestSequence &+= 1
+        layoutRequestOwnershipSequence &+= 1
         appearanceSettingsApplicationSequence &+= 1
         preparation.close()
     }
@@ -85,6 +87,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
         guard initialPresentationPhase != .cancelled else { return }
         if initialPresentationPhase != .ready {
             if initialPresentationPhase == .restoring, latestRequestedLayout == layout { return }
+            _ = beginLayoutRequestOwnership()
             preparation.requestLayout(layout)
             preparation.commitLayout(layout)
             guard preparation.hasStarted, initialPresentationPhase != .failed else { return }
@@ -94,6 +97,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
         }
         guard isReadyForTextLayout(layout) else { return }
         guard latestRequestedLayout != layout else { return }
+        let layoutOwnership = beginLayoutRequestOwnership()
         let requestSequence = preparation.requestLayout(layout)
         guard reading.workflow()?.state != nil else {
             preparation.commitLayout(layout)
@@ -110,17 +114,19 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 layout: layout,
                 usesPadPresentation: usesPadPresentation
             ) else {
-                preparation.rollbackLayoutRequest(ifCurrent: requestSequence)
+                rollbackLayoutRequest(ifCurrent: requestSequence, ownership: layoutOwnership)
                 return
             }
-            guard layoutRequestSequence == requestSequence else { return }
+            guard layoutRequestSequence == requestSequence,
+                  layoutRequestOwnershipSequence == layoutOwnership else { return }
             preparation.commitLayout(layout)
             reading.publish(state)
         } catch is CancellationError {
-            preparation.rollbackLayoutRequest(ifCurrent: requestSequence)
+            rollbackLayoutRequest(ifCurrent: requestSequence, ownership: layoutOwnership)
         } catch {
-            guard layoutRequestSequence == requestSequence else { return }
-            preparation.rollbackLayoutRequest(ifCurrent: requestSequence)
+            guard layoutRequestSequence == requestSequence,
+                  layoutRequestOwnershipSequence == layoutOwnership else { return }
+            rollbackLayoutRequest(ifCurrent: requestSequence, ownership: layoutOwnership)
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 reading.reportFailure(error)
             }
@@ -176,18 +182,32 @@ final class NovelReaderRuntimeUpdateCoordinator {
 
         let applicationSequence = beginApplyingAppearanceSettings()
         let surfaceRevision = surfaceAppearanceRevision
+        let appearanceLayout = NovelReaderLayoutPresentation.layout(
+            containerSize: latestRequestedLayout.containerSize,
+            safeAreaInsets: latestRequestedLayout.safeAreaInsets,
+            settings: newSettings
+        )
+        let layoutOwnership = beginLayoutRequestOwnership()
+        let layoutSequence = preparation.requestLayout(appearanceLayout)
         defer { finishApplyingAppearanceSettings(applicationSequence) }
 
         do {
             guard let state = try await requestRuntimeUpdate(
                 settings: newSettings,
-                layout: layout,
+                layout: appearanceLayout,
                 usesPadPresentation: usesPadPresentation
-            ) else { return }
+            ) else {
+                guard appearanceSettingsApplicationSequence == applicationSequence else { return }
+                rollbackLayoutRequest(ifCurrent: layoutSequence, ownership: layoutOwnership)
+                return
+            }
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
+            guard layoutRequestSequence == layoutSequence,
+                  layoutRequestOwnershipSequence == layoutOwnership else { return }
             if surfaceAppearanceRevision == surfaceRevision {
                 applePencilPageTurnSettings = newApplePencilPageTurnSettings
             }
+            preparation.commitLayout(appearanceLayout)
             reading.publish(state)
             let committedSettings = state.presentation?.committedSettings ?? newSettings
             bootstrapSettings = committedSettings
@@ -196,8 +216,11 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 applePencilPageTurnSettings: applePencilSettingsChanged ? applePencilPageTurnSettings : nil
             )
         } catch is CancellationError {
+            guard appearanceSettingsApplicationSequence == applicationSequence else { return }
+            rollbackLayoutRequest(ifCurrent: layoutSequence, ownership: layoutOwnership)
         } catch {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
+            rollbackLayoutRequest(ifCurrent: layoutSequence, ownership: layoutOwnership)
             if surfaceAppearanceRevision == surfaceRevision {
                 applePencilPageTurnSettings = oldApplePencilPageTurnSettings
             }
@@ -246,6 +269,19 @@ final class NovelReaderRuntimeUpdateCoordinator {
         applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
     ) {
         reading.persist(novelReaderSettings, applePencilPageTurnSettings)
+    }
+
+    private func beginLayoutRequestOwnership() -> UInt64 {
+        // Equal geometry can still belong to a newer appearance transaction.
+        // Keep ownership separate from the geometry revision so an older
+        // resize cannot roll back that transaction's requested layout.
+        layoutRequestOwnershipSequence &+= 1
+        return layoutRequestOwnershipSequence
+    }
+
+    private func rollbackLayoutRequest(ifCurrent revision: UInt64, ownership: UInt64) {
+        guard layoutRequestOwnershipSequence == ownership else { return }
+        preparation.rollbackLayoutRequest(ifCurrent: revision)
     }
 
     private func beginApplyingAppearanceSettings() -> UInt64 {

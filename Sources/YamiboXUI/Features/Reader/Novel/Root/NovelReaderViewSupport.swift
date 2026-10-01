@@ -1,6 +1,38 @@
 import SwiftUI
 import YamiboXCore
 
+/// Projects window geometry and settings together, before asking TextKit to
+/// lay out the document. Appearance commits and the view must use the same
+/// inputs so publishing new settings does not trigger a second pagination.
+@MainActor
+enum NovelReaderLayoutPresentation {
+    static func layout(
+        containerSize: CGSize,
+        safeAreaInsets: NovelReaderLayoutInsets,
+        settings: NovelReaderAppearanceSettings
+    ) -> NovelReaderLayout {
+        let horizontalPadding = max(settings.horizontalPadding, 0)
+        let verticalBands = NovelReaderVerticalBandsPresentation()
+        return NovelReaderLayout(
+            containerSize: containerSize,
+            safeAreaInsets: safeAreaInsets,
+            contentInsets: NovelReaderLayoutInsets(
+                top: settings.readingMode == .vertical ? 16 : 0,
+                leading: horizontalPadding,
+                bottom: settings.readingMode == .vertical ? 24 : 0,
+                trailing: horizontalPadding
+            ),
+            chromeInsets: settings.readingMode == .paged
+                ? NovelReaderLayoutInsets(
+                    top: verticalBands.pagedTopBandHeight,
+                    bottom: verticalBands.pagedContentBottomReserve(forBottomInset: safeAreaInsets.bottom)
+                )
+                : .zero,
+            readingMode: settings.readingMode
+        )
+    }
+}
+
 @MainActor
 final class NovelReaderVerticalTapSuppression {
     var until: CFTimeInterval = 0

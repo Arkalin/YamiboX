@@ -264,13 +264,7 @@ extension FavoriteLibraryOrganizer {
     /// readout reflects every favorite archived under it, not just its
     /// representative member.
     func selectionLocationState(_ location: FavoriteLocation) -> LocalFavoriteLocationTriState {
-        let ids = expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs)
-        guard !ids.isEmpty else { return .none }
-        let selectedItems = document.items.filter { ids.contains($0.id) }
-        guard !selectedItems.isEmpty else { return .none }
-        let count = selectedItems.filter { $0.locations.contains(location) }.count
-        if count == 0 { return .none }
-        return count == selectedItems.count ? .all : .some
+        selectionLocationSnapshot.state(location)
     }
 
     /// Adds or removes one location on every selected item. Removal skips

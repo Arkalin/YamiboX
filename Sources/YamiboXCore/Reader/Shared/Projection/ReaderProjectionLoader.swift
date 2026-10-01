@@ -134,7 +134,12 @@ struct ReaderProjectionOfflineSourcePageLoad<Identity: Hashable & Sendable, Sour
 actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
     private let strategy: Strategy
     private let coalescesInFlightRequests: Bool
-    private var inFlightTasks: [ReaderProjectionLoadKey<Strategy.Identity>: Task<ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage>, Error>] = [:]
+    private struct InFlightLoad {
+        var id: UUID
+        var task: Task<ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage>, Error>
+        var consumers: Set<UUID>
+    }
+    private var inFlightTasks: [ReaderProjectionLoadKey<Strategy.Identity>: InFlightLoad] = [:]
 
     init(
         strategy: Strategy,
@@ -150,16 +155,19 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
     ) async throws -> ReaderProjectionLoadedValue<Strategy.Projection, Strategy.SourcePage> {
         do {
             let online = try await loadOnline(request, ignoresCache: ignoresCache)
+            try Task.checkCancellation()
             return ReaderProjectionLoadedValue(
                 projection: online.projection,
                 sourcePage: online.sourcePage,
                 source: .online(sourceLoadedOnline: online.sourceLoadedOnline)
             )
         } catch {
+            try Task.checkCancellation()
             guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error),
                   let fallback = await loadOfflineFallback(request, failure: LoadFailureDetails(error: error)) else {
                 throw error
             }
+            try Task.checkCancellation()
             return fallback
         }
     }
@@ -175,10 +183,15 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
         _ request: Strategy.Request,
         ignoresCache: Bool
     ) async throws -> ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage> {
+        try Task.checkCancellation()
         let identity = try await strategy.identity(for: request, ignoresCache: ignoresCache)
+        try Task.checkCancellation()
         let taskKey = ReaderProjectionLoadKey(identity: identity, ignoresCache: ignoresCache)
-        if coalescesInFlightRequests, let task = inFlightTasks[taskKey] {
-            return try await task.value
+        let consumerID = UUID()
+        if coalescesInFlightRequests, var load = inFlightTasks[taskKey] {
+            load.consumers.insert(consumerID)
+            inFlightTasks[taskKey] = load
+            return try await awaitCoalescedLoad(load, key: taskKey, consumerID: consumerID)
         }
 
         let task = Task<ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage>, Error> {
@@ -197,12 +210,15 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
                let cached = await strategy.cachedProjection(for: identity),
                strategy.isReusableProjection(cached, identity: identity, fingerprint: fingerprint) {
                 await sourceCacheWrite
+                try Task.checkCancellation()
                 return ReaderProjectionPreparedSourcePage(
                     projection: cached,
                     sourcePage: sourceLoad.sourcePage,
                     sourceLoadedOnline: sourceLoad.loadedOnline
                 )
             }
+
+            try Task.checkCancellation()
 
             let projection: Strategy.Projection
             do {
@@ -221,6 +237,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
                 YamiboLog.offlineCache.warning("loadOnline: failed to cache freshly-derived projection; subsequent loads will re-derive from scratch: \(error)")
             }
             await sourceCacheWrite
+            try Task.checkCancellation()
             return ReaderProjectionPreparedSourcePage(
                 projection: projection,
                 sourcePage: sourceLoad.sourcePage,
@@ -228,20 +245,49 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             )
         }
         if coalescesInFlightRequests {
-            inFlightTasks[taskKey] = task
-        }
-        defer {
-            if coalescesInFlightRequests {
-                inFlightTasks.removeValue(forKey: taskKey)
-            }
-        }
-        if coalescesInFlightRequests {
-            return try await task.value
+            let load = InFlightLoad(id: UUID(), task: task, consumers: [consumerID])
+            inFlightTasks[taskKey] = load
+            return try await awaitCoalescedLoad(load, key: taskKey, consumerID: consumerID)
         }
         return try await withTaskCancellationHandler {
-            try await task.value
+            let result = try await task.value
+            try Task.checkCancellation()
+            return result
         } onCancel: {
             task.cancel()
+        }
+    }
+
+    private func awaitCoalescedLoad(
+        _ load: InFlightLoad,
+        key: ReaderProjectionLoadKey<Strategy.Identity>,
+        consumerID: UUID
+    ) async throws -> ReaderProjectionPreparedSourcePage<Strategy.Projection, Strategy.SourcePage> {
+        defer { releaseConsumer(consumerID, loadID: load.id, key: key) }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let result = try await load.task.value
+            try Task.checkCancellation()
+            return result
+        } onCancel: {
+            Task { await self.releaseConsumer(consumerID, loadID: load.id, key: key) }
+        }
+    }
+
+    private func releaseConsumer(
+        _ consumerID: UUID,
+        loadID: UUID,
+        key: ReaderProjectionLoadKey<Strategy.Identity>
+    ) {
+        // A cancelled load may still finish after a replacement starts under
+        // this key. Its completion must not remove the replacement's waiters.
+        guard var load = inFlightTasks[key], load.id == loadID,
+              load.consumers.remove(consumerID) != nil else { return }
+        if load.consumers.isEmpty {
+            inFlightTasks.removeValue(forKey: key)
+            load.task.cancel()
+        } else {
+            inFlightTasks[key] = load
         }
     }
 
@@ -249,7 +295,9 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
         _ request: Strategy.Request,
         failure: LoadFailureDetails
     ) async -> ReaderProjectionLoadedValue<Strategy.Projection, Strategy.SourcePage>? {
-        guard let sourceLoad = await strategy.offlineSourcePage(for: request) else { return nil }
+        guard !Task.isCancelled,
+              let sourceLoad = await strategy.offlineSourcePage(for: request),
+              !Task.isCancelled else { return nil }
         let fingerprint = strategy.fingerprint(sourcePage: sourceLoad.sourcePage, identity: sourceLoad.identity)
         if let cached = await strategy.cachedProjection(for: sourceLoad.identity),
            strategy.isReusableProjection(cached, identity: sourceLoad.identity, fingerprint: fingerprint) {
@@ -260,6 +308,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             )
         }
 
+        guard !Task.isCancelled else { return nil }
         let projection: Strategy.Projection
         do {
             projection = try strategy.deriveProjection(
@@ -271,6 +320,7 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             YamiboLog.offlineCache.warning("loadOfflineFallback: offline projection derivation also failed; original online error will be surfaced instead: \(error)")
             return nil
         }
+        guard !Task.isCancelled else { return nil }
         do {
             try await strategy.saveProjection(projection)
         } catch {

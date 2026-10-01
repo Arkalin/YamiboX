@@ -664,29 +664,10 @@ public struct NovelReaderView: View {
     }
 
     private func readerLayout(proxy: GeometryProxy, topInset: CGFloat, bottomInset: CGFloat) -> NovelReaderLayout {
-        let horizontalPadding = max(model.settings.horizontalPadding, 0)
-        let safeAreaInsets = NovelReaderLayoutInsets(
-            top: topInset,
-            bottom: bottomInset
-        )
-        let contentInsets = NovelReaderLayoutInsets(
-            top: model.settings.readingMode == .vertical ? 16 : 0,
-            leading: horizontalPadding,
-            bottom: model.settings.readingMode == .vertical ? 24 : 0,
-            trailing: horizontalPadding
-        )
-        let chromeInsets = model.settings.readingMode == .paged
-            ? NovelReaderLayoutInsets(
-                top: verticalBands.pagedTopBandHeight,
-                bottom: verticalBands.pagedContentBottomReserve(forBottomInset: bottomInset)
-            )
-            : .zero
-        return NovelReaderLayout(
+        NovelReaderLayoutPresentation.layout(
             containerSize: proxy.size,
-            safeAreaInsets: safeAreaInsets,
-            contentInsets: contentInsets,
-            chromeInsets: chromeInsets,
-            readingMode: model.settings.readingMode
+            safeAreaInsets: NovelReaderLayoutInsets(top: topInset, bottom: bottomInset),
+            settings: model.settings
         )
     }
 

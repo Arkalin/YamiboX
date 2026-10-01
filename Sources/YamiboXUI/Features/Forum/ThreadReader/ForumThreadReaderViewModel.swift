@@ -51,6 +51,19 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private let progressSync: ProgressSyncModule
     @ObservationIgnored private var latestVisibleAnchorPostID: String?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var pageLoadTask: Task<Bool, Never>?
+    @ObservationIgnored private var pageLoadKey: PageLoadKey?
+    @ObservationIgnored private var needsViewModeReload = false
+    private struct PageLoadKey: Equatable {
+        var page: Int
+        var authorID: String?
+        var reverse: Bool
+        var preferCache: Bool
+        var preservesContent: Bool
+        var usesFallback: Bool
+        var replyID: String?
+        var replyFallbackPage: Int?
+    }
     @ObservationIgnored private var handledSubmissionID: UUID?
     @ObservationIgnored private var initialPreloadedPage: ForumThreadPage?
     @ObservationIgnored private let resolveReplyTarget: @Sendable (URL) async -> YamiboThreadRouteResolution?
@@ -241,6 +254,7 @@ final class ForumThreadReaderViewModel {
     var readerSwitchAuthorID: String? { threadAuthorID ?? context.authorID }
 
     func suspendForModeSwitch() {
+        cancelPageLoad()
         flushReadingProgress()
         becameReaderCompanion = true
         isSuspendedForModeSwitch = true
@@ -254,6 +268,7 @@ final class ForumThreadReaderViewModel {
     /// silently resume its previous floor or author/reverse filter.
     func prepareForOriginalPost(context: ThreadNovelLaunchContext, preloadedPage: ForumThreadPage?) {
         guard context.thread.tid == self.context.thread.tid else { return }
+        cancelPageLoad()
         generation += 1
         initialPreloadedPage = nil
         self.context = context
@@ -261,6 +276,7 @@ final class ForumThreadReaderViewModel {
         hasConsumedLaunchTarget = false
         isAuthorOnly = false
         isReverseOrder = false
+        needsViewModeReload = false
         latestVisibleAnchorPostID = nil
         restoredAnchorPostID = nil
         errorMessage = nil
@@ -296,6 +312,12 @@ final class ForumThreadReaderViewModel {
             await refresh(after: change)
             return
         }
+        // Cancellation retains the old page. A filter toggle may still need
+        // matching content, so reentry must resume that unfinished intent.
+        if needsViewModeReload {
+            await loadPage(1)
+            return
+        }
         guard page == nil else { return }
         var initialPage = context.initialPage
         // Resume is opt-in. Explicit post/page links still take precedence.
@@ -323,6 +345,7 @@ final class ForumThreadReaderViewModel {
     private func refresh(after change: ForumSubmissionChange) async {
         // Resolving a findpost URL can suspend. A page turn or mode switch
         // during that lookup must win over the submission's older intent.
+        cancelPageLoad()
         generation += 1
         let requestGeneration = generation
         isLoading = true
@@ -388,21 +411,24 @@ final class ForumThreadReaderViewModel {
     /// seen page 1 it is resolved first, and the toggle stays off if even that
     /// fails rather than silently loading the unfiltered thread.
     func setAuthorOnly(_ isEnabled: Bool) async {
-        guard isEnabled != isAuthorOnly else { return }
+        guard !Task.isCancelled, isEnabled != isAuthorOnly else { return }
         if isEnabled, threadAuthorID == nil {
+            cancelPageLoad()
             generation += 1
             let requestGeneration = generation
             isLoading = true
+            defer { if requestGeneration == generation { isLoading = false } }
             let resolved: String?
             do {
                 resolved = try await resolveThreadAuthorID()
             } catch {
-                guard requestGeneration == generation else { return }
+                guard requestGeneration == generation, !Task.isCancelled,
+                      !LoadDiagnosticError.isCancellation(error) else { return }
                 isLoading = false
                 transientFeedback = .failure(error, message: L10n.string("forum.thread.author_only_unavailable"))
                 return
             }
-            guard requestGeneration == generation else { return }
+            guard requestGeneration == generation, !Task.isCancelled else { return }
             isLoading = false
             guard let resolved else {
                 guard !Task.isCancelled else { return }
@@ -411,6 +437,7 @@ final class ForumThreadReaderViewModel {
             }
             threadAuthorID = resolved
         }
+        needsViewModeReload = true
         isAuthorOnly = isEnabled
         await reloadAfterViewModeChange()
     }
@@ -418,7 +445,8 @@ final class ForumThreadReaderViewModel {
     /// Turns 倒序浏览 on or off, restarting at page 1 for the same reason
     /// `setAuthorOnly` does — reversed page 1 holds the newest replies.
     func setReverseOrder(_ isEnabled: Bool) async {
-        guard isEnabled != isReverseOrder else { return }
+        guard !Task.isCancelled, isEnabled != isReverseOrder else { return }
+        needsViewModeReload = true
         isReverseOrder = isEnabled
         await reloadAfterViewModeChange()
     }
@@ -645,8 +673,58 @@ final class ForumThreadReaderViewModel {
         locatingReply: (postID: String, fallbackPage: Int)? = nil,
         preloadedPage: ForumThreadPage? = nil
     ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let key = PageLoadKey(
+            page: page, authorID: activeAuthorID, reverse: isReverseOrder,
+            preferCache: preferCache, preservesContent: preservesCurrentContentOnFailure,
+            usesFallback: usesCachedFallbackOnFailure,
+            replyID: locatingReply?.postID, replyFallbackPage: locatingReply?.fallbackPage
+        )
+        guard preloadedPage != nil || pageLoadKey != key || pageLoadTask?.isCancelled == true else { return false }
+        pageLoadTask?.cancel()
         generation += 1
         let requestGeneration = generation
+        pageLoadKey = key
+        let task = Task {
+            await performPageLoad(
+                page, preferCache: preferCache,
+                preservesCurrentContentOnFailure: preservesCurrentContentOnFailure,
+                usesCachedFallbackOnFailure: usesCachedFallbackOnFailure,
+                locatingReply: locatingReply, preloadedPage: preloadedPage,
+                requestGeneration: requestGeneration
+            )
+        }
+        pageLoadTask = task
+        let loaded = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if requestGeneration == generation {
+            pageLoadTask = nil
+            pageLoadKey = nil
+        }
+        return loaded && !Task.isCancelled
+    }
+
+    func cancelPageLoad() {
+        generation += 1
+        pageLoadTask?.cancel()
+        pageLoadTask = nil
+        pageLoadKey = nil
+        isLoading = false
+    }
+
+    private func performPageLoad(
+        _ page: Int,
+        preferCache: Bool,
+        preservesCurrentContentOnFailure: Bool,
+        usesCachedFallbackOnFailure: Bool,
+        locatingReply: (postID: String, fallbackPage: Int)?,
+        preloadedPage: ForumThreadPage?,
+        requestGeneration: Int
+    ) async -> Bool {
+        guard requestGeneration == generation, !Task.isCancelled else { return false }
         isLoading = true
         errorMessage = nil
         transientMessage = nil
@@ -662,19 +740,22 @@ final class ForumThreadReaderViewModel {
 
         do {
             let repository = await repositoryProvider()
-            var loaded = if let preloadedPage, !isFilteredView,
+            guard requestGeneration == generation, !Task.isCancelled else { return false }
+            var loaded: ForumThreadPage
+            if let preloadedPage, !isFilteredView,
                 preloadedPage.thread.tid == context.thread.tid,
                 (preloadedPage.pageNavigation?.currentPage ?? 1) == page {
-                preloadedPage
+                loaded = preloadedPage
             } else if preferCache, let cached = await repository.cachedThreadPage(
                 context: context,
                 page: page,
                 authorID: authorID,
                 reverse: reverse
             ) {
-                cached
+                loaded = cached
             } else {
-                try await repository.fetchThreadPage(
+                guard requestGeneration == generation, !Task.isCancelled else { return false }
+                loaded = try await repository.fetchThreadPage(
                     context: context,
                     page: page,
                     authorID: authorID,
@@ -695,13 +776,16 @@ final class ForumThreadReaderViewModel {
                 loadedPageNumber = locatingReply.fallbackPage
             }
             self.page = loaded
+            needsViewModeReload = false
             currentPage = loaded.pageNavigation?.currentPage ?? loadedPageNumber
             captureThreadAuthorIDIfNeeded(from: loaded)
             handlePageLoadSuccess(previousLoadedPage: previousLoadedPage)
             return true
         } catch {
-            guard requestGeneration == generation else { return false }
+            guard requestGeneration == generation, !Task.isCancelled,
+                  !LoadDiagnosticError.isCancellation(error) else { return false }
             let repository = await repositoryProvider()
+            guard requestGeneration == generation, !Task.isCancelled else { return false }
             if usesCachedFallbackOnFailure,
                let cached = await repository.cachedThreadPage(
                    context: context,
@@ -709,8 +793,9 @@ final class ForumThreadReaderViewModel {
                    authorID: authorID,
                    reverse: reverse
                ) {
-                guard requestGeneration == generation else { return false }
+                guard requestGeneration == generation, !Task.isCancelled else { return false }
                 self.page = cached
+                needsViewModeReload = false
                 currentPage = cached.pageNavigation?.currentPage ?? page
                 errorMessage = nil
                 transientFeedback = .failure(error, message: L10n.string("forum.thread.refresh_failed", error.localizedDescription))
@@ -719,7 +804,7 @@ final class ForumThreadReaderViewModel {
                 return false
             }
 
-            guard requestGeneration == generation else { return false }
+            guard requestGeneration == generation, !Task.isCancelled else { return false }
             if preservesCurrentContentOnFailure, self.page != nil {
                 errorMessage = nil
                 transientFeedback = .failure(error, message: L10n.string("forum.thread.refresh_failed", error.localizedDescription))

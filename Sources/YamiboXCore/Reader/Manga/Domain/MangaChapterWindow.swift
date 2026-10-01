@@ -24,12 +24,11 @@ public enum MangaChapterWindowMutationResult: Hashable, Sendable {
 
 public struct MangaChapterWindow: Hashable, Sendable {
     public private(set) var directory: MangaDirectory
-    public private(set) var documents: [MangaReaderProjection] {
-        didSet { rebuildPageIndex() }
-    }
+    public private(set) var documents: [MangaReaderProjection]
     public private(set) var position: MangaReadingPosition?
     public private(set) var pages: [MangaReaderPageProjection] = []
     private var chapterOffsets: [String: Int] = [:]
+    private var directoryChapterOrder: [String: Int]
     private let maxLoadedDocuments: Int
 
     public init(
@@ -39,6 +38,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         maxLoadedDocuments: Int = 10
     ) {
         self.directory = directory
+        self.directoryChapterOrder = Self.chapterOrder(in: directory)
         self.documents = [initialDocument]
         self.position = nil
         self.maxLoadedDocuments = max(1, maxLoadedDocuments)
@@ -58,6 +58,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         }
 
         self.directory = directory
+        self.directoryChapterOrder = Self.chapterOrder(in: directory)
         self.documents = documents
         self.position = nil
         self.maxLoadedDocuments = max(1, maxLoadedDocuments)
@@ -98,6 +99,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
     ) -> MangaChapterWindowSnapshot {
         let currentPosition = self.position
         self.directory = directory
+        directoryChapterOrder = Self.chapterOrder(in: directory)
         reorderDocumentsToMatchDirectory()
 
         let anchorTID = clampedPosition(position)?.tid
@@ -106,6 +108,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         trimDocuments(preserving: anchorTID)
 
         self.position = clampedPosition(position) ?? clampedPosition(currentPosition)
+        rebuildPageIndex()
         return snapshot
     }
 
@@ -128,6 +131,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         reorderDocumentsToMatchDirectory()
         trimDocuments(preserving: preservedTID ?? documents.first?.tid)
         self.position = clampedPosition(position) ?? clampedPosition(currentPosition)
+        rebuildPageIndex()
         return snapshot
     }
 
@@ -145,7 +149,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         guard !documents.contains(where: { $0.tid == document.tid }) else {
             return .unchanged(unchangedSnapshot, reason: .duplicateChapter)
         }
-        guard chapterOrder()[document.tid] != nil else {
+        guard directoryChapterOrder[document.tid] != nil else {
             return .unchanged(unchangedSnapshot, reason: .unknownChapter)
         }
         guard isAdjacentToLoadedRange(document.tid) else {
@@ -160,6 +164,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         trimDocuments(preserving: anchorTID)
 
         self.position = clampedPosition(requestedPosition)
+        rebuildPageIndex()
         return .changed(snapshot)
     }
 
@@ -169,6 +174,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
     ) -> MangaChapterWindowSnapshot {
         documents = [document]
         self.position = clampedPosition(position)
+        rebuildPageIndex()
         return snapshot
     }
 
@@ -177,7 +183,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         delta: Int
     ) -> MangaChapter? {
         guard abs(delta) == 1,
-              let index = directory.chapters.firstIndex(where: { $0.tid == position.tid }) else {
+              let index = directoryChapterOrder[position.tid] else {
             return nil
         }
 
@@ -190,7 +196,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         guard abs(delta) == 1 else { return nil }
         let anchorTID = delta < 0 ? documents.first?.tid : documents.last?.tid
         guard let anchorTID,
-              let index = directory.chapters.firstIndex(where: { $0.tid == anchorTID }) else {
+              let index = directoryChapterOrder[anchorTID] else {
             return nil
         }
 
@@ -224,6 +230,8 @@ public struct MangaChapterWindow: Hashable, Sendable {
     }
 
     private mutating func rebuildPageIndex() {
+        // Append, reorder and trim form one window mutation. Rebuild only the
+        // committed documents rather than each intermediate array operation.
         pages = MangaReaderPageProjection.projections(from: documents)
         chapterOffsets = [:]
         for page in pages where chapterOffsets[page.tid] == nil {
@@ -232,7 +240,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
     }
 
     private func isAdjacentToLoadedRange(_ tid: String) -> Bool {
-        let order = chapterOrder()
+        let order = directoryChapterOrder
         guard let targetIndex = order[tid] else { return false }
 
         if let firstTID = documents.first?.tid,
@@ -251,7 +259,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
     }
 
     private mutating func reorderDocumentsToMatchDirectory() {
-        let order = chapterOrder()
+        let order = directoryChapterOrder
         documents = documents.enumerated()
             .sorted { lhs, rhs in
                 let lhsOrder = order[lhs.element.tid]
@@ -288,7 +296,7 @@ public struct MangaChapterWindow: Hashable, Sendable {
         }
     }
 
-    private func chapterOrder() -> [String: Int] {
+    private static func chapterOrder(in directory: MangaDirectory) -> [String: Int] {
         var order: [String: Int] = [:]
         order.reserveCapacity(directory.chapters.count)
 

@@ -45,6 +45,7 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
     let pageTurnDirection: MangaPageTurnDirection
     let usesTwoPageSpread: Bool
     let spreads: [MangaPageSpread]
+    let spreadIDs: [String]
     let currentSpreadIndex: Int?
     private let spreadIndexesByPage: [Int]
 
@@ -66,6 +67,7 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
             usesTwoPageSpread: usesTwoPageSpread
         )
         self.spreads = spreads
+        spreadIDs = spreads.map(\.id)
         var spreadIndexesByPage = Array(repeating: 0, count: pages.count)
         for spread in spreads {
             for pageIndex in spread.pageIndexes {
@@ -88,6 +90,7 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
         pageTurnDirection = base.pageTurnDirection
         usesTwoPageSpread = base.usesTwoPageSpread
         spreads = base.spreads
+        spreadIDs = base.spreadIDs
         spreadIndexesByPage = base.spreadIndexesByPage
         self.currentPageIndex = Self.clampedIndex(currentPageIndex, pageCount: pages.count)
         currentSpreadIndex = self.currentPageIndex.flatMap { pageIndex in
@@ -318,6 +321,11 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
     let plan: MangaPagedReadingPlan
     let leaves: [MangaPagedPageCurlLeaf]
     let usesTwoPageSpread: Bool
+    private struct PageLeafKey: Hashable, Sendable {
+        let pageID: String
+        let isBack: Bool
+    }
+    private let leafIndexesByPage: [PageLeafKey: Int]
 
     init(plan: MangaPagedReadingPlan) {
         self.plan = plan
@@ -371,6 +379,13 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                 )
             ).ifEmpty(Self.emptySingleLeaves)
         }
+        var indexes: [PageLeafKey: Int] = [:]
+        for leaf in leaves {
+            guard let pageID = leaf.pageID else { continue }
+            let key = PageLeafKey(pageID: pageID, isBack: leaf.isBack)
+            if indexes[key] == nil { indexes[key] = leaf.index }
+        }
+        leafIndexesByPage = indexes
     }
 
     var pageCount: Int {
@@ -378,15 +393,13 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
     }
 
     func leafIndexes(forSelectionIndex selectionIndex: Int) -> [Int] {
-        guard !leaves.isEmpty else { return [] }
         let clampedSelection = clampedSelectionIndex(selectionIndex)
-        let indexes = leaves
-            .filter { $0.selectionIndex == clampedSelection }
-            .map(\.index)
-        guard !indexes.isEmpty else {
-            return [0, 1].filter { leaves.indices.contains($0) }
-        }
-        return indexes
+        // Both modes create exactly two physical leaves per selection, even
+        // for an empty book or the blank side of a chapter's final spread.
+        let physicalSelection = plan.pageTurnDirection == .rightToLeft
+            ? pageCount - clampedSelection - 1 : clampedSelection
+        let first = physicalSelection * 2
+        return [first, first + 1]
     }
 
     func selectionIndex(forLeafIndexes leafIndexes: [Int]) -> Int? {
@@ -422,7 +435,7 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
 
     func leafIndex(matching leaf: MangaPagedPageCurlLeaf) -> Int? {
         if let pageID = leaf.pageID {
-            return leaves.first { $0.pageID == pageID && $0.isBack == leaf.isBack }?.index
+            return leafIndexesByPage[PageLeafKey(pageID: pageID, isBack: leaf.isBack)]
         }
         if leaves.indices.contains(leaf.index) {
             let candidate = leaves[leaf.index]

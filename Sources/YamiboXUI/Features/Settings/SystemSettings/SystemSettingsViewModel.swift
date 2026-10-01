@@ -27,7 +27,6 @@ final class SystemSettingsViewModel {
     private(set) var isLoggedIn = false
 
     private let activity: SystemSettingsActivity
-    private let storageUsage: SettingsStorageUsage
 
     init(dependencies: SettingsDependencies) {
         let activity = SystemSettingsActivity()
@@ -72,7 +71,6 @@ final class SystemSettingsViewModel {
 
         self.dependencies = dependencies
         self.activity = activity
-        self.storageUsage = storageUsage
         self.general = general
         self.bookshelf = bookshelf
         self.forum = forum
@@ -118,9 +116,8 @@ final class SystemSettingsViewModel {
         reading.applyLoadedSettings(settings)
         peripherals.applyLoadedSettings(settings)
         await refreshSessionState()
-        // Defer the image directory scan to the Storage page, without blocking
-        // navigation into unrelated settings categories.
-        await storageUsage.refresh(includeAdditionalUsage: false)
+        // Storage owns its usage refresh. Unrelated settings must not wait
+        // for cache file enumeration or download database statistics.
     }
 
     func refreshSessionState() async {

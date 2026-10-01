@@ -10,7 +10,7 @@ final class ForumDestinationNavigator {
     var path: [ForumDestination] = [] {
         didSet {
             if oldValue != path {
-                browserOpenID = nil
+                cancelThreadOpen()
                 pathRevision = UUID()
                 let retained = Set(path.compactMap { destination -> ThreadNovelLaunchContext? in
                     if case let .threadReader(context) = destination { return context }
@@ -29,6 +29,7 @@ final class ForumDestinationNavigator {
     var transientFeedback: TransientFeedback?
     private(set) var isOpeningContent = false
     @ObservationIgnored private var contentOpenTask: Task<Void, Never>?
+    @ObservationIgnored private var threadOpenTask: Task<Void, Never>?
     @ObservationIgnored private var preloadedThreadPages: [ThreadNovelLaunchContext: (generation: UUID, page: ForumThreadPage)] = [:]
 
     func preloadedPage(for context: ThreadNovelLaunchContext) -> ForumThreadPage? {
@@ -167,7 +168,7 @@ final class ForumDestinationNavigator {
     }
 
     func route(_ url: URL, source: ForumNavigationSource, title: String? = nil, fromBrowserList: Bool = false) {
-        browserOpenID = nil
+        cancelThreadOpen()
         if fromBrowserList && browserUsesSplitNavigation { path = browserListPath }
         switch ForumRouteResolver.resolve(url: url, source: source) {
         case .home:
@@ -243,12 +244,15 @@ final class ForumDestinationNavigator {
         }
         let sourceListPath = browserListPath
         let replacesDetail = fromBrowserList && browserUsesSplitNavigation
+        cancelThreadOpen()
         let openID = UUID()
-        if fromBrowserList { browserOpenID = openID }
+        browserOpenID = openID
         let accountGeneration = actions.accountGeneration()
-        return Task {
+        let task = Task {
+            defer { if browserOpenID == openID { finishThreadOpen() } }
             do {
                 let resolver = await dependencies.forum.makeThreadRouteResolver()
+                try Task.checkCancellation()
                 let resolution = try await resolver.resolveWithPage(
                     YamiboThreadRouteRequest(
                         threadURL: url,
@@ -260,18 +264,23 @@ final class ForumDestinationNavigator {
                 )
                 try Task.checkCancellation()
                 guard accountGeneration == actions.accountGeneration() else { return }
+                guard browserOpenID == openID else { return }
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
+                finishThreadOpen()
                 if replacesDetail { path = sourceListPath }
                 openYamiboThreadRouteTarget(resolution.target, preloadedPage: resolution.preloadedPage, isDiscussionView: isDiscussionView)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
                    accountGeneration == actions.accountGeneration(),
+                   browserOpenID == openID,
                    !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
                 }
             }
         }
+        threadOpenTask = task
+        return task
     }
 
     @discardableResult
@@ -292,12 +301,15 @@ final class ForumDestinationNavigator {
         }
         let sourceListPath = browserListPath
         let replacesDetail = fromBrowserList && browserUsesSplitNavigation
+        cancelThreadOpen()
         let openID = UUID()
-        if fromBrowserList { browserOpenID = openID }
+        browserOpenID = openID
         let accountGeneration = actions.accountGeneration()
-        return Task {
+        let task = Task {
+            defer { if browserOpenID == openID { finishThreadOpen() } }
             do {
                 let resolver = await dependencies.forum.makeThreadRouteResolver()
+                try Task.checkCancellation()
                 let resolution = try await resolver.resolveWithPage(
                     YamiboThreadRouteRequest(
                         threadURL: thread.url,
@@ -311,18 +323,23 @@ final class ForumDestinationNavigator {
                 )
                 try Task.checkCancellation()
                 guard accountGeneration == actions.accountGeneration() else { return }
+                guard browserOpenID == openID else { return }
                 guard !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) else { return }
+                finishThreadOpen()
                 if replacesDetail { path = sourceListPath }
                 openYamiboThreadRouteTarget(resolution.target, preloadedPage: resolution.preloadedPage)
             } catch {
                 if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error),
                    accountGeneration == actions.accountGeneration(),
+                   browserOpenID == openID,
                    !fromBrowserList || (browserOpenID == openID && browserListPath == sourceListPath) {
                     actionErrorMessage = error.localizedDescription
                     actionErrorDetails = LoadFailureDetails(error: error)
                 }
             }
         }
+        threadOpenTask = task
+        return task
     }
 
     /// The thread card long-press menu's one-off reading-mode handler, or
@@ -509,6 +526,17 @@ final class ForumDestinationNavigator {
 
     func cancelContentOpen() {
         contentOpenTask?.cancel()
+        cancelThreadOpen()
+    }
+
+    private func cancelThreadOpen() {
+        threadOpenTask?.cancel()
+        finishThreadOpen()
+    }
+
+    private func finishThreadOpen() {
+        threadOpenTask = nil
+        browserOpenID = nil
     }
 
     private func openYamiboThreadRouteTarget(_ target: YamiboThreadRouteTarget, preloadedPage: ForumThreadPage? = nil, isDiscussionView: Bool = false) {

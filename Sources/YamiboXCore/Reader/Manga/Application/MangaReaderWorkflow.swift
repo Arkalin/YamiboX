@@ -53,6 +53,7 @@ public final class MangaReaderWorkflow {
     private var activeDirectoryMutationGeneration: UInt64?
     private var settings: MangaReaderSettings
     private var directoryPanelCommandState = MangaDirectoryPanelCommandState()
+    private var preparedDirectoryPanel: PreparedDirectoryPanel?
     private var viewportPlacementRevision = 0
     private var currentViewportPlacement: MangaNovelReaderViewportPlacement?
 
@@ -66,6 +67,16 @@ public final class MangaReaderWorkflow {
         let sessionGeneration: UInt64
         let generation: UInt64
         let directoryID: MangaDirectoryID
+    }
+
+    // Directory-derived work is prepared only at directory replacement and
+    // sort/chapter boundaries, not on every page turn or cooldown tick.
+    private struct PreparedDirectoryPanel {
+        var displayChapters: [MangaChapter]
+        var sortOrder: MangaDirectorySortOrder
+        let latestChapter: MangaChapter?
+        var draftChapterTID: String?
+        var editDraft: MangaDirectoryEditDraft
     }
 
     public init(
@@ -106,6 +117,7 @@ public final class MangaReaderWorkflow {
         activeDirectoryMutationGeneration = nil
         let preparationSessionGeneration = sessionGeneration
         window = nil
+        preparedDirectoryPanel = nil
         shouldAutoUpdateDirectoryAfterPrepare = false
         directoryPanelCommandState = MangaDirectoryPanelCommandState()
         presentation = MangaReaderPresentation(
@@ -183,7 +195,7 @@ public final class MangaReaderWorkflow {
                   sessionGeneration == preparationSessionGeneration else {
                 throw CancellationError()
             }
-            commitWindow(window, positionChanged: true)
+            commitWindow(window, positionChanged: true, directoryChanged: true)
             shouldAutoUpdateDirectoryAfterPrepare = resolution.shouldAutoUpdateAfterInitialLoad
             presentation = loadedPresentation(from: window, placementPageIndex: MangaReaderPageProjection.resolvedPageIndex(for: window))
         } catch {
@@ -672,7 +684,7 @@ public final class MangaReaderWorkflow {
               current.directory.id == mutation.directoryID,
               current.directory != latest else { return nil }
         _ = current.updateDirectory(latest, preserving: current.resolvedPosition)
-        commitWindow(current)
+        commitWindow(current, directoryChanged: true)
         finishDirectoryObservation(mutation)
         presentation = loadedPresentation(from: current)
         return presentation
@@ -777,7 +789,7 @@ public final class MangaReaderWorkflow {
         // snapshot that was captured before the external store/network work.
         // This preserves a page turn or chapter load that completed while the
         // directory command was suspended.
-        commitWindow(current)
+        commitWindow(current, directoryChanged: true)
         activeDirectoryMutationGeneration = nil
         directoryMutationGeneration &+= 1
 
@@ -788,8 +800,15 @@ public final class MangaReaderWorkflow {
         return presentation
     }
 
-    private func commitWindow(_ nextWindow: MangaChapterWindow, positionChanged: Bool = false) {
+    private func commitWindow(
+        _ nextWindow: MangaChapterWindow,
+        positionChanged: Bool = false,
+        directoryChanged: Bool = false
+    ) {
         window = nextWindow
+        if directoryChanged {
+            preparedDirectoryPanel = nil
+        }
         if positionChanged {
             positionGeneration &+= 1
         }
@@ -868,20 +887,40 @@ public final class MangaReaderWorkflow {
     }
 
     private func directoryPanelPresentation(from window: MangaChapterWindow) -> MangaDirectoryPanelPresentation {
-        let displayChapters: [MangaChapter] = switch settings.directorySortOrder {
-        case .ascending:
-            window.directory.chapters
-        case .descending:
-            Array(window.directory.chapters.reversed())
+        let currentChapterTID = window.resolvedPosition?.tid
+        if preparedDirectoryPanel == nil {
+            preparedDirectoryPanel = PreparedDirectoryPanel(
+                displayChapters: window.directory.chapters,
+                sortOrder: .ascending,
+                latestChapter: MangaChapterDisplayFormatter.latestChapter(in: window.directory.chapters),
+                draftChapterTID: currentChapterTID,
+                editDraft: directoryWorkflow.editDraft(for: window.directory, currentTID: currentChapterTID)
+            )
         }
-        let latestChapterText = MangaChapterDisplayFormatter.latestChapter(in: window.directory.chapters).map {
+        if preparedDirectoryPanel?.sortOrder != settings.directorySortOrder {
+            preparedDirectoryPanel?.displayChapters = switch settings.directorySortOrder {
+            case .ascending:
+                window.directory.chapters
+            case .descending:
+                Array(window.directory.chapters.reversed())
+            }
+            preparedDirectoryPanel?.sortOrder = settings.directorySortOrder
+        }
+        if preparedDirectoryPanel?.draftChapterTID != currentChapterTID {
+            preparedDirectoryPanel?.editDraft = directoryWorkflow.editDraft(
+                for: window.directory,
+                currentTID: currentChapterTID
+            )
+            preparedDirectoryPanel?.draftChapterTID = currentChapterTID
+        }
+        let latestChapterText = preparedDirectoryPanel?.latestChapter.map {
             L10n.string("manga.latest_chapter", MangaChapterDisplayFormatter.displayNumber(for: $0))
         }
         return MangaDirectoryPanelPresentation(
             directoryTitle: window.directory.cleanBookName,
             directoryID: window.directory.id,
-            displayChapters: displayChapters,
-            currentChapterTID: window.resolvedPosition?.tid,
+            displayChapters: preparedDirectoryPanel?.displayChapters ?? [],
+            currentChapterTID: currentChapterTID,
             latestChapterText: latestChapterText,
             sortOrder: settings.directorySortOrder,
             updateButtonTitle: directoryPanelCommandState.updateButtonTitle(strategy: window.directory.strategy),
@@ -889,7 +928,7 @@ public final class MangaReaderWorkflow {
             isSearchMode: directoryPanelCommandState.isSearchMode(strategy: window.directory.strategy),
             shouldForceSearchOnUpdate: directoryPanelCommandState.shouldForceSearchOnUpdate,
             isUpdating: directoryPanelCommandState.isUpdating,
-            editDraft: directoryWorkflow.editDraft(for: window.directory, currentTID: window.resolvedPosition?.tid),
+            editDraft: preparedDirectoryPanel?.editDraft,
             errorMessage: directoryPanelCommandState.errorMessage,
             errorDetails: directoryPanelCommandState.errorDetails,
             failureEventID: directoryPanelCommandState.failureEventID

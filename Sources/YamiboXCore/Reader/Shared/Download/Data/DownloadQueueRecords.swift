@@ -39,7 +39,7 @@ extension DownloadStore {
         try await ensureQueueRecovered()
         do {
             return try await database.read { db in
-                try Self.allRawWorks(in: db).map { try Self.queueWorkProjection(from: $0, in: db) }
+                try Self.allQueueWorkProjections(in: db)
             }
         } catch {
             throw downloadPersistenceError(from: error)
@@ -568,6 +568,73 @@ extension DownloadStore {
         ).compactMap { try rawWork(from: $0, in: db) }
     }
 
+    static func allQueueWorkProjections(in db: Database) throws -> [DownloadQueueWorkProjection] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT \(workColumnList) FROM download_works \(workOrderClause)
+            """)
+        let knownRows = rows.filter { DownloadReaderKind(rawValue: $0["reader_kind"] as String) != nil }
+        guard !knownRows.isEmpty else { return [] }
+        let hasManga = knownRows.contains { $0["reader_kind"] as String == DownloadReaderKind.manga.rawValue }
+        let identities = hasManga ? try downloadMangaIdentitySnapshot(in: db) : DownloadMangaIdentitySnapshot()
+        db.add(function: DatabaseFunction("download_valid_image_url", argumentCount: 1, pure: true) { values in
+            guard let value = String.fromDatabaseValue(values[0]) else {
+                throw YamiboPersistenceError(context: "Failed to decode download image URL")
+            }
+            return URL(string: value) == nil ? 0 : 1
+        })
+        let targetCounts = try workImageCounts(table: "download_work_images", in: db)
+        let completedCounts = try workImageCounts(table: "download_completed_images", in: db)
+        return knownRows.map { row in
+            let kind = DownloadReaderKind(rawValue: row["reader_kind"] as String)!
+            let owner: String = row["owner_name"]
+            let entryKey: String = row["tid"]
+            let fallbackTitle = (row["owner_title"] as String?) ?? owner
+            // Preserve raw group identity while matching imageURLs' canonical
+            // manga-owner lookup, including historical redirect rows.
+            let imageOwner = kind == .manga ? identities.canonicalID(owner) : owner
+            let imageEntry = DownloadWorkImageCountKey(readerKind: kind, ownerKey: imageOwner, entryKey: entryKey)
+            let ownerTitle = kind == .manga ? identities.title(for: imageOwner) ?? fallbackTitle : fallbackTitle
+            return DownloadQueueWorkProjection(
+                id: DownloadWorkID(readerKind: kind, rawValue: row["work_id"]),
+                groupID: DownloadGroupID(readerKind: kind, ownerKey: owner),
+                entryID: DownloadEntryID(readerKind: kind, ownerKey: owner, entryKey: entryKey),
+                ownerTitle: ownerTitle,
+                title: downloadEntryTitle(chapterTitle: row["chapter_title"], entryKey: entryKey),
+                progress: DownloadProgress(completedUnitCount: completedCounts[imageEntry] ?? 0,
+                    targetUnitCount: kind == .attachment ? 1 : targetCounts[imageEntry] ?? 0),
+                state: DownloadWorkState(rawValue: row["state"] as String) ?? .paused,
+                failureMessage: row["failure_message"],
+                currentBytesPerSecond: row["current_bytes_per_second"],
+                insertionIndex: row["insertion_index"]
+            )
+        }
+    }
+
+    private static func workImageCounts(table: String, in db: Database) throws -> [DownloadWorkImageCountKey: Int] {
+        var counts: [DownloadWorkImageCountKey: Int] = [:]
+        let kinds = DownloadReaderKind.allCases.map(\.rawValue)
+        let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+        // COUNT(*) alone would include corrupt strings that imageURLs drops.
+        // The scalar function keeps Foundation's exact URL acceptance rule;
+        // GROUP BY returns only counts rather than transferring every URL row
+        // or hashing its work identity once per image in Swift.
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT reader_kind, CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry,
+                SUM(download_valid_image_url(CAST(image_url AS TEXT))) AS image_count
+            FROM \(table) WHERE reader_kind IN (\(placeholders))
+                AND typeof(owner_name) = 'text' AND typeof(tid) = 'text'
+            GROUP BY reader_kind, owner_name, tid
+            """, arguments: StatementArguments(kinds))
+        while let row = try rows.next() {
+            guard let kind = DownloadReaderKind(rawValue: row["reader_kind"] as String) else { continue }
+            let entry = DownloadWorkImageCountKey(readerKind: kind, ownerKey: row["raw_owner"] as Data, entryKey: row["raw_entry"] as Data)
+            // Count rows, not distinct URLs: duplicate positions have always
+            // contributed to queue progress.
+            counts[entry] = row["image_count"]
+        }
+        return counts
+    }
+
     /// Head-of-queue lookup for the processing loop. `allRawWorks(in:).first`
     /// paid `rawWork(from:in:)`'s two image-list subqueries for every queued
     /// row just to keep one; here only the first decodable header row is
@@ -693,6 +760,23 @@ extension DownloadStore {
             createdAt: downloadOptionalDate(from: row["created_at"] as Double?) ?? Date(timeIntervalSince1970: 0),
             updatedAt: downloadOptionalDate(from: row["updated_at"] as Double?) ?? Date(timeIntervalSince1970: 0)
         )
+    }
+}
+
+// Database lookup keys must not trim whitespace as the public display IDs do.
+private struct DownloadWorkImageCountKey: Hashable {
+    var readerKind: DownloadReaderKind
+    var ownerKey: Data
+    var entryKey: Data
+
+    init(readerKind: DownloadReaderKind, ownerKey: String, entryKey: String) {
+        self.init(readerKind: readerKind, ownerKey: Data(ownerKey.utf8), entryKey: Data(entryKey.utf8))
+    }
+
+    init(readerKind: DownloadReaderKind, ownerKey: Data, entryKey: Data) {
+        self.readerKind = readerKind
+        self.ownerKey = ownerKey
+        self.entryKey = entryKey
     }
 }
 

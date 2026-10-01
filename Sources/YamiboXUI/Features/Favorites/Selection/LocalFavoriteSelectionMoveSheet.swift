@@ -1,14 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Tri-state per-item location membership (all / some / none of the selected
-/// items carry a location).
-enum LocalFavoriteLocationTriState: Equatable {
-    case none
-    case some
-    case all
-}
-
 /// Category → collection tree with tri-state boxes for the selected items'
 /// locations, mirroring the Android collection picker. Items can live in
 /// multiple locations; toggling a partially-selected location includes it
@@ -25,8 +17,7 @@ struct LocalFavoriteSelectionMoveSheet: View {
             FavoriteLocationMembershipList(
                 categories: organizer.categories,
                 collections: organizer.collections,
-                itemCount: organizer.expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs).count,
-                state: organizer.selectionLocationState,
+                membership: organizer.selectionLocationSnapshot,
                 onSetLocation: { location, included in
                     Task { await organizer.setSelectionLocation(location, included: included) }
                 }

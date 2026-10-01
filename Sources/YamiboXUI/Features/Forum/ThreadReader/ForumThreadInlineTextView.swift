@@ -48,8 +48,38 @@ struct ForumThreadInlineTextView: View {
     // Before text blocks were kept intact, it only ever drew at most 320 characters.
     private static let maxSyntheticItalicCharacters = 320
 
-    let attributedText: AttributedString
     let refererURL: URL
+    private let preparedRuns: [PreparedRun]
+    private let imageURLs: [URL]
+    private let useSyntheticItalics: Bool
+
+    private enum PreparedRun {
+        case text(Text)
+        case image(ForumThreadImageBlock, count: Int)
+    }
+
+    init(attributedText: AttributedString, refererURL: URL) {
+        self.refererURL = refererURL
+        let syntheticItalics = attributedText.characters.count <= Self.maxSyntheticItalicCharacters
+            && attributedText.runs.contains(where: { $0[ForumThreadItalicKey.self] == true })
+        useSyntheticItalics = syntheticItalics
+        var urls: Set<URL> = []
+        // Rebuilt with the input value, not image playback state. Static text
+        // slices and modifiers must not be reconstructed for every GIF frame.
+        preparedRuns = attributedText.runs.map { run in
+            if let inline = run[ForumThreadInlineImageKey.self] {
+                urls.insert(inline.url)
+                return .image(inline, count: attributedText[run.range].characters.count)
+            }
+            let text = Text(AttributedString(attributedText[run.range]))
+                .baselineOffset(run[ForumThreadBaselineOffsetKey.self] ?? 0)
+            if run[ForumThreadItalicKey.self] == true {
+                return .text(syntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic())
+            }
+            return .text(text)
+        }
+        imageURLs = urls.sorted { $0.absoluteString < $1.absoluteString }
+    }
 
     @Environment(\.yamiboImagePipeline) private var pipeline
     @Environment(\.scenePhase) private var scenePhase
@@ -58,14 +88,7 @@ struct ForumThreadInlineTextView: View {
     @State private var images: [URL: Image] = [:]
 
     var body: some View {
-        let useSyntheticItalics = attributedText.characters.count <= Self.maxSyntheticItalicCharacters
-            && attributedText.runs.contains(where: { $0[ForumThreadItalicKey.self] == true })
-        let text = Self.composedText(
-            attributedText,
-            images: images,
-            imageSize: imageSize,
-            useSyntheticItalics: useSyntheticItalics
-        )
+        let text = composedText()
         Group {
             if useSyntheticItalics {
                 text.textRenderer(ForumThreadTextRenderer())
@@ -86,31 +109,21 @@ struct ForumThreadInlineTextView: View {
         }
     }
 
-    static func composedText(
-        _ attributed: AttributedString,
-        images: [URL: Image],
-        imageSize: CGFloat,
-        useSyntheticItalics: Bool
-    ) -> Text {
-        attributed.runs.reduce(Text(verbatim: "")) { result, run in
+    private func composedText() -> Text {
+        preparedRuns.reduce(Text(verbatim: "")) { result, run in
             let part: Text
-            if let inline = run[ForumThreadInlineImageKey.self] {
-                let image = images[inline.url] ?? sizedImage(UIImage(systemName: "face.smiling") ?? UIImage(), dimension: imageSize)
+            switch run {
+            case let .image(inline, count):
+                let image = images[inline.url] ?? Self.sizedImage(UIImage(systemName: "face.smiling") ?? UIImage(), dimension: imageSize)
                 let attachment = Text(image)
                     .accessibilityLabel(Text(verbatim: inline.altText ?? L10n.string("forum.thread.image")))
                     .baselineOffset(-imageSize / 7)
                 // Adjacent identical smileys coalesce into one attributed run.
-                part = attributed[run.range].characters.reduce(Text(verbatim: "")) { text, _ in
+                part = (0..<count).reduce(Text(verbatim: "")) { text, _ in
                     Text("\(text)\(attachment)")
                 }
-            } else {
-                let text = Text(AttributedString(attributed[run.range]))
-                    .baselineOffset(run[ForumThreadBaselineOffsetKey.self] ?? 0)
-                if run[ForumThreadItalicKey.self] == true {
-                    part = useSyntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic()
-                } else {
-                    part = text
-                }
+            case let .text(text):
+                part = text
             }
             return Text("\(result)\(part)")
         }
@@ -129,11 +142,6 @@ struct ForumThreadInlineTextView: View {
             image.draw(in: CGRect(x: (dimension - width) / 2, y: (dimension - height) / 2, width: width, height: height))
         }
         return rendered
-    }
-
-    private var imageURLs: [URL] {
-        Array(Set(attributedText.runs.compactMap { $0[ForumThreadInlineImageKey.self]?.url }))
-            .sorted { $0.absoluteString < $1.absoluteString }
     }
 
     private struct RequestIdentity: Hashable {

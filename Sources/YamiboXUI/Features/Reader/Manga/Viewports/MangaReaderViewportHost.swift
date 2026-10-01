@@ -145,6 +145,7 @@ private struct MangaReaderLoadedContent: View {
                         MangaPagedPageCurlReaderViewport(
                             attachedInformation: attachedInformation(plan: plan),
                             plan: plan,
+                            sequence: pagedCache.pageCurlSequence(),
                             viewportPlacement: loaded.viewportPlacement,
                             settings: effectiveSettings,
                             imageLoader: imageLoader,
@@ -217,6 +218,7 @@ private struct MangaReaderLoadedContent: View {
 @MainActor
 private final class MangaPagedContentCache {
     private var basePlan: MangaPagedReadingPlan?
+    private var cachedSequence: MangaPagedPageCurlSequence?
     private var chapters: [MangaChapter] = []
     private var workTitle = ""
     private var informationVariants: [Int: [[ReaderAttachedPageInformation]]] = [:]
@@ -227,6 +229,7 @@ private final class MangaPagedContentCache {
             || basePlan?.pageTurnDirection != direction
             || basePlan?.usesTwoPageSpread != usesTwoPageSpread
         if structureChanged {
+            cachedSequence = nil
             basePlan = MangaPagedReadingPlan(pages: loaded.pages, currentPageIndex: nil,
                 pageTurnDirection: direction, usesTwoPageSpread: usesTwoPageSpread)
         }
@@ -258,6 +261,13 @@ private final class MangaPagedContentCache {
 
     func informationPages(isImmersive: Bool, isChromeVisible: Bool) -> [[ReaderAttachedPageInformation]] {
         informationVariants[key(isImmersive, isChromeVisible)] ?? []
+    }
+
+    func pageCurlSequence() -> MangaPagedPageCurlSequence {
+        if let cachedSequence { return cachedSequence }
+        let sequence = MangaPagedPageCurlSequence(plan: basePlan!)
+        cachedSequence = sequence
+        return sequence
     }
 
     private func key(_ immersive: Bool, _ chrome: Bool) -> Int {

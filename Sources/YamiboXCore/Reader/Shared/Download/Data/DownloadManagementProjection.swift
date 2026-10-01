@@ -26,6 +26,21 @@ extension DownloadStore {
     ) throws -> DownloadManagementSnapshot {
         var builders: [DownloadEntryID: DownloadManagementEntryBuilder] = [:]
         var groupTitles: [DownloadGroupID: DownloadManagementGroupTitle] = [:]
+        let mangaIdentities = try downloadMangaIdentitySnapshot(in: db)
+        // Preserve the old scalar Int fetches' SQLite conversion, including
+        // imported values that strict cached Row decoding would reject.
+        var mangaBytes: [Data: [Data: Int]] = [:]
+        for row in try Row.fetchAll(db, sql: """
+            SELECT CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry,
+                CAST(byte_count AS INTEGER) AS byte_count
+            FROM download_manga_entries WHERE typeof(owner_name) = 'text' AND typeof(tid) = 'text'
+            """) {
+            mangaBytes[row["raw_owner"], default: [:]][row["raw_entry"]] = row["byte_count"]
+        }
+        var novelBytes: [Data: Int] = [:]
+        for row in try Row.fetchAll(db, sql: "SELECT CAST(entry_key AS BLOB) AS raw_entry, CAST(byte_count AS INTEGER) AS byte_count FROM download_novel_entries WHERE typeof(entry_key) = 'text'") {
+            novelBytes[row["raw_entry"]] = row["byte_count"]
+        }
 
         for membership in try allMangaMemberships(
             fileManager: fileManager,
@@ -45,15 +60,16 @@ extension DownloadStore {
                 updatedAt: membership.createdAt
             )
             builder.title = downloadEntryTitle(chapterTitle: membership.chapterTitle, entryKey: membership.tid)
-            builder.byteCount += try mangaEntryByteCount(ownerName: membership.ownerName, tid: membership.tid, in: db)
+            let canonicalOwner = mangaIdentities.canonicalID(membership.ownerName)
+            builder.byteCount += mangaBytes[Data(canonicalOwner.utf8)]?[Data(membership.tid.utf8)] ?? 0
             builder.imageURLStrings.formUnion(membership.imageURLs.map(\.absoluteString))
             builder.updatedAt = max(builder.updatedAt, membership.createdAt)
             builders[entryID] = builder
-            let ownerTitle = try mangaOwnerTitle(membership.ownerName, in: db)
+            let ownerTitle = mangaIdentities.title(for: canonicalOwner) ?? membership.ownerName
             recordGroupTitle(ownerTitle, updatedAt: membership.createdAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
-        for entry in try allNovelEntries(in: db) {
+        try forEachNovelEntry(in: db) { entry in
             let entryID = entry.id
             var builder = builders[entryID] ?? DownloadManagementEntryBuilder(
                 id: entryID,
@@ -62,7 +78,7 @@ extension DownloadStore {
                 updatedAt: entry.updatedAt
             )
             builder.title = entry.title
-            builder.byteCount += try novelEntryByteCount(entryKey: entryID.entryKey, in: db)
+            builder.byteCount += novelBytes[Data(entryID.entryKey.utf8)] ?? 0
             builder.imageURLStrings.formUnion(entry.imageURLs.map(\.absoluteString))
             builder.updatedAt = max(builder.updatedAt, entry.updatedAt)
             builders[entryID] = builder
@@ -76,26 +92,38 @@ extension DownloadStore {
             recordGroupTitle(row["owner_title"], updatedAt: date, groupID: id.groupID, in: &groupTitles)
         }
 
-        for work in try allRawWorks(in: db) {
+        let workImages = try managementWorkImageURLStrings(in: db)
+        for work in try Row.fetchAll(db, sql: """
+            SELECT reader_kind, work_id, owner_name, owner_title, tid, chapter_title, state, updated_at
+            FROM download_works
+            ORDER BY insertion_index ASC, reader_kind ASC, owner_name ASC, tid ASC
+            """) {
+            guard let kind = DownloadReaderKind(rawValue: work["reader_kind"] as String) else { continue }
+            let owner: String = work["owner_name"]
+            let entryKey: String = work["tid"]
+            let fallbackOwnerTitle = (work["owner_title"] as String?) ?? owner
+            let title = downloadEntryTitle(chapterTitle: work["chapter_title"], entryKey: entryKey)
+            let updatedAt = downloadOptionalDate(from: work["updated_at"] as Double?) ?? Date(timeIntervalSince1970: 0)
+            let imageOwner = kind == .manga ? mangaIdentities.canonicalID(owner) : owner
             let entryID = DownloadEntryID(
-                readerKind: work.readerKind,
-                ownerKey: work.ownerKey,
-                entryKey: work.entryKey
+                readerKind: kind,
+                ownerKey: owner,
+                entryKey: entryKey
             )
             var builder = builders[entryID] ?? DownloadManagementEntryBuilder(
                 id: entryID,
-                title: downloadEntryTitle(chapterTitle: work.title, entryKey: work.entryKey),
+                title: title,
                 state: .queued,
-                updatedAt: work.updatedAt
+                updatedAt: updatedAt
             )
-            builder.title = downloadEntryTitle(chapterTitle: work.title, entryKey: work.entryKey)
-            builder.state = DownloadEntryState(workState: work.state)
-            builder.updatedAt = max(builder.updatedAt, work.updatedAt)
-            builder.workID = DownloadWorkID(readerKind: work.readerKind, rawValue: work.workID)
-            builder.imageURLStrings.formUnion((work.targetImageURLs + work.completedImageURLs).map(\.absoluteString))
+            builder.title = title
+            builder.state = DownloadEntryState(workState: DownloadWorkState(rawValue: work["state"] as String) ?? .paused)
+            builder.updatedAt = max(builder.updatedAt, updatedAt)
+            builder.workID = DownloadWorkID(readerKind: kind, rawValue: work["work_id"])
+            builder.imageURLStrings.formUnion(workImages[DownloadManagementWorkImageKey(readerKind: kind, ownerKey: imageOwner, entryKey: entryKey)] ?? [])
             builders[entryID] = builder
-            let ownerTitle = work.readerKind == .manga ? try mangaOwnerTitle(work.ownerKey, fallback: work.ownerTitle, in: db) : work.ownerTitle
-            recordGroupTitle(ownerTitle, updatedAt: work.updatedAt, groupID: entryID.groupID, in: &groupTitles)
+            let ownerTitle = kind == .manga ? mangaIdentities.title(for: imageOwner) ?? fallbackOwnerTitle : fallbackOwnerTitle
+            recordGroupTitle(ownerTitle, updatedAt: updatedAt, groupID: entryID.groupID, in: &groupTitles)
         }
 
         var groupURLStrings: [DownloadGroupID: Set<String>] = [:]
@@ -144,6 +172,28 @@ extension DownloadStore {
         return DownloadManagementSnapshot(groups: groups)
     }
 
+    private static func managementWorkImageURLStrings(in db: Database) throws -> [DownloadManagementWorkImageKey: Set<String>] {
+        var images: [DownloadManagementWorkImageKey: Set<String>] = [:]
+        let kinds = DownloadReaderKind.allCases.map(\.rawValue)
+        let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT reader_kind, CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry, image_url
+            FROM download_work_images
+            WHERE reader_kind IN (\(placeholders)) AND typeof(owner_name) = 'text' AND typeof(tid) = 'text'
+            UNION ALL
+            SELECT reader_kind, CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry, image_url
+            FROM download_completed_images
+            WHERE reader_kind IN (\(placeholders)) AND typeof(owner_name) = 'text' AND typeof(tid) = 'text'
+            """, arguments: StatementArguments(kinds + kinds))
+        while let row = try rows.next() {
+            guard let kind = DownloadReaderKind(rawValue: row["reader_kind"] as String),
+                  let url = URL(string: row["image_url"] as String) else { continue }
+            let key = DownloadManagementWorkImageKey(readerKind: kind, ownerKey: row["raw_owner"] as Data, entryKey: row["raw_entry"] as Data)
+            images[key, default: []].insert(url.absoluteString)
+        }
+        return images
+    }
+
     private static func recordGroupTitle(
         _ title: String,
         updatedAt: Date,
@@ -157,6 +207,22 @@ extension DownloadStore {
         groupTitles[groupID] = DownloadManagementGroupTitle(title: title, updatedAt: updatedAt)
     }
 
+}
+
+private struct DownloadManagementWorkImageKey: Hashable {
+    var readerKind: DownloadReaderKind
+    var ownerKey: Data
+    var entryKey: Data
+
+    init(readerKind: DownloadReaderKind, ownerKey: String, entryKey: String) {
+        self.init(readerKind: readerKind, ownerKey: Data(ownerKey.utf8), entryKey: Data(entryKey.utf8))
+    }
+
+    init(readerKind: DownloadReaderKind, ownerKey: Data, entryKey: Data) {
+        self.readerKind = readerKind
+        self.ownerKey = ownerKey
+        self.entryKey = entryKey
+    }
 }
 
 private struct DownloadManagementGroupTitle {

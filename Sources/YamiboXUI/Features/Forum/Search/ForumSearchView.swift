@@ -4,6 +4,7 @@ import YamiboXCore
 struct ForumSearchView: View {
     @Environment(\.forumTheme) private var theme
     @State private var model: ForumSearchViewModel
+    @State private var requestTask: Task<Void, Never>?
 
     let onThreadTap: (ForumThreadSummary) -> Void
     let onAuthorTap: (String, String?) -> Void
@@ -39,23 +40,34 @@ struct ForumSearchView: View {
         .forumPageBackground()
         .tint(theme.accentText)
         .navigationTitle(L10n.string("forum.search.title"))
+        .onDisappear {
+            requestTask?.cancel()
+            requestTask = nil
+            model.cancelSearch()
+        }
     }
 
     private func submit() {
         let trimmedQuery = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return }
         if let url = URL(string: trimmedQuery), ["http", "https"].contains(url.scheme?.lowercased()) {
+            requestTask?.cancel()
+            model.cancelSearch()
             onURLSubmit(url)
             return
         }
 
-        Task {
+        requestTask?.cancel()
+        requestTask = Task {
+            guard !Task.isCancelled else { return }
             await model.searchFirstPage()
         }
     }
 
     private func goToPage(_ page: Int) {
-        Task {
+        requestTask?.cancel()
+        requestTask = Task {
+            guard !Task.isCancelled else { return }
             await model.goToPage(page)
         }
     }

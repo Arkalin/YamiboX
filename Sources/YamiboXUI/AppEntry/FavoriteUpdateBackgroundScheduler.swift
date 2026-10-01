@@ -37,6 +37,12 @@ public enum FavoriteUpdateBackgroundScheduler {
         guard YamiboForumEnvironment.current.supportsBackgroundRelaunch else { return }
         Task { @MainActor in
             let monitor = makeMonitor(appContext: appContext)
+            // Disabled scheduling needs no run/event snapshot. Re-read the
+            // interval after loading below in case it changes during that work.
+            guard let configuredInterval = await monitor.configuredInterval(), configuredInterval != .off else {
+                BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
+                return
+            }
             await monitor.load()
             guard let interval = await monitor.configuredInterval(),
                   let delay = interval.nextDelay(hasRecentEvents: monitor.hasRecentEvents) else {

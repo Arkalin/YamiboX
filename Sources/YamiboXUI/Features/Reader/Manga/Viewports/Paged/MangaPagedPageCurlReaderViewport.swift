@@ -14,6 +14,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         coordinator.zoom.detach(from: controller)
     }
     let plan: MangaPagedReadingPlan
+    let sequence: MangaPagedPageCurlSequence
     let viewportPlacement: MangaNovelReaderViewportPlacement?
     let settings: MangaReaderSettings
     let imageLoader: MangaReaderPageImageLoader
@@ -41,17 +42,13 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         )
     }
 
-    var sequence: MangaPagedPageCurlSequence {
-        MangaPagedPageCurlSequence(plan: plan)
-    }
-
     var selectionIndex: Int {
         MangaPagedPageCurlSelectionResolver.currentSelectionIndex(plan: plan)
     }
 
     private var contentIdentity: MangaPagedReaderContentIdentity {
         MangaPagedReaderContentIdentity(
-            spreadIDs: plan.spreads.map(\.id),
+            spreadIDs: plan.spreadIDs,
             pageScaleMode: effectivePageScaleMode,
             pagedTurnStyle: settings.pagedTurnStyle,
             pageTurnDirection: settings.pageTurnDirection,

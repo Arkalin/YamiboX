@@ -17,12 +17,13 @@ import YamiboXCore
 struct BookCoverThumbnail: View {
     let url: URL?
     let title: String
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                if let url {
-                    YamiboRemoteImage(source: YamiboImageSource(url: url)) { image in
+                if let url, let thumbnail = YamiboImageThumbnail(pointSize: proxy.size, displayScale: displayScale) {
+                    YamiboRemoteImage(source: YamiboImageSource(url: url), thumbnail: thumbnail) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)

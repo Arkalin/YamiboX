@@ -6,11 +6,15 @@ public protocol DownloadQueueControlling: Sendable {
     func continueQueue() async throws
     func pauseQueue() async throws
     func cancelWork(id: DownloadWorkID) async throws
+    func cancelWorks(ids: [DownloadWorkID]) async throws
     func cancelGroup(id: DownloadGroupID) async throws
 }
 
 public extension DownloadQueueControlling {
     func cancelWork(id: DownloadWorkID) async throws {}
+    func cancelWorks(ids: [DownloadWorkID]) async throws {
+        for id in ids { try await cancelWork(id: id) }
+    }
     func cancelGroup(id: DownloadGroupID) async throws {}
 }
 
@@ -210,10 +214,7 @@ final class DownloadQueueViewModel {
         await performCommand {
             let controller = await self.queueController()
             let rowsByID = self.chapterRowsByID()
-            for id in ids {
-                guard let row = rowsByID[id] else { continue }
-                try await controller.cancelWork(id: row.id)
-            }
+            try await controller.cancelWorks(ids: ids.compactMap { rowsByID[$0]?.id })
         }
         selectedWorkIDs.removeAll()
         isSelectionMode = false

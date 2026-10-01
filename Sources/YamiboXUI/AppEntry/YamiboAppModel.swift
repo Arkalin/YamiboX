@@ -206,6 +206,7 @@ public final class YamiboAppModel {
             await configureAccountTransitions()
             preparation = await appContinuity.prepareLaunch(
                 canRestoreReaderRoute: canRestoreReaderRoute,
+                includingFavoriteLibrary: false,
                 onProgress: updateBootstrapPhase
             )
         }
@@ -248,7 +249,7 @@ public final class YamiboAppModel {
             // changes during either await must reload before publishing a shell.
             if stateGeneration != accountGeneration {
                 stateGeneration = accountGeneration
-                state = await appContext.bootstrap()
+                state = await appContext.bootstrap(includingFavoriteLibrary: false)
             }
             let latestSettings = await appContext.settingsStore.load()
             guard stateGeneration == accountGeneration else { continue }
@@ -321,7 +322,7 @@ public final class YamiboAppModel {
             bootstrapPhase = nil
         }
 
-        let state = await appContext.bootstrap(onProgress: updateBootstrapPhase)
+        let state = await appContext.bootstrap(includingFavoriteLibrary: false, onProgress: updateBootstrapPhase)
         applyNavigationSettings(state.settings.system.navigation)
         appThemePreset = state.settings.appearance.themePreset
         readerToolbarStyle = state.settings.readerToolbarStyle

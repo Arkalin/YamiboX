@@ -13,6 +13,8 @@ struct NovelReaderSettingsSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
+    @State private var previewSourceText = ""
+    @State private var previewTexts: [ReaderTranslationMode: String] = [:]
     @State private var isPeripheralSettingsPresented = false
     @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
@@ -85,11 +87,8 @@ struct NovelReaderSettingsSheet: View {
         NovelReaderHeroSection(
             settings: model.fontLibrary.resolving(draftSettings),
             palette: palette,
-            previewText: model.previewText(
-                translationMode: draftSettings.translationMode,
-                characterCount: Self.previewCharacterCount,
-                fallback: Self.fallbackPreviewText
-            ),
+            previewText: previewTexts[draftSettings.translationMode]
+                ?? String(Self.fallbackPreviewText.prefix(Self.previewCharacterCount)),
             topInset: topInset,
             height: heroHeight,
             onClose: { dismiss() },
@@ -157,6 +156,8 @@ struct NovelReaderSettingsSheet: View {
     private func loadDraftIfNeeded() {
         guard !hasLoadedDraft else { return }
         draftSettings = model.settings
+        previewSourceText = model.previewSourceText(fallback: Self.fallbackPreviewText)
+        preparePreview(for: draftSettings.translationMode)
         model.fontLibrary.protect(draftSettings.fontSelection, owner: fontProtectionID)
         hasLoadedDraft = true
     }
@@ -181,5 +182,17 @@ struct NovelReaderSettingsSheet: View {
         }
     }
     private func setPageTurnDirection(_ value: ReaderPageTurnDirection) { draftSettings.pageTurnDirection = value }
-    private func setTranslationMode(_ value: ReaderTranslationMode) { draftSettings.translationMode = value }
+    private func setTranslationMode(_ value: ReaderTranslationMode) {
+        preparePreview(for: value)
+        draftSettings.translationMode = value
+    }
+
+    private func preparePreview(for mode: ReaderTranslationMode) {
+        guard previewTexts[mode] == nil else { return }
+        // Preserve the complete conversion context at the position where the
+        // sheet opened. Only the final short preview is cached per mode; font,
+        // color and layout drafts must not rejoin/reconvert the forum page.
+        let transformed = NovelTextTransformer.transform(previewSourceText, mode: mode)
+        previewTexts[mode] = String(transformed.prefix(Self.previewCharacterCount))
+    }
 }

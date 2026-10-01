@@ -70,6 +70,14 @@ final class ForumSearchViewModel {
         await search(pageNumber: 1)
     }
 
+    func cancelSearch() {
+        generation += 1
+        searchTask?.cancel()
+        searchTask = nil
+        inFlightKey = nil
+        isLoading = false
+    }
+
     func goToPage(_ pageNumber: Int) async {
         let nextPage = max(1, pageNumber)
         guard nextPage != currentPage else { return }
@@ -80,7 +88,7 @@ final class ForumSearchViewModel {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, !Task.isCancelled else { return }
         let key = RequestKey(query: trimmedQuery, forumID: forumID, page: pageNumber)
-        guard inFlightKey != key else { return }
+        guard inFlightKey != key || searchTask?.isCancelled == true else { return }
         searchTask?.cancel()
         inFlightKey = key
         generation += 1
@@ -105,10 +113,7 @@ final class ForumSearchViewModel {
         guard !Task.isCancelled, generation == requestGeneration else { return }
         let trimmedQuery = key.query
         let pageNumber = key.page
-        if pageNumber == 1 {
-            currentPage = 1
-            currentSearchID = nil
-        }
+        let searchID = currentSearchID
         isLoading = true
         errorMessage = nil
         defer {
@@ -126,7 +131,7 @@ final class ForumSearchViewModel {
             // "overwrite it with nil", matching the original unconditional
             // assignment in the searchForum branch.
             let resolvedSearchID: String??
-            if pageNumber == 1 || currentSearchID == nil {
+            if pageNumber == 1 || searchID == nil {
                 let formHash = await formHashProvider()
                 try Task.checkCancellation()
                 nextPage = try await repository.searchForum(
@@ -138,7 +143,7 @@ final class ForumSearchViewModel {
             } else {
                 nextPage = try await repository.searchForumPage(
                     query: trimmedQuery,
-                    searchID: currentSearchID ?? "",
+                    searchID: searchID ?? "",
                     page: pageNumber
                 )
                 resolvedSearchID = nil
@@ -151,9 +156,11 @@ final class ForumSearchViewModel {
             currentPage = nextPage.pageNavigation?.currentPage ?? pageNumber
             errorMessage = nil
         } catch {
-            guard requestGeneration == generation else { return }
+            guard requestGeneration == generation, !Task.isCancelled,
+                  !LoadDiagnosticError.isCancellation(error) else { return }
             page = nil
             currentPage = pageNumber
+            if pageNumber == 1 { currentSearchID = nil }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)

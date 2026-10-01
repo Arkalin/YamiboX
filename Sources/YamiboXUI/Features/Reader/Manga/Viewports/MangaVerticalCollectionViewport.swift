@@ -49,6 +49,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private(set) var logicalLayout = MangaVerticalCollectionZoomLayout()
         private(set) var layoutRevision = 0
         private var contentIdentity: [String] = []
+        private var identityPages: [MangaReaderPageProjection] = []
         private var heightToWidthRatios: [String: CGFloat] = [:]
         private var pendingRatios: [String: CGFloat] = [:]
         private var ratioUpdateTask: Task<Void, Never>?
@@ -138,7 +139,13 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                     cell.refreshLiked(using: parent.likedPageIDs)
                 }
             }
-            let nextIdentity = parent.pages.map(\.id)
+            let nextIdentity: [String]
+            if identityPages == parent.pages {
+                nextIdentity = contentIdentity
+            } else {
+                identityPages = parent.pages
+                nextIdentity = parent.pages.map(\.id)
+            }
             if nextIdentity != contentIdentity {
                 imagePrefetchCoordinator.cancel()
                 lastPrefetchSources = []

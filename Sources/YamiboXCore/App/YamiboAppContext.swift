@@ -684,6 +684,7 @@ public final class YamiboAppContext: Sendable {
     }
 
     public func bootstrap(
+        includingFavoriteLibrary: Bool = true,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> YamiboBootstrapState {
         await onProgress(.loadingSession)
@@ -692,10 +693,16 @@ public final class YamiboAppContext: Sendable {
         let profile = await profileStore.load()
         await onProgress(.loadingSettings)
         let settings = await settingsStore.load()
-        await onProgress(.loadingFavorites)
-        // Startup snapshot for first paint only — every writer re-reads
-        // the store, so this fallback can never leak into a save.
-        let localFavoriteLibrary = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
+        // The app shell does not consume this snapshot. Keep the complete
+        // bootstrap contract for other callers without putting it on the
+        // shell's critical path; library screens read the store themselves.
+        let localFavoriteLibrary: FavoriteLibraryDocument
+        if includingFavoriteLibrary {
+            await onProgress(.loadingFavorites)
+            localFavoriteLibrary = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
+        } else {
+            localFavoriteLibrary = FavoriteLibraryDocument()
+        }
         return YamiboBootstrapState(
             session: session,
             profile: profile,

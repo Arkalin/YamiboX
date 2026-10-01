@@ -29,8 +29,9 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
             reverse: reverse,
             page: page,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            cancellationPolicy: .completeStartedRequest
+            cancellationPolicy: .propagateCancellation
         )
+        try Task.checkCancellation()
         let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
             try ForumThreadPageHTMLParser.parsePage(
                 from: html,
@@ -54,8 +55,9 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
             authorID: context.authorID,
             page: page,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            cancellationPolicy: .completeStartedRequest
+            cancellationPolicy: .propagateCancellation
         )
+        try Task.checkCancellation()
         let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
             try ForumThreadPageHTMLParser.parsePage(
                 from: html,

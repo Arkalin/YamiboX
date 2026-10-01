@@ -141,7 +141,10 @@ final class FavoriteLibraryOrganizer {
     /// `reload()` via one batched `MangaDirectoryBatchReading.directories
     /// (containingTIDs:)` call — never recomputed per render (the design
     /// doc's performance constraint #2).
-    @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:]
+    @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:] {
+        didSet { mangaDirectoriesRevision &+= 1 }
+    }
+    private(set) var mangaDirectoriesRevision: UInt64 = 0
     /// Includes mode-off members so changing presentation never hides an existing update.
     var unreadMangaDirectoriesByTID: [String: MangaDirectory] = [:] {
         didSet { unreadDirectoriesRevision &+= 1 }
@@ -154,6 +157,42 @@ final class FavoriteLibraryOrganizer {
         didSet { cachedSourceFilterLabels = nil }
     }
     @ObservationIgnored private var cachedSourceFilterLabels: FavoriteSourceFilterLabels?
+
+    private struct SelectionLocationCacheKey: Equatable {
+        let documentRevision: UInt64
+        let directoriesRevision: UInt64
+        let boardReaderSettings: BoardReaderSettings
+        let memberScopeGroupKey: String?
+        let selectedFavoriteIDs: Set<String>
+    }
+    @ObservationIgnored private var cachedSelectionLocations: (
+        key: SelectionLocationCacheKey, snapshot: LocalFavoriteLocationMembershipSnapshot
+    )?
+
+    /// Presentation cache only. Commands still expand the current selection
+    /// independently and commit against the latest persisted document.
+    var selectionLocationSnapshot: LocalFavoriteLocationMembershipSnapshot {
+        // Read observable revisions even on a cache hit. Directory metadata
+        // is otherwise observation-ignored, and a same-count replacement of
+        // items or directories must still invalidate the displayed states.
+        let key = SelectionLocationCacheKey(
+            documentRevision: unreadItemsRevision,
+            directoriesRevision: mangaDirectoriesRevision,
+            boardReaderSettings: boardReaderSettings,
+            memberScopeGroupKey: selectedMergedGroupKey,
+            selectedFavoriteIDs: selection.selectedFavoriteIDs
+        )
+        if let cachedSelectionLocations, cachedSelectionLocations.key == key {
+            return cachedSelectionLocations.snapshot
+        }
+        let ids = expandedSelectionFavoriteIDs(key.selectedFavoriteIDs)
+        let snapshot = LocalFavoriteLocationMembershipSnapshot(
+            items: document.items.filter { ids.contains($0.id) },
+            displayedItemCount: ids.count
+        )
+        cachedSelectionLocations = (key, snapshot)
+        return snapshot
+    }
 
     private var sourceFilterLabels: FavoriteSourceFilterLabels {
         let items = document.items // Keep the observable document dependency on warm reads.
