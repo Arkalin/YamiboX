@@ -227,7 +227,15 @@ public enum NovelReaderProjectionBuilder {
         textOccurrenceByChapter: inout [NovelChapterIdentity: Int],
         imageOccurrenceByChapter: inout [NovelChapterIdentity: Int]
     ) -> NovelReaderSegmentSemantics? {
-        guard let chapterIdentity else { return nil }
+        guard let chapterIdentity else {
+            if case .text = segment {
+                return NovelReaderSegmentSemantics(
+                    inlineTextStyles: inlineTextStyles,
+                    blockTextStyles: blockTextStyles
+                )
+            }
+            return nil
+        }
         switch segment {
         case let .text(text, chapterTitle):
             let textOccurrence = textOccurrenceByChapter[chapterIdentity] ?? 0
@@ -292,15 +300,35 @@ private enum NovelReaderPostHTMLProjectionParser {
 
     private struct StyledCharacter {
         var character: Character
-        var isBold: Bool
+        var format: InlineFormat
         var isQuote: Bool
+        var ruby: RubyMarker?
+    }
+
+    private struct InlineFormat: Equatable {
+        var bold = false
+        var italic = false
+        var underline = false
+        var strikethrough = false
+        var foregroundHex: String?
+        var backgroundHex: String?
+    }
+
+    private struct RubyMarker: Equatable {
+        var id: Int
+        var text: String
+    }
+
+    private struct ActiveInline: Equatable {
+        var colorHex: String?
+        var ruby: RubyMarker?
     }
 
     static func project(post: ForumThreadPost) throws -> NovelReaderProjectedPost {
         let fragment = try KannaSoup.parseBodyFragment(post.contentHTML, baseURL: YamiboDomain.baseURL.absoluteString)
         let body = fragment.body() ?? fragment
         let isReplyToOther = ForumPostReplyReferenceParser.parse(in: body) != nil
-        body.select("i").remove()
+        body.select("i.pstatus").remove()
         let attachmentImageURLs = NovelReaderAttachmentFilter.removeFileAttachments(from: body)
 
         let text = readableText(from: body)
@@ -389,35 +417,65 @@ private enum NovelReaderPostHTMLProjectionParser {
             text = []
         }
 
-        func appendText(_ value: String, isBold: Bool, isQuote: Bool) {
+        func appendText(_ value: String, format: InlineFormat, isQuote: Bool, ruby: RubyMarker?) {
             for character in value {
-                text.append(StyledCharacter(character: character, isBold: isBold, isQuote: isQuote))
+                text.append(StyledCharacter(character: character, format: format, isQuote: isQuote, ruby: ruby))
             }
         }
 
-        func appendInlineBoundarySpace(isBold: Bool, isQuote: Bool) {
-            guard let last = text.last, !last.character.isWhitespace else { return }
-            text.append(StyledCharacter(character: " ", isBold: isBold, isQuote: isQuote))
-        }
-
-        func appendSegments(from node: Node, isBold: Bool, isQuote: Bool) {
+        var nextRubyID = 0
+        func appendSegments(from node: Node, format: InlineFormat, isQuote: Bool, ruby: RubyMarker?) {
             if let textNode = node as? TextNode {
                 appendText(
                     textNode
                         .getWholeText()
                         .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression),
-                    isBold: isBold,
-                    isQuote: isQuote
+                    format: format,
+                    isQuote: isQuote,
+                    ruby: ruby
                 )
                 return
             }
 
             if let element = node as? Element {
                 let tagName = element.tagName().lowercased()
-                let nextBold = resolvedBoldState(for: element, tagName: tagName, inheritedBold: isBold)
+                if tagName == "rt" || tagName == "rp" { return }
+                let nextFormat = resolvedFormat(for: element, tagName: tagName, inherited: format)
                 let nextQuote = isQuote || isQuoteBlock(element, tagName: tagName)
+                if tagName == "ruby" {
+                    // Each direct rt labels the base nodes immediately before it.
+                    // One marker for the entire ruby element would misalign paired
+                    // rb/rt groups such as 漢/かん and 字/じ.
+                    var baseNodes: [Node] = []
+                    for child in element.getChildNodes() {
+                        let childTag = (child as? Element)?.tagName().lowercased()
+                        if childTag == "rp" { continue }
+                        if childTag == "rt" {
+                            let annotation = (child as? Element)?.text()
+                                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                            let marker: RubyMarker?
+                            if annotation.isEmpty {
+                                marker = ruby
+                            } else {
+                                nextRubyID += 1
+                                marker = RubyMarker(id: nextRubyID, text: annotation)
+                            }
+                            for base in baseNodes {
+                                appendSegments(from: base, format: nextFormat, isQuote: nextQuote, ruby: marker)
+                            }
+                            baseNodes.removeAll(keepingCapacity: true)
+                        } else {
+                            baseNodes.append(child)
+                        }
+                    }
+                    for base in baseNodes {
+                        appendSegments(from: base, format: nextFormat, isQuote: nextQuote, ruby: ruby)
+                    }
+                    return
+                }
+                let nextRuby = ruby
                 if tagName == "br" {
-                    appendText("\n", isBold: nextBold, isQuote: nextQuote)
+                    appendText("\n", format: nextFormat, isQuote: nextQuote, ruby: nextRuby)
                     return
                 }
                 if tagName == "img" {
@@ -433,33 +491,26 @@ private enum NovelReaderPostHTMLProjectionParser {
                     return
                 }
                 if tagName == "li" {
-                    appendText("• ", isBold: nextBold, isQuote: nextQuote)
-                }
-                let usesInlineBoundarySpacing = inlineBoundarySpacingTags.contains(tagName)
-                if usesInlineBoundarySpacing {
-                    appendInlineBoundarySpace(isBold: isBold, isQuote: isQuote)
+                    appendText("• ", format: nextFormat, isQuote: nextQuote, ruby: nextRuby)
                 }
 
                 for child in element.getChildNodes() {
-                    appendSegments(from: child, isBold: nextBold, isQuote: nextQuote)
-                }
-                if usesInlineBoundarySpacing {
-                    appendInlineBoundarySpace(isBold: isBold, isQuote: isQuote)
+                    appendSegments(from: child, format: nextFormat, isQuote: nextQuote, ruby: nextRuby)
                 }
 
                 if blockBreakTags.contains(tagName) {
-                    appendText("\n", isBold: nextBold, isQuote: false)
+                    appendText("\n", format: .init(), isQuote: false, ruby: nil)
                 }
                 return
             }
 
             for child in node.getChildNodes() {
-                appendSegments(from: child, isBold: isBold, isQuote: isQuote)
+                appendSegments(from: child, format: format, isQuote: isQuote, ruby: ruby)
             }
         }
 
         for child in body.getChildNodes() {
-            appendSegments(from: child, isBold: false, isQuote: false)
+            appendSegments(from: child, format: .init(), isQuote: false, ruby: nil)
         }
         flushText()
 
@@ -476,6 +527,7 @@ private enum NovelReaderPostHTMLProjectionParser {
 
         if let element = node as? Element {
             let tagName = element.tagName().lowercased()
+            if tagName == "rt" || tagName == "rp" { return }
             if tagName == "br" {
                 value += "\n"
                 return
@@ -499,49 +551,42 @@ private enum NovelReaderPostHTMLProjectionParser {
         }
     }
 
-    private static func resolvedBoldState(
-        for element: Element,
-        tagName: String,
-        inheritedBold: Bool
-    ) -> Bool {
-        var isBold = inheritedBold
-        if tagName == "b" || tagName == "strong" {
-            isBold = true
+    private static func resolvedFormat(for element: Element, tagName: String, inherited: InlineFormat) -> InlineFormat {
+        var result = inherited
+        if tagName == "b" || tagName == "strong" { result.bold = true }
+        if tagName == "i" || tagName == "em" { result.italic = true }
+        if tagName == "u" { result.underline = true }
+        if tagName == "s" || tagName == "strike" || tagName == "del" { result.strikethrough = true }
+        if tagName == "font", let color = ForumTextStyleRules.normalizedColorHex(element.attr("color")) {
+            result.foregroundHex = color
         }
-        if let styleBold = inlineFontWeightBoldState(for: element) {
-            isBold = styleBold
+        let declarations = ForumTextStyleRules.styleDeclarations(from: element.attr("style")).mapValues {
+            $0.replacingOccurrences(of: "!important", with: "", options: .caseInsensitive)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return isBold
+        if let weight = declarations["font-weight"]?.lowercased() {
+            result.bold = weight == "bold" || weight == "bolder" || (Int(weight) ?? 0) >= 600
+        }
+        if let fontStyle = declarations["font-style"]?.lowercased() {
+            result.italic = fontStyle == "italic" || fontStyle == "oblique"
+        }
+        if let decoration = declarations["text-decoration"] ?? declarations["text-decoration-line"] {
+            // A descendant's decoration adds to the ancestor's painted line;
+            // `text-decoration: none` does not remove an outer <u> or <s>.
+            result.underline = result.underline || decoration.contains("underline")
+            result.strikethrough = result.strikethrough || decoration.contains("line-through")
+        }
+        if let color = declarations["color"].flatMap(ForumTextStyleRules.normalizedColorHex) {
+            result.foregroundHex = color
+        }
+        if let color = declarations["background-color"].flatMap(ForumTextStyleRules.normalizedColorHex) {
+            result.backgroundHex = color
+        }
+        return result
     }
 
     private static func isQuoteBlock(_ element: Element, tagName: String) -> Bool {
         tagName == "blockquote" || element.hasClass("quote")
-    }
-
-    private static func inlineFontWeightBoldState(for element: Element) -> Bool? {
-        let style = element.attr("style").lowercased()
-        guard !style.isEmpty else { return nil }
-
-        for declaration in style.split(separator: ";") {
-            let parts = declaration.split(separator: ":", maxSplits: 1).map {
-                $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            guard parts.count == 2, parts[0] == "font-weight" else { continue }
-            let value = parts[1]
-                .replacingOccurrences(of: "!important", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if value == "bold" || value == "bolder" {
-                return true
-            }
-            if value == "normal" || value == "lighter" {
-                return false
-            }
-            let numericPrefix = value.prefix { $0.isNumber }
-            if let weight = Int(numericPrefix) {
-                return weight >= 600
-            }
-        }
-        return nil
     }
 
     private static func normalizeStyledText(
@@ -566,14 +611,10 @@ private enum NovelReaderPostHTMLProjectionParser {
         var normalized: [StyledCharacter] = []
         for (index, line) in lines.enumerated() {
             if index > 0 {
-                let lineBreak = lineBreaks[index - 1]
-                normalized.append(
-                    StyledCharacter(
-                        character: "\n",
-                        isBold: false,
-                        isQuote: lineBreak.isQuote
-                    )
-                )
+                var lineBreak = lineBreaks[index - 1]
+                lineBreak.character = "\n"
+                lineBreak.format = .init()
+                normalized.append(lineBreak)
             }
             normalized.append(contentsOf: normalizeStyledLine(line))
         }
@@ -585,24 +626,29 @@ private enum NovelReaderPostHTMLProjectionParser {
         var outputCount = 0
         var inlineTextStyles: [NovelInlineTextStyleRange] = []
         var blockTextStyles: [NovelBlockTextStyleRange] = []
-        var boldStart: Int?
+        let inlineKinds: [NovelInlineTextStyle] = [
+            .bold, .italic, .underline, .strikethrough, .foregroundColor, .backgroundColor, .ruby
+        ]
+        var active: [NovelInlineTextStyle: (value: ActiveInline, start: Int)] = [:]
         var quoteStart: Int?
         for character in normalized {
             let location = outputCount
-            if character.isBold {
-                if boldStart == nil {
-                    boldStart = location
+            for kind in inlineKinds {
+                let next = inlineValue(for: kind, character: character)
+                if let previous = active[kind], previous.value != next {
+                    if location > previous.start {
+                        inlineTextStyles.append(.init(
+                            style: kind,
+                            range: NovelCharacterRange(location: previous.start, length: location - previous.start),
+                            colorHex: previous.value.colorHex,
+                            rubyText: previous.value.ruby?.text
+                        ))
+                    }
+                    active[kind] = nil
                 }
-            } else if let start = boldStart {
-                if location > start {
-                    inlineTextStyles.append(
-                        NovelInlineTextStyleRange(
-                            style: .bold,
-                            range: NovelCharacterRange(location: start, length: location - start)
-                        )
-                    )
+                if let next, active[kind] == nil {
+                    active[kind] = (next, location)
                 }
-                boldStart = nil
             }
             if character.isQuote {
                 if quoteStart == nil {
@@ -624,13 +670,14 @@ private enum NovelReaderPostHTMLProjectionParser {
             }
             output.append(character.character)
         }
-        if let start = boldStart, outputCount > start {
-            inlineTextStyles.append(
-                NovelInlineTextStyleRange(
-                    style: .bold,
-                    range: NovelCharacterRange(location: start, length: outputCount - start)
-                )
-            )
+        for kind in inlineKinds {
+            guard let previous = active[kind], outputCount > previous.start else { continue }
+            inlineTextStyles.append(.init(
+                style: kind,
+                range: NovelCharacterRange(location: previous.start, length: outputCount - previous.start),
+                colorHex: previous.value.colorHex,
+                rubyText: previous.value.ruby?.text
+            ))
         }
         if let start = quoteStart, outputCount > start {
             blockTextStyles.append(
@@ -643,30 +690,34 @@ private enum NovelReaderPostHTMLProjectionParser {
         return (output, inlineTextStyles, blockTextStyles)
     }
 
+    private static func inlineValue(for style: NovelInlineTextStyle, character: StyledCharacter) -> ActiveInline? {
+        switch style {
+        case .bold: character.format.bold ? ActiveInline() : nil
+        case .italic: character.format.italic ? ActiveInline() : nil
+        case .underline: character.format.underline ? ActiveInline() : nil
+        case .strikethrough: character.format.strikethrough ? ActiveInline() : nil
+        case .foregroundColor: character.format.foregroundHex.map { ActiveInline(colorHex: $0) }
+        case .backgroundColor: character.format.backgroundHex.map { ActiveInline(colorHex: $0) }
+        case .ruby: character.ruby.map { ActiveInline(ruby: $0) }
+        }
+    }
+
     private static func normalizeStyledLineBreaks(_ text: [StyledCharacter]) -> [StyledCharacter] {
         var result: [StyledCharacter] = []
         var index = 0
         while index < text.count {
             let character = text[index]
             if character.character == "\r" {
-                result.append(
-                    StyledCharacter(
-                        character: "\n",
-                        isBold: character.isBold,
-                        isQuote: character.isQuote
-                    )
-                )
+                var replaced = character
+                replaced.character = "\n"
+                result.append(replaced)
                 if index + 1 < text.count, text[index + 1].character == "\n" {
                     index += 1
                 }
             } else if character.character == "\u{00A0}" {
-                result.append(
-                    StyledCharacter(
-                        character: " ",
-                        isBold: character.isBold,
-                        isQuote: character.isQuote
-                    )
-                )
+                var replaced = character
+                replaced.character = " "
+                result.append(replaced)
             } else {
                 result.append(character)
             }
@@ -677,29 +728,38 @@ private enum NovelReaderPostHTMLProjectionParser {
 
     private static func normalizeStyledLine(_ line: [StyledCharacter]) -> [StyledCharacter] {
         var result: [StyledCharacter] = []
-        var pendingWhitespaceIsBold = false
+        var pendingWhitespaceFormat = InlineFormat()
         var pendingWhitespaceIsQuote = false
+        var pendingWhitespaceRuby: RubyMarker?
         var hasPendingWhitespace = false
 
         for character in line {
             if character.character == " " || character.character == "\t" {
                 hasPendingWhitespace = true
-                pendingWhitespaceIsBold = pendingWhitespaceIsBold || character.isBold
+                pendingWhitespaceFormat.bold = pendingWhitespaceFormat.bold || character.format.bold
+                pendingWhitespaceFormat.italic = pendingWhitespaceFormat.italic || character.format.italic
+                pendingWhitespaceFormat.underline = pendingWhitespaceFormat.underline || character.format.underline
+                pendingWhitespaceFormat.strikethrough = pendingWhitespaceFormat.strikethrough || character.format.strikethrough
+                pendingWhitespaceFormat.foregroundHex = character.format.foregroundHex ?? pendingWhitespaceFormat.foregroundHex
+                pendingWhitespaceFormat.backgroundHex = character.format.backgroundHex ?? pendingWhitespaceFormat.backgroundHex
                 pendingWhitespaceIsQuote = pendingWhitespaceIsQuote || character.isQuote
+                pendingWhitespaceRuby = character.ruby ?? pendingWhitespaceRuby
                 continue
             }
             if hasPendingWhitespace, !result.isEmpty {
                 result.append(
                     StyledCharacter(
                         character: " ",
-                        isBold: pendingWhitespaceIsBold,
-                        isQuote: pendingWhitespaceIsQuote
+                        format: pendingWhitespaceFormat,
+                        isQuote: pendingWhitespaceIsQuote,
+                        ruby: pendingWhitespaceRuby
                     )
                 )
             }
             hasPendingWhitespace = false
-            pendingWhitespaceIsBold = false
+            pendingWhitespaceFormat = .init()
             pendingWhitespaceIsQuote = false
+            pendingWhitespaceRuby = nil
             result.append(character)
         }
 
@@ -713,13 +773,9 @@ private enum NovelReaderPostHTMLProjectionParser {
             if character.character == "\n" {
                 newlineCount += 1
                 if newlineCount <= 2 {
-                    result.append(
-                        StyledCharacter(
-                            character: "\n",
-                            isBold: false,
-                            isQuote: character.isQuote
-                        )
-                    )
+                    var lineBreak = character
+                    lineBreak.format = .init()
+                    result.append(lineBreak)
                 }
             } else {
                 newlineCount = 0
@@ -807,12 +863,6 @@ private enum NovelReaderPostHTMLProjectionParser {
         "blockquote"
     ]
 
-    private static let inlineBoundarySpacingTags: Set<String> = [
-        "b",
-        "strong",
-        "span",
-        "font"
-    ]
 }
 
 /// Matches the original raw substrings, including references occurring outside
@@ -932,7 +982,9 @@ private enum NovelPostContentProjector {
                         range: NovelCharacterRange(
                             location: start + style.range.location,
                             length: style.range.length
-                        )
+                        ),
+                        colorHex: style.colorHex,
+                        rubyText: style.rubyText
                     )
                 }
             )
@@ -987,7 +1039,9 @@ private enum NovelPostContentProjector {
             guard end > start else { return nil }
             return NovelInlineTextStyleRange(
                 style: style.style,
-                range: NovelCharacterRange(location: start, length: end - start)
+                range: NovelCharacterRange(location: start, length: end - start),
+                colorHex: style.colorHex,
+                rubyText: style.rubyText
             )
         }
 
@@ -1073,7 +1127,7 @@ private enum NovelPostContentProjector {
             let novelText = textExcludingInlineEmoticons(in: textBlock)
             buffer.append(
                 novelText.text,
-                inlineStyles: novelText.boldRanges,
+                inlineStyles: novelText.inlineStyles,
                 isQuote: isQuote
             )
 
@@ -1172,10 +1226,10 @@ private enum NovelPostContentProjector {
 
     private static func textExcludingInlineEmoticons(
         in textBlock: ForumThreadTextBlock
-    ) -> (text: String, boldRanges: [NovelInlineTextStyleRange]) {
+    ) -> (text: String, inlineStyles: [NovelInlineTextStyleRange]) {
         let removedIndexes = Set(textBlock.inlineImages.map(\.start))
         guard !removedIndexes.isEmpty else {
-            return (textBlock.text, boldRanges(in: textBlock, removedBefore: { _ in 0 }))
+            return (textBlock.text, inlineStyleRanges(in: textBlock, removedBefore: { _ in 0 }))
         }
         var text = ""
         var removedPrefix = [Int](repeating: 0, count: textBlock.text.count + 1)
@@ -1183,25 +1237,42 @@ private enum NovelPostContentProjector {
             removedPrefix[index + 1] = removedPrefix[index] + (removedIndexes.contains(index) ? 1 : 0)
             if !removedIndexes.contains(index) { text.append(character) }
         }
-        return (text, boldRanges(in: textBlock) { offset in
+        return (text, inlineStyleRanges(in: textBlock) { offset in
             removedPrefix[min(max(offset, 0), removedPrefix.count - 1)]
         })
     }
 
-    private static func boldRanges(
+    private static func inlineStyleRanges(
         in textBlock: ForumThreadTextBlock,
         removedBefore: (Int) -> Int
     ) -> [NovelInlineTextStyleRange] {
-        textBlock.styleRuns.compactMap { run in
-            guard run.style.isBold, run.length > 0 else { return nil }
+        var styles: [NovelInlineTextStyleRange] = []
+        for run in textBlock.styleRuns where run.length > 0 {
             let start = run.start - removedBefore(run.start)
             let end = run.start + run.length - removedBefore(run.start + run.length)
-            guard end > start else { return nil }
-            return NovelInlineTextStyleRange(
-                style: .bold,
-                range: NovelCharacterRange(location: start, length: end - start)
-            )
+            guard end > start else { continue }
+            let range = NovelCharacterRange(location: start, length: end - start)
+            if run.style.isBold { styles.append(.init(style: .bold, range: range)) }
+            if run.style.isItalic { styles.append(.init(style: .italic, range: range)) }
+            if run.style.isUnderline { styles.append(.init(style: .underline, range: range)) }
+            if run.style.isStrikethrough { styles.append(.init(style: .strikethrough, range: range)) }
+            if let color = run.style.foregroundHex {
+                styles.append(.init(style: .foregroundColor, range: range, colorHex: color))
+            }
+            if let color = run.style.backgroundHex {
+                styles.append(.init(style: .backgroundColor, range: range, colorHex: color))
+            }
         }
+        styles.append(contentsOf: textBlock.rubies.compactMap { ruby in
+            guard ruby.length > 0, !ruby.rubyText.isEmpty else { return nil }
+            let start = ruby.start - removedBefore(ruby.start)
+            let end = ruby.start + ruby.length - removedBefore(ruby.start + ruby.length)
+            guard end > start else { return nil }
+            return .init(style: .ruby,
+                         range: NovelCharacterRange(location: start, length: end - start),
+                         rubyText: ruby.rubyText)
+        })
+        return styles
     }
 
     private static func readableTextFragments(

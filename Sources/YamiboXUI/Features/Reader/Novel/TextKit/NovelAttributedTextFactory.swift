@@ -7,6 +7,17 @@ typealias ReaderPlatformFont = UIFont
 typealias ReaderPlatformFontDescriptor = UIFontDescriptor
 typealias ReaderPlatformFontWeight = UIFont.Weight
 
+extension NSAttributedString.Key {
+    static let novelRuby = NSAttributedString.Key("yamibo.novel.ruby")
+    static let novelAuthoredBackground = NSAttributedString.Key("yamibo.novel.authoredBackground")
+}
+
+final class NovelRubyAnnotation: NSObject {
+    let text: String
+
+    init(text: String) { self.text = text }
+}
+
 /// Owns the Novel Text Attributed Document semantics for TextKit measurement
 /// and drawing: chapter title styling, paragraph indentation, font family,
 /// kerning, line height, and justification.
@@ -43,6 +54,7 @@ enum NovelAttributedTextFactory {
                     text: text,
                     chapterTitleRange: annotatedSegment.semantics?.chapterTitleRange,
                     inlineTextStyles: annotatedSegment.semantics?.inlineTextStyles ?? [],
+                    blockTextStyles: annotatedSegment.semantics?.blockTextStyles ?? [],
                     settings: preparedInput.settings
                 )
             )
@@ -114,6 +126,7 @@ enum NovelAttributedTextFactory {
         text: String,
         chapterTitleRange: NSRange?,
         inlineTextStyles: [NovelRuntimeInlineTextStyle] = [],
+        blockTextStyles: [NovelRuntimeBlockTextStyle] = [],
         startsAtParagraphBoundary: Bool = true,
         settings: NovelReaderAppearanceSettings,
         baseFontSize: Double = defaultBaseFontSize,
@@ -145,6 +158,8 @@ enum NovelAttributedTextFactory {
         }
         applyInlineTextStyles(
             inlineTextStyles,
+            blockTextStyles: blockTextStyles,
+            chapterTitleRange: titleRange(from: chapterTitleRange, in: text),
             to: rendered,
             text: text,
             settings: settings,
@@ -252,22 +267,105 @@ enum NovelAttributedTextFactory {
 
     private static func applyInlineTextStyles(
         _ inlineTextStyles: [NovelRuntimeInlineTextStyle],
+        blockTextStyles: [NovelRuntimeBlockTextStyle],
+        chapterTitleRange: NSRange?,
         to rendered: NSMutableAttributedString,
         text: String,
         settings: NovelReaderAppearanceSettings,
         pointSize: Double
     ) {
-        for inlineStyle in inlineTextStyles {
-            guard inlineStyle.style == .bold,
-                  let range = textRange(from: inlineStyle.range, in: text) else {
-                continue
-            }
-            rendered.addAttribute(
-                .font,
-                value: settings.readerFont(size: pointSize, weight: .bold),
-                range: range
-            )
+        let enabled = settings.forumFormat
+        let valid = inlineTextStyles.compactMap { style -> (NovelRuntimeInlineTextStyle, NSRange)? in
+            textRange(from: style.range, in: text).map { (style, $0) }
         }
+        let title = rendered.length > 0 ? rendered.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : nil
+        let fontStyles = valid.filter {
+            ($0.0.style == .bold && enabled.bold) || ($0.0.style == .italic && enabled.italic)
+        }
+        if !fontStyles.isEmpty {
+            let titleEdges = chapterTitleRange.map { [$0.location, NSMaxRange($0)] } ?? []
+            let boundaries = Set([0, rendered.length] + titleEdges
+                                 + fontStyles.flatMap { [$0.1.location, NSMaxRange($0.1)] }).sorted()
+            for (start, end) in zip(boundaries, boundaries.dropFirst()) where end > start {
+                let isBold = fontStyles.contains { $0.0.style == .bold && NSLocationInRange(start, $0.1) }
+                let isItalic = fontStyles.contains { $0.0.style == .italic && NSLocationInRange(start, $0.1) }
+                guard isBold || isItalic else { continue }
+                let current = rendered.attribute(.font, at: start, effectiveRange: nil) as? UIFont ?? title
+                let titleIsBold = chapterTitleRange.map { NSLocationInRange(start, $0) } == true
+                    || current?.fontDescriptor.symbolicTraits.contains(.traitBold) == true
+                let base = settings.readerFont(size: pointSize, weight: isBold || titleIsBold ? .bold : .light)
+                rendered.addAttribute(.font, value: isItalic ? italicFont(base) : base,
+                                      range: NSRange(location: start, length: end - start))
+            }
+        }
+
+        for (style, range) in valid {
+            switch style.style {
+            case .underline where enabled.underline:
+                rendered.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            case .strikethrough where enabled.strikethrough:
+                rendered.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            case .ruby where enabled.ruby:
+                if let annotation = style.rubyText, !annotation.isEmpty {
+                    rendered.addAttribute(.novelRuby, value: NovelRubyAnnotation(text: annotation), range: range)
+                }
+            default:
+                break
+            }
+        }
+
+        let colors = valid.filter {
+            ($0.0.style == .foregroundColor && enabled.textColor && $0.0.colorHex != nil) ||
+            ($0.0.style == .backgroundColor && enabled.backgroundColor && $0.0.colorHex != nil)
+        }
+        if !colors.isEmpty {
+            let quoteRanges = enabled.quote ? blockTextStyles.compactMap { textRange(from: $0.range, in: text) } : []
+            let boundaries = Set([0, rendered.length] + colors.flatMap { [$0.1.location, NSMaxRange($0.1)] }
+                                 + quoteRanges.flatMap { [$0.location, NSMaxRange($0)] }).sorted()
+            for (start, end) in zip(boundaries, boundaries.dropFirst()) where end > start {
+                let foreground = colors.last { $0.0.style == .foregroundColor && NSLocationInRange(start, $0.1) }?.0.colorHex
+                let background = colors.last { $0.0.style == .backgroundColor && NSLocationInRange(start, $0.1) }?.0.colorHex
+                guard foreground != nil || background != nil else { continue }
+                let isQuote = quoteRanges.contains { NSLocationInRange(start, $0) }
+                if let background, let color = NovelForumColorRenderer.color(hex: background) {
+                    rendered.addAttribute(.novelAuthoredBackground, value: color,
+                                          range: NSRange(location: start, length: end - start))
+                }
+                rendered.addAttribute(.foregroundColor,
+                    value: NovelForumColorRenderer.foreground(authoredHex: foreground, backgroundHex: background,
+                                                               isQuote: isQuote, settings: settings),
+                    range: NSRange(location: start, length: end - start))
+            }
+        }
+
+        if enabled.ruby, rendered.length > 0 {
+            let extra = ceil(pointSize * 0.5) + 2
+            var paragraphRanges: [NSRange] = []
+            rendered.enumerateAttribute(.novelRuby, in: NSRange(location: 0, length: rendered.length)) { value, range, _ in
+                guard value != nil else { return }
+                paragraphRanges.append((text as NSString).paragraphRange(for: range))
+            }
+            for range in Set(paragraphRanges) where range.length > 0 {
+                guard let paragraph = rendered.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle,
+                      let adjusted = paragraph.mutableCopy() as? NSMutableParagraphStyle else { continue }
+                adjusted.lineSpacing += extra
+                adjusted.paragraphSpacingBefore = max(adjusted.paragraphSpacingBefore, extra)
+                rendered.addAttribute(.paragraphStyle, value: adjusted, range: range)
+            }
+        }
+    }
+
+    private static func italicFont(_ font: UIFont) -> UIFont {
+        if let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) {
+            let candidate = UIFont(descriptor: descriptor, size: font.pointSize)
+            if candidate.familyName == font.familyName,
+               candidate.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+                return candidate
+            }
+        }
+        return UIFont(descriptor: font.fontDescriptor.withMatrix(
+            CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
+        ), size: font.pointSize)
     }
 
     private static func textRange(

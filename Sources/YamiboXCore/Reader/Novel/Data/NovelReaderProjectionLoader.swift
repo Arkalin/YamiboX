@@ -110,7 +110,7 @@ private struct NovelProjectionAdapter: ReaderThreadPageProjectionAdapter {
     typealias Identity = NovelProjectionIdentity
     typealias Projection = NovelReaderProjection
 
-    private static let projectionSchemaVersion = 4
+    private static let projectionSchemaVersion = 5
 
     let client: YamiboClient
     let projectionStore: NovelReaderProjectionStore

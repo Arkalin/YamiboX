@@ -262,6 +262,12 @@ final class NovelReaderRuntimeUpdateCoordinator {
 
 private extension NovelReaderAppearanceSettings {
     func isSurfaceOnlyAppearanceChange(to other: NovelReaderAppearanceSettings) -> Bool {
+        // Authored ink is contrast-adjusted against the paper color in the
+        // attributed document, so a theme change must rebuild its attributes.
+        if forumFormat.textColor || forumFormat.backgroundColor || forumFormat.quote,
+           backgroundStyle != other.backgroundStyle {
+            return false
+        }
         // Quiet changes the attributed glyph color, not just the page background.
         // Rebuild on entry and exit so the live TextKit graph cannot retain old text colors.
         if backgroundStyle != other.backgroundStyle,

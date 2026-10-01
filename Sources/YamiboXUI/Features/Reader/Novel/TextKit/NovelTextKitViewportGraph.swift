@@ -244,55 +244,87 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         context.saveGState()
         context.clip(to: pageClipRect)
         context.translateBy(x: bounds.minX, y: bounds.minY - surfaceOriginY)
-        context.setFillColor(quoteBlockBackgroundColor().cgColor)
-        for blockStyle in visibleQuoteStyles(in: pageDocumentRange) {
-            let quoteRange = NovelDocumentUTF16Offset(blockStyle.range.location)..<NovelDocumentUTF16Offset(NSMaxRange(blockStyle.range))
-            guard let visibleQuoteRange = intersection(quoteRange, pageDocumentRange),
-                  let utf16Range = utf16Range(for: visibleQuoteRange),
-                  let start = textContentStorage.location(
-                    textContentStorage.documentRange.location,
-                    offsetBy: utf16Range.location
-                  ),
-                  let end = textContentStorage.location(start, offsetBy: utf16Range.length),
-                  let textRange = NSTextRange(location: start, end: end) else {
-                continue
-            }
-
-            var backgroundRect: CGRect?
-            textLayoutManager.enumerateTextSegments(
-                in: textRange,
-                type: .standard,
-                options: []
-            ) { _, rect, _, _ in
-                var clippedRect = rect
-                if let documentClipRange {
-                    clippedRect = clippedRect.intersection(documentClipRange)
+        if settings.forumFormat.quote {
+            context.setFillColor(NovelForumColorRenderer.quoteBackground(for: settings).cgColor)
+            for blockStyle in visibleQuoteStyles(in: pageDocumentRange) {
+                let quoteRange = NovelDocumentUTF16Offset(blockStyle.range.location)..<NovelDocumentUTF16Offset(NSMaxRange(blockStyle.range))
+                guard let visibleQuoteRange = intersection(quoteRange, pageDocumentRange),
+                      let utf16Range = utf16Range(for: visibleQuoteRange),
+                      let start = textContentStorage.location(
+                        textContentStorage.documentRange.location,
+                        offsetBy: utf16Range.location
+                      ),
+                      let end = textContentStorage.location(start, offsetBy: utf16Range.length),
+                      let textRange = NSTextRange(location: start, end: end) else {
+                    continue
                 }
-                guard !clippedRect.isNull,
-                      clippedRect.width.isFinite,
-                      clippedRect.height.isFinite,
-                      clippedRect.width > 0,
-                      clippedRect.height > 0 else {
+
+                var backgroundRect: CGRect?
+                textLayoutManager.enumerateTextSegments(
+                    in: textRange,
+                    type: .standard,
+                    options: []
+                ) { _, rect, _, _ in
+                    var clippedRect = rect
+                    if let documentClipRange {
+                        clippedRect = clippedRect.intersection(documentClipRange)
+                    }
+                    guard !clippedRect.isNull,
+                          clippedRect.width.isFinite,
+                          clippedRect.height.isFinite,
+                          clippedRect.width > 0,
+                          clippedRect.height > 0 else {
+                        return true
+                    }
+                    let paddedRect = clippedRect.insetBy(dx: -10, dy: -6)
+                    backgroundRect = backgroundRect.map { $0.union(paddedRect) } ?? paddedRect
                     return true
                 }
-                let paddedRect = clippedRect.insetBy(dx: -10, dy: -6)
-                backgroundRect = backgroundRect.map { $0.union(paddedRect) } ?? paddedRect
+
+                guard let backgroundRect,
+                      backgroundRect.width > 0,
+                      backgroundRect.height > 0 else {
+                    continue
+                }
+                let path = UIBezierPath(
+                    roundedRect: backgroundRect,
+                    cornerRadius: min(8, max(backgroundRect.height / 2, 0))
+                ).cgPath
+                context.addPath(path)
+                context.fillPath()
+            }
+        }
+        drawAuthoredBackgrounds(pageDocumentRange: pageDocumentRange,
+                                documentClipRange: documentClipRange, in: context)
+        context.restoreGState()
+    }
+
+    private func drawAuthoredBackgrounds(
+        pageDocumentRange: Range<NovelDocumentUTF16Offset>,
+        documentClipRange: CGRect?,
+        in context: CGContext
+    ) {
+        guard settings.forumFormat.backgroundColor,
+              let attributed = textContentStorage.textStorage,
+              pageDocumentRange.upperBound.rawValue <= attributed.length else { return }
+        let range = NSRange(location: pageDocumentRange.lowerBound.rawValue,
+                            length: pageDocumentRange.upperBound - pageDocumentRange.lowerBound)
+        attributed.enumerateAttribute(.novelAuthoredBackground, in: range) { value, run, _ in
+            guard let color = value as? UIColor,
+                  let start = textContentStorage.location(textContentStorage.documentRange.location,
+                                                          offsetBy: run.location),
+                  let end = textContentStorage.location(start, offsetBy: run.length),
+                  let textRange = NSTextRange(location: start, end: end) else { return }
+            context.setFillColor(color.cgColor)
+            textLayoutManager.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, rect, _, _ in
+                let clipped = documentClipRange.map { rect.intersection($0) } ?? rect
+                guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return true }
+                let highlight = clipped.insetBy(dx: -2, dy: -1)
+                context.addPath(UIBezierPath(roundedRect: highlight, cornerRadius: 3).cgPath)
+                context.fillPath()
                 return true
             }
-
-            guard let backgroundRect,
-                  backgroundRect.width > 0,
-                  backgroundRect.height > 0 else {
-                continue
-            }
-            let path = UIBezierPath(
-                roundedRect: backgroundRect,
-                cornerRadius: min(8, max(backgroundRect.height / 2, 0))
-            ).cgPath
-            context.addPath(path)
-            context.fillPath()
         }
-        context.restoreGState()
     }
 
     @discardableResult
@@ -306,7 +338,7 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
               let pageLocation = pageStartLocation(page: page) else {
             return false
         }
-        let documentRange = page.frozenGeometry.map {
+        let visibleDocumentRange = page.frozenGeometry.map {
             $0.documentStartOffset.rawValue..<$0.documentEndOffset.rawValue
         }
         let clipMaxY = page.frozenGeometry.map {
@@ -336,20 +368,20 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             guard fragment.layoutFragmentFrame.maxY >= surfaceOriginY else {
                 return true
             }
-            if let documentRange {
+            if let visibleDocumentRange {
                 var shouldContinue = true
                 var lineClipRects: [CGRect] = []
                 for lineFragment in fragment.textLineFragments {
                     let lineStart = fragmentStart + lineFragment.characterRange.location
                     let lineEnd = lineStart + lineFragment.characterRange.length
-                    if lineStart >= documentRange.upperBound {
+                    if lineStart >= visibleDocumentRange.upperBound {
                         shouldContinue = false
                         break
                     }
                     guard NovelTextViewportDrawingGeometry.fragmentStartsInDocumentRange(
                         fragmentStart: lineStart,
                         fragmentEnd: lineEnd,
-                        documentRange: documentRange
+                        documentRange: visibleDocumentRange
                     ) else {
                         continue
                     }
@@ -379,8 +411,80 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
             fragment.draw(at: fragment.layoutFragmentFrame.origin, in: context)
             return true
         }
+        drawRuby(pageDocumentRange: page.frozenGeometry.map {
+            $0.documentStartOffset..<$0.documentEndOffset
+        } ?? documentRange(for: page))
         context.restoreGState()
         return true
+    }
+
+    private func drawRuby(pageDocumentRange: Range<NovelDocumentUTF16Offset>?) {
+        guard settings.forumFormat.ruby, let pageDocumentRange,
+              let attributed = textContentStorage.textStorage,
+              pageDocumentRange.upperBound.rawValue <= attributed.length else { return }
+        let range = NSRange(location: pageDocumentRange.lowerBound.rawValue,
+                            length: pageDocumentRange.upperBound - pageDocumentRange.lowerBound)
+        let documentStart = textContentStorage.documentRange.location
+        attributed.enumerateAttribute(.novelRuby, in: range) { value, run, _ in
+            guard let annotation = value as? NovelRubyAnnotation,
+                  let start = textContentStorage.location(documentStart, offsetBy: run.location),
+                  let end = textContentStorage.location(start, offsetBy: run.length),
+                  let textRange = NSTextRange(location: start, end: end) else { return }
+            var original = NSRange()
+            _ = attributed.attribute(.novelRuby, at: run.location, effectiveRange: &original)
+            let baseCoordinates = NovelTextCoordinateIndex(
+                (attributed.string as NSString).substring(with: original)
+            )
+            let fontSize = NovelAttributedTextFactory.defaultBaseFontSize * settings.fontScale * 0.5
+            let font = settings.readerFont(size: fontSize, weight: .light)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            let baseAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: (attributed.attribute(.foregroundColor, at: run.location,
+                                                       effectiveRange: nil) as? UIColor)
+                    ?? readerThemeTextUIColor(for: settings.backgroundStyle),
+                .paragraphStyle: paragraph,
+            ]
+            let rubyCharacters = Array(annotation.text)
+            textLayoutManager.enumerateTextSegments(in: textRange, type: .standard, options: []) { segment, rect, _, _ in
+                guard let segment, rect.width > 0, rect.height > 0 else { return true }
+                let startOffset = textContentStorage.offset(from: documentStart, to: segment.location)
+                let endOffset = textContentStorage.offset(from: documentStart, to: segment.endLocation)
+                guard startOffset != NSNotFound, endOffset != NSNotFound,
+                      baseCoordinates.characterCount > 0 else { return true }
+                let firstBase = baseCoordinates.characterOffset(
+                    forUTF16Offset: startOffset - original.location
+                )
+                let lastBase = baseCoordinates.characterOffset(
+                    forUTF16Offset: endOffset - original.location, roundingUp: true
+                )
+                let first = min((firstBase * rubyCharacters.count + baseCoordinates.characterCount - 1)
+                    / baseCoordinates.characterCount, rubyCharacters.count)
+                let last = min((lastBase * rubyCharacters.count + baseCoordinates.characterCount - 1)
+                    / baseCoordinates.characterCount, rubyCharacters.count)
+                guard last > first else { return true }
+                let label = String(rubyCharacters[first..<last])
+                var attributes = baseAttributes
+                let availableWidth = max(rect.width, 1)
+                let naturalWidth = (label as NSString).size(withAttributes: attributes).width
+                if naturalWidth > availableWidth {
+                    attributes[.font] = settings.readerFont(
+                        size: fontSize * Double(availableWidth / naturalWidth), weight: .light
+                    )
+                }
+                let height = ceil((attributes[.font] as? UIFont ?? font).lineHeight)
+                let lineFragment = textLayoutManager.textLayoutFragment(for: segment.location)
+                let lineTop = lineFragment.flatMap { fragment in
+                    fragment.textLineFragment(for: segment.location, isUpstreamAffinity: false)
+                        .map { line in fragment.layoutFragmentFrame.minY + line.typographicBounds.minY }
+                } ?? rect.minY
+                let labelRect = CGRect(x: rect.minX, y: lineTop - height - 2,
+                                       width: availableWidth, height: height)
+                (label as NSString).draw(in: labelRect, withAttributes: attributes)
+                return true
+            }
+        }
     }
 
     private func page(forSurfaceOrdinal surfaceOrdinal: Int) -> NovelTextViewportIndexSurface? {
@@ -506,25 +610,4 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         return NSRange(location: aligned.lowerBound, length: aligned.count)
     }
 
-    private func quoteBlockBackgroundColor() -> UIColor {
-        let backgroundStyle = settings.backgroundStyle
-        return UIColor { traits in
-            if traits.userInterfaceStyle == .dark {
-                return UIColor(white: 1, alpha: 0.10)
-            }
-
-            switch backgroundStyle {
-            case .system:
-                return UIColor(white: 1, alpha: 0.58)
-            case .paper:
-                return UIColor(red: 1.0, green: 0.97, blue: 0.88, alpha: 0.68)
-            case .mint:
-                return UIColor(white: 1, alpha: 0.62)
-            case .sakura:
-                return UIColor(white: 1, alpha: 0.60)
-            case .quiet:
-                return UIColor(white: 1, alpha: 0.08)
-            }
-        }
-    }
 }

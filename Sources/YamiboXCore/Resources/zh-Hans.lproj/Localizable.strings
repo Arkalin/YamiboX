@@ -1024,6 +1024,16 @@
 "reader.go_previous_web_page" = "前往上一网页…";
 "reader.horizontal_padding" = "页边空白";
 "reader.inline_images" = "帖子图片";
+"reader.forum_format" = "论坛格式";
+"reader.forum_format.bold" = "粗体";
+"reader.forum_format.italic" = "斜体";
+"reader.forum_format.underline" = "下划线";
+"reader.forum_format.strikethrough" = "删除线";
+"reader.forum_format.text_color" = "文字颜色";
+"reader.forum_format.background_color" = "文字背景色";
+"reader.forum_format.ruby" = "注音";
+"reader.forum_format.quote" = "引用";
+"reader.forum_format.images" = "图片";
 "reader.ios_only" = "Reader is available on iOS only.";
 "reader.jump_web_page" = "跳转网页";
 "reader.justified_text" = "使文本两端对齐";

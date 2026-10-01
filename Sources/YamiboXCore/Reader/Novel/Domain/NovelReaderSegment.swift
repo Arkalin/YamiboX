@@ -101,15 +101,25 @@ public struct NovelCharacterRange: Codable, Hashable, Sendable {
 
 public enum NovelInlineTextStyle: String, Codable, Hashable, Sendable {
     case bold
+    case italic
+    case underline
+    case strikethrough
+    case foregroundColor
+    case backgroundColor
+    case ruby
 }
 
 public struct NovelInlineTextStyleRange: Codable, Hashable, Sendable {
     public var style: NovelInlineTextStyle
     public var range: NovelCharacterRange
+    public var colorHex: String?
+    public var rubyText: String?
 
-    public init(style: NovelInlineTextStyle, range: NovelCharacterRange) {
+    public init(style: NovelInlineTextStyle, range: NovelCharacterRange, colorHex: String? = nil, rubyText: String? = nil) {
         self.style = style
         self.range = range
+        self.colorHex = colorHex
+        self.rubyText = rubyText
     }
 }
 

@@ -56,6 +56,35 @@ public enum ReaderTranslationMode: String, Codable, Hashable, CaseIterable, Send
     }
 }
 
+public struct NovelReaderForumFormatSettings: Codable, Hashable, Sendable {
+    public var bold = true
+    public var italic = true
+    public var underline = true
+    public var strikethrough = true
+    public var textColor = true
+    public var backgroundColor = true
+    public var ruby = true
+    public var quote = true
+
+    public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case bold, italic, underline, strikethrough, textColor, backgroundColor, ruby, quote
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bold = try values.decodeIfPresent(Bool.self, forKey: .bold) ?? true
+        italic = try values.decodeIfPresent(Bool.self, forKey: .italic) ?? true
+        underline = try values.decodeIfPresent(Bool.self, forKey: .underline) ?? true
+        strikethrough = try values.decodeIfPresent(Bool.self, forKey: .strikethrough) ?? true
+        textColor = try values.decodeIfPresent(Bool.self, forKey: .textColor) ?? true
+        backgroundColor = try values.decodeIfPresent(Bool.self, forKey: .backgroundColor) ?? true
+        ruby = try values.decodeIfPresent(Bool.self, forKey: .ruby) ?? true
+        quote = try values.decodeIfPresent(Bool.self, forKey: .quote) ?? true
+    }
+}
+
 public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var isImmersiveModeEnabled: Bool
     public var fontScale: Double
@@ -67,6 +96,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var usesJustifiedText: Bool
     public var indentsParagraphFirstLine: Bool
     public var loadsInlineImages: Bool
+    public var forumFormat: NovelReaderForumFormatSettings
     /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var backgroundStyle: ReaderBackgroundStyle
@@ -85,6 +115,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         usesJustifiedText: Bool = false,
         indentsParagraphFirstLine: Bool = false,
         loadsInlineImages: Bool = true,
+        forumFormat: NovelReaderForumFormatSettings = .init(),
         showsTwoPagesInLandscapeOnPad: Bool = true,
         backgroundStyle: ReaderBackgroundStyle = .system,
         readingMode: ReaderReadingMode = .paged,
@@ -100,6 +131,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         self.usesJustifiedText = usesJustifiedText
         self.indentsParagraphFirstLine = indentsParagraphFirstLine
         self.loadsInlineImages = loadsInlineImages
+        self.forumFormat = forumFormat
         self.showsTwoPagesInLandscapeOnPad = showsTwoPagesInLandscapeOnPad
         self.backgroundStyle = backgroundStyle
         self.isImmersiveModeEnabled = isImmersiveModeEnabled
@@ -119,6 +151,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         case usesJustifiedText
         case indentsParagraphFirstLine
         case loadsInlineImages
+        case forumFormat
         case showsTwoPagesInLandscapeOnPad
         case backgroundStyle
         case readingMode
@@ -144,6 +177,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         usesJustifiedText = try container.decode(Bool.self, forKey: .usesJustifiedText)
         indentsParagraphFirstLine = try container.decode(Bool.self, forKey: .indentsParagraphFirstLine)
         loadsInlineImages = try container.decode(Bool.self, forKey: .loadsInlineImages)
+        forumFormat = try container.decodeIfPresent(NovelReaderForumFormatSettings.self, forKey: .forumFormat) ?? .init()
         showsTwoPagesInLandscapeOnPad = try container.decode(Bool.self, forKey: .showsTwoPagesInLandscapeOnPad)
         backgroundStyle = try container.decode(ReaderBackgroundStyle.self, forKey: .backgroundStyle)
         readingMode = try container.decode(ReaderReadingMode.self, forKey: .readingMode)
