@@ -3,7 +3,12 @@ import YamiboXCore
 
 struct UserSpaceView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.forumBlacklist) private var blacklist
     @State private var model: UserSpaceViewModel
+    @State private var pendingBlockUID: String?
+    @State private var blockErrorMessage: String?
+    @State private var blockErrorDetails: LoadFailureDetails?
+    @State private var blockFeedback: TransientFeedback?
 
     let onThreadTap: (URL, String?) -> Void
     let onUserTap: (String, String?) -> Void
@@ -42,6 +47,7 @@ struct UserSpaceView: View {
     var body: some View {
         UserSpaceBodyView(
             profile: model.profile,
+            spaceUID: model.profile?.uid ?? model.uid,
             selectedSubPage: model.selectedSubPage,
             availableSubPages: model.availableSubPages,
             viewAllBlogFilter: model.viewAllBlogFilter,
@@ -76,6 +82,34 @@ struct UserSpaceView: View {
         .yamiboInlineNavigationTitleDisplayMode()
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
+            if model.selectedSubPage == .profile, !model.isSelf,
+               let uid = model.profile?.uid, blacklist?.accountUID != uid {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        if blacklist?.contains(uid) == true {
+                            Button {
+                                changeBlockState(false, uid: uid)
+                            } label: {
+                                Label(L10n.string("blacklist.unblock"), systemImage: "person.crop.circle.badge.checkmark")
+                            }
+                        } else {
+                            Button(role: .destructive) {
+                                if blacklist?.isLoggedIn == true {
+                                    pendingBlockUID = uid
+                                } else {
+                                    blockErrorMessage = L10n.string("blacklist.login_required")
+                                }
+                            } label: {
+                                Label(L10n.string("blacklist.block"), systemImage: "person.slash")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .disabled(blacklist == nil || blacklist?.isWorking == true)
+                    .accessibilityLabel(L10n.string("common.more"))
+                }
+            }
             if model.canOpenBlogEditor {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -89,6 +123,31 @@ struct UserSpaceView: View {
         }
         .task(id: refreshRevision) {
             await model.load()
+        }
+        .alert(
+            L10n.string("blacklist.confirm", model.profile?.username ?? model.titleHint ?? ""),
+            isPresented: Binding(get: { pendingBlockUID != nil }, set: { if !$0 { pendingBlockUID = nil } }),
+            presenting: pendingBlockUID
+        ) { uid in
+            Button(L10n.string("blacklist.block"), role: .destructive) {
+                pendingBlockUID = nil
+                changeBlockState(true, uid: uid)
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) { pendingBlockUID = nil }
+        }
+        .failureAlert(
+            L10n.string("common.operation_failed"), message: blockErrorMessage, details: blockErrorDetails,
+            isPresented: Binding(get: { blockErrorMessage != nil }, set: {
+                if !$0 { blockErrorMessage = nil; blockErrorDetails = nil }
+            })
+        ) {
+            Button(L10n.string("common.ok")) { blockErrorMessage = nil; blockErrorDetails = nil }
+        }
+        .transientMessage(blockFeedback) { blockFeedback = nil }
+        .onChange(of: blacklist?.accountUID) { _, _ in
+            pendingBlockUID = nil
+            blockErrorMessage = nil
+            blockErrorDetails = nil
         }
         .sheet(isPresented: Binding(
             get: { model.isAddFriendSheetPresented },
@@ -132,6 +191,21 @@ struct UserSpaceView: View {
     private func selectSubPage(_ subPage: UserSpaceSubPage) {
         Task {
             await model.selectSubPage(subPage)
+        }
+    }
+
+    private func changeBlockState(_ blocked: Bool, uid: String) {
+        guard let blacklist else { return }
+        Task {
+            do {
+                try await blacklist.setBlocked(blocked, uid: uid)
+                blockFeedback = TransientFeedback(message: L10n.string(blocked ? "blacklist.blocked" : "blacklist.unblocked"))
+            } catch {
+                guard !LoadDiagnosticError.isCancellation(error) else { return }
+                blockErrorMessage = LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated
+                    ? L10n.string("blacklist.login_required") : error.localizedDescription
+                blockErrorDetails = LoadFailureDetails(error: error)
+            }
         }
     }
 

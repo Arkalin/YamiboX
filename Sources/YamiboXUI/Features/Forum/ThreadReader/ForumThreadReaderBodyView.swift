@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumThreadReaderBodyView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.forumBlacklist) private var blacklist
     @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 700
     @Namespace private var imageBrowserZoomNamespace
     @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
@@ -61,6 +62,11 @@ struct ForumThreadReaderBodyView: View {
                     }
                 )
             }
+            .onChange(of: blacklist?.blockedUIDs) { _, _ in
+                imageBrowserRequest = nil
+                reportVisibleAnchor()
+            }
+            .onChange(of: blacklist?.replyDisplay) { _, _ in reportVisibleAnchor() }
     }
 
     private var contentWithSheets: some View {
@@ -85,35 +91,46 @@ struct ForumThreadReaderBodyView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if let page {
-                    ForEach(page.posts) { post in
+                    if let hiddenAnchorPost {
+                        ForumBlockedContentView(floor: hiddenAnchorPost.floorText)
+                    } else if !page.posts.isEmpty && renderedPosts.isEmpty {
+                        ForumBlacklistEmptyView()
+                    }
+                    ForEach(renderedPosts) { post in
                         let isFirstPost = currentPage == 1
                             && !isReverseOrder
                             && post.postID == page.posts.first?.postID
-                        ForumThreadPostCard(
-                            post: post,
-                            isTarget: post.postID == highlightedPostID,
-                            threadTitle: isFirstPost ? page.title : nil,
-                            totalViews: isFirstPost ? page.totalViews : nil,
-                            totalReplies: isFirstPost ? page.totalReplies : nil,
-                            refererURL: YamiboRoute.threadByID(
-                                tid: page.thread.tid,
-                                page: currentPage,
-                                authorID: nil,
-                                reverse: false
-                            ).url,
-                            threadID: page.thread.tid,
-                            currentPage: currentPage,
-                            onUserTap: onUserTap,
-                            onImageTap: openImageBrowser,
-                            onShowRatingResults: showRatingResults,
-                            onShowPollVoters: showPollVoters,
-                            onVotePoll: votePoll,
-                            onLoadRateOptions: loadRateOptions,
-                            onRatePost: ratePost,
-                            onCommentPost: commentPost,
-                            onURLTap: onURLTap,
-                            onAttachmentTap: onAttachmentTap
-                        )
+                        Group {
+                            if blacklist?.contains(post.author.uid) == true {
+                                ForumBlockedContentView(floor: post.floorText)
+                            } else {
+                                ForumThreadPostCard(
+                                    post: post,
+                                    isTarget: post.postID == highlightedPostID,
+                                    threadTitle: isFirstPost ? page.title : nil,
+                                    totalViews: isFirstPost ? page.totalViews : nil,
+                                    totalReplies: isFirstPost ? page.totalReplies : nil,
+                                    refererURL: YamiboRoute.threadByID(
+                                        tid: page.thread.tid,
+                                        page: currentPage,
+                                        authorID: nil,
+                                        reverse: false
+                                    ).url,
+                                    threadID: page.thread.tid,
+                                    currentPage: currentPage,
+                                    onUserTap: onUserTap,
+                                    onImageTap: openImageBrowser,
+                                    onShowRatingResults: showRatingResults,
+                                    onShowPollVoters: showPollVoters,
+                                    onVotePoll: votePoll,
+                                    onLoadRateOptions: loadRateOptions,
+                                    onRatePost: ratePost,
+                                    onCommentPost: commentPost,
+                                    onURLTap: onURLTap,
+                                    onAttachmentTap: onAttachmentTap
+                                )
+                            }
+                        }
                         .id(post.postID)
                         .onAppear {
                             visiblePostIDs.insert(post.postID)
@@ -148,7 +165,7 @@ struct ForumThreadReaderBodyView: View {
             await refresh()
         }
         .modifier(ForumThreadAnchorScrollModifier(
-            postIDs: page?.posts.map(\.postID), targetPostID: targetPostID,
+            postIDs: page.map { _ in renderedPosts.map(\.postID) }, targetPostID: targetPostID,
             restoredAnchorPostID: restoredAnchorPostID,
             highlightedPostID: $highlightedPostID,
             onConsumeRestoredAnchor: onConsumeRestoredAnchor
@@ -178,18 +195,26 @@ struct ForumThreadReaderBodyView: View {
     /// window rather than exact pixel visibility — floor-level precision is
     /// the design target (browsing-history decision #6), not pixel offsets.
     private func reportVisibleAnchor() {
-        guard let page else {
+        guard page != nil else {
             onVisibleAnchorChange(nil)
             return
         }
-        onVisibleAnchorChange(page.posts.first { visiblePostIDs.contains($0.postID) }?.postID)
+        onVisibleAnchorChange(renderedPosts.first { visiblePostIDs.contains($0.postID) }?.postID)
+    }
+
+    private var renderedPosts: [ForumThreadPost] {
+        guard blacklist?.replyDisplay == .hidden else { return page?.posts ?? [] }
+        return (page?.posts ?? []).filter { blacklist?.contains($0.author.uid) != true }
+    }
+
+    private var hiddenAnchorPost: ForumThreadPost? {
+        guard blacklist?.replyDisplay == .hidden, let anchor = targetPostID ?? restoredAnchorPostID else { return nil }
+        return page?.posts.first { $0.postID == anchor && blacklist?.contains($0.author.uid) == true }
     }
 
     private func openImageBrowser(_ imageID: String, _ url: URL, _ title: String?, _ refererURL: URL) {
         if let request = makeImageBrowserRequest(imageID, url, title, refererURL) {
             imageBrowserRequest = request
-        } else {
-            onURLTap(url)
         }
     }
 

@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumTagView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.forumBlacklist) private var blacklist
     @State private var model: ForumTagViewModel
     @State private var query = ""
     let onTagTap: (ForumTagTarget) -> Void
@@ -18,8 +19,8 @@ struct ForumTagView: View {
     }
 
     var body: some View {
-        ForumKeyboardBrowser(threadIDs: model.page?.threads.map(\.tid) ?? [], onOpen: { id in
-            if let thread = model.page?.threads.first(where: { $0.tid == id }) { onThreadTap(thread) }
+        ForumKeyboardBrowser(threadIDs: visibleThreads.map(\.tid), onOpen: { id in
+            if let thread = visibleThreads.first(where: { $0.tid == id }) { onThreadTap(thread) }
         }) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -105,7 +106,8 @@ struct ForumTagView: View {
                     .font(.headline)
                     .foregroundStyle(theme.primaryText)
                 if page.threads.isEmpty { empty(L10n.string("forum.tags.no_threads")) }
-                ForEach(page.threads) { thread in
+                if !page.threads.isEmpty && visibleThreads.isEmpty { ForumBlacklistEmptyView() }
+                ForEach(visibleThreads) { thread in
                     ForumThreadSummaryRowView(thread: thread, onThreadTap: { onThreadTap(thread) }, onAuthorTap: onAuthorTap)
                 }
                 ForumPageNavigationBar(navigation: page.pageNavigation, currentPage: model.currentPage, goToPage: { number in
@@ -120,6 +122,10 @@ struct ForumTagView: View {
         LoadFailureView(message: message, details: model.errorDetails) { Task { await model.retry() } }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)
+    }
+
+    private var visibleThreads: [ForumThreadSummary] {
+        (model.page?.threads ?? []).filter { blacklist?.contains($0.authorID) != true }
     }
 
     private func empty(_ message: String) -> some View {

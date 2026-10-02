@@ -4,6 +4,7 @@ import YamiboXCore
 struct UserSpaceBodyView: View {
     @Environment(\.forumTheme) private var theme
     let profile: UserSpaceProfile?
+    let spaceUID: String?
     let selectedSubPage: UserSpaceSubPage
     let availableSubPages: [UserSpaceSubPage]
     let viewAllBlogFilter: UserSpaceViewAllBlogFilter
@@ -50,6 +51,7 @@ struct UserSpaceBodyView: View {
                 } else {
                     UserSpaceSubPageContentView(
                         selectedSubPage: selectedSubPage,
+                        spaceUID: spaceUID,
                         availableSubPages: availableSubPages,
                         isSelf: isSelf,
                         viewAllBlogFilter: viewAllBlogFilter,
@@ -120,6 +122,7 @@ private struct UserSpaceProfileContentView: View {
 private struct UserSpaceSubPageContentView: View {
     @Environment(\.forumTheme) private var theme
     let selectedSubPage: UserSpaceSubPage
+    let spaceUID: String?
     let availableSubPages: [UserSpaceSubPage]
     let isSelf: Bool
     let viewAllBlogFilter: UserSpaceViewAllBlogFilter
@@ -163,6 +166,7 @@ private struct UserSpaceSubPageContentView: View {
         } else {
             UserSpaceContentView(
                 selectedSubPage: selectedSubPage,
+                spaceUID: spaceUID,
                 content: content,
                 pageNavigation: pageNavigation,
                 currentPage: currentPage,

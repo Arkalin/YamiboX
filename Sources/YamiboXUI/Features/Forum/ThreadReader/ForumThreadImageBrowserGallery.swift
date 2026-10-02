@@ -21,9 +21,12 @@ struct ForumThreadImageBrowserGallery: Equatable {
         page: ForumThreadPage,
         refererURL: URL,
         selectedBlockID: String,
-        defaultTitle: String
+        defaultTitle: String,
+        blockedUIDs: Set<String> = []
     ) {
-        let items = page.posts.flatMap { post in
+        let items = page.posts.filter { post in
+            post.author.uid.map { !blockedUIDs.contains($0) } ?? true
+        }.flatMap { post in
             Self.items(
                 in: post.contentBlocks,
                 refererURL: refererURL,

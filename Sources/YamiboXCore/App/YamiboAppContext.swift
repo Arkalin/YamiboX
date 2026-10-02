@@ -30,6 +30,7 @@ public final class YamiboAppContext: Sendable {
     let composerDraftStore: ForumComposerDraftStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let messageUnreadWorkflow: MessageUnreadWorkflow
+    public let blacklistWorkflow: ForumBlacklistWorkflow
     /// Public for change-ID observation in the app-entry layer.
     public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
@@ -118,6 +119,18 @@ public final class YamiboAppContext: Sendable {
         self.sessionStore = sessionStore
         self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { state in
             UserSpaceRepository(client: YamiboClient(session: session, credentials: state.credentials, handlesCookies: false))
+        }
+        self.blacklistWorkflow = ForumBlacklistWorkflow(
+            sessionStore: sessionStore,
+            store: ForumBlacklistStore(defaults: profileDefaults)
+        ) { snapshot, interactive in
+            ForumBlacklistRepository(client: YamiboClient(
+                session: session, credentials: snapshot.session.credentials,
+                wafRecoverer: interactive ? wafRecoverer : nil, handlesCookies: false,
+                validateSession: {
+                    guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+                }
+            ))
         }
         self.profileStore = profileStore
         self.checkInStore = checkInStore
@@ -229,6 +242,7 @@ public final class YamiboAppContext: Sendable {
             syncCoordinator: webDAVSyncSettingsStore.syncCoordinator,
             lifecycle: accountTransitionLifecycle,
             unread: messageUnreadWorkflow,
+            blacklist: blacklistWorkflow,
             stopDownload: { try await queueExecutors.invalidate() },
             clearAccountCaches: { [store = self.forumCacheStore] in try await store.clearAccountCaches() },
             clearWebData: { await webDataCleaner.clear($0) }
@@ -242,6 +256,7 @@ public final class YamiboAppContext: Sendable {
             steps: [
                 .init("checkIn") { await checkInStore.clearAll() },
                 .init("settings") { try await settingsStore.reset() },
+                .init("blacklist") { [blacklistWorkflow] in await blacklistWorkflow.reset() },
                 .init("webDAVSettings") { try await webDAVSyncSettingsStore.resetWithinAccountTransition() },
                 .init("readerResume") { await readerResumeRouteStore.clear() },
                 .init("favorites") { [store = self.localFavoriteLibraryStore] in try await store.clearAll() },
@@ -309,6 +324,7 @@ public final class YamiboAppContext: Sendable {
             sessionStore: sessionStore,
             profileStore: profileStore,
             messageUnreadWorkflow: messageUnreadWorkflow,
+            blacklist: blacklistWorkflow,
             localFavoriteLibraryStore: localFavoriteLibraryStore,
             readingProgressStore: readingProgressStore,
             browsingHistoryStore: browsingHistoryStore,
@@ -432,6 +448,7 @@ public final class YamiboAppContext: Sendable {
     public var settingsDependencies: SettingsDependencies {
         SettingsDependencies(
             sessionStore: sessionStore,
+            blacklist: blacklistWorkflow,
             settingsStore: settingsStore,
             favoriteBackgroundImageStore: favoriteBackgroundImageStore,
             launchBackgroundImageStore: launchBackgroundImageStore,

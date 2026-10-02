@@ -617,7 +617,8 @@ final class ForumThreadReaderViewModel {
         imageID: String,
         url: URL,
         title: String?,
-        refererURL: URL
+        refererURL: URL,
+        blockedUIDs: Set<String> = []
     ) -> ForumThreadImageBrowserRequest? {
         guard let page else { return nil }
         let defaultTitle = L10n.string("forum.thread.image")
@@ -625,8 +626,10 @@ final class ForumThreadReaderViewModel {
             page: page,
             refererURL: refererURL,
             selectedBlockID: imageID,
-            defaultTitle: defaultTitle
+            defaultTitle: defaultTitle,
+            blockedUIDs: blockedUIDs
         )
+        if !blockedUIDs.isEmpty, !gallery.items.contains(where: { $0.id == imageID }) { return nil }
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let fallbackItem = ImageBrowserItem(
             id: imageID,

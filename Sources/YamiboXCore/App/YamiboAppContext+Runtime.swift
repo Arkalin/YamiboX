@@ -21,11 +21,19 @@ extension YamiboAppContext {
             operations: [
                 { [browsingHistoryWorkflow] in await browsingHistoryWorkflow.observeChanges() },
                 { [messageUnreadWorkflow] in await messageUnreadWorkflow.observeSessionChanges() },
+                { [blacklistWorkflow] in await blacklistWorkflow.observeSessionChanges() },
             ],
             actions: .init(
                 synchronizeForeground: { continuity.foregroundBecameActive() },
-                refreshUnread: { [messageUnreadWorkflow] in await messageUnreadWorkflow.appDidBecomeActive() },
-                invalidateUnread: { [messageUnreadWorkflow] in messageUnreadWorkflow.appDidEnterBackground() },
+                refreshUnread: { [messageUnreadWorkflow, blacklistWorkflow] in
+                    async let unread: Void = messageUnreadWorkflow.appDidBecomeActive()
+                    async let blacklist: Void = blacklistWorkflow.appDidBecomeActive()
+                    _ = await (unread, blacklist)
+                },
+                invalidateUnread: { [messageUnreadWorkflow, blacklistWorkflow] in
+                    messageUnreadWorkflow.appDidEnterBackground()
+                    blacklistWorkflow.appDidEnterBackground()
+                },
                 synchronizeBackground: { continuity.willEnterBackground() }
             )
         )
