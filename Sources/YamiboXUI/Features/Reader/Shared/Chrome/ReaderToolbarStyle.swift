@@ -40,6 +40,11 @@ struct ReaderBooksProgressPalette {
     var unreadOverlay: Color {
         usesDarkPaper ? Color.white.opacity(0.38) : Color.black.opacity(0.85)
     }
+
+    func chapterTickColor(isCurrent: Bool, isRead: Bool, ink: Color) -> Color {
+        let segmentInk = usesDarkPaper ? Color.white : (isRead ? ink : .white)
+        return isCurrent ? segmentInk : segmentInk.opacity(0.48)
+    }
 }
 
 extension View {

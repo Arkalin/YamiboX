@@ -7,21 +7,41 @@ import UIKit
 private struct ReaderProgressChapterTickOverlay: View {
     let ticks: [ReaderChromeProgressTick]
     let currentTint: Color
+    let progressFraction: Double
+    let fillDirection: ReaderProgressFillDirection
+    @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerToolbarPaper) private var toolbarPaper
+    @Environment(\.readerToolbarInk) private var toolbarInk
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let layout = ReaderBottomChromeLayoutPresentation()
+        let booksPalette = ReaderBooksProgressPalette(paper: toolbarPaper, colorScheme: colorScheme)
 
         GeometryReader { geometry in
             ForEach(Array(ticks.enumerated()), id: \.element.targetIndex) { _, tick in
+                let tickX = layout.capsuleChapterTickCoordinate(
+                    position: tick.positionFraction,
+                    length: geometry.size.width,
+                    edgeInset: layout.capsuleChapterTickRoundedEdgeInset
+                )
+                let fillWidth = geometry.size.width * CGFloat(progressFraction)
+                // Use the rendered segment, including the rounded-edge inset
+                // and right-to-left fills, to keep ink off matching paper.
+                let isRead = fillDirection == .rightToLeft
+                    ? tickX >= geometry.size.width - fillWidth
+                    : tickX <= fillWidth
                 Capsule()
-                    .fill(tick.isCurrent ? currentTint : Color.secondary.opacity(0.38))
+                    .fill(toolbarStyle.effectiveStyle == .books
+                        ? booksPalette.chapterTickColor(
+                            isCurrent: tick.isCurrent,
+                            isRead: isRead,
+                            ink: toolbarInk
+                        )
+                        : (tick.isCurrent ? currentTint : Color.secondary.opacity(0.38)))
                     .frame(width: tick.isCurrent ? 3 : 2, height: tick.isCurrent ? 12 : 8)
                     .position(
-                        x: layout.capsuleChapterTickCoordinate(
-                            position: tick.positionFraction,
-                            length: geometry.size.width,
-                            edgeInset: layout.capsuleChapterTickRoundedEdgeInset
-                        ),
+                        x: tickX,
                         y: geometry.size.height / 2
                     )
                     .accessibilityHidden(true)
@@ -128,7 +148,9 @@ struct ReaderDirectoryProgressCapsule: View {
                 .frame(width: fillWidth)
                 .accessibilityHidden(true)
 
-            ReaderProgressChapterTickOverlay(ticks: ticks, currentTint: .white)
+            ReaderProgressChapterTickOverlay(
+                ticks: ticks, currentTint: .white, progressFraction: progress, fillDirection: fillDirection
+            )
                 .opacity(showsChapterTicks(layout: layout) ? 1 : 0)
 
             booksDirectoryContent
@@ -183,7 +205,9 @@ struct ReaderDirectoryProgressCapsule: View {
                     .accessibilityHidden(true)
             }
 
-            ReaderProgressChapterTickOverlay(ticks: ticks, currentTint: controlTint)
+            ReaderProgressChapterTickOverlay(
+                ticks: ticks, currentTint: controlTint, progressFraction: clampedProgress, fillDirection: fillDirection
+            )
                 .opacity(showsChapterTicks(layout: layout) ? 1 : 0)
 
             HStack(spacing: 8) {
@@ -535,10 +559,11 @@ private struct ReaderVerticalProgressChapterTickOverlay: View {
     ) -> Color {
         if toolbarStyle.effectiveStyle == .books {
             // Match each segment's text color instead of using the glass accent.
-            let ink = booksPalette.usesDarkPaper
-                ? Color.white
-                : (tick.positionFraction <= progressFraction ? toolbarInk : .white)
-            return tick.isCurrent ? ink : ink.opacity(0.48)
+            return booksPalette.chapterTickColor(
+                isCurrent: tick.isCurrent,
+                isRead: tick.positionFraction <= progressFraction,
+                ink: toolbarInk
+            )
         }
         return tick.isCurrent && layout.verticalCurrentChapterTickUsesAccentColor
             ? currentTint : Color.secondary.opacity(0.38)
