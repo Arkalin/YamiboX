@@ -199,6 +199,41 @@ enum ReaderPagedPageCurlTransition {
 #if os(iOS)
 import UIKit
 
+extension ReaderPagedPageCurlTransition {
+    static func spineLocation(
+        usesTwoPageSpread: Bool,
+        direction: ReaderPagedHorizontalNavigationDirection
+    ) -> UIPageViewController.SpineLocation {
+        if usesTwoPageSpread { return .mid }
+        return direction == .rightSwipeAdvances ? .max : .min
+    }
+
+    static func displayedLeafIndexes(
+        target: [Int],
+        current: [Int],
+        usesTwoPageSpread: Bool,
+        readingDirection: ReaderPagedHorizontalNavigationDirection,
+        navigationDirection: UIPageViewController.NavigationDirection,
+        animated: Bool
+    ) -> [Int] {
+        guard !usesTwoPageSpread, target.count == 2 else { return target }
+        let backSlot = readingDirection == .rightSwipeAdvances ? 0 : 1
+        guard animated else { return [target[1 - backSlot]] }
+
+        // setViewControllers takes the visible front first for either edge spine,
+        // even when the data source's physical order puts the back first.
+        var displayed = [target[1 - backSlot], target[backSlot]]
+        // Turning away from the spine exposes the departing sheet's back.
+        // Turning toward it exposes the arriving sheet's back instead.
+        let usesDepartingBack = readingDirection == .rightSwipeAdvances
+            ? navigationDirection == .reverse : navigationDirection == .forward
+        if usesDepartingBack, current.count == 2 {
+            displayed[1] = current[backSlot]
+        }
+        return displayed
+    }
+}
+
 enum ReaderPagedPageTurnBackground {
     static func dimmedPageColor(
         baseColor: UIColor,

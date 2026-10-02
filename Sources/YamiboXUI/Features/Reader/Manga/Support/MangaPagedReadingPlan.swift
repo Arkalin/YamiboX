@@ -372,12 +372,15 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                     ),
                 ]
             }
-            leaves = Self.indexedLeaves(
-                from: Self.physicalBookOrder(
-                    leafGroups: pageLeaves,
-                    pageTurnDirection: plan.pageTurnDirection
-                )
+            let orderedLeaves = Self.physicalBookOrder(
+                leafGroups: pageLeaves,
+                pageTurnDirection: plan.pageTurnDirection
             ).ifEmpty(Self.emptySingleLeaves)
+            // With a right-hand spine the back precedes the visible front physically.
+            let orientedLeaves = plan.pageTurnDirection == .rightToLeft
+                ? stride(from: 0, to: orderedLeaves.count, by: 2).flatMap { [orderedLeaves[$0 + 1], orderedLeaves[$0]] }
+                : orderedLeaves
+            leaves = Self.indexedLeaves(from: orientedLeaves)
         }
         var indexes: [PageLeafKey: Int] = [:]
         for leaf in leaves {
@@ -544,6 +547,7 @@ private extension Array where Element == MangaPagedPageCurlLeaf {
 enum MangaPagedPageCurlSpineLocation: Equatable, Sendable {
     case min
     case mid
+    case max
 }
 
 struct MangaPagedPageCurlSpineConfiguration: Equatable, Sendable {
@@ -552,7 +556,8 @@ struct MangaPagedPageCurlSpineConfiguration: Equatable, Sendable {
 
     static func configuration(
         usesTwoPageSpread: Bool,
-        currentSpineLocation: MangaPagedPageCurlSpineLocation
+        currentSpineLocation: MangaPagedPageCurlSpineLocation,
+        pageTurnDirection: MangaPageTurnDirection
     ) -> MangaPagedPageCurlSpineConfiguration {
         if usesTwoPageSpread {
             return MangaPagedPageCurlSpineConfiguration(
@@ -562,7 +567,7 @@ struct MangaPagedPageCurlSpineConfiguration: Equatable, Sendable {
         }
 
         return MangaPagedPageCurlSpineConfiguration(
-            spineLocation: .min,
+            spineLocation: pageTurnDirection == .rightToLeft ? .max : .min,
             doubleSidedUpdate: true
         )
     }

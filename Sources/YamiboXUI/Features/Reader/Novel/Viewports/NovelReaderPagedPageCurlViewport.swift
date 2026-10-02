@@ -74,7 +74,12 @@ struct NovelReaderPagedPageCurlSequence: Equatable {
                 leafGroups: leafGroups,
                 pageTurnDirection: pageTurnDirection
             )
-            leaves = orderedLeaves.isEmpty ? Self.emptySingleLeaves : Self.indexedLeaves(from: orderedLeaves)
+            let singleLeaves = orderedLeaves.isEmpty ? Self.emptySingleLeaves : orderedLeaves
+            // With a right-hand spine the back precedes the visible front physically.
+            let orientedLeaves = pageTurnDirection == .rightToLeft
+                ? stride(from: 0, to: singleLeaves.count, by: 2).flatMap { [singleLeaves[$0 + 1], singleLeaves[$0]] }
+                : singleLeaves
+            leaves = Self.indexedLeaves(from: orientedLeaves)
         }
         indexesBySelection = Dictionary(grouping: leaves, by: \.selectionIndex).mapValues { $0.map(\.index) }
     }
@@ -201,7 +206,10 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let spineLocation: UIPageViewController.SpineLocation = sequence.usesTwoPageSpread ? .mid : .min
+        let spineLocation = ReaderPagedPageCurlTransition.spineLocation(
+            usesTwoPageSpread: sequence.usesTwoPageSpread,
+            direction: settings.pageTurnDirection.horizontalNavigationDirection
+        )
         let pageViewController = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
@@ -348,7 +356,10 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         ) -> UIPageViewController.SpineLocation {
             configureSpine(in: pageViewController)
             setCurrentSelection(in: pageViewController, animated: false)
-            return parent.sequence.usesTwoPageSpread ? .mid : .min
+            return ReaderPagedPageCurlTransition.spineLocation(
+                usesTwoPageSpread: parent.sequence.usesTwoPageSpread,
+                direction: parent.settings.pageTurnDirection.horizontalNavigationDirection
+            )
         }
 
         func pageViewController(
@@ -492,16 +503,14 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 return targetLeafIndex >= currentLeafIndex ? .forward : .reverse
             }()
 
-            // Nonanimated single-page placement accepts only the visible front.
-            // Forward curls expose the departing sheet's back; reverse curls expose the arriving sheet's back.
-            var displayedLeafIndexes = parent.sequence.usesTwoPageSpread || animated
-                ? leafIndexes : Array(leafIndexes.prefix(1))
-            if animated, !parent.sequence.usesTwoPageSpread, direction == .forward,
-               let currentSelectionIndex,
-               let backIndex = parent.sequence.leafIndexes(forSelectionIndex: currentSelectionIndex).last,
-               displayedLeafIndexes.count == 2 {
-                displayedLeafIndexes[1] = backIndex
-            }
+            let displayedLeafIndexes = ReaderPagedPageCurlTransition.displayedLeafIndexes(
+                target: leafIndexes,
+                current: currentSelectionIndex.map(parent.sequence.leafIndexes(forSelectionIndex:)) ?? [],
+                usesTwoPageSpread: parent.sequence.usesTwoPageSpread,
+                readingDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection,
+                navigationDirection: direction,
+                animated: animated
+            )
             let controllers = displayedLeafIndexes.compactMap(controller(forLeafIndex:))
             guard !controllers.isEmpty else {
                 currentSelectionIndex = nil

@@ -160,7 +160,8 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     func configureSpine(in pageViewController: UIPageViewController) -> UIPageViewController.SpineLocation {
         let configuration = MangaPagedPageCurlSpineConfiguration.configuration(
             usesTwoPageSpread: parent.sequence.usesTwoPageSpread,
-            currentSpineLocation: pageViewController.mangaPageCurlSpineLocation
+            currentSpineLocation: pageViewController.mangaPageCurlSpineLocation,
+            pageTurnDirection: parent.settings.pageTurnDirection
         )
         if let doubleSided = configuration.doubleSidedUpdate {
             pageViewController.isDoubleSided = doubleSided
@@ -216,16 +217,14 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         let clampedSelectionIndex = min(max(selectionIndex, 0), max(parent.sequence.pageCount - 1, 0))
         let leafIndexes = parent.sequence.leafIndexes(forSelectionIndex: clampedSelectionIndex)
         let direction = navigationDirection(to: clampedSelectionIndex)
-        // UIKit takes only the visible front for nonanimated single-page placement.
-        // A forward curl uses the departing back; a reverse curl uses the arriving back.
-        var displayedLeafIndexes = parent.sequence.usesTwoPageSpread || animated
-            ? leafIndexes : Array(leafIndexes.prefix(1))
-        if animated, !parent.sequence.usesTwoPageSpread, direction == .forward,
-           let currentSelectionIndex,
-           let backIndex = parent.sequence.leafIndexes(forSelectionIndex: currentSelectionIndex).last,
-           displayedLeafIndexes.count == 2 {
-            displayedLeafIndexes[1] = backIndex
-        }
+        let displayedLeafIndexes = ReaderPagedPageCurlTransition.displayedLeafIndexes(
+            target: leafIndexes,
+            current: currentSelectionIndex.map(parent.sequence.leafIndexes(forSelectionIndex:)) ?? [],
+            usesTwoPageSpread: parent.sequence.usesTwoPageSpread,
+            readingDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection,
+            navigationDirection: direction,
+            animated: animated
+        )
         let controllers = displayedLeafIndexes.compactMap(controller(forLeafIndex:))
         guard !controllers.isEmpty else {
             currentSelectionIndex = nil
@@ -488,7 +487,11 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
 
 private extension UIPageViewController {
     var mangaPageCurlSpineLocation: MangaPagedPageCurlSpineLocation {
-        spineLocation == .mid ? .mid : .min
+        switch spineLocation {
+        case .mid: .mid
+        case .max: .max
+        default: .min
+        }
     }
 }
 
@@ -499,6 +502,8 @@ private extension MangaPagedPageCurlSpineConfiguration {
             .min
         case .mid:
             .mid
+        case .max:
+            .max
         }
     }
 }

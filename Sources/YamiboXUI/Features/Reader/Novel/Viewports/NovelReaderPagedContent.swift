@@ -82,6 +82,8 @@ struct NovelReaderPagedContent: View {
                     onImageTap: bindings.onImageTap,
                     onImageLongPress: bindings.onImageLongPress
                 )
+                // UIKit's spine can only change on recreation or an orientation callback.
+                .id(displaySettings.pageTurnDirection)
             } else {
                 NovelReaderPagedCollectionViewport(
                     attachedInformation: attachedInformation,

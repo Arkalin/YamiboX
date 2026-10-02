@@ -167,6 +167,7 @@ private struct MangaReaderLoadedContent: View {
                             onTap: onTap
                         )
                         .id(plan.usesTwoPageSpread)
+                        .id(settings.pageTurnDirection)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         MangaPagedReaderViewport(

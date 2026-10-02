@@ -62,7 +62,10 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> MangaPagedPageCurlContainerViewController {
-        let spineLocation: UIPageViewController.SpineLocation = sequence.usesTwoPageSpread ? .mid : .min
+        let spineLocation = ReaderPagedPageCurlTransition.spineLocation(
+            usesTwoPageSpread: sequence.usesTwoPageSpread,
+            direction: settings.pageTurnDirection.horizontalNavigationDirection
+        )
         let pageViewController = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
