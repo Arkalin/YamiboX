@@ -179,7 +179,7 @@ public struct MangaReaderView: View {
                     model: model,
                     settingsStore: dependencies.settingsStore,
                     peripheralInput: appModel.peripheralInput,
-                    controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent,
+                    controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent,
                     readerViewportSize: proxy.size,
                     readerTopInset: readingTopInset
                 )

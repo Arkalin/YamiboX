@@ -67,7 +67,7 @@ private struct FavoriteUpdateFilterToggleRow: View {
     let onChange: (Bool) async -> Void
 
     var body: some View {
-        Toggle(isOn: binding) {
+        AppThemeSwitch(isOn: binding) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(subtitle)

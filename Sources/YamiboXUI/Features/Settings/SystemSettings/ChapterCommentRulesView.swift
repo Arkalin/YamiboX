@@ -65,7 +65,7 @@ struct ChapterCommentRulesView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(L10n.string("settings.chapter_comments.enabled"), isOn: Binding(
+                AppThemeSwitch(L10n.string("settings.chapter_comments.enabled"), isOn: Binding(
                     get: { viewModel.chapterComments[scope].isEnabled },
                     set: { viewModel.setCommentFilterEnabled($0, scope: scope) }
                 ))

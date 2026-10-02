@@ -367,8 +367,7 @@ private struct BlogReaderCommentEditor: View {
                 )
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.accentText)
+            .appProminentButtonStyle()
             .disabled(!canSubmit)
         }
         .padding(13)

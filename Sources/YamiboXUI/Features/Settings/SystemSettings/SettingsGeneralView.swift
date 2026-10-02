@@ -10,9 +10,12 @@ struct SettingsGeneralView: View {
     var body: some View {
         Form {
             SettingsAppearanceSection(
-                selectedPreset: viewModel.themePreset,
+                library: viewModel.themeLibrary,
+                usesAccentSurfaces: Binding(get: { viewModel.usesAccentSurfaces }, set: viewModel.updateUsesAccentSurfaces),
                 isBusy: viewModel.isBusy,
-                onSelect: viewModel.updateThemePreset
+                onSelect: viewModel.selectTheme,
+                save: viewModel.saveTheme,
+                delete: viewModel.deleteTheme
             )
 
             Section {

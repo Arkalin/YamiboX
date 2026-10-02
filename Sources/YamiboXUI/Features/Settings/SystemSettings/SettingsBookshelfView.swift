@@ -6,7 +6,7 @@ struct SettingsBookshelfView: View {
 
     var body: some View {
         Form {
-            Toggle(
+            AppThemeSwitch(
                 L10n.string("settings.bookshelf.only_favorites"),
                 isOn: Binding(
                     get: { viewModel.showsOnlyFavorites },

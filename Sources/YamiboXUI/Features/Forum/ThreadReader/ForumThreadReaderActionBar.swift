@@ -18,8 +18,7 @@ struct ForumThreadReaderActionBar: View {
                 Label(L10n.string("forum.thread.send_reply"), systemImage: "square.and.pencil")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.accentText)
+            .appProminentButtonStyle()
 
             Button(action: onFavorite) {
                 Label(

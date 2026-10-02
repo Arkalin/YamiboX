@@ -215,7 +215,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
                 model: model,
                 settingsStore: settingsStore,
                 peripheralInput: appModel.peripheralInput,
-                controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent
+                controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent
             )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)

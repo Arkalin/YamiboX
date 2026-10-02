@@ -79,7 +79,7 @@ private struct FavoriteActionPromptSheet: View {
                     .accessibilityIdentifier("\(action.identifierPrefix)-cancel")
                 }
 
-                Toggle(L10n.string("favorites.quick.add_prompt.remember"), isOn: $rememberChoice)
+                AppThemeSwitch(L10n.string("favorites.quick.add_prompt.remember"), isOn: $rememberChoice)
                     .font(.subheadline)
                     .accessibilityIdentifier("\(action.identifierPrefix)-remember")
 
@@ -90,7 +90,7 @@ private struct FavoriteActionPromptSheet: View {
                         Text(L10n.string(action.remoteTitleKey))
                             .frame(maxWidth: .infinity, minHeight: 24)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appProminentButtonStyle(role: action.buttonRole)
                     .accessibilityIdentifier("\(action.identifierPrefix)-sync")
 
                     Button(role: action.buttonRole) {

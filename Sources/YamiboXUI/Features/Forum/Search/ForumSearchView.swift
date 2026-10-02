@@ -185,6 +185,7 @@ private struct ForumSearchInputView: View {
             Button(action: submit) {
                 if isLoading {
                     ProgressView()
+                        .tint(.white)
                         .controlSize(.small)
                         .frame(width: 18, height: 18)
                 } else {
@@ -192,8 +193,7 @@ private struct ForumSearchInputView: View {
                         .frame(width: 18, height: 18)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.accentText)
+            .appProminentButtonStyle()
             .disabled(isLoading || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel(L10n.string("common.search"))
         }

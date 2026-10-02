@@ -54,7 +54,7 @@ struct FavoriteRemoteSyncStatusCard: View {
                     Button(action: onResume) {
                         Label(L10n.string("favorites.sync.resume"), systemImage: "play.circle")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appProminentButtonStyle()
                 }
             }
             .font(.footnote.weight(.semibold))

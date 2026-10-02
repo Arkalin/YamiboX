@@ -111,8 +111,9 @@ public struct ForumTheme: @unchecked Sendable {
         self.navigationBarBackgroundDark = navigationBarBackgroundDark
     }
 
-    public static let standard = ForumThemePalette(
-        id: AppThemePreset.standard.rawValue,
+    // Neutral surfaces for themes with interface tinting disabled, not a selectable theme.
+    private static let neutralSurfaces = ForumThemePalette(
+        id: "neutral-surfaces",
         usesColoredNavigationBar: false,
         light: .init(
             pageBackground: 0xF2F2F7, surface: 0xFFFFFF,
@@ -169,75 +170,56 @@ public struct ForumTheme: @unchecked Sendable {
         )
     ).theme
 
-    public static let teal = ForumThemePalette(
-        id: AppThemePreset.teal.rawValue,
-        usesColoredNavigationBar: true,
-        light: .init(
-            pageBackground: 0xEDF5F3, surface: 0xFBFFFE,
-            primaryText: 0x18312F, secondaryText: 0x3F5B58, tertiaryText: 0x54616D,
-            accent: 0x155E63, accentText: 0x155E63,
-            supportingText: 0x2D6965, actionText: 0x2D6965,
-            decoration: 0x2D6965, progressFill: 0x2D6965,
-            decorativeFill: 0x155E63, prominentSurface: 0x155E63,
-            surfaceTint: 0x2D6965, navigationTint: 0x155E63, pinnedBadgeTint: 0x155E63,
-            webText: 0x234C49, navigationBarBackground: 0x155257,
-            warning: 0x7A4B00, warningFill: 0xF1C75B,
-            danger: 0xA5222F, dangerFill: 0xA5222F
-        ),
-        dark: .init(
-            pageBackground: 0x0F1717, surface: 0x172321,
-            primaryText: 0xEBF5F1, secondaryText: 0xB8CCC6, tertiaryText: 0x99B2AC,
-            accent: 0x205A5B, accentText: 0x78C8BE,
-            supportingText: 0x86BBB3, actionText: 0x86BBB3,
-            decoration: 0x86BBB3, progressFill: 0x86BBB3,
-            decorativeFill: 0x205A5B, prominentSurface: 0x205A5B,
-            surfaceTint: 0x86BBB3, navigationTint: 0x78C8BE, pinnedBadgeTint: 0x78C8BE,
-            webText: 0xD0E5DF, navigationBarBackground: 0x103F42,
-            warning: 0xF3BC60, warningFill: 0x62420F,
-            danger: 0xFF8988, dangerFill: 0x972F38
-        )
-    ).theme
-
-    public static let rose = ForumThemePalette(
-        id: AppThemePreset.rose.rawValue,
-        usesColoredNavigationBar: true,
-        light: .init(
-            pageBackground: 0xF7F1F3, surface: 0xFFFBFC,
-            primaryText: 0x302126, secondaryText: 0x5D444D, tertiaryText: 0x725763,
-            accent: 0x7B334C, accentText: 0x7B334C,
-            supportingText: 0x864D66, actionText: 0x864D66,
-            decoration: 0x864D66, progressFill: 0x864D66,
-            decorativeFill: 0x7B334C, prominentSurface: 0x7B334C,
-            surfaceTint: 0x864D66, navigationTint: 0x7B334C, pinnedBadgeTint: 0x7B334C,
-            webText: 0x583845, navigationBarBackground: 0x713047,
-            warning: 0x815000, warningFill: 0xF2C866,
-            danger: 0xA7273A, dangerFill: 0xA7273A
-        ),
-        dark: .init(
-            pageBackground: 0x181315, surface: 0x251B1F,
-            primaryText: 0xF8ECEF, secondaryText: 0xD3BBC3, tertiaryText: 0xB7A3A7,
-            accent: 0x713149, accentText: 0xD99AAE,
-            supportingText: 0xCEA0B0, actionText: 0xCEA0B0,
-            decoration: 0xCEA0B0, progressFill: 0xCEA0B0,
-            decorativeFill: 0x713149, prominentSurface: 0x713149,
-            surfaceTint: 0xCEA0B0, navigationTint: 0xD99AAE, pinnedBadgeTint: 0xD99AAE,
-            webText: 0xE4CDD5, navigationBarBackground: 0x512134,
-            warning: 0xF4BF67, warningFill: 0x694610,
-            danger: 0xFF8897, dangerFill: 0x9F3045
-        )
-    ).theme
-
     public static func theme(for preset: AppThemePreset) -> ForumTheme {
         switch preset {
-        case .standard: standard
         case .classic: classic
-        case .teal: teal
-        case .rose: rose
+        case .custom: ForumThemePalette.custom(hex: AppAppearanceSettings.defaultCustomThemeColorHex).theme
         }
+    }
+
+    public static func theme(for settings: AppAppearanceSettings) -> ForumTheme {
+        let palette = settings.themePreset == .custom
+            ? ForumThemePalette.custom(hex: settings.customThemeColorHex).theme
+            : theme(for: settings.themePreset)
+        let surfaces = settings.usesAccentSurfaces ? palette : neutralSurfaces
+        // Rich-text renderers cache by theme ID, including the surface style.
+        let id = "\(palette.id)-\(settings.usesAccentSurfaces)"
+        return ForumTheme(
+            id: id,
+            accent: palette.accent,
+            accentText: palette.accentText,
+            supportingText: surfaces.supportingText,
+            actionText: palette.actionText,
+            decoration: surfaces.decoration,
+            progressFill: surfaces.progressFill,
+            decorativeFill: surfaces.decorativeFill,
+            prominentSurface: palette.prominentSurface,
+            usesColoredNavigationBar: settings.usesAccentSurfaces,
+            pinnedBadgeFill: settings.usesAccentSurfaces ? palette.pinnedBadgeFill : palette.accentText.opacity(0.16),
+            divider: surfaces.divider,
+            pageBackground: surfaces.pageBackground,
+            surface: surfaces.surface,
+            primaryText: surfaces.primaryText,
+            webText: surfaces.webText,
+            secondaryText: surfaces.secondaryText,
+            tertiaryText: surfaces.tertiaryText,
+            border: surfaces.border,
+            mutedFill: surfaces.mutedFill,
+            selectedFill: settings.usesAccentSurfaces ? palette.selectedFill : palette.accentText.opacity(0.16),
+            warning: surfaces.warning,
+            danger: surfaces.danger,
+            pinnedSurface: surfaces.pinnedSurface,
+            announcementSurface: surfaces.announcementSurface,
+            navigationSurface: surfaces.navigationSurface,
+            navigationBarBackgroundLight: surfaces.navigationBarBackgroundLight,
+            navigationBarBackgroundDark: surfaces.navigationBarBackgroundDark,
+            warningFill: surfaces.warningFill,
+            dangerFill: surfaces.dangerFill
+        )
     }
 }
 
-private struct ForumThemePalette {
+struct ForumThemePalette {
     let id: String
     let usesColoredNavigationBar: Bool
     let light: Scheme

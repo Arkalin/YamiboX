@@ -112,11 +112,10 @@ struct ForumComposerEditor: View {
     }
 
     private var plainTextToggle: some View {
-        Toggle(L10n.string("forum.blog.html_source"), isOn: Binding(
+        AppThemeSwitch(L10n.string("forum.blog.html_source"), isOn: Binding(
             get: { mode == .code },
             set: { changeMode($0 ? .code : .visual) }
         ))
-        .toggleStyle(.switch)
         .font(.subheadline)
         .fixedSize(horizontal: true, vertical: false)
         .frame(minHeight: 44)

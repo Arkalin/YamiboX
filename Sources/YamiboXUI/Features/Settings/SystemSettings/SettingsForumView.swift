@@ -21,7 +21,7 @@ struct SettingsForumView: View {
                 }
                 .disabled(viewModel.isBusy)
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.enhanced_check_in"),
                     isOn: Binding(
                         get: { viewModel.enhancedCheckInEnabled },
@@ -184,7 +184,7 @@ private struct SystemSettingsBoardReaderRowMenu: View {
             }
 
             if case let .manga(smartEnabled) = row.entry.mode {
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.board_reader.smart_toggle"),
                     isOn: Binding(
                         get: { smartEnabled },

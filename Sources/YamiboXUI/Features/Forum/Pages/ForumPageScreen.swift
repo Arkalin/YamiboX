@@ -71,7 +71,7 @@ struct ForumPageScreen: View {
                 Text(L10n.string("forum.native.confirm_load"))
             } actions: {
                 Button(L10n.string("forum.native.continue")) { Task { await model.load(confirmedAction: true) } }
-                    .buttonStyle(.borderedProminent)
+                    .appProminentButtonStyle()
             }
         } else if let message = model.errorMessage {
             VStack(spacing: 16) {

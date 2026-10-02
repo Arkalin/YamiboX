@@ -40,13 +40,12 @@ struct MangaReaderPagedDisplaySettings: View {
             MangaReaderEdgeFillPicker(selection: $settings.pageEdgeFillStyle, palette: palette)
 
             ReaderSettingsDivider(palette: palette)
-            Toggle(isOn: $settings.ignoresTopSafeArea) {
+            AppThemeSwitch(isOn: $settings.ignoresTopSafeArea) {
                 Text(L10n.string("manga.ignores_top_safe_area"))
                     .font(.body)
                     .foregroundStyle(palette.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .tint(palette.selectedControlBackground)
             .frame(minHeight: 44)
             .accessibilityIdentifier("manga.settings.ignoresTopSafeArea")
         }

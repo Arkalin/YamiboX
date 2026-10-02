@@ -398,7 +398,7 @@ private struct CustomBackgroundEditorBottomControls: View {
     var body: some View {
         VStack(spacing: 14) {
             if supportsOverlayVisibility {
-                Toggle(L10n.string("custom_background.show_icon"), isOn: $draft.showsOverlay)
+                AppThemeSwitch(L10n.string("custom_background.show_icon"), isOn: $draft.showsOverlay)
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -482,7 +482,8 @@ private struct CustomBackgroundChangeImageButton: View {
     var body: some View {
         Button(action: action, label: label)
             .font(.subheadline.weight(.semibold))
-            .sharedGlassButtonStyle(prominent: true, tint: appTheme.controlAccent)
+            .sharedGlassButtonStyle(prominent: true, tint: appTheme.forumTheme.prominentSurface)
+            .foregroundStyle(.white)
             .disabled(isApplying)
     }
 

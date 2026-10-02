@@ -482,7 +482,7 @@ public struct NovelReaderView: View {
                 Text(errorMessage)
                     .multilineTextAlignment(.center)
                 Button(L10n.string("common.retry"), action: retryLoad)
-                    .buttonStyle(.borderedProminent)
+                    .appProminentButtonStyle()
                 LoadFailureDetailsButton(details: model.errorDetails, message: errorMessage)
             }
             .padding(24)

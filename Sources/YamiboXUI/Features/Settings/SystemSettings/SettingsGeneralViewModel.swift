@@ -7,7 +7,8 @@ import YamiboXCore
 @Observable
 final class SettingsGeneralViewModel: AppSettingsPersisting {
     var navigation = AppNavigationSettings()
-    var themePreset = AppThemePreset.classic
+    var themeLibrary = AppThemeLibrary()
+    var usesAccentSurfaces = true
     var launchBackground = CustomBackgroundSettings()
     var launchShowsBrand = true
 
@@ -33,7 +34,8 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     /// read instead of one per page.
     func applyLoadedSettings(_ settings: AppSettings) {
         navigation = settings.system.navigation
-        themePreset = settings.appearance.themePreset
+        themeLibrary = settings.appearance.themeLibrary
+        usesAccentSurfaces = settings.appearance.usesAccentSurfaces
         launchBackground = settings.appearance.launchBackground
         launchShowsBrand = settings.appearance.launchShowsBrand
     }
@@ -43,18 +45,41 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         navigation = saved.system.navigation
     }
 
-    func updateThemePreset(_ value: AppThemePreset) {
-        guard themePreset != value else { return }
-        persistSettings(\.themePreset, to: value, updateSettings: updateSettings) {
-            $0.appearance.themePreset = value
+    func selectTheme(_ id: String) {
+        var library = themeLibrary
+        library.select(id)
+        guard library != themeLibrary else { return }
+        persistSettings(\.themeLibrary, to: library, updateSettings: updateSettings) {
+            $0.appearance.themeLibrary.select(id)
         }
+    }
+
+    func updateUsesAccentSurfaces(_ value: Bool) {
+        persistSettings(\.usesAccentSurfaces, to: value, updateSettings: updateSettings) {
+            $0.appearance.usesAccentSurfaces = value
+        }
+    }
+
+    func saveTheme(_ theme: AppThemeDefinition) async throws {
+        let saved = try await updateSettings {
+            $0.appearance.themeLibrary.save(theme)
+        }
+        themeLibrary = saved.appearance.themeLibrary
+    }
+
+    func deleteTheme(_ id: String) async throws {
+        let saved = try await updateSettings {
+            $0.appearance.themeLibrary.remove(id)
+        }
+        themeLibrary = saved.appearance.themeLibrary
     }
 
     /// Mirrors what `resetApplicationData()` just persisted; see the storage
     /// page's reset action, which fans out to every page.
     func restoreDefaultsAfterApplicationReset() {
         navigation = AppNavigationSettings()
-        themePreset = .classic
+        themeLibrary = AppThemeLibrary()
+        usesAccentSurfaces = true
         launchBackground = .init()
         launchShowsBrand = true
     }

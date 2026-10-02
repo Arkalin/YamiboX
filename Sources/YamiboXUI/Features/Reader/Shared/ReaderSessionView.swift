@@ -23,7 +23,7 @@ struct ReaderSessionScreen: View {
         .onChange(of: session.contentID) { _, _ in
             navigator.path = []
         }
-        .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
+        .forumTheme(AppTheme.theme(for: appModel.appAppearanceSettings).forumTheme)
         .onAppear { session.completeFullScreenHandoff() }
     }
 }

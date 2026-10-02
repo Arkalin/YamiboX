@@ -215,12 +215,13 @@ private struct PrivateMessageInputBar: View {
             Button(action: send) {
                 if isSending {
                     ProgressView()
+                        .tint(.white)
                 } else {
                     Label(L10n.string("private_message.send"), systemImage: "paperplane.fill")
                         .labelStyle(.iconOnly)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .appProminentButtonStyle()
             .disabled(!canSend)
         }
         .padding(.horizontal, 12)

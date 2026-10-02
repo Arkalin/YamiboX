@@ -2,24 +2,33 @@ import SwiftUI
 import YamiboXCore
 
 /// The application-wide accent paired with the full forum palette for a
-/// selected appearance preset. Non-forum screens use only `controlAccent`.
+/// selected appearance preset. Switches have a separate track tint.
 public struct AppTheme: @unchecked Sendable {
     public let id: String
     public let controlAccent: Color
+    public let switchTint: Color
     public let forumTheme: ForumTheme
 
-    public init(id: String, controlAccent: Color, forumTheme: ForumTheme) {
+    public init(id: String, controlAccent: Color, forumTheme: ForumTheme, switchTint: Color? = nil) {
         self.id = id
         self.controlAccent = controlAccent
+        self.switchTint = switchTint ?? controlAccent
         self.forumTheme = forumTheme
     }
 
     public static func theme(for preset: AppThemePreset) -> AppTheme {
-        let forumTheme = ForumTheme.theme(for: preset)
+        theme(for: AppAppearanceSettings(themePreset: preset))
+    }
+
+    public static func theme(for settings: AppAppearanceSettings) -> AppTheme {
+        let forumTheme = ForumTheme.theme(for: settings)
         return AppTheme(
-            id: preset.rawValue,
+            id: forumTheme.id,
             controlAccent: forumTheme.accentText,
-            forumTheme: forumTheme
+            forumTheme: forumTheme,
+            switchTint: settings.themePreset == .custom
+                ? Color(hex: ForumThemePalette.customSwitchTint(hex: settings.customThemeColorHex))
+                : nil
         )
     }
 }

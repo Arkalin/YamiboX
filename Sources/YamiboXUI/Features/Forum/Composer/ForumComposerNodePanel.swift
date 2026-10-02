@@ -151,7 +151,7 @@ private struct ForumComposerNodePanelContent: View {
             }
             if model.request.tag != .password && model.request.tag != .postbg && !model.request.tag.isSingleton {
                 Section {
-                    Toggle(L10n.string("forum.composer.raw_parameters"), isOn: $model.rawParameters)
+                    AppThemeSwitch(L10n.string("forum.composer.raw_parameters"), isOn: $model.rawParameters)
                     if model.rawParameters {
                         TextField(L10n.string("forum.composer.parameters"), text: $model.rawParameter).font(.system(.body, design: .monospaced))
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -211,20 +211,20 @@ private struct ForumComposerNodeProperties: View {
                 ForumComposerAlignmentPicker(alignment: $model.alignment, allowsCenter: model.request.tag != .float)
             case .p:
                 ForumComposerAlignmentPicker(alignment: $model.alignment)
-                Toggle(L10n.string("forum.composer.fixed_line_height"), isOn: $model.lineHeightEnabled)
+                AppThemeSwitch(L10n.string("forum.composer.fixed_line_height"), isOn: $model.lineHeightEnabled)
                 if model.lineHeightEnabled { Stepper(L10n.string("forum.composer.line_height_px", Int(model.lineHeight)), value: $model.lineHeight, in: 1...200, step: 1) }
-                Toggle(L10n.string("forum.composer.use_first_indent"), isOn: $model.indentEnabled)
+                AppThemeSwitch(L10n.string("forum.composer.use_first_indent"), isOn: $model.indentEnabled)
                 if model.indentEnabled { Stepper(L10n.string("forum.composer.first_indent", Int(model.indent)), value: $model.indent, in: 0...20, step: 1) }
             case .lineh:
                 HStack { Text(L10n.string("forum.composer.line_height_multiple")); Spacer(); Text(model.number, format: .number.precision(.fractionLength(1))) }
                 Slider(value: $model.number, in: 0.5...5, step: 0.1)
             case .collapse:
                 TextField(L10n.string("forum.composer.title"), text: $model.title)
-                Toggle(L10n.string("forum.composer.expanded"), isOn: $model.expanded)
+                AppThemeSwitch(L10n.string("forum.composer.expanded"), isOn: $model.expanded)
             case .hide:
-                Toggle(L10n.string("forum.composer.hide_credits"), isOn: $model.creditsEnabled)
+                AppThemeSwitch(L10n.string("forum.composer.hide_credits"), isOn: $model.creditsEnabled)
                 if model.creditsEnabled { Stepper(value: $model.credits, in: 0...1_000_000) { Text(L10n.string("forum.composer.credits", model.credits)) } }
-                Toggle(L10n.string("forum.composer.hide_days"), isOn: $model.daysEnabled)
+                AppThemeSwitch(L10n.string("forum.composer.hide_days"), isOn: $model.daysEnabled)
                 if model.daysEnabled { Stepper(value: $model.days, in: 0...36_500) { Text(L10n.string("forum.composer.days", model.days)) } }
                 if !model.creditsEnabled && !model.daysEnabled { Text(L10n.string("forum.composer.hide_reply")).foregroundStyle(.secondary) }
             case .img, .flash, .media, .begin:
@@ -232,7 +232,7 @@ private struct ForumComposerNodeProperties: View {
                     TextField(L10n.string("forum.composer.media_type"), text: $model.value).autocorrectionDisabled().textInputAutocapitalization(.never)
                 }
                 if model.request.tag == .begin { TextField(L10n.string("forum.composer.target"), text: $model.value).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled() }
-                Toggle(L10n.string("forum.composer.dimensions"), isOn: $model.dimensionsEnabled)
+                AppThemeSwitch(L10n.string("forum.composer.dimensions"), isOn: $model.dimensionsEnabled)
                 if model.dimensionsEnabled { ForumComposerDimensionFields(width: $model.width, height: $model.height) }
                 if model.request.tag == .begin {
                     Picker(L10n.string("forum.composer.effect"), selection: $model.effect) {
@@ -241,7 +241,7 @@ private struct ForumComposerNodeProperties: View {
                     Stepper(L10n.string("forum.composer.seconds", model.seconds), value: $model.seconds, in: 0...3600)
                 }
             case .audio:
-                Toggle(L10n.string("forum.composer.audio_flag"), isOn: Binding(get: { model.value == "1" }, set: { model.value = $0 ? "1" : "" }))
+                AppThemeSwitch(L10n.string("forum.composer.audio_flag"), isOn: Binding(get: { model.value == "1" }, set: { model.value = $0 ? "1" : "" }))
             case .ruby:
                 TextField(L10n.string("forum.composer.annotation"), text: $model.value)
             case .postbg:

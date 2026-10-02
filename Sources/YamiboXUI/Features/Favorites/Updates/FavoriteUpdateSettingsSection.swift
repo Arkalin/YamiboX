@@ -99,7 +99,7 @@ struct FavoriteUpdateSettingsSection: View {
 
     private var notificationSection: some View {
         Section {
-            Toggle(L10n.string("favorites.updates.notifications"), isOn: notificationsBinding)
+            AppThemeSwitch(L10n.string("favorites.updates.notifications"), isOn: notificationsBinding)
         } footer: {
             if notificationsBlockedBySystem {
                 Text(L10n.string("favorites.updates.notifications_blocked"))

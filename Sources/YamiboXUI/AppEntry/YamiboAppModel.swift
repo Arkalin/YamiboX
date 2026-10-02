@@ -81,7 +81,7 @@ public final class YamiboAppModel {
     @ObservationIgnored private var readerRestorationRevision = UUID()
     @ObservationIgnored private var claimedForumNavigationRequestID: UUID?
     @ObservationIgnored private var claimedForumSearchRequestID: UUID?
-    public private(set) var appThemePreset = AppThemePreset.classic
+    public private(set) var appAppearanceSettings = AppAppearanceSettings()
     private(set) var readerToolbarStyle = ReaderToolbarStyle.liquidGlass
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
     let forumContentRefresh = ForumContentRefreshState()
@@ -259,7 +259,7 @@ public final class YamiboAppModel {
                favoriteUpdatesRequestID == nil {
                 selectedTab = AppTabLaunchResolver.resolveInitialTab(navigation: navigationSettings)
             }
-            appThemePreset = latestSettings.appearance.themePreset
+            appAppearanceSettings = latestSettings.appearance
             readerToolbarStyle = latestSettings.readerToolbarStyle
             bootstrapState = YamiboBootstrapState(
                 session: state.session, profile: state.profile, settings: latestSettings,
@@ -324,7 +324,7 @@ public final class YamiboAppModel {
 
         let state = await appContext.bootstrap(includingFavoriteLibrary: false, onProgress: updateBootstrapPhase)
         applyNavigationSettings(state.settings.system.navigation)
-        appThemePreset = state.settings.appearance.themePreset
+        appAppearanceSettings = state.settings.appearance
         readerToolbarStyle = state.settings.readerToolbarStyle
         bootstrapState = state
         bootstrapErrorMessage = nil
@@ -367,7 +367,7 @@ public final class YamiboAppModel {
 
     public func refreshAppAppearanceSettings() async {
         let settings = await appContext.settingsStore.load()
-        appThemePreset = settings.appearance.themePreset
+        appAppearanceSettings = settings.appearance
         applyNavigationSettings(settings.system.navigation)
         readerToolbarStyle = settings.readerToolbarStyle
         if let state = bootstrapState {

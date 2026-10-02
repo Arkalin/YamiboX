@@ -61,7 +61,7 @@ struct ContentErrorView: View {
             } label: {
                 Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.borderedProminent)
+            .appProminentButtonStyle()
             LoadFailureDetailsButton(details: details, message: message)
         }
         .padding(18)

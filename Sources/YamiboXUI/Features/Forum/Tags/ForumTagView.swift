@@ -68,7 +68,7 @@ struct ForumTagView: View {
                 .submitLabel(.search)
                 .onSubmit(search)
             Button(action: search) { Image(systemName: "magnifyingglass") }
-                .buttonStyle(.borderedProminent)
+                .appProminentButtonStyle()
                 .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel(L10n.string("common.search"))
         }

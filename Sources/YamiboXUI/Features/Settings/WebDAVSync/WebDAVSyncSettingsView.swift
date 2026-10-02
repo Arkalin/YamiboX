@@ -175,7 +175,7 @@ public struct WebDAVSyncSettingsView: View {
                 }
 
                 Section {
-                    Toggle(isOn: $viewModel.isAutoSyncEnabled) {
+                    AppThemeSwitch(isOn: $viewModel.isAutoSyncEnabled) {
                         Label(L10n.string("webdav.auto_sync"), systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(viewModel.isBusy)
@@ -319,7 +319,7 @@ private struct WebDAVSyncContentView: View {
     var body: some View {
         Form {
             ForEach(WebDAVSyncContent.allCases) { content in
-                Toggle(content.title, isOn: Binding(
+                AppThemeSwitch(content.title, isOn: Binding(
                     get: { !viewModel.disabledContentIDs.contains(content.rawValue) },
                     set: { enabled in Task { await viewModel.setContent(content, enabled: enabled) } }
                 ))

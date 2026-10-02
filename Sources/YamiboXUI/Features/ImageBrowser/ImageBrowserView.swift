@@ -731,7 +731,7 @@ private struct ImageBrowserFailureView: View {
                 Button(action: retry) {
                     Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.borderedProminent)
+                .appProminentButtonStyle()
                 .controlSize(.regular)
                 LoadFailureDetailsButton(details: details, message: L10n.string("image.load_failed"))
                     .foregroundStyle(.white)

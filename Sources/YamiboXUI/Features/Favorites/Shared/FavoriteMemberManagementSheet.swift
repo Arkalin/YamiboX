@@ -159,7 +159,7 @@ struct FavoriteWorkRemovalSheet: View {
                 }
                 if prompt.asksRemote {
                     Section {
-                        Toggle(L10n.string("favorites.quick.add_prompt.remember"), isOn: $remember)
+                        AppThemeSwitch(L10n.string("favorites.quick.add_prompt.remember"), isOn: $remember)
                         Button(L10n.string("favorites.quick.remove_prompt.both"), role: .destructive) { onConfirm(true, remember) }
                             .accessibilityIdentifier("favorite-work-remove-sync")
                         Button(L10n.string("favorites.quick.remove_prompt.local_only"), role: .destructive) { onConfirm(false, remember) }

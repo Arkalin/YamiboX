@@ -41,7 +41,7 @@ struct ForumPostRatingForm: View {
                     }
                 }
                 Divider()
-                Toggle(L10n.string("forum.thread.rate_notice_author"), isOn: $model.noticeAuthor)
+                AppThemeSwitch(L10n.string("forum.thread.rate_notice_author"), isOn: $model.noticeAuthor)
             }
             .padding(ForumComposerStyle.contentInset)
             .disabled(disabled || model.isLoadingOptions)

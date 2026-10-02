@@ -23,7 +23,7 @@ struct LoadFailureView: View {
                 if showsRetry {
                     if prominentRetry {
                         Button(L10n.string("common.retry"), action: retry)
-                            .buttonStyle(.borderedProminent)
+                            .appProminentButtonStyle()
                     } else {
                         Button(L10n.string("common.retry"), action: retry)
                     }

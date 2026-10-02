@@ -938,7 +938,7 @@ private struct ReaderChapterCommentProfileScreen: View {
                     }
                 }
         }
-        .forumTheme(AppTheme.theme(for: appModel.appThemePreset).forumTheme)
+        .forumTheme(AppTheme.theme(for: appModel.appAppearanceSettings).forumTheme)
     }
 }
 

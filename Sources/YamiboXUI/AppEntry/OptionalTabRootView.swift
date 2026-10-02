@@ -55,7 +55,7 @@ struct OptionalTabRootView: View {
                 } description: {
                     Text(L10n.string("messages.login_required_message"))
                 } actions: {
-                    Button(L10n.string("mine.login")) { showsLogin = true }.buttonStyle(.borderedProminent)
+                    Button(L10n.string("mine.login")) { showsLogin = true }.appProminentButtonStyle()
                 }
                 .navigationTitle(tab.title)
                 .navigationBarTitleDisplayMode(.inline)

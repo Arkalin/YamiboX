@@ -150,7 +150,7 @@ private struct ForumComposerTablePanelContent: View {
     var body: some View {
         Form {
             Section {
-                Toggle(L10n.string("forum.composer.source"), isOn: Binding(get: { model.sourceMode }, set: { model.setSourceMode($0) }))
+                AppThemeSwitch(L10n.string("forum.composer.source"), isOn: Binding(get: { model.sourceMode }, set: { model.setSourceMode($0) }))
             }
             if model.sourceMode {
                 Section {
@@ -161,7 +161,7 @@ private struct ForumComposerTablePanelContent: View {
                 Section {
                     ForumComposerTableGrid(model: model, selectingRange: selectingRange)
                         .frame(height: min(360, CGFloat(model.table.rowCount) * 72 + 8))
-                    Toggle(L10n.string("forum.composer.table_range"), isOn: $selectingRange)
+                    AppThemeSwitch(L10n.string("forum.composer.table_range"), isOn: $selectingRange)
                     ForumComposerTableActions(model: model)
                 }
                 if let cell = model.selectedID.flatMap({ model.table.cell(id: $0) }) {

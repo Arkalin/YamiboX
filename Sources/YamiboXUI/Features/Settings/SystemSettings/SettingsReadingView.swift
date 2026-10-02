@@ -27,7 +27,7 @@ struct SettingsReadingView: View {
                 }
             }
             Section {
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.reading_progress.save_normal_thread"),
                     isOn: Binding(
                         get: { viewModel.readingProgress.savesNormalThreadProgress },
@@ -56,13 +56,13 @@ struct SettingsReadingView: View {
                 }
             }
             Section(L10n.string("settings.section.novel_download")) {
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.novel_download.retain_inline_images"),
                     isOn: novelDownloadRetainsInlineImagesBinding
                 )
                 .disabled(viewModel.isBusy)
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.novel_download.auto_refresh"),
                     isOn: novelDownloadAutoRefreshBinding
                 )

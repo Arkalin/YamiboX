@@ -57,13 +57,13 @@ struct SettingsFavoritesView: View {
                 }
                 .disabled(viewModel.isBusy)
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("favorites.sort.descending"),
                     isOn: favoriteSortDescendingBinding
                 )
                 .disabled(viewModel.isBusy)
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("favorites.category.show_counts"),
                     isOn: favoriteShowsCategoryCountsBinding
                 )
@@ -95,7 +95,7 @@ struct SettingsFavoritesView: View {
                     favoriteGridCardScaleRow
                 }
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.favorite_smart_manga_badge"),
                     isOn: favoriteSmartMangaBadgeBinding
                 )
@@ -123,7 +123,7 @@ struct SettingsFavoritesView: View {
                     .disabled(viewModel.isBusy)
                 }
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.favorite_add_sync_prompt"),
                     isOn: favoriteAddSyncPromptBinding
                 )
@@ -140,7 +140,7 @@ struct SettingsFavoritesView: View {
                     .disabled(viewModel.isBusy)
                 }
 
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.favorite_remove_sync_prompt"),
                     isOn: favoriteRemoveRemotePromptBinding
                 )
@@ -163,7 +163,7 @@ struct SettingsFavoritesView: View {
             }
 
             Section {
-                Toggle(
+                AppThemeSwitch(
                     L10n.string("settings.favorite_smart_manga_bulk_delete"),
                     isOn: favoriteSmartMangaBulkDeleteBinding
                 )

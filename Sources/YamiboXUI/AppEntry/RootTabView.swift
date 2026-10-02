@@ -40,7 +40,7 @@ public struct RootTabView: View {
                 }
             }
         }
-        .appTheme(.theme(for: appModel.appThemePreset))
+        .appTheme(.theme(for: appModel.appAppearanceSettings))
         .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
         .task {
             await appModel.bootstrapIfNeeded()
@@ -137,7 +137,7 @@ public struct RootTabView: View {
             ForumNavigationHostView(
                 dependencies: appModel.appContext.forumNavigationDependencies,
                 appModel: appModel,
-                theme: AppTheme.theme(for: appModel.appThemePreset).forumTheme
+                theme: AppTheme.theme(for: appModel.appAppearanceSettings).forumTheme
             )
                 .id(appModel.accountGeneration)
         case .favorites:
@@ -286,7 +286,7 @@ private struct ReaderPresentationModifier: ViewModifier {
                         dependencies: appModel.appContext.forumNavigationDependencies,
                         appModel: appModel
                     )
-                        .appTheme(AppTheme.theme(for: appModel.appThemePreset))
+                        .appTheme(AppTheme.theme(for: appModel.appAppearanceSettings))
                         .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
                         .modifier(ClipboardForumLinkPromptAlert(appModel: appModel, isActive: true))
                 }

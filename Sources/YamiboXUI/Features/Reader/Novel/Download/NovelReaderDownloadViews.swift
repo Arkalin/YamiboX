@@ -282,14 +282,14 @@ struct NovelReaderDownloadProgressSheet: View {
                                 onClose()
                                 dismiss()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .appProminentButtonStyle()
                         } else {
                             Button(L10n.string("reader.run_in_background")) {
                                 download.hideProgress()
                                 onClose()
                                 dismiss()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .appProminentButtonStyle()
 
                             Button(L10n.string("common.stop"), role: .destructive) {
                                 download.stopDownloading()

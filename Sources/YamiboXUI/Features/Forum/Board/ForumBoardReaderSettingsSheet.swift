@@ -52,7 +52,7 @@ struct ForumBoardReaderSettingsSheet: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel(L10n.string("forum.board.reader_settings.smart_toggle_help_toggle"))
                             Spacer(minLength: 8)
-                            Toggle("", isOn: smartComicModeBinding)
+                            AppThemeSwitch("", isOn: smartComicModeBinding)
                                 .labelsHidden()
                         }
                         if showsSmartMangaHelp {

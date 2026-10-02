@@ -70,7 +70,7 @@ struct SettingsPeripheralSections: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(L10n.string("apple_pencil.help_toggle"))
                         Spacer(minLength: 8)
-                        Toggle("", isOn: Binding(
+                        AppThemeSwitch("", isOn: Binding(
                             get: { viewModel.applePencilPageTurn.isEnabled },
                             set: { viewModel.updateApplePencilPageTurnEnabled($0) }
                         ))
@@ -102,7 +102,7 @@ struct SettingsPeripheralSections: View {
 
             Section {
                 connectionStatusRow
-                Toggle(L10n.string("settings.gamepad.enabled"), isOn: Binding(
+                AppThemeSwitch(L10n.string("settings.gamepad.enabled"), isOn: Binding(
                     get: { viewModel.gamepad.isEnabled },
                     set: { viewModel.updateGamepadEnabled($0) }
                 ))
@@ -124,7 +124,7 @@ struct SettingsPeripheralSections: View {
 
             Section {
                 keyboardConnectionStatusRow
-                Toggle(L10n.string("settings.keyboard.enabled"), isOn: Binding(
+                AppThemeSwitch(L10n.string("settings.keyboard.enabled"), isOn: Binding(
                     get: { viewModel.keyboard.isEnabled },
                     set: { viewModel.updateKeyboardEnabled($0) }
                 ))

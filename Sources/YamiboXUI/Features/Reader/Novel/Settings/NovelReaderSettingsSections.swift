@@ -117,7 +117,7 @@ struct NovelReaderTextOptionsSection: View {
                 .font(.title3)
                 .foregroundStyle(palette.primaryText)
             Spacer()
-            Toggle("", isOn: isOn)
+            AppThemeSwitch("", isOn: isOn)
                 .labelsHidden()
         }
         .padding(.horizontal, 20)

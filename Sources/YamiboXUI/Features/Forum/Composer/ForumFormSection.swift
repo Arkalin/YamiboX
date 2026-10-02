@@ -209,14 +209,14 @@ struct ForumFieldView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(field.label).font(.subheadline).foregroundStyle(.secondary)
                     ForEach(field.options) { option in
-                        Toggle(option.label, isOn: Binding(get: { values.contains(option.value) }, set: { selected in
+                        AppThemeSwitch(option.label, isOn: Binding(get: { values.contains(option.value) }, set: { selected in
                             values.removeAll { $0 == option.value }
                             if selected { values.append(option.value) }
                         }))
                     }
                 }
             case .toggle:
-                Toggle(field.label, isOn: Binding(get: { !values.isEmpty }, set: { values = $0 ? [field.options.first?.value ?? "on"] : [] }))
+                AppThemeSwitch(field.label, isOn: Binding(get: { !values.isEmpty }, set: { values = $0 ? [field.options.first?.value ?? "on"] : [] }))
             case .file:
                 Label(L10n.string("forum.native.upload_unavailable"), systemImage: "paperclip")
                     .foregroundStyle(.secondary)

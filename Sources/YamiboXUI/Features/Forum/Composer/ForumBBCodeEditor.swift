@@ -177,8 +177,8 @@ private struct ForumBBCodeEditorFooter: View {
                     session.commitComposition(resign: true); session.isFullScreen = true
                 }
             }
-            Toggle(L10n.string("forum.composer.source"), isOn: Binding(get: { session.sourceMode }, set: { session.setSourceMode($0) }))
-                .toggleStyle(.switch).font(.subheadline).fixedSize(horizontal: true, vertical: false)
+            AppThemeSwitch(L10n.string("forum.composer.source"), isOn: Binding(get: { session.sourceMode }, set: { session.setSourceMode($0) }))
+                .font(.subheadline).fixedSize(horizontal: true, vertical: false)
                 .frame(minHeight: 44).accessibilityIdentifier("native-composer-plain-text")
         }
     }
