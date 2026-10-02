@@ -1073,7 +1073,7 @@
 "reader.section.other" = "其他";
 "reader.section.text" = "文本";
 "reader.select_web_page" = "选择网页";
-"reader.settings.preview_fallback" = "今夜，窗外的风像翻页声一样轻，阅读设置会在此处预览，右上角保存后才会作用在正文中。你可以先把它调到舒服，再继续往下读。";
+"reader.settings.preview_fallback" = "我没有能够为她祈祷幸福的宽阔心胸。所以，当我无法祈求她的幸福时，我希望耳环能够代替我为她的幸福祈祷。";
 "reader.source.all_posts" = "当前为全部回复页";
 "reader.title" = "小说阅读";
 "reader.two_pages_landscape" = "横屏时同时显示 2 页";
@@ -1108,9 +1108,9 @@
 "settings.app_theme.delete_message" = "删除后无法恢复。如果正在使用此主题，将切换为经典。";
 "settings.app_theme.edit_color" = "选择主题色";
 "settings.app_theme.preview" = "主题预览";
-"settings.app_theme.preview_title" = "今日书单";
-"settings.app_theme.preview_subtitle" = "发现新的好故事";
-"settings.app_theme.preview_detail" = "一起聊聊最近的阅读";
+"settings.app_theme.preview_title" = "今日300";
+"settings.app_theme.preview_subtitle" = "发现新的百合故事";
+"settings.app_theme.preview_detail" = "一起聊聊最近的百合";
 "settings.app_theme.tint_interface" = "界面染色";
 "settings.app_theme.tint_footer" = "关闭染色更简约，按钮与链接保留主题色。";
 "settings.clear_content_cover_cache" = "清理封面索引";
@@ -1772,7 +1772,7 @@
 "test_forum.configuration_title" = "测试论坛配置错误";
 "test_forum.launch_instructions" = "请通过 Xcode 的 Run → Arguments 或 simctl 传入 --forum-base-url <URL> 后重新启动。桌面启动不会沿用上次地址。";
 "test_forum.preparing" = "正在准备测试论坛数据…";
-"settings.reader_toolbar.title" = "阅读器工具栏风格";
+"settings.reader_toolbar.title" = "阅读器工具栏";
 "settings.reader_toolbar.style" = "风格";
 "settings.reader_toolbar.liquidGlass" = "液态玻璃";
 "settings.reader_toolbar.books" = "图书";
