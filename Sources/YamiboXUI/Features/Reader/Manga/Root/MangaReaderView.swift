@@ -107,9 +107,10 @@ public struct MangaReaderView: View {
                 isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
                 availableSize: proxy.size
             )
+            let readingTopInset = readingViewportInsets.topInset(for: proxy.size, proposed: topInset)
             let pagedContentTopInset = MangaPagedLayoutPolicy.pagedContentTopInset(
                 settings: model.presentation.settings,
-                topInset: readingViewportInsets.topInset(for: proxy.size, proposed: topInset)
+                topInset: readingTopInset
             )
 
             MangaReaderPresentationContent(
@@ -172,6 +173,16 @@ public struct MangaReaderView: View {
             }
             .onChange(of: usesTwoPageSpread, initial: true) { _, newValue in
                 controlUsesTwoPageSpread = newValue
+            }
+            .sheet(isPresented: $isSettingsPresented) {
+                MangaReaderSettingsSheet(
+                    model: model,
+                    settingsStore: dependencies.settingsStore,
+                    peripheralInput: appModel.peripheralInput,
+                    controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent,
+                    readerViewportSize: proxy.size,
+                    readerTopInset: readingTopInset
+                )
             }
             .overlay {
                 ApplePencilPageTurnInteractionOverlay(
@@ -321,14 +332,6 @@ public struct MangaReaderView: View {
                 appModel: appModel,
                 rootIsDiscussionView: true,
                 discussionWorkTIDs: discussionWorkTIDs
-            )
-        }
-        .sheet(isPresented: $isSettingsPresented) {
-            MangaReaderSettingsSheet(
-                model: model,
-                settingsStore: dependencies.settingsStore,
-                peripheralInput: appModel.peripheralInput,
-                controlAccent: AppTheme.theme(for: appModel.appThemePreset).controlAccent
             )
         }
         .sheet(isPresented: $isDownloadPresented) {

@@ -27,6 +27,7 @@ struct MangaReaderSettingsHero: View {
     let topInset: CGFloat
     let height: CGFloat
     let usesTwoPageSpread: Bool
+    let readerViewportSize: CGSize
     let tapZonesPreviewRequestID: Int
     let onClose: () -> Void
     let onConfirm: () -> Void
@@ -37,6 +38,7 @@ struct MangaReaderSettingsHero: View {
                 settings: settings,
                 palette: palette,
                 usesTwoPageSpread: usesTwoPageSpread,
+                readerViewportSize: readerViewportSize,
                 height: height,
                 contentTopPadding: topInset + 78,
                 tapZonesPreviewRequestID: tapZonesPreviewRequestID
@@ -91,6 +93,7 @@ private struct MangaReaderSettingsPreviewSpread: View {
     let settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
+    let readerViewportSize: CGSize
     let height: CGFloat
     let contentTopPadding: CGFloat
     let tapZonesPreviewRequestID: Int
@@ -104,6 +107,10 @@ private struct MangaReaderSettingsPreviewSpread: View {
             settings: settings,
             usesTwoPageSpread: usesTwoPageSpread
         )
+    }
+
+    private var previewAspectRatio: CGFloat {
+        usesTwoPageSpread ? readerViewportSize.width / readerViewportSize.height : 0.72
     }
 
     private var frameCornerRadii: RectangleCornerRadii {
@@ -126,24 +133,14 @@ private struct MangaReaderSettingsPreviewSpread: View {
                     .padding(.horizontal, 18)
                     .padding(.bottom, 18)
             } else {
-                HStack(spacing: usesTwoPageSpread ? 12 : 0) {
-                    MangaReaderLayeredPagedPreviewPage(
-                        palette: palette,
-                        isTrailingPage: false,
-                        scaleMode: effectivePageScaleMode,
-                        edgeFillStyle: settings.pageEdgeFillStyle,
-                        pageTurnDirection: settings.pageTurnDirection
-                    )
-                    if usesTwoPageSpread {
-                        MangaReaderLayeredPagedPreviewPage(
-                            palette: palette,
-                            isTrailingPage: true,
-                            scaleMode: effectivePageScaleMode,
-                            edgeFillStyle: settings.pageEdgeFillStyle,
-                            pageTurnDirection: settings.pageTurnDirection
-                        )
-                    }
-                }
+                MangaReaderLayeredPagedPreview(
+                    palette: palette,
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    aspectRatio: previewAspectRatio,
+                    scaleMode: effectivePageScaleMode,
+                    edgeFillStyle: settings.pageEdgeFillStyle,
+                    pageTurnDirection: settings.pageTurnDirection
+                )
                 .padding(.top, contentTopPadding)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
@@ -155,7 +152,7 @@ private struct MangaReaderSettingsPreviewSpread: View {
             if selectedMode != .scroll {
                 MangaReaderSettingsPageTurnZonesPreview(
                     settings: settings,
-                    usesTwoPageSpread: usesTwoPageSpread,
+                    aspectRatio: previewAspectRatio,
                     tapZonesPreviewRequestID: tapZonesPreviewRequestID
                 )
                 .padding(.top, contentTopPadding)
@@ -171,15 +168,12 @@ private struct MangaReaderSettingsPreviewSpread: View {
 
 private struct MangaReaderSettingsPageTurnZonesPreview: View {
     let settings: MangaReaderSettings
-    let usesTwoPageSpread: Bool
+    let aspectRatio: CGFloat
     let tapZonesPreviewRequestID: Int
 
     var body: some View {
         GeometryReader { proxy in
-            let pageCount: CGFloat = usesTwoPageSpread ? 2 : 1
-            let spacing: CGFloat = usesTwoPageSpread ? 12 : 0
-            let pageHeight = max(0, min(proxy.size.height, (proxy.size.width - spacing) / (0.72 * pageCount)))
-            let pageWidth = pageHeight * 0.72
+            let size = MangaReaderSettingsPagedPreviewLayout.fittedSize(in: proxy.size, aspectRatio: aspectRatio)
 
             // Match the visible foreground spread, not the full-width hero or its duplicate sheets.
             ReaderSettingsPageTurnZonesPreview(
@@ -189,16 +183,24 @@ private struct MangaReaderSettingsPageTurnZonesPreview: View {
                 isEnabled: settings.readingMode == .paged,
                 usesCompactLabels: true
             )
-            .frame(width: pageWidth * pageCount + spacing, height: pageHeight)
+            .frame(width: size.width, height: size.height)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 }
 
-private struct MangaReaderLayeredPagedPreviewPage: View {
+private enum MangaReaderSettingsPagedPreviewLayout {
+    static func fittedSize(in container: CGSize, aspectRatio: CGFloat) -> CGSize {
+        let height = max(0, min(container.height, container.width / aspectRatio))
+        return CGSize(width: height * aspectRatio, height: height)
+    }
+}
+
+private struct MangaReaderLayeredPagedPreview: View {
     let palette: MangaReaderSettingsPalette
-    let isTrailingPage: Bool
+    let usesTwoPageSpread: Bool
+    let aspectRatio: CGFloat
     let scaleMode: MangaPageScaleMode
     let edgeFillStyle: MangaPageEdgeFillStyle
     let pageTurnDirection: MangaPageTurnDirection
@@ -213,26 +215,102 @@ private struct MangaReaderLayeredPagedPreviewPage: View {
     }
 
     var body: some View {
-        ZStack {
-            MangaReaderPagedPreviewPage(
-                palette: palette,
-                isTrailingPage: isTrailingPage,
-                scaleMode: scaleMode,
-                edgeFillStyle: edgeFillStyle,
-                pageTurnDirection: pageTurnDirection
-            )
-            .brightness(-0.08)
-            .opacity(0.82)
-            .offset(x: duplicateOffsetX)
+        GeometryReader { proxy in
+            let size = MangaReaderSettingsPagedPreviewLayout.fittedSize(in: proxy.size, aspectRatio: aspectRatio)
 
+            ZStack {
+                MangaReaderPagedPreviewCanvas(
+                    palette: palette,
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    scaleMode: scaleMode,
+                    edgeFillStyle: edgeFillStyle,
+                    pageTurnDirection: pageTurnDirection
+                )
+                .brightness(-0.08)
+                .opacity(0.82)
+                .offset(x: duplicateOffsetX)
+
+                MangaReaderPagedPreviewCanvas(
+                    palette: palette,
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    scaleMode: scaleMode,
+                    edgeFillStyle: edgeFillStyle,
+                    pageTurnDirection: pageTurnDirection
+                )
+            }
+            .frame(width: size.width, height: size.height)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+}
+
+private struct MangaReaderPagedPreviewCanvas: View {
+    let palette: MangaReaderSettingsPalette
+    let usesTwoPageSpread: Bool
+    let scaleMode: MangaPageScaleMode
+    let edgeFillStyle: MangaPageEdgeFillStyle
+    let pageTurnDirection: MangaPageTurnDirection
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if usesTwoPageSpread {
+            // One reader viewport with two equal slots, not two independently layered cards.
+            HStack(spacing: 0) {
+                MangaReaderPagedSpreadPreviewPage(
+                    palette: palette,
+                    isTrailingPage: pageTurnDirection == .rightToLeft
+                )
+                MangaReaderPagedSpreadPreviewPage(
+                    palette: palette,
+                    isTrailingPage: pageTurnDirection == .leftToRight
+                )
+            }
+            .environment(\.layoutDirection, .leftToRight)
+            .background(edgeFillStyle.settingsPreviewColor(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
+        } else {
             MangaReaderPagedPreviewPage(
                 palette: palette,
-                isTrailingPage: isTrailingPage,
+                isTrailingPage: false,
                 scaleMode: scaleMode,
                 edgeFillStyle: edgeFillStyle,
                 pageTurnDirection: pageTurnDirection
             )
         }
+    }
+}
+
+private struct MangaReaderPagedSpreadPreviewPage: View {
+    let palette: MangaReaderSettingsPalette
+    let isTrailingPage: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let horizontalInset: CGFloat = 12
+            let pageWidth = MangaReaderPagedPreviewArtworkMetrics.baseWidth + horizontalInset * 2
+            let layout = MangaPagedImageSurfaceLayout(
+                imageSize: CGSize(width: pageWidth, height: pageWidth / 0.72),
+                containerSize: proxy.size,
+                fitMode: .fitWidth,
+                initialHorizontalAlignment: .left,
+                zoomScale: 1
+            )
+            let imageSize = layout.fittedImageSize
+            let scale = imageSize.width / pageWidth
+
+            MangaReaderPagedPreviewArtwork(
+                palette: palette,
+                isTrailingPage: isTrailingPage,
+                panelWidth: (MangaReaderPagedPreviewArtworkMetrics.baseWidth - 8) / 2 * scale,
+                scale: scale
+            )
+            .frame(width: imageSize.width, height: imageSize.height)
+            .background(palette.previewPageBackground)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
     }
 }
 

@@ -11,6 +11,8 @@ struct MangaReaderSettingsSheet: View {
     let settingsStore: SettingsStore
     let peripheralInput: ReaderPeripheralInputManager
     let controlAccent: Color
+    let readerViewportSize: CGSize
+    let readerTopInset: CGFloat
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
@@ -30,10 +32,18 @@ struct MangaReaderSettingsSheet: View {
                 colorScheme: colorScheme,
                 controlAccent: controlAccent
             )
+            let readerContentSize = CGSize(
+                width: readerViewportSize.width,
+                height: max(readerViewportSize.height - MangaPagedLayoutPolicy.pagedContentTopInset(
+                    settings: draftSettings,
+                    topInset: readerTopInset
+                ), 0)
+            )
+            // A narrow settings sheet must not turn a landscape reader spread into a single-page preview.
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: draftSettings,
                 isPadDevice: isPadDevice,
-                availableSize: proxy.size
+                availableSize: readerContentSize
             )
 
             ZStack(alignment: .top) {
@@ -49,6 +59,7 @@ struct MangaReaderSettingsSheet: View {
                         topInset: topInset,
                         height: heroHeight,
                         usesTwoPageSpread: usesTwoPageSpread,
+                        readerViewportSize: readerContentSize,
                         tapZonesPreviewRequestID: tapZonesPreviewRequestID,
                         onClose: { dismiss() },
                         onConfirm: commitDraft
