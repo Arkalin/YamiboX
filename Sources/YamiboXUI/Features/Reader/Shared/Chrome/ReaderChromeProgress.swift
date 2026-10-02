@@ -1,4 +1,5 @@
 import Foundation
+import YamiboXCore
 
 public struct ReaderChromeProgressTick: Equatable, Sendable {
     public var targetIndex: Int
@@ -35,8 +36,13 @@ public struct ReaderChromeProgress: Equatable, Sendable {
     public var iconSystemName: String
 
     private var scrubTargetIndexes: [Int]
+    private var progressIndexRange: Range<Int>
 
-    /// Reader-owned immutable indexes have already been clamped and deduplicated.
+    mutating func useValidatedProgressIndexRange(_ range: Range<Int>) {
+        progressIndexRange = range
+    }
+
+    /// Reader-owned immutable indexes have already been clamped, sorted and deduplicated.
     /// Public construction keeps its defensive normalization for other consumers.
     mutating func useValidatedScrubTargetIndexes(_ indexes: [Int]) {
         scrubTargetIndexes = indexes
@@ -64,13 +70,17 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         secondaryText: String? = nil,
         ticks: [ReaderChromeProgressTick] = [],
         iconSystemName: String = "list.bullet",
-        scrubTargetIndexes: [Int]? = nil
+        scrubTargetIndexes: [Int]? = nil,
+        progressIndexRange: Range<Int>? = nil
     ) {
         self.itemCount = max(itemCount, 1)
         self.currentIndex = min(max(currentIndex, 0), max(self.itemCount - 1, 0))
+        let start = min(max(progressIndexRange?.lowerBound ?? 0, 0), self.itemCount - 1)
+        let end = min(max(progressIndexRange?.upperBound ?? self.itemCount, start + 1), self.itemCount)
+        self.progressIndexRange = start ..< end
         let resolvedFraction = progressFraction ?? Self.positionFraction(
-            forTargetIndex: self.currentIndex,
-            itemCount: self.itemCount
+            forTargetIndex: self.currentIndex - start,
+            itemCount: end - start
         )
         self.progressFraction = Self.clampFraction(resolvedFraction)
         let resolvedPercent = Int((self.progressFraction * 100).rounded())
@@ -90,9 +100,25 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         guard scrubTargetIndexes.count > 1 else {
             return scrubTargetIndexes.first ?? 0
         }
-        let targetOffset = Int((clampedFraction * Double(scrubTargetIndexes.count - 1)).rounded())
-        let clampedOffset = min(max(targetOffset, 0), scrubTargetIndexes.count - 1)
-        return scrubTargetIndexes[clampedOffset]
+        // Snap to real page positions, not equally spaced ranks: spread anchors
+        // can skip pages and the final spread can contain only one page.
+        let pagePosition = clampedFraction * Double(progressIndexRange.count) - 1
+            + Double(progressIndexRange.lowerBound)
+        var low = 0
+        var high = scrubTargetIndexes.count
+        while low < high {
+            let middle = (low + high) / 2
+            if Double(scrubTargetIndexes[middle]) < pagePosition {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        guard low > 0 else { return scrubTargetIndexes[0] }
+        guard low < scrubTargetIndexes.count else { return scrubTargetIndexes[scrubTargetIndexes.count - 1] }
+        let previous = scrubTargetIndexes[low - 1]
+        let next = scrubTargetIndexes[low]
+        return pagePosition - Double(previous) < Double(next) - pagePosition ? previous : next
     }
 
     public func title(forTargetIndex targetIndex: Int) -> String? {
@@ -115,7 +141,10 @@ public struct ReaderChromeProgress: Equatable, Sendable {
     }
 
     public func positionFraction(forTargetIndex targetIndex: Int) -> Double {
-        Self.positionFraction(forTargetIndex: targetIndex, itemCount: itemCount)
+        Self.positionFraction(
+            forTargetIndex: targetIndex - progressIndexRange.lowerBound,
+            itemCount: progressIndexRange.count
+        )
     }
 
     public var scrubContext: ReaderProgressScrubContext {
@@ -139,6 +168,7 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         let candidates = indexes ?? Array(0 ... maxIndex)
         let normalized = candidates
             .map { min(max($0, 0), maxIndex) }
+            .sorted()
             .reduce(into: [Int]()) { result, index in
                 if result.last != index {
                     result.append(index)
@@ -148,11 +178,7 @@ public struct ReaderChromeProgress: Equatable, Sendable {
     }
 
     private static func positionFraction(forTargetIndex targetIndex: Int, itemCount: Int) -> Double {
-        let itemCount = max(itemCount, 1)
-        guard itemCount > 1 else { return 0 }
-        let maxIndex = max(itemCount - 1, 1)
-        let clampedIndex = min(max(targetIndex, 0), maxIndex)
-        return Double(clampedIndex) / Double(maxIndex)
+        ReaderPageProgress.fraction(index: targetIndex, count: itemCount)
     }
 
     private static func clampFraction(_ value: Double) -> Double {

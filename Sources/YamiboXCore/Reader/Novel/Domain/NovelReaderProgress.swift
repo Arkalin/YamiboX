@@ -111,9 +111,9 @@ public struct NovelReaderProgressProjection: Hashable, Sendable {
         )
         let fraction: Double = switch readingMode {
         case .vertical:
-            displayedPageCount > 1 ? Double(displayedPageIndex) / Double(displayedPageCount - 1) : 0
+            ReaderPageProgress.fraction(index: displayedPageIndex, count: visibleSurfaceIndexes.count)
         case .paged:
-            surfaceCount > 1 ? Double(progressSurfaceIndex) / Double(surfaceCount - 1) : 0
+            ReaderPageProgress.fraction(index: progressSurfaceIndex, count: surfaces.count)
         }
         let percent = Int((fraction * 100).rounded())
 
@@ -168,8 +168,8 @@ public struct NovelReaderProgressProjection: Hashable, Sendable {
             }
         }
         let fraction: Double = switch readingMode {
-        case .vertical: localCount > 1 ? Double(localIndex) / Double(localCount - 1) : 0
-        case .paged: count > 1 ? Double(index) / Double(count - 1) : 0
+        case .vertical: ReaderPageProgress.fraction(index: localIndex, count: indexes.count)
+        case .paged: ReaderPageProgress.fraction(index: index, count: surfaces.count)
         }
         let percent = min(max(Int((fraction * 100).rounded()), 0), 100)
         self.readingMode = readingMode

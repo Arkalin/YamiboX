@@ -748,9 +748,8 @@ public struct MangaReaderView: View {
             ?? pages[0]
         let currentPageIndex = loaded.currentPageIndex ?? pages.firstIndex(of: currentPage)
         let itemCount = max(currentPage.chapterPageCount, 1)
-        let maxIndex = max(itemCount - 1, 1)
         let currentIndex = min(max(currentPage.localIndex, 0), itemCount - 1)
-        let progressFraction = itemCount > 1 ? Double(currentIndex) / Double(maxIndex) : 0
+        let progressFraction = ReaderPageProgress.fraction(index: currentIndex, count: itemCount)
         let percentText = "\(Int((progressFraction * 100).rounded()))%"
         let readingPlan = chromeSummaryMemo.plan(
             loaded: loaded,

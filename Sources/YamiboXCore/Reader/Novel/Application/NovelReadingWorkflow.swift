@@ -739,8 +739,10 @@ public final class NovelReadingWorkflow {
         let snapshot = state?.snapshot
         let progressProjection = state?.presentation?.progressProjection
         let documentSurfaceProgressPercent = progressProjection.map { projection in
-            guard projection.displayedPageCount > 1 else { return 0 }
-            let fraction = Double(projection.displayedPageIndex) / Double(projection.displayedPageCount - 1)
+            let fraction = ReaderPageProgress.fraction(
+                index: projection.displayedPageIndex,
+                count: projection.visibleSurfaceIndexes.count
+            )
             return Int((min(max(fraction, 0), 1) * 100).rounded())
         }
         let surfaces = viewportRuntime.currentResult?.viewportIndex.surfaces ?? []

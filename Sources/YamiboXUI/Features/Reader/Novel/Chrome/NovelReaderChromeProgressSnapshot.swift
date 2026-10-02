@@ -36,9 +36,8 @@ private struct NovelReaderProgressScrubData: Equatable, Sendable {
                 return fallbackVisibleSurfaceIndex
             }
             let clampedPercent = min(max(value, 0), 100)
-            let localSurfaceIndex = min(
-                max(Int((clampedPercent / 100) * Double(visibleSurfaceIndexes.count - 1)), 0),
-                max(visibleSurfaceIndexes.count - 1, 0)
+            let localSurfaceIndex = ReaderPageProgress.index(
+                fraction: clampedPercent / 100, count: visibleSurfaceIndexes.count
             )
             return visibleSurfaceIndexes[localSurfaceIndex]
         }
@@ -153,7 +152,7 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
                 guard seenStartIndexes.insert(clampedStartIndex).inserted else { return nil }
                 return NovelReaderProgressChapterTick(
                     chapter: chapter,
-                    position: Double(clampedStartIndex) / Double(max(maxIndex, 1)),
+                    position: ReaderPageProgress.fraction(index: clampedStartIndex, count: projection.surfaceCount),
                     isCurrent: currentChapterIndex == index
                 )
             }
@@ -297,26 +296,7 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     }
 
     public var progressScrubContext: ReaderProgressScrubContext {
-        ReaderProgressScrubContext(
-            itemCount: scrubData.surfaceCount,
-            currentProgressFraction: currentProgressFraction,
-            targetIndex: { fraction in
-                let clampedFraction = min(max(fraction, 0), 1)
-                let value = switch scrubData.readingMode {
-                case .paged:
-                    clampedFraction * Double(max(scrubData.surfaceCount - 1, 0))
-                case .vertical:
-                    clampedFraction * 100
-                }
-                return scrubData.targetSurfaceIndex(for: value)
-            },
-            title: { surfaceIndex in
-                scrubData.chapterTitle(for: surfaceIndex)
-            },
-            tickTargetIndex: { surfaceIndex in
-                scrubData.chapterTickStartIndex(for: surfaceIndex)
-            }
-        )
+        chromeProgress.scrubContext
     }
 
     public var chromeProgress: ReaderChromeProgress {
@@ -331,16 +311,27 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
             percentText: currentProgressPercentText,
             primaryText: L10n.string("reader.chapters") + " · \(currentProgressPercentText)",
             secondaryText: progressText,
-            ticks: progressChapterTicks.map { tick in
-                ReaderChromeProgressTick(
-                    targetIndex: tick.chapter.startIndex,
-                    positionFraction: tick.position,
-                    title: tick.chapter.title,
-                    isCurrent: tick.isCurrent
-                )
-            },
-            scrubTargetIndexes: scrubData.scrubTargetIndexes
+            ticks: chromeTicks,
+            scrubTargetIndexes: scrubData.scrubTargetIndexes,
+            progressIndexRange: scrubData.progressIndexRange
         )
+    }
+
+    private var chromeTicks: [ReaderChromeProgressTick] {
+        let range = scrubData.progressIndexRange
+        let precedingTick = progressChapterTicks.contains { $0.chapter.startIndex == range.lowerBound }
+            ? nil : progressChapterTicks.last { $0.chapter.startIndex < range.lowerBound }
+        return progressChapterTicks.compactMap { tick in
+            let start = tick.chapter.startIndex
+            guard range.contains(start) || tick == precedingTick else { return nil }
+            let target = max(start, range.lowerBound)
+            return ReaderChromeProgressTick(
+                targetIndex: target,
+                positionFraction: ReaderPageProgress.fraction(index: target - range.lowerBound, count: range.count),
+                title: tick.chapter.title,
+                isCurrent: tick.isCurrent
+            )
+        }
     }
 
     /// Retains the static dictionaries/arrays of the previous snapshot. Only
@@ -355,7 +346,8 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
         let oldChapter = structure.chapterIndexes.indices.contains(oldIndex) ? structure.chapterIndexes[oldIndex] : nil
         let newChapter = structure.chapterIndexes.indices.contains(index) ? structure.chapterIndexes[index] : nil
         var chrome = chromeProgress
-        if readingMode == .vertical, visibleView != projection.displayedView {
+        let didChangeView = visibleView != projection.displayedView
+        if readingMode == .vertical, didChangeView {
             chrome.useValidatedScrubTargetIndexes(projection.visibleSurfaceIndexes.isEmpty
                 ? [projection.fallbackVisibleSurfaceIndex] : projection.visibleSurfaceIndexes)
         }
@@ -365,10 +357,6 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
                 var next = tick
                 next.isCurrent = tickChapterIndexes[offset] == newChapter
                 return next
-            }
-            chrome.ticks = progressChapterTicks.map {
-                ReaderChromeProgressTick(targetIndex: $0.chapter.startIndex, positionFraction: $0.position,
-                                         title: $0.chapter.title, isCurrent: $0.isCurrent)
             }
         }
         visibleView = projection.displayedView
@@ -386,6 +374,10 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
         scrubData.currentProgressPercent = projection.currentProgressPercent
         scrubData.visibleSurfaceIndexes = projection.visibleSurfaceIndexes
         scrubData.fallbackVisibleSurfaceIndex = projection.fallbackVisibleSurfaceIndex
+        chrome.useValidatedProgressIndexRange(scrubData.progressIndexRange)
+        if oldChapter != newChapter || didChangeView {
+            chrome.ticks = chromeTicks
+        }
         pageNumber = projection.displayedPageIndex + 1
         let spread = projection.usesTwoPageSpread ? structure.spread(containing: index) : nil
         let visible = spread.map { [$0.leftSurfaceIndex, $0.rightSurfaceIndex].compactMap { $0 } } ?? [index]
@@ -449,6 +441,14 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
 }
 
 private extension NovelReaderProgressScrubData {
+    var progressIndexRange: Range<Int> {
+        if readingMode == .vertical, let first = visibleSurfaceIndexes.first,
+           let last = visibleSurfaceIndexes.last {
+            return first ..< (last + 1)
+        }
+        return 0 ..< max(surfaceCount, 1)
+    }
+
     var scrubTargetIndexes: [Int] {
         switch readingMode {
         case .paged:
