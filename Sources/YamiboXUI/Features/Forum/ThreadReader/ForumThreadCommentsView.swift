@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumThreadCommentsView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.forumBlacklist) private var blacklist
     let comments: [ForumThreadPostComment]
     let onUserTap: (String, String?) -> Void
 
@@ -12,13 +13,22 @@ struct ForumThreadCommentsView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(theme.supportingText)
 
-            ForEach(comments) { comment in
-                ForumThreadCommentRow(comment: comment, onUserTap: onUserTap)
+            ForEach(visibleComments) { comment in
+                if blacklist?.contains(comment.author.uid) == true {
+                    ForumBlockedContentView()
+                } else {
+                    ForumThreadCommentRow(comment: comment, onUserTap: onUserTap)
+                }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var visibleComments: [ForumThreadPostComment] {
+        guard blacklist?.replyDisplay == .hidden else { return comments }
+        return comments.filter { blacklist?.contains($0.author.uid) != true }
     }
 }
 

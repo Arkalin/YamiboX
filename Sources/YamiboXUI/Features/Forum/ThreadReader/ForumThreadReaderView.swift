@@ -3,6 +3,7 @@ import YamiboXCore
 
 struct ForumThreadReaderView: View {
     @Environment(\.forumKeepsTabBarVisible) private var keepsTabBarVisible
+    @Environment(\.forumBlacklist) private var blacklist
     @State private var model: ForumThreadReaderViewModel
     @State private var pendingAttachment: ForumThreadAttachmentBlock?
     @State private var readTask: Task<Void, Never>?
@@ -53,7 +54,12 @@ struct ForumThreadReaderView: View {
             goToPage: goToPage,
             toggleFavorite: toggleFavorite,
             presentFavoriteLocationPicker: presentFavoriteLocationPicker,
-            makeImageBrowserRequest: model.imageBrowserRequest,
+            makeImageBrowserRequest: { imageID, url, title, refererURL in
+                model.imageBrowserRequest(
+                    imageID: imageID, url: url, title: title, refererURL: refererURL,
+                    blockedUIDs: blacklist?.blockedUIDs ?? []
+                )
+            },
             imageBrowserCoverActionsProvider: model.imageBrowserCoverActionsProvider,
             loadRatingResults: model.loadRatingResults,
             loadRateOptions: model.loadRateOptions,

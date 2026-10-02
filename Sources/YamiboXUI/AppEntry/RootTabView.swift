@@ -103,6 +103,7 @@ public struct RootTabView: View {
             ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
         }
         .environment(\.yamiboImagePipeline, appModel.imagePipeline)
+        .environment(\.forumBlacklist, appModel.appContext.blacklistWorkflow)
     }
 
     private var isShowingBootstrapPlaceholder: Bool {

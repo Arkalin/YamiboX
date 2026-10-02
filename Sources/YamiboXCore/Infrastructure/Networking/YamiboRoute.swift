@@ -33,6 +33,8 @@ public enum YamiboRoute: Sendable {
     case userSpaceFriendPage(type: UserSpaceFriendType, page: Int)
     case userSpaceAddFriendForm(uid: String)
     case userSpaceAddFriendSubmit(uid: String)
+    case forumBlacklist(page: Int)
+    case forumBlacklistAdd
     case userSpaceBlogEditor
     case userSpacePrivateMessages(page: Int)
     case userSpaceNotices(page: Int)
@@ -352,6 +354,21 @@ public enum YamiboRoute: Sendable {
             )
         case let .userSpaceAddFriendForm(uid), let .userSpaceAddFriendSubmit(uid):
             return userSpaceAddFriendURL(uid: uid)
+        case let .forumBlacklist(page):
+            return Self.makeURL(path: "/home.php", queryItems: [
+                .init(name: "mod", value: "space"),
+                .init(name: "do", value: "friend"),
+                .init(name: "view", value: "blacklist"),
+                .init(name: "page", value: String(max(1, page))),
+                .init(name: "mobile", value: "no")
+            ])
+        case .forumBlacklistAdd:
+            return Self.makeURL(path: "/home.php", queryItems: [
+                .init(name: "mod", value: "spacecp"),
+                .init(name: "ac", value: "friend"),
+                .init(name: "op", value: "blacklist"),
+                .init(name: "mobile", value: "no")
+            ])
         case .userSpaceBlogEditor:
             return Self.makeURL(path: "/home.php", queryItems: [
                 .init(name: "mod", value: "spacecp"),

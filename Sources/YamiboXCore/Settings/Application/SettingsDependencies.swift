@@ -5,6 +5,7 @@ import Foundation
 /// (favorite sync section, WebDAV sync sheet).
 public struct SettingsDependencies: Sendable {
     public let sessionStore: SessionStore
+    public let blacklist: ForumBlacklistWorkflow
     public let settingsStore: SettingsStore
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     public let launchBackgroundImageStore: CustomBackgroundImageStore
@@ -30,6 +31,7 @@ public struct SettingsDependencies: Sendable {
 
     public init(
         sessionStore: SessionStore,
+        blacklist: ForumBlacklistWorkflow,
         settingsStore: SettingsStore,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
         launchBackgroundImageStore: CustomBackgroundImageStore,
@@ -53,6 +55,7 @@ public struct SettingsDependencies: Sendable {
         networkLogStore: NetworkLogStore = .shared
     ) {
         self.sessionStore = sessionStore
+        self.blacklist = blacklist
         self.settingsStore = settingsStore
         self.favoriteBackgroundImageStore = favoriteBackgroundImageStore
         self.launchBackgroundImageStore = launchBackgroundImageStore

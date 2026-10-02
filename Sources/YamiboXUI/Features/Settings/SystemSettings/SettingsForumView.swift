@@ -11,6 +11,15 @@ struct SettingsForumView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    ForumBlacklistManagementView(workflow: viewModel.dependencies.blacklist)
+                } label: {
+                    SystemSettingsRow(title: L10n.string("blacklist.management"), showsChevron: false)
+                }
+                .disabled(viewModel.isBusy)
+            }
+
+            Section {
                 Button {
                     openCheckInAutomationCreator()
                 } label: {

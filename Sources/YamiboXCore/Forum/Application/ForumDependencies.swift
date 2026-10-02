@@ -20,6 +20,7 @@ public struct ForumDependencies: Sendable {
     public let sessionStore: SessionStore
     public let profileStore: YamiboProfileStore
     public let messageUnreadWorkflow: MessageUnreadWorkflow
+    public let blacklist: ForumBlacklistWorkflow
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore
     /// Shared with the other reader surfaces, including in test compositions.
@@ -46,6 +47,7 @@ public struct ForumDependencies: Sendable {
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
         messageUnreadWorkflow: MessageUnreadWorkflow,
+        blacklist: ForumBlacklistWorkflow,
         localFavoriteLibraryStore: FavoriteLibraryStore,
         readingProgressStore: ReadingProgressStore,
         browsingHistoryStore: BrowsingHistoryStore,
@@ -70,6 +72,7 @@ public struct ForumDependencies: Sendable {
         self.sessionStore = sessionStore
         self.profileStore = profileStore
         self.messageUnreadWorkflow = messageUnreadWorkflow
+        self.blacklist = blacklist
         self.localFavoriteLibraryStore = localFavoriteLibraryStore
         self.readingProgressStore = readingProgressStore
         self.browsingHistoryStore = browsingHistoryStore

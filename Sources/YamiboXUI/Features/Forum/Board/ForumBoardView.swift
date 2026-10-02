@@ -233,6 +233,7 @@ private struct ForumBoardBodyView: View {
 }
 
 private struct ForumBoardContentView: View {
+    @Environment(\.forumBlacklist) private var blacklist
     @Environment(\.forumTheme) private var theme
     let board: ForumBoardSummary
     let subBoards: [ForumBoardSummary]
@@ -258,8 +259,8 @@ private struct ForumBoardContentView: View {
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
-        ForumKeyboardBrowser(threadIDs: threads.map(\.tid), onOpen: { id in
-            if let thread = threads.first(where: { $0.tid == id }) { onThreadTap(thread) }
+        ForumKeyboardBrowser(threadIDs: visibleThreads.map(\.tid), onOpen: { id in
+            if let thread = visibleThreads.first(where: { $0.tid == id }) { onThreadTap(thread) }
         }) {
             boardContent
         }
@@ -284,8 +285,10 @@ private struct ForumBoardContentView: View {
 
                 if threads.isEmpty {
                     ForumBoardNoThreadsView()
+                } else if visibleThreads.isEmpty {
+                    ForumBlacklistEmptyView()
                 } else {
-                    ForEach(threads) { thread in
+                    ForEach(visibleThreads) { thread in
                         ForumThreadSummaryRowView(
                             thread: thread,
                             onThreadTap: {
@@ -333,6 +336,10 @@ private struct ForumBoardContentView: View {
             selectFilter: selectFilter,
             selectOrder: selectOrder
         )
+    }
+
+    private var visibleThreads: [ForumThreadSummary] {
+        threads.filter { blacklist?.contains($0.authorID) != true }
     }
 
     private var filterItems: [ForumBoardOptionItem] {

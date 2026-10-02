@@ -2,7 +2,9 @@ import SwiftUI
 import YamiboXCore
 
 struct UserSpaceContentView: View {
+    @Environment(\.forumBlacklist) private var blacklist
     let selectedSubPage: UserSpaceSubPage
+    let spaceUID: String?
     let content: UserSpaceViewModel.Content?
     let pageNavigation: ForumPageNavigation?
     let currentPage: Int
@@ -19,31 +21,36 @@ struct UserSpaceContentView: View {
             EmptyView()
         case .threads:
             if case let .threads(page) = content {
+                let threads = page.threads.filter { blacklist?.contains(spaceUID ?? $0.authorID) != true }
                 if page.threads.isEmpty {
                     UserSpaceEmptyView(message: L10n.string("user_space.empty_threads"))
+                } else if threads.isEmpty {
+                    ForumBlacklistEmptyView()
                 } else {
-                    ForEach(page.threads) { thread in
+                    ForEach(threads) { thread in
                         ForumThreadSummaryRowView(
                             thread: thread,
                             onThreadTap: { onThreadTap(thread.url, thread.title) },
                             onAuthorTap: onUserTap
                         )
                     }
-                    ForumPageNavigationBar(navigation: pageNavigation, currentPage: currentPage, goToPage: goToPage, hidesOnSinglePage: true)
                 }
+                ForumPageNavigationBar(navigation: pageNavigation, currentPage: currentPage, goToPage: goToPage, hidesOnSinglePage: true)
             }
         case .replies:
             if case let .replies(page) = content {
                 if page.replies.isEmpty {
                     UserSpaceEmptyView(message: L10n.string("user_space.empty_replies"))
+                } else if blacklist?.contains(spaceUID) == true {
+                    ForumBlacklistEmptyView()
                 } else {
                     ForEach(page.replies) { reply in
                         UserSpaceReplyRowView(reply: reply) {
                             onThreadTap(reply.threadURL, reply.threadTitle)
                         }
                     }
-                    ForumPageNavigationBar(navigation: pageNavigation, currentPage: currentPage, goToPage: goToPage, hidesOnSinglePage: true)
                 }
+                ForumPageNavigationBar(navigation: pageNavigation, currentPage: currentPage, goToPage: goToPage, hidesOnSinglePage: true)
             }
         case .myBlogs, .friendBlogs, .viewAllBlogs:
             if case let .blogs(page) = content {

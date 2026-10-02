@@ -75,6 +75,7 @@ struct ForumSearchView: View {
 
 private struct ForumSearchBodyView: View {
     @Environment(\.forumTheme) private var theme
+    @Environment(\.forumBlacklist) private var blacklist
     @FocusState private var isQueryFocused: Bool
     @Binding var query: String
 
@@ -91,8 +92,8 @@ private struct ForumSearchBodyView: View {
     let onAuthorTap: (String, String?) -> Void
 
     var body: some View {
-        ForumKeyboardBrowser(threadIDs: results.map(\.tid), onOpen: { id in
-            if let thread = results.first(where: { $0.tid == id }) { onThreadTap(thread) }
+        ForumKeyboardBrowser(threadIDs: visibleResults.map(\.tid), onOpen: { id in
+            if let thread = visibleResults.first(where: { $0.tid == id }) { onThreadTap(thread) }
         }) {
             searchContent
         }
@@ -139,7 +140,9 @@ private struct ForumSearchBodyView: View {
                         .foregroundStyle(theme.secondaryText)
                 }
 
-                ForEach(results) { thread in
+                if visibleResults.isEmpty { ForumBlacklistEmptyView() }
+
+                ForEach(visibleResults) { thread in
                     ForumThreadSummaryRowView(
                         thread: thread,
                         onThreadTap: {
@@ -159,6 +162,10 @@ private struct ForumSearchBodyView: View {
                 }
             }
         }
+    }
+
+    private var visibleResults: [ForumThreadSummary] {
+        results.filter { blacklist?.contains($0.authorID) != true }
     }
 }
 
