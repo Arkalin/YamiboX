@@ -272,13 +272,20 @@ public struct NovelReaderView: View {
                         .background {
                             NovelReaderNavigationOverlayDisplayProbe(
                                 revision: model.navigationOverlayRevision,
-                                didDisplay: model.navigationOverlayDidDisplay
+                                waitsForPresentation: model.initialPresentationPhase.concealsContent,
+                                didDisplay: { revision in
+                                    model.initialPresentationDidDisplay()
+                                    model.navigationOverlayDidDisplay(revision: revision)
+                                }
                             )
                         }
                         .zIndex(1)
                 }
             }
-            .onAppear { model.setNavigationOverlayReporter(active: true) }
+            .onAppear {
+                model.setInitialPresentationReporter(active: true)
+                model.setNavigationOverlayReporter(active: true)
+            }
             .disabled(hasPresentedOverlay)
             // Hide only the reading surface's bar, not a presented panel's commands.
             .toolbar(.hidden, for: .navigationBar)
@@ -399,6 +406,7 @@ public struct NovelReaderView: View {
                 model.handleMemoryPressure()
             },
             onDisappear: {
+                model.setInitialPresentationReporter(active: false)
                 model.setNavigationOverlayReporter(active: false)
                 appModel.peripheralInput.removeHandler(controlHandlerToken)
                 controlHandlerToken = nil

@@ -185,6 +185,9 @@ final class NovelReaderLoadingCoordinator {
                 preparedInitialLoad = prepared
                 forceRefreshInitialLoad = false
             }
+            try await preparation.waitForInitialDisplay()
+            try Task.checkCancellation()
+            guard preparation.isCurrent(sequence), !isClosed else { return }
             // Drain geometry changes before admitting the first presentation.
             while preparation.isCurrent(sequence), !isClosed {
                 try Task.checkCancellation()
@@ -216,7 +219,7 @@ final class NovelReaderLoadingCoordinator {
             }
         } catch {
             guard preparation.isCurrent(sequence), !isClosed else { return }
-            if Task.isCancelled {
+            if Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
                 preparation.advance(to: .cancelled, for: sequence)
             } else {
                 preparation.advance(to: .failed, for: sequence)

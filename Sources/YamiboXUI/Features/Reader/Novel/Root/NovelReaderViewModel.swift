@@ -1052,6 +1052,14 @@ public final class NovelReaderViewModel {
         }
     }
 
+    func setInitialPresentationReporter(active: Bool) {
+        preparation.setDisplayReporter(active: active)
+    }
+
+    func initialPresentationDidDisplay() {
+        preparation.initialSurfaceDidDisplay()
+    }
+
     func navigationOverlayDidDisplay(revision: UInt64) {
         guard revision == navigationOverlayRevision else { return }
         finishNavigationOverlayWait()

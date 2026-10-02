@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import YamiboXCore
 
@@ -28,6 +29,54 @@ final class NovelReaderPreparationCoordinator {
     @ObservationIgnored private(set) var layoutRevision: UInt64 = 0
     @ObservationIgnored private var sequence: UInt64 = 0
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var hasDisplayReporter = false
+    @ObservationIgnored private var hasDisplayedInitialSurface = false
+    @ObservationIgnored private var displayWaiter: (id: UUID, continuation: CheckedContinuation<Void, any Error>)?
+
+    func setDisplayReporter(active: Bool) {
+        hasDisplayReporter = active
+        if !active {
+            task?.cancel()
+            finishDisplayWait(error: CancellationError())
+        }
+    }
+
+    func initialSurfaceDidDisplay() {
+        guard hasDisplayReporter, phase != .cancelled else { return }
+        hasDisplayedInitialSurface = true
+        finishDisplayWait()
+    }
+
+    /// Data preparation can overlap entry, but synchronous TextKit indexing
+    /// must not freeze the reader's partially transparent presentation frame.
+    func waitForInitialDisplay() async throws {
+        guard hasDisplayReporter, !hasDisplayedInitialSurface else { return }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                guard !Task.isCancelled, phase != .cancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                displayWaiter = (id, continuation)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard self?.displayWaiter?.id == id else { return }
+                self?.finishDisplayWait(error: CancellationError())
+            }
+        }
+    }
+
+    private func finishDisplayWait(error: (any Error)? = nil) {
+        let waiter = displayWaiter
+        displayWaiter = nil
+        if let error {
+            waiter?.continuation.resume(throwing: error)
+        } else {
+            waiter?.continuation.resume()
+        }
+    }
 
     func prepare(layout: NovelReaderLayout) -> PreparationRequest {
         guard phase != .cancelled, phase != .failed else { return .ignore }
@@ -125,6 +174,7 @@ final class NovelReaderPreparationCoordinator {
         task?.cancel()
         task = nil
         phase = .cancelled
+        finishDisplayWait(error: CancellationError())
         layoutRevision &+= 1
         requestedLayout = layout
     }

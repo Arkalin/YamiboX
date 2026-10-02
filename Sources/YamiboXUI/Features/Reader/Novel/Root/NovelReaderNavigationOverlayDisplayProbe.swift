@@ -5,12 +5,13 @@ import UIKit
 /// The second tick admits work only after the overlay's first committed frame.
 struct NovelReaderNavigationOverlayDisplayProbe: UIViewRepresentable {
     let revision: UInt64
+    var waitsForPresentation = false
     let didDisplay: @MainActor (UInt64) -> Void
 
     func makeUIView(context: Context) -> ProbeView { ProbeView() }
 
     func updateUIView(_ view: ProbeView, context: Context) {
-        view.configure(revision: revision, didDisplay: didDisplay)
+        view.configure(revision: revision, waitsForPresentation: waitsForPresentation, didDisplay: didDisplay)
     }
 
     static func dismantleUIView(_ view: ProbeView, coordinator: Void) {
@@ -23,9 +24,11 @@ struct NovelReaderNavigationOverlayDisplayProbe: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var ticks = 0
         private var hasReported = false
+        private var waitsForPresentation = false
 
-        func configure(revision: UInt64, didDisplay: @escaping @MainActor (UInt64) -> Void) {
+        func configure(revision: UInt64, waitsForPresentation: Bool, didDisplay: @escaping @MainActor (UInt64) -> Void) {
             self.didDisplay = didDisplay
+            self.waitsForPresentation = waitsForPresentation
             if self.revision != revision {
                 stop()
                 self.revision = revision
@@ -48,11 +51,34 @@ struct NovelReaderNavigationOverlayDisplayProbe: UIViewRepresentable {
         }
 
         @objc private func displayTick() {
+            if waitsForPresentation, !hasFinishedPresentation {
+                ticks = 0
+                return
+            }
             ticks += 1
             guard ticks >= 2, let revision else { return }
             hasReported = true
             stop()
             didDisplay?(revision)
+        }
+
+        private var hasFinishedPresentation: Bool {
+            // UIKit owns cover/zoom entry; SwiftUI's mode cross-fade can also
+            // animate an ancestor layer without a controller transition.
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let controller = current as? UIViewController,
+                   controller.transitionCoordinator?.isAnimated == true {
+                    return false
+                }
+                responder = current.next
+            }
+            var ancestor: CALayer? = layer
+            while let current = ancestor {
+                if (current.presentation() ?? current).opacity < 0.999 { return false }
+                ancestor = current.superlayer
+            }
+            return true
         }
 
         func stop() {
