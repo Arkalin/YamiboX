@@ -1245,6 +1245,7 @@
 /* Settings search synonyms: separate terms with | and retain product names. */
 "settings.search.keywords.favorites.grid_card_scale" = "卡片|大小|缩放|网格|瀑布流|外观";
 "settings.search.keywords.bookshelf.only_favorites" = "书架|主页|首页|收藏|继续阅读|此前阅读";
+"settings.search.keywords.bookshelf.background" = "书架|背景|壁纸|图片|模糊|外观";
 "settings.search.keywords.bookshelf.continue_count" = "书架|继续阅读|数量|小说|漫画|独立|混合";
 "settings.search.keywords.general.navigation" = "导航栏|底栏|排序|启动页|书架|消息|浏览记录|喜欢";
 "settings.search.keywords.general.appearance" = "主题|外观|配色|简约|普通|经典|青岚|樱墨|浅色|深色";
@@ -1364,6 +1365,7 @@
 "settings.section.favorite_smart_manga_management" = "智能漫画收藏管理";
 "settings.section.general" = "通用";
 "settings.bookshelf.only_favorites" = "只显示已收藏项";
+"settings.bookshelf.background" = "书架背景";
 "settings.bookshelf.continue_mode" = "显示方式";
 "settings.bookshelf.continue_mode.separate" = "独立";
 "settings.bookshelf.continue_mode.mixed" = "混合";

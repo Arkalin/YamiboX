@@ -29,6 +29,7 @@ public actor CustomBackgroundPersistence {
                 try await settingsStore.update {
                     switch scope {
                     case .favorites: $0.favorites.background = updated
+                    case .bookshelf: $0.system.bookshelfBackground = updated
                     case .launch:
                         $0.appearance.launchBackground = updated
                         if let overlayVisibility { $0.appearance.launchShowsBrand = overlayVisibility }

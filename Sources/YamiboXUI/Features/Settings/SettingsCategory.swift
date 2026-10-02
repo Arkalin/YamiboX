@@ -101,6 +101,12 @@ enum SettingsSearchRegistry {
             keywords: localizedKeywords("settings.search.keywords.bookshelf.only_favorites")
         ),
         SettingsSearchEntry(
+            id: "bookshelf.background",
+            title: L10n.string("settings.bookshelf.background"),
+            category: .bookshelf,
+            keywords: localizedKeywords("settings.search.keywords.bookshelf.background")
+        ),
+        SettingsSearchEntry(
             id: "bookshelf.continue_count",
             title: L10n.string("home.continue"),
             category: .bookshelf,

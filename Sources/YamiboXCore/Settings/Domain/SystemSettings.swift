@@ -79,6 +79,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
     public var homePage: AppHomePage { AppHomePage(tab: navigation.startupTab) }
     public var homeShowsOnlyFavorites: Bool
     public var bookshelfContinue: BookshelfContinueSettings
+    public var bookshelfBackground: CustomBackgroundSettings
     public var usesDataSaverMode: Bool
     public var enhancedCheckInEnabled: Bool
     public var applePencilPageTurn: ApplePencilPageTurnSettings
@@ -90,6 +91,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         navigation: AppNavigationSettings? = nil,
         homeShowsOnlyFavorites: Bool = false,
         bookshelfContinue: BookshelfContinueSettings = .init(),
+        bookshelfBackground: CustomBackgroundSettings = .init(),
         usesDataSaverMode: Bool = false,
         enhancedCheckInEnabled: Bool = false,
         applePencilPageTurn: ApplePencilPageTurnSettings = .init(),
@@ -99,6 +101,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         self.navigation = navigation ?? AppNavigationSettings(startupTab: homePage.tab)
         self.homeShowsOnlyFavorites = homeShowsOnlyFavorites
         self.bookshelfContinue = bookshelfContinue
+        self.bookshelfBackground = bookshelfBackground
         self.usesDataSaverMode = usesDataSaverMode
         self.enhancedCheckInEnabled = enhancedCheckInEnabled
         self.applePencilPageTurn = applePencilPageTurn
@@ -111,6 +114,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         case navigation
         case homeShowsOnlyFavorites
         case bookshelfContinue
+        case bookshelfBackground
         case usesDataSaverMode
         case enhancedCheckInEnabled
         case applePencilPageTurn
@@ -126,6 +130,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
             navigation: try container.decodeIfPresent(AppNavigationSettings.self, forKey: .navigation),
             homeShowsOnlyFavorites: try container.decodeIfPresent(Bool.self, forKey: .homeShowsOnlyFavorites) ?? false,
             bookshelfContinue: try container.decodeIfPresent(BookshelfContinueSettings.self, forKey: .bookshelfContinue) ?? .init(),
+            bookshelfBackground: try container.decodeIfPresent(CustomBackgroundSettings.self, forKey: .bookshelfBackground) ?? .init(),
             usesDataSaverMode: try container.decodeIfPresent(Bool.self, forKey: .usesDataSaverMode) ?? false,
             enhancedCheckInEnabled: try container.decodeIfPresent(Bool.self, forKey: .enhancedCheckInEnabled) ?? false,
             applePencilPageTurn: try container.decodeIfPresent(ApplePencilPageTurnSettings.self, forKey: .applePencilPageTurn) ?? .init(),
@@ -140,6 +145,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         try container.encode(navigation, forKey: .navigation)
         try container.encode(homeShowsOnlyFavorites, forKey: .homeShowsOnlyFavorites)
         try container.encode(bookshelfContinue, forKey: .bookshelfContinue)
+        try container.encode(bookshelfBackground, forKey: .bookshelfBackground)
         try container.encode(usesDataSaverMode, forKey: .usesDataSaverMode)
         try container.encode(enhancedCheckInEnabled, forKey: .enhancedCheckInEnabled)
         try container.encode(applePencilPageTurn, forKey: .applePencilPageTurn)

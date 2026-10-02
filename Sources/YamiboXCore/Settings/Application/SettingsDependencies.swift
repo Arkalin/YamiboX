@@ -9,8 +9,10 @@ public struct SettingsDependencies: Sendable {
     public let settingsStore: SettingsStore
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     public let launchBackgroundImageStore: CustomBackgroundImageStore
+    public let bookshelfBackgroundImageStore: CustomBackgroundImageStore
     public let favoriteBackgroundPersistence: CustomBackgroundPersistence
     public let launchBackgroundPersistence: CustomBackgroundPersistence
+    public let bookshelfBackgroundPersistence: CustomBackgroundPersistence
     public let novelReaderCacheStore: NovelReaderProjectionStore
     public let mangaDirectoryStore: MangaDirectoryStore
     public let mangaReaderProjectionStore: MangaReaderProjectionStore
@@ -35,8 +37,10 @@ public struct SettingsDependencies: Sendable {
         settingsStore: SettingsStore,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
         launchBackgroundImageStore: CustomBackgroundImageStore,
+        bookshelfBackgroundImageStore: CustomBackgroundImageStore,
         favoriteBackgroundPersistence: CustomBackgroundPersistence,
         launchBackgroundPersistence: CustomBackgroundPersistence,
+        bookshelfBackgroundPersistence: CustomBackgroundPersistence,
         novelReaderCacheStore: NovelReaderProjectionStore,
         mangaDirectoryStore: MangaDirectoryStore,
         mangaReaderProjectionStore: MangaReaderProjectionStore,
@@ -59,8 +63,10 @@ public struct SettingsDependencies: Sendable {
         self.settingsStore = settingsStore
         self.favoriteBackgroundImageStore = favoriteBackgroundImageStore
         self.launchBackgroundImageStore = launchBackgroundImageStore
+        self.bookshelfBackgroundImageStore = bookshelfBackgroundImageStore
         self.favoriteBackgroundPersistence = favoriteBackgroundPersistence
         self.launchBackgroundPersistence = launchBackgroundPersistence
+        self.bookshelfBackgroundPersistence = bookshelfBackgroundPersistence
         self.novelReaderCacheStore = novelReaderCacheStore
         self.mangaDirectoryStore = mangaDirectoryStore
         self.mangaReaderProjectionStore = mangaReaderProjectionStore

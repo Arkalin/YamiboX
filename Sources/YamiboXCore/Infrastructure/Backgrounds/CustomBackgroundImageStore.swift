@@ -7,6 +7,7 @@ public actor CustomBackgroundImageStore {
     public enum Scope: String, Sendable {
         case favorites = "favorite-background"
         case launch = "launch-background"
+        case bookshelf = "bookshelf-background"
     }
     public static let defaultJPEGQuality = 0.88
     public static let defaultMaximumLongEdgePixels = 4096

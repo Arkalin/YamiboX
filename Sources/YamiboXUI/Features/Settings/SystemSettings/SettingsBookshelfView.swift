@@ -16,6 +16,16 @@ struct SettingsBookshelfView: View {
                 )
                 .disabled(viewModel.isBusy)
                 .accessibilityIdentifier("settings.bookshelf.only_favorites")
+
+                CustomBackgroundSettingsRow(
+                    title: L10n.string("settings.bookshelf.background"),
+                    settings: viewModel.background,
+                    imageStore: viewModel.dependencies.bookshelfBackgroundImageStore,
+                    persistence: viewModel.dependencies.bookshelfBackgroundPersistence,
+                    isBusy: viewModel.isBusy,
+                    onSaved: { viewModel.background = $0 }
+                ) { _, _, _ in EmptyView() }
+                .accessibilityIdentifier("settings.bookshelf.background")
             }
 
             Section(L10n.string("home.continue")) {

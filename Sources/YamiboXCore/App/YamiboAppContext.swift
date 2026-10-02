@@ -36,8 +36,10 @@ public final class YamiboAppContext: Sendable {
     let novelReaderCacheStore: NovelReaderProjectionStore
     let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     let launchBackgroundImageStore: CustomBackgroundImageStore
+    let bookshelfBackgroundImageStore: CustomBackgroundImageStore
     let favoriteBackgroundPersistence: CustomBackgroundPersistence
     let launchBackgroundPersistence: CustomBackgroundPersistence
+    let bookshelfBackgroundPersistence: CustomBackgroundPersistence
     private let likeStore: LikeStore
     private let likeImageStore: LikeImageStore
     private let bookmarkStore: BookmarkStore
@@ -78,6 +80,7 @@ public final class YamiboAppContext: Sendable {
         novelReaderCacheStore: NovelReaderProjectionStore? = nil,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore? = nil,
         launchBackgroundImageStore: CustomBackgroundImageStore? = nil,
+        bookshelfBackgroundImageStore: CustomBackgroundImageStore? = nil,
         likeStore: LikeStore? = nil,
         likeImageStore: LikeImageStore? = nil,
         bookmarkStore: BookmarkStore? = nil,
@@ -158,11 +161,17 @@ public final class YamiboAppContext: Sendable {
         self.launchBackgroundImageStore = launchBackgroundImageStore ?? CustomBackgroundImageStore(
             baseDirectory: CustomBackgroundImageStore.directory(scope: .launch, rootDirectory: resolvedGRDBRootDirectory)
         )
+        self.bookshelfBackgroundImageStore = bookshelfBackgroundImageStore ?? CustomBackgroundImageStore(
+            baseDirectory: CustomBackgroundImageStore.directory(scope: .bookshelf, rootDirectory: resolvedGRDBRootDirectory)
+        )
         self.favoriteBackgroundPersistence = CustomBackgroundPersistence(
             settingsStore: settingsStore, imageStore: self.favoriteBackgroundImageStore, scope: .favorites
         )
         self.launchBackgroundPersistence = CustomBackgroundPersistence(
             settingsStore: settingsStore, imageStore: self.launchBackgroundImageStore, scope: .launch
+        )
+        self.bookshelfBackgroundPersistence = CustomBackgroundPersistence(
+            settingsStore: settingsStore, imageStore: self.bookshelfBackgroundImageStore, scope: .bookshelf
         )
         self.likeStore = likeStore ?? LikeStore(databasePool: resolvedGRDBDatabasePool)
         self.likeImageStore = likeImageStore ?? LikeImageStore(
@@ -274,6 +283,7 @@ public final class YamiboAppContext: Sendable {
                 .init("forumCache") { [store = self.forumCacheStore] in try await store.clearAll() },
                 .init("favoriteBackgrounds") { [store = self.favoriteBackgroundImageStore] in try await store.deleteAll() },
                 .init("launchBackgrounds") { [store = self.launchBackgroundImageStore] in try await store.deleteAll() },
+                .init("bookshelfBackgrounds") { [store = self.bookshelfBackgroundImageStore] in try await store.deleteAll() },
                 .init("ordinaryImageCache") { [pipeline = self.imagePipeline] in
                     await pipeline.clearCache()
                     await ordinaryImageCache?.removeAllCachedData()
@@ -373,6 +383,7 @@ public final class YamiboAppContext: Sendable {
             mangaDirectoryStore: mangaDirectoryStore,
             mangaDirectorySearchCooldownState: mangaDirectorySearchCooldownState,
             favoriteBackgroundImageStore: favoriteBackgroundImageStore,
+            bookshelfBackgroundImageStore: bookshelfBackgroundImageStore,
             makeFavoriteRepository: { [self] in await makeFavoriteRepository() },
             makeForumThreadReaderRepository: { [self] in await makeForumThreadReaderRepository() },
             makeThreadRouteResolver: { [self] in await makeThreadRouteResolver() },
@@ -452,8 +463,10 @@ public final class YamiboAppContext: Sendable {
             settingsStore: settingsStore,
             favoriteBackgroundImageStore: favoriteBackgroundImageStore,
             launchBackgroundImageStore: launchBackgroundImageStore,
+            bookshelfBackgroundImageStore: bookshelfBackgroundImageStore,
             favoriteBackgroundPersistence: favoriteBackgroundPersistence,
             launchBackgroundPersistence: launchBackgroundPersistence,
+            bookshelfBackgroundPersistence: bookshelfBackgroundPersistence,
             novelReaderCacheStore: novelReaderCacheStore,
             mangaDirectoryStore: mangaDirectoryStore,
             mangaReaderProjectionStore: mangaReaderProjectionStore,

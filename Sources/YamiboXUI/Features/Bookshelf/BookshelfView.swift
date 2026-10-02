@@ -9,6 +9,7 @@ struct BookshelfView: View {
     private let accountSwitcher: AccountSwitchCoordinator
     private let isPresentedFromMine: Bool
     @State private var model: BookshelfViewModel
+    @State private var background: CustomBackgroundState
     @State private var account: MineHomeViewModel
     @State private var navigator: ForumDestinationNavigator
     @State private var showsLogin = false
@@ -30,6 +31,11 @@ struct BookshelfView: View {
         self.appModel = appModel
         self.isPresentedFromMine = navigator != nil
         _model = State(initialValue: BookshelfViewModel(dependencies: libraryDependencies))
+        _background = State(initialValue: CustomBackgroundState(
+            settingsStore: libraryDependencies.settingsStore,
+            imageStore: libraryDependencies.bookshelfBackgroundImageStore,
+            scope: .bookshelf
+        ))
         _account = State(initialValue: MineHomeViewModel(dependencies: accountDependencies))
         _navigator = State(initialValue: navigator ?? ForumDestinationNavigator(
             dependencies: forumDependencies,
@@ -93,7 +99,10 @@ struct BookshelfView: View {
             } action: { _, offset in
                 if isBookshelfVisible { scrollOffset = offset }
             }
-            .background(Color(uiColor: .systemBackground))
+            .background {
+                BookshelfBackgroundLayer(background: background)
+                    .ignoresSafeArea()
+            }
             .navigationTitle(AppTab.bookshelf.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(isPresentedFromMine ? .visible : .hidden, for: .navigationBar)
@@ -124,6 +133,7 @@ struct BookshelfView: View {
                 await model.reload()
                 await account.load()
             }
+            .task { await background.reload() }
             .task(id: isBookshelfVisible) {
                 guard isBookshelfVisible else { return }
                 await model.observe(libraryDependencies.browsingHistoryStore.changes())
@@ -185,6 +195,26 @@ struct BookshelfView: View {
                 }
             }
         }
+    }
+}
+
+private struct BookshelfBackgroundLayer: View {
+    let background: CustomBackgroundState
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground)
+            if background.settings.isEnabled,
+               let data = background.imageData,
+               CustomBackgroundImageDecodeCache.shared.image(for: data) != nil {
+                CustomBackgroundLayer(settings: background.settings, imageData: data)
+                // Match the existing background treatment to keep shelf labels legible.
+                colorScheme == .dark ? Color.black.opacity(0.32) : Color.white.opacity(0.28)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

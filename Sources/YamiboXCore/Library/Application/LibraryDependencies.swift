@@ -37,6 +37,7 @@ public struct LibraryDependencies: Sendable {
     /// forum search is still safe to repeat.
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
+    public let bookshelfBackgroundImageStore: CustomBackgroundImageStore
     public let makeFavoriteRepository: @Sendable () async -> any FavoriteLibraryRemoteOperating
     public let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageFetching & ThreadCoverPageResolving
     public let makeThreadRouteResolver: @Sendable () async -> YamiboThreadRouteResolver
@@ -54,6 +55,7 @@ public struct LibraryDependencies: Sendable {
         mangaDirectoryStore: any MangaDirectoryPersisting,
         mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState,
         favoriteBackgroundImageStore: FavoriteBackgroundImageStore,
+        bookshelfBackgroundImageStore: CustomBackgroundImageStore,
         makeFavoriteRepository: @escaping @Sendable () async -> any FavoriteLibraryRemoteOperating,
         makeForumThreadReaderRepository: @escaping @Sendable () async -> any ForumThreadPageFetching & ThreadCoverPageResolving,
         makeThreadRouteResolver: @escaping @Sendable () async -> YamiboThreadRouteResolver,
@@ -70,6 +72,7 @@ public struct LibraryDependencies: Sendable {
         self.mangaDirectoryStore = mangaDirectoryStore
         self.mangaDirectorySearchCooldownState = mangaDirectorySearchCooldownState
         self.favoriteBackgroundImageStore = favoriteBackgroundImageStore
+        self.bookshelfBackgroundImageStore = bookshelfBackgroundImageStore
         self.makeFavoriteRepository = makeFavoriteRepository
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeThreadRouteResolver = makeThreadRouteResolver

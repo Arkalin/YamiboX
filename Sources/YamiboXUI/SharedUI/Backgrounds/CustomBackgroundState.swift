@@ -36,7 +36,11 @@ public final class CustomBackgroundState {
         revision &+= 1
         let request = revision
         let snapshot = await settingsStore.load()
-        var settings = scope == .favorites ? snapshot.favorites.background : snapshot.appearance.launchBackground
+        var settings = switch scope {
+        case .favorites: snapshot.favorites.background
+        case .launch: snapshot.appearance.launchBackground
+        case .bookshelf: snapshot.system.bookshelfBackground
+        }
         if scope == .launch { settings.blurRadius = 0 }
         let showsOverlay = scope == .launch ? snapshot.appearance.launchShowsBrand : true
         let imageChanged = !hasLoaded || settings != self.settings
