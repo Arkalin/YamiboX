@@ -672,8 +672,8 @@ public enum LocalFavoriteLibraryProjection {
     }
 
     /// Chinese-locale string compare, pinned rather than following the
-    /// device's current locale/region: the app ships a single zh-Hans
-    /// localization, so an ambient-locale compare would only make title/
+    /// device's current locale/region or chosen Chinese localization:
+    /// an ambient-locale compare would only make title/
     /// source-group sort order depend on an unrelated device Region
     /// setting instead of being stable across devices (and environments —
     /// this is also what keeps `.displayTitle`/`.sourceGroup` sort order
