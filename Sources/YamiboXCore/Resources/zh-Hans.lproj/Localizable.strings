@@ -191,7 +191,7 @@
 "error.missing_favorite_thread_id" = "添加收藏失败：未识别帖子 ID";
 "error.missing_forum_board_favorite_token" = "收藏本版失败：未拿到表单校验码";
 "error.missing_forum_search_token" = "搜索失败：未拿到表单校验码";
-"error.not_authenticated" = "当前登录态不可用，请重新登录";
+"error.not_authenticated" = "登录状态已失效，请重新登录";
 "error.forum_board_favorite_failed" = "收藏本版失败，请稍后重试";
 "error.offline" = "当前网络不可用，且本地没有可读缓存";
 "error.parsing_failed" = "页面解析失败：%@";
@@ -226,9 +226,9 @@
 "favorites.boards.missing_delete_id" = "未能解析该收藏的编号，无法删除。";
 "favorites.boards.open" = "打开板块";
 "favorites.boards.title" = "板块收藏";
-"favorites.bulk_delete_favorites_message" = "确定要删除已选中的收藏吗？本地下载内容和阅读进度会保留；是否同删百合会收藏，按你的偏好处理。";
-"favorites.bulk_delete_mixed_message" = "确定要删除已选中的内容吗？合集会被解散；是否同删百合会收藏，按你的偏好处理。";
-"favorites.bulk_delete_scope_message" = "已选收藏中有多位置项目。可以只从当前位置移除，或彻底删除收藏；彻底删除时是否同删百合会收藏，按你的偏好处理。";
+"favorites.bulk_delete_favorites_message" = "删除所选收藏？下载内容和阅读进度会保留。";
+"favorites.bulk_delete_mixed_message" = "删除所选内容？合集会解散，下载内容和阅读进度会保留。";
+"favorites.bulk_delete_scope_message" = "所选收藏中有项目位于多个位置。可只从当前位置移除，也可彻底删除。下载内容和阅读进度会保留。";
 "favorites.bulk_delete_skipped_smart_manga_message" = "已选中的智能漫画收藏未被删除，请前往其“查看归档收藏”页面删除。";
 "favorites.bulk_dissolve_collections_message" = "确定要解散已选中的合集吗？其中的收藏会返回根页，不会被删除。";
 "favorites.card.last_updated" = "最后更新 %@";
@@ -254,8 +254,11 @@
 "favorites.create_collection" = "创建合集";
 "favorites.create_collection_message" = "创建后会把当前选中的收藏移入新合集。";
 "favorites.delete_favorite" = "删除收藏";
-"favorites.delete_favorite_message" = "确定要删除“%@”吗？本地下载内容和阅读进度会保留；是否同删百合会收藏，按你的偏好处理。";
-"favorites.delete_favorite_scope_message" = "“%@”在多个位置中出现。可以只从当前位置移除，或彻底删除收藏；彻底删除时是否同删百合会收藏，按你的偏好处理。";
+"favorites.delete_favorite_message" = "删除“%@”？下载内容和阅读进度会保留。";
+"favorites.delete_favorite_scope_message" = "“%@”位于多个位置。可只从当前位置移除，也可彻底删除。下载内容和阅读进度会保留。";
+"favorites.delete_remote.prompt" = "若网站也有收藏，选择“彻底删除”后可决定是否一并删除。";
+"favorites.delete_remote.both" = "若网站也有收藏，选择“彻底删除”会一并删除。";
+"favorites.delete_remote.local_only" = "选择“彻底删除”不会删除网站收藏。";
 "favorites.delete_failed" = "删除失败";
 "favorites.delete_selection" = "删除所选内容";
 "favorites.delete_scope.current_location" = "仅从当前位置移除";
@@ -298,7 +301,7 @@
 "favorites.layout.staggered" = "瀑布流";
 "favorites.location.add_to_category" = "加入分类";
 "favorites.location.add_to_collection" = "加入合集";
-"favorites.location.keep_one_hint" = "每项收藏至少保留一个位置；取消最后一个位置不会生效。";
+"favorites.location.keep_one_hint" = "每项收藏至少保留一个位置。";
 "favorites.location.selected_items" = "正在编辑 %d 项收藏的位置";
 "favorites.location.manage" = "管理位置";
 "favorites.location.move_to_category" = "移动到分类";
@@ -348,7 +351,7 @@
 "favorites.quick.removed" = "已删除收藏";
 "favorites.quick.removed_with_remote" = "已删除收藏并移除百合会收藏";
 "favorites.quick.relocated" = "已更新收藏位置";
-"favorites.quick.sync_item.pending" = "已同步到百合会，映射将在下次同步补齐";
+"favorites.quick.sync_item.pending" = "已同步到百合会，下次同步会更新本地记录";
 "favorites.quick.sync_item.synced" = "已同步到百合会";
 "favorites.sort.recent_read" = "最近阅读";
 "favorites.sort.remote_order" = "远端顺序";
@@ -376,7 +379,7 @@
 "favorites.sync.phase.interrupted" = "同步已中断";
 "favorites.sync.phase.preparing" = "准备同步";
 "favorites.sync.phase.queued" = "等待启动";
-"favorites.sync.phase.reconciling" = "回填远端映射";
+"favorites.sync.phase.reconciling" = "更新收藏同步记录";
 "favorites.sync.phase.uploading" = "上传本地收藏";
 "favorites.sync.progress.empty" = "暂无同步任务";
 "favorites.sync.progress.errors" = "错误";
@@ -413,7 +416,7 @@
 "favorites.sync.warning.page_count_changed" = "同步期间网站收藏页数发生变动，建议完成后再同步一次。";
 "favorites.sync.warning.reconcile_failed" = "回填远端映射失败：%@，下次同步会补齐。";
 "favorites.sync.warning.remote_favorites_empty_before_upload" = "网站收藏列表读取为空，即将把 %d 项本地收藏重新上传到百合会；如果你确定网站上原本有收藏，请检查网络后重新同步一次。";
-"favorites.sync.warning.task_lost" = "检测到运行中的同步任务已丢失，已标记为中断。";
+"favorites.sync.warning.task_lost" = "上次同步意外中断。";
 "favorites.sync.warning.upload_failed_item" = "无法上传 %@：%@";
 "favorites.updates.title" = "收藏更新";
 "favorites.updates.canceled" = "检测已取消";
@@ -430,7 +433,7 @@
 "favorites.updates.failed" = "检查失败";
 "favorites.updates.filters" = "更新筛选";
 "favorites.updates.filters.categories" = "分类";
-"favorites.updates.filters.empty" = "先运行一次更新检查以生成筛选项。";
+"favorites.updates.filters.empty" = "检查收藏更新后，可在这里筛选。";
 "favorites.updates.filters.fids" = "板块";
 "favorites.updates.filters.item_count" = "%d 项收藏";
 "favorites.updates.interrupt" = "中断";
@@ -459,7 +462,7 @@
 "favorites.updates.unread_indicator" = "有未读更新";
 "favorites.updates.no_events" = "暂无收藏更新";
 "favorites.updates.notifications" = "更新通知";
-"favorites.updates.notifications_blocked" = "通知权限已在系统设置中被关闭，更新通知暂时无法送达。";
+"favorites.updates.notifications_blocked" = "通知已关闭，请在系统设置中开启。";
 "favorites.updates.notifications_denied_message" = "通知权限未开启，请在系统设置中允许本应用发送通知。";
 "favorites.updates.notifications_denied_title" = "无法开启更新通知";
 "favorites.updates.notifications_footer" = "检测到收藏更新时发送系统通知。";
@@ -487,7 +490,7 @@
 "favorites.tags_action" = "标签";
 "favorites.tags_deselect_all" = "全不选";
 "favorites.tags.empty" = "暂无标签";
-"favorites.tags_overwrite_warning" = "所选收藏的标签不一致，确认后会用当前选择覆盖全部所选收藏。";
+"favorites.tags_overwrite_warning" = "所选收藏的标签不同。保存后，它们的标签都会替换为当前选择。";
 "favorites.tags_select_all" = "全选";
 "favorites.tags_selected_count" = "已选择 %d 个标签";
 "favorites.title" = "收藏";
@@ -517,13 +520,13 @@
 "forum.board.pinned_badge" = "置顶";
 "forum.board.post_thread" = "发表帖子";
 "forum.board.reader_settings" = "阅读方式设置";
-"forum.board.reader_settings.footer" = "普通帖子：按论坛原帖形式浏览；小说：用小说阅读器打开本板块的帖子；漫画：用漫画阅读器打开本板块的帖子。";
+"forum.board.reader_settings.footer" = "选择本板块帖子的默认阅读方式。";
 "forum.board.reader_settings.mode" = "阅读方式";
 "forum.board.reader_settings.mode.manga" = "漫画";
 "forum.board.reader_settings.mode.novel" = "小说";
 "forum.board.reader_settings.mode.plain" = "普通帖子";
 "forum.board.reader_settings.smart_toggle" = "智能漫画模式";
-"forum.board.reader_settings.smart_toggle_help" = "开启后，本板块的漫画帖子会自动识别所属合集，支持合并显示、目录跳转与跨章续读；收藏页中对应的漫画收藏也会自动合并展示。关闭后每个帖子单独阅读、单独显示。";
+"forum.board.reader_settings.smart_toggle_help" = "将本板块中同一部漫画的章节合并显示，支持查看目录和连续阅读，收藏页也会合并显示。关闭后，各帖独立显示和阅读。";
 "forum.board.reader_settings.smart_toggle_help_toggle" = "查看说明";
 "forum.board.refresh_failed" = "刷新失败：%@";
 "forum.board.previous_page" = "上一页";
@@ -807,7 +810,7 @@
 "manga.directory.reset" = "重置目录";
 "manga.directory.edit" = "编辑目录";
 "manga.directory.reset_confirm_title" = "重置目录？";
-"manga.directory.reset_confirm_message" = "将清空本地记录并从原始来源重新抓取整本目录，你所做的手动修正（改名、排序、删除章节等）都会丢失，且无法撤销。";
+"manga.directory.reset_confirm_message" = "重新获取整本目录，清除改名、排序、删除章节等手动修改。此操作无法撤销。";
 "manga.directory.selected_count" = "已选择 %d 项";
 "manga.progress" = "进度";
 "manga.global_search" = "全局搜索";
@@ -1000,13 +1003,13 @@
 "reader.font.built_in" = "内置字体";
 "reader.font.imported" = "导入字体";
 "reader.font.import" = "导入字体文件";
-"reader.font.import_help" = "支持 TTF、OTF、TTC、OTC，仅保存在此设备的 App 内。字体集合中的字面可分别选择，删除时移除整个文件。导入不会改变当前正文，请返回阅读设置确认应用。";
+"reader.font.import_help" = "支持 TTF、OTF、TTC、OTC，字体仅保存在本机。导入后，请返回阅读设置选择并应用。";
 "reader.font.sample" = "春风拂面，閱讀時光。Aa 123";
 "reader.font.selected" = "已选择";
 "reader.font.available" = "已就绪";
 "reader.font.unavailable" = "字体不可用";
 "reader.font.missing" = "缺失的导入字体";
-"reader.font.fallback" = "所选字体暂不可用，当前临时使用苹方。请切换内置字体或重新导入字体文件，原选择已保留。";
+"reader.font.fallback" = "所选字体不可用，暂用苹方，原选择已保留。可重新导入字体，或选择内置字体。";
 "reader.font.missing_glyphs" = "部分中文将使用系统字体";
 "reader.font.restore_failed" = "部分字体无法恢复";
 "reader.font.library_busy" = "字体库正忙或无法读取，请稍后重试。";
@@ -1017,7 +1020,7 @@
 "reader.font.import_success" = "导入成功";
 "reader.font.in_use" = "正文或设置预览正在使用此文件中的字体，请先切换字体。";
 "reader.font.delete_failed" = "无法注销字体，文件已保留。";
-"reader.font.delete_file" = "删除此字体文件及其中的所有字面？";
+"reader.font.delete_file" = "删除此文件及其中的所有字体？";
 "reader.font_family" = "字体";
 "reader.font_size" = "大小";
 "reader.go_next_web_page" = "前往下一网页…";
@@ -1135,7 +1138,7 @@
 "settings.network_log.empty_message" = "新的网络请求结束后，会在这里显示脱敏摘要。";
 "settings.network_log.export" = "导出日志";
 "settings.network_log.clear_title" = "确认清空网络日志";
-"settings.network_log.clear_message" = "将删除全部已保存的日志。清空前开始的请求不会重新写回；新的请求仍会继续记录。";
+"settings.network_log.clear_message" = "清空全部日志，之后仍会记录新的网络请求。";
 "settings.network_log.details" = "请求详情";
 "settings.network_log.summary" = "请求摘要";
 "settings.network_log.started_at" = "开始时间";
@@ -1173,7 +1176,7 @@
 "settings.clear_other_caches" = "清理其他缓存";
 "settings.clear_other_caches_message" = "将清除系统网络缓存、签到记录缓存和收藏更新追踪缓存。";
 "settings.clear_web_reader_cache" = "清理网页/阅读器缓存";
-"settings.clear_web_reader_cache_message" = "将清除论坛网页、小说和漫画阅读排版的本地渲染缓存，重新打开时会重新从服务器加载。";
+"settings.clear_web_reader_cache_message" = "清除论坛网页和阅读器缓存，下次打开时需重新联网加载。";
 "settings.confirm_clear_content_cover_cache" = "确认清理封面索引";
 "settings.confirm_clear_image_cache" = "确认清除图片缓存";
 "settings.confirm_clear_other_caches" = "确认清理其他缓存";
@@ -1232,15 +1235,15 @@
 "settings.favorite_background.custom" = "自定义";
 "settings.favorite_background.default" = "默认";
 "settings.favorite_grid_card_scale" = "网格卡片大小";
-"settings.favorite_grid_card_scale.footer" = "卡片大小仅作用于固定网格和瀑布流布局，也可以在收藏页中直接用双指捏合调整。";
+"settings.favorite_grid_card_scale.footer" = "仅适用于固定网格和瀑布流。也可在收藏页双指捏合调整。";
 "settings.favorite_smart_manga_badge" = "显示智能漫画标识";
 "settings.favorite_add_sync_default" = "新增收藏默认动作";
 "settings.favorite_add_sync_prompt" = "新增收藏时询问是否同步";
 "settings.favorite_remove_sync_default" = "移除收藏默认动作";
 "settings.favorite_remove_sync_prompt" = "移除收藏时询问是否同步删除";
-"settings.favorite_sync_behavior.footer" = "适用于所有收藏入口，包括详情页、阅读页、浏览记录，以及收藏页的“彻底删除”。关闭询问后将按默认动作静默执行；在任意询问弹窗中选择“不再询问”也会更新这里的开关。";
+"settings.favorite_sync_behavior.footer" = "适用于所有收藏操作。关闭询问后，按下方设置处理。在弹窗中选择“不再询问”也会修改此设置。";
 "settings.favorite_smart_manga_bulk_delete" = "允许批量删除智能漫画收藏";
-"settings.favorite_smart_manga_bulk_delete.footer" = "开启后，可通过收藏卡片菜单、多选工具栏，以及详情页和浏览记录中已点亮的作品星标，确认删除该作品归档下的全部收藏项。关闭后，作品星标会打开“查看归档收藏”，只能在其中逐项删除。";
+"settings.favorite_smart_manga_bulk_delete.footer" = "开启后，可一次删除整部漫画的章节收藏。关闭后，需在“查看归档收藏”中逐项删除。";
 "settings.navigation.title" = "导航栏与启动页";
 /* Settings search synonyms: separate terms with | and retain product names. */
 "settings.search.keywords.favorites.grid_card_scale" = "卡片|大小|缩放|网格|瀑布流|外观";
@@ -1306,7 +1309,7 @@
 "settings.gamepad.capture_rejected" = "该键不可绑定";
 "settings.gamepad.clear_binding" = "清除绑定";
 "settings.gamepad.connect_hint" = "连接手柄后可点击动作行修改按键绑定。";
-"settings.gamepad.dpad_note" = "方向键为固定语义：翻页模式下左右（跟随翻页方向）与上下翻页，竖排模式下上下滚动一屏。";
+"settings.gamepad.dpad_note" = "方向键不可更改。翻页模式下，上下、左右键均可翻页，左右键跟随翻页方向；滚动模式下，上下键滚动一屏。";
 "settings.gamepad.enabled" = "启用手柄控制";
 "settings.gamepad.menu_fixed" = "Menu 键（固定）";
 "settings.gamepad.next_page" = "下一页";
@@ -1323,7 +1326,7 @@
 "settings.keyboard.capture_rejected" = "该键不可绑定";
 "settings.keyboard.clear_binding" = "清除绑定";
 "settings.keyboard.connect_hint" = "连接键盘后可点击动作行修改按键绑定。";
-"settings.keyboard.dpad_note" = "方向键为固定语义：翻页模式下左右（跟随翻页方向）与上下翻页，竖排模式下上下滚动一屏。";
+"settings.keyboard.dpad_note" = "方向键不可更改。翻页模式下，上下、左右键均可翻页，左右键跟随翻页方向；滚动模式下，上下键滚动一屏。";
 "settings.keyboard.enabled" = "启用键盘控制";
 "settings.keyboard.menu_fixed" = "Esc 键（固定）";
 "settings.keyboard.next_page" = "下一页";
@@ -1386,7 +1389,7 @@
 "settings.clear_reading_progress" = "清理阅读进度";
 "settings.clear_browsing_history" = "清理浏览记录";
 "settings.confirm_clear_reading_progress" = "确认清理阅读进度";
-"settings.clear_reading_progress_message" = "将清空小说、漫画和帖子的全部阅读进度。浏览记录、收藏和下载内容不受影响，清理后可重新记录进度。";
+"settings.clear_reading_progress_message" = "清空全部阅读进度，保留浏览记录、收藏和下载内容。";
 "settings.section.backup_sync" = "备份与同步";
 "settings.section.reset" = "重置";
 "settings.section.favorites_browsing" = "浏览与排序";
@@ -1447,7 +1450,7 @@
 "webdav.error.not_found" = "服务器上没有找到同步数据，请先上传。";
 "webdav.error.login_required" = "请先登录再同步。";
 "webdav.error.unsupported_version" = "不支持的同步数据版本（%d），请将参与同步的所有设备升级到最新版本。";
-"webdav.error.unsafe_conditional_write" = "WebDAV 服务不支持可靠的条件写入，已停止上传以防止覆盖其他设备的数据。本地修改仍保留，等待同步。";
+"webdav.error.unsafe_conditional_write" = "服务器无法保证上传不覆盖其他设备的数据，已停止上传。本地修改已保留，尚未同步。";
 "webdav.error.write_conflict" = "其他设备正在修改云端数据，多次重试后仍有冲突。本地修改仍保留，请稍后重试同步。";
 "webdav.last_synced" = "上次同步：%@";
 "webdav.operation" = "操作";
@@ -1761,7 +1764,7 @@
 "reader.comment_composer.chapter_author" = "本章作者";
 "reader.comment_composer.target" = "操作对象";
 "reader.comment_composer.locate_failed" = "无法定位目标楼层，请重试";
-"reader.comment_composer.form_unavailable" = "无法获取当前页面的操作令牌，请重试";
+"reader.comment_composer.form_unavailable" = "暂时无法点评或评分，请重试";
 "reader.comment_composer.reply_unavailable" = "暂时无法回复此楼层";
 "reader.comment_composer.reply_outside_chapter" = "回复会追加到帖子末尾，不会出现在当前章节评论区。若要留在本章，请使用点评。";
 "reader.comment_composer.reply_placement_unknown" = "回复会追加到帖子末尾，可能不会出现在当前章节评论区。";

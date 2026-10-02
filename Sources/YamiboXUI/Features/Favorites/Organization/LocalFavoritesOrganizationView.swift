@@ -715,12 +715,12 @@ struct LocalFavoritesOrganizationView: View {
             Text(L10n.string("favorites.dissolve_collection_message", collection.name))
         case let .deleteItem(item):
             if item.locations.count > 1 {
-                Text(L10n.string("favorites.delete_favorite_scope_message", item.resolvedDisplayTitle))
+                Text(deleteMessage(L10n.string("favorites.delete_favorite_scope_message", item.resolvedDisplayTitle)))
             } else {
-                Text(L10n.string("favorites.delete_favorite_message", item.resolvedDisplayTitle))
+                Text(deleteMessage(L10n.string("favorites.delete_favorite_message", item.resolvedDisplayTitle)))
             }
         case .deleteSelection:
-            Text(deleteSelectionMessage)
+            Text(deleteMessage(deleteSelectionMessage, includesFavorites: selection.selectedFavoriteCount > 0))
         case .dissolveSelectedCollections:
             Text(L10n.string("favorites.bulk_dissolve_collections_message"))
         }
@@ -734,6 +734,19 @@ struct LocalFavoritesOrganizationView: View {
             return L10n.string("favorites.bulk_delete_scope_message")
         }
         return L10n.string("favorites.bulk_delete_favorites_message")
+    }
+
+    private func deleteMessage(_ message: String, includesFavorites: Bool = true) -> String {
+        guard includesFavorites else { return message }
+        let outcomeKey: String
+        if organizer.removeRemotePromptEnabled {
+            outcomeKey = "favorites.delete_remote.prompt"
+        } else if organizer.removeRemoteDefault {
+            outcomeKey = "favorites.delete_remote.both"
+        } else {
+            outcomeKey = "favorites.delete_remote.local_only"
+        }
+        return message + "\n" + L10n.string(outcomeKey)
     }
 
     // MARK: - Errors

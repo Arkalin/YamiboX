@@ -10,6 +10,7 @@ struct NovelReaderFontLibraryView: View {
     @ScaledMetric(relativeTo: .body) private var sampleSize = 20.0
     @State private var pickerRequest: ReaderFontDocumentPicker.Request?
     @State private var report: String?
+    @State private var pendingDeletion: ReaderFontEntry?
     @State private var protectionID = UUID()
 
     var body: some View {
@@ -42,7 +43,7 @@ struct NovelReaderFontLibraryView: View {
                     ForEach(library.entries.filter { $0.selection.fileID != nil }) { entry in
                         fontRow(entry)
                             .swipeActions {
-                                Button(role: .destructive) { delete(entry) } label: {
+                                Button(role: .destructive) { pendingDeletion = entry } label: {
                                     Label(L10n.string("common.delete"), systemImage: "trash")
                                 }
                                 .disabled(library.isWorking)
@@ -78,6 +79,16 @@ struct NovelReaderFontLibraryView: View {
                         report = await library.importFiles(urls).joined(separator: "\n")
                     }
                 }
+            }
+            .alert(L10n.string("reader.font.delete_file"), isPresented: Binding(
+                get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
+            )) {
+                Button(L10n.string("common.delete"), role: .destructive) {
+                    guard let entry = pendingDeletion else { return }
+                    pendingDeletion = nil
+                    delete(entry)
+                }
+                Button(L10n.string("common.cancel"), role: .cancel) { pendingDeletion = nil }
             }
             .alert(L10n.string("reader.font.library"), isPresented: Binding(
                 get: { report != nil }, set: { if !$0 { report = nil } }

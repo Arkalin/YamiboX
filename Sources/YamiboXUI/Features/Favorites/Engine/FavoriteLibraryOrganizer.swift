@@ -101,6 +101,8 @@ final class FavoriteLibraryOrganizer {
     /// views read it in `body` to show or hide the sparkles badge and must
     /// re-render when the Settings switch flips.
     private(set) var smartMangaBadgeEnabled = true
+    private(set) var removeRemotePromptEnabled = true
+    private(set) var removeRemoteDefault = false
     var backgroundSettings: FavoriteBackgroundSettings { background.settings }
     var backgroundImageData: Data? { background.imageData }
     private let background: CustomBackgroundState
@@ -264,7 +266,7 @@ final class FavoriteLibraryOrganizer {
             changeID: { [store = settingsStore] in store.changeID }
         ) { [weak self] in
             await self?.reloadBoardReaderSettings()
-            await self?.reloadSmartMangaToggleSettings()
+            await self?.reloadFavoriteSettingsSnapshots()
         }
         // Without this, renaming a manga directory from the manga reader's
         // directory page would leave an already-open Favorites tab showing
@@ -384,6 +386,8 @@ final class FavoriteLibraryOrganizer {
         boardReaderSettings = settings.boardReader
         smartMangaBulkDeleteEnabled = settings.favorites.smartMangaBulkDeleteEnabled
         smartMangaBadgeEnabled = settings.favorites.smartMangaBadgeEnabled
+        removeRemotePromptEnabled = settings.favorites.removeRemotePromptEnabled
+        removeRemoteDefault = settings.favorites.removeRemoteDefault
         mangaDirectoriesByTID = await resolveMangaDirectories(for: loadedDocument.items, boardReaderSettings: boardReaderSettings)
         await covers.refresh(.init(items: loadedDocument.items, directories: Array(Set(mangaDirectoriesByTID.values))))
         display = FavoriteLibraryDisplayState(
@@ -513,16 +517,13 @@ final class FavoriteLibraryOrganizer {
         scheduleMangaCoverBackfill(for: document.items)
     }
 
-    /// Re-derives the favorites-slice smart-manga toggles
-    /// (`smartMangaBulkDeleteEnabled`/`smartMangaBadgeEnabled`) in response
-    /// to *any* `SettingsStore.changes()` element — kept in sync live
-    /// so flipping either Settings switch while Favorites is already open
-    /// immediately updates `hasDeletableSelection`/the long-press menu/the
-    /// sparkles badge without waiting for an unrelated reload. Each flag is
-    /// diff-guarded separately so an unrelated settings save never publishes
-    /// a spurious change of the observable badge flag.
-    private func reloadSmartMangaToggleSettings() async {
+    /// Refreshes the favorites settings read synchronously by the browse view
+    /// after Settings changes, so its menu, badge, and delete confirmation
+    /// reflect the latest preferences without waiting for an unrelated reload.
+    private func reloadFavoriteSettingsSnapshots() async {
         let settings = await settingsStore.load()
+        removeRemotePromptEnabled = settings.favorites.removeRemotePromptEnabled
+        removeRemoteDefault = settings.favorites.removeRemoteDefault
         if settings.favorites.smartMangaBulkDeleteEnabled != smartMangaBulkDeleteEnabled {
             smartMangaBulkDeleteEnabled = settings.favorites.smartMangaBulkDeleteEnabled
         }
