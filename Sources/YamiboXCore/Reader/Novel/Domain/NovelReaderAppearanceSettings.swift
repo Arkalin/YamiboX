@@ -103,6 +103,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var readingMode: ReaderReadingMode
     public var pagedTurnStyle: ReaderPagedTurnStyle
     public var pageTurnDirection: ReaderPageTurnDirection
+    public var swapsPageTurnTapZones: Bool
     public var translationMode: ReaderTranslationMode
 
     public init(
@@ -121,6 +122,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         readingMode: ReaderReadingMode = .paged,
         pagedTurnStyle: ReaderPagedTurnStyle = .slide,
         pageTurnDirection: ReaderPageTurnDirection = .leftToRight,
+        swapsPageTurnTapZones: Bool = false,
         translationMode: ReaderTranslationMode = .none
     ) {
         self.fontScale = fontScale
@@ -138,6 +140,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         self.readingMode = readingMode
         self.pagedTurnStyle = pagedTurnStyle
         self.pageTurnDirection = pageTurnDirection
+        self.swapsPageTurnTapZones = swapsPageTurnTapZones
         self.translationMode = translationMode
     }
 
@@ -157,6 +160,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         case readingMode
         case pagedTurnStyle
         case pageTurnDirection
+        case swapsPageTurnTapZones
         case translationMode
     }
 
@@ -183,6 +187,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         readingMode = try container.decode(ReaderReadingMode.self, forKey: .readingMode)
         pagedTurnStyle = try container.decode(ReaderPagedTurnStyle.self, forKey: .pagedTurnStyle)
         pageTurnDirection = try container.decode(ReaderPageTurnDirection.self, forKey: .pageTurnDirection)
+        swapsPageTurnTapZones = try container.decodeIfPresent(Bool.self, forKey: .swapsPageTurnTapZones) ?? false
         translationMode = try container.decode(ReaderTranslationMode.self, forKey: .translationMode)
     }
 

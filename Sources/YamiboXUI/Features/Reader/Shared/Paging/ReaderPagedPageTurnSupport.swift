@@ -72,11 +72,12 @@ extension ReaderPageTurnDirection {
         }
     }
 
-    func directionalTapZone(for zone: ReaderPagedTapZone) -> ReaderPagedTapZone {
-        switch (self, zone) {
-        case (.rightToLeft, .previous):
+    func directionalTapZone(for zone: ReaderPagedTapZone, swapped: Bool = false) -> ReaderPagedTapZone {
+        let reversesZones = (self == .rightToLeft) != swapped
+        return switch (reversesZones, zone) {
+        case (true, .previous):
             .next
-        case (.rightToLeft, .next):
+        case (true, .next):
             .previous
         default:
             zone

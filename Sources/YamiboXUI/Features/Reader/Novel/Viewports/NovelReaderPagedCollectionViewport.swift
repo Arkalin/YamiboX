@@ -316,7 +316,9 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 return
             }
             let zone = ReaderPagedTapZone.zone(for: location, in: collectionView.bounds)
-            let directionalZone = parent.settings.pageTurnDirection.directionalTapZone(for: zone)
+            let directionalZone = parent.settings.pageTurnDirection.directionalTapZone(
+                for: zone, swapped: parent.settings.swapsPageTurnTapZones
+            )
             if !parent.isChromeVisible,
                pagingDriver.animateAdjacentSelection(for: directionalZone, in: collectionView, inputs: pagingInputs) {
                 return
