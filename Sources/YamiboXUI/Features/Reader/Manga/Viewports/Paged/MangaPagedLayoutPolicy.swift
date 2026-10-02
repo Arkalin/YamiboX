@@ -52,7 +52,7 @@ enum MangaPagedLayoutPolicy {
 
 enum MangaPagedViewportResizePolicy {
     static func alignedContentOffsetX(
-        previousContentOffsetX: CGFloat,
+        itemIndex: Int,
         previousViewportSize: CGSize?,
         currentViewportSize: CGSize,
         itemCount: Int
@@ -67,7 +67,6 @@ enum MangaPagedViewportResizePolicy {
             return nil
         }
 
-        let itemIndex = Int((previousContentOffsetX / previousViewportSize.width).rounded())
         let clampedItemIndex = min(max(itemIndex, 0), itemCount - 1)
         return CGFloat(clampedItemIndex) * currentViewportSize.width
     }

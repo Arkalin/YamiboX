@@ -129,9 +129,12 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             lastLaidOutViewportSize = currentViewportSize
         }
 
+        // UIKit may already have clamped the offset to the new content size.
+        // Preserve the logical selection instead of interpreting that offset with the old width.
         guard pendingInitialSpreadIndex == nil,
+              let spreadIndex = parent.plan.currentSpreadIndex,
               let targetOffsetX = MangaPagedViewportResizePolicy.alignedContentOffsetX(
-                  previousContentOffsetX: collectionView.contentOffset.x,
+                  itemIndex: viewportIndex(forSpreadIndex: spreadIndex),
                   previousViewportSize: lastLaidOutViewportSize,
                   currentViewportSize: currentViewportSize,
                   itemCount: parent.plan.spreads.count
@@ -145,7 +148,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             CGPoint(x: targetOffsetX, y: collectionView.contentOffset.y),
             animated: false
         )
-        publishCurrentPageIfNeeded(from: collectionView)
+        // A resize only restores placement; it must not change reading progress.
         updateGestureState(in: collectionView)
     }
 
