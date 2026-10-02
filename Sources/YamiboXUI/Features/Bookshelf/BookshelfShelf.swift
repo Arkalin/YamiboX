@@ -10,7 +10,8 @@ struct BookshelfShelf: Equatable {
     init(
         entries: [BrowsingHistoryEntry],
         boardReader: BoardReaderSettings,
-        favorites: FavoriteMembershipSnapshot? = nil
+        favorites: FavoriteMembershipSnapshot? = nil,
+        continueSettings: BookshelfContinueSettings = .init()
     ) {
         let readingEntries = entries.filter { entry in
             guard entry.category(boardReader: boardReader) != .normal else { return false }
@@ -20,12 +21,23 @@ struct BookshelfShelf: Equatable {
                 if $0.lastVisitTime != $1.lastVisitTime { return $0.lastVisitTime > $1.lastVisitTime }
                 return $0.id < $1.id
             }
-        var categories: Set<BrowsingHistoryCategory> = []
+        var novelCount = 0
+        var mangaCount = 0
         var continuing: [BrowsingHistoryEntry] = []
         var previous: [BrowsingHistoryEntry] = []
         for entry in readingEntries {
-            if categories.insert(entry.category(boardReader: boardReader)).inserted {
+            let category = entry.category(boardReader: boardReader)
+            let canContinue = switch continueSettings.mode {
+            case .mixed:
+                continuing.count < continueSettings.mixedCount
+            case .separate:
+                category == .novel
+                    ? novelCount < continueSettings.novelCount
+                    : mangaCount < continueSettings.mangaCount
+            }
+            if canContinue {
                 continuing.append(entry)
+                if category == .novel { novelCount += 1 } else { mangaCount += 1 }
             } else {
                 previous.append(entry)
             }

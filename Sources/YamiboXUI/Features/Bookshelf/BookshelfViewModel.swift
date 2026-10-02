@@ -30,10 +30,11 @@ final class BookshelfViewModel {
         generation += 1
         let currentGeneration = generation
         let snapshot: BrowsingHistorySnapshot
+        let systemSettings = await dependencies.settingsStore.load().system
         var favorites: FavoriteMembershipSnapshot?
         do {
             snapshot = try await dependencies.browsingHistoryWorkflow.snapshot()
-            if await dependencies.settingsStore.load().system.homeShowsOnlyFavorites {
+            if systemSettings.homeShowsOnlyFavorites {
                 favorites = try await FavoriteMembershipSnapshot.load(
                     libraryStore: dependencies.localFavoriteLibraryStore,
                     directoryStore: dependencies.mangaDirectoryStore,
@@ -51,7 +52,12 @@ final class BookshelfViewModel {
         }
         let settings = snapshot.boardReader
         let entries = snapshot.entries
-        let shelf = BookshelfShelf(entries: entries, boardReader: settings, favorites: favorites)
+        let shelf = BookshelfShelf(
+            entries: entries,
+            boardReader: settings,
+            favorites: favorites,
+            continueSettings: systemSettings.bookshelfContinue
+        )
         let keys = (shelf.continuing + shelf.previous).compactMap { ContentCoverKey(target: $0.target) }
         let covers = await dependencies.contentCoverStore.covers(for: keys)
         guard !Task.isCancelled, currentGeneration == generation else { return }

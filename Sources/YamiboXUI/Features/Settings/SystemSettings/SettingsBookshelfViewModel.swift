@@ -6,6 +6,7 @@ import YamiboXCore
 @Observable
 final class SettingsBookshelfViewModel: AppSettingsPersisting {
     var showsOnlyFavorites = false
+    var continueSettings = BookshelfContinueSettings()
 
     let dependencies: SettingsDependencies
     var settingsStore: SettingsStore { dependencies.settingsStore }
@@ -18,6 +19,7 @@ final class SettingsBookshelfViewModel: AppSettingsPersisting {
 
     func applyLoadedSettings(_ settings: AppSettings) {
         showsOnlyFavorites = settings.system.homeShowsOnlyFavorites
+        continueSettings = settings.system.bookshelfContinue
     }
 
     func updateShowsOnlyFavorites(_ value: Bool) {
@@ -29,5 +31,37 @@ final class SettingsBookshelfViewModel: AppSettingsPersisting {
 
     func restoreDefaultsAfterApplicationReset() {
         showsOnlyFavorites = false
+        continueSettings = .init()
+    }
+
+    func updateContinueMode(_ mode: BookshelfContinueMode) {
+        var settings = continueSettings
+        settings.mode = mode
+        updateContinueSettings(settings)
+    }
+
+    func updateNovelCount(_ count: Int) {
+        var settings = continueSettings
+        settings.setNovelCount(count)
+        updateContinueSettings(settings)
+    }
+
+    func updateMangaCount(_ count: Int) {
+        var settings = continueSettings
+        settings.setMangaCount(count)
+        updateContinueSettings(settings)
+    }
+
+    func updateMixedCount(_ count: Int) {
+        var settings = continueSettings
+        settings.setMixedCount(count)
+        updateContinueSettings(settings)
+    }
+
+    private func updateContinueSettings(_ settings: BookshelfContinueSettings) {
+        guard continueSettings != settings else { return }
+        persistSettings(\.continueSettings, to: settings) {
+            $0.system.bookshelfContinue = settings
+        }
     }
 }
