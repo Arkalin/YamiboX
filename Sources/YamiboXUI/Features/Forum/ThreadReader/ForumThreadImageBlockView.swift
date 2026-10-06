@@ -14,15 +14,15 @@ struct ForumThreadImageBlockView: View {
     var body: some View {
         if block.isEmoticon {
             image
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(maxHeight: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(block.altText ?? L10n.string("forum.thread.image"))
         } else {
             image
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(maxHeight: 520)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .imageBrowserZoomSource(id: blockID, in: block.linkURL == nil ? imageBrowserZoomNamespace : nil)
         }
     }
