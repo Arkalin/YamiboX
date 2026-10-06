@@ -64,6 +64,8 @@ public struct ContentCover: Codable, Hashable, Sendable {
     public var key: ContentCoverKey
     public var automaticCoverURL: URL?
     public var manualCoverURL: URL?
+    public var automaticRefererPageURL: URL?
+    public var manualRefererPageURL: URL?
     public var dynamicEnabled: Bool
     /// User override that suppresses both cover URLs in favor of the text
     /// placeholder, independent of `dynamicEnabled`/which URL would
@@ -77,6 +79,8 @@ public struct ContentCover: Codable, Hashable, Sendable {
         key: ContentCoverKey,
         automaticCoverURL: URL? = nil,
         manualCoverURL: URL? = nil,
+        automaticRefererPageURL: URL? = nil,
+        manualRefererPageURL: URL? = nil,
         dynamicEnabled: Bool = true,
         textCoverForced: Bool = false,
         updatedAt: Date = .now
@@ -84,6 +88,8 @@ public struct ContentCover: Codable, Hashable, Sendable {
         self.key = key
         self.automaticCoverURL = automaticCoverURL
         self.manualCoverURL = manualCoverURL
+        self.automaticRefererPageURL = automaticRefererPageURL
+        self.manualRefererPageURL = manualRefererPageURL
         self.dynamicEnabled = dynamicEnabled
         self.textCoverForced = textCoverForced
         self.updatedAt = updatedAt
@@ -97,11 +103,37 @@ public struct ContentCover: Codable, Hashable, Sendable {
             return manualCoverURL ?? automaticCoverURL
         }
     }
+
+    public var resolvedImageSource: YamiboImageSource? {
+        guard let url = resolvedURL else { return nil }
+        let usesAutomatic = dynamicEnabled ? automaticCoverURL != nil : manualCoverURL == nil
+        return .cover(url: url,
+            refererPageURL: usesAutomatic ? automaticRefererPageURL : manualRefererPageURL,
+            threadID: key.targetType == .thread ? key.targetID : nil)
+    }
+
+    /// Old peers omit these optional fields. Never transfer provenance across
+    /// different artwork, or between the manual and automatic choices.
+    func retainingKnownSources(from other: Self) -> Self {
+        var result = self
+        if automaticCoverURL == other.automaticCoverURL, result.automaticRefererPageURL == nil {
+            result.automaticRefererPageURL = other.automaticRefererPageURL
+        }
+        if manualCoverURL == other.manualCoverURL, result.manualRefererPageURL == nil {
+            result.manualRefererPageURL = other.manualRefererPageURL
+        }
+        return result
+    }
 }
 
 public actor ContentCoverStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     private nonisolated let keyChanges = ContentCoverKeyChanges()
+    private nonisolated let imageInvalidator = ContentCoverImageInvalidator()
+
+    public nonisolated func setImageLoadInvalidator(_ action: @escaping @Sendable (Set<URL>?) async -> Void) {
+        imageInvalidator.set(action)
+    }
     /// A coalescing stream is only a wakeup; this journal retains key changes
     /// across skipped signals. Bulk writes and identity remapping invalidate all.
     public nonisolated func changedCoverKeys(since revision: UInt64, among keys: Set<ContentCoverKey>) -> (revision: UInt64, keys: Set<ContentCoverKey>) {
@@ -190,7 +222,7 @@ public actor ContentCoverStore {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
+                SELECT target_type, target_id, automatic_url, manual_url, automatic_referer, manual_referer, dynamic_enabled, text_cover_forced, updated_at
                 FROM content_cover
                 WHERE \(condition)
                 """,
@@ -203,6 +235,8 @@ public actor ContentCoverStore {
                     key: key,
                     automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
                     manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
+                    automaticRefererPageURL: (row["automatic_referer"] as String?).flatMap(URL.init(string:)),
+                    manualRefererPageURL: (row["manual_referer"] as String?).flatMap(URL.init(string:)),
                     dynamicEnabled: row["dynamic_enabled"],
                     textCoverForced: row["text_cover_forced"],
                     updatedAt: Date(timeIntervalSince1970: row["updated_at"])
@@ -227,7 +261,7 @@ public actor ContentCoverStore {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
+                SELECT target_type, target_id, automatic_url, manual_url, automatic_referer, manual_referer, dynamic_enabled, text_cover_forced, updated_at
                 FROM content_cover
                 ORDER BY target_type, target_id
                 """
@@ -240,6 +274,8 @@ public actor ContentCoverStore {
                     key: ContentCoverKey(targetType: targetType, targetID: row["target_id"]),
                     automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
                     manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
+                    automaticRefererPageURL: (row["automatic_referer"] as String?).flatMap(URL.init(string:)),
+                    manualRefererPageURL: (row["manual_referer"] as String?).flatMap(URL.init(string:)),
                     dynamicEnabled: row["dynamic_enabled"],
                     textCoverForced: row["text_cover_forced"],
                     updatedAt: Date(timeIntervalSince1970: row["updated_at"])
@@ -261,38 +297,60 @@ public actor ContentCoverStore {
     }
 
     @discardableResult
-    public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, date: Date = .now, onlyIfMissing: Bool = false) async throws -> Bool {
+    public func setAutomaticCover(_ source: YamiboImageSource, for key: ContentCoverKey, date: Date = .now, onlyIfMissing: Bool = false) async throws -> Bool {
+        try await setAutomaticCover(source.url, for: key, refererPageURL: source.refererPageURL, date: date, onlyIfMissing: onlyIfMissing)
+    }
+
+    @discardableResult
+    public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, refererPageURL: URL? = nil, date: Date = .now, onlyIfMissing: Bool = false) async throws -> Bool {
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
               !key.targetID.isEmpty else {
             return false
         }
+        let referer = YamiboImageSource.sanitizedCoverReferer(refererPageURL, imageURL: normalizedURL)
         let didChange = try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
-            if onlyIfMissing, cover.textCoverForced || cover.resolvedURL != nil { return false }
-            guard cover.automaticCoverURL != normalizedURL else { return false }
+            let sameImage = cover.automaticCoverURL == normalizedURL
+            let enrichesSource = sameImage && cover.automaticRefererPageURL == nil && referer != nil
+            if onlyIfMissing, cover.textCoverForced || (cover.resolvedURL != nil && !enrichesSource) { return false }
+            let nextReferer = sameImage ? referer ?? cover.automaticRefererPageURL : referer
+            guard !sameImage || cover.automaticRefererPageURL != nextReferer else { return false }
             cover.automaticCoverURL = normalizedURL
+            cover.automaticRefererPageURL = nextReferer
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
             return true
         }
-        if didChange { postChangeNotification(key: key) }
+        if didChange {
+            await imageInvalidator.invalidate([normalizedURL])
+            postChangeNotification(key: key)
+        }
         return didChange
     }
 
     @discardableResult
-    public func setManualCover(_ url: URL, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
+    public func setManualCover(_ source: YamiboImageSource, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
+        try await setManualCover(source.url, for: key, refererPageURL: source.refererPageURL, date: date)
+    }
+
+    @discardableResult
+    public func setManualCover(_ url: URL, for key: ContentCoverKey, refererPageURL: URL? = nil, date: Date = .now) async throws -> Bool {
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
               !key.targetID.isEmpty else {
             return false
         }
+        let referer = YamiboImageSource.sanitizedCoverReferer(refererPageURL, imageURL: normalizedURL)
         try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
+            cover.manualRefererPageURL = cover.manualCoverURL == normalizedURL
+                ? referer ?? cover.manualRefererPageURL : referer
             cover.manualCoverURL = normalizedURL
             cover.dynamicEnabled = false
             cover.textCoverForced = false
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
+        await imageInvalidator.invalidate([normalizedURL])
         postChangeNotification(key: key)
         return true
     }
@@ -307,6 +365,7 @@ public actor ContentCoverStore {
                 return false
             }
             cover.manualCoverURL = nil
+            cover.manualRefererPageURL = nil
             cover.dynamicEnabled = true
             cover.textCoverForced = false
             cover.updatedAt = date
@@ -314,6 +373,7 @@ public actor ContentCoverStore {
             return true
         }
         if didClear {
+            await invalidateResolvedImage(for: key)
             postChangeNotification(key: key)
         }
         return didClear
@@ -327,6 +387,7 @@ public actor ContentCoverStore {
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
+        await invalidateResolvedImage(for: key)
         postChangeNotification(key: key)
     }
 
@@ -343,6 +404,7 @@ public actor ContentCoverStore {
             cover.updatedAt = date
             try Self.upsert(cover, in: db)
         }
+        if !forced { await invalidateResolvedImage(for: key) }
         postChangeNotification(key: key)
         return true
     }
@@ -352,6 +414,7 @@ public actor ContentCoverStore {
             try db.execute(sql: "DELETE FROM content_cover")
             try db.execute(sql: "DELETE FROM content_cover_sync_state")
         }
+        await imageInvalidator.invalidate(nil)
         postChangeNotification()
     }
 
@@ -362,6 +425,7 @@ public actor ContentCoverStore {
             try deletions.save(to: "content_cover_sync_state", in: db)
             try db.execute(sql: "DELETE FROM content_cover")
         }
+        await imageInvalidator.invalidate(nil)
         postChangeNotification()
     }
 
@@ -428,6 +492,8 @@ public actor ContentCoverStore {
                         length(CAST(target_id AS BLOB)) +
                         COALESCE(length(CAST(automatic_url AS BLOB)), 0) +
                         COALESCE(length(CAST(manual_url AS BLOB)), 0) +
+                        COALESCE(length(CAST(automatic_referer AS BLOB)), 0) +
+                        COALESCE(length(CAST(manual_referer AS BLOB)), 0) +
                         24
                     ), 0)
                     FROM content_cover
@@ -467,7 +533,7 @@ public actor ContentCoverStore {
         guard let row = try Row.fetchOne(
             db,
             sql: """
-            SELECT automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at
+            SELECT automatic_url, manual_url, automatic_referer, manual_referer, dynamic_enabled, text_cover_forced, updated_at
             FROM content_cover
             WHERE target_type = ? AND target_id = ?
             """,
@@ -479,6 +545,8 @@ public actor ContentCoverStore {
             key: key,
             automaticCoverURL: (row["automatic_url"] as String?).flatMap(URL.init(string:)),
             manualCoverURL: (row["manual_url"] as String?).flatMap(URL.init(string:)),
+            automaticRefererPageURL: (row["automatic_referer"] as String?).flatMap(URL.init(string:)),
+            manualRefererPageURL: (row["manual_referer"] as String?).flatMap(URL.init(string:)),
             dynamicEnabled: row["dynamic_enabled"],
             textCoverForced: row["text_cover_forced"],
             updatedAt: Date(timeIntervalSince1970: row["updated_at"])
@@ -490,14 +558,16 @@ public actor ContentCoverStore {
         try db.execute(
             sql: """
             INSERT OR REPLACE INTO content_cover
-            (target_type, target_id, automatic_url, manual_url, dynamic_enabled, text_cover_forced, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (target_type, target_id, automatic_url, manual_url, automatic_referer, manual_referer, dynamic_enabled, text_cover_forced, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 key.targetType.rawValue,
                 key.targetID,
                 cover.automaticCoverURL?.absoluteString,
                 cover.manualCoverURL?.absoluteString,
+                cover.automaticCoverURL.flatMap { YamiboImageSource.sanitizedCoverReferer(cover.automaticRefererPageURL, imageURL: $0) }?.absoluteString,
+                cover.manualCoverURL.flatMap { YamiboImageSource.sanitizedCoverReferer(cover.manualRefererPageURL, imageURL: $0) }?.absoluteString,
                 cover.dynamicEnabled,
                 cover.textCoverForced,
                 cover.updatedAt.timeIntervalSince1970,
@@ -512,9 +582,30 @@ public actor ContentCoverStore {
 
     public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
 
+    private func invalidateResolvedImage(for key: ContentCoverKey) async {
+        if let url = await cover(for: key)?.resolvedURL {
+            await imageInvalidator.invalidate([url])
+        }
+    }
+
     private nonisolated func postChangeNotification(key: ContentCoverKey? = nil) {
         keyChanges.record(key)
         changeBroadcaster.post()
+    }
+}
+
+/// Installed once by the composition root, with a weak pipeline capture.
+private final class ContentCoverImageInvalidator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var action: (@Sendable (Set<URL>?) async -> Void)?
+
+    func set(_ action: @escaping @Sendable (Set<URL>?) async -> Void) {
+        lock.withLock { self.action = action }
+    }
+
+    func invalidate(_ urls: Set<URL>?) async {
+        let action = lock.withLock { self.action }
+        await action?(urls)
     }
 }
 

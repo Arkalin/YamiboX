@@ -989,7 +989,7 @@ final class FavoriteLibraryOrganizer {
                 selectedCollectionID: selectedCollectionID,
                 filter: filter,
                 readingProgress: readingProgress,
-                coverURLsByKey: coverLookup.urlsByKey,
+                coverSourcesByKey: coverLookup.sourcesByKey,
                 textCoverForcedKeys: coverLookup.forcedKeys,
                 mangaDirectoriesByTID: mangaDirectoriesByTID,
                 boardReaderSettings: boardReaderSettings,
@@ -1012,7 +1012,7 @@ final class FavoriteLibraryOrganizer {
                     selectedCollectionID: nil,
                     filter: filter,
                     readingProgress: readingProgress,
-                    coverURLsByKey: coverLookup.urlsByKey,
+                    coverSourcesByKey: coverLookup.sourcesByKey,
                     textCoverForcedKeys: coverLookup.forcedKeys,
                     mangaDirectoriesByTID: mangaDirectoriesByTID,
                     boardReaderSettings: boardReaderSettings

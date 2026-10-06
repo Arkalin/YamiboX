@@ -146,10 +146,7 @@ struct ContentCoverWebDAVMerger: Sendable {
         // `FavoriteLibraryWebDAVMerger`).
         var byKey = Dictionary(local.covers.map { ($0.key, $0) }, uniquingKeysWith: Self.newerCover)
         for cover in remote?.covers ?? [] {
-            if let existing = byKey[cover.key], existing.updatedAt >= cover.updatedAt {
-                continue
-            }
-            byKey[cover.key] = cover
+            byKey[cover.key] = byKey[cover.key].map { Self.newerCover($0, cover) } ?? cover
         }
         return ContentCoverWebDAVPayload(
             updatedAt: updatedAt,
@@ -162,7 +159,9 @@ struct ContentCoverWebDAVMerger: Sendable {
     }
 
     private static func newerCover(_ lhs: ContentCover, _ rhs: ContentCover) -> ContentCover {
-        lhs.updatedAt >= rhs.updatedAt ? lhs : rhs
+        lhs.updatedAt >= rhs.updatedAt
+            ? lhs.retainingKnownSources(from: rhs)
+            : rhs.retainingKnownSources(from: lhs)
     }
 }
 

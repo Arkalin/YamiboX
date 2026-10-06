@@ -338,7 +338,7 @@ private struct BookshelfContinueCard: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
             : AnyLayout(HStackLayout(spacing: 14))
         layout {
-            BookshelfCover(url: book.coverURL, title: book.entry.title)
+            BookshelfCover(source: book.coverSource, title: book.entry.title)
                 .frame(width: min(coverWidth, 80), height: min(coverWidth, 80) * 1.43)
                 .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
             VStack(alignment: .leading, spacing: 5) {
@@ -420,7 +420,7 @@ private struct BookshelfShelfBook: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            BookshelfCover(url: book.coverURL, title: book.entry.title)
+            BookshelfCover(source: book.coverSource, title: book.entry.title)
                 .aspectRatio(0.7, contentMode: .fit)
                 .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: transition.namespace)
                 .modifier(BookOpeningCoverPressEffect())
@@ -462,11 +462,11 @@ private struct BookshelfBookButton: View {
 /// The narrow highlight and dark crease form the spine, independently of
 /// the cast shadow. Keeping both inside the cover also works for text art.
 private struct BookshelfCover: View {
-    let url: URL?
+    let source: YamiboImageSource?
     let title: String
 
     var body: some View {
-        BookCoverThumbnail(url: url, title: title)
+        BookCoverThumbnail(source: source, title: title)
             .background(Color(uiColor: .secondarySystemBackground))
             .overlay(alignment: .leading) {
                 LinearGradient(stops: [

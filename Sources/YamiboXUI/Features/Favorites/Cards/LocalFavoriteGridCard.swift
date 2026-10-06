@@ -16,7 +16,7 @@ struct LocalFavoriteGridCard: View {
     var body: some View {
         Button(action: handleTap) {
             VStack(alignment: .leading, spacing: 8) {
-                LocalFavoriteGridCover(url: card.coverURL, title: card.resolvedTitle)
+                LocalFavoriteGridCover(source: card.coverSource, title: card.resolvedTitle)
                     .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace)
                 Text(card.resolvedTitle)
                     .font(.subheadline.weight(.semibold))
@@ -85,7 +85,7 @@ struct LocalFavoriteGridCard: View {
 
 /// Cover image sized to a 3:4 aspect ratio for grid cards.
 struct LocalFavoriteGridCover: View {
-    let url: URL?
+    let source: YamiboImageSource?
     let title: String
 
     var body: some View {
@@ -93,7 +93,7 @@ struct LocalFavoriteGridCover: View {
         Color.clear
             .aspectRatio(3 / 4, contentMode: .fit)
             .overlay {
-                BookCoverThumbnail(url: url, title: title)
+                BookCoverThumbnail(source: source, title: title)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .frame(maxWidth: .infinity)

@@ -153,9 +153,9 @@ public struct FavoriteCardProjection: Equatable, Identifiable, Sendable {
     public var lastUpdatedAt: Date?
     public var progressPercent: Int?
     public var chapterPageProgress: String?
-    public var coverURL: URL?
+    public var coverSource: YamiboImageSource?
     /// Whether the user has forced the text placeholder cover for this
-    /// target, suppressing `coverURL` even when a real cover resolves.
+    /// target, suppressing `coverSource` even when a real cover resolves.
     public var textCoverForced: Bool
 
     /// Non-nil only when `item.target` (a `.mangaThread` favorite) resolved

@@ -23,7 +23,7 @@ public struct ThreadCoverResolver: Sendable {
         thread: ThreadIdentity,
         title: String,
         repository: any ThreadCoverPageResolving
-    ) async -> URL? {
+    ) async -> YamiboImageSource? {
         guard let firstPage = await loadPage(
             thread: thread,
             title: title,
@@ -40,7 +40,7 @@ public struct ThreadCoverResolver: Sendable {
         return Self.findThreadCoverCandidate(in: firstPage, owner: owner)
     }
 
-    public static func findThreadCoverCandidate(in page: ForumThreadPage?) -> URL? {
+    public static func findThreadCoverCandidate(in page: ForumThreadPage?) -> YamiboImageSource? {
         guard let page,
               let owner = owner(in: page) else {
             return nil
@@ -82,10 +82,10 @@ private extension ThreadCoverResolver {
         page.posts.first { floorNumber(from: $0.floorText) == 1 }?.author
     }
 
-    static func findThreadCoverCandidate(in page: ForumThreadPage, owner: BlogReaderUser) -> URL? {
+    static func findThreadCoverCandidate(in page: ForumThreadPage, owner: BlogReaderUser) -> YamiboImageSource? {
         let ownerID = validOwnerID(owner.uid)
         let ownerName = trimmedNonEmpty(owner.name)
-        return page.posts
+        let url = page.posts
             .enumerated()
             .sorted { lhs, rhs in
                 let lhsFloor = floorNumber(from: lhs.element.floorText) ?? Int.max
@@ -108,6 +108,9 @@ private extension ThreadCoverResolver {
                 post.images.compactMap(Self.coverCandidateURL(in:))
             }
             .first
+        let referer = YamiboRoute.threadByID(tid: page.thread.tid,
+            page: page.pageNavigation?.currentPage ?? 1, authorID: nil, reverse: false).url
+        return url.map { .cover(url: $0, refererPageURL: referer) }
     }
 
     static func coverCandidateURL(in image: ForumThreadPostImage) -> URL? {

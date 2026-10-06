@@ -69,7 +69,7 @@ final class BookshelfViewModel {
                 entry: entry,
                 category: entry.category(boardReader: settings),
                 isSmartManga: settings.isSmartComicModeEnabled(forumID: entry.forumID),
-                coverURL: ContentCoverKey(target: entry.target).flatMap { covers[$0]?.resolvedURL }
+                coverSource: ContentCoverKey(target: entry.target).flatMap { covers[$0]?.resolvedImageSource }
             )
         }
         continuing = shelf.continuing.map(book)

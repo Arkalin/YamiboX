@@ -15,7 +15,7 @@ struct LikeWorkListView: View {
 
     @State private var summaries: [LikeWorkSummary] = []
     @State private var titlesByWorkKey: [ReadingWorkKey: String] = [:]
-    @State private var coverURLsByWorkKey: [ReadingWorkKey: URL] = [:]
+    @State private var coverSourcesByWorkKey: [ReadingWorkKey: YamiboImageSource] = [:]
     @State private var searchText = ""
     @State private var localFilter = LikeWorkFilter.all
     @State private var hasLoaded = false
@@ -56,7 +56,7 @@ struct LikeWorkListView: View {
                 } label: {
                     LikeWorkRow(
                         title: title(for: summary.workKey),
-                        coverURL: coverURLsByWorkKey[summary.workKey],
+                        coverSource: coverSourcesByWorkKey[summary.workKey],
                         kind: summary.workKey.kind,
                         itemCount: summary.itemCount,
                         lastLikedAt: summary.lastLikedAt,
@@ -323,13 +323,13 @@ struct LikeWorkListView: View {
         }
         let fetched = await fetchedCovers
         guard isCurrentLoad(generation, accountGeneration: accountGeneration) else { return }
-        var covers: [ReadingWorkKey: URL] = [:]
+        var covers: [ReadingWorkKey: YamiboImageSource] = [:]
         for (summary, coverKey) in zip(summaries, coverKeys) {
-            covers[summary.workKey] = fetched[coverKey]?.resolvedURL
+            covers[summary.workKey] = fetched[coverKey]?.resolvedImageSource
         }
         self.summaries = summaries
         titlesByWorkKey = titles
-        coverURLsByWorkKey = covers
+        coverSourcesByWorkKey = covers
         hasLoaded = true
     }
 

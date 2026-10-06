@@ -41,7 +41,7 @@ struct FavoriteLibraryDisplayState: Equatable {
 /// `LocalFavoriteLibraryDerivation.collectionPreviewTiles(_:mangaThreadItemsByGroupKey:)`
 /// is what performs the resolved-directory collapsing.
 struct LocalFavoriteCollectionPreviewTile: Equatable, Sendable {
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
     let title: String
 }
 
@@ -91,9 +91,9 @@ enum LocalFavoriteLibraryDerivation {
         /// a card's display lookup and its cover-action writes
         /// (`FavoriteLibraryOrganizer.toggleTextCover`) can never disagree
         /// about which row the card means.
-        var coverURLsByKey: [ContentCoverKey: URL]
+        var coverSourcesByKey: [ContentCoverKey: YamiboImageSource]
         /// Keys whose stored cover has `textCoverForced` set — same keyspace
-        /// as `coverURLsByKey` (a forced key also resolves no URL there; the
+        /// as `coverSourcesByKey` (a forced key also resolves no URL there; the
         /// flag is surfaced separately so the card's context menu can offer
         /// "使用图片封面" instead of "使用文字封面").
         var textCoverForcedKeys: Set<ContentCoverKey>
@@ -133,7 +133,7 @@ enum LocalFavoriteLibraryDerivation {
             boardReaderSettings: inputs.boardReaderSettings
             )
         }
-        if structureChanged || previous?.coverURLsByKey != inputs.coverURLsByKey {
+        if structureChanged || previous?.coverSourcesByKey != inputs.coverSourcesByKey {
             cache.previews = collectionPreviewTiles(inputs, mangaThreadItemsByGroupKey: cache.groups)
         }
         cache.structuralInputs = inputs
@@ -172,7 +172,7 @@ enum LocalFavoriteLibraryDerivation {
         // comment for why skipping the category/collection filter and
         // bucketing its result afterward is exactly equivalent. Deliberately
         // NOT run through `resolvedCards`'s cover overlay — neither a count
-        // nor `FavoriteCollectionSortSummary` reads `coverURL`/
+        // nor `FavoriteCollectionSortSummary` reads `coverSource`/
         // `textCoverForced`, so overlaying it here would be pure waste.
         let globalChanged = structureChanged
             || cache.globalInputs?.filter.selectedSourceFilters != inputs.filter.selectedSourceFilters
@@ -266,7 +266,7 @@ enum LocalFavoriteLibraryDerivation {
             // `FavoriteLibraryOrganizer.toggleTextCover`, which writes
             // through this exact property.
             if let key = card.contentCoverKey {
-                card.coverURL = inputs.coverURLsByKey[key]
+                card.coverSource = inputs.coverSourcesByKey[key]
                 card.textCoverForced = inputs.textCoverForcedKeys.contains(key)
             }
             return card
@@ -339,7 +339,7 @@ enum LocalFavoriteLibraryDerivation {
     /// than a plain tuple purely for the named fields' readability.
     private struct CollectionPreviewCandidate {
         var sortDate: Date
-        var coverURL: URL?
+        var coverSource: YamiboImageSource?
         var title: String
     }
 
@@ -379,7 +379,7 @@ enum LocalFavoriteLibraryDerivation {
                 guard isModeOnMangaThread else {
                     candidates.append(CollectionPreviewCandidate(
                         sortDate: item.updatedAt,
-                        coverURL: ContentCoverKey(target: item.target).flatMap { inputs.coverURLsByKey[$0] },
+                        coverSource: ContentCoverKey(target: item.target).flatMap { inputs.coverSourcesByKey[$0] },
                         title: item.resolvedDisplayTitle
                     ))
                     continue
@@ -404,7 +404,7 @@ enum LocalFavoriteLibraryDerivation {
                     // locally-cleaned title, its own per-thread cover.
                     candidates.append(CollectionPreviewCandidate(
                         sortDate: item.updatedAt,
-                        coverURL: ContentCoverKey(target: item.target).flatMap { inputs.coverURLsByKey[$0] },
+                        coverSource: ContentCoverKey(target: item.target).flatMap { inputs.coverSourcesByKey[$0] },
                         title: effectiveTitle
                     ))
                     continue
@@ -423,8 +423,8 @@ enum LocalFavoriteLibraryDerivation {
                 // `updatedAt` since that's what this function sorts by.
                 let groupMembers = mangaThreadItemsByGroupKey[mangaDirectory.id.rawValue] ?? [item]
                 let sortDate = groupMembers.map(\.updatedAt).max() ?? item.updatedAt
-                let coverURL = inputs.coverURLsByKey[.smartManga(directoryID: mangaDirectory.id)]
-                candidates.append(CollectionPreviewCandidate(sortDate: sortDate, coverURL: coverURL, title: effectiveTitle))
+                let coverSource = inputs.coverSourcesByKey[.smartManga(directoryID: mangaDirectory.id)]
+                candidates.append(CollectionPreviewCandidate(sortDate: sortDate, coverSource: coverSource, title: effectiveTitle))
             }
 
             // Stable bounded selection, avoiding sorting all collection members.
@@ -435,7 +435,7 @@ enum LocalFavoriteLibraryDerivation {
                 if newest.count > 4 { newest.removeLast() }
             }
             let tiles = newest
-                .map { LocalFavoriteCollectionPreviewTile(coverURL: $0.coverURL, title: $0.title) }
+                .map { LocalFavoriteCollectionPreviewTile(coverSource: $0.coverSource, title: $0.title) }
             return (collection.id, Array(tiles))
         })
     }

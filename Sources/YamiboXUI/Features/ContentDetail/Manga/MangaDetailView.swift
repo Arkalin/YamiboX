@@ -139,7 +139,7 @@ private struct MangaDetailBodyView: View {
             if let directory = model.directory {
                 MangaDetailHeader(
                     directory: directory,
-                    coverURL: model.coverURL,
+                    coverSource: model.coverSource,
                     latestChapterText: model.latestChapterText,
                     readingProgressText: model.readingProgressText,
                     hasReadingProgress: model.hasReadingProgress,
@@ -198,7 +198,7 @@ private struct MangaDetailBodyView: View {
 
 struct MangaDetailHeader: View {
     let directory: MangaDirectory
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
     let latestChapterText: String?
     let readingProgressText: String?
     let hasReadingProgress: Bool
@@ -219,7 +219,7 @@ struct MangaDetailHeader: View {
     var body: some View {
         ContentDetailHeader(
             title: directory.cleanBookName,
-            coverSource: coverURL.map { YamiboImageSource(url: $0) },
+            coverSource: coverSource,
             onCopyText: onCopyText
         ) { compact in
             MangaHeaderMetadata(

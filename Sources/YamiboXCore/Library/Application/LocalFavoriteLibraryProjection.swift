@@ -650,7 +650,7 @@ public enum LocalFavoriteLibraryProjection {
             chapterPageProgress: chapterPageProgress(from: progress),
             // Filled from ContentCoverStore by the library derivation; items
             // deliberately carry no cover of their own.
-            coverURL: nil,
+            coverSource: nil,
             textCoverForced: false,
             mangaDirectory: entry.mangaDirectory,
             mergedMembers: entry.members,

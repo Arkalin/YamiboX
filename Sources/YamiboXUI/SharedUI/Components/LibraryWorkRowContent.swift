@@ -1,11 +1,12 @@
 import SwiftUI
+import YamiboXCore
 
 struct LibraryWorkRowContent: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.appTheme) private var appTheme
 
     let title: String
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
     let categoryTitle: Text
     let timestamp: Text
     let detail: String?
@@ -48,14 +49,14 @@ struct LibraryWorkRowContent: View {
     }
 
     @ViewBuilder private var cover: some View {
-        if usesForumPlaceholder, coverURL == nil {
+        if usesForumPlaceholder, coverSource == nil {
             Image(systemName: "text.bubble")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
         } else {
-            BookCoverThumbnail(url: coverURL, title: title)
+            BookCoverThumbnail(source: coverSource, title: title)
         }
     }
 

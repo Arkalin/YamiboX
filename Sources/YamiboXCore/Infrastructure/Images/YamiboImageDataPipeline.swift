@@ -69,6 +69,9 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0, coverCacheKeys: coverCacheKeys) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
+        // Nuke's original-data key ignores Cookie/Referer. Core single-flight
+        // now owns coalescing using the actual request context instead.
+        configuration.isTaskCoalescingEnabled = false
         self.pipeline = ImagePipeline(
             configuration: configuration,
             delegate: YamiboImageDataPipelineDelegate()
@@ -117,7 +120,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
         var userInfo: [ImageRequest.UserInfoKey: any Sendable] = [:]
         if let client {
-            YamiboNetworkPolicy.applyCredentials(client.credentials, to: &urlRequest, userAgent: client.userAgent)
+            YamiboNetworkPolicy.applyCredentials(client.credentials, to: &urlRequest, userAgent: client.userAgent, handlesCookies: false)
             userInfo[.yamiboURLSession] = YamiboImageRequestSession(client.session)
         }
         if let refererPageURL = source.refererPageURL {
@@ -268,7 +271,13 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             newRequest request: URLRequest,
             completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
-            let redirectedRequest = YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url)
+            var redirectedRequest = YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url)
+            if let from = response.url, let to = redirectedRequest?.url, !YamiboImageSource.sameOrigin(from, to) {
+                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Cookie")
+                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Authorization")
+                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Referer")
+                redirectedRequest?.httpShouldHandleCookies = false
+            }
             if let redirectedRequest {
                 NetworkLogRecorder.shared.addRedirect(to: logToken, from: response, request: redirectedRequest)
             }

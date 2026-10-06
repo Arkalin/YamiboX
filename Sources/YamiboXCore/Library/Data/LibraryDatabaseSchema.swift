@@ -68,6 +68,12 @@ enum LibraryDatabaseSchema: DatabaseSchemaModule {
                 table.primaryKey(["run_id", "kind", "position"])
             }
         }
+        migrator.registerMigration("library.v6.cover-provenance") { db in
+            try db.alter(table: "content_cover") { table in
+                table.add(column: "automatic_referer", .text)
+                table.add(column: "manual_referer", .text)
+            }
+        }
     }
 
     static func erase(in db: Database) throws {

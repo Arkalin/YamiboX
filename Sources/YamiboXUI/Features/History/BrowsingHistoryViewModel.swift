@@ -19,7 +19,7 @@ final class BrowsingHistoryViewModel {
     private(set) var favoritesReady = false
     private(set) var smartMangaBulkDeleteEnabled = true
     var favoriteActions: FavoriteActionController?
-    var coverURLsByEntryID: [String: URL] = [:]
+    var coverSourcesByEntryID: [String: YamiboImageSource] = [:]
     var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -296,13 +296,13 @@ final class BrowsingHistoryViewModel {
         }
         let coversByKey = await contentCoverStore.covers(for: Array(keysByEntryID.values))
         guard generation == reloadGeneration else { return }
-        var covers: [String: URL] = [:]
+        var covers: [String: YamiboImageSource] = [:]
         for (entryID, key) in keysByEntryID {
-            if let url = coversByKey[key]?.resolvedURL {
+            if let url = coversByKey[key]?.resolvedImageSource {
                 covers[entryID] = url
             }
         }
-        coverURLsByEntryID = covers
+        coverSourcesByEntryID = covers
     }
 }
 

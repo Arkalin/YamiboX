@@ -11,7 +11,7 @@ final class FavoriteCoverCoordinator {
     }
 
     struct Lookup: Equatable {
-        var urlsByKey: [ContentCoverKey: URL] = [:]
+        var sourcesByKey: [ContentCoverKey: YamiboImageSource] = [:]
         var forcedKeys: Set<ContentCoverKey> = []
 
     }
@@ -69,7 +69,7 @@ final class FavoriteCoverCoordinator {
         guard !Task.isCancelled, revision == expectedRevision else { return }
         var snapshot = isFullRefresh ? Lookup() : lookup
         for key in requestedKeys {
-            snapshot.urlsByKey[key] = changed.urlsByKey[key]
+            snapshot.sourcesByKey[key] = changed.sourcesByKey[key]
             if changed.forcedKeys.contains(key) { snapshot.forcedKeys.insert(key) }
             else { snapshot.forcedKeys.remove(key) }
         }
@@ -101,7 +101,7 @@ final class FavoriteCoverCoordinator {
         var result = Lookup()
         for key in keys {
             guard let cover = covers[key] else { continue }
-            result.urlsByKey[key] = cover.resolvedURL
+            result.sourcesByKey[key] = cover.resolvedImageSource
             if cover.textCoverForced { result.forcedKeys.insert(key) }
         }
         return result
@@ -111,7 +111,7 @@ final class FavoriteCoverCoordinator {
         guard let makeRepository, backfillTask == nil else { return }
         let missing = groups.filter { group in
             let key = ContentCoverKey.smartManga(directoryID: group.directory.id)
-            return lookup.urlsByKey[key] == nil
+            return lookup.sourcesByKey[key] == nil
                 && !lookup.forcedKeys.contains(key)
                 && !attemptedTargetIDs.contains(key.targetID)
         }

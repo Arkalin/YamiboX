@@ -137,8 +137,8 @@ final class MangaDetailViewModel {
         readingProgress?.manga?.chapterThreadID
     }
 
-    var coverURL: URL? {
-        contentCover?.resolvedURL
+    var coverSource: YamiboImageSource? {
+        contentCover?.resolvedImageSource
     }
 
     var latestChapterText: String? {
@@ -563,7 +563,7 @@ final class MangaDetailViewModel {
         // Same missing-check as the favorites backfill: a text-cover-forced
         // row is a deliberate "no image", not a missing cover, and any
         // resolved URL means there is nothing to do.
-        if let contentCover, contentCover.textCoverForced || contentCover.resolvedURL != nil {
+        if let contentCover, contentCover.textCoverForced || contentCover.resolvedImageSource != nil {
             return
         }
         attemptedAutomaticCoverBookNames.insert(directory.id.rawValue)

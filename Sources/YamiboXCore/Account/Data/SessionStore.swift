@@ -2,6 +2,9 @@ import Foundation
 
 public protocol SessionStoring: Sendable {
     func load() async -> SessionState
+    func snapshot() async throws -> AccountSessionSnapshot
+    func isCurrentGeneration(_ expected: UUID) async -> Bool
+    func changes() -> AsyncStream<String>
     func save(_ session: SessionState) async throws
     func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws
     func updateWebSession(cookie: String, userAgent: String, isLoggedIn: Bool) async throws

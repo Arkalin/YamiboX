@@ -100,7 +100,7 @@ enum ImageBrowserThreadCoverActions {
             title: title,
             systemImage: "photo.on.rectangle.angled"
         ) { source in
-            guard try await store.setManualCover(source.url, for: key) else { return nil }
+            guard try await store.setManualCover(source, for: key) else { return nil }
             return L10n.string("cover.set_success_message")
         }
     }

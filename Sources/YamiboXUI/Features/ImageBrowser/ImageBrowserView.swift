@@ -500,7 +500,8 @@ private struct ImageBrowserPageView: View {
     }
 
     private var requestIdentity: YamiboUIImageRequestIdentity {
-        .init(cacheKey: item.source.cacheKey, pipelineID: imagePipeline.map(ObjectIdentifier.init))
+        .init(cacheKey: item.source.cacheKey, pipelineID: imagePipeline.map(ObjectIdentifier.init),
+              source: item.source, revision: imagePipeline?.requestRevision(for: item.source))
     }
 
     private func load() async {

@@ -193,7 +193,7 @@ struct LikeItemMetadata: View {
 
 struct LikeWorkRow: View {
     let title: String
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
     let kind: ReadingWorkKind
     let itemCount: Int
     let lastLikedAt: Date
@@ -204,7 +204,7 @@ struct LikeWorkRow: View {
         HStack(alignment: .center, spacing: 8) {
             LibraryWorkRowContent(
                 title: title,
-                coverURL: coverURL,
+                coverSource: coverSource,
                 categoryTitle: Text(kind == .novel ? LikeWorkFilter.novel.title : LikeWorkFilter.manga.title),
                 timestamp: Text(LocalFavoriteRelativeDate.string(from: lastLikedAt)),
                 detail: L10n.string("likes.item_count_format", itemCount)

@@ -55,7 +55,7 @@ struct LocalFavoriteCollectionMosaic: View {
                 // own background is only ~12% opaque, so a collection-tinted
                 // rectangle painted underneath it would bleed through and tint
                 // every text-fallback tile with the collection's color.
-                BookCoverThumbnail(url: tiles[index].coverURL, title: tiles[index].title)
+                BookCoverThumbnail(source: tiles[index].coverSource, title: tiles[index].title)
             } else {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(color.opacity(0.18))
@@ -100,7 +100,7 @@ struct LocalFavoriteCollectionCoverPreview: View {
     private func tile(at index: Int, width: CGFloat, height: CGFloat) -> some View {
         Group {
             if index < tiles.count {
-                BookCoverThumbnail(url: tiles[index].coverURL, title: tiles[index].title)
+                BookCoverThumbnail(source: tiles[index].coverSource, title: tiles[index].title)
             } else {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(color.opacity(index == 0 ? 0.8 : 0.18))

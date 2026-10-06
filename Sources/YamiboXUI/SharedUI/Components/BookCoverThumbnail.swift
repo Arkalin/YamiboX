@@ -15,15 +15,15 @@ import YamiboXCore
 /// proposed, so the explicit `.frame(width:height:)` callers apply is honored
 /// exactly.
 struct BookCoverThumbnail: View {
-    let url: URL?
+    let source: YamiboImageSource?
     let title: String
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                if let url, let thumbnail = YamiboImageThumbnail(pointSize: proxy.size, displayScale: displayScale) {
-                    YamiboRemoteImage(source: YamiboImageSource(url: url), thumbnail: thumbnail) { image in
+                if let source, let thumbnail = YamiboImageThumbnail(pointSize: proxy.size, displayScale: displayScale) {
+                    YamiboRemoteImage(source: source, thumbnail: thumbnail) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)

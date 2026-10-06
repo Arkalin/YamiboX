@@ -52,7 +52,7 @@ struct BookshelfBook: Identifiable {
     let entry: BrowsingHistoryEntry
     let category: BrowsingHistoryCategory
     let isSmartManga: Bool
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
 
     var id: String { entry.id }
 

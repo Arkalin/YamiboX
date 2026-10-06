@@ -4,6 +4,7 @@ import UIKit
 import Nuke
 import Combine
 import ImageIO
+import Observation
 
 typealias YamiboPlatformImage = UIImage
 
@@ -36,6 +37,8 @@ struct YamiboUIImageRequestIdentity: Hashable {
     let cacheKey: String?
     let pipelineID: ObjectIdentifier?
     var thumbnail: YamiboImageThumbnail? = nil
+    var source: YamiboImageSource? = nil
+    var revision: UUID? = nil
 }
 
 /// Decode to cover the display box, not merely to fit its longest edge.
@@ -99,6 +102,7 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
 /// with an in-memory cache. All byte loading —
 /// offline lookup, session headers, disk cache — lives in the Core pipeline.
 @MainActor
+@Observable
 public final class YamiboUIImagePipeline {
     static let defaultMemoryLimitBytes = 512 * 1024 * 1024
     static let defaultEntryCostLimit = 0.25
@@ -108,6 +112,10 @@ public final class YamiboUIImagePipeline {
     private let memoryCache: ImageCache
     private let loadedImages = PassthroughSubject<(String, YamiboImageThumbnail?, YamiboDisplayImage), Never>()
     private let prefetchedBytes = PassthroughSubject<String, Never>()
+    private var requestEpoch: UUID
+    private var imageRevisions: [String: UUID] = [:]
+    private var coverRecoveryRevisions: [String: UUID] = [:]
+    @ObservationIgnored private var loadObservation: Task<Void, Never>?
 
     /// Recover failed views when another consumer loads the same image, even
     /// when its decoded size exceeds the memory cache's single-entry limit.
@@ -135,6 +143,7 @@ public final class YamiboUIImagePipeline {
 
     public init(core: any YamiboImageDataLoading, memoryCache: YamiboUIImageMemoryCache) {
         self.dataLoader = core
+        self.requestEpoch = core.initialLoadEpoch
         self.memoryCache = memoryCache.cache
         self.pipeline = ImagePipeline {
             $0.imageCache = memoryCache.cache
@@ -145,6 +154,24 @@ public final class YamiboUIImagePipeline {
                 return YamiboAnimatedDataPreservingDecoder(base: decoder, preservesAnimatedData: context.request.thumbnail == nil)
             }
         }
+        let changes = core.loadChanges()
+        loadObservation = Task { [weak self] in
+            for await revision in changes {
+                guard !Task.isCancelled else { return }
+                self?.requestEpoch = revision.epoch
+                self?.imageRevisions = revision.images
+                self?.coverRecoveryRevisions = revision.recoveredCovers
+            }
+        }
+    }
+
+    deinit { loadObservation?.cancel() }
+
+    func requestRevision(for source: YamiboImageSource?) -> UUID {
+        if let source, source.purpose == .cover, let recovery = coverRecoveryRevisions[source.cacheKey] {
+            return recovery
+        }
+        return source.flatMap { imageRevisions[$0.cacheKey] } ?? requestEpoch
     }
 
     func cachedImage(for source: YamiboImageSource) -> YamiboPlatformImage? {
@@ -170,8 +197,15 @@ public final class YamiboUIImagePipeline {
 
     func previewImage(for source: YamiboImageSource, maxPixelSize: Int) async throws -> UIImage {
         do {
-            let request = nukeRequest(for: source, maxPixelSize: maxPixelSize)
-            return try await pipeline.imageTask(with: request).response.image
+            let context = try await dataLoader.loadContext(for: source)
+            let request = nukeRequest(for: source, maxPixelSize: maxPixelSize, context: context)
+            let image = try await pipeline.imageTask(with: request).response.image
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
+            await dataLoader.didDecodeImage(for: source, context: context)
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
+            return image
         } catch {
             throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
         }
@@ -182,8 +216,10 @@ public final class YamiboUIImagePipeline {
     /// the visible page alone pays for its full-resolution decode.
     func prefetchImage(for source: YamiboImageSource) async throws {
         guard cachedImage(for: source) == nil else { return }
-        let data = try await dataLoader.data(for: source)
+        let context = try await dataLoader.loadContext(for: source)
+        let data = try await dataLoader.data(for: source, context: context)
         try Task.checkCancellation()
+        guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
         let entryLimit = Double(memoryCache.costLimit) * min(max(memoryCache.entryCostLimit, 0), 1)
         let shouldDecode = await Task.detached(priority: .utility) {
             Self.shouldDecodeForPrefetch(data: data, entryLimit: entryLimit)
@@ -196,10 +232,15 @@ public final class YamiboUIImagePipeline {
             prefetchedBytes.send(source.cacheKey)
             return
         }
-        var request = nukeRequest(for: source, preparedData: data)
+        var request = nukeRequest(for: source, preparedData: data, context: context)
         request.priority = .low
         do {
             let response = try await pipeline.imageTask(with: request).response
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
+            await dataLoader.didDecodeImage(for: source, context: context)
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             loadedImages.send((source.cacheKey, nil, YamiboDisplayImage(container: response.container)))
             prefetchedBytes.send(source.cacheKey)
         } catch {
@@ -228,16 +269,26 @@ public final class YamiboUIImagePipeline {
         thumbnail: YamiboImageThumbnail? = nil,
         priority: ImageRequest.Priority = .normal
     ) async throws -> YamiboDisplayImage {
+        let context = try await dataLoader.loadContext(for: source)
         if let cached = cachedDisplayImage(for: source, thumbnail: thumbnail) {
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
+            await dataLoader.didDecodeImage(for: source, context: context)
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             loadedImages.send((source.cacheKey, thumbnail, cached))
             return cached
         }
 
         do {
-            var request = nukeRequest(for: source, thumbnail: thumbnail)
+            var request = nukeRequest(for: source, thumbnail: thumbnail, context: context)
             request.priority = priority
             let response = try await pipeline.imageTask(with: request).response
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             let image = YamiboDisplayImage(container: response.container)
+            await dataLoader.didDecodeImage(for: source, context: context)
+            try Task.checkCancellation()
+            guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             loadedImages.send((source.cacheKey, thumbnail, image))
             // Other failed variants may retry the shared bytes, but must not
             // adopt this variant's decoded image (especially a cover poster).
@@ -253,16 +304,20 @@ public final class YamiboUIImagePipeline {
         pipeline.cache.removeAll()
     }
 
-    private func nukeRequest(for source: YamiboImageSource, maxPixelSize: Int? = nil, thumbnail: YamiboImageThumbnail? = nil, preparedData: Data? = nil) -> ImageRequest {
+    private func nukeRequest(for source: YamiboImageSource, maxPixelSize: Int? = nil, thumbnail: YamiboImageThumbnail? = nil, preparedData: Data? = nil, context: YamiboImageLoadContext? = nil) -> ImageRequest {
         let core = dataLoader
         var imageRequest = ImageRequest(
-            id: source.cacheKey,
+            id: context.map { $0.requestID + (source.purpose == .cover ? ":cover" : ":content") } ?? source.cacheKey,
             data: {
                 if let preparedData { return preparedData }
+                if let context { return try await core.data(for: source, context: context) }
                 return try await core.data(for: source)
             },
             options: [.disableDiskCache]
         )
+        // Network identities include authentication, Referer and purpose;
+        // successful decoded variants still reuse the original URL cache key.
+        imageRequest.imageID = source.cacheKey
         // UIScreen.main is deprecated; the current trait collection carries
         // the effective display scale (falls back to 2.0 in the rare
         // unspecified case, matching every current iPhone floor).
@@ -276,7 +331,8 @@ public final class YamiboUIImagePipeline {
         return imageRequest
     }
 
-    private static func mapImagePipelineError(_ error: ImagePipeline.Error) -> Error {
+    private static func mapImagePipelineError(_ error: any Error) -> any Error {
+        guard let error = error as? ImagePipeline.Error else { return error }
         switch error {
         case .dataLoadingFailed(let underlying):
             return underlying
@@ -294,6 +350,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     private let thumbnail: YamiboImageThumbnail?
     private let injectedPipeline: YamiboUIImagePipeline?
     @Environment(\.yamiboImagePipeline) private var environmentPipeline
+    @Environment(\.scenePhase) private var scenePhase
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
     private let failure: (@escaping () -> Void) -> Failure
@@ -366,6 +423,9 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         .task(id: LoadIdentity(request: requestIdentity, attempt: attempt)) {
             await load()
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, source?.purpose == .cover, didFail { attempt += 1 }
+        }
         .onReceive(successfulLoads) { loaded in
             guard didFail else { return }
             apply(loaded)
@@ -404,7 +464,8 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     }
 
     private var requestIdentity: YamiboUIImageRequestIdentity {
-        .init(cacheKey: source?.cacheKey, pipelineID: (injectedPipeline ?? environmentPipeline).map(ObjectIdentifier.init), thumbnail: thumbnail)
+        .init(cacheKey: source?.cacheKey, pipelineID: (injectedPipeline ?? environmentPipeline).map(ObjectIdentifier.init),
+              thumbnail: thumbnail, source: source, revision: (injectedPipeline ?? environmentPipeline)?.requestRevision(for: source))
     }
 
     private func load() async {
@@ -423,14 +484,9 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             didFail = true
             return
         }
-        if let cached = pipeline.cachedDisplayImage(for: source, thumbnail: thumbnail) {
-            apply(cached)
-            loadedIdentity = identity
-            didFail = false
-            return
-        }
-
-        apply(nil)
+        // Keep a cached poster visible while the pipeline validates the load
+        // context and reports decoded-cache recovery to the cover policy.
+        apply(pipeline.cachedDisplayImage(for: source, thumbnail: thumbnail))
         didFail = false
         do {
             let loaded = try await pipeline.displayImage(for: source, thumbnail: thumbnail)

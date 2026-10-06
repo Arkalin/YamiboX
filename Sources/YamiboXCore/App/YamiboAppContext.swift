@@ -237,8 +237,12 @@ public final class YamiboAppContext: Sendable {
             engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory, contentCoverStore: self.contentCoverStore),
             sessionStore: sessionStore,
             imageSession: imageSession,
-            offlineImages: resolvedDownloadStore
+            offlineImages: resolvedDownloadStore,
+            failureCacheDirectory: resolvedCachesRootDirectory.appendingPathComponent("image-load-policy")
         )
+        self.contentCoverStore.setImageLoadInvalidator { [weak imagePipeline = self.imagePipeline] urls in
+            await imagePipeline?.invalidateCoverFailures(for: urls)
+        }
         self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
         self.downloadBackgroundDownloadTransport = downloadBackgroundDownloadTransport ?? DownloadBackgroundTransport(sessionStore: sessionStore)
@@ -253,7 +257,10 @@ public final class YamiboAppContext: Sendable {
             unread: messageUnreadWorkflow,
             blacklist: blacklistWorkflow,
             stopDownload: { try await queueExecutors.invalidate() },
-            clearAccountCaches: { [store = self.forumCacheStore] in try await store.clearAccountCaches() },
+            clearAccountCaches: { [store = self.forumCacheStore, imagePipeline = self.imagePipeline] in
+                await imagePipeline.prepareForAccountChange()
+                try await store.clearAccountCaches()
+            },
             clearWebData: { await webDataCleaner.clear($0) }
         )
         self.accountTransitionWorkflow = accountTransitionWorkflow

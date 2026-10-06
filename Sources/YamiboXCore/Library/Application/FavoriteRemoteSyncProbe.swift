@@ -49,7 +49,7 @@ public extension FavoriteYamiboSyncClient {
 struct FavoriteRemoteSyncProbe: Sendable {
     var resolve: @Sendable (YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget
     var repository: any ThreadCoverPageResolving
-    var saveCover: @Sendable (URL, FavoriteItemTarget) async throws -> Void
+    var saveCover: @Sendable (YamiboImageSource, FavoriteItemTarget) async throws -> Void
 
     func probe(_ entry: YamiboRemoteFavoriteEntry) async throws -> FavoriteThreadProbeResult {
         try Task.checkCancellation()
@@ -120,7 +120,7 @@ struct FavoriteRemoteSyncProbe: Sendable {
             target: target,
             title: payload.title,
             sourceGroup: sourceGroup,
-            coverURL: coverURL,
+            coverURL: coverURL?.url,
             contentUpdatedAt: page.posts.first.flatMap {
                 FavoriteContentUpdateDateResolver.date(lastEditedText: $0.lastEditedText, postedAtText: $0.postedAtText)
             },

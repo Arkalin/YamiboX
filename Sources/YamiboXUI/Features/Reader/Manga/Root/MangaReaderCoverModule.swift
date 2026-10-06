@@ -69,7 +69,7 @@ final class MangaReaderCoverModule {
         actionWasCancelled = false
         guard let key = mangaCoverKey, let store = reading.makeContentCoverStore() else { return false }
         do {
-            try await store.setManualCover(reading.imageSource(page).url, for: key)
+            try await store.setManualCover(reading.imageSource(page), for: key)
             return true
         } catch {
             YamiboLog.library.error("Failed to set manual manga cover: \(error.localizedDescription)")

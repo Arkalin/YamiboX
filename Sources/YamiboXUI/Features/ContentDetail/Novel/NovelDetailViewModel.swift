@@ -34,7 +34,7 @@ struct NovelDetailHeaderSummary: Equatable, Sendable {
     var forumName: String?
     var totalViews: Int?
     var totalReplies: Int?
-    var coverURL: URL?
+    var coverSource: YamiboImageSource?
     var chapterCount: Int
     var firstFloorPreviewText: String?
     var readingProgressText: String?
@@ -168,7 +168,7 @@ final class NovelDetailViewModel {
             forumName: forumName,
             totalViews: threadPage?.totalViews,
             totalReplies: threadPage?.totalReplies,
-            coverURL: resolvedHeaderCoverURL,
+            coverSource: resolvedHeaderCoverSource,
             chapterCount: chapters.count,
             firstFloorPreviewText: Self.firstFloorPreviewText(from: previewPost),
             readingProgressText: Self.readingProgressText(from: readingProgress, favorite: favoriteActions.favorite),
@@ -184,9 +184,9 @@ final class NovelDetailViewModel {
         await reload()
     }
 
-    private var resolvedHeaderCoverURL: URL? {
-        contentCover?.resolvedURL
-            ?? threadPage.flatMap(ThreadCoverResolver.findThreadCoverCandidate(in:))
+    private var resolvedHeaderCoverSource: YamiboImageSource? {
+        if let contentCover { return contentCover.resolvedImageSource }
+        return threadPage.flatMap(ThreadCoverResolver.findThreadCoverCandidate(in:))
     }
 
     func reload() async {

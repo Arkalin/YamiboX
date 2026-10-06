@@ -224,10 +224,9 @@ struct NovelDetailHeader: View {
     let onReadStart: () -> Void
 
     var body: some View {
-        let threadURL = YamiboRoute.threadByID(tid: summary.threadID, page: 1, authorID: nil, reverse: false).url
         ContentDetailHeader(
             title: summary.title,
-            coverSource: summary.coverURL.map { YamiboImageSource(url: $0, refererPageURL: threadURL) },
+            coverSource: summary.coverSource,
             onCopyText: onCopyText
         ) { compact in
             NovelHeaderMetadata(

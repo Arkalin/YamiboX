@@ -173,7 +173,7 @@ struct BrowsingHistoryView: View {
             entry: entry,
             category: model.effectiveCategory(for: entry),
             showsNormalThreadProgress: model.showsNormalThreadProgress,
-            coverURL: model.coverURLsByEntryID[entry.id],
+            coverSource: model.coverSourcesByEntryID[entry.id],
             isFavorited: model.isFavorited(entry),
             canToggleFavorite: model.favoriteThreadID(for: entry) != nil,
             favoriteStateKnown: model.favoriteSnapshot != nil,
@@ -364,7 +364,7 @@ private struct BrowsingHistoryRow: View {
     /// actually open with.
     let category: BrowsingHistoryCategory
     let showsNormalThreadProgress: Bool
-    let coverURL: URL?
+    let coverSource: YamiboImageSource?
     let isFavorited: Bool
     let canToggleFavorite: Bool
     let favoriteStateKnown: Bool
@@ -379,7 +379,7 @@ private struct BrowsingHistoryRow: View {
             Button(action: onOpen) {
                 LibraryWorkRowContent(
                     title: entry.title,
-                    coverURL: coverURL,
+                    coverSource: coverSource,
                     categoryTitle: Text(L10n.string("history.filter.\(category.rawValue)")),
                     timestamp: Text(entry.lastVisitTime, format: .dateTime.hour().minute()),
                     detail: positionText,
