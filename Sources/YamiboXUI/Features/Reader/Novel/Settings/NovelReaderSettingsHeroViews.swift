@@ -42,8 +42,7 @@ struct NovelReaderHeroSection: View {
             NovelReaderPreviewMaskedContent(
                 settings: settings,
                 palette: palette,
-                previewText: previewText,
-                contentHeight: max(160, height - topInset - 122)
+                previewText: previewText
             )
             .overlay {
                 ReaderSettingsPageTurnZonesPreview(
@@ -55,7 +54,6 @@ struct NovelReaderHeroSection: View {
             }
         }
         .padding(.top, topInset + 12)
-        .padding(.bottom, 28)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .top)
     }
 }
@@ -95,7 +93,6 @@ struct NovelReaderPreviewMaskedContent: View {
     let settings: NovelReaderAppearanceSettings
     let palette: NovelReaderSheetPalette
     let previewText: String
-    let contentHeight: CGFloat
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -109,8 +106,7 @@ struct NovelReaderPreviewMaskedContent: View {
             .padding(.top, 4)
             .padding(.horizontal, settings.horizontalPadding)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: contentHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .mask(
             LinearGradient(
                 stops: [

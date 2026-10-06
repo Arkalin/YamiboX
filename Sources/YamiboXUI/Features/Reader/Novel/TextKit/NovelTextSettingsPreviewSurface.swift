@@ -39,11 +39,22 @@ final class NovelTextSettingsPreviewSurface {
             return
         }
 
+        let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let textBounds = attributedText.boundingRect(
+            with: CGSize(width: bounds.width, height: .greatestFiniteMagnitude),
+            options: options,
+            context: nil
+        )
+        // Lay out complete lines beyond the viewport so its bottom fade can
+        // reveal a partial line instead of dropping that line entirely.
+        var drawingBounds = bounds
+        drawingBounds.size.height = max(bounds.height, ceil(textBounds.height))
+
         context.saveGState()
         context.clip(to: bounds)
         attributedText.draw(
-            with: bounds,
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            with: drawingBounds,
+            options: options,
             context: nil
         )
         context.restoreGState()
