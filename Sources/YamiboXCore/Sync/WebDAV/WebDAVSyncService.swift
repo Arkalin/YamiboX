@@ -7,6 +7,7 @@ public actor WebDAVSyncService {
     /// magnitude versus the previous ~2.4s cadence, while foreground/background
     /// transitions (see `bypassingMinimumInterval`) still sync promptly.
     private static let minimumAutomaticSyncInterval: TimeInterval = 5 * 60
+    private static let minimumLifecycleSyncInterval: TimeInterval = 15
 
     private let settingsStore: WebDAVSyncSettingsStore
     private let sessionStore: SessionStore
@@ -119,7 +120,8 @@ public actor WebDAVSyncService {
 
     /// - Parameter bypassingMinimumInterval: Foreground activation and the
     ///   background flush are natural, infrequent checkpoints and always pass
-    ///   `true` here. The debounced local-change path (many rounds during an
+    ///   `true` here; clean checkpoints within 15 seconds are still coalesced.
+    ///   The debounced local-change path (many rounds during an
     ///   active reading session) leaves this `false` so most of those rounds
     ///   are skipped, only touching `localUpdatedAt`/dirty state, not the network.
     @discardableResult
@@ -181,7 +183,9 @@ public actor WebDAVSyncService {
         // Full reconciliation checkpoints still inspect every participant.
         // A recent-sync local-change round only needs to mark its affected
         // datasets before returning; unrelated libraries can be arbitrarily large.
-        let skipsNetwork = !bypassingMinimumInterval && settings.lastSyncedAt.map {
+        let lastReconciledAt = await settingsStore.syncCoordinator.lastAutomaticReconciliation(settings: settings)
+        let lastCheck = [lastReconciledAt, settings.lastSyncedAt].compactMap { $0 }.max()
+        let skipsNetwork = !bypassingMinimumInterval && lastCheck.map {
             Date.now.timeIntervalSince($0) < Self.minimumAutomaticSyncInterval
         } == true
         try await refreshDirtyState(
@@ -198,11 +202,34 @@ public actor WebDAVSyncService {
         settings = try await reloadSettings(for: settings, run: run)
         settings.disabledContentIDs = disabledContentIDs
         settings.contentSelectionRevision = selectionRevision
-        if !bypassingMinimumInterval,
-           let lastSyncedAt = settings.lastSyncedAt,
-           Date.now.timeIntervalSince(lastSyncedAt) < Self.minimumAutomaticSyncInterval {
+        if skipsNetwork {
             return .skipped
         }
+        // Brief interruptions can produce both background and foreground events.
+        // Coalesce clean checkpoints, but never delay a pending local upload.
+        if bypassingMinimumInterval,
+           settings.dirtyDatasetIDs.subtracting(settings.disabledContentIDs).isEmpty,
+           let lastReconciledAt,
+           Date.now.timeIntervalSince(lastReconciledAt) < Self.minimumLifecycleSyncInterval {
+            return .skipped
+        }
+        let result = try await reconcileAutomatically(settings: settings, accountUID: accountUID, run: run)
+        try await checkCurrent(run)
+        // A successful no-op is still a completed remote check. Keep this out of
+        // persisted content timestamps so it cannot shadow another device's edit.
+        await settingsStore.syncCoordinator.recordAutomaticReconciliation(settings: settings)
+        return result
+    }
+
+    private func reconcileAutomatically(
+        settings initialSettings: WebDAVSyncSettings,
+        accountUID: String,
+        run: WebDAVSyncCoordinator.RunToken
+    ) async throws -> WebDAVAutomaticSyncResult {
+        var settings = initialSettings
+        let disabledContentIDs = settings.disabledContentIDs
+        let selectionRevision = settings.contentSelectionRevision
+        let participants = enabledParticipants(settings)
         settings = try await prepareDatasets(settings: settings, accountUID: accountUID, run: run)
 
         try await checkCurrent(run)
@@ -486,13 +513,8 @@ public actor WebDAVSyncService {
         return current
     }
 
-    /// Per-dataset GETs run concurrently: every sync round starts with this
-    /// fetch, and the startup round sits on the app-launch critical path (the
-    /// bootstrap placeholder stays up until it finishes), so the round's fetch
-    /// latency must be the slowest single request, not the sum over all
-    /// datasets — on a high-latency WebDAV server the difference is tens of
-    /// seconds. Any fetch failing fails the round exactly as the previous
-    /// serial loop did; the group cancels the requests still in flight.
+    /// Per-dataset conditional GETs run concurrently. Any fetch failing fails
+    /// the round; a cached body is never used as an offline-success fallback.
     private func fetchRemotePayloads(
         settings: WebDAVSyncSettings,
         run: WebDAVSyncCoordinator.RunToken
@@ -523,12 +545,20 @@ public actor WebDAVSyncService {
         settings: WebDAVSyncSettings
     ) async throws -> WebDAVRemotePayload? {
         let file: WebDAVRemoteFile
+        let coordinator = settingsStore.syncCoordinator
+        let name = participant.remoteFileName
+        let cached = await coordinator.cachedRemoteFile(name, settings: settings)
         do {
-            file = try await client.fetchPayload(settings: settings, fileName: participant.remoteFileName)
-        } catch WebDAVSyncError.notFound {
-            return nil
+            file = try await client.fetchPayload(settings: settings, fileName: name, cached: cached)
+            let info = try participant.inspectRemote(file.data)
+            try Task.checkCancellation()
+            await coordinator.cacheRemoteFile(file, name: name, settings: settings)
+            return WebDAVRemotePayload(data: file.data, info: info, etag: file.etag)
+        } catch {
+            await coordinator.cacheRemoteFile(nil, name: name, settings: settings)
+            if error as? WebDAVSyncError == .notFound { return nil }
+            throw error
         }
-        return WebDAVRemotePayload(data: file.data, info: try participant.inspectRemote(file.data), etag: file.etag)
     }
 
     /// Per-dataset result of one sync round, consumed by
@@ -575,11 +605,7 @@ public actor WebDAVSyncService {
             current.dirtyDatasetIDs.formUnion(includedIDs)
         }
         try await checkCurrent(run)
-        try await client.ensureDirectoryExists(settings: settings)
-        for directory in Set(included.flatMap(\.remoteDirectories)).sorted() {
-            try await checkCurrent(run)
-            try await client.ensureDirectoryExists(settings: settings, namespace: directory)
-        }
+        try await client.ensureDirectoryExists(settings: settings, namespaces: included.flatMap(\.remoteDirectories))
         try await checkCurrent(run)
         let connection = WebDAVConnectionIdentity(settings)
         if !(await settingsStore.syncCoordinator.hasVerified(connection)) {
@@ -615,6 +641,9 @@ public actor WebDAVSyncService {
                 do {
                     try await checkCurrent(run)
                     try Task.checkCancellation()
+                    // Invalidate before sending: a cancelled/failed PUT can still
+                    // have reached the server. Conflict retries must fetch afresh.
+                    await settingsStore.syncCoordinator.cacheRemoteFile(nil, name: participant.remoteFileName, settings: settings)
                     try await client.uploadPayloadData(data, settings: settings,
                         fileName: participant.remoteFileName, condition: condition)
                     try await checkCurrent(run)

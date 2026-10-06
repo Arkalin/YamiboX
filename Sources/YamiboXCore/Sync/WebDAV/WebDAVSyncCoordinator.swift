@@ -18,6 +18,11 @@ actor WebDAVSyncCoordinator {
     private var epoch: UInt64 = 0
     private var connectionChangeID: UUID?
     private var verifiedConnection: WebDAVConnectionIdentity?
+    private var cachedConnection: WebDAVConnectionIdentity?
+    private var cachedReceiptScope: WebDAVReceiptScope?
+    private var remoteFiles: [String: WebDAVRemoteFile] = [:]
+    private var lastAutomaticReconciliation: Date?
+    private static let maximumCachedBytes = 16 * 1024 * 1024
 
     func run<T: Sendable>(_ operation: @escaping @Sendable (RunToken) async throws -> T) async throws -> T {
         guard !isResetting else { throw CancellationError() }
@@ -68,6 +73,10 @@ actor WebDAVSyncCoordinator {
         }
         epoch &+= 1
         verifiedConnection = nil
+        cachedConnection = nil
+        cachedReceiptScope = nil
+        remoteFiles.removeAll()
+        lastAutomaticReconciliation = nil
         return token
     }
 
@@ -78,6 +87,7 @@ actor WebDAVSyncCoordinator {
     }
 
     func checkCurrent(_ token: RunToken) async throws {
+        try Task.checkCancellation()
         guard !isResetting, token.epoch == epoch else { throw CancellationError() }
     }
 
@@ -98,6 +108,43 @@ actor WebDAVSyncCoordinator {
 
     func markVerified(_ connection: WebDAVConnectionIdentity) {
         verifiedConnection = connection
+    }
+
+    /// In-memory bodies never cross connection/account boundaries or survive a
+    /// reset. The coordinator is shared even when a caller creates a new service.
+    private func prepareCacheScope(_ settings: WebDAVSyncSettings) {
+        let connection = WebDAVConnectionIdentity(settings)
+        guard cachedConnection != connection || cachedReceiptScope != settings.receiptScope else { return }
+        cachedConnection = connection
+        cachedReceiptScope = settings.receiptScope
+        remoteFiles.removeAll()
+        lastAutomaticReconciliation = nil
+    }
+
+    func cachedRemoteFile(_ name: String, settings: WebDAVSyncSettings) -> WebDAVRemoteFile? {
+        prepareCacheScope(settings)
+        return remoteFiles[name]
+    }
+
+    func cacheRemoteFile(_ file: WebDAVRemoteFile?, name: String, settings: WebDAVSyncSettings) {
+        prepareCacheScope(settings)
+        remoteFiles[name] = nil
+        guard let file, let etag = file.etag, WebDAVClient.isStrongETag(etag),
+              file.data.count <= Self.maximumCachedBytes else { return }
+        if remoteFiles.values.reduce(0, { $0 + $1.data.count }) + file.data.count > Self.maximumCachedBytes {
+            remoteFiles.removeAll()
+        }
+        remoteFiles[name] = file
+    }
+
+    func lastAutomaticReconciliation(settings: WebDAVSyncSettings) -> Date? {
+        prepareCacheScope(settings)
+        return lastAutomaticReconciliation
+    }
+
+    func recordAutomaticReconciliation(settings: WebDAVSyncSettings) {
+        prepareCacheScope(settings)
+        lastAutomaticReconciliation = .now
     }
 }
 

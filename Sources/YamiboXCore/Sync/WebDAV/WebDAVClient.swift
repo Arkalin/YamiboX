@@ -17,15 +17,28 @@ struct WebDAVClient: Sendable {
         self.session = session
     }
 
-    func fetchPayload(settings: WebDAVSyncSettings, fileName: String) async throws -> WebDAVRemoteFile {
+    func fetchPayload(settings: WebDAVSyncSettings, fileName: String, cached: WebDAVRemoteFile? = nil) async throws -> WebDAVRemoteFile {
         let config = try configuration(from: settings, fileName: fileName)
         var request = YamiboNetworkConfiguration.makeRequest(url: config.fileURL)
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         applyHeaders(to: &request, configuration: config)
+        let reusable = cached.flatMap { file in
+            file.etag.map(Self.isStrongETag) == true && !file.data.isEmpty ? file : nil
+        }
+        if let etag = reusable?.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
 
         let (data, response) = try await NetworkLoggedTransport.data(for: request, using: session, source: .webDAV)
         let statusCode = try statusCode(from: response)
+        if statusCode == 304 {
+            guard let reusable else { throw WebDAVSyncError.invalidResponse(statusCode) }
+            // A cached body is usable only with the validator that identifies it.
+            // Fall back to a full read if a server gives us a different validator.
+            if let etag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag"), etag != reusable.etag {
+                return try await fetchPayload(settings: settings, fileName: fileName)
+            }
+            return reusable
+        }
         guard statusCode != 404 else { throw WebDAVSyncError.notFound }
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
         guard 200 ..< 300 ~= statusCode else { throw WebDAVSyncError.invalidResponse(statusCode) }
@@ -35,10 +48,10 @@ struct WebDAVClient: Sendable {
 
     /// Ensures the remote sync directory exists. Callers batch this to once
     /// per sync round rather than once per uploaded dataset.
-    func ensureDirectoryExists(settings: WebDAVSyncSettings, namespace: String? = nil) async throws {
+    func ensureDirectoryExists(settings: WebDAVSyncSettings, namespaces: [String] = []) async throws {
         let config = try configuration(from: settings, fileName: "")
         try await createDirectoryIfNeeded(configuration: config)
-        if let namespace {
+        for namespace in Set(namespaces).sorted() {
             let nested = Configuration(directoryURL: config.directoryURL.appendingPathComponent(namespace, isDirectory: true),
                 fileURL: config.directoryURL.appendingPathComponent(namespace, isDirectory: true),
                 username: config.username, password: config.password)
