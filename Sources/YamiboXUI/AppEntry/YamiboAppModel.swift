@@ -131,7 +131,10 @@ public final class YamiboAppModel {
         selectedTab = initialTab
         self.windowCoordinator = windowCoordinator
         self.windowID = windowID
-        let continuity = AppContinuityWorkflow(appContext: appContext, readerResumeRouteStore: readerResumeRouteStore)
+        let continuity = AppContinuityWorkflow(
+            appContext: appContext, readerResumeRouteStore: readerResumeRouteStore,
+            backgroundExecution: AppBackgroundExecution()
+        )
         appContinuity = continuity
         runtime = windowCoordinator == nil ? appContext.makeRuntimeCoordinator(continuity: continuity) : nil
         peripheralInput = ReaderPeripheralInputManager(

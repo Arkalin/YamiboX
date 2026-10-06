@@ -64,7 +64,7 @@ public final class YamiboWindowCoordinator {
         self.imagePipeline = imagePipeline ?? YamiboUIImagePipeline(core: appContext.imagePipeline)
         self.restorationDefaults = restorationDefaults
         self.initialNavigation = initialNavigation
-        let synchronization = AppContinuityWorkflow(appContext: appContext)
+        let synchronization = AppContinuityWorkflow(appContext: appContext, backgroundExecution: AppBackgroundExecution())
         self.synchronization = synchronization
         runtime = appContext.makeRuntimeCoordinator(continuity: synchronization)
     }

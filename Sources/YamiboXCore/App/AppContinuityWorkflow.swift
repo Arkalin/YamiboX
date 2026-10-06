@@ -65,11 +65,17 @@ public final class AppContinuityWorkflow: Sendable {
 
     private let appContext: YamiboAppContext
     private let readerResumeRouteStore: ReaderResumeRouteStore
+    private let backgroundExecution: (any AppBackgroundExecutionProtecting)?
     private let state = OSAllocatedUnfairLock(initialState: MutableState())
 
-    public init(appContext: YamiboAppContext, readerResumeRouteStore: ReaderResumeRouteStore? = nil) {
+    public init(
+        appContext: YamiboAppContext,
+        readerResumeRouteStore: ReaderResumeRouteStore? = nil,
+        backgroundExecution: (any AppBackgroundExecutionProtecting)? = nil
+    ) {
         self.appContext = appContext
         self.readerResumeRouteStore = readerResumeRouteStore ?? appContext.readerResumeRouteStore
+        self.backgroundExecution = backgroundExecution
     }
 
     public func prepareLaunch(
@@ -340,7 +346,10 @@ public final class AppContinuityWorkflow: Sendable {
         guard let batch else { return }
         defer { endWebDAVSync() }
         do {
-            _ = try await appContext.makeWebDAVSyncService().synchronizeAutomatically(afterLocalChangesIn: batch.datasetIDs)
+            let service = appContext.makeWebDAVSyncService()
+            _ = try await withBackgroundProtection {
+                try await service.synchronizeAutomatically(afterLocalChangesIn: batch.datasetIDs)
+            }
         } catch {
             state.withLock {
                 if let datasetIDs = batch.datasetIDs {
@@ -351,7 +360,9 @@ public final class AppContinuityWorkflow: Sendable {
             }
             // Retain failed candidates for the next change signal or full
             // checkpoint. Requeueing alone must not create a retry timer loop.
-            YamiboLog.sync.warning("Debounced local-change WebDAV upload failed: \(error)")
+            if !LoadDiagnosticError.isCancellation(error) {
+                YamiboLog.sync.warning("Debounced local-change WebDAV upload failed: \(error)")
+            }
         }
     }
 
@@ -444,12 +455,17 @@ public final class AppContinuityWorkflow: Sendable {
         defer { endWebDAVSync() }
 
         do {
-            // Foreground activation is an infrequent, natural checkpoint, so it
-            // always syncs regardless of the minimum automatic-sync interval.
-            return try await appContext.makeWebDAVSyncService().synchronizeAutomatically(bypassingMinimumInterval: true)
+            // Foreground activation bypasses the local-edit interval. The service
+            // only coalesces very recent checkpoints when no local data is dirty.
+            let service = appContext.makeWebDAVSyncService()
+            return try await withBackgroundProtection {
+                try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
+            }
         } catch {
             // Automatic sync should never block the app shell.
-            YamiboLog.sync.warning("Automatic WebDAV sync failed: \(error)")
+            if !LoadDiagnosticError.isCancellation(error) {
+                YamiboLog.sync.warning("Automatic WebDAV sync failed: \(error)")
+            }
             return .skipped
         }
     }
@@ -470,15 +486,25 @@ public final class AppContinuityWorkflow: Sendable {
         do {
             // Full marking and reconciliation share the coordinator run, even
             // when backgrounding cancelled the pending debounce before it ran.
-            _ = try await appContext.makeWebDAVSyncService().synchronizeAutomatically(
-                afterLocalChangesIn: nil, bypassingMinimumInterval: true
-            )
+            let service = appContext.makeWebDAVSyncService()
+            _ = try await withBackgroundProtection {
+                try await service.synchronizeAutomatically(afterLocalChangesIn: nil, bypassingMinimumInterval: true)
+            }
         } catch {
             // The next checkpoint or change signal must still inspect all
             // candidates if this full pass failed before marking completed.
             state.withLock { $0.needsFullLocalFingerprint = true }
-            YamiboLog.sync.warning("Background WebDAV sync flush failed: \(error)")
+            if !LoadDiagnosticError.isCancellation(error) {
+                YamiboLog.sync.warning("Background WebDAV sync flush failed: \(error)")
+            }
         }
+    }
+
+    private func withBackgroundProtection(
+        _ operation: @escaping @Sendable () async throws -> WebDAVAutomaticSyncResult
+    ) async throws -> WebDAVAutomaticSyncResult {
+        if let backgroundExecution { return try await backgroundExecution.run(operation) }
+        return try await operation()
     }
 
     private func restorableRoute(
