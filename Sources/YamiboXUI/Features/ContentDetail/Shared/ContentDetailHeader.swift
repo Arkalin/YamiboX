@@ -26,6 +26,7 @@ struct ContentDetailHeader<Metadata: View, Actions: View, Details: View>: View {
                             .font(compact ? .headline : .title3.weight(.semibold))
                             .foregroundStyle(theme.primaryText)
                             .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contextMenu {
                                 Button {
