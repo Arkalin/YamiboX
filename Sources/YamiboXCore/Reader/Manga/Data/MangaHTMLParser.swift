@@ -33,27 +33,50 @@ enum MangaHTMLParser {
         HTMLTextExtractor.firstMatch(pattern: #"searchid=(\d+)"#, in: html)?.dropFirst().first
     }
 
-    static func extractTotalPages(from html: String) -> Int {
-        let optionValues = HTMLTextExtractor.matches(pattern: #"<option[^>]*value=["'](\d+)["']"#, in: html)
-            .compactMap { Int($0.dropFirst().first ?? "") }
-        if let max = optionValues.max() {
-            return max
+    static func extractTotalPages(from html: String, matching pageURL: URL) -> Int {
+        guard let document = try? KannaSoup.parse(html) else { return 1 }
+        // Replies, numeric titles and unrelated <select>s are not pagination.
+        // A one-page tag has no pager at all, even when a thread has many replies.
+        let pagers = document.selectAll(".pg, .pgbox")
+        var pages = [1]
+        for pager in pagers {
+            let links = pager.selectAll("a[href]").compactMap { link -> Int? in
+                guard let url = URL(string: link.attr("href"), relativeTo: pageURL)?.absoluteURL,
+                      matchesDirectoryPage(url, expected: pageURL) else { return nil }
+                return url.queryItemValue("page").flatMap(Int.init)
+            }
+            pages.append(contentsOf: links)
+            pages.append(contentsOf: pager.selectAll("select option").compactMap { Int($0.attr("value")) })
+            if let current = pager.firstText("strong").flatMap(Int.init) { pages.append(current) }
+            // Discuz can put the total in a tooltip rather than visible text.
+            let labels = [pager.normalizedText()] + pager.selectAll("span[title]").map { $0.attr("title") }
+            for label in labels {
+                if let total = HTMLTextExtractor.firstMatch(pattern: #"(?:共|/)\s*(\d+)\s*[页頁]"#, in: label)?
+                    .dropFirst().first.flatMap(Int.init) {
+                    pages.append(total)
+                }
+            }
         }
+        // Some mobile templates use a standalone page selector.
+        pages.append(contentsOf: document.selectAll("select[name='page'] option").compactMap { Int($0.attr("value")) })
+        return pages.max() ?? 1
+    }
 
-        // Anchor to the pager's "共 N 页" label — a bare first-title-attribute
-        // scan would read row timestamp tooltips as page counts and drive the
-        // directory loader through dozens of bogus page fetches.
-        let labeledPage = HTMLTextExtractor.firstMatch(pattern: #"共\s*(\d+)\s*[页頁]"#, in: html)?
-            .dropFirst()
-            .first
-            .flatMap(Int.init)
-        if let labeledPage {
-            return labeledPage
+    static func directoryCurrentPage(from html: String) -> Int? {
+        guard let document = try? KannaSoup.parse(html) else { return nil }
+        return document.firstText(".pg strong").flatMap(Int.init)
+            ?? document.selectFirst("select[name='page'] option[selected]").flatMap { Int($0.attr("value")) }
+    }
+
+    private static func matchesDirectoryPage(_ url: URL, expected: URL) -> Bool {
+        guard YamiboDomain.isForumURL(url), url.path == expected.path else { return false }
+        if expected.queryItemValue("mod") == "tag" {
+            return url.queryItemValue("mod") == "tag"
+                && url.queryItemValue("id") == expected.queryItemValue("id")
+                && url.queryItemValue("type") != "blog"
         }
-
-        let linkedPages = HTMLTextExtractor.matches(pattern: #">(\d+)</a>"#, in: html)
-            .compactMap { Int($0.dropFirst().first ?? "") }
-        return linkedPages.max() ?? 1
+        return url.queryItemValue("searchid") == expected.queryItemValue("searchid")
+            && expected.queryItemValue("searchid") != nil
     }
 
     static func findTagIDsMobile(in html: String) -> [String] {
@@ -211,7 +234,7 @@ enum MangaHTMLParser {
     static func parseTagThreadListHTML(
         _ html: String,
         groupIndex: Int = 0,
-        allowedForumIDs: Set<String>
+        allowedForumIDs: Set<String>? = nil
     ) -> [MangaChapter] {
         parsePCList(html, groupIndex: groupIndex, allowedForumIDs: allowedForumIDs)
     }

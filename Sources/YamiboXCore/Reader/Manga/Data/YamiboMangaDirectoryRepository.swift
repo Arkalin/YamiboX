@@ -65,8 +65,11 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                     allowedForumIDs: allowedForumIDs
                 ))
 
-                let totalPages = MangaHTMLParser.extractTotalPages(from: firstHTML)
+                let totalPages = MangaHTMLParser.extractTotalPages(from: firstHTML, matching: YamiboRoute.tag(id: tagID, page: 1).url)
                 guard totalPages > 1 else { continue }
+                let firstPageIDs = MangaHTMLParser.parseTagThreadListHTML(firstHTML).map(\.tid).sorted()
+                guard !firstPageIDs.isEmpty else { continue }
+                var seenPages: Set<[String]> = [firstPageIDs]
 
                 for page in 2 ... totalPages {
                     try Task.checkCancellation()
@@ -75,6 +78,11 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                         userAgent: YamiboNetworkConfiguration.desktopTagUserAgent
                     )
                     try MangaReaderDataSupport.validateReadableMangaHTML(html)
+                    if let current = MangaHTMLParser.directoryCurrentPage(from: html), current != page { break }
+                    // Check unfiltered rows: a valid intermediate page can consist
+                    // entirely of threads from a different forum.
+                    let pageIDs = MangaHTMLParser.parseTagThreadListHTML(html).map(\.tid).sorted()
+                    guard !pageIDs.isEmpty, seenPages.insert(pageIDs).inserted else { break }
                     let pageChapters = MangaHTMLParser.parseTagThreadListHTML(
                         html,
                         groupIndex: groupIndex,
@@ -104,15 +112,18 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                 return chapters
             }
 
-            let totalPages = MangaHTMLParser.extractTotalPages(from: firstHTML)
+            let totalPages = MangaHTMLParser.extractTotalPages(from: firstHTML, matching: YamiboRoute.searchPage(searchID: searchID, page: 1).url)
             guard totalPages > 1 else { return chapters }
+            guard !chapters.isEmpty else { return chapters }
+            var seenPages: Set<[String]> = [chapters.map(\.tid).sorted()]
 
             for page in 2 ... totalPages {
                 try Task.checkCancellation()
                 let html = try await client.fetchHTML(for: .searchPage(searchID: searchID, page: page))
                 try MangaReaderDataSupport.validateReadableMangaHTML(html)
+                if let current = MangaHTMLParser.directoryCurrentPage(from: html), current != page { break }
                 let pageChapters = MangaHTMLParser.parseListHTML(html)
-                guard !pageChapters.isEmpty else { continue }
+                guard !pageChapters.isEmpty, seenPages.insert(pageChapters.map(\.tid).sorted()).inserted else { break }
                 chapters.append(contentsOf: pageChapters)
             }
             return chapters
