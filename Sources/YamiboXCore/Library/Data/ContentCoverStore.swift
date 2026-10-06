@@ -134,6 +134,10 @@ public actor ContentCoverStore {
     public nonisolated func setImageLoadInvalidator(_ action: @escaping @Sendable (Set<URL>?) async -> Void) {
         imageInvalidator.set(action)
     }
+
+    public nonisolated func setImageDataRetainer(_ action: @escaping @Sendable (YamiboImageSource) async throws -> Void) {
+        imageInvalidator.setRetainer(action)
+    }
     /// A coalescing stream is only a wakeup; this journal retains key changes
     /// across skipped signals. Bulk writes and identity remapping invalidate all.
     public nonisolated func changedCoverKeys(since revision: UInt64, among keys: Set<ContentCoverKey>) -> (revision: UInt64, keys: Set<ContentCoverKey>) {
@@ -145,12 +149,17 @@ public actor ContentCoverStore {
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
+    private let images: ContentCoverImageStore
+    private var imageGeneration = UUID()
+    private var isClearingImages = false
 
     public init(databasePool: DatabasePool? = nil) {
         // `.standard` is the resolver's "shared production pool" signal, so
         // the nil-pool fallback and the convenience below stay one code path.
         self.database = databasePool
             ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.contentCovers")
+        self.images = ContentCoverImageStore(directory: URL(fileURLWithPath: self.database.path)
+            .deletingLastPathComponent().appendingPathComponent("content-covers", isDirectory: true))
     }
 
     /// Isolated-storage convenience mirroring `FavoriteLibraryStore`: standard
@@ -158,6 +167,74 @@ public actor ContentCoverStore {
     /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.contentCovers") {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
+        self.images = ContentCoverImageStore(directory: URL(fileURLWithPath: self.database.path)
+            .deletingLastPathComponent().appendingPathComponent("content-covers", isDirectory: true))
+    }
+
+    /// A clear invalidates even a load whose URL is selected again afterwards.
+    /// These synchronous actor operations do not suspend between checking the
+    /// current references/generation and performing file IO.
+    func imageData(for url: URL) throws -> (generation: UUID, data: Data?) {
+        try checkImageMutationAllowed()
+        let referenced = try isImageReferenced(url)
+        return (imageGeneration, referenced ? try images.data(for: url) : nil)
+    }
+
+    func retainImageData(_ data: Data, for url: URL, generation: UUID) throws {
+        try checkImageMutationAllowed()
+        guard generation == imageGeneration else { throw CancellationError() }
+        // A transient detail-page candidate is displayable but has no owner
+        // yet. It must not leave orphan artwork behind.
+        guard try isImageReferenced(url) else { return }
+        if try !images.containsImage(for: url) { try images.save(data, for: url) }
+    }
+
+    /// One-time startup migration. Later reader copies belong exclusively to
+    /// the ordinary cache; its clearing and eviction never invoke this path.
+    func migrateLegacyImageData(
+        reading: @Sendable (URL) -> Data?,
+        removing: @Sendable (URL) -> Void
+    ) throws {
+        try checkImageMutationAllowed()
+        guard !images.hasMigratedOrdinaryImages else { return }
+        let urls = try referencedImageURLs()
+        for url in urls {
+            guard let data = reading(url) else { continue }
+            do {
+                if try !images.containsImage(for: url) { try images.save(data, for: url) }
+            } catch YamiboError.invalidImageData {
+                // Discard only the invalid cache response, not the index.
+                // A future on-demand load can fetch the real image.
+                removing(url)
+                continue
+            }
+            removing(url)
+        }
+        try images.finishOrdinaryImageMigration()
+    }
+
+    private func isImageReferenced(_ url: URL) throws -> Bool {
+        try database.read { db in
+            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM content_cover WHERE automatic_url = ? OR manual_url = ?)",
+                arguments: [url.absoluteString, url.absoluteString]) ?? false
+        }
+    }
+
+    private func referencedImageURLs() throws -> Set<URL> {
+        try database.read { db in
+            Set(try String.fetchAll(db, sql: """
+                SELECT automatic_url FROM content_cover WHERE automatic_url IS NOT NULL
+                UNION SELECT manual_url FROM content_cover WHERE manual_url IS NOT NULL
+                """).compactMap(URL.init(string:)))
+        }
+    }
+
+    private func reconcileImages() throws {
+        try images.retainOnly(referencedImageURLs())
+    }
+
+    private func checkImageMutationAllowed() throws {
+        guard !isClearingImages else { throw CancellationError() }
     }
 
     public func cover(for key: ContentCoverKey) async -> ContentCover? {
@@ -287,13 +364,18 @@ public actor ContentCoverStore {
     /// WebDAV participant's merge/apply paths. Rows whose key trims to empty
     /// are dropped, matching the guard every single-row write above applies.
     public func replaceAll(_ covers: [ContentCover]) async throws {
-        try await database.write { db in
+        try checkImageMutationAllowed()
+        let affectedURLs = try await database.write { db in
+            let previous = try Self.allCovers(in: db)
             try db.execute(sql: "DELETE FROM content_cover")
             for cover in covers where !cover.key.targetID.isEmpty {
                 try Self.upsert(cover, in: db)
             }
+            return try Self.changedImageURLs(from: previous, to: Self.allCovers(in: db))
         }
+        if !affectedURLs.isEmpty { await imageInvalidator.invalidate(affectedURLs) }
         postChangeNotification()
+        try reconcileImages()
     }
 
     @discardableResult
@@ -303,6 +385,7 @@ public actor ContentCoverStore {
 
     @discardableResult
     public func setAutomaticCover(_ url: URL, for key: ContentCoverKey, refererPageURL: URL? = nil, date: Date = .now, onlyIfMissing: Bool = false) async throws -> Bool {
+        try checkImageMutationAllowed()
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
               !key.targetID.isEmpty else {
             return false
@@ -324,17 +407,20 @@ public actor ContentCoverStore {
         if didChange {
             await imageInvalidator.invalidate([normalizedURL])
             postChangeNotification(key: key)
+            try reconcileImages()
         }
         return didChange
     }
 
     @discardableResult
     public func setManualCover(_ source: YamiboImageSource, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
-        try await setManualCover(source.url, for: key, refererPageURL: source.refererPageURL, date: date)
+        try await setManualCover(source.url, for: key, refererPageURL: source.refererPageURL,
+            date: date, offlineScope: source.offlineScope)
     }
 
     @discardableResult
-    public func setManualCover(_ url: URL, for key: ContentCoverKey, refererPageURL: URL? = nil, date: Date = .now) async throws -> Bool {
+    public func setManualCover(_ url: URL, for key: ContentCoverKey, refererPageURL: URL? = nil, date: Date = .now, offlineScope: YamiboImageOfflineScope? = nil) async throws -> Bool {
+        try checkImageMutationAllowed()
         guard let normalizedURL = Self.normalizedCoverURL(from: url.absoluteString),
               !key.targetID.isEmpty else {
             return false
@@ -352,6 +438,11 @@ public actor ContentCoverStore {
         }
         await imageInvalidator.invalidate([normalizedURL])
         postChangeNotification(key: key)
+        try reconcileImages()
+        if var source = await cover(for: key)?.resolvedImageSource {
+            source.offlineScope = offlineScope ?? source.offlineScope
+            try await imageInvalidator.retain(source)
+        }
         return true
     }
 
@@ -359,6 +450,7 @@ public actor ContentCoverStore {
     /// dynamic mode back on.
     @discardableResult
     public func clearManualCover(for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
+        try checkImageMutationAllowed()
         guard !key.targetID.isEmpty else { return false }
         let didClear = try await database.write { db in
             guard var cover = try Self.fetchCover(for: key, in: db), cover.manualCoverURL != nil else {
@@ -375,11 +467,13 @@ public actor ContentCoverStore {
         if didClear {
             await invalidateResolvedImage(for: key)
             postChangeNotification(key: key)
+            try reconcileImages()
         }
         return didClear
     }
 
     public func setDynamicEnabled(_ enabled: Bool, for key: ContentCoverKey, date: Date = .now) async throws {
+        try checkImageMutationAllowed()
         guard !key.targetID.isEmpty else { return }
         try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
@@ -397,6 +491,7 @@ public actor ContentCoverStore {
     /// would already have produced.
     @discardableResult
     public func setTextCoverForced(_ forced: Bool, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
+        try checkImageMutationAllowed()
         guard !key.targetID.isEmpty else { return false }
         try await database.write { db in
             var cover = try Self.fetchCover(for: key, in: db) ?? ContentCover(key: key)
@@ -410,15 +505,24 @@ public actor ContentCoverStore {
     }
 
     public func clearAll() async throws {
+        try checkImageMutationAllowed()
+        isClearingImages = true
+        imageGeneration = UUID()
+        defer { isClearingImages = false }
         try await database.write { db in
             try db.execute(sql: "DELETE FROM content_cover")
             try db.execute(sql: "DELETE FROM content_cover_sync_state")
         }
         await imageInvalidator.invalidate(nil)
         postChangeNotification()
+        try images.deleteAll()
     }
 
     public func clearAllForSync(at date: Date = .now) async throws {
+        try checkImageMutationAllowed()
+        isClearingImages = true
+        imageGeneration = UUID()
+        defer { isClearingImages = false }
         try await database.write { db in
             var deletions = try SyncDeletionState.load(from: "content_cover_sync_state", in: db)
             deletions.clear(at: date)
@@ -427,6 +531,7 @@ public actor ContentCoverStore {
         }
         await imageInvalidator.invalidate(nil)
         postChangeNotification()
+        try images.deleteAll()
     }
 
     func syncSnapshot() async throws -> SyncRecordSnapshot<ContentCover> {
@@ -441,6 +546,7 @@ public actor ContentCoverStore {
         merging remote: SyncRecordSnapshot<ContentCover>?,
         _ transform: @escaping @Sendable (inout SyncRecordSnapshot<ContentCover>, SyncRecordSnapshot<ContentCover>?) throws -> T
     ) async throws -> T {
+        try checkImageMutationAllowed()
         let result = try await database.write { db in
             // A directory merge can commit after the WebDAV wrapper normalizes
             // the payload. Resolve both sides again while holding the write
@@ -452,14 +558,28 @@ public actor ContentCoverStore {
                 identities: identities
             )
             let remote = try remote.map { try Self.canonicalSnapshot($0, identities: identities) }
+            let previous = snapshot.records
             let result = try transform(&snapshot, remote)
             try db.execute(sql: "DELETE FROM content_cover")
             for cover in snapshot.records { try Self.upsert(cover, in: db) }
             try snapshot.deletions.save(to: "content_cover_sync_state", in: db)
-            return result
+            return (result, Self.changedImageURLs(from: previous, to: snapshot.records))
         }
+        if !result.1.isEmpty { await imageInvalidator.invalidate(result.1) }
         postChangeNotification()
-        return result
+        try reconcileImages()
+        return result.0
+    }
+
+    private static func changedImageURLs(from previous: [ContentCover], to next: [ContentCover]) -> Set<URL> {
+        let old = Dictionary(previous.map { ($0.key, $0) }, uniquingKeysWith: { _, latest in latest })
+        let new = Dictionary(next.map { ($0.key, $0) }, uniquingKeysWith: { _, latest in latest })
+        var urls = Set<URL>()
+        for key in Set(old.keys).union(new.keys) where old[key]?.resolvedImageSource != new[key]?.resolvedImageSource {
+            urls.formUnion([old[key]?.automaticCoverURL, old[key]?.manualCoverURL,
+                new[key]?.automaticCoverURL, new[key]?.manualCoverURL].compactMap { $0 })
+        }
+        return urls
     }
 
     private static func canonicalSnapshot(
@@ -481,29 +601,25 @@ public actor ContentCoverStore {
         return SyncRecordSnapshot(records: records, deletions: deletions)
     }
 
-    public func totalDiskUsageBytes() async -> Int {
-        do {
-            return try await database.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT COALESCE(SUM(
-                        length(CAST(target_type AS BLOB)) +
-                        length(CAST(target_id AS BLOB)) +
-                        COALESCE(length(CAST(automatic_url AS BLOB)), 0) +
-                        COALESCE(length(CAST(manual_url AS BLOB)), 0) +
-                        COALESCE(length(CAST(automatic_referer AS BLOB)), 0) +
-                        COALESCE(length(CAST(manual_referer AS BLOB)), 0) +
-                        24
-                    ), 0)
-                    FROM content_cover
-                    """
-                ) ?? 0
-            }
-        } catch {
-            YamiboLog.library.warning("Failed to read content cover disk usage: \(error)")
-            return 0
+    public func totalDiskUsageBytes() async throws -> Int {
+        let indexBytes = try await database.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                SELECT COALESCE(SUM(
+                    length(CAST(target_type AS BLOB)) +
+                    length(CAST(target_id AS BLOB)) +
+                    COALESCE(length(CAST(automatic_url AS BLOB)), 0) +
+                    COALESCE(length(CAST(manual_url AS BLOB)), 0) +
+                    COALESCE(length(CAST(automatic_referer AS BLOB)), 0) +
+                    COALESCE(length(CAST(manual_referer AS BLOB)), 0) +
+                    24
+                ), 0)
+                FROM content_cover
+                """
+            ) ?? 0
         }
+        return indexBytes + (try images.usageBytes())
     }
 
     public static func normalizedCoverURL(from rawValue: String) -> URL? {
@@ -580,7 +696,13 @@ public actor ContentCoverStore {
         return .smartManga(directoryID: try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: key.targetID), in: db))
     }
 
-    public nonisolated func notifyIdentityMigrationCommitted() { postChangeNotification() }
+    public nonisolated func notifyIdentityMigrationCommitted() {
+        postChangeNotification()
+        Task {
+            do { try await reconcileImages() }
+            catch { YamiboLog.persistence.error("Failed to reconcile cover artwork after identity change: \(error)") }
+        }
+    }
 
     private func invalidateResolvedImage(for key: ContentCoverKey) async {
         if let url = await cover(for: key)?.resolvedURL {
@@ -598,6 +720,16 @@ public actor ContentCoverStore {
 private final class ContentCoverImageInvalidator: @unchecked Sendable {
     private let lock = NSLock()
     private var action: (@Sendable (Set<URL>?) async -> Void)?
+    private var retainer: (@Sendable (YamiboImageSource) async throws -> Void)?
+
+    func setRetainer(_ action: @escaping @Sendable (YamiboImageSource) async throws -> Void) {
+        lock.withLock { retainer = action }
+    }
+
+    func retain(_ source: YamiboImageSource) async throws {
+        let action = lock.withLock { retainer }
+        try await action?(source)
+    }
 
     func set(_ action: @escaping @Sendable (Set<URL>?) async -> Void) {
         lock.withLock { self.action = action }

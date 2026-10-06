@@ -33,7 +33,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     // keep this page's view and tests reading them from their primary owner.
 
     var webReaderCacheBytes: Int { storageUsage.webReaderCacheBytes }
-    var contentCoverCacheBytes: Int { storageUsage.contentCoverCacheBytes }
+    var contentCoverBytes: Int? { storageUsage.contentCoverBytes }
     var mangaDirectoryCacheBytes: Int { storageUsage.mangaDirectoryCacheBytes }
     var downloadBytes: Int { storageUsage.downloadBytes }
     var imageCacheBytes: Int? { storageUsage.imageCacheBytes }
@@ -43,7 +43,7 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
     var networkLogBytes: Int? { storageUsage.networkLogBytes }
 
     var webReaderCacheLabel: String { storageUsage.webReaderCacheLabel }
-    var contentCoverCacheLabel: String { storageUsage.contentCoverCacheLabel }
+    var contentCoverLabel: String { storageUsage.contentCoverLabel }
     var mangaDirectoryCacheLabel: String { storageUsage.mangaDirectoryCacheLabel }
     var downloadLabel: String { storageUsage.downloadLabel }
     var imageCacheLabel: String { storageUsage.imageCacheLabel }
@@ -87,8 +87,8 @@ final class SettingsStorageViewModel: SystemSettingsActivityReporting {
         }
     }
 
-    func clearContentCoverCache() async -> Bool {
-        activeAction = .clearingContentCoverCache
+    func clearContentCovers() async -> Bool {
+        activeAction = .clearingContentCovers
         defer { activeAction = nil }
 
         do {

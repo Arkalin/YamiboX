@@ -117,7 +117,7 @@ extension SystemSettingsActivityReporting {
 @Observable
 final class SettingsStorageUsage {
     private(set) var webReaderCacheBytes = 0
-    private(set) var contentCoverCacheBytes = 0
+    private(set) var contentCoverBytes: Int?
     private(set) var mangaDirectoryCacheBytes = 0
     private(set) var downloadBytes = 0
     private(set) var imageCacheBytes: Int?
@@ -139,8 +139,8 @@ final class SettingsStorageUsage {
         Self.cacheLabel(for: webReaderCacheBytes)
     }
 
-    var contentCoverCacheLabel: String {
-        Self.cacheLabel(for: contentCoverCacheBytes)
+    var contentCoverLabel: String {
+        additionalUsageLabel(for: contentCoverBytes)
     }
 
     var mangaDirectoryCacheLabel: String {
@@ -162,7 +162,7 @@ final class SettingsStorageUsage {
             .init(category: .webReader, bytes: webReaderCacheBytes),
             .init(category: .images, bytes: imageCacheBytes),
             .init(category: .other, bytes: otherCacheBytes),
-            .init(category: .covers, bytes: contentCoverCacheBytes),
+            .init(category: .covers, bytes: contentCoverBytes),
             .init(category: .progress, bytes: readingProgressBytes)
         ]
         categories.append(.init(category: .history, bytes: browsingHistoryBytes))
@@ -178,7 +178,6 @@ final class SettingsStorageUsage {
         let novelBytes = await dependencies.novelReaderCacheStore.totalDiskUsageBytes()
         let mangaProjectionBytes = await dependencies.mangaReaderProjectionStore.totalDiskUsageBytes()
         let forumBytes = await dependencies.forumCacheStore.totalDiskUsageBytes()
-        let coverBytes = await dependencies.contentCoverStore.totalDiskUsageBytes()
         let directoryBytes = await dependencies.mangaDirectoryStore.totalDiskUsageBytes()
         let offlineBytes = await dependencies.downloadStore.totalDiskUsageBytes()
         var imageBytes: Int?
@@ -194,10 +193,11 @@ final class SettingsStorageUsage {
             progressBytes = try? await dependencies.library.readingProgressStore.estimatedDataUsageBytes()
             historyBytes = try? await dependencies.library.browsingHistoryStore.estimatedDataUsageBytes()
         }
+        let coverBytes = try? await dependencies.contentCoverStore.totalDiskUsageBytes()
         // A clear/reset or newer refresh must win over an older suspended read.
         guard generation == refreshGeneration, !Task.isCancelled else { return }
         webReaderCacheBytes = novelBytes + mangaProjectionBytes + forumBytes
-        contentCoverCacheBytes = coverBytes
+        contentCoverBytes = coverBytes
         mangaDirectoryCacheBytes = directoryBytes
         downloadBytes = offlineBytes
         if includeAdditionalUsage {
@@ -242,7 +242,7 @@ final class SettingsStorageUsage {
         refreshGeneration += 1
         networkLogRefreshGeneration += 1
         webReaderCacheBytes = 0
-        contentCoverCacheBytes = 0
+        contentCoverBytes = 0
         mangaDirectoryCacheBytes = 0
         downloadBytes = 0
         imageCacheBytes = 0

@@ -5,6 +5,7 @@ import Foundation
 /// failure cache; its identity excludes runtime generations and WAF churn.
 public struct YamiboImageLoadContext: Hashable, Sendable {
     public let requestID: String
+    public var imageRevision: UUID { imageEpoch ?? epoch }
     let failureKey: String
     let authenticationID: String
     let accountGeneration: UUID
@@ -241,6 +242,13 @@ actor YamiboImageLoadCoordinator {
         }
         invalidateFlights(for: urls)
         persist()
+        publishRevision()
+    }
+
+    /// Clearing temporary bytes must not reset a cover's authentication-aware
+    /// retry policy or remove retained artwork.
+    func invalidateTransientLoads() {
+        invalidateFlights(for: nil)
         publishRevision()
     }
 

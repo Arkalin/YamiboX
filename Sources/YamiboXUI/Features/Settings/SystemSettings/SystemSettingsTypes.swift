@@ -4,7 +4,7 @@ import YamiboXCore
 enum SystemSettingsAction: Equatable {
     case loading
     case clearingWebReaderCache
-    case clearingContentCoverCache
+    case clearingContentCovers
     case clearingOtherCaches
     case clearingImageCache
     case clearingReadingProgress
@@ -16,7 +16,7 @@ enum SystemSettingsAction: Equatable {
 
 enum SystemSettingsConfirmation: String, Identifiable {
     case clearWebReaderCache
-    case clearContentCoverCache
+    case clearContentCovers
     case clearOtherCaches
     case clearImageCache
     case clearReadingProgress
@@ -31,8 +31,8 @@ enum SystemSettingsConfirmation: String, Identifiable {
         switch self {
         case .clearWebReaderCache:
             L10n.string("settings.confirm_clear_web_reader_cache")
-        case .clearContentCoverCache:
-            L10n.string("settings.confirm_clear_content_cover_cache")
+        case .clearContentCovers:
+            L10n.string("settings.confirm_clear_content_covers")
         case .clearOtherCaches:
             L10n.string("settings.confirm_clear_other_caches")
         case .clearImageCache:
@@ -52,7 +52,7 @@ enum SystemSettingsConfirmation: String, Identifiable {
 
     var buttonTitle: String {
         switch self {
-        case .clearWebReaderCache, .clearContentCoverCache, .clearOtherCaches, .clearImageCache,
+        case .clearWebReaderCache, .clearContentCovers, .clearOtherCaches, .clearImageCache,
              .clearReadingProgress, .clearBrowsingHistory:
             L10n.string("common.clear")
         case .restoreBoardReaderDefaults:
@@ -68,8 +68,8 @@ enum SystemSettingsConfirmation: String, Identifiable {
         switch self {
         case .clearWebReaderCache:
             L10n.string("settings.clear_web_reader_cache_message")
-        case .clearContentCoverCache:
-            L10n.string("settings.clear_content_cover_cache_message")
+        case .clearContentCovers:
+            L10n.string("settings.clear_content_covers_message")
         case .clearOtherCaches:
             L10n.string("settings.clear_other_caches_message")
         case .clearImageCache:

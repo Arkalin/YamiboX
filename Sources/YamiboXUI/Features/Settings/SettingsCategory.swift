@@ -239,10 +239,10 @@ enum SettingsSearchRegistry {
             keywords: localizedKeywords("settings.search.keywords.storage.clear_other_caches")
         ),
         SettingsSearchEntry(
-            id: "storage.clear_content_cover_cache",
-            title: L10n.string("settings.clear_content_cover_cache"),
+            id: "storage.clear_content_covers",
+            title: L10n.string("settings.clear_content_covers"),
             category: .storage,
-            keywords: localizedKeywords("settings.search.keywords.storage.clear_content_cover_cache")
+            keywords: localizedKeywords("settings.search.keywords.storage.clear_content_covers")
         ),
         SettingsSearchEntry(
             id: "storage.clear_reading_progress",

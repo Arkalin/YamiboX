@@ -49,7 +49,8 @@ public struct YamiboImageSource: Hashable, Sendable {
             ? threadID.map { YamiboRoute.threadByID(tid: $0, page: 1, authorID: nil, reverse: false).url }
                 ?? YamiboDomain.baseURL
             : nil
-        return Self(url: url, refererPageURL: sanitizedCoverReferer(refererPageURL, imageURL: url) ?? fallback, purpose: .cover)
+        return Self(url: url, refererPageURL: sanitizedCoverReferer(refererPageURL, imageURL: url) ?? fallback,
+            offlineScope: YamiboImageOfflineScope(tid: threadID), purpose: .cover)
     }
 
     public static func sanitizedCoverReferer(_ url: URL?, imageURL: URL) -> URL? {

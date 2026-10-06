@@ -15,10 +15,11 @@ public protocol YamiboImageDataLoading: Sendable {
 ///
 /// Callers describe *what* image they want with `YamiboImageSource`; the
 /// pipeline owns *how* it is fetched: downloads lookup, current-session
-/// authentication headers, Referer, the shared bytes disk cache, and error
-/// mapping.
+/// authentication headers, Referer, retained cover artwork, ordinary image
+/// caching, and error mapping.
 public final class YamiboImagePipeline: YamiboImageDataLoading {
     private let engine: YamiboImageDataPipeline
+    private let coverStore: ContentCoverStore
     private let sessionStore: any SessionStoring
     private let imageSession: URLSession
     private let offlineImages: (any YamiboOfflineImageDataProviding)?
@@ -32,10 +33,12 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         sessionStore: any SessionStoring = SessionStore(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
         offlineImages: (any YamiboOfflineImageDataProviding)? = nil,
-        failureCacheDirectory: URL? = nil
+        failureCacheDirectory: URL? = nil,
+        contentCoverStore: ContentCoverStore = ContentCoverStore()
     ) {
         self.init(
             engine: YamiboImageDataPipeline(),
+            contentCoverStore: contentCoverStore,
             sessionStore: sessionStore,
             imageSession: imageSession,
             offlineImages: offlineImages,
@@ -45,12 +48,14 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
 
     init(
         engine: YamiboImageDataPipeline,
+        contentCoverStore: ContentCoverStore,
         sessionStore: any SessionStoring = SessionStore(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
         offlineImages: (any YamiboOfflineImageDataProviding)? = nil,
         failureCacheDirectory: URL? = nil
     ) {
         self.engine = engine
+        self.coverStore = contentCoverStore
         self.sessionStore = sessionStore
         self.imageSession = imageSession
         self.offlineImages = offlineImages
@@ -90,22 +95,49 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         try Task.checkCancellation()
         guard await isCurrent(context, source: source) else { throw CancellationError() }
         let source = source.normalizedForLoading
-        if let scope = source.offlineScope,
-           let offlineImages,
-           let offline = await offlineImages.offlineImageData(url: source.url, scope: scope) {
-            return offline
+        let retained = source.purpose == .cover ? try await coverStore.imageData(for: source.url) : nil
+        let data: Data
+        if let artwork = retained?.data {
+            data = artwork
+        } else if let scope = source.offlineScope,
+                  let offlineImages,
+                  let offline = await offlineImages.offlineImageData(url: source.url, scope: scope) {
+            data = offline
+        } else if let cached = engine.cachedData(for: source) {
+            // Reader bytes can become retained artwork without a new request.
+            data = cached
+        } else if source.purpose == .content,
+                  let artwork = try? await coverStore.imageData(for: source.url).data {
+            // A migrated image remains usable by readers too, without making
+            // the ordinary cache responsible for keeping the cover alive.
+            data = artwork
+        } else {
+            let client = YamiboClient(
+                session: imageSession,
+                credentials: context.credentials,
+                handlesCookies: false
+            )
+            data = try await coordinator.data(for: source, context: context) { [engine] in
+                try await engine.data(for: source, client: client)
+            }
+            if source.purpose == .content, await isCurrent(context, source: source) {
+                // A reader may have joined a cover's cache-free HTTP flight.
+                engine.storeOrdinaryImageData(data, for: source)
+            }
         }
-        // Successful bytes outrank a previous failure, including bytes warmed
-        // by a reader while its cover was cooling down.
-        if let data = engine.cachedData(for: source) { return data }
-        let client = YamiboClient(
-            session: imageSession,
-            credentials: context.credentials,
-            handlesCookies: false
-        )
-        return try await coordinator.data(for: source, context: context) { [engine] in
-            try await engine.data(for: source, client: client)
+        try Task.checkCancellation()
+        guard await isCurrent(context, source: source) else { throw CancellationError() }
+        if let retained, retained.data == nil {
+            do {
+                try await coverStore.retainImageData(data, for: source.url, generation: retained.generation)
+            } catch YamiboError.invalidImageData {
+                // Reader cache hits and shared flights may contain the same
+                // invalid response. Do not let that copy poison the next retry.
+                engine.removeCachedData(for: YamiboImageSource(url: source.url))
+                throw YamiboError.invalidImageData
+            }
         }
+        return data
     }
 
     public func didDecodeImage(for source: YamiboImageSource, context: YamiboImageLoadContext) async {
@@ -123,12 +155,21 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
     }
 
     public func cachedData(for source: YamiboImageSource) -> Data? {
-        engine.cachedData(for: source)
+        // Retained cover IO uses the asynchronous data entry point.
+        source.purpose == .cover ? nil : engine.cachedData(for: source)
+    }
+
+    public func migrateLegacyCoverImages() async throws {
+        guard engine.hasDataCache else { return }
+        try await coverStore.migrateLegacyImageData(
+            reading: { [engine] in engine.cachedData(for: YamiboImageSource(url: $0)) },
+            removing: { [engine] in engine.removeCachedData(for: YamiboImageSource(url: $0)) }
+        )
     }
 
     public func clearCache() async {
-        await coordinator.invalidateCovers(nil)
-        engine.removeAllCachedData()
+        await coordinator.invalidateTransientLoads()
+        await engine.removeAllCachedData()
     }
 
     public func totalDiskUsageBytes() async -> Int {

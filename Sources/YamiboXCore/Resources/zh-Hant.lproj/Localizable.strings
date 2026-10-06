@@ -1116,8 +1116,8 @@
 "settings.app_theme.preview_detail" = "一起聊聊最近的百合";
 "settings.app_theme.tint_interface" = "界面染色";
 "settings.app_theme.tint_footer" = "關閉染色更簡約，按鈕與連結保留主題色。";
-"settings.clear_content_cover_cache" = "清理封面索引";
-"settings.clear_content_cover_cache_message" = "將清除全部自動與手動封面索引及封面顯示偏好。重新開啟內容後仍可生成新的自動封面。";
+"settings.clear_content_covers" = "清理封面";
+"settings.clear_content_covers_message" = "將清除全部自動與手動封面圖片。重新開啟內容後仍可生成新的自動封面。";
 "settings.clear_image_cache" = "清理圖片快取";
 "settings.storage_usage_calculating" = "統計中";
 "settings.storage_usage_unavailable" = "無法統計";
@@ -1126,7 +1126,7 @@
 "settings.storage_category.webReader" = "網頁與閱讀器";
 "settings.storage_category.images" = "圖片快取";
 "settings.storage_category.other" = "其他快取";
-"settings.storage_category.covers" = "封面索引";
+"settings.storage_category.covers" = "封面";
 "settings.storage_category.progress" = "閱讀進度";
 "settings.storage_category.history" = "瀏覽記錄";
 "settings.storage_category.directories" = "漫畫目錄";
@@ -1172,12 +1172,12 @@
 "settings.network_log.source.update" = "更新檢查";
 "settings.network_log.source.webNavigation" = "網頁導航";
 "settings.network_log.source.webVerification" = "網頁安全驗證";
-"settings.clear_image_cache_message" = "將清除應用臨時圖片快取資料，包括閱讀圖片和頭像；不會刪除漫畫下載內容或其他閱讀快取。";
+"settings.clear_image_cache_message" = "將清除應用臨時圖片快取資料，包括閱讀圖片和頭像";
 "settings.clear_other_caches" = "清理其他快取";
 "settings.clear_other_caches_message" = "將清除系統網路快取、簽到記錄快取和收藏更新追蹤快取。";
 "settings.clear_web_reader_cache" = "清理網頁/閱讀器快取";
 "settings.clear_web_reader_cache_message" = "清除論壇網頁和閱讀器快取，下次開啟時需重新聯網載入。";
-"settings.confirm_clear_content_cover_cache" = "確認清理封面索引";
+"settings.confirm_clear_content_covers" = "確認清理封面";
 "settings.confirm_clear_image_cache" = "確認清除圖片快取";
 "settings.confirm_clear_other_caches" = "確認清理其他快取";
 "settings.confirm_clear_web_reader_cache" = "確認清理網頁/閱讀器快取";
@@ -1272,7 +1272,7 @@
 "settings.search.keywords.storage.clear_image_cache" = "清除|快取|空間|圖片";
 "settings.search.keywords.storage.clear_other_caches" = "清理|快取|其他|簽到|收藏更新|網路";
 "settings.search.keywords.storage.network_logs" = "網路|請求|日誌|匯出|診斷|HTTP|WebDAV";
-"settings.search.keywords.storage.clear_content_cover_cache" = "清理|快取|空間|封面|索引";
+"settings.search.keywords.storage.clear_content_covers" = "清理|空間|封面|圖片";
 "settings.search.keywords.storage.clear_reading_progress" = "清理|閱讀|進度";
 "settings.search.keywords.storage.clear_browsing_history" = "清理|清空|瀏覽|記錄|歷史";
 "settings.search.keywords.storage.manga_directory" = "漫畫|目錄|索引|清理|分組";

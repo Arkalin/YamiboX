@@ -234,7 +234,8 @@ public final class YamiboAppContext: Sendable {
             }
         )
         self.imagePipeline = YamiboImagePipeline(
-            engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory, contentCoverStore: self.contentCoverStore),
+            engine: Self.makeImageDataPipeline(cachesRootDirectory: cachesRootDirectory),
+            contentCoverStore: self.contentCoverStore,
             sessionStore: sessionStore,
             imageSession: imageSession,
             offlineImages: resolvedDownloadStore,
@@ -242,6 +243,9 @@ public final class YamiboAppContext: Sendable {
         )
         self.contentCoverStore.setImageLoadInvalidator { [weak imagePipeline = self.imagePipeline] urls in
             await imagePipeline?.invalidateCoverFailures(for: urls)
+        }
+        self.contentCoverStore.setImageDataRetainer { [weak imagePipeline = self.imagePipeline] source in
+            _ = try await imagePipeline?.data(for: source)
         }
         self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
@@ -709,14 +713,10 @@ public final class YamiboAppContext: Sendable {
         await ordinaryImageCache?.removeAllCachedData()
     }
 
-    private static func makeImageDataPipeline(cachesRootDirectory: URL?, contentCoverStore: ContentCoverStore) -> YamiboImageDataPipeline {
-        let coverCacheKeys: YamiboMaintainedImageDataCache.CoverCacheKeys = {
-            Set(try await contentCoverStore.allCovers().compactMap { $0.resolvedURL?.absoluteString })
-        }
-        guard let cachesRootDirectory else { return YamiboImageDataPipeline(coverCacheKeys: coverCacheKeys) }
+    private static func makeImageDataPipeline(cachesRootDirectory: URL?) -> YamiboImageDataPipeline {
+        guard let cachesRootDirectory else { return YamiboImageDataPipeline() }
         return YamiboImageDataPipeline(
-            dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true),
-            coverCacheKeys: coverCacheKeys
+            dataCacheDirectory: cachesRootDirectory.appendingPathComponent("ordinary-image-cache", isDirectory: true)
         )
     }
 
@@ -724,6 +724,13 @@ public final class YamiboAppContext: Sendable {
         includingFavoriteLibrary: Bool = true,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> YamiboBootstrapState {
+        do {
+            try await imagePipeline.migrateLegacyCoverImages()
+        } catch {
+            // Retry unfinished legacy migration on the next launch. Ordinary
+            // cache clearing and eviction remain independent of cover storage.
+            YamiboLog.persistence.error("Failed to retain existing cover artwork: \(error)")
+        }
         await onProgress(.loadingSession)
         let session = await sessionStore.load()
         await onProgress(.loadingProfile)

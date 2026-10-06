@@ -1,11 +1,9 @@
 import Foundation
 import Nuke
 
-/// Coalesces writes into off-main maintenance windows with a bounded cover
-/// preference. Nuke owns staging and IO; this wrapper owns eviction policy.
+/// Coalesces writes into off-main maintenance windows. Nuke owns staging and
+/// IO; this wrapper owns ordinary image eviction policy.
 final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
-    typealias CoverCacheKeys = @Sendable () async throws -> Set<String>
-    static let defaultCoverProtectionLimitBytes = 256 * 1024 * 1024
 
     private struct PendingMaintenance {
         let id: UUID
@@ -25,7 +23,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
     private let cache: DataCache
     private let queue = DispatchQueue(label: "com.arkalin.YamiboX.ImageCacheMaintenance", qos: .utility)
     private let delay: DispatchTimeInterval
-    private let coverCacheKeys: CoverCacheKeys
     // All mutable state, including scheduling and cache mutation order, is locked.
     private let lock = NSLock()
     private var writeRevision: UInt64 = 0
@@ -33,13 +30,11 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
 
     init(
         cache: DataCache,
-        maintenanceDelay: DispatchTimeInterval = .seconds(30),
-        coverCacheKeys: @escaping CoverCacheKeys = { [] }
+        maintenanceDelay: DispatchTimeInterval = .seconds(30)
     ) {
         self.cache = cache
         delay = maintenanceDelay
-        self.coverCacheKeys = coverCacheKeys
-        // Its startup sweep must not bypass the bounded cover preference.
+        // Its startup sweep must not bypass our IO ordering.
         cache.isSweepEnabled = false
         // Include cache-hit-only sessions even if Nuke's last sweep was recent.
         lock.withLock { scheduleMaintenanceIfNeeded() }
@@ -85,14 +80,13 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         guard let revision = lock.withLock({ pending?.id == id ? writeRevision : nil }) else { return }
         defer { finishMaintenance(id: id, revision: revision) }
         do {
-            let keys = try await coverCacheKeys()
             guard isCurrentMaintenance(id) else { return }
             // Never call flush from Nuke's queue: it synchronously enters it.
             cache.flush()
             guard isCurrentMaintenance(id) else { return }
             try cache.queue.sync {
                 guard isCurrentMaintenance(id) else { return }
-                try sweep(id: id, coverKeys: keys)
+                try sweep(id: id)
             }
         } catch {
             guard isCurrentMaintenance(id) else { return }
@@ -115,7 +109,7 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
     }
 
     /// Runs on Nuke's write queue so files cannot be replaced during eviction.
-    private func sweep(id: UUID, coverKeys: Set<String>) throws {
+    private func sweep(id: UUID) throws {
         let entries = try inventory().sorted {
             if $0.accessedAt != $1.accessedAt { return $0.accessedAt > $1.accessedAt }
             return $0.url.lastPathComponent < $1.url.lastPathComponent
@@ -124,20 +118,9 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         guard remainingBytes > cache.sizeLimit, isCurrentMaintenance(id) else { return }
 
         let targetBytes = Int(Double(cache.sizeLimit) * 0.7)
-        let protectionLimit = min(Self.defaultCoverProtectionLimitBytes, targetBytes)
-        let coverFilenames = Set(coverKeys.compactMap { cache.filename(for: $0) })
-        var protectedFilenames: Set<String> = []
-        var protectedBytes = 0
-        for entry in entries where coverFilenames.contains(entry.url.lastPathComponent) {
-            guard entry.allocatedBytes <= protectionLimit - protectedBytes else { continue }
-            protectedFilenames.insert(entry.url.lastPathComponent)
-            protectedBytes += entry.allocatedBytes
-        }
-
         var removedCount = 0
         for entry in entries.reversed() {
             guard remainingBytes > targetBytes else { break }
-            guard !protectedFilenames.contains(entry.url.lastPathComponent) else { continue }
             // A queue alone does not invalidate a sweep after removeAll stages
             // a clear. Admission and deletion are atomic with that operation.
             let isCurrent = lock.withLock {
@@ -159,9 +142,9 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         remainingBytes = try inventory().reduce(0) { $0 + $1.allocatedBytes }
         guard isCurrentMaintenance(id) else { return }
         if remainingBytes > targetBytes {
-            YamiboLog.persistence.warning("Image cache eviction incomplete: allocated=\(remainingBytes) target=\(targetBytes) protected=\(protectedBytes) removed=\(removedCount). No immediate retry.")
+            YamiboLog.persistence.warning("Image cache eviction incomplete: allocated=\(remainingBytes) target=\(targetBytes) removed=\(removedCount). No immediate retry.")
         } else {
-            YamiboLog.persistence.info("Image cache eviction completed: allocated=\(remainingBytes) target=\(targetBytes) protected=\(protectedBytes) removed=\(removedCount)")
+            YamiboLog.persistence.info("Image cache eviction completed: allocated=\(remainingBytes) target=\(targetBytes) removed=\(removedCount)")
         }
     }
 

@@ -77,11 +77,11 @@ struct SettingsStorageView: View {
                 .disabled(viewModel.isBusy)
 
                 Button {
-                    pendingConfirmation = .clearContentCoverCache
+                    pendingConfirmation = .clearContentCovers
                 } label: {
                     SystemSettingsRow(
-                        title: L10n.string("settings.clear_content_cover_cache"),
-                        value: viewModel.contentCoverCacheLabel
+                        title: L10n.string("settings.clear_content_covers"),
+                        value: viewModel.contentCoverLabel
                     )
                 }
                 .disabled(viewModel.isBusy)
@@ -202,7 +202,7 @@ struct SettingsStorageView: View {
                 switch confirmation {
                 case .clearBrowsingHistory: content = .browsingHistory
                 case .clearReadingProgress: content = .readingProgress
-                case .clearContentCoverCache: content = .contentCovers
+                case .clearContentCovers: content = .contentCovers
                 default: content = nil
                 }
                 return confirmation.message + (content.map { "\n\n" + syncSettings.deletionNotice(for: $0) } ?? "")
@@ -249,8 +249,8 @@ struct SettingsStorageView: View {
         switch confirmation {
         case .clearWebReaderCache:
             _ = await viewModel.clearWebReaderCache()
-        case .clearContentCoverCache:
-            _ = await viewModel.clearContentCoverCache()
+        case .clearContentCovers:
+            _ = await viewModel.clearContentCovers()
         case .clearOtherCaches:
             _ = await viewModel.clearOtherCaches()
         case .clearImageCache:

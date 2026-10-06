@@ -6,16 +6,16 @@ public protocol YamiboOrdinaryImageCacheClearing: Sendable {
     func totalDiskUsageBytes() async -> Int
 }
 
-/// `@unchecked Sendable`: holds no mutable state of its own — both stored
-/// properties are immutable references to Nuke's `ImagePipeline`/`DataCache`,
-/// which are internally thread-safe. Keep any future state behind a lock or
-/// this annotation becomes a lie.
+/// `@unchecked Sendable`: holds only immutable references to internally
+/// thread-safe Nuke objects.
 final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
     static let defaultDataCacheLimitBytes = 512 * 1024 * 1024
     static let defaultDataCacheName = "com.arkalin.YamiboX.OrdinaryImageDataCache"
 
     private let pipeline: ImagePipeline
     private let dataCache: DataCache?
+
+    var hasDataCache: Bool { dataCache != nil }
 
     var dataCacheLimitBytes: Int {
         dataCache?.sizeLimit ?? 0
@@ -27,27 +27,24 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     convenience init(
         dataCacheName: String = YamiboImageDataPipeline.defaultDataCacheName,
-        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes,
-        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys = { [] }
+        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
     ) {
-        self.init(dataCacheLimitBytes: dataCacheLimitBytes, coverCacheKeys: coverCacheKeys) {
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
             try DataCache(name: dataCacheName)
         }
     }
 
     convenience init(
         dataCacheDirectory: URL,
-        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes,
-        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys = { [] }
+        dataCacheLimitBytes: Int = YamiboImageDataPipeline.defaultDataCacheLimitBytes
     ) {
-        self.init(dataCacheLimitBytes: dataCacheLimitBytes, coverCacheKeys: coverCacheKeys) {
+        self.init(dataCacheLimitBytes: dataCacheLimitBytes) {
             try DataCache(path: dataCacheDirectory)
         }
     }
 
     private init(
         dataCacheLimitBytes: Int,
-        coverCacheKeys: @escaping YamiboMaintainedImageDataCache.CoverCacheKeys,
         makeDataCache: () throws -> DataCache
     ) {
         let dataCache: DataCache?
@@ -66,7 +63,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
         fallbackLoader.delegate = ImageFallbackNetworkLogDelegate()
         var configuration = ImagePipeline.Configuration(dataLoader: fallbackLoader)
-        configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0, coverCacheKeys: coverCacheKeys) }
+        configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
         // Nuke's original-data key ignores Cookie/Referer. Core single-flight
@@ -91,10 +88,21 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     }
 
     func cachedData(for source: YamiboImageSource) -> Data? {
-        pipeline.cache.cachedData(for: nukeRequest(for: source, client: nil))
+        // Explicit lookup also permits promoting existing reader bytes for a
+        // cover. Cover network requests themselves never use this disk cache.
+        dataCache?.cachedData(for: source.cacheKey)
     }
 
-    func removeAllCachedData() {
+    func removeCachedData(for source: YamiboImageSource) {
+        pipeline.cache.removeCachedData(for: nukeRequest(for: source, client: nil))
+    }
+
+    func storeOrdinaryImageData(_ data: Data, for source: YamiboImageSource) {
+        guard source.purpose == .content, dataCache?.containsData(for: source.cacheKey) == false else { return }
+        pipeline.cache.storeCachedData(data, for: nukeRequest(for: source, client: nil))
+    }
+
+    func removeAllCachedData() async {
         pipeline.cache.removeAll()
     }
 
@@ -129,6 +137,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
         var imageRequest = ImageRequest(urlRequest: urlRequest, userInfo: userInfo)
         imageRequest.imageID = source.cacheKey
+        if source.purpose == .cover { imageRequest.options.insert(.disableDiskCache) }
         return imageRequest
     }
 
