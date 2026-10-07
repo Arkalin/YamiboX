@@ -148,4 +148,4 @@ CI 執行架構檢查和模擬器編譯，設定見 [Swift 工作流程](.github
 
 ## 回饋與貢獻
 
-歡迎透過 [GitHub Issue](https://github.com/Arkalin/YamiboX/issues) 提交使用問題、相容性問題、功能建議或其他改善建議。
+歡迎透過 [Issue 範本](https://github.com/Arkalin/YamiboX/issues/new/choose) 提交使用問題、相容性問題、功能建議或文件問題。參與程式碼、文件或本地化改善前，請閱讀[貢獻指南（簡體中文）](CONTRIBUTING.md)，了解開發環境、驗證要求與 PR 提交流程。

@@ -148,4 +148,4 @@ CI 执行架构检查和模拟器编译，配置见 [Swift 工作流](.github/wo
 
 ## 反馈与贡献
 
-欢迎通过 [GitHub Issue](https://github.com/Arkalin/YamiboX/issues) 提交使用问题、兼容性问题、功能建议或其他改进建议。
+欢迎通过 [Issue 模板](https://github.com/Arkalin/YamiboX/issues/new/choose) 提交使用问题、兼容性问题、功能建议或文档问题。参与代码、文档或本地化改进前，请阅读[贡献指南](CONTRIBUTING.md)，了解开发环境、验证要求与 PR 提交流程。

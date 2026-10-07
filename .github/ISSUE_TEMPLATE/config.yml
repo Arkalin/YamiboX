@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 用户手册
+    url: https://github.com/Arkalin/YamiboX/wiki
+    about: 安装、功能使用及常见问题请先查阅 Wiki。
+  - name: 贡献指南
+    url: https://github.com/Arkalin/YamiboX/blob/main/CONTRIBUTING.md
+    about: 开发环境、验证要求与提交约定。

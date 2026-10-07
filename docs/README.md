@@ -15,6 +15,7 @@
 
 | 文档 | 要解决的问题 |
 | --- | --- |
+| [贡献指南](../CONTRIBUTING.md) | 如何反馈问题、准备贡献、验证改动与提交 PR |
 | [本地开发入门](development/local-development.md) | 如何准备依赖、构建、安装和排查本地环境 |
 | [架构总览](architecture.md) | 模块与业务目录如何划分，依赖如何约束 |
 | [平台集成与资源维护](development/platform-and-resources.md) | 系统能力、平台实现、本地化、主题与资源如何接入 |

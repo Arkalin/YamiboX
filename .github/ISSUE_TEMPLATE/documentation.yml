@@ -1,0 +1,28 @@
+name: 文档问题
+description: 报告 README、开发文档、用户手册中的错误、缺漏或过时说明。
+title: "[Docs] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎指出文档问题，也欢迎直接提交小型文档修正 PR。请先搜索已有 Issue；引用示例和截图时注意脱敏。
+  - type: input
+    id: location
+    attributes:
+      label: 文档位置
+      description: 提供文件路径或 Wiki 页面链接，尽量注明章节；缺少整篇文档时请说明期望的入口。
+      placeholder: docs/development/local-development.md 的“准备本地论坛”章节
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 错误或缺漏
+      description: 哪些说明有误、过时或难以理解？涉及操作失败时请注明环境与失败步骤，移除日志中的敏感信息。
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: 建议修正（可选）
+      description: 可提供更准确的表述、参考依据或希望补充的内容；暂不确定如何修正也可以提交。

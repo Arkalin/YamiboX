@@ -1,0 +1,40 @@
+name: 功能建议
+description: 提出新功能或现有体验的改进建议。
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先查阅 [用户手册](https://github.com/Arkalin/YamiboX/wiki) 并搜索已有 Issue。每个 Issue 聚焦一个需求，先描述问题，不必预先设计实现方案。
+        请勿附带个人信息、凭据或未获许可的论坛内容。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与问题
+      description: 在什么场景下，现有功能无法满足什么需求？涉及 iPhone、iPad、阅读模式或外设时请说明。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的行为
+      description: 希望如何操作、得到什么结果？可提供具体例子或脱敏示意图。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 现有替代方法（可选）
+      description: 目前如何处理？现有方法有什么不足？
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息（可选）
+      description: 可附相关 Issue、参考资料、期望支持的设备或系统范围。
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已查阅现有功能并搜索已有 Issue；如有相关建议，已在上文说明。
+          required: true

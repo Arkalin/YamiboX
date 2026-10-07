@@ -1,0 +1,83 @@
+name: Bug 反馈
+description: 报告崩溃、显示异常、操作失败或兼容性问题。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有 Issue，并查阅 [用户手册](https://github.com/Arkalin/YamiboX/wiki)。每个 Issue 尽量只报告一个问题。
+        日常使用中发现的问题可直接报告，无需搭建开发环境。请勿上传密码、Cookie、Token、私信、完整数据库或未获许可的论坛内容；截图与日志须先脱敏。
+        安全漏洞请勿在此公开敏感细节，参阅 [贡献指南](https://github.com/Arkalin/YamiboX/blob/main/CONTRIBUTING.md)。
+  - type: input
+    id: app-version
+    attributes:
+      label: App 版本
+      description: 可在“我的 → 设置 → 关于”查看；自行构建请补充提交 SHA，不清楚时请注明。
+      placeholder: 版本号、构建号或提交 SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: 安装来源
+      options:
+        - GitHub Releases IPA
+        - AltStore 软件源
+        - 自行构建 YamiboX-Local
+        - 自行构建其他配置
+        - 其他或不确定（请在补充信息中说明）
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备与系统版本
+      placeholder: "例如：iPhone 16 / iOS 18.6，或 iPad 模拟器 / iPadOS 26"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与前置条件
+      description: 说明所在页面、必要设置、是否登录及复现频率。阅读器问题请注明阅读模式和翻页方式；无需提供账号或凭据。
+      placeholder: |
+        前置条件：
+        1. 打开……
+        2. 点击……
+        3. 出现……
+        复现频率：每次 / 偶发 / 仅一次
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+      description: 你期望发生什么？
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 实际发生了什么？如有错误提示，请提供脱敏后的原文。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图、录屏或日志（可选）
+      description: 可拖入脱敏附件。网络日志可从“设置 → 数据存储 → 网络日志”获取，只提供相关片段；没有日志也可以提交。
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息（可选）
+      description: 如开始出现问题的版本、临时解决办法、相关 Issue。自行构建请注明 Xcode、Scheme 及实际验证环境，不要求使用 Local 环境；不要提供私有服务凭据。
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索已有 Issue；如有相关报告，已在上文说明。
+          required: true
+        - label: 我已检查正文与附件，不包含敏感信息或未获许可的内容。
+          required: true
