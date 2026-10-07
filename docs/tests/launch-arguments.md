@@ -17,7 +17,7 @@
 此模式只支持 iOS 模拟器，通过启动参数指定本地或远程 HTTP/HTTPS 测试论坛，不会覆盖普通 Debug 或正式版 App。普通 Debug、Release 始终使用正式站，忽略此参数。
 
 1. 在本机的 `yamibo-dicuz-plugins` 仓库启动论坛：`docker compose up --detach --build --wait`。确认 `http://127.0.0.1:8088/forum.php` 可访问；启动与测试账号说明见该仓库的 `README.md`。不要在 App 中使用正式站账号。
-2. 在 Xcode 中选择共享 Scheme `YamiboX-Local` 和 iOS 模拟器，在 Edit Scheme → Run → Arguments 中添加 `--forum-base-url` 和地址（例如 `http://127.0.0.1:8088`）。共享 Scheme 不预设地址。该 Scheme 使用 `Debug-Local`，安装为「Yamibo X 本地测试」（`com.arkalin.YamiboX.local`）。仅做编译检查时，可将 [README](../../README.md) 中构建命令的 Scheme 改为 `YamiboX-Local`；不要安装其中 `CODE_SIGNING_ALLOWED=NO` 生成的 App，未签名的模拟器 App 无法正常访问 Keychain。
+2. 在 Xcode 中选择共享 Scheme `YamiboX-Local` 和 iOS 模拟器，在 Edit Scheme → Run → Arguments 中添加 `--forum-base-url` 和地址（例如 `http://127.0.0.1:8088`）。共享 Scheme 不预设地址。该 Scheme 使用 `Debug-Local`，安装为「Yamibo X 本地测试」（`com.arkalin.YamiboX.local`）。命令行构建见 [README](../../README.md#本地开发)。安装到模拟器的构建须保留签名；仅编译检查时可追加 `CODE_SIGNING_ALLOWED=NO`，不要安装该未签名产物，否则无法正常访问 Keychain。
 3. 使用测试论坛已有账号在 App 内手动登录。测试 App 的沙盒和 Keychain 账号服务均与其他版本分离。每次启动必须传入地址；从模拟器桌面冷启动只显示配置错误，不恢复上次地址，也不会清理数据或回退正式站。
 
 安装后也可用命令启动（重启前先用 `simctl terminate` 结束旧进程）：
