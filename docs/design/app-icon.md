@@ -1,67 +1,66 @@
-# App 图标
+# App 图标维护
 
-`YamiboX/AppIcon.icon` 是分层图标源文件，可直接用 Icon Composer 打开。
+桌面图标以 [AppIcon.icon](../../YamiboX/AppIcon.icon) 为分层源文件，用 Icon Composer 打开；“关于”页使用共享花形的 SceneKit 几何。两种渲染路径独立，不要求材质逐像素相同。
 
-- 背景：原图深棕色的代表值 `#521C0A`，不预绘圆角或玻璃覆盖层。
-- 原始矢量：`Assets/lily.svg`，从原始 PNG 自动描摹的完整百合花。它是拆分的基准，不直接加入渲染组。
-- 前景：六个 `Assets/petal-*.svg` 花瓣和 `Assets/stamens.svg` 花蕊，直接拆出原始矢量中的子轮廓，使用原来的 1024 × 1024 坐标，不重新拟合、不缩放、不平移。
-- 材质：由 Icon Composer / 系统施加高光、分层阴影和 iOS 27 轻微折射。前景不启用额外半透明或模糊，保留米白颜色和图案辨识度。
+## 资产来源与构建入口
 
-## 立体层次
+| 文件 | 用途 |
+| --- | --- |
+| [原始 PNG](../../YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png) | 描摹输入；README 与发布源仍引用这张图 |
+| [lily.svg](../../YamiboX/AppIcon.icon/Assets/lily.svg) | 从原始 PNG 提取的完整百合花轮廓，作为拆分基准，不直接加入桌面渲染组 |
+| `AppIcon.icon/Assets/petal-*.svg`、`stamens.svg` | 六片花瓣与花蕊，保留 1024 × 1024 原坐标及镂空 |
+| [icon.json](../../YamiboX/AppIcon.icon/icon.json) | 图层、顺序、背景和材质配置；由 Icon Composer 编辑 |
+| [AboutIconGeometry.json](../../Sources/YamiboXUI/Resources/AboutIconGeometry.json) | 拆分脚本生成的 App 内路径与挤出厚度，通过 UI 的 `Bundle.module` 加载 |
+| [AppIconPreview.imageset](../../YamiboX/Assets.xcassets/AppIconPreview.imageset) | 桌面图标导出的普通浅色/深色图片，作为 App 内备用正面 |
+| [LaunchIcon.imageset](../../YamiboX/Assets.xcassets/LaunchIcon.imageset) | 独立启动画面素材，不由图标脚本更新 |
 
-Icon Composer 文档里的组按前到后排列，使用三个深度组（少于 Apple 的四组上限）：
+[Xcode 工程](../../YamiboX.xcodeproj/project.pbxproj)把 `.icon` 加入 Resources，三个配置的 `ASSETCATALOG_COMPILER_APPICON_NAME` 都是 `AppIcon`。不要只改 appiconset 或预览图片，遗漏实际桌面源文件。
 
-1. `03 Stamens - front`：花蕊，整体受光，阴影不透明度 55%。
-2. `02 Petals - middle`：左上、右上、下方花瓣，每片独立受光，阴影不透明度 40%。
-3. `01 Petals - back`：顶部、左下、右下花瓣，每片独立受光，阴影不透明度 30%。
+现有花形来源是上述仓库 PNG，转换脚本不构成新的绘制来源，也不改变素材授权。替换外部图形时应保存来源、作者和适用许可，不从项目代码许可证推断第三方素材可自由使用；项目许可与上游致谢见 [LICENSE](../../LICENSE) 和 [README](../../README.md#许可与致谢)。
 
-高光保持 Automatic；折射强度为 10%–15%、高度为 6%–8%，花蕊使用 12%/6%。这些是本图标的克制材质设置，不是 Apple 要求的固定值。背景独立于前景组，无须额外制作玻璃图片。
+## 图层与 App 内渲染约束
 
-拆分保留花瓣内的细缝、花蕊周围所有微小轮廓，不增加可见重叠、不填平镂空，也不补绘隐藏形状。立体感来自原轮廓上的材质和三个组的空间层次，而不是改变花朵设计。若后续需要更强的透镜重叠效果，应另行确认是否允许调整内部遮挡关系。
+背景为深棕色 `#521C0A`，前景代表色为米白 `#F4EDE4`。源资产不预绘圆角或玻璃覆盖层。Icon Composer 的组按前到后排列：花蕊、三片中层花瓣、三片后层花瓣。高光、阴影及折射由 `icon.json` 和系统渲染，不通过修改花形制造材质。
 
-iOS 27 使用新高光和折射渲染；早于 27 的系统忽略折射，仍可呈现分层高光与阴影。用 `--design-generation 26` 预览旧渲染，不代表已在旧版系统完成设备验证。
+[AboutIconGeometry](../../Sources/YamiboXUI/Features/Settings/About/AboutIconGeometry.swift)校验 JSON 后构建偶奇填充的贝塞尔路径；[AboutInteractiveIcon](../../Sources/YamiboXUI/Features/Settings/About/AboutInteractiveIcon.swift)负责挤出、材质、灯光、旋转与减少动态效果。几何生成依据桌面组顺序反向生成后到前层，运行时不解析 SVG。
 
-Xcode 工程把 `.icon` 加入资源构建，三个配置继续使用 `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`。Xcode 为旧系统生成兼容静态图标。原有 `AppIcon.appiconset/AppIcon-1024.png` 保持不变，保留 README 和发布源的图片地址；启动画面素材也不变。
+“关于”页固定展示默认棕底，深色界面不会切换实体背板。几何缺失时使用普通预览图片；[AboutView](../../Sources/YamiboXUI/Features/Settings/About/AboutView.swift)优先加载 `AppIconPreview` 的浅色外观。不要通过 `UIImage(named: "AppIcon")` 读取多组 `.icon` 栈，它不是普通 UIImage 资源。
 
-“关于”页的交互图标使用下面的独立立体几何，不把桌面图标的高光烘焙在正面贴图里。它始终展示默认棕底图标，不随 App 的深色模式切换到近黑底；主屏幕图标仍由系统按用户选择的外观渲染。普通图片资源 `AppIconPreview` 仅作为几何资源缺失时的备用正面，此处强制读取其默认外观。不要通过 `UIImage(named: "AppIcon")` 读取多组图标栈：iOS 27 的 UIKit 会抛出 `Need an imageRef` 异常。桌面仍由系统实时渲染 `.icon`。
+## 按变更选择生成步骤
 
-## App 内交互图标
-
-交互图标采用有光泽的 Blinn 材质，背板与正面花朵使用较集中的柔和高光，侧壁光泽略柔和。受限强度的纯灰白软箱反射、主光、补光与背部轮廓光随旋转产生反光和明暗变化；不修改现有棕色背板、乳白花朵和侧壁的 diffuse RGB，也不烘焙高光或改变原花形。镜面高光与环境反射独立控制，避免背板大面积泛白。
-
-`AboutInteractiveIcon` 保留实体圆角基底，使用同一组原始贝塞尔路径建立六片花瓣和花蕊的七个 `SCNShape`：
-
-- 后层花瓣挤出厚度 0.045，中层花瓣 0.09，花蕊 0.135（基底宽度为 2 个场景单位）。
-- 各层从基底正面开始挤出，具有真实侧壁，不是悬浮图片；方向光产生实时遮挡阴影，侧壁使用略深的米色材质。
-- 使用正交相机，使不同厚度的正面轮廓保持原来的比例和坐标。路径使用偶奇填充规则，保留镂空，不削蚀花瓣边缘。
-- 点击图标任意部位均有中等触感反馈（强度 0.65），中心只震动、不旋转；点击左右边缘，第一次轻摆，第二次点击任一左右边缘沿对应方向转一周，再略微越过正面并阻尼回稳。转圈期间的点击不会叠加动作。
-- 点击上下边缘只轻摆；从上下边缘开始垂直拖动可以翻动图标，松手回稳。中心区域的垂直手势仍交给页面滚动，水平拖动仍可旋转。
-- 边缘按实际三维模型命中位置划分，中心为局部坐标绝对值均小于 0.55 的区域；点击上下边缘或拖动会重置两次点击的计数。减少动态效果关闭点击动画；切换亮暗外观不会改变实体背板的棕色。
-
-运行拆分脚本时，同时生成 `Sources/YamiboXUI/Resources/AboutIconGeometry.json`。UI target 通过 `Bundle.module` 加载经过校验的结构化路径；运行时不解析 SVG，也不依赖 Icon Composer 私有 API。更改路径或组顺序后应重新生成资源并构建。桌面 Liquid Glass 与 App 内 SceneKit 是两种独立渲染：共享花形，但不声称材质效果逐像素相同。
-
-## 重现矢量描摹
-
-在仓库根目录运行，工具依赖仅装到临时目录，不加入 App 依赖：
+所有命令从仓库根目录执行。需要 Node.js；拆分脚本使用 `Array.toReversed()`，应使用支持它的运行时。描摹工具不属于 App 的 Package 依赖，只安装在临时目录。
 
 ```sh
 npm install --prefix /tmp/yamibox-icon-tracing --no-save --ignore-scripts \
   potrace@2.1.8 pngjs@7.0.0 @resvg/resvg-js@2.6.2 \
   @xmldom/xmldom@0.9.12 svg-path-parser@1.1.0
+```
+
+| 变更 | 执行步骤 |
+| --- | --- |
+| 原始 PNG 改变 | 描摹，审核轮廓到图层映射，再拆分和导出预览 |
+| 直接修改完整 `lily.svg` | 审核轮廓映射，再拆分和导出预览；不从旧 PNG 重新描摹覆盖修改 |
+| Icon Composer 组顺序改变 | 拆分并重新生成 App 内几何，再导出预览 |
+| 只调整桌面材质 | 仅导出预览，不重新描摹，也不修改 App 内实时材质 |
+| App 内灯光、材质或交互改变 | 修改 UI 实现并验证“关于”页，不重新生成花形 |
+
+```sh
 NODE_PATH=/tmp/yamibox-icon-tracing/node_modules node scripts/trace-app-icon.cjs
 NODE_PATH=/tmp/yamibox-icon-tracing/node_modules node scripts/split-app-icon.cjs
 bash scripts/render-app-icon.sh
 ```
 
-脚本从原 PNG 的前景覆盖率提取轮廓，在 4 倍采样下拟合贝塞尔曲线，保留镂空，不删除细小轮廓。输出使用原图的代表性米白色 `#F4EDE4`，而不是复现 PNG 中的细微像素色差。
+这些命令会写入源资产和生成资源，不是只读检查。运行前确认所需步骤，运行后检查差异：
 
-脚本会将 SVG 重新栅格化，与原图的半覆盖率轮廓比对；轮廓交并比低于 99.5%，或出现超出原边缘 1 像素邻域的差异时拒绝输出。当前交并比为 99.8247%，差异像素 567 个，全部在边缘邻域内。矢量拟合并非逐像素无损转换，这个数值不包含系统额外渲染的高光与阴影。
+- [描摹脚本](../../scripts/trace-app-icon.cjs)要求输入为 1024 × 1024 PNG；使用原图前景覆盖率进行 4 倍采样拟合。轮廓交并比低于 99.5% 或出现超出一像素边缘邻域的差异时拒绝写入 `lily.svg`。这是轮廓近似门槛，不是逐像素无损承诺。
+- [拆分脚本](../../scripts/split-app-icon.cjs)解析 XML 和 SVG 路径，不重新拟合。现有映射要求 24 个子轮廓，并在 1024、2048 两种尺寸下检验重新组合后的 RGBA 完全一致。更换花形后必须人工审核映射，不能删除失败检查来强行生成。
+- [预览脚本](../../scripts/render-app-icon.sh)调用当前 Xcode 的 `ictool`，以渲染代数 27 导出 `Default`、`Dark` 两张 1024 像素图片到 `AppIconPreview.imageset`。仅变更 `.icon` 后不会自动运行此脚本。
 
-拆分脚本使用 XML 和 SVG 路径解析器，不重新描摹。它在 1024 和 2048 像素下将七个前景重新组合，与完整 `lily.svg` 的 RGBA 输出逐像素比对；任何差异都会拒绝生成。当前两种尺寸的差异均为零。更换原图后需要重新审核子轮廓与图层的对应关系，脚本不会自动猜测新花瓣的结构。
+图层拆分或顺序改变后提交相应 SVG、`icon.json`、几何 JSON 和预览中实际变化的文件；不要无差别重写启动素材和原始 PNG。
 
-只在 Icon Composer 中调整桌面材质后，无须重新描摹；运行 `bash scripts/render-app-icon.sh` 同步两个备用预览即可。这不会改变交互图标的实时材质。导出的圆角只用于备用预览，不会重新导入作为前景。
+## 预览与系统渲染检查
 
-## 查看系统渲染
+`ictool` 随当前 Xcode 的 Icon Composer 提供，使用前可通过 `--help` 核对参数。下面只向临时目录导出预览：
 
 ```sh
 "$(xcode-select -p)/../Applications/Icon Composer.app/Contents/Executables/ictool" \
@@ -70,6 +69,6 @@ bash scripts/render-app-icon.sh
   --design-generation 27
 ```
 
-将 `Default` 换为 `Dark`、`TintedDark`、`ClearLight` 或 `ClearDark` 可检查对应外观，将渲染代数改为 `26` 可检查兼容外观。这些输出是预览，不应作为带圆角和烘焙高光的前景素材重新导入。
+将 `Default` 换为 `Dark`、`TintedDark`、`ClearLight` 或 `ClearDark` 检查对应外观；`--design-generation 26` 用于检查前一代渲染。预览代数不是运行设备版本，也不能证明旧系统设备兼容。带圆角与高光的预览不得重新导入为前景素材。
 
-参考：[Apple App icons](https://developer.apple.com/design/human-interface-guidelines/app-icons)、[Icon Composer](https://developer.apple.com/documentation/xcode/creating-your-app-icon-using-icon-composer)、[WWDC26 Icon Composer](https://developer.apple.com/videos/play/wwdc2026/8012/)。
+图标改动的交互检查只安装签名 Local App，按[本地启动参数](../tests/launch-arguments.md)传入论坛地址。分别查看主屏幕图标和“关于”页：轮廓、细缝和花蕊应完整，浅色/深色外观不混淆桌面与 App 内材质，旋转后应回稳，减少动态效果被尊重。验证特定系统或设备时记录实际环境，不以 `ictool` 预览替代设备结果。
