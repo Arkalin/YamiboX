@@ -142,6 +142,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         var parent: NovelReaderPagedCollectionViewport
         let informationState = ReaderAttachedInformationState()
+        let imageLikeState: NovelReaderImageLikeState
         private let pagingDriver = ReaderPagedPagingDriver(commitsQuickFadeSelectionImmediately: true)
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
         private var imagePipeline: YamiboUIImagePipeline?
@@ -190,6 +191,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         init(parent: NovelReaderPagedCollectionViewport) {
             self.parent = parent
+            imageLikeState = NovelReaderImageLikeState(anchors: parent.likedImageAnchors)
         }
 
         func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -211,7 +213,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             cell.backgroundColor = .clear
             cell.contentConfiguration = UIHostingConfiguration {
                 NovelReaderPagedPageSurfaceContainer(settings: parent.settings) {
-                    pageContent(at: itemIndex)
+                    PageContent(parent: parent, imageLikeState: imageLikeState, itemIndex: itemIndex)
                 }
                 .overlay {
                     ReaderAttachedInformationView(state: informationState, itemIndex: itemIndex)
@@ -224,46 +226,51 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             return cell
         }
 
-        @ViewBuilder
-        private func pageContent(at itemIndex: Int) -> some View {
-            switch parent.itemSource {
-            case .surfaces:
-                let surface = parent.surfaces.indices.contains(itemIndex)
-                    ? parent.surfaces[itemIndex]
-                    : nil
-                NovelReaderViewportSurfaceContent(
-                    surface: surface,
-                    displayReference: surface.flatMap { parent.displayReferenceProvider($0.identity) },
-                    selectionController: parent.selectionController,
-                    likeHighlightController: parent.likeHighlightController,
-                    searchHighlightController: parent.searchHighlightController,
-                    likedImageAnchors: parent.likedImageAnchors,
-                    fallbackDocumentView: surface?.documentView,
-                    fallbackSurfaceIndex: itemIndex,
-                    settings: parent.settings,
-                    refererURL: parent.refererURL,
-                    offlineScope: parent.offlineScope
-                )
-                .padding(.horizontal, parent.settings.horizontalPadding)
-                .padding(.top, parent.topInset)
-                .padding(.bottom, parent.bottomInset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            case .spreads(let spreads):
-                if spreads.indices.contains(itemIndex) {
-                    NovelReaderPresentationSpreadContent(
-                        spread: spreads[itemIndex],
-                        surfaces: parent.surfaces,
-                        settings: parent.settings,
-                        refererURL: parent.refererURL,
-                        offlineScope: parent.offlineScope,
-                        topInset: parent.topInset,
-                        bottomInset: parent.bottomInset,
-                        displayReferenceProvider: parent.displayReferenceProvider,
+        private struct PageContent: View {
+            let parent: NovelReaderPagedCollectionViewport
+            let imageLikeState: NovelReaderImageLikeState
+            let itemIndex: Int
+
+            var body: some View {
+                switch parent.itemSource {
+                case .surfaces:
+                    let surface = parent.surfaces.indices.contains(itemIndex)
+                        ? parent.surfaces[itemIndex]
+                        : nil
+                    NovelReaderViewportSurfaceContent(
+                        surface: surface,
+                        displayReference: surface.flatMap { parent.displayReferenceProvider($0.identity) },
                         selectionController: parent.selectionController,
                         likeHighlightController: parent.likeHighlightController,
                         searchHighlightController: parent.searchHighlightController,
-                        likedImageAnchors: parent.likedImageAnchors
+                        likedImageAnchors: imageLikeState.anchors,
+                        fallbackDocumentView: surface?.documentView,
+                        fallbackSurfaceIndex: itemIndex,
+                        settings: parent.settings,
+                        refererURL: parent.refererURL,
+                        offlineScope: parent.offlineScope
                     )
+                    .padding(.horizontal, parent.settings.horizontalPadding)
+                    .padding(.top, parent.topInset)
+                    .padding(.bottom, parent.bottomInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                case .spreads(let spreads):
+                    if spreads.indices.contains(itemIndex) {
+                        NovelReaderPresentationSpreadContent(
+                            spread: spreads[itemIndex],
+                            surfaces: parent.surfaces,
+                            settings: parent.settings,
+                            refererURL: parent.refererURL,
+                            offlineScope: parent.offlineScope,
+                            topInset: parent.topInset,
+                            bottomInset: parent.bottomInset,
+                            displayReferenceProvider: parent.displayReferenceProvider,
+                            selectionController: parent.selectionController,
+                            likeHighlightController: parent.likeHighlightController,
+                            searchHighlightController: parent.searchHighlightController,
+                            likedImageAnchors: imageLikeState.anchors
+                        )
+                    }
                 }
             }
         }
@@ -374,6 +381,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
             contentIdentity nextContentIdentity: NovelReaderPagedSpreadViewportContentIdentity
         ) {
             informationState.update(parent.attachedInformation)
+            imageLikeState.anchors = parent.likedImageAnchors
             let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
             imagePipeline = parent.imagePipeline

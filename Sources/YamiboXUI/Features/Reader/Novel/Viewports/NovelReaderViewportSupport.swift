@@ -1,8 +1,20 @@
 import SwiftUI
+import Observation
 import YamiboXCore
 
 #if os(iOS)
 import UIKit
+
+/// Keeps retained SwiftUI page hosts current without rebuilding the reading layout.
+@MainActor
+@Observable
+final class NovelReaderImageLikeState {
+    var anchors: Set<NovelImageLikeAnchor>
+
+    init(anchors: Set<NovelImageLikeAnchor>) {
+        self.anchors = anchors
+    }
+}
 
 struct NovelReaderVerticalViewportMetrics: Equatable {
     var contentOffsetY: CGFloat = 0

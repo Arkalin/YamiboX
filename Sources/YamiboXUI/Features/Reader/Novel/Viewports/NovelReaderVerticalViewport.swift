@@ -98,6 +98,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         context.coordinator.callbackScheduler.performViewUpdate {
             context.coordinator.updateLineSpacing(in: collectionView)
             context.coordinator.reloadDataIfNeeded(in: collectionView, contentIdentity: contentIdentity)
+            context.coordinator.updateVisibleImageLikes(in: collectionView)
             context.coordinator.handle(scrollRequest, in: collectionView)
         }
     }
@@ -182,6 +183,12 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             return true
         }
 
+        fileprivate func updateVisibleImageLikes(in collectionView: UICollectionView) {
+            for case let cell as NovelReaderVerticalViewportCell in collectionView.visibleCells {
+                cell.updateImageLikes(parent.likedImageAnchors)
+            }
+        }
+
         func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
             verticalSurfaceCount
         }
@@ -233,6 +240,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             forItemAt indexPath: IndexPath
         ) {
             guard let cell = cell as? NovelReaderVerticalViewportCell else { return }
+            cell.updateImageLikes(parent.likedImageAnchors)
             if let attributes = collectionView.layoutAttributesForItem(at: indexPath) {
                 cell.refreshLayout(for: attributes.size)
             } else {
@@ -901,6 +909,17 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
         }
     }
 
+    func updateImageLikes(_ likedImageAnchors: Set<NovelImageLikeAnchor>) {
+        guard currentLikedImageAnchors != likedImageAnchors, let currentPage else { return }
+        currentLikedImageAnchors = likedImageAnchors
+        // Update badges in place so annotation changes preserve text selection and scroll position.
+        for (block, blockView) in zip(currentPage.blocks, blockViews) {
+            guard case let .image(url) = block,
+                  let imageView = blockView.view as? NovelReaderVerticalViewportImageView else { continue }
+            imageView.updateLikedState(isNovelImageLiked(url, surface: currentSurface, likedAnchors: likedImageAnchors))
+        }
+    }
+
     private func makeTextBlockView(
         contentWidth: CGFloat,
         displayReference: NovelTextViewportDisplayReference?,
@@ -1052,9 +1071,13 @@ final class NovelReaderVerticalViewportImageView: UIView {
 
         let badgeSize: CGFloat = 22
         let badgeInset: CGFloat = 8
+        let badgeBounds = imageView.image.map {
+            ImageContentGeometry.aspectFitFrame(imageSize: $0.size, containerSize: bounds.size)
+                .offsetBy(dx: bounds.minX, dy: bounds.minY)
+        } ?? bounds
         likedBadgeView.frame = CGRect(
-            x: bounds.maxX - badgeSize - badgeInset,
-            y: bounds.minY + badgeInset,
+            x: badgeBounds.maxX - badgeSize - badgeInset,
+            y: badgeBounds.minY + badgeInset,
             width: badgeSize,
             height: badgeSize
         )
@@ -1111,10 +1134,14 @@ final class NovelReaderVerticalViewportImageView: UIView {
     ) {
         self.url = source.url
         self.title = title
-        likedBadgeView.isHidden = !isLiked
+        updateLikedState(isLiked)
         guard sourceIdentity != source else { return }
         sourceIdentity = source
         load(source: source)
+    }
+
+    func updateLikedState(_ isLiked: Bool) {
+        likedBadgeView.isHidden = !isLiked
     }
 
     func updatePipeline(_ pipeline: YamiboUIImagePipeline?) {
@@ -1223,6 +1250,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
         detailsButton.isHidden = true
         failureDetails = nil
         imageView.image = image
+        setNeedsLayout()
     }
 
     @MainActor

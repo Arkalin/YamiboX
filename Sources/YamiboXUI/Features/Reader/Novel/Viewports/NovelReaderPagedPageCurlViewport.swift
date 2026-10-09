@@ -265,6 +265,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
         var parent: NovelReaderPagedPageCurlViewport
         let informationState = ReaderAttachedInformationState()
+        let imageLikeState: NovelReaderImageLikeState
         let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
         private var contentIdentity: NovelReaderPagedSpreadViewportContentIdentity?
         private var imagePipeline: YamiboUIImagePipeline?
@@ -281,6 +282,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
 
         init(parent: NovelReaderPagedPageCurlViewport) {
             self.parent = parent
+            imageLikeState = NovelReaderImageLikeState(anchors: parent.likedImageAnchors)
             renderedColorScheme = parent.colorScheme
             contentIdentity = parent.contentIdentity
             imagePipeline = parent.imagePipeline
@@ -301,6 +303,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 return
             }
             informationState.update(parent.attachedInformation)
+            imageLikeState.anchors = parent.likedImageAnchors
             let nextContentIdentity = parent.contentIdentity
             let didChangeContentIdentity = contentIdentity != nextContentIdentity || imagePipeline !== parent.imagePipeline
             contentIdentity = nextContentIdentity
@@ -574,7 +577,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                     selectionController: parent.selectionController,
                     likeHighlightController: parent.likeHighlightController,
                     searchHighlightController: parent.searchHighlightController,
-                    likedImageAnchors: parent.likedImageAnchors
+                    imageLikeState: imageLikeState
                 )
             )
             controllers.add(controller)
@@ -732,7 +735,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
     let searchHighlightController: NovelReaderSearchHighlightController?
-    let likedImageAnchors: Set<NovelImageLikeAnchor>
+    let imageLikeState: NovelReaderImageLikeState
 
     var body: some View {
         NovelReaderPagedPageSurfaceContainer(settings: settings) {
@@ -745,7 +748,7 @@ private struct NovelReaderPagedPageCurlLeafView: View {
                     selectionController: leaf.isBack ? nil : selectionController,
                     likeHighlightController: leaf.isBack ? nil : likeHighlightController,
                     searchHighlightController: leaf.isBack ? nil : searchHighlightController,
-                    likedImageAnchors: leaf.isBack ? [] : likedImageAnchors,
+                    likedImageAnchors: leaf.isBack ? [] : imageLikeState.anchors,
                     fallbackDocumentView: surface?.documentView,
                     fallbackSurfaceIndex: surfaceIndex,
                     settings: settings,
