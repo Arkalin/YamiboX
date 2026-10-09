@@ -45,19 +45,7 @@ struct BookshelfView: View {
     }
 
     var body: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad, !isPresentedFromMine, showsHistory {
-            BrowsingHistoryView(
-                dependencies: libraryDependencies.history,
-                appModel: appModel,
-                showsPreviousReading: true,
-                onClose: { showsHistory = false }
-            )
-        } else {
-            bookshelfNavigation
-        }
-    }
-
-    private var bookshelfNavigation: some View {
+        // History shares the shelf's stack rather than replacing the tab root.
         ForumDestinationStackView(navigator: navigator, appModel: appModel, ownsNavigation: !isPresentedFromMine) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -103,10 +91,12 @@ struct BookshelfView: View {
                 BookshelfBackgroundLayer(background: background)
                     .ignoresSafeArea()
             }
-            .navigationTitle(AppTab.bookshelf.title)
+            .navigationTitle(isStandalonePadBookshelf ? "" : AppTab.bookshelf.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(isPresentedFromMine ? .visible : .hidden, for: .navigationBar)
-            .navigationDestination(isPresented: UIDevice.current.userInterfaceIdiom == .pad && !isPresentedFromMine ? .constant(false) : $showsHistory) {
+            // iPad shares the navigation bar's safe area with its top tab bar.
+            // Keep that area reserved on return, without duplicating our header.
+            .toolbar(isPresentedFromMine || isStandalonePadBookshelf ? .visible : .hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showsHistory) {
                 BrowsingHistoryView(
                     dependencies: libraryDependencies.history,
                     appModel: appModel,
@@ -114,6 +104,17 @@ struct BookshelfView: View {
                     ownsNavigation: false
                 )
                 .toolbar(.visible, for: .navigationBar)
+                .navigationBarBackButtonHidden(isStandalonePadBookshelf)
+                .toolbar {
+                    if isStandalonePadBookshelf {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(L10n.string("common.close"), systemImage: "xmark") {
+                                showsHistory = false
+                            }
+                            .labelStyle(.iconOnly)
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $showsLogin) {
                 MineLoginSheet(
@@ -162,6 +163,10 @@ struct BookshelfView: View {
                 }
             }
         }
+    }
+
+    private var isStandalonePadBookshelf: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && !isPresentedFromMine
     }
 
     // Readers save frequently; refresh once on return rather than rebuilding
