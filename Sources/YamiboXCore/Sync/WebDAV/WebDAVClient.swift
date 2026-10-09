@@ -59,7 +59,8 @@ struct WebDAVClient: Sendable {
         }
     }
 
-    func uploadPayloadData(_ data: Data, settings: WebDAVSyncSettings, fileName: String, condition: WebDAVWriteCondition) async throws {
+    @discardableResult
+    func uploadPayloadData(_ data: Data, settings: WebDAVSyncSettings, fileName: String, condition: WebDAVWriteCondition) async throws -> WebDAVRemoteFile? {
         let config = try configuration(from: settings, fileName: fileName)
 
         var request = YamiboNetworkConfiguration.makeRequest(url: config.fileURL)
@@ -80,10 +81,20 @@ struct WebDAVClient: Sendable {
         guard statusCode != 412 else { throw WebDAVSyncError.writeConflict }
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
         guard 200 ..< 300 ~= statusCode else { throw WebDAVSyncError.invalidResponse(statusCode) }
+        // A successful PUT's validator identifies the stored request body.
+        // Missing/weak validators (or merely accepted writes) require a full GET.
+        guard [200, 201, 204].contains(statusCode),
+              let etag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag"),
+              Self.isStrongETag(etag) else { return nil }
+        return WebDAVRemoteFile(data: data, etag: etag)
     }
 
     static func isStrongETag(_ etag: String) -> Bool {
-        etag.count >= 2 && etag.hasPrefix("\"") && etag.hasSuffix("\"") && !etag.contains("\r") && !etag.contains("\n")
+        guard etag.count >= 2, etag.hasPrefix("\""), etag.hasSuffix("\"") else { return false }
+        // Reject weak tags, combined header values and invalid opaque-tag bytes.
+        return etag.utf8.dropFirst().dropLast().allSatisfy {
+            $0 == 0x21 || (0x23...0x7E).contains($0) || $0 >= 0x80
+        }
     }
 
     /// A strong validator alone does not prove the server enforces it. Probe

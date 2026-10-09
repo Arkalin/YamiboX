@@ -554,6 +554,10 @@ public actor WebDAVSyncService {
             try Task.checkCancellation()
             await coordinator.cacheRemoteFile(file, name: name, settings: settings)
             return WebDAVRemotePayload(data: file.data, info: info, etag: file.etag)
+        } catch where error is URLError || LoadDiagnosticError.isCancellation(error) {
+            // Transport failure does not invalidate the previously validated body.
+            // Preserve it only for a later conditional GET; this round still fails.
+            throw error
         } catch {
             await coordinator.cacheRemoteFile(nil, name: name, settings: settings)
             if error as? WebDAVSyncError == .notFound { return nil }
@@ -644,9 +648,10 @@ public actor WebDAVSyncService {
                     // Invalidate before sending: a cancelled/failed PUT can still
                     // have reached the server. Conflict retries must fetch afresh.
                     await settingsStore.syncCoordinator.cacheRemoteFile(nil, name: participant.remoteFileName, settings: settings)
-                    try await client.uploadPayloadData(data, settings: settings,
+                    let uploaded = try await client.uploadPayloadData(data, settings: settings,
                         fileName: participant.remoteFileName, condition: condition)
                     try await checkCurrent(run)
+                    await settingsStore.syncCoordinator.cacheRemoteFile(uploaded, name: participant.remoteFileName, settings: settings)
                 } catch WebDAVSyncError.writeConflict {
                     guard attempt < 3 else { throw WebDAVSyncError.writeConflict }
                     try await checkCurrent(run)
