@@ -3,6 +3,7 @@ import Foundation
 /// I/O capabilities consumed by novel detail pages and supplied by app assembly.
 public protocol NovelDetailDocumentLoading: Sendable {
     func loadPage(_ request: NovelPageRequest) async throws -> NovelReaderProjection
+    func loadPageSnapshot(_ request: NovelPageRequest, ignoresCache: Bool) async throws -> NovelReaderPageSnapshot
     func projection(from page: ForumThreadPage, request: NovelPageRequest) async throws -> NovelReaderProjection
     /// Freshness belongs to the author-scoped source fetch, not the later cache lookup.
     func projection(from page: ForumThreadPage, request: NovelPageRequest, sourceLoadedOnline: Bool) async throws -> NovelReaderProjection

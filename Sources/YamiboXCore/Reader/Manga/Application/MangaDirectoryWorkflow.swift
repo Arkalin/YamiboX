@@ -93,31 +93,29 @@ public struct MangaDirectoryWorkflow: Sendable {
     private let store: any MangaDirectoryPersisting
     private let configuration: MangaDirectoryWorkflowConfiguration
     private let searchCooldownState: MangaDirectorySearchCooldownState
+    private let downloadStore: (any MangaDownloadStoring)?
 
     public init(
         repository: any MangaDirectoryRepository,
         store: any MangaDirectoryPersisting,
         configuration: MangaDirectoryWorkflowConfiguration = MangaDirectoryWorkflowConfiguration(),
-        searchCooldownState: MangaDirectorySearchCooldownState = MangaDirectorySearchCooldownState()
+        searchCooldownState: MangaDirectorySearchCooldownState = MangaDirectorySearchCooldownState(),
+        downloadStore: (any MangaDownloadStoring)? = nil
     ) {
         self.repository = repository
         self.store = store
         self.configuration = configuration
         self.searchCooldownState = searchCooldownState
+        self.downloadStore = downloadStore
     }
 
     public func resolveInitialDirectory(
         context: MangaLaunchContext,
         projection: MangaReaderProjection
     ) async throws -> MangaDirectoryResolutionResult {
-        let resolvedID: MangaDirectoryID?
-        if let id = context.directoryID {
-            resolvedID = id
-        } else {
-            resolvedID = try await store.resolveDirectoryID(
-                legacyName: context.directoryName, legacyIdentity: nil, chapterTID: projection.tid
-            )
-        }
+        let resolvedID = try await MangaReaderDirectoryResolver.resolve(
+            context: context, store: store, downloadStore: downloadStore
+        )
         if let resolvedID, let existing = try await store.directory(id: resolvedID) {
             return MangaDirectoryResolutionResult(
                 directory: existing,
@@ -125,14 +123,18 @@ public struct MangaDirectoryWorkflow: Sendable {
             )
         }
 
-        if resolvedID == nil, let existing = try await store.directory(containingTID: projection.tid) {
-            return MangaDirectoryResolutionResult(
-                directory: existing,
-                shouldAutoUpdateAfterInitialLoad: shouldAutoUpdate(existing)
-            )
+        let seed: MangaDirectorySeed
+        do {
+            seed = try await repository.loadDirectorySeed(for: context.chapterTID)
+        } catch {
+            try Task.checkCancellation()
+            guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error),
+                  let directory = try await offlineDirectory(context: context, projection: projection, directoryID: resolvedID) else {
+                throw error
+            }
+            try Task.checkCancellation()
+            return MangaDirectoryResolutionResult(directory: directory, shouldAutoUpdateAfterInitialLoad: false)
         }
-
-        let seed = try await repository.loadDirectorySeed(for: context.chapterTID)
         var directory = MangaDirectoryInitialization.directory(from: seed)
         if let resolvedID {
             directory = directory.reidentified(as: resolvedID)
@@ -148,6 +150,39 @@ public struct MangaDirectoryWorkflow: Sendable {
         return MangaDirectoryResolutionResult(
             directory: directory,
             shouldAutoUpdateAfterInitialLoad: shouldAutoUpdate(directory)
+        )
+    }
+
+    private func offlineDirectory(
+        context: MangaLaunchContext,
+        projection: MangaReaderProjection,
+        directoryID: MangaDirectoryID?
+    ) async throws -> MangaDirectory? {
+        guard let downloadStore, let directoryID,
+              let current = await downloadStore.mangaOfflineMembership(for: MangaReaderProjectionRequest(
+                threadID: projection.tid, view: projection.sourceIdentity.view,
+                authorID: projection.sourceIdentity.authorID, offlineOwnerName: directoryID.rawValue
+              )), current.imageURLs == projection.imageURLs else { return nil }
+        var chapters: [MangaChapter] = []
+        for membership in await downloadStore.mangaDownloadMemberships(forOwnerName: directoryID.rawValue) {
+            try Task.checkCancellation()
+            guard await downloadStore.mangaDownloadState(ownerName: directoryID.rawValue, tid: membership.tid) == .downloaded else { continue }
+            let author = membership.sourcePage.posts.first?.author
+            chapters.append(MangaChapter(
+                tid: membership.tid, rawTitle: membership.chapterTitle,
+                chapterNumber: MangaTitleCleaner.extractChapterNumber(membership.chapterTitle),
+                view: membership.sourcePage.pageNavigation?.currentPage ?? 1,
+                authorUID: author?.uid, authorName: author?.name
+            ))
+        }
+        guard chapters.contains(where: { $0.tid == projection.tid }) else { return nil }
+        let title = try await store.identityName(id: directoryID)
+            ?? context.directoryName ?? context.displayTitle
+        // This is a reading-only reconstruction, not a replacement for a
+        // manually curated or synchronized directory.
+        return MangaDirectory(
+            id: directoryID, cleanBookName: title, strategy: .pendingSearch,
+            sourceKey: title, chapters: MangaDirectoryMerge.mergeAndSort([], chapters)
         )
     }
 

@@ -190,10 +190,10 @@ final class MangaDetailViewModel {
     func refresh() async {
         // A refresh-control task may be cancelled while its view updates.
         // Keep the user-requested reload alive, and await its actual completion.
-        await Task { await reload() }.value
+        await Task { await reload(ignoresCache: true) }.value
     }
 
-    func reload() async {
+    func reload(ignoresCache: Bool = false) async {
         guard !isLoading, !Task.isCancelled else { return }
         isLoading = true
         defer { isLoading = false }
@@ -202,11 +202,6 @@ final class MangaDetailViewModel {
 
         do {
             try Task.checkCancellation()
-            let loader = await dependencies.makeMangaReaderProjectionLoader()
-            let document = try await loader.loadReaderProjection(
-                MangaReaderProjectionRequest(threadID: context.thread.tid)
-            )
-            let workflow = await makeDirectoryWorkflowWithRepository()
             let launchContext = MangaLaunchContext(
                 originalThreadID: context.thread.tid,
                 chapterTID: context.thread.tid,
@@ -218,6 +213,16 @@ final class MangaDetailViewModel {
                 isSmartModeEnabled: true,
                 forumID: context.thread.fid
             )
+            let directoryID = try await MangaReaderDirectoryResolver.resolve(
+                context: launchContext, store: dependencies.mangaDirectoryStore,
+                downloadStore: dependencies.mangaDownloadStore
+            )
+            let loader = await dependencies.makeMangaReaderProjectionLoader()
+            let document = try await loader.loadReaderProjectionSnapshot(
+                MangaReaderProjectionRequest(threadID: context.thread.tid, offlineOwnerName: directoryID?.rawValue),
+                ignoresCache: ignoresCache
+            ).projection
+            let workflow = await makeDirectoryWorkflowWithRepository()
             let resolution = try await workflow.resolveInitialDirectory(
                 context: launchContext,
                 projection: document
@@ -516,7 +521,8 @@ final class MangaDetailViewModel {
             repository: await dependencies.makeMangaDirectoryRepository(),
             store: dependencies.mangaDirectoryStore,
             configuration: workflowConfiguration,
-            searchCooldownState: dependencies.mangaDirectorySearchCooldownState
+            searchCooldownState: dependencies.mangaDirectorySearchCooldownState,
+            downloadStore: dependencies.mangaDownloadStore
         )
     }
 

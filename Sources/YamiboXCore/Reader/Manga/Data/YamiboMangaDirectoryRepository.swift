@@ -16,7 +16,16 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
             let html = try await client.fetchThreadById(tid: tid)
             try MangaReaderDataSupport.validateReadableMangaHTML(html)
 
+            // A page title alone is not a directory seed: Discuz permission
+            // interstitials can also be HTTP 200 and have a title. Validate
+            // the real thread body before persisting any discovered identity.
+            let sourcePage = try LoadDiagnosticError.parsing(html: html, context: "MangaDirectorySeed") {
+                try ForumThreadPageHTMLParser.parsePage(from: html, thread: ThreadIdentity(tid: tid), fallbackTitle: nil)
+            }
             let facts = MangaHTMLParser.parseDirectorySeed(from: html, baseURL: normalizedURL)
+            guard sourcePage.posts.contains(where: { !$0.images.isEmpty }) || !facts.samePageChapters.isEmpty else {
+                throw LoadDiagnosticError.attaching(to: MangaReaderDataSupport.currentMangaChapterParsingFailure(), html: html)
+            }
             let rawTitle = facts.title?.nilIfBlank ?? tid
             let cleanedThreadTitle = MangaTitleCleaner.cleanThreadTitle(rawTitle).nilIfBlank
                 ?? rawTitle.nilIfBlank

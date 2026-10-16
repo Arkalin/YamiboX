@@ -226,40 +226,31 @@ final class NovelDetailViewModel {
             async let cover = loadContentCover()
             async let settings = dependencies.settingsStore.load()
             favoriteActions.errorMessage = nil
-            let threadRepository = await dependencies.makeForumThreadReaderRepository()
+            let projectionRepository = await dependencies.makeNovelReaderRepository()
             try Task.checkCancellation()
-            let initialPages = try await loadInitialPages(repository: threadRepository, preferCache: preferCache)
+            let snapshot = try await projectionRepository.loadPageSnapshot(
+                NovelPageRequest(threadID: context.thread.tid, view: 1, authorID: context.authorID),
+                ignoresCache: !preferCache
+            )
             readingProgress = try await progress
             contentCover = await cover
             novelReaderSettings = await settings.novelReader
-            let headerPage = initialPages.headerPage
-            let contentPage = initialPages.contentPage
-            let authorID = initialPages.authorID
-            let contentContext = initialPages.contentContext
+            let contentPage = snapshot.sourcePage
+            let authorID = try Self.resolveAuthorID(context: context, page: contentPage)
+            let contentContext = authorScopedContext(authorID: authorID)
             try Task.checkCancellation()
-            if refreshesPersistentCache {
+            if refreshesPersistentCache && snapshot.sourceLoadedOnline {
+                let threadRepository = await dependencies.makeForumThreadReaderRepository()
                 try await threadRepository.clearCachedThreadPages(thread: context.thread)
-                try await threadRepository.storeNovelThreadPage(headerPage, context: context, pageNumber: 1)
-                if contentContext != context {
-                    try await threadRepository.storeNovelThreadPage(contentPage, context: contentContext, pageNumber: 1)
-                }
+                try await threadRepository.storeNovelThreadPage(contentPage, context: contentContext, pageNumber: 1)
             }
             try Task.checkCancellation()
-            let projectionRepository = await dependencies.makeNovelReaderRepository()
-            let projection = try? await projectionRepository.projection(
-                from: contentPage,
-                request: NovelPageRequest(threadID: context.thread.tid, view: 1, authorID: authorID),
-                sourceLoadedOnline: initialPages.contentLoadedOnline
-            )
-            let summaries = if let projection {
-                await Self.summariesOffMainActor(from: contentPage, document: projection, settings: novelReaderSettings)
-            } else {
-                [NovelChapterSummary]()
-            }
+            let projection = snapshot.projection
+            let summaries = await Self.summariesOffMainActor(from: contentPage, document: projection, settings: novelReaderSettings)
             try Task.checkCancellation()
             guard contentGeneration == generation else { return }
             resolvedAuthorID = authorID
-            threadPage = headerPage
+            threadPage = contentPage
             loadedThreadPages = [1: contentPage]
             pageChapterSummaries = [1: summaries]
             document = projection
@@ -271,7 +262,7 @@ final class NovelDetailViewModel {
             rebuildChapterDirectory()
             coverRefreshTask = Task { [weak self] in
                 guard let self, self.contentGeneration == generation, !Task.isCancelled else { return }
-                await self.refreshContentCover(from: headerPage)
+                await self.refreshContentCover(from: contentPage)
             }
         } catch {
             let networkError = error as NSError
@@ -304,37 +295,6 @@ final class NovelDetailViewModel {
             }
         }
     }
-
-    private func loadInitialPages(
-        repository: any NovelDetailThreadPageLoading,
-        preferCache: Bool
-    ) async throws -> (headerPage: ForumThreadPage, contentPage: ForumThreadPage, authorID: String, contentContext: NovelDetailLaunchContext, contentLoadedOnline: Bool) {
-        if let authorID = context.authorID?.nilIfBlank {
-            let scopedContext = authorScopedContext(authorID: authorID)
-            let page = try await loadNovelThreadPage(context: scopedContext, page: 1, preferCache: preferCache, repository: repository)
-            return (page.page, page.page, authorID, scopedContext, page.loadedOnline)
-        }
-
-        let headerPage = try await loadNovelThreadPage(context: context, page: 1, preferCache: preferCache, repository: repository)
-        let authorID = try Self.resolveAuthorID(context: context, page: headerPage.page)
-        let contentContext = authorScopedContext(authorID: authorID)
-        let contentPage = try await loadNovelThreadPage(context: contentContext, page: 1, preferCache: preferCache, repository: repository)
-        return (headerPage.page, contentPage.page, authorID, contentContext, contentPage.loadedOnline)
-    }
-
-    private func loadNovelThreadPage(
-        context: NovelDetailLaunchContext,
-        page: Int,
-        preferCache: Bool,
-        repository: any NovelDetailThreadPageLoading
-    ) async throws -> (page: ForumThreadPage, loadedOnline: Bool) {
-        if preferCache,
-           let cached = await repository.cachedNovelThreadPage(context: context, page: page) {
-            return (cached, false)
-        }
-        return (try await repository.fetchNovelThreadPage(context: context, page: page), true)
-    }
-
 
     func launchContext(for chapter: NovelChapterSummary?) -> NovelLaunchContext {
         NovelLaunchContext(
@@ -399,27 +359,17 @@ final class NovelDetailViewModel {
         }
 
         do {
-            let repository = await dependencies.makeForumThreadReaderRepository()
             let authorID = try Self.resolveAuthorID(context: context, page: threadPage)
-            resolvedAuthorID = authorID
-            let contentContext = authorScopedContext(authorID: authorID)
-            let loaded = if let cached = await repository.cachedNovelThreadPage(context: contentContext, page: normalizedPage) {
-                cached
-            } else {
-                try await repository.fetchNovelThreadPage(context: contentContext, page: normalizedPage)
-            }
             let projectionRepository = await dependencies.makeNovelReaderRepository()
-            let projection = try? await projectionRepository.projection(
-                from: loaded,
-                request: NovelPageRequest(threadID: context.thread.tid, view: normalizedPage, authorID: authorID)
+            let snapshot = try await projectionRepository.loadPageSnapshot(
+                NovelPageRequest(threadID: context.thread.tid, view: normalizedPage, authorID: authorID),
+                ignoresCache: false
             )
-            let summaries = if let projection {
-                await Self.summariesOffMainActor(from: loaded, document: projection, settings: novelReaderSettings)
-            } else {
-                [NovelChapterSummary]()
-            }
+            let loaded = snapshot.sourcePage
+            let summaries = await Self.summariesOffMainActor(from: loaded, document: snapshot.projection, settings: novelReaderSettings)
             try Task.checkCancellation()
             guard contentGeneration == generation else { return }
+            resolvedAuthorID = authorID
             loadedThreadPages[normalizedPage] = loaded
             pageChapterSummaries[normalizedPage] = summaries
             totalChapterPages = max(totalChapterPages, Self.totalPages(from: loaded, fallback: normalizedPage))

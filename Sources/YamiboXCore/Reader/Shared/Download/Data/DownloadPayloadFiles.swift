@@ -334,25 +334,24 @@ extension DownloadStore {
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedThreadID.isEmpty else { return nil }
         let normalizedAuthorID = authorID?.nilIfBlank
-        let entryKey = NovelDownloadEntry.entryKey(
-            threadID: normalizedThreadID,
-            view: view,
-            authorID: normalizedAuthorID
-        )
         let row: NovelOfflineSourcePageSnapshotRow?
         do {
             row = try await database.read { db -> NovelOfflineSourcePageSnapshotRow? in
-                guard let row = try Row.fetchOne(
+                // A route without author metadata must still work after its
+                // discovery page disappears. Ambiguous author views stay a miss.
+                let rows = try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT owner_title, source_page_file_name, updated_at
+                    SELECT owner_title, source_page_file_name, updated_at, author_id
                     FROM download_novel_entries
-                    WHERE entry_key = ? AND source_page_file_name IS NOT NULL
-                    ORDER BY updated_at DESC
-                    LIMIT 1
+                    WHERE thread_id = ? AND view = ?
+                      AND (? IS NULL OR author_id = ?)
+                      AND source_page_file_name IS NOT NULL AND source_page_schema_version = ?
+                    LIMIT 2
                     """,
-                    arguments: [entryKey]
-                ),
+                    arguments: [normalizedThreadID, max(1, view), normalizedAuthorID, normalizedAuthorID, NovelDownloadEntry.sourcePageSchemaVersion]
+                )
+                guard rows.count == 1, let row = rows.first,
                     let fileName = row["source_page_file_name"] as String? else {
                     return nil
                 }
@@ -360,11 +359,12 @@ extension DownloadStore {
                     ownerTitle: (row["owner_title"] as String?)
                         ?? Self.novelDisplayOwnerTitle(ownerTitle: "", threadID: normalizedThreadID),
                     fileName: fileName,
-                    updatedAt: novelPayloadOptionalDate(from: row["updated_at"] as Double?)
+                    updatedAt: novelPayloadOptionalDate(from: row["updated_at"] as Double?),
+                    authorID: (row["author_id"] as String?)?.nilIfBlank
                 )
             }
         } catch {
-            YamiboLog.download.error("Failed to fetch novel offline source page snapshot for entry \(entryKey): \(error)")
+            YamiboLog.download.error("Failed to fetch novel offline source page snapshot for thread \(normalizedThreadID), view \(view): \(error)")
             return nil
         }
         guard let row,
@@ -373,7 +373,12 @@ extension DownloadStore {
                 directory: novelSourcePagesDirectory,
                 fileManager: fileManager,
                 as: ForumThreadPage.self
-              ) else {
+              ),
+              sourcePage.thread.tid == normalizedThreadID,
+              (sourcePage.pageNavigation?.currentPage ?? max(1, view)) == max(1, view),
+              let sourceAuthorID = sourcePage.posts.first?.author.uid?.nilIfBlank,
+              row.authorID == nil || row.authorID == sourceAuthorID,
+              normalizedAuthorID == nil || normalizedAuthorID == sourceAuthorID else {
             return nil
         }
         return NovelOfflineSourcePageSnapshot(
@@ -573,6 +578,7 @@ private struct NovelOfflineSourcePageSnapshotRow: Sendable {
     var ownerTitle: String
     var fileName: String
     var updatedAt: Date?
+    var authorID: String?
 }
 
 private extension String {

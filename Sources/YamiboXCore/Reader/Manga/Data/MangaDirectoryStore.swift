@@ -163,6 +163,15 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         }
     }
 
+    public func directoryIDs(containingTID tid: String) async throws -> Set<MangaDirectoryID> {
+        guard let tid = tid.nilIfBlank else { return [] }
+        return try await database.read { db in
+            let snapshot = try MangaDirectoryIdentityDatabase.snapshot(in: db)
+            let ids = try String.fetchAll(db, sql: "SELECT DISTINCT directory_id FROM manga_directory_chapters WHERE tid = ?", arguments: [tid])
+            return Set(ids.map { MangaDirectoryID(rawValue: snapshot.canonicalID($0)) })
+        }
+    }
+
     public func identitySnapshot() async throws -> MangaDirectoryIdentitySnapshot {
         try await database.read { db in try MangaDirectoryIdentityDatabase.snapshot(in: db) }
     }

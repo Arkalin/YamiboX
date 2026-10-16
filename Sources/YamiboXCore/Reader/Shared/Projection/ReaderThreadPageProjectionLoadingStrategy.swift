@@ -41,6 +41,10 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
     let adapter: Adapter
     var overlapsSourceCacheWrite = false
 
+    func validateSession() async throws {
+        try await adapter.client.validateSession?()
+    }
+
     func identity(for request: Request, ignoresCache: Bool) async throws -> Identity {
         if let authorID = Self.normalizedAuthorID(request.authorID) {
             return adapter.makeIdentity(request: request, authorID: authorID)
@@ -50,7 +54,8 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         let discoveryPage: ForumThreadPage
         var sourceHTML: String?
         if !ignoresCache,
-           let cached = await adapter.forumCacheStore.loadThreadPage(thread: thread, page: 1, authorID: nil) {
+           let cached = await adapter.forumCacheStore.loadThreadPage(thread: thread, page: 1, authorID: nil),
+           sourcePageMatches(cached, threadID: thread.tid, view: 1) {
             discoveryPage = cached
         } else {
             let html = try await fetchThreadHTML(threadID: thread.tid, view: 1, authorID: nil)
@@ -101,7 +106,7 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
                thread: thread,
                page: identity.view,
                authorID: identity.authorID
-           ) {
+           ), sourcePageMatches(cached, threadID: identity.threadID, view: identity.view) {
             return ReaderProjectionSourcePageLoad(sourcePage: cached, loadedOnline: false)
         }
 
@@ -112,7 +117,13 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         )
         try Task.checkCancellation()
         let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
-            try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
+            let page = try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
+            // Discuz clamps an out-of-range request to its last page. Do not
+            // cache or refresh a saved page using a different page's body.
+            guard sourcePageMatches(page, threadID: identity.threadID, view: identity.view) else {
+                throw YamiboError.parsingFailed(context: L10n.string("context.reader_source_page_mismatch"))
+            }
+            return page
         }
         try Task.checkCancellation()
         let cacheStore = adapter.forumCacheStore
@@ -174,6 +185,10 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         try await YamiboNetworkErrorPolicy.mappingErrors {
             try await adapter.client.fetchThreadById(tid: threadID, authorID: authorID, page: view)
         }
+    }
+
+    private func sourcePageMatches(_ page: ForumThreadPage, threadID: String, view: Int) -> Bool {
+        page.thread.tid == threadID && (page.pageNavigation?.currentPage ?? 1) == max(1, view)
     }
 
     static func normalizedAuthorID(_ authorID: String?) -> String? {

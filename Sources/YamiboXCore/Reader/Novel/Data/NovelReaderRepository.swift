@@ -226,21 +226,30 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
     }
 
     private func loadPage(_ request: NovelPageRequest, ignoresCache: Bool) async throws -> NovelReaderProjectionLoad {
+        let snapshot = try await loadPageSnapshot(request, ignoresCache: ignoresCache)
+        return NovelReaderProjectionLoad(projection: snapshot.projection, source: snapshot.source)
+    }
+
+    public func loadPageSnapshot(_ request: NovelPageRequest, ignoresCache: Bool) async throws -> NovelReaderPageSnapshot {
         let loaded = ignoresCache
             ? try await projectionLoader.loadProjectionIgnoringCache(request)
             : try await projectionLoader.loadProjection(request)
-        if case let .online(sourceLoadedOnline) = loaded.source {
+        switch loaded.source {
+        case let .online(sourceLoadedOnline):
             try Task.checkCancellation()
             if sourceLoadedOnline { scheduleOfflineRefresh(loaded) }
-            return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
-        }
-        if case let .offlineFallback(updatedAt, failure) = loaded.source {
-            return NovelReaderProjectionLoad(
+            return NovelReaderPageSnapshot(
+                projection: loaded.projection, sourcePage: loaded.sourcePage,
+                source: .online, sourceLoadedOnline: sourceLoadedOnline
+            )
+        case let .offlineFallback(updatedAt, failure):
+            return NovelReaderPageSnapshot(
                 projection: loaded.projection,
-                source: .offlineFallback(updatedAt: updatedAt, failure: failure)
+                sourcePage: loaded.sourcePage,
+                source: .offlineFallback(updatedAt: updatedAt, failure: failure),
+                sourceLoadedOnline: false
             )
         }
-        return NovelReaderProjectionLoad(projection: loaded.projection, source: .online)
     }
 
     private func scheduleOfflineRefresh(_ onlinePage: NovelReaderProjectionLoadedPage) {

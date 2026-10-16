@@ -42,6 +42,7 @@ public struct MangaReaderProjectionSnapshot: Sendable {
 
 public protocol MangaReaderProjectionSnapshotLoading: MangaReaderProjectionLoading {
     func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest) async throws -> MangaReaderProjectionSnapshot
+    func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest, ignoresCache: Bool) async throws -> MangaReaderProjectionSnapshot
 }
 
 protocol MangaReaderProjectionPersisting: Sendable {
@@ -101,6 +102,7 @@ public protocol MangaDirectoryPersisting: MangaDirectoryRenaming, MangaDirectory
     /// Atomically adopts an existing discovery identity or persists a new seed.
     func resolveOrCreateDirectory(_ seed: MangaDirectory) async throws -> MangaDirectory
     func resolveDirectoryID(legacyName: String?, legacyIdentity: String?, chapterTID: String?) async throws -> MangaDirectoryID?
+    func directoryIDs(containingTID tid: String) async throws -> Set<MangaDirectoryID>
     func registerIdentity(id: MangaDirectoryID, name: String) async throws
     func identityName(id: MangaDirectoryID) async throws -> String?
     func saveDirectory(_ directory: MangaDirectory) async throws

@@ -56,13 +56,12 @@ enum ReaderProjectionFallbackPolicy {
             return false
         }
         switch yamiboError {
-        case .offline, .underlying, .invalidResponse, .unreadableBody, .emptyHTML:
+        // Discuz also returns deleted/restricted posts as successful HTTP
+        // responses. Their page/readability errors must not hide a download.
+        case .offline, .underlying, .invalidResponse, .unreadableBody, .emptyHTML,
+             .parsingFailed, .floodControl, .securityVerificationRequired, .notAuthenticated:
             return true
-        case .parsingFailed,
-             .invalidImageData,
-             .floodControl,
-             .securityVerificationRequired,
-             .notAuthenticated,
+        case .invalidImageData,
              .accountUIDUnavailable,
              .loginFormUnavailable,
              .loginFailed,
@@ -80,6 +79,7 @@ protocol ReaderProjectionLoadingStrategy: Sendable {
     associatedtype Projection: Sendable
     associatedtype SourcePage: Sendable
 
+    func validateSession() async throws
     func identity(for request: Request, ignoresCache: Bool) async throws -> Identity
     func onlineSourcePage(
         for request: Request,
@@ -163,10 +163,16 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             )
         } catch {
             try Task.checkCancellation()
-            guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error),
-                  let fallback = await loadOfflineFallback(request, failure: LoadFailureDetails(error: error)) else {
+            guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error) else {
                 throw error
             }
+            // A server-side login failure can use saved content; a revoked
+            // client/session generation cannot publish an old operation.
+            try await strategy.validateSession()
+            guard let fallback = await loadOfflineFallback(request, failure: LoadFailureDetails(error: error)) else {
+                throw error
+            }
+            try await strategy.validateSession()
             try Task.checkCancellation()
             return fallback
         }

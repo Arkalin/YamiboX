@@ -35,7 +35,11 @@ actor MangaReaderProjectionLoader: MangaReaderProjectionSnapshotLoading {
     }
 
     func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest) async throws -> MangaReaderProjectionSnapshot {
-        let loaded = try await loader.load(request, ignoresCache: false)
+        try await loadReaderProjectionSnapshot(request, ignoresCache: false)
+    }
+
+    func loadReaderProjectionSnapshot(_ request: MangaReaderProjectionRequest, ignoresCache: Bool) async throws -> MangaReaderProjectionSnapshot {
+        let loaded = try await loader.load(request, ignoresCache: ignoresCache)
         return MangaReaderProjectionSnapshot(projection: loaded.projection, sourcePage: loaded.sourcePage)
     }
 
@@ -74,11 +78,7 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
         for request: MangaReaderProjectionRequest
     ) async -> ReaderProjectionOfflineSourcePageLoad<MangaReaderProjectionSourceIdentity, ForumThreadPage>? {
         guard let downloadStore,
-              let ownerName = request.offlineOwnerName?.nilIfBlank,
-              let membership = await downloadStore.mangaDownloadMembership(ownerName: ownerName, tid: request.threadID),
-              membership.tid == request.threadID,
-              membership.sourcePage.thread.tid == request.threadID,
-              sourcePageMatchesRequestedView(membership.sourcePage, view: request.view) else {
+              let membership = await downloadStore.mangaOfflineMembership(for: request) else {
             return nil
         }
 
@@ -133,10 +133,5 @@ private struct MangaProjectionAdapter: ReaderThreadPageProjectionAdapter {
 
     func saveProjection(_ projection: MangaReaderProjection) async throws {
         try await projectionStore.save(projection)
-    }
-
-    private func sourcePageMatchesRequestedView(_ sourcePage: ForumThreadPage, view: Int) -> Bool {
-        guard let currentPage = sourcePage.pageNavigation?.currentPage else { return true }
-        return currentPage == max(1, view)
     }
 }

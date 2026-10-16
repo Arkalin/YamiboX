@@ -456,10 +456,22 @@ final class ForumDestinationNavigator {
                 contentOpenTask = nil
             }
             do {
-                let repository = await dependencies.forum.makeForumThreadReaderRepository()
-                let page = try await repository.fetchThreadPage(context: ThreadNovelLaunchContext(
-                    thread: ThreadIdentity(tid: tid), title: L10n.string("forum.default_title")
-                ), page: 1, authorID: nil, reverse: false)
+                let page: ForumThreadPage
+                switch destination {
+                case .normalThread:
+                    let repository = await dependencies.forum.makeForumThreadReaderRepository()
+                    page = try await repository.fetchThreadPage(context: ThreadNovelLaunchContext(
+                        thread: ThreadIdentity(tid: tid), title: L10n.string("forum.default_title")
+                    ), page: 1, authorID: nil, reverse: false)
+                case .novelDetail, .novelReader:
+                    let repository = await dependencies.destinations.novelDetail.makeNovelReaderRepository()
+                    page = try await repository.loadPageSnapshot(
+                        NovelPageRequest(threadID: tid, view: 1), ignoresCache: false
+                    ).sourcePage
+                case .mangaDetail, .mangaReader:
+                    let loader = await dependencies.destinations.mangaDetail.makeMangaReaderProjectionLoader()
+                    page = try await loader.loadReaderProjectionSnapshot(MangaReaderProjectionRequest(threadID: tid)).sourcePage
+                }
                 try Task.checkCancellation()
                 guard revision == pathRevision, generation == actions.accountGeneration() else { return }
                 let thread = ThreadIdentity(tid: tid, fid: page.forumID ?? page.thread.fid)

@@ -84,6 +84,32 @@ actor DownloadStore {
         }
     }
 
+    func mangaDownloadMemberships(threadID: String) async -> [MangaDownloadMembership] {
+        await ensureQueueRecoveredBestEffort()
+        guard let tid = threadID.nilIfBlank else { return [] }
+        do {
+            return try await database.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT owner_name, tid, chapter_title, source_page_file_name, source_page_schema_version, source_page_fingerprint, byte_count, created_at
+                    FROM download_manga_entries WHERE tid = ?
+                    """,
+                    arguments: [tid]
+                ).compactMap {
+                    try Self.membership(
+                        from: $0, fileManager: fileManager,
+                        mangaSourcePagesDirectory: mangaSourcePagesDirectory,
+                        sourcePageCache: sourcePageCache, in: db
+                    )
+                }
+            }
+        } catch {
+            YamiboLog.download.error("Failed to read manga offline memberships for tid \(tid): \(error)")
+            return []
+        }
+    }
+
     func mangaDownloadMemberships(forOwnerName ownerName: String) async -> [MangaDownloadMembership] {
         await ensureQueueRecoveredBestEffort()
         guard let ownerName = ownerName.nilIfBlank else { return [] }

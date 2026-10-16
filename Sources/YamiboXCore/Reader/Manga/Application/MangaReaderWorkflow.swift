@@ -99,7 +99,8 @@ public final class MangaReaderWorkflow {
             repository: directoryRepository,
             store: directoryStore,
             configuration: directoryWorkflowConfiguration,
-            searchCooldownState: directorySearchCooldownState
+            searchCooldownState: directorySearchCooldownState,
+            downloadStore: downloadStore
         )
         self.settings = settings
         self.presentation = MangaReaderPresentation(
@@ -126,14 +127,9 @@ public final class MangaReaderWorkflow {
         )
 
         do {
-            if let id = context.directoryID {
-                resolvedDirectoryID = try await directoryStore.directory(id: id)?.id ?? id
-            } else {
-                resolvedDirectoryID = try await directoryStore.resolveDirectoryID(
-                    legacyName: context.directoryName ?? context.displayTitle,
-                    legacyIdentity: nil, chapterTID: context.chapterTID
-                )
-            }
+            resolvedDirectoryID = try await MangaReaderDirectoryResolver.resolve(
+                context: context, store: directoryStore, downloadStore: downloadStore
+            )
             let document: MangaReaderProjection
             if let initialProjection,
                initialProjection.tid == context.chapterTID,
@@ -149,21 +145,7 @@ public final class MangaReaderWorkflow {
             }
             let resolution: MangaDirectoryResolutionResult
             if context.isSmartModeEnabled {
-                do {
-                    resolution = try await directoryWorkflow.resolveInitialDirectory(
-                        context: context,
-                        projection: document
-                    )
-                } catch {
-                    guard let offlineDirectory = await offlineReadableCurrentChapterDirectory(for: document) else {
-                        throw error
-                    }
-                    YamiboLog.reader.warning("Initial directory resolution failed, falling back to offline-readable directory: \(error)")
-                    resolution = MangaDirectoryResolutionResult(
-                        directory: offlineDirectory,
-                        shouldAutoUpdateAfterInitialLoad: false
-                    )
-                }
+                resolution = try await directoryWorkflow.resolveInitialDirectory(context: context, projection: document)
             } else {
                 // Smart Comic Mode is off for this thread's board: per
                 // decision #12, skip `resolveInitialDirectory` entirely (no
@@ -236,44 +218,6 @@ public final class MangaReaderWorkflow {
     ) -> MangaDirectory {
         let title = context.displayTitle.nilIfBlank ?? document.chapterTitle
         return MangaDirectory(
-            cleanBookName: title,
-            strategy: .pendingSearch,
-            sourceKey: title,
-            chapters: [
-                MangaChapter(
-                    tid: document.tid,
-                    rawTitle: document.chapterTitle,
-                    chapterNumber: MangaTitleCleaner.extractChapterNumber(document.chapterTitle),
-                    view: document.sourceIdentity.view,
-                    authorUID: document.sourceIdentity.authorID,
-                    authorName: document.ownerAuthorName
-                )
-            ]
-        )
-    }
-
-    private nonisolated(nonsending) func offlineReadableCurrentChapterDirectory(for document: MangaReaderProjection) async -> MangaDirectory? {
-        guard let downloadStore,
-              let directoryID = resolvedDirectoryID,
-              let membership = await downloadStore.mangaDownloadMembership(ownerName: directoryID.rawValue, tid: document.tid),
-              membership.imageURLs.map(\.absoluteString) == document.imageURLs.map(\.absoluteString),
-              !membership.imageURLs.isEmpty
-        else {
-            return nil
-        }
-
-        for imageURL in membership.imageURLs {
-            // Existence check only — reading the actual bytes of every page
-            // just to decide offline readability would load the whole chapter
-            // into memory on each reader launch.
-            guard await downloadStore.hasOfflineImage(for: imageURL) else {
-                return nil
-            }
-        }
-
-        let title = context.directoryName ?? context.displayTitle
-        return MangaDirectory(
-            id: directoryID,
             cleanBookName: title,
             strategy: .pendingSearch,
             sourceKey: title,

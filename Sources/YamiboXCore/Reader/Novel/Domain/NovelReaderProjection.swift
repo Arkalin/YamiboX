@@ -25,6 +25,22 @@ public struct NovelReaderProjectionLoad: Hashable, Sendable {
     }
 }
 
+/// Transient detail/read result. Offline source pages must not be published
+/// as fresh online responses or used to advance download timestamps.
+public struct NovelReaderPageSnapshot: Sendable {
+    public var projection: NovelReaderProjection
+    public var sourcePage: ForumThreadPage
+    public var source: NovelReaderProjectionLoadSource
+    public var sourceLoadedOnline: Bool
+
+    public init(projection: NovelReaderProjection, sourcePage: ForumThreadPage, source: NovelReaderProjectionLoadSource, sourceLoadedOnline: Bool) {
+        self.projection = projection
+        self.sourcePage = sourcePage
+        self.source = source
+        self.sourceLoadedOnline = sourceLoadedOnline
+    }
+}
+
 public struct NovelReaderProjection: Codable, Hashable, Sendable {
     public static let schemaVersion = 8
 

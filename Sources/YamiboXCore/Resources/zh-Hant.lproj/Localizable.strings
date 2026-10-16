@@ -172,6 +172,8 @@
 "context.forum_home" = "論壇首頁";
 "context.forum_search" = "論壇搜尋";
 "context.thread_page" = "帖子頁面";
+"context.reader_source_page_mismatch" = "返回的帖子頁與請求頁不一致";
+"manga.open.ambiguous_ownership" = "此章節屬於多個漫畫目錄，無法確定作品歸屬。請從明確的作品目錄開啟。";
 "context.thread_title" = "帖子標題";
 "error.empty_html" = "返回內容為空";
 "error.favorite_delete_failed" = "刪除收藏失敗，請稍後重試";
