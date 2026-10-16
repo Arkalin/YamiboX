@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol ThreadCoverPageResolving: Sendable {
+public protocol ThreadCoverPageResolving: ThreadContentUpdatePageLoading {
     func cachedThreadPage(
         thread: ThreadIdentity,
         title: String,

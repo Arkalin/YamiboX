@@ -7,6 +7,7 @@ import YamiboXCore
 final class MangaDetailViewModel {
     var directory: MangaDirectory?
     var currentDocument: MangaReaderProjection?
+    private var currentPublicationDate: Date?
     var readingProgress: ReadingProgressRecord?
     var contentCover: ContentCover?
     var isLoading = false
@@ -110,7 +111,8 @@ final class MangaDetailViewModel {
                 title: self.favoriteTitle,
                 forumID: self.context.thread.fid,
                 forumName: boardReaderSettings.entry(forumID: self.context.thread.fid)?.boardName,
-                contentUpdatedAt: self.directory?.lastUpdatedAt
+                contentUpdatedAt: self.currentPublicationDate
+                    ?? self.directory?.chapters.first(where: { $0.tid == self.context.thread.tid })?.publishTime
             )
         }
     }
@@ -218,10 +220,11 @@ final class MangaDetailViewModel {
                 downloadStore: dependencies.mangaDownloadStore
             )
             let loader = await dependencies.makeMangaReaderProjectionLoader()
-            let document = try await loader.loadReaderProjectionSnapshot(
+            let snapshot = try await loader.loadReaderProjectionSnapshot(
                 MangaReaderProjectionRequest(threadID: context.thread.tid, offlineOwnerName: directoryID?.rawValue),
                 ignoresCache: ignoresCache
-            ).projection
+            )
+            let document = snapshot.projection
             let workflow = await makeDirectoryWorkflowWithRepository()
             let resolution = try await workflow.resolveInitialDirectory(
                 context: launchContext,
@@ -235,7 +238,13 @@ final class MangaDetailViewModel {
             try Task.checkCancellation()
 
             currentDocument = document
+            currentPublicationDate = snapshot.sourcePage.posts.first.flatMap(FavoriteContentUpdateDateResolver.publicationDate)
             directory = resolvedDirectory
+            if let currentPublicationDate {
+                try await dependencies.localFavoriteLibraryStore.recordContentUpdate(
+                    for: .mangaThread(threadID: context.thread.tid), contentUpdatedAt: currentPublicationDate
+                )
+            }
             favoriteMembershipTask?.cancel()
             favoriteMembershipTask = Task { [weak self] in
                 await self?.refreshFavoriteMembership()

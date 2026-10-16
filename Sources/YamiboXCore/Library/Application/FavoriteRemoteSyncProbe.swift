@@ -88,14 +88,26 @@ struct FavoriteRemoteSyncProbe: Sendable {
 
         try Task.checkCancellation()
         let page: ForumThreadPage
-        if let cached = await repository.cachedThreadPage(
-            thread: payload.thread, title: payload.title, authorID: nil, page: 1
-        ) {
-            page = cached
-        } else {
-            page = try await repository.fetchThreadPage(
+        let contentUpdatedAt: Date?
+        if target.kind == .mangaThread {
+            // Sync already needs this chapter page for classification/cover.
+            // Reuse it; manga publication dates do not justify another fetch.
+            if let cached = await repository.cachedThreadPage(
                 thread: payload.thread, title: payload.title, authorID: nil, page: 1
+            ) {
+                page = cached
+            } else {
+                page = try await repository.fetchThreadPage(
+                    thread: payload.thread, title: payload.title, authorID: nil, page: 1
+                )
+            }
+            contentUpdatedAt = page.posts.first.flatMap(FavoriteContentUpdateDateResolver.publicationDate)
+        } else {
+            let content = try await FavoriteContentUpdateResolver.resolve(
+                thread: payload.thread, title: payload.title, kind: target.kind, repository: repository
             )
+            page = content.firstPage
+            contentUpdatedAt = content.contentUpdatedAt
         }
         try Task.checkCancellation()
 
@@ -121,9 +133,7 @@ struct FavoriteRemoteSyncProbe: Sendable {
             title: payload.title,
             sourceGroup: sourceGroup,
             coverURL: coverURL?.url,
-            contentUpdatedAt: page.posts.first.flatMap {
-                FavoriteContentUpdateDateResolver.date(lastEditedText: $0.lastEditedText, postedAtText: $0.postedAtText)
-            },
+            contentUpdatedAt: contentUpdatedAt,
             authorID: authorID
         )
     }

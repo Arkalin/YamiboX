@@ -1,13 +1,19 @@
 import Foundation
 
 /// Read-only network capability, also used by favorite update checks.
-public protocol ForumThreadPageFetching: Sendable {
+public protocol ForumThreadPageFetching: ThreadContentUpdatePageLoading {
     func fetchThreadPage(
         context: ThreadNovelLaunchContext,
         page: Int,
         authorID: String?,
         reverse: Bool
     ) async throws -> ForumThreadPage
+}
+
+/// Fresh canonical pages for content timestamps. Separate from reader caches:
+/// desktop date tooltips preserve seconds that relative mobile labels omit.
+public protocol ThreadContentUpdatePageLoading: Sendable {
+    func fetchContentUpdatePage(thread: ThreadIdentity, title: String, authorID: String?, reverse: Bool) async throws -> ForumThreadPage
 }
 
 /// Feature-facing capabilities, shared by app assembly and presentation.

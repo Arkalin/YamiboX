@@ -44,6 +44,9 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
     public var author: BlogReaderUser
     public var postedAtText: String?
     public var lastEditedText: String?
+    /// Resolved at HTML capture time, never when decoding a cached page.
+    public var postedAt: Date?
+    public var lastEditedAt: Date?
     public var contentHTML: String
     public var contentText: String
     public var contentBlocks: [ForumThreadContentBlock]
@@ -63,6 +66,7 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
         case author
         case postedAtText
         case lastEditedText
+        case postedAt, lastEditedAt
         case contentHTML
         case contentText
         case contentBlocks
@@ -81,6 +85,8 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
         author: BlogReaderUser,
         postedAtText: String? = nil,
         lastEditedText: String? = nil,
+        postedAt: Date? = nil,
+        lastEditedAt: Date? = nil,
         contentHTML: String,
         contentText: String,
         contentBlocks: [ForumThreadContentBlock] = [],
@@ -97,6 +103,8 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
         self.author = author
         self.postedAtText = postedAtText?.nilIfBlank
         self.lastEditedText = lastEditedText?.nilIfBlank
+        self.postedAt = postedAt
+        self.lastEditedAt = lastEditedAt
         self.contentHTML = contentHTML
         self.contentText = contentText.trimmingCharacters(in: .whitespacesAndNewlines)
         self.contentBlocks = contentBlocks
@@ -117,6 +125,8 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
             author: try container.decode(BlogReaderUser.self, forKey: .author),
             postedAtText: try container.decodeIfPresent(String.self, forKey: .postedAtText),
             lastEditedText: try container.decodeIfPresent(String.self, forKey: .lastEditedText),
+            postedAt: try container.decodeIfPresent(Date.self, forKey: .postedAt),
+            lastEditedAt: try container.decodeIfPresent(Date.self, forKey: .lastEditedAt),
             contentHTML: try container.decode(String.self, forKey: .contentHTML),
             contentText: try container.decode(String.self, forKey: .contentText),
             contentBlocks: try container.decodeIfPresent([ForumThreadContentBlock].self, forKey: .contentBlocks) ?? [],

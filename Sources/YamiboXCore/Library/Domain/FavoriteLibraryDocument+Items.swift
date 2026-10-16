@@ -76,7 +76,7 @@ extension FavoriteLibraryDocument {
                 items[index].forumID = probeResult.forumID
                 items[index].forumName = probeResult.forumName
             }
-            items[index].contentUpdatedAt = probeResult.contentUpdatedAt ?? items[index].contentUpdatedAt
+            items[index].contentUpdatedAt = [probeResult.contentUpdatedAt, items[index].contentUpdatedAt].compactMap { $0 }.max()
             if let remoteMapping {
                 items[index].remoteMapping = remoteMapping
                 items[index].remoteMappingUpdatedAt = date
@@ -120,6 +120,15 @@ extension FavoriteLibraryDocument {
             .novelDetail(threadID: threadID)
         case let .mangaThread(threadID):
             .mangaThread(threadID: threadID)
+        }
+    }
+
+    /// Merge observed content dates without changing user metadata or reviving
+    /// favorites deleted while a network request was in flight.
+    public mutating func recordContentUpdate(for target: FavoriteItemTarget, contentUpdatedAt: Date) {
+        for index in items.indices where items[index].target == target {
+            guard items[index].contentUpdatedAt.map({ $0 >= contentUpdatedAt }) != true else { continue }
+            items[index].contentUpdatedAt = contentUpdatedAt
         }
     }
 
@@ -221,12 +230,17 @@ extension FavoriteLibraryDocument {
         guard let index = items.firstIndex(where: { $0.target.id == oldTarget.id }) else { return }
         var replacement = items[index]
         replacement.target = newTarget
+        // Normal replies, novel author edits and manga publication dates
+        // have different scopes. A reclassification must not carry a later
+        // reader reply into a chapter's publication date.
+        if oldTarget != newTarget { replacement.contentUpdatedAt = nil }
         if oldTarget.id == newTarget.id {
             items[index] = replacement
             sortItems()
             return
         }
         if let duplicateIndex = items.firstIndex(where: { $0.target.id == newTarget.id }) {
+            replacement.contentUpdatedAt = items[duplicateIndex].contentUpdatedAt
             replacement.locations = FavoriteItem.normalizedLocations(items[duplicateIndex].locations + replacement.locations)
             replacement.tagIDs = FavoriteItem.normalizedIDs(items[duplicateIndex].tagIDs + replacement.tagIDs)
             replacement.locationsUpdatedAt = date

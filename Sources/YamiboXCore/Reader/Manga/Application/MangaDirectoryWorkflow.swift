@@ -425,7 +425,10 @@ public enum MangaDirectoryMerge {
         _ incoming: [MangaChapter]
     ) -> [MangaChapter] {
         var mergedByID: [String: MangaChapter] = [:]
-        for chapter in existing + incoming {
+        for var chapter in existing + incoming {
+            // List rows may omit publication time, or contain only a date
+            // while the already-loaded chapter supplied an exact timestamp.
+            chapter.publishTime = [chapter.publishTime, mergedByID[chapter.tid]?.publishTime].compactMap { $0 }.max()
             mergedByID[chapter.tid] = chapter
         }
 

@@ -9,6 +9,25 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
         self.cacheStore = cacheStore
     }
 
+    public func fetchContentUpdatePage(
+        thread: ThreadIdentity, title: String, authorID: String?, reverse: Bool
+    ) async throws -> ForumThreadPage {
+        var components = URLComponents(url: YamiboRoute.threadByID(
+            tid: thread.tid, page: 1, authorID: authorID, reverse: reverse
+        ).url, resolvingAgainstBaseURL: false)!
+        components.queryItems = components.queryItems?.map {
+            $0.name == "mobile" ? URLQueryItem(name: "mobile", value: "no") : $0
+        }
+        let html = try await client.fetchHTML(
+            url: components.url!, userAgent: YamiboNetworkConfiguration.desktopTagUserAgent,
+            cachePolicy: .reloadIgnoringLocalCacheData, cancellationPolicy: .propagateCancellation
+        )
+        try Task.checkCancellation()
+        return try LoadDiagnosticError.parsing(html: html, context: "FavoriteContentUpdate") {
+            try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: title)
+        }
+    }
+
     /// Loads one page of a thread. `authorID` scopes it to a single poster
     /// (the reader's 只看楼主), `reverse` asks Discuz for newest-first order
     /// (倒序浏览).

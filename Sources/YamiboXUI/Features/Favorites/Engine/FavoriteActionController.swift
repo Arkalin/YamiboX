@@ -354,6 +354,7 @@ final class FavoriteActionController {
         guard !isFavorited else { transientMessage = L10n.string("favorites.work.changed"); return }
         do {
             let metadata = await makeAddMetadata?() ?? AddMetadata(title: defaultTitle)
+            try Task.checkCancellation()
             let result = try await FavoriteCommands.addFavorite(
                 threadID: threadID, title: metadata.title, type: type,
                 authorID: metadata.authorID, forumID: metadata.forumID, forumName: metadata.forumName,

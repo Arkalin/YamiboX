@@ -17,6 +17,17 @@ public enum FavoriteContentUpdateDateResolver {
     public static func date(from text: String?) -> Date? {
         DiscuzEditedDateParser.date(from: text)
     }
+
+    public static func publicationDate(of post: ForumThreadPost) -> Date? {
+        post.postedAt ?? date(from: post.postedAtText)
+    }
+
+    public static func date(in page: ForumThreadPage, authorID: String? = nil) -> Date? {
+        page.posts.filter { authorID == nil || $0.author.uid == authorID }.compactMap { post in
+            [publicationDate(of: post), post.lastEditedAt ?? date(lastEditedText: post.lastEditedText, postedAtText: nil)]
+                .compactMap { $0 }.max()
+        }.max()
+    }
 }
 
 public struct FavoriteThreadProbeResult: Hashable, Sendable {

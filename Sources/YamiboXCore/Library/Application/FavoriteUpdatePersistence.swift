@@ -39,6 +39,7 @@ public protocol FavoriteUpdateLibraryAccessing: Sendable {
     func load() async throws -> FavoriteLibraryDocument
     /// Re-read and patch atomically; never recreate an item deleted during a check.
     func healUnknownSourceGroup(for target: FavoriteItemTarget, forumID: String, forumName: String?) async throws
+    func recordContentUpdate(for target: FavoriteItemTarget, contentUpdatedAt: Date) async throws
 }
 
 extension FavoriteUpdateStatePersisting {

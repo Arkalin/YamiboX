@@ -193,6 +193,8 @@ public struct FavoriteUpdateTrackedTarget: Codable, Hashable, Identifiable, Send
     /// re-report as new.
     public var knownChapterTIDs: Set<String>?
     public var baselineReady: Bool
+    /// Nil on legacy records whose novel baseline included reader replies.
+    public var novelBaselineVersion: Int?
     public var lastCheckedAt: Date?
     public var lastUpdatedAt: Date?
     public var lastError: String?
@@ -212,6 +214,7 @@ public struct FavoriteUpdateTrackedTarget: Codable, Hashable, Identifiable, Send
         knownPageCount: Int? = nil,
         knownChapterTIDs: Set<String>? = nil,
         baselineReady: Bool = false,
+        novelBaselineVersion: Int? = nil,
         lastCheckedAt: Date? = nil,
         lastUpdatedAt: Date? = nil,
         lastError: String? = nil,
@@ -228,6 +231,7 @@ public struct FavoriteUpdateTrackedTarget: Codable, Hashable, Identifiable, Send
         self.knownPageCount = knownPageCount
         self.knownChapterTIDs = knownChapterTIDs
         self.baselineReady = baselineReady
+        self.novelBaselineVersion = novelBaselineVersion
         self.lastCheckedAt = lastCheckedAt
         self.lastUpdatedAt = lastUpdatedAt
         self.lastError = lastError

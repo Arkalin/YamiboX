@@ -37,7 +37,8 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                 tid: tid,
                 rawTitle: cleanedThreadTitle,
                 chapterNumber: MangaTitleCleaner.extractChapterNumber(rawTitle),
-                view: 1
+                view: 1,
+                publishTime: sourcePage.posts.first.flatMap(FavoriteContentUpdateDateResolver.publicationDate)
             )
             let samePageChapters = deduplicatedSamePageChapters(
                 facts.samePageChapters,

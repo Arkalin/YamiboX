@@ -33,11 +33,12 @@ enum DiscuzEditedDateParser {
 
     /// The moment the content last changed: the edit note's timestamp when one
     /// is present, otherwise whatever date the posted-at text yields.
-    static func date(lastEditedText: String?, postedAtText: String?) -> Date? {
-        date(from: extractedEditTime(from: lastEditedText)) ?? date(from: postedAtText)
+    static func date(lastEditedText: String?, postedAtText: String?, relativeTo: Date? = nil) -> Date? {
+        [date(from: extractedEditTime(from: lastEditedText), relativeTo: relativeTo),
+         date(from: postedAtText, relativeTo: relativeTo)].compactMap { $0 }.max()
     }
 
-    static func date(from text: String?) -> Date? {
+    static func date(from text: String?, relativeTo: Date? = nil) -> Date? {
         guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
             return nil
         }
@@ -72,7 +73,36 @@ enum DiscuzEditedDateParser {
                 }
             }
         }
-        return nil
+        guard let relativeTo else { return nil }
+        return relativeDate(from: normalized, relativeTo: relativeTo)
+    }
+
+    /// Only call with the page's capture time. Reinterpreting cached relative
+    /// text against today's clock would make unchanged content appear newer.
+    private static func relativeDate(from text: String, relativeTo: Date) -> Date? {
+        if text == "刚刚" || text == "剛剛" { return relativeTo }
+        if let match = HTMLTextExtractor.firstMatch(
+            pattern: #"^(\d+)\s*(秒|分钟|分鐘|小时|小時|天)前$"#, in: text
+        ), let count = Double(match[1]) {
+            let seconds: Double = switch match[2] {
+            case "秒": 1
+            case "分钟", "分鐘": 60
+            case "小时", "小時": 3600
+            default: 86400
+            }
+            return relativeTo.addingTimeInterval(-count * seconds)
+        }
+        guard let match = HTMLTextExtractor.firstMatch(
+            pattern: #"^(今天|昨天|前天)\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$"#, in: text
+        ), let hour = Int(match[2]), let minute = Int(match[3]),
+              hour < 24, minute < 60 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let offset = match[1] == "今天" ? 0 : (match[1] == "昨天" ? -1 : -2)
+        guard let day = calendar.date(byAdding: .day, value: offset, to: relativeTo) else { return nil }
+        let second = match.count > 4 ? (Int(match[4]) ?? 0) : 0
+        guard second < 60 else { return nil }
+        return calendar.date(bySettingHour: hour, minute: minute, second: second, of: day)
     }
 
     private static func extractedEditTime(from text: String?) -> String? {

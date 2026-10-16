@@ -217,6 +217,10 @@ extension DownloadStore {
         canonical.posts = canonical.posts.map { post in
             var post = post
             post.manageActions = []
+            // Relative display dates resolve against each fetch time. Keep
+            // their source text in the fingerprint, not the derived instants.
+            post.postedAt = nil
+            post.lastEditedAt = nil
             return post
         }
         let data = try Self.encodeJSONData(canonical, context: "novel offline source page fingerprint")

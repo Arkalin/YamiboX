@@ -101,12 +101,16 @@ final class NovelDetailViewModel {
         )
         favoriteActions.makeAddMetadata = { @MainActor [weak self] in
             guard let self else { return .init(title: context.title) }
+            let repository = await self.dependencies.makeForumThreadReaderRepository()
+            let contentDate = try? await FavoriteContentUpdateResolver.resolve(
+                thread: self.context.thread, title: self.favoriteTitle, kind: .novelThread, repository: repository
+            ).contentUpdatedAt
             return .init(
                 title: self.favoriteTitle,
                 authorID: self.resolvedAuthorID ?? self.context.authorID,
                 forumID: self.threadPage?.forumID ?? self.threadPage?.thread.fid ?? self.context.thread.fid,
                 forumName: self.threadPage?.forumName ?? self.forumName,
-                contentUpdatedAt: Self.contentUpdatedAt(from: self.threadPage),
+                contentUpdatedAt: contentDate,
                 formHash: self.threadPage?.formHash
             )
         }
@@ -548,14 +552,6 @@ final class NovelDetailViewModel {
 
     private var favoriteTitle: String {
         displayTitle(threadPage?.title ?? context.title)
-    }
-
-    private static func contentUpdatedAt(from page: ForumThreadPage?) -> Date? {
-        guard let firstPost = page?.posts.first else { return nil }
-        return FavoriteContentUpdateDateResolver.date(
-            lastEditedText: firstPost.lastEditedText,
-            postedAtText: firstPost.postedAtText
-        )
     }
 
     private func authorScopedContext(authorID: String) -> NovelDetailLaunchContext {

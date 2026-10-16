@@ -6,6 +6,7 @@ import Foundation
 /// content-block pipeline.
 enum ForumThreadPostsParser {
     static func posts(in document: Document) throws -> [ForumThreadPost] {
+        let capturedAt = Date()
         let containers = postContainers(in: document)
         var seen: Set<String> = []
         var posts: [ForumThreadPost] = []
@@ -19,6 +20,7 @@ enum ForumThreadPostsParser {
             }
 
             let lastEditedText = lastEditedText(in: container, body: body)
+            let postedAtText = postedAtText(in: container)
             let poll = ForumThreadPollParser.poll(in: container, body: body)
             let ratingBlock = ForumThreadRatingParser.ratingBlock(in: container, postID: postID)
             let comments = try ForumThreadCommentParser.comments(in: container, postID: postID)
@@ -45,8 +47,10 @@ enum ForumThreadPostsParser {
                     postID: postID,
                     floorText: floorText(in: container),
                     author: author(in: container),
-                    postedAtText: postedAtText(in: container),
+                    postedAtText: postedAtText,
                     lastEditedText: lastEditedText,
+                    postedAt: DiscuzEditedDateParser.date(from: postedAtText, relativeTo: capturedAt),
+                    lastEditedAt: DiscuzEditedDateParser.date(lastEditedText: lastEditedText, postedAtText: nil, relativeTo: capturedAt),
                     contentHTML: contentHTML,
                     contentText: contentText,
                     contentBlocks: contentBlocks,
@@ -152,6 +156,12 @@ enum ForumThreadPostsParser {
     }
 
     private static func postedAtText(in container: Element) -> String? {
+        // Desktop pages expose the exact timestamp in a tooltip even while
+        // the visible label says "3 小时前". Prefer that authoritative value.
+        for element in container.selectAll("[id^=authorposton] [title], [id^=authorposton][title], .authi .mtime [title]") {
+            let title = element.attr("title")
+            if DiscuzEditedDateParser.date(from: title) != nil { return title }
+        }
         // Desktop-style markup prefixes the date with "发表于"/"發表於" inside `.authi`.
         let prefixedText = container.selectFirst(".authi")?.normalizedText() ?? ""
         if let prefixed = HTMLTextExtractor.firstMatch(pattern: #"(发表于|發表於)\s*([^|#]+)"#, in: prefixedText)?
@@ -170,9 +180,15 @@ enum ForumThreadPostsParser {
         // the date/relative-time shape rather than trusting the whole node text.
         // Scoped to `.authi .mtime` (not the whole container) so a coincidental
         // "mtime"-classed element inside a quoted reply body can't be picked up.
-        let mtimeText = container.firstText(".authi .mtime") ?? ""
+        guard let mtime = container.selectFirst(".authi .mtime") else { return nil }
+        // Counters are siblings of the date, not part of it. In particular
+        // "20" views followed by "3 小时前" must not become "203 小时前".
+        let mtimeText = mtime.getChildNodes().filter {
+            guard let element = $0 as? Element else { return true }
+            return !element.hasClass("y")
+        }.map { $0.text() }.joined(separator: " ")
         return HTMLTextExtractor.firstMatch(
-            pattern: #"(\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2})?|昨天\s*\d{1,2}:\d{2}|前天\s*\d{1,2}:\d{2}|刚刚|\d+\s*(?:秒|分钟|小时|天)前)"#,
+            pattern: #"(\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?|(?:今天|昨天|前天)\s*\d{1,2}:\d{2}(?::\d{2})?|刚刚|剛剛|\d+\s*(?:秒|分钟|分鐘|小时|小時|天)前)"#,
             in: mtimeText
         )?
             .dropFirst()

@@ -460,9 +460,22 @@ final class ForumThreadReaderViewModel {
         let defaultTitle = context.title
         favoriteActions.makeAddMetadata = { [weak self] in
             guard let self else { return .init(title: defaultTitle) }
+            let settings = await settingsStoreProvider()?.load()
+            let kind: FavoriteItemTargetKind = settings?.boardReader.threadKind(forumID: resolvedForumID) == .manga
+                ? .mangaThread : .normalThread
+            let date: Date?
+            if kind == .mangaThread {
+                date = page?.posts.first(where: { $0.floorText == "1" || $0.floorText == "1#" || $0.floorText == "楼主" || $0.floorText == "樓主" })
+                    .flatMap(FavoriteContentUpdateDateResolver.publicationDate)
+            } else {
+                let repository = await repositoryProvider()
+                date = try? await FavoriteContentUpdateResolver.resolve(
+                    thread: context.thread, title: favoriteTitle, kind: kind, repository: repository
+                ).contentUpdatedAt
+            }
             return .init(
                 title: favoriteTitle, forumID: resolvedForumID, forumName: page?.forumName,
-                contentUpdatedAt: Self.contentUpdatedAt(from: page), formHash: page?.formHash
+                contentUpdatedAt: date, formHash: page?.formHash
             )
         }
         favoriteActions.didAddFavorite = { [weak self] result in
@@ -971,14 +984,6 @@ final class ForumThreadReaderViewModel {
         }
         let contextTitle = context.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return contextTitle.isEmpty ? context.thread.tid : contextTitle
-    }
-
-    private static func contentUpdatedAt(from page: ForumThreadPage?) -> Date? {
-        guard let firstPost = page?.posts.first else { return nil }
-        return FavoriteContentUpdateDateResolver.date(
-            lastEditedText: firstPost.lastEditedText,
-            postedAtText: firstPost.postedAtText
-        )
     }
 
 }

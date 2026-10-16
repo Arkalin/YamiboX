@@ -27,7 +27,7 @@ extension NovelDetailDocumentLoading {
     }
 }
 
-public protocol NovelDetailThreadPageLoading: Sendable {
+public protocol NovelDetailThreadPageLoading: ThreadContentUpdatePageLoading {
     func cachedNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async -> ForumThreadPage?
     func fetchNovelThreadPage(context: NovelDetailLaunchContext, page: Int) async throws -> ForumThreadPage
     func clearCachedThreadPages(thread: ThreadIdentity) async throws

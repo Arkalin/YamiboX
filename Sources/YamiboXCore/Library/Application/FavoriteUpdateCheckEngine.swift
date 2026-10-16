@@ -830,6 +830,7 @@ public final class FavoriteUpdateCheckEngine {
     /// thread, moved board) gets re-fetched forever with no end in sight.
     static let circuitBreakerThreshold = 5
     static let circuitBreakerCooldown: TimeInterval = 24 * 3600
+    private static let currentNovelBaselineVersion = 1
 
     private func checkUpdate(
         for item: FavoriteItem,
@@ -848,9 +849,12 @@ public final class FavoriteUpdateCheckEngine {
             return .skipped
         }
 
-        let page: ForumThreadPage
+        let content: FavoriteContentUpdateResolver.Snapshot
         do {
-            page = try await threadPage(for: item, knownPageCount: target.knownPageCount)
+            content = try await contentUpdate(for: item)
+            if let date = content.contentUpdatedAt {
+                try await libraryStore.recordContentUpdate(for: item.target, contentUpdatedAt: date)
+            }
         } catch {
             // The network being unreachable is not this target's fault, and
             // every other candidate would fail identically — don't burn a
@@ -868,9 +872,22 @@ public final class FavoriteUpdateCheckEngine {
             return .failed(error.localizedDescription)
         }
 
-        await healUnknownSourceGroupIfNeeded(item: item, page: page)
+        let page = content.latestPage
+        await healUnknownSourceGroupIfNeeded(item: item, page: content.firstPage)
 
-        let fingerprint = FavoriteUpdateFingerprint(page: page)
+        let fingerprint = FavoriteUpdateFingerprint(page: page, contentUpdatedAt: content.contentUpdatedAt)
+        if item.target.kind == .novelThread,
+           target.novelBaselineVersion != Self.currentNovelBaselineVersion {
+            // The old fingerprint included reader replies. Rebuild it only
+            // after a successful author-scoped fetch, without reporting the
+            // scope change itself as new content or retaining unscoped fields.
+            target.knownLatestPostID = nil
+            target.knownReplyCount = nil
+            target.knownPageCount = nil
+            target.lastUpdatedAt = nil
+            target.baselineReady = false
+            target.novelBaselineVersion = Self.currentNovelBaselineVersion
+        }
         let previous = FavoriteUpdateFingerprint(target: target)
 
         // Only advance fields this fetch actually produced a value for — a
@@ -882,6 +899,7 @@ public final class FavoriteUpdateCheckEngine {
         target.knownLatestPostID = fingerprint.latestPostID ?? target.knownLatestPostID
         target.knownReplyCount = fingerprint.replyCount ?? target.knownReplyCount
         target.knownPageCount = fingerprint.pageCount ?? target.knownPageCount
+        target.lastUpdatedAt = [target.lastUpdatedAt, content.contentUpdatedAt].compactMap { $0 }.max()
         target.baselineReady = true
         target.lastCheckedAt = .now
         target.lastError = nil
@@ -954,7 +972,7 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    private func threadPage(for item: FavoriteItem, knownPageCount: Int?) async throws -> ForumThreadPage {
+    private func contentUpdate(for item: FavoriteItem) async throws -> FavoriteContentUpdateResolver.Snapshot {
         guard let tid = item.target.threadID else {
             throw FavoriteActionError.missingFavoriteThreadID
         }
@@ -962,14 +980,9 @@ public final class FavoriteUpdateCheckEngine {
         try Task.checkCancellation()
         let fid: String? = if case let .forumBoard(id, _) = item.sourceGroup { id } else { nil }
         let thread = ThreadIdentity(tid: tid, fid: fid)
-        let context = ThreadNovelLaunchContext(thread: thread, title: item.resolvedDisplayTitle)
-        // New replies land on the last page — fetching the previously
-        // known last page (falling back to page 1 for a first-ever
-        // check) is what lets latestPostID track the thread's actual
-        // newest content instead of freezing at whatever was on page 1
-        // forever once the thread grows past one page.
-        let page = max(1, knownPageCount ?? 1)
-        return try await repository.fetchThreadPage(context: context, page: page, authorID: nil, reverse: false)
+        return try await FavoriteContentUpdateResolver.resolve(
+            thread: thread, title: item.resolvedDisplayTitle, kind: item.target.kind, repository: repository
+        )
     }
 
 }
@@ -980,12 +993,14 @@ private struct FavoriteUpdateFingerprint: Sendable {
     var replyCount: Int?
     var pageCount: Int?
     var isReady: Bool
+    var contentUpdatedAt: Date?
 
-    init(page: ForumThreadPage) {
+    init(page: ForumThreadPage, contentUpdatedAt: Date?) {
         latestPostID = page.posts.map(\.postID).last
         replyCount = page.totalReplies
         pageCount = page.pageNavigation?.totalPages
         isReady = latestPostID != nil || replyCount != nil || pageCount != nil
+        self.contentUpdatedAt = contentUpdatedAt
     }
 
     init(target: FavoriteUpdateTrackedTarget) {
@@ -993,9 +1008,13 @@ private struct FavoriteUpdateFingerprint: Sendable {
         replyCount = target.knownReplyCount
         pageCount = target.knownPageCount
         isReady = target.baselineReady
+        contentUpdatedAt = target.lastUpdatedAt
     }
 
     func isNewer(than previous: FavoriteUpdateFingerprint) -> Bool {
+        if let contentUpdatedAt, let previousDate = previous.contentUpdatedAt, contentUpdatedAt > previousDate {
+            return true
+        }
         if let replyCount, let previousReplyCount = previous.replyCount, replyCount > previousReplyCount {
             return true
         }

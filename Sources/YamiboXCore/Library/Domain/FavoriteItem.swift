@@ -8,6 +8,10 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
     public var forumID: String?
     public var forumName: String?
     public var contentUpdatedAt: Date?
+    // Version 0 mixed refresh clocks and arbitrary-page dates with content
+    // dates. Discard only that derived metadata on decode, including WebDAV
+    // imports, so a future refresh can repair it even to an earlier date.
+    private var contentDateVersion = 1
     public var remoteMapping: FavoriteRemoteMapping?
     public var locations: [FavoriteLocation]
     public var tagIDs: [String]
@@ -71,6 +75,7 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case target, title, displayName, sourceGroup, forumID, forumName
         case contentUpdatedAt, remoteMapping, locations, tagIDs, createdAt, updatedAt
+        case contentDateVersion
         case locationsUpdatedAt, tagIDsUpdatedAt, displayNameUpdatedAt, remoteMappingUpdatedAt
     }
 
@@ -91,7 +96,8 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
         sourceGroup = try container.decode(FavoriteSourceGroup.self, forKey: .sourceGroup)
         forumID = try container.decodeIfPresent(String.self, forKey: .forumID)
         forumName = try container.decodeIfPresent(String.self, forKey: .forumName)
-        contentUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .contentUpdatedAt)
+        contentUpdatedAt = try container.decodeIfPresent(Int.self, forKey: .contentDateVersion) == 1
+            ? container.decodeIfPresent(Date.self, forKey: .contentUpdatedAt) : nil
         remoteMapping = try container.decodeIfPresent(FavoriteRemoteMapping.self, forKey: .remoteMapping)
         locations = try container.decode([FavoriteLocation].self, forKey: .locations)
         tagIDs = try container.decode([String].self, forKey: .tagIDs)

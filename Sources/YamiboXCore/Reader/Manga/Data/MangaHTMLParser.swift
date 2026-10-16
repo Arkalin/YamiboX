@@ -244,17 +244,17 @@ enum MangaHTMLParser {
         groupIndex: Int,
         allowedForumIDs: Set<String>? = nil
     ) -> [MangaChapter] {
-        let rowPattern = #"<tr[^>]*>(.*?)</tr>"#
-        return HTMLTextExtractor.matches(pattern: rowPattern, in: html).compactMap { row in
-            guard let rowHTML = row.first else { return nil }
-            if let allowedForumIDs, !rowContainsForumID(in: rowHTML, allowedForumIDs: allowedForumIDs) {
+        guard let document = try? KannaSoup.parse(html) else { return [] }
+        let capturedAt = Date()
+        return document.selectAll("tr").compactMap { row in
+            if let allowedForumIDs, !rowContainsForumID(in: row.outerHtml(), allowedForumIDs: allowedForumIDs) {
                 return nil
             }
-            guard let link = HTMLTextExtractor.firstMatch(pattern: #"<th[^>]*>.*?<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#, in: rowHTML) else {
+            guard let link = row.selectFirst("th a[href]") else {
                 return nil
             }
-            let href = link[1]
-            let title = HTMLTextExtractor.stripTags(link[2])
+            let href = link.attr("href")
+            let title = link.normalizedText()
             guard
                 let tid = YamiboForumURLIdentity.threadID(from: href),
                 let url = HTMLTextExtractor.absoluteURL(from: href)
@@ -262,22 +262,23 @@ enum MangaHTMLParser {
                 return nil
             }
 
-            let authorHref = HTMLTextExtractor.firstMatch(pattern: #"<cite>\s*<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#, in: rowHTML)
-            let authorURL = authorHref?[1] ?? ""
-            let authorName = authorHref.map { HTMLTextExtractor.stripTags($0[2]) }
-            let dateText = HTMLTextExtractor.firstMatch(pattern: #"<em(?:\s+[^>]*)?>.*?(\d{4}-\d{2}-\d{2}).*?</em>"#, in: rowHTML)?
-                .dropFirst()
-                .first
+            // The first author cell is the thread's publication metadata;
+            // the last .by cell is the newest REPLY and must never supply a
+            // manga chapter's date. Do not require zero-padded month/day.
+            let authorCell = row.selectAll("td.by").first { $0.selectFirst("cite") != nil }
+            let authorLink = authorCell?.selectFirst("cite a[href]")
+            let dateText = authorCell?.selectFirst("em [title]")?.attr("title").nilIfBlank
+                ?? authorCell?.firstText("em")
 
             return MangaChapter(
                 tid: tid,
                 rawTitle: title,
                 chapterNumber: MangaTitleCleaner.extractChapterNumber(title),
                 view: view(from: url),
-                authorUID: extractUID(from: authorURL),
-                authorName: authorName,
+                authorUID: extractUID(from: authorLink?.attr("href") ?? ""),
+                authorName: authorLink?.normalizedText(),
                 groupIndex: groupIndex,
-                publishTime: parseDate(dateText)
+                publishTime: DiscuzEditedDateParser.date(from: dateText, relativeTo: capturedAt)
             )
         }
     }
@@ -338,11 +339,4 @@ enum MangaHTMLParser {
         return postID
     }
 
-    private static func parseDate(_ raw: String?) -> Date? {
-        guard let raw else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.date(from: raw)
-    }
 }

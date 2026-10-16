@@ -640,12 +640,13 @@ public enum LocalFavoriteLibraryProjection {
             collectionNames: collectionNames(for: item, metadata: metadata),
             tags: tags(for: item, metadata: metadata),
             recentReadingAt: progress?.lastReadAt,
-            // A merged card's "content updated" proxy is the freshest of any
-            // member's own content update, not just the representative
-            // (earliest-chapter) member's — otherwise a manga that just got a
-            // brand-new favorited chapter wouldn't visibly bubble up under
-            // the "recently updated" sort.
-            lastUpdatedAt: entry.members?.compactMap(\.contentUpdatedAt).max() ?? item.contentUpdatedAt,
+            // Manga uses publication dates already returned by the directory
+            // list (including chapters not individually favorited). No chapter
+            // fetches, edit checks, or directory refresh clocks are involved.
+            lastUpdatedAt: ([item.contentUpdatedAt]
+                + (entry.members?.map(\.contentUpdatedAt) ?? [])
+                + (isModeOnMangaThread ? (entry.mangaDirectory?.chapters.map(\.publishTime) ?? []) : []))
+                .compactMap { $0 }.max(),
             progressPercent: progressPercent(from: progress),
             chapterPageProgress: chapterPageProgress(from: progress),
             // Filled from ContentCoverStore by the library derivation; items
