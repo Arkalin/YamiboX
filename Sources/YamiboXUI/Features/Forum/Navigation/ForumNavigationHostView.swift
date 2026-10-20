@@ -4,6 +4,7 @@ import YamiboXCore
 public struct ForumNavigationHostView: View {
     @State private var model: ForumHomeViewModel
     @State private var navigator: ForumDestinationNavigator
+    @State private var handoffNavigationRevision: UUID?
 
     private let appModel: YamiboAppModel
     private let theme: ForumTheme
@@ -46,12 +47,19 @@ public struct ForumNavigationHostView: View {
             }
             .forumNavigationBarStyle()
         }
+        .id(handoffNavigationRevision)
         .task {
             await model.load()
         }
         .onChange(of: appModel.forumNavigationRequest?.id, initial: true) { _, _ in
             guard let request = appModel.claimForumNavigationRequest() else { return }
-            if let destination = request.contentDestination {
+            if let context = request.handoffThread {
+                navigator.cancelContentOpen()
+                navigator.path = [.threadReader(context)]
+                // A fresh continuation can request exactly the same launch context
+                // after this retained thread model has scrolled somewhere else.
+                handoffNavigationRevision = request.id
+            } else if let destination = request.contentDestination {
                 navigator.openContent(request.url, destination: destination)
             } else {
                 navigator.route(request.url, source: request.source, title: request.title)

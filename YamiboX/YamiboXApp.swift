@@ -363,6 +363,7 @@ private struct YamiboStartupWindow: View {
     let startup: YamiboAppStartup
     let request: YamiboWindowRequest?
     @State private var launchScreenDeadline: ContinuousClock.Instant?
+    @State private var handoffRequest: ReadingHandoffRequest?
 
     var body: some View {
         Group {
@@ -371,7 +372,8 @@ private struct YamiboStartupWindow: View {
                     coordinator: windows,
                     initialTab: startup.initialTab,
                     request: request,
-                    launchScreenDeadline: launchScreenDeadline
+                    launchScreenDeadline: launchScreenDeadline,
+                    handoffRequest: handoffRequest
                 )
             } else if let failure = startup.failure {
                 ContentUnavailableView {
@@ -396,7 +398,15 @@ private struct YamiboStartupWindow: View {
             }
         }
         .task { await startup.prepare() }
+        .onContinueUserActivity(ReadingHandoffActivity.type(.novel), perform: receiveHandoff)
+        .onContinueUserActivity(ReadingHandoffActivity.type(.manga), perform: receiveHandoff)
+        .onContinueUserActivity(ReadingHandoffActivity.type(.thread), perform: receiveHandoff)
         .environment(\.launchBackgroundState, startup.launchBackground)
+    }
+
+    private func receiveHandoff(_ activity: NSUserActivity) {
+        guard let request = ReadingHandoffActivity.decode(activity) else { return }
+        handoffRequest = request
     }
 }
 

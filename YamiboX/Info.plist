@@ -34,6 +34,12 @@
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>用于将漫画图片保存到系统相册。</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).handoff.novel</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).handoff.manga</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).handoff.thread</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

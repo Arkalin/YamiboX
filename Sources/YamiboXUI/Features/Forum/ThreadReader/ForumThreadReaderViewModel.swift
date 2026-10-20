@@ -49,7 +49,7 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private let mangaDirectoryStoreProvider: @Sendable () async -> (any MangaDirectoryPersisting)?
     @ObservationIgnored private let settingsStoreProvider: @Sendable () async -> SettingsStore?
     @ObservationIgnored private let progressSync: ProgressSyncModule
-    @ObservationIgnored private var latestVisibleAnchorPostID: String?
+    private var latestVisibleAnchorPostID: String?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var pageLoadTask: Task<Bool, Never>?
     @ObservationIgnored private var pageLoadKey: PageLoadKey?
@@ -170,6 +170,12 @@ final class ForumThreadReaderViewModel {
         )
         self.resolveReplyTarget = resolveReplyTarget
         threadAuthorID = context.authorID
+        if let position = context.explicitReadingState {
+            isAuthorOnly = position.authorID != nil
+            isReverseOrder = position.isReverseOrder
+            threadAuthorID = position.authorID ?? context.authorID
+            restoredAnchorPostID = position.anchorPostID
+        }
         self.repositoryProvider = repositoryProvider
         localFavoriteLibraryStoreProvider = {
             localFavoriteLibraryStore
@@ -199,6 +205,19 @@ final class ForumThreadReaderViewModel {
 
     var navigationTitle: String {
         page?.title ?? context.title
+    }
+
+    var handoffPayload: YamiboHandoffPayload? {
+        guard persistsReadingActivity, page != nil, !isLoading, !needsViewModeReload,
+              !isSuspendedForModeSwitch else { return nil }
+        var currentContext = context
+        currentContext.title = navigationTitle
+        currentContext.thread.fid = resolvedForumID
+        return .thread(currentContext, position: ThreadExplicitReadingState(
+            page: currentPage,
+            anchorPostID: restoredAnchorPostID ?? latestVisibleAnchorPostID ?? targetPostID,
+            authorID: activeAuthorID, isReverseOrder: isReverseOrder
+        ))
     }
 
     /// Cover menu entries for images opened from this thread: thread cover
@@ -274,11 +293,12 @@ final class ForumThreadReaderViewModel {
         self.context = context
         isSuspendedForModeSwitch = false
         hasConsumedLaunchTarget = false
-        isAuthorOnly = false
-        isReverseOrder = false
+        isAuthorOnly = context.explicitReadingState?.authorID != nil
+        isReverseOrder = context.explicitReadingState?.isReverseOrder ?? false
+        threadAuthorID = context.explicitReadingState?.authorID ?? context.authorID ?? threadAuthorID
         needsViewModeReload = false
         latestVisibleAnchorPostID = nil
-        restoredAnchorPostID = nil
+        restoredAnchorPostID = context.explicitReadingState?.anchorPostID
         errorMessage = nil
         isLoading = false
         page = nil
@@ -319,10 +339,10 @@ final class ForumThreadReaderViewModel {
             return
         }
         guard page == nil else { return }
-        var initialPage = context.initialPage
+        var initialPage = context.explicitReadingState?.page ?? context.initialPage
         // Resume is opt-in. Explicit post/page links still take precedence.
         do {
-            if context.targetPostID == nil, context.initialPage <= 1,
+            if context.explicitReadingState == nil, context.targetPostID == nil, context.initialPage <= 1,
                await settingsStoreProvider()?.load().readingProgress.savesNormalThreadProgress == true,
                let savedProgress = try await readingProgressStoreProvider().load(for: .normalThread(threadID: context.thread.tid))?.thread {
                 initialPage = max(1, savedProgress.lastPage)

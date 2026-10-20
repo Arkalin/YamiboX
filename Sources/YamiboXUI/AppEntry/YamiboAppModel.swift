@@ -9,12 +9,14 @@ public struct ForumNavigationRequest: Identifiable, Hashable, Sendable {
     public let source: ForumNavigationSource
     public let title: String?
     public let contentDestination: AppContentDestination?
+    public let handoffThread: ThreadNovelLaunchContext?
 
-    public init(url: URL, source: ForumNavigationSource = .external, title: String? = nil, contentDestination: AppContentDestination? = nil) {
+    public init(url: URL, source: ForumNavigationSource = .external, title: String? = nil, contentDestination: AppContentDestination? = nil, handoffThread: ThreadNovelLaunchContext? = nil) {
         self.url = url
         self.source = source
         self.title = title
         self.contentDestination = contentDestination
+        self.handoffThread = handoffThread
     }
 }
 
@@ -37,6 +39,9 @@ public struct ForumSearchRequest: Identifiable, Hashable, Sendable {
 @MainActor
 @Observable
 public final class YamiboAppModel {
+    let handoffPublisher = ReadingHandoffPublisher()
+    @ObservationIgnored private var handledHandoffIDs: Set<UUID> = []
+    private var pendingHandoff: ReadingHandoffRequest?
     let readerFontLibrary = ReaderFontLibrary()
     public private(set) var bootstrapState: YamiboBootstrapState?
     public private(set) var isBootstrapping = false
@@ -219,6 +224,10 @@ public final class YamiboAppModel {
             initialNavigation = nil
             open(target)
         }
+        if let request = pendingHandoff {
+            pendingHandoff = nil
+            openHandoff(request.payload)
+        }
 
         // Publishing the local shell is independent of WebDAV GET/PUT. The
         // task is app-owned; cancelling this window only drops its late restore.
@@ -300,6 +309,8 @@ public final class YamiboAppModel {
     }
 
     func publishAccountChange() {
+        handoffPublisher.reset()
+        pendingHandoff = nil
         readerRestorationRevision = UUID()
         cancelMangaReaderOpen()
         suspendedNovelContext = nil
@@ -648,6 +659,40 @@ public final class YamiboAppModel {
         dismissPresentedReaderSession()
         selectedTab = .forum
         forumNavigationRequest = ForumNavigationRequest(url: url)
+    }
+
+    public func continueHandoff(_ request: ReadingHandoffRequest) {
+        guard request.payload.encoded() != nil, handledHandoffIDs.insert(request.id).inserted else { return }
+        readerRestorationRevision = UUID()
+        // A cold-launch activity outranks both launch arguments and stored continuation.
+        initialNavigation = nil
+        if bootstrapState == nil {
+            pendingHandoff = request
+        } else {
+            openHandoff(request.payload)
+        }
+    }
+
+    private func openHandoff(_ payload: YamiboHandoffPayload) {
+        readerRestorationRevision = UUID()
+        cancelMangaReaderOpen()
+        appContinuity.readerRouteDismissed()
+        clipboardForumLinkPrompt = nil
+        suspendedNovelContext = nil
+        suspendedMangaContext = nil
+        forumNavigationRequest = nil
+        forumSearchRequest = nil
+        mineNavigationRequest = nil
+        favoriteUpdatesRequestID = nil
+        switch payload.readerRoute {
+        case let .novel(context): presentNovelReader(context)
+        case let .manga(context): presentMangaReader(context)
+        case nil:
+            guard let context = payload.threadContext else { return }
+            dismissPresentedReaderSession()
+            selectedTab = .forum
+            forumNavigationRequest = ForumNavigationRequest(url: payload.webpageURL, handoffThread: context)
+        }
     }
 
     private func open(_ target: AppNavigationTarget) {

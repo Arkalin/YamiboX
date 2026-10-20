@@ -31,6 +31,7 @@ public final class YamiboWindowCoordinator {
     @ObservationIgnored private let restorationDefaults: UserDefaults
     @ObservationIgnored private var models: [String: WeakModel] = [:]
     @ObservationIgnored private var phases: [String: ScenePhase] = [:]
+    @ObservationIgnored private var handoffWindowID: String?
     @ObservationIgnored private var sceneIdentifiers: [String: String] = [:]
     @ObservationIgnored private var bootstrapTask: Task<AppContinuityLaunchPreparation, Never>?
     @ObservationIgnored private var accountEpoch = UUID()
@@ -88,6 +89,7 @@ public final class YamiboWindowCoordinator {
         models[windowID] = WeakModel(model)
         if legacyWindowID == nil { legacyWindowID = windowID }
         if presentationWindowID == nil { presentationWindowID = windowID }
+        refreshHandoffOwner()
         if let userInfo = pendingNotificationUserInfo {
             pendingNotificationUserInfo = nil
             Task { await FavoriteUpdateNotificationRouting.open(notificationUserInfo: userInfo, dependencies: model.appContext.libraryDependencies, appModel: model) }
@@ -139,6 +141,7 @@ public final class YamiboWindowCoordinator {
         if presentationWindowID == nil || phases[presentationWindowID ?? ""] != .active {
             presentationWindowID = phases.first(where: { $0.value == .active })?.key ?? presentationWindowID
         }
+        refreshHandoffOwner()
         return true
     }
 
@@ -177,6 +180,7 @@ public final class YamiboWindowCoordinator {
             for model in liveModels { model.peripheralInput.resetPressState() }
         }
         focusedWindowID = windowID
+        refreshHandoffOwner()
         presentationWindowID = Self.presentationOwner(
             current: presentationWindowID,
             focused: windowID,
@@ -199,12 +203,27 @@ public final class YamiboWindowCoordinator {
 
     public func sceneDidDisconnect(_ sceneIdentifier: String) {
         guard let windowID = sceneIdentifiers.removeValue(forKey: sceneIdentifier) else { return }
+        models[windowID]?.value?.handoffPublisher.reset()
         phases.removeValue(forKey: windowID)
         if focusedWindowID == windowID { focusedWindowID = nil }
         if presentationWindowID == windowID {
             presentationWindowID = phases.first(where: { $0.value == .active })?.key
         }
         updateAggregatePhase()
+        refreshHandoffOwner()
+    }
+
+    private func refreshHandoffOwner() {
+        // A prewarmed/background-only window must not start advertising. Keep
+        // the last foreground owner's snapshot when every window backgrounds.
+        let owner = focusedWindowID.flatMap { phases[$0] == .active ? $0 : nil }
+            ?? handoffWindowID.flatMap { phases[$0] == .active ? $0 : nil }
+            ?? phases.first(where: { $0.value == .active })?.key
+            ?? handoffWindowID.flatMap { phases[$0] != nil ? $0 : nil }
+        handoffWindowID = owner
+        for (id, model) in models {
+            model.value?.handoffPublisher.setEnabled(id == owner)
+        }
     }
 
     public func openForumSearch(sceneIdentifier: String? = nil) {

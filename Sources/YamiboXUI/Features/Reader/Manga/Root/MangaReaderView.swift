@@ -6,6 +6,8 @@ import UIKit
 
 public struct MangaReaderView: View {
     @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.readingHandoffAllowed) private var allowsReadingHandoff
     private let context: MangaLaunchContext
     private let dependencies: MangaReaderDependencies
     private let forumDependencies: ForumNavigationDependencies
@@ -295,6 +297,11 @@ public struct MangaReaderView: View {
         }
         .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
+        .readingHandoff(handoffPayload)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            appModel.handoffPublisher.flushLatest(handoffPayload)
+        }
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!isChromeVisible)
         .persistentSystemOverlays(isChromeVisible ? .automatic : .hidden)
@@ -449,6 +456,7 @@ public struct MangaReaderView: View {
             }
             Button(L10n.string("common.cancel"), role: .cancel) {}
         }
+        .environment(\.readingHandoffAllowed, allowsReadingHandoff && !context.isPreview)
     }
 
     private func toggleChrome() {
@@ -497,6 +505,13 @@ public struct MangaReaderView: View {
             isDownloadPresented ||
             noteEditTarget != nil ||
             forumThreadOverlayItem != nil
+    }
+
+    private var handoffPayload: YamiboHandoffPayload? {
+        guard !isDismissing, !hasControlBlockingSheet,
+              case let .loaded(loaded) = model.presentation.state,
+              loaded.currentPage != nil else { return nil }
+        return .manga(model.currentResumeContext)
     }
 
     private func handleControlEvent(_ event: ReaderControlEvent) {

@@ -20,6 +20,7 @@ public struct NovelReaderView: View {
     @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.readingHandoffAllowed) private var allowsReadingHandoff
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // The five boolean-presented sheets are mutually exclusive (every setter
     // is a chrome button, and chrome is disabled while any overlay is up),
@@ -364,15 +365,22 @@ public struct NovelReaderView: View {
             ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
             : (colorScheme == .dark ? .white : .black))
         .annotationOperationFeedback(annotations.operations)
+        .background {
+            NovelReaderHandoffSource(model: model, isActive: !isDismissing
+                && presentedSheet == nil && searchPresentation == nil && chapterCommentsTarget == nil
+                && forumThreadOverlayItem == nil && imageBrowserItem == nil)
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active, model.novelReaderPresentation != nil else { return }
             syncVerticalViewportBeforeSave()
+            appModel.handoffPublisher.flushLatest(.novel(model.currentResumeContext))
             guard let route = model.resumeRouteForBackground() else { return }
             // The default continuation store is synchronous. Flush it before
             // iOS can suspend the scene; the async save also flushes progress.
             persistResumeRouteBeforeBackground?(route)
             Task { await model.saveProgress() }
         }
+        .environment(\.readingHandoffAllowed, allowsReadingHandoff && !model.context.isPreview)
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {

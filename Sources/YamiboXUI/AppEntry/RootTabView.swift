@@ -103,6 +103,7 @@ public struct RootTabView: View {
             ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
         }
         .environment(\.yamiboImagePipeline, appModel.imagePipeline)
+        .environment(\.readingHandoffPublisher, appModel.handoffPublisher)
         .environment(\.forumBlacklist, appModel.appContext.blacklistWorkflow)
     }
 

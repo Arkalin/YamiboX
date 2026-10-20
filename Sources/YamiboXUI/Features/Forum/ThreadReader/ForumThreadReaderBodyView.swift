@@ -9,7 +9,6 @@ struct ForumThreadReaderBodyView: View {
     @State private var imageBrowserRequest: ForumThreadImageBrowserRequest?
     @State private var ratingResultsRequest: ForumThreadRatingResultsRequest?
     @State private var pollVotersRequest: ForumThreadPollVotersRequest?
-    @State private var visiblePostIDs: Set<String> = []
     @State private var highlightedPostID: String?
 
     let page: ForumThreadPage?
@@ -64,9 +63,7 @@ struct ForumThreadReaderBodyView: View {
             }
             .onChange(of: blacklist?.blockedUIDs) { _, _ in
                 imageBrowserRequest = nil
-                reportVisibleAnchor()
             }
-            .onChange(of: blacklist?.replyDisplay) { _, _ in reportVisibleAnchor() }
     }
 
     private var contentWithSheets: some View {
@@ -132,14 +129,6 @@ struct ForumThreadReaderBodyView: View {
                             }
                         }
                         .id(post.postID)
-                        .onAppear {
-                            visiblePostIDs.insert(post.postID)
-                            reportVisibleAnchor()
-                        }
-                        .onDisappear {
-                            visiblePostIDs.remove(post.postID)
-                            reportVisibleAnchor()
-                        }
                     }
 
                     ForumPageNavigationBar(
@@ -168,7 +157,8 @@ struct ForumThreadReaderBodyView: View {
             postIDs: page.map { _ in renderedPosts.map(\.postID) }, targetPostID: targetPostID,
             restoredAnchorPostID: restoredAnchorPostID,
             highlightedPostID: $highlightedPostID,
-            onConsumeRestoredAnchor: onConsumeRestoredAnchor
+            onConsumeRestoredAnchor: onConsumeRestoredAnchor,
+            onVisibleAnchorChange: onVisibleAnchorChange
         ))
         .forumPageBackground()
         .tint(theme.accentText)
@@ -188,18 +178,6 @@ struct ForumThreadReaderBodyView: View {
                 )
             }
         }
-    }
-
-    /// Reports the topmost rendered post (in page order) as the floor-level
-    /// reading anchor. `onAppear`/`onDisappear` track LazyVStack's realized
-    /// window rather than exact pixel visibility — floor-level precision is
-    /// the design target (browsing-history decision #6), not pixel offsets.
-    private func reportVisibleAnchor() {
-        guard page != nil else {
-            onVisibleAnchorChange(nil)
-            return
-        }
-        onVisibleAnchorChange(renderedPosts.first { visiblePostIDs.contains($0.postID) }?.postID)
     }
 
     private var renderedPosts: [ForumThreadPost] {

@@ -44,6 +44,7 @@ struct YamiboWindowInputHost: UIViewRepresentable {
             ) { [weak coordinator] _ in
                 MainActor.assumeIsolated { coordinator?.focus(windowID: windowID) }
             }
+            if window.isKeyWindow { coordinator.focus(windowID: windowID) }
         }
 
         private func detach() {

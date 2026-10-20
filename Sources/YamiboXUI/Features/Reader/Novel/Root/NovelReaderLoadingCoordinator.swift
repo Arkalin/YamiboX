@@ -178,7 +178,7 @@ final class NovelReaderLoadingCoordinator {
                 guard preparation.isCurrent(sequence), !isClosed else { return }
                 let prepared = try await workflow.prepareInitialLoad(initial: NovelReadingInitialPosition(
                     resumePoint: context.initialResumePoint ?? progress?.novel?.novelResumePoint,
-                    favoriteAuthorID: progress?.novel?.authorID
+                    favoriteAuthorID: context.initialResumePoint == nil ? progress?.novel?.authorID : nil
                 ), forceRefresh: forceRefreshInitialLoad)
                 try Task.checkCancellation()
                 guard preparation.isCurrent(sequence), self.workflow === workflow, !isClosed else { return }

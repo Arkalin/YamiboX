@@ -14,6 +14,7 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
     let restoredAnchorPostID: String?
     @Binding var highlightedPostID: String?
     let onConsumeRestoredAnchor: () -> Void
+    let onVisibleAnchorChange: (String?) -> Void
 
     private struct Request: Equatable {
         let postIDs: [String]?
@@ -30,13 +31,15 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
                 hasLayout = ready
                 if ready { scrollToPendingAnchor() }
             }
-            // Long novel floors may be taller than 100 viewports. Any visible
-            // portion counts; a percentage threshold could never be reached.
-            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { ids in
+            // Long floors need a tiny fraction, but strictly positive: zero
+            // also qualifies offscreen cached targets on some system versions.
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.000_001) { ids in
                 visiblePostIDs = ids
                 finishVisibleAnchor()
+                reportVisibleAnchor()
             }
             .task(id: Request(postIDs: postIDs, target: targetPostID, restored: restoredAnchorPostID)) {
+                defer { reportVisibleAnchor() }
                 pendingAnchor = nil
                 highlightedPostID = nil
                 guard let postIDs else { return }
@@ -66,6 +69,13 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
             withAnimation(.snappy) { position.scrollTo(id: pendingAnchor, anchor: .top) }
         }
         finishVisibleAnchor()
+    }
+
+    private func reportVisibleAnchor() {
+        // Visibility IDs are not promised in page order. LazyVStack onAppear
+        // includes offscreen prefetched rows and cannot identify this anchor.
+        let visible = Set(visiblePostIDs)
+        onVisibleAnchorChange(postIDs?.first { visible.contains($0) })
     }
 
     private func finishVisibleAnchor() {

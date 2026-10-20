@@ -104,6 +104,7 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
     /// the only history entry for that tid (browsing-history decision #14).
     /// Anchor reading progress is still written and restored as usual.
     public var isDiscussionView: Bool
+    public var explicitReadingState: ThreadExplicitReadingState?
 
     public var loadsAllPosts: Bool { true }
 
@@ -113,7 +114,8 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
         initialPage: Int = 1,
         targetPostID: String? = nil,
         authorID: String? = nil,
-        isDiscussionView: Bool = false
+        isDiscussionView: Bool = false,
+        explicitReadingState: ThreadExplicitReadingState? = nil
     ) {
         self.thread = thread
         self.title = title.nilIfBlank ?? L10n.string("forum.default_title")
@@ -121,6 +123,7 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
         self.targetPostID = targetPostID?.nilIfBlank
         self.authorID = authorID?.nilIfBlank
         self.isDiscussionView = isDiscussionView
+        self.explicitReadingState = explicitReadingState
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -130,6 +133,7 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
         case targetPostID
         case authorID
         case isDiscussionView
+        case explicitReadingState
     }
 
     public init(from decoder: any Decoder) throws {
@@ -140,7 +144,8 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
             initialPage: try container.decodeIfPresent(Int.self, forKey: .initialPage) ?? 1,
             targetPostID: try container.decodeIfPresent(String.self, forKey: .targetPostID),
             authorID: try container.decodeIfPresent(String.self, forKey: .authorID),
-            isDiscussionView: try container.decodeIfPresent(Bool.self, forKey: .isDiscussionView) ?? false
+            isDiscussionView: try container.decodeIfPresent(Bool.self, forKey: .isDiscussionView) ?? false,
+            explicitReadingState: try container.decodeIfPresent(ThreadExplicitReadingState.self, forKey: .explicitReadingState)
         )
     }
 }

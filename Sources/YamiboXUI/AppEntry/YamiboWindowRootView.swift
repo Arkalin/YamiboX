@@ -6,6 +6,7 @@ public struct YamiboWindowRootView: View {
     let initialTab: AppTab
     let request: YamiboWindowRequest?
     let launchScreenDeadline: ContinuousClock.Instant?
+    let handoffRequest: ReadingHandoffRequest?
 
     @SceneStorage("yamibox.window.identifier") private var windowID = ""
     @SceneStorage("yamibox.window.requestHandled") private var requestHandled = false
@@ -16,12 +17,14 @@ public struct YamiboWindowRootView: View {
         coordinator: YamiboWindowCoordinator,
         initialTab: AppTab,
         request: YamiboWindowRequest?,
-        launchScreenDeadline: ContinuousClock.Instant? = nil
+        launchScreenDeadline: ContinuousClock.Instant? = nil,
+        handoffRequest: ReadingHandoffRequest? = nil
     ) {
         self.coordinator = coordinator
         self.initialTab = initialTab
         self.request = request
         self.launchScreenDeadline = launchScreenDeadline
+        self.handoffRequest = handoffRequest
     }
 
     public var body: some View {
@@ -57,6 +60,10 @@ public struct YamiboWindowRootView: View {
                 }
             }
             self.model = model
+            if let handoffRequest { model.continueHandoff(handoffRequest) }
+        }
+        .onChange(of: handoffRequest) { _, request in
+            if let request { model?.continueHandoff(request) }
         }
     }
 

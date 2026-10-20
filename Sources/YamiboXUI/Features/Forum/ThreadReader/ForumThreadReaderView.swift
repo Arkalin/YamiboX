@@ -77,6 +77,7 @@ struct ForumThreadReaderView: View {
             recommendedReaderKind: model.recommendedReaderKind
         )
         .navigationTitle(model.navigationTitle)
+        .readingHandoff(model.handoffPayload)
         .yamiboInlineNavigationTitleDisplayMode()
         .toolbar(.visible, for: .navigationBar)
         // A detail column can be compact even when its containing window is regular.

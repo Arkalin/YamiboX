@@ -93,6 +93,29 @@ xcrun simctl launch booted com.arkalin.YamiboX.local --forum-base-url http://127
 需分别记录模拟器上的下载/进度验证与系统实时活动验证结果；iOS 26 真机验收须另外明确授权，
 不得为绕过限制切换正式 App 或生产论坛。
 
+## 阅读器与帖子页系统接力验证
+
+仅小说阅读器、漫画阅读器和原生帖子页发布 Handoff；详情页、列表及临时预览不发布。
+使用上面的直达参数进入当前本地论坛中实际存在的内容，不要把旧离线缓存当作在线 fixture。
+活动类型为当前 Bundle ID 加 `.handoff.novel`、`.handoff.manga` 或 `.handoff.thread`，
+测试版与其他版本不互通；载荷还校验论坛站点，不能跨站恢复。
+
+模拟器验证可以在调试器中检查当前窗口模型的 `handoffPublisher`，并构造 `NSUserActivity`
+注入 `YamiboStartupWindow.receiveHandoff(_:)` 接收回调：`userInfo` 的 `readingPosition`
+为 `YamiboHandoffPayload` 经 `encoded()` 生成的 `Data`，`continuationID` 为 UUID 字符串。
+活动类型必须与载荷类型相符。不要为此新增 URL Scheme、生产可用的测试启动参数或测试 target。
+
+- 小说检查章节、文字偏移以及分页/滚动和不同字号下的恢复；漫画检查当前章节、内容分页及图片索引。
+- 帖子检查页码、可见楼层、只看楼主及倒序；接力到第一页或首图也必须覆盖接收端旧进度。
+- 检查启动未完成时的排队、重复回调不重复导航，以及迟到的本地/WebDAV 续读不覆盖接力。
+- 检查切换页面、模式、账号、临时预览和窗口焦点后旧活动撤销；同一时刻只由焦点窗口发布。
+- 检查错误版本、跨站、非法标识、非法数值范围和超大载荷不改变导航；有效载荷中的过期图片索引按当前内容收敛。
+- 活动不启用搜索、预测或公开索引。
+
+`webpageURL` 指向当前站点的原帖，保留页码、筛选和可用的楼层片段；浏览器回退不恢复原生文字/图片位置。
+模拟器中的载荷、回调和链接检查不等同于真实跨设备验收。系统接力入口、设备间传输及未安装 App
+时的浏览器回退需另行明确授权后验证，不得擅自使用真机、普通 App 或生产论坛。
+
 ## 连接失败排查与限制
 
 若页面无法加载，先在 Mac 上执行 `curl -I http://127.0.0.1:8088/forum.php`，并在 Docker 仓库执行 `docker compose ps --all` 查看 `web`、`db` 服务状态；再确认 Xcode 选中的是 `YamiboX-Local` 且目标是 iOS 模拟器。真机不能使用此 Scheme。现有 REST fixture 的附件图片只有 8×8 像素，默认头像也只是占位图，不能用来验证常规大图浏览。此模式不保证未安装于本地论坛的正式站专属插件可用。

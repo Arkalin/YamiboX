@@ -651,7 +651,9 @@ public final class NovelReaderViewModel {
     }
 
     var currentResumeContext: NovelLaunchContext {
-        novelReaderPresentation == nil ? context : resumeContext(for: currentProgressSnapshot())
+        // Observe text-offset changes independently of the displayed page/chrome.
+        _ = publishedState.resumePoint
+        return novelReaderPresentation == nil ? context : resumeContext(for: currentProgressSnapshot())
     }
 
     public func selectSurface(_ surfaceIndex: Int) {
