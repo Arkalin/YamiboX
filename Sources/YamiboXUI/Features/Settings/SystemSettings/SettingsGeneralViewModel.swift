@@ -9,6 +9,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
     var navigation = AppNavigationSettings()
     var themeLibrary = AppThemeLibrary()
     var usesAccentSurfaces = true
+    var darkMode = AppDarkMode.system
     var launchBackground = CustomBackgroundSettings()
     var launchShowsBrand = true
 
@@ -36,6 +37,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         navigation = settings.system.navigation
         themeLibrary = settings.appearance.themeLibrary
         usesAccentSurfaces = settings.appearance.usesAccentSurfaces
+        darkMode = settings.appearance.darkMode
         launchBackground = settings.appearance.launchBackground
         launchShowsBrand = settings.appearance.launchShowsBrand
     }
@@ -60,6 +62,12 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         }
     }
 
+    func updateDarkMode(_ value: AppDarkMode) {
+        persistSettings(\.darkMode, to: value, updateSettings: updateSettings) {
+            $0.appearance.darkMode = value
+        }
+    }
+
     func saveTheme(_ theme: AppThemeDefinition) async throws {
         let saved = try await updateSettings {
             $0.appearance.themeLibrary.save(theme)
@@ -80,6 +88,7 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         navigation = AppNavigationSettings()
         themeLibrary = AppThemeLibrary()
         usesAccentSurfaces = true
+        darkMode = .system
         launchBackground = .init()
         launchShowsBrand = true
     }

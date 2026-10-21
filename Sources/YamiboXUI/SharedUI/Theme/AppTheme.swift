@@ -1,6 +1,16 @@
 import SwiftUI
 import YamiboXCore
 
+extension AppDarkMode {
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .off: .light
+        case .on: .dark
+        }
+    }
+}
+
 /// The application-wide accent paired with the full forum palette for a
 /// selected appearance preset. Switches have a separate track tint.
 public struct AppTheme: @unchecked Sendable {

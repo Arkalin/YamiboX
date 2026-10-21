@@ -12,6 +12,7 @@ struct SettingsGeneralView: View {
             SettingsAppearanceSection(
                 library: viewModel.themeLibrary,
                 usesAccentSurfaces: Binding(get: { viewModel.usesAccentSurfaces }, set: viewModel.updateUsesAccentSurfaces),
+                darkMode: Binding(get: { viewModel.darkMode }, set: viewModel.updateDarkMode),
                 isBusy: viewModel.isBusy,
                 onSelect: viewModel.selectTheme,
                 save: viewModel.saveTheme,

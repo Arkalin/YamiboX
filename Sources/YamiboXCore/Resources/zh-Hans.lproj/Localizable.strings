@@ -1098,6 +1098,10 @@
 "settings.enhanced_check_in" = "增强签到";
 "settings.enhanced_check_in_description" = "签到时同时访问自己的推广链接。";
 "settings.app_theme" = "应用主题";
+"settings.app_theme.dark_mode" = "深色模式";
+"settings.app_theme.dark_mode.system" = "跟随系统";
+"settings.app_theme.dark_mode.off" = "关闭";
+"settings.app_theme.dark_mode.on" = "开启";
 "settings.app_theme.classic" = "经典";
 "settings.app_theme.custom" = "自定义";
 "settings.app_theme.default" = "默认外观";

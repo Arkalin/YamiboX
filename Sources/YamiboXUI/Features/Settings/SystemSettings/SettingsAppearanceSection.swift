@@ -5,6 +5,7 @@ import YamiboXCore
 struct SettingsAppearanceSection: View {
     let library: AppThemeLibrary
     @Binding var usesAccentSurfaces: Bool
+    @Binding var darkMode: AppDarkMode
     let isBusy: Bool
     let onSelect: (String) -> Void
     let save: (AppThemeDefinition) async throws -> Void
@@ -80,6 +81,13 @@ struct SettingsAppearanceSection: View {
 
             AppThemeSwitch(L10n.string("settings.app_theme.tint_interface"), isOn: $usesAccentSurfaces)
                 .disabled(isBusy)
+
+            Picker(L10n.string("settings.app_theme.dark_mode"), selection: $darkMode) {
+                ForEach(AppDarkMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .disabled(isBusy)
         } header: {
             Text(L10n.string("settings.app_theme"))
         } footer: {

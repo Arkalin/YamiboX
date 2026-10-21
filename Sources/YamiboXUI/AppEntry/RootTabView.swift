@@ -41,6 +41,7 @@ public struct RootTabView: View {
             }
         }
         .appTheme(.theme(for: appModel.appAppearanceSettings))
+        .preferredColorScheme(appModel.appAppearanceSettings.darkMode.preferredColorScheme)
         .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
         .task {
             await appModel.bootstrapIfNeeded()

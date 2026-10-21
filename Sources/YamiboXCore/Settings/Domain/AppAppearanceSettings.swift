@@ -9,6 +9,22 @@ public enum AppThemePreset: String, Codable, Hashable, CaseIterable, Identifiabl
 
 }
 
+public enum AppDarkMode: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
+    case system
+    case off
+    case on
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .system: L10n.string("settings.app_theme.dark_mode.system")
+        case .off: L10n.string("settings.app_theme.dark_mode.off")
+        case .on: L10n.string("settings.app_theme.dark_mode.on")
+        }
+    }
+}
+
 public struct AppAppearanceSettings: Codable, Hashable, Sendable {
     public static let defaultCustomThemeColorHex: UInt32 = 0x6750A4
 
@@ -21,6 +37,7 @@ public struct AppAppearanceSettings: Codable, Hashable, Sendable {
         themeLibrary.selectedTheme?.colorHex ?? Self.defaultCustomThemeColorHex
     }
     public var usesAccentSurfaces: Bool
+    public var darkMode: AppDarkMode
     public var launchBackground: CustomBackgroundSettings
     public var launchShowsBrand: Bool
 
@@ -29,6 +46,7 @@ public struct AppAppearanceSettings: Codable, Hashable, Sendable {
         customThemeColorHex: UInt32 = Self.defaultCustomThemeColorHex,
         themeLibrary: AppThemeLibrary? = nil,
         usesAccentSurfaces: Bool? = nil,
+        darkMode: AppDarkMode = .system,
         launchBackground: CustomBackgroundSettings = .init(),
         launchShowsBrand: Bool = true
     ) {
@@ -36,12 +54,13 @@ public struct AppAppearanceSettings: Codable, Hashable, Sendable {
             ? AppThemeLibrary(themes: [AppThemeDefinition(id: "custom", name: L10n.string("settings.app_theme.custom"), colorHex: customThemeColorHex)], selectedID: "custom")
             : AppThemeLibrary())
         self.usesAccentSurfaces = usesAccentSurfaces ?? true
+        self.darkMode = darkMode
         self.launchBackground = launchBackground
         self.launchShowsBrand = launchShowsBrand
     }
 
     private enum CodingKeys: String, CodingKey {
-        case themeLibrary, usesAccentSurfaces, launchBackground, launchShowsBrand
+        case themeLibrary, usesAccentSurfaces, darkMode, launchBackground, launchShowsBrand
     }
 
     public init(from decoder: any Decoder) throws {
@@ -49,6 +68,7 @@ public struct AppAppearanceSettings: Codable, Hashable, Sendable {
         self.init(
             themeLibrary: try container.decodeIfPresent(AppThemeLibrary.self, forKey: .themeLibrary) ?? AppThemeLibrary(),
             usesAccentSurfaces: try container.decodeIfPresent(Bool.self, forKey: .usesAccentSurfaces) ?? true,
+            darkMode: try container.decodeIfPresent(AppDarkMode.self, forKey: .darkMode) ?? .system,
             launchBackground: try container.decodeIfPresent(CustomBackgroundSettings.self, forKey: .launchBackground) ?? .init(),
             launchShowsBrand: try container.decodeIfPresent(Bool.self, forKey: .launchShowsBrand) ?? true
         )
@@ -58,6 +78,7 @@ public struct AppAppearanceSettings: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(themeLibrary, forKey: .themeLibrary)
         try container.encode(usesAccentSurfaces, forKey: .usesAccentSurfaces)
+        try container.encode(darkMode, forKey: .darkMode)
         try container.encode(launchBackground, forKey: .launchBackground)
         try container.encode(launchShowsBrand, forKey: .launchShowsBrand)
     }
