@@ -67,7 +67,7 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         promotionSession: URLSession = YamiboNetworkConfiguration.makeCookieIsolatedSession(),
         verificationDelayNanoseconds: UInt64 = 3_000_000_000,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        requestExecutor: ForumRequestExecutor = .unavailable,
         makeRemote: (@Sendable (AccountSessionSnapshot) -> any YamiboCheckInRemoteOperating)? = nil
     ) {
         self.sessionStore = sessionStore
@@ -77,7 +77,7 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         self.makeRemote = makeRemote ?? { snapshot in
             YamiboCheckInRemoteRepository(
                 session: session, snapshot: snapshot, sessionStore: sessionStore,
-                promotionSession: promotionSession, wafRecoverer: wafRecoverer
+                promotionSession: promotionSession, requestExecutor: requestExecutor
             )
         }
     }
@@ -152,7 +152,7 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
             result: mapNetworkError(error),
             details: cancelled ? nil : LoadFailureDetails(error: error),
             isCancelled: cancelled,
-            requiresSecurityVerification: LoadDiagnosticError.classificationError(error) as? YamiboError == .securityVerificationRequired
+            requiresSecurityVerification: LoadDiagnosticError.classificationError(error) is ForumWAFFailure
         )
     }
 

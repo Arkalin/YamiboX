@@ -28,6 +28,7 @@ public struct LoadFailureDetails: Hashable, Sendable {
     public let isHTMLParsingFailure: Bool
     /// Whether the typed recovery error requires authentication, independent of diagnostic text.
     public private(set) var requiresAuthentication: Bool
+    public private(set) var isSilentForumFailure: Bool
     public let html: String?
     public let failures: [Item]
 
@@ -38,12 +39,14 @@ public struct LoadFailureDetails: Hashable, Sendable {
         httpStatus = nil
         isHTMLParsingFailure = false
         requiresAuthentication = false
+        isSilentForumFailure = failures.contains { $0.details.isSilentForumFailure }
         html = nil
         self.failures = failures
     }
 
     public init(error: any Error, requestContext: String? = nil, html: String? = nil) {
         let classificationError = LoadDiagnosticError.classificationError(error)
+        let isSilentForumFailure = classificationError is ForumWAFFailure
         let requiresAuthentication: Bool
         if let yamibo = classificationError as? YamiboError {
             switch yamibo {
@@ -58,9 +61,11 @@ public struct LoadFailureDetails: Hashable, Sendable {
         if let diagnostic = error as? LoadDiagnosticError {
             self = diagnostic.details.adding(requestContext: requestContext, html: html)
             self.requiresAuthentication = requiresAuthentication
+            self.isSilentForumFailure = isSilentForumFailure
             return
         }
         self.requiresAuthentication = requiresAuthentication
+        self.isSilentForumFailure = isSilentForumFailure
         summary = LoadFailureRedactor.redact(error.localizedDescription)
         var causes: [Cause] = []
         var current: (any Error)? = error
@@ -102,7 +107,8 @@ public struct LoadFailureDetails: Hashable, Sendable {
 
     private init(
         summary: String, causes: [Cause], requestContext: String?,
-        httpStatus: Int?, isHTMLParsingFailure: Bool, requiresAuthentication: Bool, html: String?, failures: [Item]
+        httpStatus: Int?, isHTMLParsingFailure: Bool, requiresAuthentication: Bool,
+        isSilentForumFailure: Bool, html: String?, failures: [Item]
     ) {
         self.summary = summary
         self.causes = causes
@@ -110,6 +116,7 @@ public struct LoadFailureDetails: Hashable, Sendable {
         self.httpStatus = httpStatus
         self.isHTMLParsingFailure = isHTMLParsingFailure
         self.requiresAuthentication = requiresAuthentication
+        self.isSilentForumFailure = isSilentForumFailure
         self.html = html
         self.failures = failures
     }
@@ -122,6 +129,7 @@ public struct LoadFailureDetails: Hashable, Sendable {
             httpStatus: self.httpStatus ?? httpStatus,
             isHTMLParsingFailure: isHTMLParsingFailure || html != nil,
             requiresAuthentication: requiresAuthentication,
+            isSilentForumFailure: isSilentForumFailure,
             html: self.html ?? html.map(LoadFailureRedactor.redact),
             failures: failures
         )

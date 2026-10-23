@@ -91,7 +91,7 @@ final class AccountLoginViewModel {
     }
 
     private func makeService() -> YamiboAccountService {
-        .isolatedLoginService(sessionStore: sessionStore, profileStore: profileStore, wafRecoverer: webCoordinator)
+        .isolatedLoginService(sessionStore: sessionStore, profileStore: profileStore, executor: webCoordinator.requestExecutor)
     }
 
     private func commit(_ profile: YamiboProfile) async throws -> Bool {
@@ -170,7 +170,12 @@ struct AccountLoginSheet: View {
             Task { if await model.finishWebLogin() { complete() } }
         }) {
             NavigationStack {
-                ForumWebSessionWebViewHost(coordinator: model.webCoordinator, placement: .visible)
+                ForumWebSessionWebViewHost(coordinator: model.webCoordinator)
+                    .overlay(alignment: .bottom) {
+                        if let failure = model.webCoordinator.silentFailure {
+                            Text(failure).font(.footnote).padding().background(.regularMaterial)
+                        }
+                    }
                     .navigationTitle(L10n.string("mine.web_login"))
                     .yamiboInlineNavigationTitleDisplayMode()
                     .toolbar {
@@ -184,12 +189,6 @@ struct AccountLoginSheet: View {
                 let monitor = MineWebLoginSessionMonitor(sessionStore: model.sessionStore)
                 if await monitor.waitForAuthentication(), !Task.isCancelled { isWebLoginPresented = false }
             }
-        }
-        .sheet(item: Binding(
-            get: { isWebLoginPresented ? nil : model.webCoordinator.presentation },
-            set: { if $0 == nil { model.webCoordinator.dismissPresentation() } }
-        )) { _ in
-            ForumWAFVerificationView(coordinator: model.webCoordinator)
         }
     }
 

@@ -54,7 +54,7 @@ public actor ReaderChapterCommentsRepository: ReaderChapterCommentsLoading {
         for target: ReaderChapterCommentTarget,
         request: ChapterCommentRatingRequest
     ) async throws -> [ChapterComment] {
-        let html = try await client.fetchHTML(url: request.url, cachePolicy: .reloadIgnoringLocalCacheData)
+        let html = try await client.fetchHTML(url: request.url, replay: .safeReadOnce, cachePolicy: .reloadIgnoringLocalCacheData)
         var postTarget = target
         postTarget.ownerPostID = request.postID
         let ratings = try LoadDiagnosticError.parsing(html: html, context: "ChapterCommentsHTMLParser.parseFullRatingReasonsPage") {
@@ -84,7 +84,7 @@ public actor ReaderChapterCommentsRepository: ReaderChapterCommentsLoading {
     private func loadUnfilteredChapterCommentHTML(for target: ReaderChapterCommentTarget) async throws -> String {
         if let findPostURL = YamiboRoute.findPostURL(threadID: target.threadID, postID: target.ownerPostID) {
             do {
-                return try await client.fetchHTML(url: findPostURL, cachePolicy: .reloadIgnoringLocalCacheData)
+                return try await client.fetchHTML(url: findPostURL, replay: .safeReadOnce, cachePolicy: .reloadIgnoringLocalCacheData)
             } catch {
                 if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
             }

@@ -13,6 +13,13 @@ public struct YamiboImageLoadContext: Hashable, Sendable {
     let imageEpoch: UUID?
     let recoveryEpoch: UUID?
     let credentials: YamiboRequestCredentials
+    private(set) var recoveryRevision: UUID?
+
+    public func recovering(_ revision: UUID?) -> Self {
+        var copy = self
+        copy.recoveryRevision = revision
+        return copy
+    }
 }
 
 struct YamiboCoverImageCoolingDown: Error, Sendable {
@@ -25,10 +32,12 @@ public struct YamiboImageLoadRevision: Sendable {
     public let epoch: UUID
     public let images: [String: UUID]
     public let recoveredCovers: [String: UUID]
+    /// Retry hints for failed consumers only, not cache/request invalidations.
+    public let verifiedImages: [String: UUID]
 }
 
 /// Owns network single-flight and cover-only negative caching. Keeping both
-/// together means one HTTP attempt increments the failure count exactly once.
+/// together counts a shared load (including a verified replay) only once.
 actor YamiboImageLoadCoordinator {
     nonisolated let initialEpoch: UUID
     private struct Failure: Codable {
@@ -53,6 +62,20 @@ actor YamiboImageLoadCoordinator {
         var waiters: [UUID: CheckedContinuation<Data, any Error>]
     }
 
+    private struct VerificationFailure {
+        let ticket: RecoveryTicket
+        let imageID: String
+        let notificationKey: String
+        var notified = false
+    }
+
+    struct RecoveryTicket: Sendable {
+        let requestContext: ForumRequestContext
+        let operation: ForumRequestOperation
+        let lease: ForumRuntimeLease
+        let challenge: YamiboWAFChallenge
+    }
+
     private let sessionStore: any SessionStoring
     private let fileURL: URL
     private let now: @Sendable () -> Date
@@ -65,6 +88,8 @@ actor YamiboImageLoadCoordinator {
     private var epoch: UUID
     private var imageEpochs: [String: UUID] = [:]
     private var recoveryEpochs: [String: UUID] = [:]
+    private var verificationFailures: [String: VerificationFailure] = [:]
+    private var verifiedImages: [String: UUID] = [:]
 
     init(sessionStore: any SessionStoring, cacheDirectory: URL, now: @escaping @Sendable () -> Date = { .now }) {
         let epoch = UUID()
@@ -78,7 +103,8 @@ actor YamiboImageLoadCoordinator {
     nonisolated func changes() -> AsyncStream<YamiboImageLoadRevision> { broadcaster.stream() }
 
     private func publishRevision() {
-        broadcaster.post(YamiboImageLoadRevision(epoch: epoch, images: imageEpochs, recoveredCovers: recoveryEpochs))
+        broadcaster.post(YamiboImageLoadRevision(epoch: epoch, images: imageEpochs,
+            recoveredCovers: recoveryEpochs, verifiedImages: verifiedImages))
     }
 
     func context(for source: YamiboImageSource) async throws -> YamiboImageLoadContext {
@@ -112,12 +138,18 @@ actor YamiboImageLoadCoordinator {
             (authenticationID != next || accountGeneration != snapshot.generation)
         authenticationID = next
         accountGeneration = snapshot.generation
-        guard changed else { return } // A cold launch must retain its cooldown.
+        guard changed else {
+            // WAF-only updates must not clear caches or restart successful loads.
+            recoverVerificationFailures(using: snapshot.session.credentials)
+            return // A cold launch must retain its cover cooldown.
+        }
         loadFailuresIfNeeded()
         failures = failures.filter { $0.value.authenticationID != next }
         epoch = UUID()
         imageEpochs.removeAll()
         recoveryEpochs.removeAll()
+        verificationFailures.removeAll()
+        verifiedImages.removeAll()
         cancelFlights { _ in true }
         persist()
         publishRevision()
@@ -157,6 +189,8 @@ actor YamiboImageLoadCoordinator {
                     if source.purpose == .cover { flights[context.requestID]?.includesCover = true }
                     return
                 }
+                // An active attempt handles its own verification/replay. It must
+                // not also be restarted by an older failure's notification.
                 let id = UUID()
                 let task = Task { [weak self] in
                     let result: Result<Data, any Error>
@@ -170,6 +204,64 @@ actor YamiboImageLoadCoordinator {
         } onCancel: {
             Task { await self.cancelWaiter(waiterID, requestID: context.requestID) }
         }
+    }
+
+    /// Only attempts that could not complete verification wait for another
+    /// consumer to verify. A replay that is still blocked is deliberately final.
+    func recordVerificationFailure(for source: YamiboImageSource, context: YamiboImageLoadContext, ticket: RecoveryTicket) async {
+        guard await isCurrent(context, source: source),
+              ticket.lease.isValid, ticket.operation.attemptCount == 1,
+              verificationFailures.count < 2048 || verificationFailures[context.failureKey] != nil else { return }
+        verificationFailures[context.failureKey] = VerificationFailure(ticket: ticket, imageID: source.cacheKey,
+            notificationKey: source.recoveryKey)
+        YamiboLog.networking.info("Forum operation=\(ticket.operation.id, privacy: .public) image-ticket=registered")
+        // A WebKit update can win the race with this failure being recorded.
+        await sessionDidChange()
+    }
+
+    func takeRecoveryTicket(context: YamiboImageLoadContext) throws -> RecoveryTicket? {
+        guard let revision = context.recoveryRevision else {
+            verificationFailures.removeValue(forKey: context.failureKey)
+            return nil
+        }
+        guard let failure = verificationFailures[context.failureKey], failure.notified,
+              verifiedImages[failure.notificationKey] == revision else { throw ForumWAFFailure.replayExhausted }
+        // A delayed UI callback must fail closed, not mint a new operation.
+        guard failure.ticket.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
+        guard failure.ticket.operation.attemptCount == 1 else { throw ForumWAFFailure.replayExhausted }
+        guard failure.ticket.requestContext.key.generation == context.accountGeneration,
+              failure.ticket.requestContext.key.userAgent == context.credentials.userAgent else { throw ForumWAFFailure.sessionInvalidated }
+        YamiboLog.networking.info("Forum operation=\(failure.ticket.operation.id, privacy: .public) image-ticket=consumed")
+        return failure.ticket
+    }
+
+    private func recoverVerificationFailures(using credentials: YamiboRequestCredentials) {
+        guard !verificationFailures.isEmpty else { return }
+        if verifiedImages.count >= 2048 {
+            let active = Set(flights.values.map { $0.source.recoveryKey }).union(verificationFailures.values.map(\.notificationKey))
+            verifiedImages = verifiedImages.filter { active.contains($0.key) }
+        }
+        var recovered = false
+        for (key, failure) in verificationFailures {
+            guard !failure.notified else { continue }
+            guard failure.ticket.lease.isValid, failure.ticket.operation.attemptCount == 1 else {
+                verificationFailures.removeValue(forKey: key)
+                continue
+            }
+            guard !failure.notified, credentials.userAgent == failure.ticket.requestContext.key.userAgent,
+                  ForumWAFResult(cookies: credentials.cookies).hasUpdatedClearance(for: failure.ticket.challenge) else { continue }
+            verificationFailures[key]?.notified = true
+            verifiedImages[failure.notificationKey] = UUID()
+            YamiboLog.networking.info("Forum operation=\(failure.ticket.operation.id, privacy: .public) image-ticket=notified")
+            recovered = true
+        }
+        if recovered { publishRevision() }
+    }
+
+    private static func clearanceID(_ credentials: YamiboRequestCredentials, for url: URL) -> String? {
+        guard let cookie = credentials.cookies.first(where: { $0.name == "nox_jst_v1" && $0.matches(url) }) else { return nil }
+        return digest([cookie.identity, cookie.value, cookie.expiresAt.map { String($0.timeIntervalSince1970) } ?? "",
+            credentials.userAgent])
     }
 
     private func complete(requestID: String, id: UUID, result: Result<Data, any Error>) async {
@@ -210,6 +302,7 @@ actor YamiboImageLoadCoordinator {
     /// or a different thumbnail variant can recover every failed cover of it.
     func didDecode(_ source: YamiboImageSource, context: YamiboImageLoadContext) async {
         guard await isCurrent(context, source: source) else { return }
+        verificationFailures = verificationFailures.filter { $0.value.imageID != source.cacheKey }
         loadFailuresIfNeeded()
         let imageID = Self.digest([source.cacheKey])
         let hadFailures = failures.values.contains {
@@ -253,6 +346,16 @@ actor YamiboImageLoadCoordinator {
     }
 
     private func invalidateFlights(for urls: Set<URL>?) {
+        if let urls {
+            let ids = Set(urls.map(\.absoluteString))
+            for (key, failure) in verificationFailures where ids.contains(failure.imageID) {
+                verificationFailures.removeValue(forKey: key)
+                verifiedImages.removeValue(forKey: failure.notificationKey)
+            }
+        } else {
+            verificationFailures.removeAll()
+            verifiedImages.removeAll()
+        }
         if let urls, imageEpochs.count + urls.count <= 2048 {
             for url in urls {
                 imageEpochs[url.absoluteString] = UUID()

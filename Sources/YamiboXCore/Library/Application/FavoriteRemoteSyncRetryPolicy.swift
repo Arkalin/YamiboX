@@ -30,6 +30,7 @@ struct FavoriteRemoteSyncRetryPolicy: Sendable {
 
     static func isRunFatal(_ error: any Error) -> Bool {
         let source = LoadDiagnosticError.classificationError(error)
+        if source is ForumWAFFailure { return true }
         if let favoriteError = source as? FavoriteActionError {
             return favoriteError == .missingFavoriteAddToken
         }

@@ -3,6 +3,7 @@ import YamiboXCore
 
 #if os(iOS)
 import UIKit
+import Combine
 
 /// Page-keyed image access for the manga reader viewports: maps a page
 /// projection to its `YamiboImageSource` and forwards to the UI pipeline.
@@ -39,9 +40,17 @@ final class MangaReaderPageImageLoader {
         ReaderImagePrefetchCoordinator(pipeline: uiImagePipeline)
     }
 
-    func image(for page: MangaReaderPageProjection) async throws -> UIImage {
+    func verificationRecoveries(for page: MangaReaderPageProjection) -> AnyPublisher<Void, Never> {
+        uiImagePipeline.verificationRecoveries(for: imageSource(page))
+    }
+
+    func verificationRecoveryRevision(for page: MangaReaderPageProjection) -> UUID? {
+        uiImagePipeline.verificationRecoveryRevision(for: imageSource(page))
+    }
+
+    func image(for page: MangaReaderPageProjection, recoveryRevision: UUID? = nil) async throws -> UIImage {
         do {
-            return try await uiImagePipeline.image(for: imageSource(page))
+            return try await uiImagePipeline.image(for: imageSource(page), recoveryRevision: recoveryRevision)
         } catch {
             if !(error is CancellationError) {
                 YamiboLog.reader.warning("Failed to load manga page image: \(error.localizedDescription)")

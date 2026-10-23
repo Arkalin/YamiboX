@@ -32,7 +32,53 @@ check_symbols() {
     fi
 }
 
+check_pattern() {
+    local file="$1" pattern="$2" rule="$3" matches
+    matches=$(awk -v pattern="$pattern" '!/^[[:space:]]*\/\// && $0 ~ pattern { printf "%d:%s\n", NR, $0 }' "$file")
+    if [[ -n "$matches" ]]; then
+        printf '%s: %s\n%s\n' "$file" "$rule" "$matches" >&2
+        violations=1
+    fi
+}
+
 while IFS= read -r -d '' file; do
+    # Exact-file registrations, not directory exceptions. Native adapters own
+    # one attempt; external-service registrations may not sign forum requests.
+    case "$file" in
+        Sources/YamiboXCore/Infrastructure/Networking/NetworkLoggedTransport.swift|\
+        Sources/YamiboXCore/Infrastructure/Networking/YamiboNetworkConfiguration.swift|\
+        Sources/YamiboXCore/Infrastructure/Images/YamiboImageDataPipeline.swift|\
+        Sources/YamiboXCore/Reader/Shared/Download/Application/DownloadBackgroundTransport.swift) ;;
+        *) check_pattern "$file" '(URLSession[[:space:]]*[(]|URLSession[.]shared|[.](dataTask|downloadTask|uploadTask)[[:space:]]*[(]|(session|urlSession)[.](data|download|upload|bytes)[[:space:]]*[(])' \
+            'Native transport creation/execution requires an exact controlled-adapter registration.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXCore/Infrastructure/Networking/NetworkLoggedTransport.swift|\
+        Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/ForumDataTransport.swift|\
+        Sources/YamiboXCore/Sync/WebDAV/WebDAVClient.swift|\
+        Sources/YamiboXCore/Update/AppSourceLoader.swift) ;;
+        *) check_symbols "$file" 'NetworkLoggedTransport' 'Business forum requests must use the required executor and controlled adapter.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXCore/Sync/WebDAV/WebDAVClient.swift|Sources/YamiboXCore/Update/AppSourceLoader.swift)
+            check_symbols "$file" 'YamiboRequestCredentials|ForumRequestContext|ForumWAFRecoveryCoordinator|applyCredentials' \
+                'External services must not inject forum credentials or initiate forum recovery.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXUI/Features/Forum/Web/ForumWebView.swift|\
+        Sources/YamiboXUI/AppEntry/ForumWebSessionCoordinator.swift|\
+        Sources/YamiboXUI/Platform/WebKit/WebKitSilentForumVerifier.swift) ;;
+        *) check_pattern "$file" '(WKWebView|WKWebViewConfiguration|WKWebsiteDataStore)[[:space:]]*[(]' \
+            'WebKit creation requires an exact web-session or silent-verifier registration.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXCore/Infrastructure/Images/YamiboImageDataPipeline.swift|\
+        Sources/YamiboXUI/Platform/Images/YamiboUIImagePipeline.swift) ;; # UI decodes Core-supplied bytes only.
+        *) check_pattern "$file" '(^|[^[:alnum:]_])(DataLoader|ImagePipeline)[[:space:]]*[({]' 'Nuke loaders require an exact transport or decode-only registration.' ;;
+    esac
+    check_symbols "$file" 'YamiboWAFChallengeRecovering|allowsWAFRecovery|allowsWAFReplay|wafRecoverer|presentFallback|presentVerificationFallback|wafVerificationPresentation|WAFVerificationPresentationModifier|BackgroundCheckInWAFRecoverer' \
+        'Legacy optional recovery, independent replay and automatic WAF presentation are forbidden.'
+    check_pattern "$file" 'ForumRequestExecutor[[:space:]]*[?]' 'Forum executor dependencies must not be optional.'
     case "$file" in
         Sources/YamiboXCore/*)
             check_imports "$file" \

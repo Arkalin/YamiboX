@@ -125,9 +125,7 @@ public actor UserSpaceRepository: MessageUnreadLoading {
         // A silent probe must never open WAF verification UI. The PM list's
         // first page exposes both counters without reading any conversation
         // or visiting the notice list (which marks notices as read).
-        var probeClient = client
-        probeClient.wafRecoverer = nil
-        let html = try await probeClient.fetchHTML(
+        let html = try await client.fetchHTML(
             for: .userSpacePrivateMessages(page: 1),
             cachePolicy: .reloadIgnoringLocalCacheData
         )

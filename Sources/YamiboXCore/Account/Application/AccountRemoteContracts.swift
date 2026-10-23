@@ -11,7 +11,7 @@ protocol YamiboAccountRemoteOperating: Sendable {
     func fetchProfile(
         credentials: YamiboRequestCredentials,
         handlesCookies: Bool,
-        allowsWAFRecovery: Bool,
+        context: ForumRequestContext,
         validateSession: (@Sendable () async throws -> Void)?
     ) async throws -> YamiboProfile
     func signOut(credentials: YamiboRequestCredentials, formHash: String) async throws

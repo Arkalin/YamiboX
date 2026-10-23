@@ -11,16 +11,20 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     private var networkLogs: [Int: DownloadNetworkLog] = [:]
     private var unstartedTaskIdentifiers: Set<Int> = []
     private var backgroundEventCompletionHandlers: [String: () -> Void] = [:]
-    private let sessionStore: (any SessionStoring)?
+    private let sessionStore: any SessionStoring
+    private let requestExecutor: ForumRequestExecutor
+    private let controlledSession = YamiboNetworkConfiguration.makeSession()
 
     public init(
         configuration: URLSessionConfiguration = DownloadBackgroundTransport.makeBackgroundConfiguration(),
         delegateQueue: OperationQueue? = nil,
-        sessionStore: (any SessionStoring)? = nil
+        sessionStore: any SessionStoring = SessionStore(),
+        requestExecutor: ForumRequestExecutor = .unavailable
     ) {
         let queue = delegateQueue ?? OperationQueue()
         queue.maxConcurrentOperationCount = 1
         self.sessionStore = sessionStore
+        self.requestExecutor = requestExecutor
         sessionFactory = { delegate in
             URLSession(configuration: configuration, delegate: delegate, delegateQueue: queue)
         }
@@ -29,10 +33,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
 
     init(
         sessionFactory: @escaping @Sendable (URLSessionDelegate) -> URLSession,
-        sessionStore: (any SessionStoring)? = nil
+        sessionStore: any SessionStoring = SessionStore(),
+        requestExecutor: ForumRequestExecutor = .unavailable
     ) {
         self.sessionFactory = sessionFactory
         self.sessionStore = sessionStore
+        self.requestExecutor = requestExecutor
         super.init()
     }
 
@@ -48,6 +54,9 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         #endif
         configuration.httpMaximumConnectionsPerHost = 3
         configuration.allowsCellularAccess = true
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
         return configuration
     }
 
@@ -60,20 +69,47 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         progress: @escaping @Sendable (DownloadTransferProgress) -> Void
     ) async throws -> Data {
         await DownloadBackgroundSessionMigration.shared.retire()
+        let snapshot = try await sessionStore.snapshot()
+        let context = sessionStore.forumRequestContext(snapshot: snapshot)
+        return try await requestExecutor.execute(context: context,
+            policy: .init(replay: .safeReadOnce, lease: .init(duration: .seconds(40)))) { [self] attempt in
+            // Background URLSession follows redirects without a per-hop veto.
+            // Forum requests therefore use the controlled, cancellable adapter.
+            guard attempt.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
+            if !ForumTransportCapabilities.backgroundDownload.admits(url: source.url, context: attempt.context, lease: attempt.lease) {
+                var request = URLRequest(url: source.url)
+                YamiboNetworkPolicy.applyCredentials(attempt.credentials, to: &request, handlesCookies: false)
+                request.setValue(source.refererPageURL?.absoluteString, forHTTPHeaderField: "Referer")
+                request.timeoutInterval = 15
+                let response = try await ForumDataTransport.data(request: request, attempt: attempt,
+                    session: controlledSession, delegate: nil,
+                    bodyPolicy: .init(prefixByteCount: 512) { response, _ in
+                        NetworkResponseBodyLimit(maximumBytes: 50 * 1024 * 1024,
+                            error: YamiboError.invalidResponse(statusCode: response.statusCode))
+                    }, progress: { received, expected in
+                        progress(.init(receivedBytes: received, expectedBytes: expected))
+                    })
+                guard 200..<300 ~= response.response.statusCode else {
+                    throw YamiboError.invalidResponse(statusCode: response.response.statusCode)
+                }
+                return response.data
+            }
+            return try await backgroundAttempt(for: source, attempt: attempt, progress: progress)
+        }
+    }
+
+    private func backgroundAttempt(for source: YamiboImageSource, attempt: ForumRequestAttempt,
+                                   progress: @escaping @Sendable (DownloadTransferProgress) -> Void) async throws -> Data {
         try Task.checkCancellation()
         let taskBox = URLSessionTaskBox()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            let credentials = await currentCredentials()
-            try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
                 var urlRequest = URLRequest(url: source.url)
-                if let credentials {
-                    YamiboNetworkPolicy.applyCredentials(credentials, to: &urlRequest)
-                }
-                if let refererPageURL = source.refererPageURL {
-                    urlRequest.setValue(refererPageURL.absoluteString, forHTTPHeaderField: "Referer")
-                }
+                // Only public external resources use this adapter. No account,
+                // WAF, Referer or shared jar can follow its invisible redirects.
+                urlRequest.httpShouldHandleCookies = false
+                urlRequest.setValue(attempt.context.key.userAgent, forHTTPHeaderField: "User-Agent")
                 let task = session.downloadTask(with: urlRequest)
                 lock.withLock { _ = unstartedTaskIdentifiers.insert(task.taskIdentifier) }
                 task.taskDescription = source.url.absoluteString
@@ -82,6 +118,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                     register(
                         taskIdentifier: task.taskIdentifier,
                         task: task,
+                        attempt: attempt,
                         continuation: continuation,
                         progress: progress,
                         logToken: NetworkLogRecorder.shared.begin(request: urlRequest, source: .download)
@@ -90,6 +127,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                     return true
                 }
                 guard admitted else {
+                    lock.withLock { _ = unstartedTaskIdentifiers.remove(task.taskIdentifier) }
                     continuation.resume(throwing: CancellationError())
                     return
                 }
@@ -100,6 +138,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     public func cancelAllDownloads() {
+        controlledSession.getAllTasks { $0.forEach { $0.cancel() } }
         let tasks = lock.withLock { pendingDownloads.values.compactMap(\.task) }
         tasks.forEach { $0.cancel() }
     }
@@ -154,12 +193,29 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         didFinishDownloadingTo location: URL
     ) {
         _ = networkLog(for: downloadTask)
+        guard lock.withLock({ pendingDownloads[downloadTask.taskIdentifier] != nil }) else { return }
         do {
+            guard let response = downloadTask.response as? HTTPURLResponse else {
+                throw YamiboError.invalidResponse(statusCode: nil)
+            }
+            let file = try FileHandle(forReadingFrom: location)
+            defer { try? file.close() }
+            let prefix = try file.read(upToCount: ForumWAFResponseClassifier.maximumBodyBytes) ?? Data()
+            lock.withLock {
+                pendingDownloads[downloadTask.taskIdentifier]?.response = response
+                pendingDownloads[downloadTask.taskIdentifier]?.prefix = prefix
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: location.path)
+            guard (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 50 * 1024 * 1024,
+                  200..<300 ~= response.statusCode else { throw YamiboError.invalidResponse(statusCode: (downloadTask.response as? HTTPURLResponse)?.statusCode) }
             let data = try Data(contentsOf: location)
-            complete(taskIdentifier: downloadTask.taskIdentifier, result: .success(data))
+            lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .success(data) }
         } catch {
-            complete(taskIdentifier: downloadTask.taskIdentifier, result: .failure(error))
+            lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .failure(error) }
         }
+        // Foundation owns and removes `location` after this callback. Retain
+        // only the bounded classification prefix and a normal resource result.
+        finishIfReady(taskIdentifier: downloadTask.taskIdentifier)
     }
 
     public func urlSession(
@@ -167,22 +223,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-        if let log = networkLog(for: task) {
-            _ = lock.withLock { networkLogs.removeValue(forKey: task.taskIdentifier) }
-            NetworkLogRecorder.shared.finish(
-                log.token,
-                response: task.response,
-                sentBytes: task.countOfBytesSent,
-                receivedBytes: task.countOfBytesReceived,
-                error: error,
-                finalURL: task.currentRequest?.url,
-                duration: log.duration,
-                startedAt: log.startedAt
-            )
+        lock.withLock {
+            unstartedTaskIdentifiers.remove(task.taskIdentifier)
+            pendingDownloads[task.taskIdentifier]?.completionReceived = true
+            pendingDownloads[task.taskIdentifier]?.completionError = error.map(Self.downloadError(from:))
         }
-        lock.withLock { _ = unstartedTaskIdentifiers.remove(task.taskIdentifier) }
-        guard let error else { return }
-        complete(taskIdentifier: task.taskIdentifier, result: .failure(Self.downloadError(from: error)))
+        finishIfReady(taskIdentifier: task.taskIdentifier)
     }
 
     public func urlSession(
@@ -204,17 +250,32 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         lock.withLock {
             networkLogs[task.taskIdentifier]?.startedAt = metrics.taskInterval.start
             networkLogs[task.taskIdentifier]?.duration = metrics.taskInterval.duration
+            pendingDownloads[task.taskIdentifier]?.metricsReceived = true
         }
         // Background sessions follow redirects without calling the redirect
         // delegate. Their transaction metrics are the source of actual hops;
         // foreground sessions already recorded those callbacks above.
-        guard session.configuration.identifier != nil, metrics.redirectCount > 0 else { return }
+        let attempt = lock.withLock { pendingDownloads[task.taskIdentifier]?.attempt }
+        var evidence = attempt.flatMap { attempt in
+            task.originalRequest?.url.map { ForumRedirectEvidence(origin: attempt.context.key.origin, originalURL: $0) }
+        }
         for (transaction, next) in zip(metrics.transactionMetrics, metrics.transactionMetrics.dropFirst()) {
             guard let response = transaction.response as? HTTPURLResponse,
                   300 ..< 400 ~= response.statusCode,
                   response.statusCode != 304 else { continue }
-            NetworkLogRecorder.shared.addRedirect(to: log.token, from: response, request: next.request)
+            if session.configuration.identifier != nil {
+                NetworkLogRecorder.shared.addRedirect(to: log.token, from: response, request: next.request)
+            }
+            if let from = response.url, let to = next.request.url { evidence?.observe(from: from, to: to) }
         }
+        lock.withLock { pendingDownloads[task.taskIdentifier]?.leftOrigin = evidence?.leftOrigin ?? true }
+        if let evidence, let url = evidence.challengeURL, let attempt, let request = task.originalRequest {
+            lock.withLock {
+                pendingDownloads[task.taskIdentifier]?.validationFailure = ForumTransportChallenge(
+                    challenge: ForumWAFResponseClassifier.challenge(url: url, request: request, credentials: attempt.credentials))
+            }
+        }
+        finishIfReady(taskIdentifier: task.taskIdentifier)
     }
 
     private var session: URLSession {
@@ -224,47 +285,71 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             }
             let session = sessionFactory(self)
             sessionStorage = session
-            // Restored tasks have no awaiting continuation in this process,
-            // but still represent real transfers and must be logged. Create
-            // their tokens early so a subsequent clear invalidates them too.
+            // No trusted pending/lease survives relaunch. Persisted queue work
+            // remains available for an explicit new run, not an invented replay.
             session.getAllTasks { [weak self] tasks in
                 for task in tasks where task.state != .completed {
-                    _ = self?.networkLog(for: task)
+                    guard let self else { task.cancel(); continue }
+                    let trusted = self.lock.withLock {
+                        self.pendingDownloads[task.taskIdentifier] != nil || self.unstartedTaskIdentifiers.contains(task.taskIdentifier)
+                    }
+                    if !trusted {
+                        YamiboLog.networking.info("Forum background task=\(task.taskIdentifier, privacy: .public) rejected=missingContext")
+                        task.cancel()
+                    }
                 }
             }
             return session
         }
     }
 
-    private func currentCredentials() async -> YamiboRequestCredentials? {
-        guard let sessionStore else { return nil }
-        let session = await sessionStore.load()
-        return session.credentials
-    }
-
     private func register(
         taskIdentifier: Int,
         task: URLSessionTask,
+        attempt: ForumRequestAttempt,
         continuation: CheckedContinuation<Data, any Error>,
         progress: @escaping @Sendable (DownloadTransferProgress) -> Void,
         logToken: NetworkLogToken
     ) {
         lock.withLock {
-            pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task, progress: progress)
+            pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task, progress: progress, attempt: attempt)
+            pendingDownloads[taskIdentifier]?.deadlineTask = Task { [weak self, weak task] in
+                do { try await ContinuousClock().sleep(until: attempt.lease.deadline) }
+                catch { return }
+                self?.lock.withLock {
+                    self?.pendingDownloads[taskIdentifier]?.validationFailure = ForumWAFFailure.runtimeUnavailable
+                }
+                task?.cancel()
+                self?.complete(taskIdentifier: taskIdentifier, result: .failure(ForumWAFFailure.runtimeUnavailable))
+            }
             unstartedTaskIdentifiers.remove(taskIdentifier)
             networkLogs[taskIdentifier] = DownloadNetworkLog(token: logToken)
         }
     }
 
     private func networkLog(for task: URLSessionTask) -> DownloadNetworkLog? {
-        lock.withLock {
-            guard !unstartedTaskIdentifiers.contains(task.taskIdentifier) else { return nil }
-            if let log = networkLogs[task.taskIdentifier] { return log }
-            guard let request = task.originalRequest ?? task.currentRequest else { return nil }
-            let log = DownloadNetworkLog(token: NetworkLogRecorder.shared.begin(request: request, source: .download))
-            networkLogs[task.taskIdentifier] = log
-            return log
+        lock.withLock { networkLogs[task.taskIdentifier] }
+    }
+
+    private func finishIfReady(taskIdentifier: Int) {
+        let result: Result<Data, any Error>? = lock.withLock {
+            guard let pending = pendingDownloads[taskIdentifier], pending.completionReceived else { return nil }
+            // Cancellation and ordinary failures do not wait for metrics that
+            // Foundation may omit. Successful files require all three signals.
+            if let failure = pending.validationFailure { return .failure(failure) }
+            if let error = pending.completionError { return .failure(error) }
+            guard pending.metricsReceived, let result = pending.result else { return nil }
+            if let response = pending.response, let request = pending.task?.originalRequest,
+               let originalURL = request.url,
+               ForumWAFResponseClassifier.matches(response: response, prefix: pending.prefix,
+                   origin: pending.attempt.context.key.origin, originalURL: originalURL, leftOrigin: pending.leftOrigin),
+               let url = response.url {
+                return .failure(ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(
+                    url: url, request: request, credentials: pending.attempt.credentials)))
+            }
+            return result
         }
+        if let result { complete(taskIdentifier: taskIdentifier, result: result) }
     }
 
     private func complete(taskIdentifier: Int, result: Result<Data, any Error>) {
@@ -272,6 +357,15 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             pendingDownloads.removeValue(forKey: taskIdentifier)
         }
         guard let pending else { return }
+        pending.deadlineTask?.cancel()
+        let log = lock.withLock { networkLogs.removeValue(forKey: taskIdentifier) }
+        if let log, let task = pending.task {
+            let error: (any Error)?
+            if case let .failure(failure) = result { error = failure } else { error = nil }
+            NetworkLogRecorder.shared.finish(log.token, response: task.response,
+                sentBytes: task.countOfBytesSent, receivedBytes: task.countOfBytesReceived, error: error,
+                finalURL: task.currentRequest?.url, duration: log.duration, startedAt: log.startedAt)
+        }
 
         switch result {
         case let .success(data):
@@ -300,6 +394,16 @@ private struct PendingDownload {
     var continuation: CheckedContinuation<Data, any Error>
     var task: URLSessionTask?
     var progress: @Sendable (DownloadTransferProgress) -> Void
+    let attempt: ForumRequestAttempt
+    var result: Result<Data, any Error>?
+    var validationFailure: (any Error)?
+    var deadlineTask: Task<Void, Never>?
+    var response: HTTPURLResponse?
+    var prefix = Data()
+    var leftOrigin = true
+    var metricsReceived = false
+    var completionReceived = false
+    var completionError: (any Error)?
 }
 
 private final class URLSessionTaskBox: @unchecked Sendable {

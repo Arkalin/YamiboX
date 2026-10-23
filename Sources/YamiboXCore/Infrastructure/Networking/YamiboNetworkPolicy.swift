@@ -13,8 +13,7 @@ enum YamiboNetworkPolicy {
     }
 
     static func cookieHeader(for url: URL, credentials: YamiboRequestCredentials, at date: Date) -> String {
-        let environment = YamiboForumEnvironment.current
-        guard !environment.restrictsRequestsToForumOrigin || environment.isForumURL(url) else { return "" }
+        guard ForumOrigin(url: YamiboDomain.baseURL)?.contains(url) == true else { return "" }
         return credentials.cookies
             .filter { $0.matches(url, at: date) }
             .sorted {

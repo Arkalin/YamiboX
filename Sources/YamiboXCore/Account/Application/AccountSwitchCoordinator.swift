@@ -39,7 +39,7 @@ public struct AccountSwitchCoordinator: Sendable {
             let verified: AuthenticatedAccount
             do {
                 if let verify { verified = try await verify(saved) }
-                else { verified = AuthenticatedAccount(session: saved, profile: try await makeService().verifySession(saved)) }
+                else { verified = try await makeService().verifySession(saved) }
             } catch {
                 if LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated {
                     try await store.invalidate(uid: uid)

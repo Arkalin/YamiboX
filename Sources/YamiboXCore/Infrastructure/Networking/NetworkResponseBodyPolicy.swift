@@ -10,6 +10,7 @@ struct NetworkResponseBodyLimit: Sendable {
 struct NetworkResponseBodyPolicy: Sendable {
     let prefixByteCount: Int
     let classify: @Sendable (HTTPURLResponse, Data) -> NetworkResponseBodyLimit?
+    var headerFailure: (@Sendable (HTTPURLResponse) -> (any Error)?)? = nil
 }
 
 /// Plain data tasks deliver chunks here. Completion-handler/async data tasks
@@ -56,8 +57,15 @@ final class NetworkResponseBodyReceiver: @unchecked Sendable {
         task?.cancel()
     }
 
-    func receive(_ response: URLResponse) {
-        lock.withLock { self.response = response }
+    @discardableResult
+    func receive(_ response: URLResponse) -> Bool {
+        lock.withLock {
+            self.response = response
+            if let response = response as? HTTPURLResponse, failure == nil {
+                failure = policy.headerFailure?(response)
+            }
+            return failure == nil
+        }
     }
 
     /// Never append an oversized chunk into the retained body. Transport may

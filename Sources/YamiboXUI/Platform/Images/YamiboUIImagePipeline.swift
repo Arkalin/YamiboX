@@ -112,9 +112,11 @@ public final class YamiboUIImagePipeline {
     private let memoryCache: ImageCache
     private let loadedImages = PassthroughSubject<(YamiboImageSource, YamiboImageThumbnail?, YamiboDisplayImage), Never>()
     private let prefetchedBytes = PassthroughSubject<String, Never>()
+    private let verifiedImageUpdates = PassthroughSubject<String, Never>()
     private var requestEpoch: UUID
     private var imageRevisions: [String: UUID] = [:]
     private var coverRecoveryRevisions: [String: UUID] = [:]
+    private var verificationRecoveryRevisions: [String: UUID] = [:]
     @ObservationIgnored private var loadObservation: Task<Void, Never>?
 
     /// Recover failed views when another consumer loads the same image, even
@@ -128,6 +130,14 @@ public final class YamiboUIImagePipeline {
 
     func prefetchedDataAvailable(for source: YamiboImageSource) -> AnyPublisher<Void, Never> {
         prefetchedBytes.filter { $0 == source.cacheKey }.map { _ in () }.eraseToAnyPublisher()
+    }
+
+    func verificationRecoveries(for source: YamiboImageSource) -> AnyPublisher<Void, Never> {
+        verifiedImageUpdates.filter { $0 == source.recoveryKey }.map { _ in () }.eraseToAnyPublisher()
+    }
+
+    func verificationRecoveryRevision(for source: YamiboImageSource) -> UUID? {
+        verificationRecoveryRevisions[source.recoveryKey]
     }
 
     convenience init(
@@ -158,14 +168,21 @@ public final class YamiboUIImagePipeline {
         loadObservation = Task { [weak self] in
             for await revision in changes {
                 guard !Task.isCancelled else { return }
-                self?.requestEpoch = revision.epoch
-                self?.imageRevisions = revision.images
-                self?.coverRecoveryRevisions = revision.recoveredCovers
+                self?.applyLoadRevision(revision)
             }
         }
     }
 
     deinit { loadObservation?.cancel() }
+
+    private func applyLoadRevision(_ revision: YamiboImageLoadRevision) {
+        let recovered = revision.verifiedImages.filter { verificationRecoveryRevisions[$0.key] != $0.value }
+        requestEpoch = revision.epoch
+        imageRevisions = revision.images
+        coverRecoveryRevisions = revision.recoveredCovers
+        verificationRecoveryRevisions = revision.verifiedImages
+        for key in recovered.keys { verifiedImageUpdates.send(key) }
+    }
 
     func requestRevision(for source: YamiboImageSource?) -> UUID {
         if let source, source.purpose == .cover, let recovery = coverRecoveryRevisions[source.cacheKey] {
@@ -180,9 +197,10 @@ public final class YamiboUIImagePipeline {
 
     func image(
         for source: YamiboImageSource,
-        priority: ImageRequest.Priority = .normal
+        priority: ImageRequest.Priority = .normal,
+        recoveryRevision: UUID? = nil
     ) async throws -> YamiboPlatformImage {
-        try await displayImage(for: source, priority: priority).image
+        try await displayImage(for: source, priority: priority, recoveryRevision: recoveryRevision).image
     }
 
     func cachedDisplayImage(for source: YamiboImageSource, thumbnail: YamiboImageThumbnail? = nil, context: YamiboImageLoadContext? = nil) -> YamiboDisplayImage? {
@@ -267,9 +285,10 @@ public final class YamiboUIImagePipeline {
     func displayImage(
         for source: YamiboImageSource,
         thumbnail: YamiboImageThumbnail? = nil,
-        priority: ImageRequest.Priority = .normal
+        priority: ImageRequest.Priority = .normal,
+        recoveryRevision: UUID? = nil
     ) async throws -> YamiboDisplayImage {
-        let context = try await dataLoader.loadContext(for: source)
+        let context = try await dataLoader.loadContext(for: source).recovering(recoveryRevision)
         if let cached = cachedDisplayImage(for: source, thumbnail: thumbnail, context: context) {
             guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             await dataLoader.didDecodeImage(for: source, context: context)
@@ -366,6 +385,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     @State private var didFail = false
     @State private var loadedIdentity: YamiboUIImageRequestIdentity?
     @State private var attempt = 0
+    @State private var pendingRecoveryRevision: UUID?
 
     init(
         source: YamiboImageSource?,
@@ -419,6 +439,7 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
                 }
             } else if didFail {
                 failure {
+                    pendingRecoveryRevision = nil
                     didFail = false
                     attempt += 1
                 }
@@ -443,6 +464,14 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             didFail = false
             attempt += 1
         }
+        .onReceive(verificationRecoveries) {
+            guard didFail else { return }
+            if let source, let pipeline = injectedPipeline ?? environmentPipeline {
+                pendingRecoveryRevision = pipeline.verificationRecoveryRevision(for: source)
+            }
+            didFail = false
+            attempt += 1
+        }
         .environment(\.yamiboRemoteImageSize, image?.size)
     }
 
@@ -463,6 +492,13 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             return Empty().eraseToAnyPublisher()
         }
         return pipeline.prefetchedDataAvailable(for: source)
+    }
+
+    private var verificationRecoveries: AnyPublisher<Void, Never> {
+        guard let source, let pipeline = injectedPipeline ?? environmentPipeline else {
+            return Empty().eraseToAnyPublisher()
+        }
+        return pipeline.verificationRecoveries(for: source)
     }
 
     private var taskIdentity: String {
@@ -494,8 +530,11 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
         // context and reports decoded-cache recovery to the cover policy.
         apply(pipeline.cachedDisplayImage(for: source, thumbnail: thumbnail))
         didFail = false
+        let verificationRevision = pipeline.verificationRecoveryRevision(for: source)
+        let recoveryRevision = pendingRecoveryRevision
+        pendingRecoveryRevision = nil
         do {
-            let loaded = try await pipeline.displayImage(for: source, thumbnail: thumbnail)
+            let loaded = try await pipeline.displayImage(for: source, thumbnail: thumbnail, recoveryRevision: recoveryRevision)
             guard !Task.isCancelled else { return }
             apply(loaded)
             loadedIdentity = identity
@@ -504,6 +543,12 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             guard !Task.isCancelled else { return }
             loadedIdentity = identity
             didFail = true
+            // The notification may arrive just before this task reports its
+            // failure. Consume that recovery without waiting for another one.
+            if let recovered = pipeline.verificationRecoveryRevision(for: source), recovered != verificationRevision {
+                pendingRecoveryRevision = recovered
+                attempt += 1
+            }
         }
     }
 

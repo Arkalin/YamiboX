@@ -23,6 +23,8 @@ struct MangaPagedReaderPageSurface: View {
     @State private var failedPageID: String?
     @State private var failureDetails: LoadFailureDetails?
     @State private var activeRequestID: UUID?
+    @State private var attempt = 0
+    @State private var pendingRecoveryRevision: UUID?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -52,7 +54,8 @@ struct MangaPagedReaderPageSurface: View {
                 ReaderLoadStateView(
                     status: .failed(title: L10n.string("image.load_failed"), message: "", details: failureDetails),
                     retryAction: {
-                        Task { await loadImage() }
+                        pendingRecoveryRevision = nil
+                        attempt += 1
                     },
                     tint: pageEdgeFillStyle.placeholderForeground(for: colorScheme)
                 )
@@ -73,10 +76,20 @@ struct MangaPagedReaderPageSurface: View {
                     .allowsHitTesting(false)
             }
         }
-        .task(id: page.id) { @MainActor in
+        .task(id: LoadIdentity(pageID: page.id, attempt: attempt)) { @MainActor in
             await loadImage()
         }
+        .onReceive(imageLoader.verificationRecoveries(for: page)) {
+            guard failedPageID == page.id else { return }
+            pendingRecoveryRevision = imageLoader.verificationRecoveryRevision(for: page)
+            attempt += 1
+        }
         .onDisappear { activeRequestID = nil }
+    }
+
+    private struct LoadIdentity: Hashable {
+        let pageID: String
+        let attempt: Int
     }
 
     private var displayedImage: UIImage? {
@@ -103,9 +116,12 @@ struct MangaPagedReaderPageSurface: View {
         loadingPageID = page.id
         failedPageID = nil
         failureDetails = nil
+        let verificationRevision = imageLoader.verificationRecoveryRevision(for: page)
+        let recoveryRevision = pendingRecoveryRevision
+        pendingRecoveryRevision = nil
 
         do {
-            let image = try await imageLoader.image(for: page)
+            let image = try await imageLoader.image(for: page, recoveryRevision: recoveryRevision)
             guard !Task.isCancelled, activeRequestID == requestID else { return }
             loadedImage = image
             loadedPageID = page.id
@@ -121,6 +137,10 @@ struct MangaPagedReaderPageSurface: View {
             loadingPageID = nil
             failedPageID = page.id
             failureDetails = LoadFailureDetails(error: error, requestContext: page.id)
+            if let recovered = imageLoader.verificationRecoveryRevision(for: page), recovered != verificationRevision {
+                pendingRecoveryRevision = recovered
+                attempt += 1
+            }
         }
     }
 }

@@ -13,7 +13,10 @@ private struct FailureAlertModifier<Actions: View>: ViewModifier {
     func body(content: Content) -> some View {
         let snapshot = details ?? LoadFailureDetails(message: message ?? title)
         content
-            .alert(title, isPresented: $isPresented) {
+            .alert(title, isPresented: Binding(
+                get: { isPresented && !snapshot.isSilentForumFailure },
+                set: { isPresented = $0 }
+            )) {
                 actions
                 if offersDetails {
                     Button(L10n.string("load_failure.details")) {
@@ -25,6 +28,19 @@ private struct FailureAlertModifier<Actions: View>: ViewModifier {
                 }
             } message: {
                 Text(message ?? "")
+            }
+            .overlay(alignment: .bottom) {
+                if isPresented, snapshot.isSilentForumFailure {
+                    HStack {
+                        Text(message ?? snapshot.summary)
+                            .font(.footnote)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button(L10n.string("common.close")) { isPresented = false }
+                    }
+                    .padding()
+                    .background(.regularMaterial)
+                }
             }
             .sheet(item: $presentedDetails) { failure in
                 LoadFailureDetailsSheet(details: failure.details)

@@ -12,7 +12,6 @@ final class AccountManagementViewModel {
     var errorDetails: LoadFailureDetails?
     var accountToLogin: SavedAccount?
     var isLoginPresented = false
-    var verification: AccountVerificationSession?
     private var switchTask: Task<Void, Error>?
 
     init(switcher: AccountSwitchCoordinator) { self.switcher = switcher }
@@ -30,21 +29,15 @@ final class AccountManagementViewModel {
             return false
         }
         isBusy = true
-        let verification = AccountVerificationSession()
-        self.verification = verification
-        defer { isBusy = false; self.verification = nil; switchTask = nil }
+        defer { isBusy = false; switchTask = nil }
         let task = Task {
-            try await switcher.switchAccount(uid: account.id) { session in
-                try await verification.verify(session)
-            }
+            try await switcher.switchAccount(uid: account.id)
         }
         switchTask = task
         do {
             try await task.value
-            await verification.close()
             return true
         } catch {
-            await verification.close()
             if LoadDiagnosticError.classificationError(error) as? YamiboError == .notAuthenticated {
                 accountToLogin = account
                 isLoginPresented = true
@@ -56,7 +49,6 @@ final class AccountManagementViewModel {
 
     func cancel() {
         switchTask?.cancel()
-        if let verification { Task { await verification.close() } }
     }
 
     func remove(_ account: SavedAccount) async {
@@ -123,12 +115,6 @@ struct AccountManagementView: View {
         .navigationTitle(L10n.string("account.switch"))
         .yamiboInlineNavigationTitleDisplayMode()
         .navigationBarBackButtonHidden(model.isBusy)
-        .background {
-            if let verification = model.verification {
-                ForumWebSessionWebViewHost(coordinator: verification.coordinator, placement: .hidden)
-                    .frame(width: 1, height: 1).opacity(0.001).allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
         .overlay { if model.isBusy { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)) } }
         .task {
             let changes = model.switcher.sessionStore.changes()
@@ -146,12 +132,6 @@ struct AccountManagementView: View {
                 model.isLoginPresented = false
             }
         }
-        .sheet(item: Binding(
-            get: { model.verification?.coordinator.presentation },
-            set: { if $0 == nil { model.verification?.coordinator.dismissPresentation() } }
-        )) { _ in
-            if let verification = model.verification { ForumWAFVerificationView(coordinator: verification.coordinator) }
-        }
         .onDisappear { model.cancel() }
         .alert(L10n.string("account.remove"), isPresented: Binding(
             get: { accountToRemove != nil }, set: { if !$0 { accountToRemove = nil } }
@@ -168,33 +148,6 @@ struct AccountManagementView: View {
             Button(L10n.string("common.ok")) { model.errorMessage = nil }
         }
     }
-}
-
-@MainActor
-final class AccountVerificationSession {
-    let coordinator: ForumWebSessionCoordinator
-    private let sessions: SessionStore
-    private let profiles: YamiboProfileStore
-
-    init() {
-        let store = AccountStore.temporary()
-        sessions = SessionStore(accountStore: store)
-        profiles = YamiboProfileStore(accountStore: store)
-        coordinator = ForumWebSessionCoordinator(sessionStore: sessions, websiteDataStore: .nonPersistent())
-    }
-
-    func verify(_ session: SessionState) async throws -> AuthenticatedAccount {
-        try Task.checkCancellation()
-        try await sessions.save(session)
-        coordinator.setAppIsActive(true)
-        let profile = try await YamiboAccountService.isolatedLoginService(
-            sessionStore: sessions, profileStore: profiles, wafRecoverer: coordinator
-        ).refreshProfile()
-        try Task.checkCancellation()
-        return AuthenticatedAccount(session: await sessions.load(), profile: profile)
-    }
-
-    func close() async { await coordinator.tearDown() }
 }
 
 private struct SavedAccountRow: View {

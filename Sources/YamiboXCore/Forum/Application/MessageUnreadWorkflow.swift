@@ -9,7 +9,7 @@ public final class MessageUnreadWorkflow {
     public var hasUnreadMessages: Bool { totalCount > 0 }
 
     @ObservationIgnored private let sessionStore: SessionStore
-    @ObservationIgnored private let makeRepository: @Sendable (SessionState) -> any MessageUnreadLoading
+    @ObservationIgnored private let makeRepository: @Sendable (AccountSessionSnapshot) -> any MessageUnreadLoading
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var isAppActive = false
     @ObservationIgnored private var authentication: String?
@@ -22,7 +22,7 @@ public final class MessageUnreadWorkflow {
 
     public nonisolated init(
         sessionStore: SessionStore,
-        makeRepository: @escaping @Sendable (SessionState) -> any MessageUnreadLoading,
+        makeRepository: @escaping @Sendable (AccountSessionSnapshot) -> any MessageUnreadLoading,
         now: @escaping @Sendable () -> Date = { .now }
     ) {
         self.sessionStore = sessionStore
@@ -124,7 +124,7 @@ public final class MessageUnreadWorkflow {
 
             let result: Result<MessageUnreadSummary, any Error>
             do {
-                result = .success(try await makeRepository(session).fetchUnreadSummary())
+                result = .success(try await makeRepository(snapshot).fetchUnreadSummary())
             } catch {
                 result = .failure(error)
             }

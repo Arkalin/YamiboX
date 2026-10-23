@@ -184,7 +184,7 @@ public final class YamiboWindowCoordinator {
         presentationWindowID = Self.presentationOwner(
             current: presentationWindowID,
             focused: windowID,
-            hasPresentation: webSessionCoordinator.presentation != nil,
+            hasPresentation: false,
             currentOwnerIsActive: phases[presentationWindowID ?? ""] == .active
         )
     }

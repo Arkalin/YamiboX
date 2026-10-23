@@ -6,6 +6,7 @@ public struct YamiboAccountService: Sendable {
     private let sessionStore: SessionStore
     private let profileStore: YamiboProfileStore
     private let userAgent: String
+    private let executor: ForumRequestExecutor
     private let websiteDataClearer: (any WebsiteDataClearing)?
     private let coordinatedSignOut: (@Sendable () async throws -> Void)?
     private let coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)?
@@ -16,7 +17,7 @@ public struct YamiboAccountService: Sendable {
         profileStore: YamiboProfileStore,
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        executor: ForumRequestExecutor,
         cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext = .standard,
         coordinatedSignOut: (@Sendable () async throws -> Void)? = nil,
         coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil,
@@ -24,10 +25,11 @@ public struct YamiboAccountService: Sendable {
     ) {
         self.session = session
         self.remote = remote ?? YamiboAccountRemoteRepository(
-            session: session, userAgent: userAgent, wafRecoverer: wafRecoverer,
+            session: session, userAgent: userAgent, executor: executor, sessionStore: sessionStore,
             cookieStorageContext: cookieStorageContext
         )
         self.sessionStore = sessionStore
+        self.executor = executor
         self.profileStore = profileStore
         self.userAgent = userAgent
         self.websiteDataClearer = websiteDataClearer
@@ -38,14 +40,14 @@ public struct YamiboAccountService: Sendable {
     public static func isolatedLoginService(
         sessionStore: SessionStore,
         profileStore: YamiboProfileStore,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil
+        executor: ForumRequestExecutor
     ) -> YamiboAccountService {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = YamiboNetworkConfiguration.requestTimeout
         configuration.timeoutIntervalForResource = YamiboNetworkConfiguration.resourceTimeout
         return YamiboAccountService(
             session: YamiboNetworkConfiguration.makeSession(configuration: configuration),
-            sessionStore: sessionStore, profileStore: profileStore, wafRecoverer: wafRecoverer,
+            sessionStore: sessionStore, profileStore: profileStore, executor: executor,
             cookieStorageContext: .isolatedLogin
         )
     }
@@ -58,7 +60,9 @@ public struct YamiboAccountService: Sendable {
         }
 
         let form = try await remote.fetchLoginForm()
-        let clearance = await sessionStore.load().cookies.filter { YamiboCookie.isWAFCookie($0.name) }
+        // An explicit Cookie header must also carry the isolated login form's
+        // session cookies; clearance alone would hide them from the POST.
+        let loginCookies = await currentCookies()
         let response = try await remote.submitLogin(
             YamiboLoginRequest(
                 username: trimmedUsername,
@@ -67,7 +71,7 @@ public struct YamiboAccountService: Sendable {
                 answer: request.answer
             ),
             form: form,
-            credentials: YamiboRequestCredentials(cookies: clearance, userAgent: userAgent)
+            credentials: YamiboRequestCredentials(cookies: loginCookies, userAgent: userAgent)
         )
 
         if response.requiresAdditionalVerification {
@@ -82,11 +86,14 @@ public struct YamiboAccountService: Sendable {
         let credentials = YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
         let profile = try await fetchProfile(credentials: credentials)
         guard !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw YamiboError.accountUIDUnavailable }
+        // Profile validation may itself recover a challenge. Persist the
+        // candidate's latest clearance, not the snapshot from before that GET.
+        let authenticatedCookies = await currentCookies()
         try Task.checkCancellation()
         guard await sessionStore.isCurrentGeneration(baseline.generation) else { throw CancellationError() }
         try await sessionStore.save(
             SessionState(
-                cookies: cookies,
+                cookies: authenticatedCookies,
                 userAgent: userAgent,
                 isLoggedIn: true,
                 lastUpdatedAt: .now,
@@ -162,13 +169,16 @@ public struct YamiboAccountService: Sendable {
         await websiteDataClearer?.clearYamiboCookies()
     }
 
-    public func verifySession(_ state: SessionState) async throws -> YamiboProfile {
+    public func verifySession(_ state: SessionState) async throws -> AuthenticatedAccount {
         guard state.isLoggedIn, state.hasValidAuthenticationCookie else { throw YamiboError.notAuthenticated }
-        // Verification must never borrow the active account's WAF recovery session.
-        return try await remote.fetchProfile(
+        let candidate = SessionStore(accountStore: .temporary())
+        try await candidate.save(state)
+        let snapshot = try await candidate.snapshot()
+        let profile = try await remote.fetchProfile(
             credentials: state.credentials, handlesCookies: false,
-            allowsWAFRecovery: false, validateSession: nil
+            context: candidate.forumRequestContext(snapshot: snapshot), validateSession: nil
         )
+        return AuthenticatedAccount(session: await candidate.load(), profile: profile)
     }
 
     private func fetchProfile(
@@ -176,9 +186,10 @@ public struct YamiboAccountService: Sendable {
         handlesCookies: Bool = true,
         validateSession: (@Sendable () async throws -> Void)? = nil
     ) async throws -> YamiboProfile {
-        try await remote.fetchProfile(
+        let snapshot = try await sessionStore.snapshot()
+        return try await remote.fetchProfile(
             credentials: credentials, handlesCookies: handlesCookies,
-            allowsWAFRecovery: true, validateSession: validateSession
+            context: sessionStore.forumRequestContext(snapshot: snapshot, credentials: credentials), validateSession: validateSession
         )
     }
 

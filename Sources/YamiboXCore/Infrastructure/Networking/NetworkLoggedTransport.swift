@@ -8,6 +8,7 @@ enum NetworkLoggedTransport {
         source: NetworkLogSource = .http,
         delegate: (any URLSessionTaskDelegate)? = nil,
         bodyPolicy: NetworkResponseBodyPolicy? = nil,
+        progress: (@Sendable (Int64, Int64) -> Void)? = nil,
         recorder: NetworkLogRecorder = .shared
     ) async throws -> (Data, URLResponse) {
         let token = recorder.begin(request: request, source: source)
@@ -17,7 +18,7 @@ enum NetworkLoggedTransport {
             recorder: recorder,
             delegate: delegate,
             sessionDelegate: session.delegate as? any URLSessionTaskDelegate,
-            receiver: receiver
+            receiver: receiver, progress: progress
         )
         if let receiver {
             return try await withTaskCancellationHandler {
@@ -54,19 +55,22 @@ enum NetworkLoggedTransport {
         private var task: URLSessionTask?
         private var duration: TimeInterval?
         private let receiver: NetworkResponseBodyReceiver?
+        private let progress: (@Sendable (Int64, Int64) -> Void)?
 
         init(
             token: NetworkLogToken,
             recorder: NetworkLogRecorder,
             delegate: (any URLSessionTaskDelegate)?,
             sessionDelegate: (any URLSessionTaskDelegate)?,
-            receiver: NetworkResponseBodyReceiver?
+            receiver: NetworkResponseBodyReceiver?,
+            progress: (@Sendable (Int64, Int64) -> Void)?
         ) {
             self.token = token
             self.recorder = recorder
             self.delegate = delegate
             self.sessionDelegate = sessionDelegate
             self.receiver = receiver
+            self.progress = progress
         }
 
         func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
@@ -86,12 +90,12 @@ enum NetworkLoggedTransport {
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                         didReceive response: URLResponse,
                         completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
-            receiver?.receive(response)
-            completionHandler(.allow)
+            completionHandler(receiver?.receive(response) == false ? .cancel : .allow)
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
             if receiver?.receive(data) == false { dataTask.cancel() }
+            progress?(dataTask.countOfBytesReceived, dataTask.countOfBytesExpectedToReceive)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {

@@ -153,6 +153,7 @@ public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, Forum
     public func fetchTagPage(target: ForumTagTarget, page: Int) async throws -> ForumTagPage {
         let html = try await client.fetchHTML(
             url: target.url(page: page),
+            replay: .safeReadOnce,
             userAgent: YamiboNetworkConfiguration.desktopTagUserAgent,
             cachePolicy: .reloadIgnoringLocalCacheData,
             cancellationPolicy: .propagateCancellation

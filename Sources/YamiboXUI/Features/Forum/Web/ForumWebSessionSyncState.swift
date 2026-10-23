@@ -3,6 +3,7 @@ import YamiboXCore
 
 enum ForumWebSessionSyncAction: Equatable {
     case none
+    case injectWAFCookies
     case injectCookies(reload: Bool)
     case clearCookies(reload: Bool)
 }
@@ -10,10 +11,12 @@ enum ForumWebSessionSyncAction: Equatable {
 struct ForumWebSessionSyncState {
     private var lastCookieHeader: String?
     private var lastAuthenticationCookieValue: String?
+    private var lastNonWAFCookies: [YamiboCookie]?
 
-    mutating func markPersistedWebSession(cookieHeader: String) {
-        lastCookieHeader = cookieHeader
-        lastAuthenticationCookieValue = SessionState.authenticationCookieValue(in: cookieHeader)
+    mutating func markPersistedWebSession(_ session: SessionState) {
+        lastCookieHeader = session.cookie
+        lastAuthenticationCookieValue = SessionState.authenticationCookieValue(in: session.cookie)
+        lastNonWAFCookies = session.cookies.filter { !YamiboCookie.isWAFCookie($0.name) }
     }
 
     mutating func action(
@@ -21,6 +24,9 @@ struct ForumWebSessionSyncState {
         reloadIfNeeded: Bool
     ) -> ForumWebSessionSyncAction {
         let authenticationValue = SessionState.authenticationCookieValue(in: sessionState.cookie)
+        let nonWAFCookies = sessionState.cookies.filter { !YamiboCookie.isWAFCookie($0.name) }
+        let onlyWAFChanged = lastNonWAFCookies == nonWAFCookies
+        defer { lastNonWAFCookies = nonWAFCookies }
         if authenticationValue != nil {
             let cookieChanged = sessionState.cookie != lastCookieHeader
             let authenticationChanged = authenticationValue != lastAuthenticationCookieValue
@@ -28,7 +34,9 @@ struct ForumWebSessionSyncState {
 
             lastCookieHeader = sessionState.cookie
             lastAuthenticationCookieValue = authenticationValue
-            return .injectCookies(reload: reloadIfNeeded || authenticationChanged)
+            // Clearance churn updates subresources in place. It is never a
+            // reason to reload a successfully displayed page.
+            return onlyWAFChanged ? .injectWAFCookies : .injectCookies(reload: authenticationChanged)
         }
 
         if sessionState.cookie.isEmpty {
@@ -45,6 +53,6 @@ struct ForumWebSessionSyncState {
         guard sessionState.cookie != lastCookieHeader else { return .none }
         lastCookieHeader = sessionState.cookie
         lastAuthenticationCookieValue = nil
-        return .injectCookies(reload: false)
+        return onlyWAFChanged ? .injectWAFCookies : .injectCookies(reload: false)
     }
 }

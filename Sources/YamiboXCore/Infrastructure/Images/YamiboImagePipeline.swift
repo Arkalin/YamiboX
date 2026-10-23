@@ -22,6 +22,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
     private let coverStore: ContentCoverStore
     private let sessionStore: any SessionStoring
     private let imageSession: URLSession
+    private let requestExecutor: ForumRequestExecutor
     private let offlineImages: (any YamiboOfflineImageDataProviding)?
     private let coordinator: YamiboImageLoadCoordinator
     private let sessionObservation: Task<Void, Never>
@@ -32,6 +33,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
     public convenience init(
         sessionStore: any SessionStoring = SessionStore(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
+        requestExecutor: ForumRequestExecutor = .unavailable,
         offlineImages: (any YamiboOfflineImageDataProviding)? = nil,
         failureCacheDirectory: URL? = nil,
         contentCoverStore: ContentCoverStore = ContentCoverStore()
@@ -41,6 +43,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
             contentCoverStore: contentCoverStore,
             sessionStore: sessionStore,
             imageSession: imageSession,
+            requestExecutor: requestExecutor,
             offlineImages: offlineImages,
             failureCacheDirectory: failureCacheDirectory
         )
@@ -51,6 +54,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         contentCoverStore: ContentCoverStore,
         sessionStore: any SessionStoring = SessionStore(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
+        requestExecutor: ForumRequestExecutor = .unavailable,
         offlineImages: (any YamiboOfflineImageDataProviding)? = nil,
         failureCacheDirectory: URL? = nil
     ) {
@@ -58,6 +62,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         self.coverStore = contentCoverStore
         self.sessionStore = sessionStore
         self.imageSession = imageSession
+        self.requestExecutor = requestExecutor
         self.offlineImages = offlineImages
         let coordinator = YamiboImageLoadCoordinator(sessionStore: sessionStore,
             cacheDirectory: failureCacheDirectory ?? YamiboDatabase.defaultCacheRootDirectory().appendingPathComponent("image-load-policy"))
@@ -112,13 +117,8 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
             // the ordinary cache responsible for keeping the cover alive.
             data = artwork
         } else {
-            let client = YamiboClient(
-                session: imageSession,
-                credentials: context.credentials,
-                handlesCookies: false
-            )
-            data = try await coordinator.data(for: source, context: context) { [engine] in
-                try await engine.data(for: source, client: client)
+            data = try await coordinator.data(for: source, context: context) { [self] in
+                try await networkData(for: source, context: context)
             }
             if source.purpose == .content, await isCurrent(context, source: source) {
                 // A reader may have joined a cover's cache-free HTTP flight.
@@ -138,6 +138,37 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
             }
         }
         return data
+    }
+
+    private func networkData(for source: YamiboImageSource, context: YamiboImageLoadContext) async throws -> Data {
+        let snapshot = try await sessionStore.snapshot()
+        guard snapshot.generation == context.accountGeneration else { throw ForumWAFFailure.sessionInvalidated }
+        let ticket = try await coordinator.takeRecoveryTicket(context: context)
+        let requestContext = sessionStore.forumRequestContext(snapshot: snapshot, credentials: context.credentials)
+        let operation = ticket?.operation ?? ForumRequestOperation()
+        let lease = ticket?.lease ?? ForumRuntimeLease(duration: .seconds(40))
+        do {
+            return try await requestExecutor.execute(context: requestContext,
+                policy: ForumRequestPolicy(replay: .safeReadOnce, lease: lease, operation: operation)) { [self] attempt in
+                guard await isCurrent(context, source: source) else { throw CancellationError() }
+                do {
+                    return try await engine.data(for: source, attempt: attempt, session: imageSession)
+                } catch {
+                    if let blocked = LoadDiagnosticError.classificationError(error) as? ForumTransportChallenge { throw blocked }
+                    throw error
+                }
+            }
+        } catch {
+            if let failure = error as? ForumWAFFailure,
+               [.silentTimeout, .runtimeUnavailable, .interactionRequired, .noUpdatedClearance, .processTerminated].contains(failure),
+               operation.attemptCount == 1, !Task.isCancelled {
+                await coordinator.recordVerificationFailure(for: source, context: context,
+                    ticket: .init(requestContext: requestContext, operation: operation, lease: lease,
+                        challenge: ForumWAFResponseClassifier.challenge(url: source.url,
+                            request: URLRequest(url: source.url), credentials: requestContext.credentials)))
+            }
+            throw error
+        }
     }
 
     public func didDecodeImage(for source: YamiboImageSource, context: YamiboImageLoadContext) async {

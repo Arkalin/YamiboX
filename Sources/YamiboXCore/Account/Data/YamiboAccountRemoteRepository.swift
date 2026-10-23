@@ -3,12 +3,17 @@ import Foundation
 struct YamiboAccountRemoteRepository: YamiboAccountRemoteOperating {
     let session: URLSession
     let userAgent: String
-    let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    let executor: ForumRequestExecutor
+    let sessionStore: SessionStore
+    private var cookieStorageID: UUID { sessionStore.forumScopeID }
     let cookieStorageContext: YamiboNetworkPolicy.CookieStorageContext
 
     func fetchLoginForm() async throws -> YamiboLoginForm {
+        let snapshot = try await sessionStore.snapshot()
         let client = YamiboClient(
-            session: session, userAgent: userAgent, wafRecoverer: wafRecoverer,
+            session: session, context: sessionStore.forumRequestContext(snapshot: snapshot,
+                credentials: YamiboRequestCredentials(cookies: snapshot.session.cookies, userAgent: userAgent), cookieStorageID: cookieStorageID),
+            executor: executor, handlesCookies: true,
             cookieStorageContext: cookieStorageContext
         )
         let html = try await client.fetchHTML(for: .login, cachePolicy: .reloadIgnoringLocalCacheData)
@@ -22,9 +27,10 @@ struct YamiboAccountRemoteRepository: YamiboAccountRemoteOperating {
         form: YamiboLoginForm,
         credentials: YamiboRequestCredentials
     ) async throws -> YamiboLoginResponse {
+        let snapshot = try await sessionStore.snapshot()
         let client = YamiboClient(
-            session: session, credentials: credentials,
-            wafRecoverer: wafRecoverer, cookieStorageContext: cookieStorageContext
+            session: session, context: sessionStore.forumRequestContext(snapshot: snapshot, credentials: credentials, cookieStorageID: cookieStorageID),
+            executor: executor, handlesCookies: true, cookieStorageContext: cookieStorageContext
         )
         var fields = form.hiddenFields.filter { name, _ in
             !["username", "password", "questionid", "answer", "submit"].contains(name)
@@ -44,12 +50,11 @@ struct YamiboAccountRemoteRepository: YamiboAccountRemoteOperating {
     func fetchProfile(
         credentials: YamiboRequestCredentials,
         handlesCookies: Bool,
-        allowsWAFRecovery: Bool,
+        context: ForumRequestContext,
         validateSession: (@Sendable () async throws -> Void)?
     ) async throws -> YamiboProfile {
         let client = YamiboClient(
-            session: session, credentials: credentials,
-            wafRecoverer: allowsWAFRecovery ? wafRecoverer : nil,
+            session: session, context: context.replacingCredentials(credentials), executor: executor,
             handlesCookies: handlesCookies, cookieStorageContext: cookieStorageContext,
             validateSession: validateSession
         )
@@ -60,7 +65,10 @@ struct YamiboAccountRemoteRepository: YamiboAccountRemoteOperating {
     }
 
     func signOut(credentials: YamiboRequestCredentials, formHash: String) async throws {
-        let client = YamiboClient(session: session, credentials: credentials, handlesCookies: false)
+        let retired = SessionStore(accountStore: .temporary())
+        let snapshot = try await retired.snapshot()
+        let client = YamiboClient(session: session,
+            context: retired.forumRequestContext(snapshot: snapshot, credentials: credentials), executor: executor)
         _ = try await client.fetchHTML(for: .logout(formHash: formHash))
     }
 

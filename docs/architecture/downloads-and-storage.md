@@ -151,6 +151,16 @@
 
 ## 9. 平台后台任务与验证限制
 
+### 论坛传输准入
+
+下载同页面与图片一样使用 `ForumRequestExecutor`，每个 pending 持有原 operation、scope、generation、attempt 和 lease。论坛来源的下载通过可逐跳否决的 data 适配器执行；系统后台 URLSession 不能保证逐跳凭据边界，因此不承载论坛请求。该降级保留字节进度与取消，但不承诺进程退出后继续。只有禁用 Cookie storage、自动 Cookie、凭据存储，且不发送 Referer 的外部公开图片才使用系统后台 download task。
+
+受控论坛下载在响应头或最多 128 KiB 正文发现挑战后隔离响应，成功文件限制为 50 MiB；后台公开下载用 `FileHandle` 读取最多 128 KiB 前缀，记录响应并检查状态与大小，暂存结果，待文件、metrics 和 task 终态汇合后才交付。分类同时校验原始来源与跳转轨迹，外部资源的挑战样式正文不触发论坛验证。Foundation 在下载回调结束后清理临时文件，适配器不复制未准入文件到离线目录。取消和普通传输失败不等待可能缺失的 metrics，lease 仍提供最终终结边界。后台不可逐跳观察时只能根据实际 metrics 事后判断，不能声称第二次自跳就已拦截。
+
+重连时取消没有当前可信 pending 的遗留 task，丢弃其结果但正常收尾系统事件回调。持久队列项不因此删除，也不会重建旧 operation 的预算。WAF 超时、运行不足或重放耗尽沿用“记录失败并暂停队列”；Cookie 更新不会新建 run，只有用户继续才建立新的有界操作。此前成功的离线文件保持不变。
+
+### 平台运行机会
+
 Core 通过 `DownloadQueueRunObserving` 上报 `DownloadRunID`、进度、终态及绑定原 executor 的暂停闭包。App 启动层创建同一个 `DownloadContinuedProcessingCoordinator`，在 UI 平台层注册系统任务并注入 Core；业务队列不直接导入 UIKit 或 BackgroundTasks。
 
 iOS 26 起，前台用户开始或继续下载时可申请 `BGContinuedProcessingTask`。请求使用 `.queue`，注册、等待或提交失败不会阻塞普通队列执行；系统提供进度活动，不是自定义 ActivityKit Widget。旧系统继续使用既有下载传输能力，不将较新的持续处理接口当作所有系统的保证。

@@ -3,6 +3,7 @@ import YamiboXCore
 
 #if os(iOS)
 import UIKit
+import Combine
 
 struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let pages: [MangaReaderPageProjection]
@@ -528,9 +529,11 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         return imageView
     }()
     private var task: Task<Void, Never>?
+    private var verificationRecoveryObservation: AnyCancellable?
     private var page: MangaReaderPageProjection?
     private var imageLoader: MangaReaderPageImageLoader?
     private var currentPageID: String?
+    private var failedPageID: String?
     private var heightToWidthRatio = 1 / defaultWidthToHeightAspectRatio
     private var onHeightToWidthRatioChange: ((CGFloat) -> Void)?
     private var onLongPress: ((MangaReaderPageProjection) -> Void)?
@@ -554,9 +557,11 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         super.prepareForReuse()
         task?.cancel()
         task = nil
+        verificationRecoveryObservation = nil
         page = nil
         imageLoader = nil
         currentPageID = nil
+        failedPageID = nil
         onHeightToWidthRatioChange = nil
         onLongPress = nil
         heightToWidthRatio = 1 / Self.defaultWidthToHeightAspectRatio
@@ -590,6 +595,10 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
 
         let isSamePage = currentPageID == page.id
         currentPageID = page.id
+        verificationRecoveryObservation = imageLoader.verificationRecoveries(for: page).sink { [weak self] in
+            guard let self, self.currentPageID == page.id, self.failedPageID == page.id else { return }
+            self.retryImageLoad(recoveryRevision: imageLoader.verificationRecoveryRevision(for: page))
+        }
         if isSamePage, imageView.image != nil {
             return
         }
@@ -642,24 +651,30 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         likeBadgeImageView.isHidden = !likedPageIDs.contains(currentPageID)
     }
 
-    private func startLoad() {
+    private func startLoad(recoveryRevision: UUID? = nil) {
         guard let page, let imageLoader else { return }
+        failedPageID = nil
         showLoading()
+        let verificationRevision = imageLoader.verificationRecoveryRevision(for: page)
         task = Task { @MainActor [weak self] in
             do {
-                let image = try await imageLoader.image(for: page)
+                let image = try await imageLoader.image(for: page, recoveryRevision: recoveryRevision)
                 guard !Task.isCancelled else { return }
                 self?.show(image: image, pageID: page.id)
             } catch {
                 guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
                 self?.showFailure(pageID: page.id, error: error)
+                if let self, self.currentPageID == page.id,
+                   let recovered = imageLoader.verificationRecoveryRevision(for: page), recovered != verificationRevision {
+                    self.startLoad(recoveryRevision: recovered)
+                }
             }
         }
     }
 
-    private func retryImageLoad() {
+    private func retryImageLoad(recoveryRevision: UUID? = nil) {
         task?.cancel()
-        startLoad()
+        startLoad(recoveryRevision: recoveryRevision)
     }
 
     private func showLoading() {
@@ -670,6 +685,7 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
 
     private func show(image: UIImage, pageID: String) {
         guard currentPageID == pageID else { return }
+        failedPageID = nil
         loadStateOverlay.hide()
         imageView.isHidden = false
         imageView.image = image
@@ -679,6 +695,7 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
 
     private func showFailure(pageID: String, error: any Error) {
         guard currentPageID == pageID else { return }
+        failedPageID = pageID
         imageView.image = nil
         imageView.isHidden = true
         loadStateOverlay.show(

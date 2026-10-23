@@ -60,9 +60,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         dataCache?.sizeLimit = dataCacheLimitBytes
         self.dataCache = dataCache
 
-        let fallbackLoader = DataLoader(configuration: YamiboNetworkConfiguration.makeImageSessionConfiguration())
-        fallbackLoader.delegate = ImageFallbackNetworkLogDelegate()
-        var configuration = ImagePipeline.Configuration(dataLoader: fallbackLoader)
+        var configuration = ImagePipeline.Configuration(dataLoader: MissingImageAttemptLoader())
         configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
@@ -77,10 +75,11 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     func data(
         for source: YamiboImageSource,
-        client: YamiboClient
+        attempt: ForumRequestAttempt,
+        session: URLSession
     ) async throws -> Data {
         do {
-            let (data, _) = try await pipeline.data(for: nukeRequest(for: source, client: client))
+            let (data, _) = try await pipeline.data(for: nukeRequest(for: source, attempt: attempt, session: session))
             return data
         } catch {
             throw LoadDiagnosticError.attaching(to: Self.mapImagePipelineError(error), requestContext: source.url.absoluteString)
@@ -94,12 +93,12 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     }
 
     func removeCachedData(for source: YamiboImageSource) {
-        pipeline.cache.removeCachedData(for: nukeRequest(for: source, client: nil))
+        pipeline.cache.removeCachedData(for: nukeRequest(for: source))
     }
 
     func storeOrdinaryImageData(_ data: Data, for source: YamiboImageSource) {
         guard source.purpose == .content, dataCache?.containsData(for: source.cacheKey) == false else { return }
-        pipeline.cache.storeCachedData(data, for: nukeRequest(for: source, client: nil))
+        pipeline.cache.storeCachedData(data, for: nukeRequest(for: source))
     }
 
     func removeAllCachedData() async {
@@ -118,7 +117,8 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     private func nukeRequest(
         for source: YamiboImageSource,
-        client: YamiboClient?
+        attempt: ForumRequestAttempt? = nil,
+        session: URLSession? = nil
     ) -> ImageRequest {
         var urlRequest = YamiboNetworkConfiguration.makeRequest(
             url: source.url,
@@ -127,9 +127,9 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         urlRequest.setValue("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
         var userInfo: [ImageRequest.UserInfoKey: any Sendable] = [:]
-        if let client {
-            YamiboNetworkPolicy.applyCredentials(client.credentials, to: &urlRequest, userAgent: client.userAgent, handlesCookies: false)
-            userInfo[.yamiboURLSession] = YamiboImageRequestSession(client.session)
+        if let attempt, let session {
+            YamiboNetworkPolicy.applyCredentials(attempt.credentials, to: &urlRequest, handlesCookies: false)
+            userInfo[.yamiboURLSession] = YamiboImageRequestSession(session, attempt: attempt)
         }
         if let refererPageURL = source.refererPageURL {
             urlRequest.setValue(refererPageURL.absoluteString, forHTTPHeaderField: "Referer")
@@ -173,7 +173,7 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 private final class YamiboImageDataPipelineDelegate: ImagePipeline.Delegate {
     func dataLoader(for request: ImageRequest, pipeline: ImagePipeline) -> any DataLoading {
         if let session = request.userInfo[.yamiboURLSession] as? YamiboImageRequestSession {
-            return YamiboURLSessionImageDataLoader(session: session.value)
+            return YamiboURLSessionImageDataLoader(session: session.value, attempt: session.attempt)
         }
         return pipeline.configuration.dataLoader
     }
@@ -181,17 +181,21 @@ private final class YamiboImageDataPipelineDelegate: ImagePipeline.Delegate {
 
 private struct YamiboImageRequestSession: @unchecked Sendable {
     let value: URLSession
+    let attempt: ForumRequestAttempt
 
-    init(_ value: URLSession) {
+    init(_ value: URLSession, attempt: ForumRequestAttempt) {
         self.value = value
+        self.attempt = attempt
     }
 }
 
 final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
     private let session: URLSession
+    private let attempt: ForumRequestAttempt
 
-    init(session: URLSession) {
+    init(session: URLSession, attempt: ForumRequestAttempt) {
         self.session = session
+        self.attempt = attempt
     }
 
     func loadData(
@@ -204,6 +208,7 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         // lets Nuke accumulate the partial data required for resumable
         // downloads; the task retains its delegate until it completes.
         task.delegate = StreamingDeliveryHandler(
+            request: request, attempt: attempt,
             logToken: NetworkLogRecorder.shared.begin(request: request, source: .image),
             didReceiveData: didReceiveData,
             completion: completion
@@ -247,13 +252,23 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         private var validatedResponse: URLResponse?
         private var validationError: Error?
         private var duration: TimeInterval?
+        private let request: URLRequest
+        private let attempt: ForumRequestAttempt
+        private var evidence: ForumRedirectEvidence
+        private var challengeResponse: HTTPURLResponse?
+        private var challengeBody = Data()
+        private static let maximumChallengeBodyBytes = 128 * 1024
 
         init(
+            request: URLRequest, attempt: ForumRequestAttempt,
             logToken: NetworkLogToken,
             didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
             completion: @escaping @Sendable (Error?) -> Void
         ) {
             self.logToken = logToken
+            self.request = request
+            self.attempt = attempt
+            evidence = ForumRedirectEvidence(origin: attempt.context.key.origin, originalURL: request.url!)
             self.didReceiveData = didReceiveData
             self.completion = completion
         }
@@ -264,6 +279,27 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             didReceive response: URLResponse,
             completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
         ) {
+            // A redirect rejected as a challenge can still deliver its 302
+            // response here. Do not overwrite that error with a generic one.
+            guard validationError == nil else {
+                completionHandler(.cancel)
+                return
+            }
+            if let httpResponse = response as? HTTPURLResponse,
+               let responseURL = httpResponse.url,
+               httpResponse.statusCode == 405, canRecover(httpResponse, task: dataTask) {
+                if ForumWAFResponseClassifier.matches(response: httpResponse, prefix: Data(),
+                    origin: evidence.origin, originalURL: evidence.originalURL, leftOrigin: evidence.leftOrigin) {
+                    validationError = verificationError(for: httpResponse)
+                    completionHandler(.cancel)
+                } else {
+                    // Some gateways identify a challenge only in its HTML.
+                    // Inspect a bounded prefix without passing it to Nuke/cache.
+                    challengeResponse = httpResponse
+                    completionHandler(.allow)
+                }
+                return
+            }
             if let error = YamiboURLSessionImageDataLoader.validationError(for: response) {
                 validationError = LoadDiagnosticError.attaching(to: error, requestContext: response.url?.absoluteString, httpStatus: (response as? HTTPURLResponse)?.statusCode)
                 completionHandler(.cancel)
@@ -280,22 +316,65 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             newRequest request: URLRequest,
             completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
-            var redirectedRequest = YamiboNetworkPolicy.redirectedRequest(request, from: task.originalRequest?.url)
-            if let from = response.url, let to = redirectedRequest?.url, !YamiboImageSource.sameOrigin(from, to) {
-                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Cookie")
-                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Authorization")
-                redirectedRequest?.setValue(nil, forHTTPHeaderField: "Referer")
-                redirectedRequest?.httpShouldHandleCookies = false
+            guard let from = response.url, let to = request.url else { completionHandler(nil); return }
+            evidence.observe(from: from, to: to)
+            if evidence.challengeURL != nil {
+                validationError = verificationError(for: response)
+                completionHandler(nil)
+                return
             }
-            if let redirectedRequest {
-                NetworkLogRecorder.shared.addRedirect(to: logToken, from: response, request: redirectedRequest)
+            guard evidence.count <= 10,
+                  !evidence.origin.contains(evidence.originalURL) || !evidence.leftOrigin else {
+                validationError = YamiboError.invalidResponse(statusCode: response.statusCode)
+                completionHandler(nil)
+                return
             }
-            completionHandler(redirectedRequest)
+            var redirected = request
+            if evidence.origin.contains(evidence.originalURL), !evidence.leftOrigin {
+                YamiboNetworkPolicy.applyCredentials(attempt.credentials, to: &redirected, handlesCookies: false)
+            } else {
+                redirected.setValue(nil, forHTTPHeaderField: "Cookie")
+                redirected.setValue(nil, forHTTPHeaderField: "Authorization")
+                redirected.setValue(nil, forHTTPHeaderField: "Referer")
+                redirected.httpShouldHandleCookies = false
+            }
+            NetworkLogRecorder.shared.addRedirect(to: logToken, from: response, request: redirected)
+            completionHandler(redirected)
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            if let challengeResponse {
+                challengeBody.append(data.prefix(Self.maximumChallengeBodyBytes - challengeBody.count))
+                if challengeBody.count == Self.maximumChallengeBodyBytes {
+                    validationError = challengeResponseError(challengeResponse)
+                    dataTask.cancel()
+                }
+                return
+            }
             guard let validatedResponse else { return }
             didReceiveData(data, validatedResponse)
+        }
+
+        private func canRecover(_ response: HTTPURLResponse, task: URLSessionTask) -> Bool {
+            guard !evidence.leftOrigin, let original = task.originalRequest?.url, let final = response.url,
+                  original.user == nil, original.password == nil, final.user == nil, final.password == nil else { return false }
+            return YamiboImageSource.sameOrigin(original, YamiboDomain.baseURL)
+                && YamiboImageSource.sameOrigin(final, YamiboDomain.baseURL)
+        }
+
+        private func verificationError(for response: HTTPURLResponse) -> any Error {
+            guard let url = response.url else { return YamiboError.invalidResponse(statusCode: response.statusCode) }
+            return ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(
+                url: url, request: request, credentials: attempt.credentials))
+        }
+
+        private func challengeResponseError(_ response: HTTPURLResponse) -> any Error {
+            if let url = response.url, ForumWAFResponseClassifier.matches(response: response, prefix: challengeBody,
+                origin: evidence.origin, originalURL: evidence.originalURL, leftOrigin: evidence.leftOrigin) {
+                return verificationError(for: response)
+            }
+            return LoadDiagnosticError.attaching(to: YamiboError.invalidResponse(statusCode: response.statusCode),
+                requestContext: response.url?.absoluteString, httpStatus: response.statusCode)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
@@ -303,6 +382,9 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            if validationError == nil, error == nil, let challengeResponse {
+                validationError = challengeResponseError(challengeResponse)
+            }
             NetworkLogRecorder.shared.finish(
                 logToken,
                 response: task.response,
@@ -325,75 +407,18 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
     }
 }
 
-/// Nuke forwards these callbacks to its retained delegate. Observing them
-/// leaves the fallback loader's validation and delivery behavior unchanged.
-private final class ImageFallbackNetworkLogDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private let lock = NSLock()
-    private var tokens: [Int: NetworkLogToken] = [:]
-    private var validationErrors: [Int: Error] = [:]
-    private var intervals: [Int: DateInterval] = [:]
-
-    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-        _ = token(for: task)
+/// Cache-only Nuke requests may omit an attempt, but must never reach the network.
+private final class MissingImageAttemptLoader: DataLoading, @unchecked Sendable {
+    func loadData(with request: URLRequest,
+                  didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
+                  completion: @escaping @Sendable (Error?) -> Void) -> any Cancellable {
+        completion(ForumWAFFailure.runtimeUnavailable)
+        return EmptyImageCancellation()
     }
+}
 
-    func urlSession(
-        _ session: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        if let error = DataLoader.validate(response: response) {
-            lock.withLock { validationErrors[dataTask.taskIdentifier] = error }
-        }
-        // Nuke ignores this observer's disposition and runs its own validator.
-        completionHandler(.allow)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping @Sendable (URLRequest?) -> Void
-    ) {
-        if let token = token(for: task) {
-            NetworkLogRecorder.shared.addRedirect(to: token, from: response, request: request)
-        }
-        completionHandler(request)
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let token = token(for: task) else { return }
-        let (validationError, interval) = lock.withLock {
-            tokens.removeValue(forKey: task.taskIdentifier)
-            return (validationErrors.removeValue(forKey: task.taskIdentifier), intervals.removeValue(forKey: task.taskIdentifier))
-        }
-        NetworkLogRecorder.shared.finish(
-            token,
-            response: task.response,
-            sentBytes: task.countOfBytesSent,
-            receivedBytes: task.countOfBytesReceived,
-            error: validationError ?? error,
-            finalURL: task.currentRequest?.url,
-            duration: interval?.duration,
-            startedAt: interval?.start
-        )
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        lock.withLock { intervals[task.taskIdentifier] = metrics.taskInterval }
-    }
-
-    private func token(for task: URLSessionTask) -> NetworkLogToken? {
-        lock.withLock {
-            if let token = tokens[task.taskIdentifier] { return token }
-            guard let request = task.originalRequest ?? task.currentRequest else { return nil }
-            let token = NetworkLogRecorder.shared.begin(request: request, source: .image)
-            tokens[task.taskIdentifier] = token
-            return token
-        }
-    }
+private struct EmptyImageCancellation: Cancellable {
+    func cancel() {}
 }
 
 private final class YamiboDataTaskCancellable: Cancellable, @unchecked Sendable {

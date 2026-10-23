@@ -9,22 +9,24 @@ public struct IOSForumWebView: UIViewRepresentable {
     @Environment(\.forumTheme) private var theme
     public let model: ForumBrowserModel
     public let sessionStore: SessionStore
+    public let requestExecutor: ForumRequestExecutor
     public let isSelected: Bool
 
-    public init(model: ForumBrowserModel, sessionStore: SessionStore, isSelected: Bool = true) {
+    public init(model: ForumBrowserModel, sessionStore: SessionStore, requestExecutor: ForumRequestExecutor, isSelected: Bool = true) {
         self.model = model
         self.sessionStore = sessionStore
+        self.requestExecutor = requestExecutor
         self.isSelected = isSelected
     }
 
     public func makeCoordinator() -> Coordinator {
-        Coordinator(model: model, sessionStore: sessionStore)
+        Coordinator(model: model, sessionStore: sessionStore, requestExecutor: requestExecutor)
     }
 
     public func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = .nonPersistent()
         let appearance = ForumWebAppearance(theme: theme, colorScheme: context.environment.colorScheme)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -52,6 +54,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         private static let instances = NSHashTable<Coordinator>.weakObjects()
         private let model: ForumBrowserModel
         private let sessionStore: SessionStore
+        private let wafBridge: ForumWebWAFBridge
         private weak var webView: WKWebView?
         private var didPrepareInitialLoad = false
         private var appliedAppearance: ForumWebAppearance?
@@ -69,10 +72,12 @@ public struct IOSForumWebView: UIViewRepresentable {
         private var authenticationObservationTask: Task<Void, Never>?
         private let navigationLogs = WebNavigationLogCapture(source: .webNavigation)
 
-        init(model: ForumBrowserModel, sessionStore: SessionStore) {
+        init(model: ForumBrowserModel, sessionStore: SessionStore, requestExecutor: ForumRequestExecutor) {
             self.model = model
             self.sessionStore = sessionStore
+            wafBridge = ForumWebWAFBridge(sessionStore: sessionStore, executor: requestExecutor)
             super.init()
+            wafBridge.onFailure = { [weak model] in model?.failSilently($0) }
             Self.instances.add(self)
         }
 
@@ -135,6 +140,7 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         public func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
             navigationLogs.redirect(navigation, webView: webView)
+            wafBridge.redirected(webView)
         }
 
         public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -143,6 +149,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         }
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            wafBridge.finished(webView)
             navigationLogs.finish(navigation)
             model.sync(with: webView)
             guard let url = webView.url, isInternal(url), !isChangingAccount else { return }
@@ -223,8 +230,11 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return
             }
 
-            navigationLogs.allow(navigationAction)
-            decisionHandler(.allow)
+            Task { @MainActor [weak self] in
+                guard let self, !isChangingAccount, await wafBridge.admit(navigationAction, in: webView) else { decisionHandler(.cancel); return }
+                navigationLogs.allow(navigationAction)
+                decisionHandler(.allow)
+            }
         }
 
         public func webView(
@@ -234,6 +244,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         ) {
             navigationLogs.receive(navigationResponse)
             guard !isChangingAccount else { decisionHandler(.cancel); return }
+            guard wafBridge.receive(navigationResponse, webView: webView) else { decisionHandler(.cancel); return }
             if let url = navigationResponse.response.url,
                model.shouldRouteNatively(url, method: mainNavigationMethod, isMainFrame: navigationResponse.isForMainFrame) {
                 navigationLogs.cancel(navigationResponse)
@@ -277,7 +288,7 @@ public struct IOSForumWebView: UIViewRepresentable {
                 guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
                 let persisted = await sessionStore.load()
                 guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
-                sessionSyncState.markPersistedWebSession(cookieHeader: persisted.cookie)
+                sessionSyncState.markPersistedWebSession(persisted)
                 lastAuthenticationCookie = SessionState.authenticationCookieValue(in: persisted.cookie)
                 didObserveAuthentication = true
                 model.openNative(url)
@@ -333,6 +344,10 @@ public struct IOSForumWebView: UIViewRepresentable {
             switch sessionSyncState.action(for: sessionState, reloadIfNeeded: reloadIfNeeded) {
             case .none:
                 return
+            case .injectWAFCookies:
+                // Never delete/reseed authentication while the bridge may be
+                // replaying a navigation with the newly committed clearance.
+                await injectCookies(sessionState.cookies.filter { YamiboCookie.isWAFCookie($0.name) }, into: webView, wafOnly: true)
             case let .injectCookies(reload):
                 await injectCookies(sessionState.cookies, into: webView)
                 if reload, !isChangingAccount, !Task.isCancelled {
@@ -355,7 +370,7 @@ public struct IOSForumWebView: UIViewRepresentable {
             }
         }
 
-        private func injectCookies(_ cookies: [YamiboCookie], into webView: WKWebView) async {
+        private func injectCookies(_ cookies: [YamiboCookie], into webView: WKWebView, wafOnly: Bool = false) async {
             let validCookies = cookies.filter { !$0.isExpired() }
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let stored = await cookieStore.allCookies()
@@ -364,11 +379,12 @@ public struct IOSForumWebView: UIViewRepresentable {
                 return (record.identity, record)
             })
 
-            await clearConflictingYamiboCookies(for: validCookies, in: webView)
+            if !wafOnly { await clearConflictingYamiboCookies(for: validCookies, in: webView) }
             for cookie in validCookies {
                 guard !isChangingAccount, !Task.isCancelled else { return }
                 if let current = storedByIdentity[cookie.identity],
                    YamiboCookie.isWAFCookie(cookie.name),
+                   current.value == cookie.value,
                    !current.isExpired(),
                    (current.expiresAt ?? .distantFuture) >= (cookie.expiresAt ?? .distantPast) {
                     continue
@@ -381,11 +397,13 @@ public struct IOSForumWebView: UIViewRepresentable {
 
         private func clearConflictingYamiboCookies(for cookies: [YamiboCookie], in webView: WKWebView) async {
             let incomingNames = Set(cookies.map(\.name))
+            let incomingIdentities = Set(cookies.map(\.identity))
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let storedCookies = await cookieStore.allCookies()
             for cookie in storedCookies
                 where YamiboDomain.containsYamiboDomain(cookie.domain) &&
                 (incomingNames.contains(cookie.name) || SessionState.isAuthenticationCookieName(cookie.name)) &&
+                !incomingIdentities.contains(YamiboCookie(cookie).identity) &&
                 !YamiboCookie.isWAFCookie(cookie.name) {
                 await cookieStore.deleteCookieAsync(cookie)
             }
@@ -402,6 +420,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         static func prepareForAccountChange(sessionStore: SessionStore) async {
             for coordinator in instances.allObjects where coordinator.sessionStore === sessionStore {
                 coordinator.isChangingAccount = true
+                coordinator.wafBridge.cancel()
                 coordinator.accountGeneration += 1
                 let handoff = coordinator.nativeNavigationTask
                 handoff?.cancel()

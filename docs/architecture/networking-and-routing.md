@@ -9,8 +9,9 @@ App 的论坛接入主要是读取 Discuz HTML、提取页面模型，以及提�
 ```text
 用户操作／业务 workflow
     -> 业务仓储：选择 URL、分页、缓存与操作语义
-    -> YamiboClient：凭据、会话校验、传输、WAF 恢复
-    -> URLSession / NetworkLoggedTransport
+    -> YamiboClient / 图片 / 下载：请求构造与业务适配
+    -> ForumRequestExecutor：会话准入、恢复与单次预算
+    -> 受控单次传输适配器 / NetworkLoggedTransport
     -> HTTP 状态与响应体
     -> 业务解析器：HTML、表单、附件或操作结果
     -> Sendable 页面模型
@@ -46,14 +47,14 @@ Core 维护网络与页面语义，UI 维护 WebKit 和系统 URL 打开方式�
 
 出站 Cookie 逐条检查有效期、域名、路径和 HTTPS 要求，按较长路径优先组合请求头。持久化 SameSite 属性不等于 `URLSession` 中实现了浏览器完整的 SameSite 行为。旧字符串 Cookie 转换会丢弃 WAF Cookie，避免把缺失过期信息的旧通行凭据恢复成长期会话。
 
-本地模式额外限制显式 Cookie 头只能发往所选 origin。系统 Cookie 匹配不包含端口，因此普通本地请求关闭自动 Cookie 处理；只有隔离登录流程的私有 ephemeral cookie jar，且请求仍属论坛 origin 时，才允许自动接收和携带 Cookie。生产默认 session 并非统一无 Cookie 存储，业务可显式传入 `handlesCookies: false`。
+显式论坛 Cookie 头只能发往所选精确 origin。系统 Cookie 匹配不包含端口，因此普通本地请求关闭自动 Cookie 处理；只有隔离登录流程的私有 ephemeral cookie jar，且请求仍属论坛 origin 时，才允许自动接收和携带 Cookie。生产默认 session 并非统一无 Cookie 存储，业务可显式传入 `handlesCookies: false`；受控论坛适配器在跨 origin 跳转前拒绝跟随。
 
 两种“隔离”不要混淆：
 
 - `isolatedLoginService` 有私有 Cookie jar，用于登录响应与后续请求间传递 `Set-Cookie`，不共享普通登录流程的 jar。
 - `makeCookieIsolatedSession` 完全不读写 Cookie storage，仅依赖调用方筛选后的显式请求头。
 
-账号身份的切换、持久化与清理见[账号与应用生命周期](account-lifecycle.md)。网络客户端可注入 `validateSession`，在初次请求前、响应后和 WAF 恢复／重试后检查会话。该能力不是每个独立客户端自动具备的代次校验，仓储和 workflow 仍须按其契约防止迟到结果写入新账号。
+账号身份的切换、持久化与清理见[账号与应用生命周期](account-lifecycle.md)。执行器必需的请求上下文在初次请求前、响应后和 WAF 恢复／重试后校验 generation。网络客户端额外的 `validateSession` 保留业务约束；仓储和 workflow 仍须按其写入契约防止迟到结果写入新账号。
 
 源码入口：[环境规则](../../Sources/YamiboXCore/Infrastructure/Networking/YamiboForumEnvironment.swift)、[Cookie 模型](../../Sources/YamiboXCore/Account/Domain/YamiboCookie.swift)、[网络凭据策略](../../Sources/YamiboXCore/Infrastructure/Networking/YamiboNetworkPolicy.swift)、[session 配置](../../Sources/YamiboXCore/Infrastructure/Networking/YamiboNetworkConfiguration.swift)。
 
@@ -79,21 +80,59 @@ Discuz 的 GET 链接也可能改写状态。`ForumWebPagePolicy.requiresConfirm
 
 ## 4. WAF 恢复与重放
 
-WAF 识别当前针对站点的 **405** 响应：需满足站点 URL 判断，且响应带 `baidu_waf`／`bdwaf-request-id` 标识，或正文前 128 KiB 含至少两个已知挑战标记。不是所有 403、405 或登录失败都属于 WAF。
+### 静默网关迁移清单
 
-恢复流程如下：
+以下清单对应 `unify-silent-forum-waf-recovery` 的实现边界；行为是否已经验收，以[本轮记录](../tests/waf-recovery-regression.md)为准。Core 契约位于 `Infrastructure/Networking/ForumWAF`，仅依赖 Foundation 和既有 Core 值类型。
 
-1. 传输发现挑战后，调用 UI 实现的 `YamiboWAFChallengeRecovering`。挑战包含 URL、method、User-Agent 和既有 clearance 的单向指纹／有效期，不把 Cookie 明文放入挑战对象。
-2. UI 的 `ForumWebSessionCoordinator` 在 App 活跃且非账号切换状态下合并并发等待者，准备 WebKit 当前会话，再通过**登录页** 完成验证，而不是打开可能有副作用的原始失败 URL。
-3. WebKit Cookie 观察与导航结束读取共同更新会话。验证要求得到有效的新 clearance；必要时从隐藏验证切换到可见交互，用户取消或账号切换会结束等待。
-4. Core 保留原请求的非 WAF Cookie，仅替换 `nox_*` WAF 凭据，不用恢复结果替换论坛账号身份。
-5. 调用方允许时，原请求最多重发一次，并忽略本地 HTTP 缓存。仍被 WAF 阻断则展示登录验证回退并抛出 `securityVerificationRequired`，不无限循环。
+| 当前创建点／业务入口 | 目标职责及重放许可 | 必须保留的约束 |
+| --- | --- | --- |
+| `YamiboAppContext.makeClient` → HTML 仓储、论坛／帖子／小说／漫画目录、收藏与自动更新、用户空间、博客、评论与路由补全 | 必需执行器；审定读取 `.safeReadOnce`，动作 `.never` | 原请求身份、账号代次、原有取消策略、缓存写入边界 |
+| `YamiboAppContext` 的消息检查与黑名单工厂 | 使用同一 scoped 执行器，不按 interactive 省略恢复 | 后台／非交互不展示 UI；动作不重发 |
+| `YamiboClient.fetchHTML` / `submitForm` / `performRequest` | 只构造请求、解码 HTML；执行器统一检测与预算，默认 `.never` | GET 不等于只读；Referer、body、UA 不变 |
+| `ForumPageClient`、`ForumPageRepository`、`ForumAttachmentDownloadProcessor` | 无需确认的 GET／附件读取允许一次；表单、上传、确认 GET 禁止重放 | 重定向准入、50 MiB 文件限制、响应分类、单 task 进度 |
+| `YamiboAccountRemoteRepository` 与 `YamiboAccountService.isolatedLoginService` | 登录表单／profile 读取允许一次，登录提交禁止；候选与活跃 scope 分离 | 私有 Cookie jar、候选凭据不得写入当前账号 |
+| `YamiboAccountRemoteRepository.signOut` | 退役 scope，`.never` | 本地切换完成后不得借用新账号或回写其 Cookie |
+| `YamiboCheckInRemoteRepository` 与后台签到装配 | 页面／检查读取允许一次；签到与推广 `.never` | 推广只携带 WAF Cookie；后台 lease 优先 |
+| `YamiboImagePipeline`、`YamiboProfileAvatarLoader`、`AccountDependencies` 及 Reader／下载默认图片工厂 | 必需执行器与 scoped 上下文；图片读取允许一次 | Nuke 合并、成功缓存键、预取取消；外部图片不触发论坛验证 |
+| `YamiboImageDataPipeline` 的 `DataLoader` / `ImagePipeline` / `session.dataTask` | native-forum 流式单次尝试适配器，不自行 recover/replay | 128 KiB 隔离前缀、逐跳停止循环、正常增量进度 |
+| `YamiboImageLoadCoordinator` → `YamiboUIImagePipeline`、通用图片、漫画分页／纵向视口 | 失败恢复 ticket 继承原 operation 和剩余预算 | revision 防遗漏；成功图片与阅读位置不变 |
+| `DownloadImageAcquirer` → `DownloadBackgroundTransport` 的 `URLSession` / `downloadTask` | native-forum 下载单次尝试，pending 绑定 operation/scope/generation/attempt | 文件前缀与 metrics 判定先于成功交付；无可信 pending 的旧任务取消 |
+| `YamiboNetworkConfiguration.makeSession` → `NetworkLoggedTransport.data` / `dataTask` | 原生单次尝试创建边界；论坛业务只能经执行器进入 | 明确 origin、逐跳凭据准入、原始 HTTP 结果与诊断 |
+| `ForumWebView` 的 `WKWebViewConfiguration` / `WKWebView`、`ForumWebSessionSyncState` 与显式网页登录 | web-session 桥接可观察挑战和 scoped Cookie；仅安全导航允许一次 | 引擎内部资源不是原生逐请求拦截；WAF-only 更新不 reload 成功网页 |
+| `WebKitSilentForumVerifier` 的 WebKit 创建点，前台／后台签到共同装配 | 统一 silent-verifier，无 presentation/fallback；旧独立后台恢复器已删除，验证流量不递归 | 非持久 WAF-only Cookie、默认 8 秒、取消清理；预热共享协调器 |
+| `WebDAVClient`、`AppSourceLoader` → `NetworkLoggedTransport` | external-service，精确文件登记，不进入论坛恢复 | 不注入论坛 Cookie，不把 405／循环改成论坛挑战 |
 
-`ForumPageClient` 仅允许不需确认的 GET 自动重放；POST 和需确认的 GET 即使完成恢复也抛出验证错误，等待用户重新操作。**这是该适配器的规则，不是所有 `YamiboClient` 调用的统一保证**：公共接口的 `allowsWAFReplay` 默认开启，其他业务入口必须自行确定动作是否可重放。
+`ForumSessionKey` 将精确 origin、scope、generation、Cookie storage 身份和 UA 纳入合并键。`ForumRequestContext` 保留原始凭据快照；提交闭包必须在同一存储事务内验证 generation 并合并 WAF Cookie，不得以先校验后无条件 save 代替。`ForumSilentVerifying` 仅返回 WAF Cookie；不可用平台显式使用 `UnavailableForumSilentVerifier`，不以可选依赖绕过检测。
 
-预热与需求验证是不同路径：预热不能主动强迫用户操作；需求等待可显示验证页面。后台签到还有专门的恢复适配器，不能据此推断所有后台任务都能弹出或完成 WebKit 验证。
+`ForumWAFFailure` 的终态映射：`challenge`、`silentTimeout`、`runtimeUnavailable`、`interactionRequired`、`noUpdatedClearance`、`processTerminated`、`replayNotPermitted`、`replayExhausted` 显示内联加载失败或队列失败／暂停；`sessionInvalidated` 丢弃旧结果并结束等待。实际任务取消单独保持 `CancellationError`。任何一项都不得自动转为登录、浏览器、验证弹层或通用错误 alert；正常主动登录是独立能力。
 
-源码入口：[WAF 契约与检测](../../Sources/YamiboXCore/Infrastructure/Networking/YamiboWAF.swift)、[UI 验证协调器](../../Sources/YamiboXUI/AppEntry/ForumWebSessionCoordinator.swift)。
+### 当前执行流程
+
+1. 所有原生论坛入口必须携带 `ForumRequestContext` 和非可选 `ForumRequestExecutor`；`YamiboClient` 仅构造请求和解码。`ForumRequestPolicy` 默认禁止重放，已审定读取才显式使用 `.safeReadOnce`。未识别的 GET、POST、上传、签到、退出与推广不会自动重发。
+2. 受控适配器隔离 405 响应头／前 128 KiB 正文，以及连续两次相同 URL 自重定向证据。普通 403/405、单跳和非论坛来源不会发起验证。原生逐跳适配器在第二次自跳停止，另设 10 跳上限；不允许携带论坛凭据跨 origin。
+3. `ForumWAFRecoveryCoordinator` actor 按 origin、scope、generation、Cookie storage ID、UA 合并 flight。迟到挑战先检查同上下文的新 clearance。单等待者取消不影响其他等待者，最后等待者离开取消执行与计时资源。
+4. `WebKitSilentForumVerifier` 创建非持久、未挂载到任何界面的 WebKit，只种入 WAF Cookie，以原 UA 访问安全登录入口。默认上限 8 秒，后台剩余运行机会更短时优先结束。页面加载完成本身不表示成功，须获得相对原请求更新且仍有效超过 60 秒的 clearance。
+5. 协调器仅以原子 generation 检查提交 WAF Cookie。UA 不同的上下文不读写另一 UA 的持久 clearance；其结果仅在兼容 key 的有界内存内复用。原账号 Cookie、Referer、body、UA 不被验证结果替换。
+6. 原操作最多初始尝试加一次重放。重放仍受阻即 `replayExhausted`；不允许重放的操作在成功更新 clearance 后返回 `replayNotPermitted`，不会把验证成功当作业务成功。取消和会话失效不重放。
+7. 前台、后台、阅读器、候选账号均没有自动 WAF sheet、alert、登录或浏览器回退。错误进入既有加载失败、内联状态或队列失败／暂停。用户主动登录是另一项能力。预热使用相同 actor，不拥有展示能力。
+
+### 图片、下载与网页边界
+
+Nuke 的原始数据缓存键保持不变，流式 loader 必须携带执行器发出的 attempt；缺失 attempt 的缓存请求只能失败，不能退回不受控网络 loader。405 字节不会进入成功缓存。图片失败注册表保留原 operation、单次预算和 lease；同会话新 clearance 只向有效、未重放的失败图发布一次 revision。通知先于 UI 失败时仍能消费，成功图、全局 epoch、阅读会话身份与阅读位置不因 WAF 变化重置。
+
+下载适配器声明后台 URLSession 不具备逐跳否决能力。论坛下载改用受控 data 传输，保留进度、取消与 50 MiB 限制；仅无 Cookie、Authorization、Referer 的外部公开图片允许系统后台下载。后台 pending 保留 operation/scope/generation/attempt，完成文件与实际 metrics 在终态交付前汇合；无可信 pending 的重连任务取消，持久队列仍保留并等待用户继续。不能声称后台任务在不可观察的第二跳提前拦截。具体限制见[下载与存储](downloads-and-storage.md)。
+
+`ForumWebWAFBridge` 接管用户已经打开的网页或登录页的**可观察**主框架挑战，保留一次导航恢复预算；验证器自身不经过该桥接，避免递归。WAF-only 同步只写通行 Cookie，不删除／重新种入认证 Cookie，也不 reload 成功网页；否则导航重放可能落在认证 Cookie 的删除与重写之间。普通 Cookie 同身份更新由 WebKit 原子替换，不先删除。
+
+WebKit 内部子资源仍由所属 Cookie store 管理，不能宣称这是对每条内部资源的原生拦截。由于 Cookie 按域而非端口匹配，`ForumWebCookieBoundary` 在首个导航放行前安装内容规则：对可能携带论坛 Cookie 的根域及子域请求禁止 Cookie，仅为精确论坛 origin 放行。不同端口的图片／脚本可继续加载但不发送论坛凭据；其他站点自身 Cookie 不受此规则影响。显式登录、普通浏览器和隔离验证器共用此边界，编译规则失败则不放行请求。规则使用 WebKit 官方的 [`block-cookies` 与 `ignore-previous-rules`](https://webkit.org/blog/3476/content-blockers-first-look/) 语义，不依赖导航 delegate 观察子资源。普通浏览器使用非持久 jar，通过 scoped 会话同步；账号转换停止旧导航与恢复。
+
+### 诊断与准入
+
+`networking` 日志使用公开的随机 operation/scope/generation/flight ID 关联 attempt、challenge、join 和 terminal，不输出 Cookie、口令、挑战全文或可复用凭据。既有 HTTP 诊断继续由 `NetworkLogRecorder` 脱敏记录。
+
+`bash scripts/check-architecture.sh` 按确切文件登记四个原生创建边界、两项外部服务以及网页／静默验证 WebKit 创建点。新增适配器须先说明用途、来源限制、能力、预算及生命周期，再添加精确文件登记；禁止用目录通配放开新网络入口。CI 沿用同一命令。扫描是文本准入而非完整 Swift 数据流证明，不能发现所有别名、动态调用或语义上的错误重放；仍需要代码审查和本地行为验收。负例必须留在临时源码副本，不进入正式源码或测试 target。
+
+源码入口：[执行器](../../Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/ForumRequestExecutor.swift)、[恢复协调器](../../Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/ForumWAFRecoveryCoordinator.swift)、[平台验证器](../../Sources/YamiboXUI/Platform/WebKit/WebKitSilentForumVerifier.swift)、[验收记录](../tests/waf-recovery-regression.md)。
 
 ## 5. 原生 URL 路由与网页回退
 
@@ -158,7 +197,8 @@ WebKit Cookie 异步读取、设置和删除统一通过 `Platform/WebKit` 桥�
 - **凭据与账号**：Cookie 的 domain／path／Secure／到期筛选；同 host 不同端口的本地请求；隔离登录成功后原生首屏认证；请求或 Cookie 同步期间切换账号。
 - **重定向与动作**：同源只读重定向、站外继续链接、POST／token GET 的确认与不重放；新增业务直接调用公共客户端时单独审查默认重放策略。
 - **响应分类**：401、非 2xx、空白与不可解码正文；带附件 header 的 HTML 错误；真正文件、下载进度、大小上限和上传文本结果。
-- **WAF**：普通 405 不误判、无 recoverer 时返回验证错误、并发恢复、取消、仅刷新 clearance、一次重试仍失败，以及动作不自动重复提交。本地站不能真实复现的挑战必须注明未验证，不转向生产站测试。
+- **WAF**：普通 405 不误判、不可用验证器有界失败、并发恢复、取消、仅刷新 clearance、一次重试仍失败，以及动作不自动重复提交。本地站不能真实复现的挑战必须注明未验证，不转向生产站测试。
+- **图片 WAF**：多图自重定向共享一次验证、单次 302 正常通过、仅正文标识的 405、验证取消后新 clearance 定向恢复、成功页不重新请求，以及验证后仍自重定向的图片停止重试。挑战正文不得进入图片缓存；分页与滚动模式均需检查失败恢复。
 - **路由**：静态／query 帖子链接、`findpost`、页码与锚点、单次阅读覆盖、智能漫画开关、登录和网页回退循环、网页登录后首次原生请求。
 - **解析与取消**：正常空搜索、缺失结构、标签空页／关闭页／深链、各模板末页；快速切换查询或页面后没有旧结果覆盖与跨账号缓存污染。
 - **Docker 资源**：UCenter 头像主机适配及 query 保留，正常附件仍由本地服务器权限决定。

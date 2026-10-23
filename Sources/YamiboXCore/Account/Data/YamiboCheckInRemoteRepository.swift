@@ -7,7 +7,7 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
     private let client: YamiboClient
     private let sessionState: SessionState
     private let promotionSession: URLSession
-    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    private let requestExecutor: ForumRequestExecutor
     private let sessionStore: SessionStore
     private let generation: UUID
 
@@ -16,12 +16,12 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         snapshot: AccountSessionSnapshot,
         sessionStore: SessionStore,
         promotionSession: URLSession,
-        wafRecoverer: (any YamiboWAFChallengeRecovering)?
+        requestExecutor: ForumRequestExecutor
     ) {
         self.client = YamiboClient(
             session: session,
-            credentials: snapshot.session.credentials,
-            wafRecoverer: wafRecoverer,
+            context: sessionStore.forumRequestContext(snapshot: snapshot),
+            executor: requestExecutor,
             handlesCookies: false,
             validateSession: {
                 guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
@@ -29,7 +29,7 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         )
         self.sessionState = snapshot.session
         self.promotionSession = promotionSession
-        self.wafRecoverer = wafRecoverer
+        self.requestExecutor = requestExecutor
         self.sessionStore = sessionStore
         self.generation = snapshot.generation
     }
@@ -49,7 +49,7 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
 
     func loadPage() async throws -> YamiboCheckInPage {
         let client = try await currentClient()
-        let html = try await client.fetchHTML(url: Self.checkInPageURL)
+        let html = try await client.fetchHTML(url: Self.checkInPageURL, replay: .safeReadOnce)
         if Self.isAlreadyCheckedIn(in: html) { return .alreadyCheckedIn }
         if let url = Self.extractCheckInURL(from: html) { return .available(url) }
         return .unavailable(LoadFailureDetails(
@@ -65,7 +65,7 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
 
     func verifyCheckIn() async throws -> Bool {
         let client = try await currentClient()
-        let html = try await client.fetchHTML(url: Self.checkInPageURL)
+        let html = try await client.fetchHTML(url: Self.checkInPageURL, replay: .safeReadOnce)
         return Self.isAlreadyCheckedIn(in: html)
     }
 
@@ -77,8 +77,8 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         }
         let client = YamiboClient(
             session: promotionSession,
-            credentials: credentials,
-            wafRecoverer: wafRecoverer.map { WAFOnlyChallengeRecoverer(base: $0) },
+            context: self.client.requestContext.replacingCredentials(credentials),
+            executor: requestExecutor,
             handlesCookies: false
         )
         Task {
@@ -157,27 +157,4 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         let path = String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
         return URL(string: path, relativeTo: YamiboDomain.baseURL)?.absoluteURL
     }
-}
-
-private struct WAFOnlyChallengeRecoverer: YamiboWAFChallengeRecovering {
-    private let base: any YamiboWAFChallengeRecovering
-
-    init(base: any YamiboWAFChallengeRecovering) {
-        self.base = base
-    }
-
-    func recover(from challenge: YamiboWAFChallenge) async throws -> YamiboRequestCredentials {
-        let recovered = try await base.recover(from: challenge)
-        let wafOnly = YamiboRequestCredentials(
-            cookies: recovered.cookies.filter { YamiboCookie.isWAFCookie($0.name) },
-            userAgent: recovered.userAgent
-        )
-        guard !wafOnly.cookieHeader(for: challenge.url).isEmpty else {
-            throw YamiboError.securityVerificationRequired
-        }
-        return wafOnly
-    }
-
-    /// A failed background referral must not show an additional fallback UI.
-    func presentFallback(for _: YamiboWAFChallenge) async {}
 }

@@ -7,6 +7,7 @@ public final class ForumBrowserModel: ObservableObject {
     @Published public private(set) var currentURL: URL?
     @Published public private(set) var pageTitle = ""
     @Published public private(set) var isLoading = false
+    @Published private(set) var silentFailure: String?
 
     private weak var webView: WKWebView?
     private let onNativeNavigation: @MainActor (URL) -> Void
@@ -52,7 +53,13 @@ public final class ForumBrowserModel: ObservableObject {
     }
 
     public func reload() {
+        silentFailure = nil
         webView?.reload()
+    }
+
+    func failSilently(_ failure: ForumWAFFailure) {
+        isLoading = false
+        silentFailure = failure.localizedDescription
     }
 
     public func sync(with webView: WKWebView) {
@@ -90,12 +97,18 @@ public struct ForumBrowserView: View {
                 IOSForumWebView(
                     model: model,
                     sessionStore: sessionStore,
+                    requestExecutor: appModel.appContext.requestExecutor,
                     isSelected: true
                 )
                 if model.isLoading {
                     ProgressView()
                         .controlSize(.small)
                         .padding(.top, 8)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let failure = model.silentFailure {
+                    Text(failure).font(.footnote).padding().background(.regularMaterial)
                 }
             }
             .toolbar {

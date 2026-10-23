@@ -22,16 +22,6 @@ public struct RootTabView: View {
 
     public var body: some View {
         ZStack {
-            if appModel.ownsWebSessionPresentation {
-                ForumWebSessionWebViewHost(
-                    coordinator: appModel.webSessionCoordinator,
-                    placement: .hidden
-                )
-                .opacity(0.001)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-
             Group {
                 if isShowingBootstrapPlaceholder {
                     AppLaunchScreenView()
@@ -100,9 +90,6 @@ public struct RootTabView: View {
             prompter: appUpdateLaunchPrompter,
             isActive: !isShowingBootstrapPlaceholder && !appModel.hasActiveReaderPresentation
         ))
-        .fullScreenCover(item: webVerificationBinding) { _ in
-            ForumWAFVerificationView(coordinator: appModel.webSessionCoordinator)
-        }
         .environment(\.yamiboImagePipeline, appModel.imagePipeline)
         .environment(\.readingHandoffPublisher, appModel.handoffPublisher)
         .environment(\.forumBlacklist, appModel.appContext.blacklistWorkflow)
@@ -169,17 +156,6 @@ public struct RootTabView: View {
         Binding(
             get: { appModel.selectedTab },
             set: { appModel.selectTab($0) }
-        )
-    }
-
-    private var webVerificationBinding: Binding<ForumWebSessionCoordinator.Presentation?> {
-        Binding(
-            get: { appModel.ownsWebSessionPresentation ? appModel.webSessionCoordinator.presentation : nil },
-            set: { presentation in
-                if presentation == nil, appModel.ownsWebSessionPresentation {
-                    appModel.webSessionCoordinator.dismissPresentation()
-                }
-            }
         )
     }
 

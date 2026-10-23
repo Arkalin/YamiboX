@@ -89,6 +89,7 @@ public actor YamiboThreadRouteResolver {
             } catch {
                 if Task.isCancelled || LoadDiagnosticError.isCancellation(error) { throw error }
                 let classified = LoadDiagnosticError.classificationError(error)
+                if classified is ForumWAFFailure { throw error }
                 if let yamiboError = classified as? YamiboError,
                    yamiboError == .notAuthenticated || yamiboError == .floodControl || yamiboError == .securityVerificationRequired {
                     if allowsAuthenticationFallback { return YamiboThreadRouteResolution(.webFallback(requestURL)) }

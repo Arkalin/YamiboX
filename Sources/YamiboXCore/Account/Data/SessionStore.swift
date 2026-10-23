@@ -1,6 +1,7 @@
 import Foundation
 
 public protocol SessionStoring: Sendable {
+    var forumScopeID: UUID { get }
     func load() async -> SessionState
     func snapshot() async throws -> AccountSessionSnapshot
     func isCurrentGeneration(_ expected: UUID) async -> Bool
@@ -11,9 +12,11 @@ public protocol SessionStoring: Sendable {
     func updateWebSession(cookies: [YamiboCookie], userAgent: String) async throws
     func updateAccountUID(_ accountUID: String?) async throws
     func reset() async throws
+    func mergeWAFCookies(_ cookies: [YamiboCookie], expectedGeneration: UUID, replacingCurrent: Bool) async throws
 }
 
 public actor SessionStore: SessionStoring {
+    public nonisolated let forumScopeID: UUID
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated let accountStore: AccountStore?
     public nonisolated let accountOperations: AccountOperationGate
@@ -29,12 +32,14 @@ public actor SessionStore: SessionStoring {
     private var transition: UUID?
 
     public init(accountStore: AccountStore = .shared) {
+        forumScopeID = accountStore.forumScopeID
         self.accountStore = accountStore
         accountOperations = accountStore.operations
         storage = nil
     }
 
     public init(defaults: UserDefaults, key: String = "yamibox.session") {
+        forumScopeID = UUID()
         accountStore = nil
         accountOperations = AccountOperationGate()
         self.storage = UserDefaultsJSONStorage(defaults: defaults, key: key) { error in

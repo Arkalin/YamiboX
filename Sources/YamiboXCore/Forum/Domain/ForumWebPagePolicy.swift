@@ -3,6 +3,29 @@ import Foundation
 /// Authentication, unsupported forum pages and off-site content use a browser. Keep this
 /// decision shared by URL routing and the WebKit navigation delegate.
 public enum ForumWebPagePolicy {
+    /// Audited navigation reads only. Unknown GET endpoints do not earn replay
+    /// permission merely by lacking a token or confirmation parameter.
+    public static func allowsAutomaticReadReplay(_ url: URL) -> Bool {
+        guard isForumPage(url), !requiresConfirmationToLoad(url) else { return false }
+        if isLoginPage(url) { return true }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let value: (String) -> String = { name in items.first { $0.name == name }?.value ?? "" }
+        if YamiboForumURLIdentity.threadID(from: url.absoluteString) != nil,
+           url.path.hasPrefix("/thread-") { return true }
+        switch url.path {
+        case "/", "/index.php": return items.allSatisfy { ["mobile", "forcemobile"].contains($0.name) }
+        case "/forum.php":
+            return ["", "forumdisplay", "viewthread", "guide", "attachment", "announcement", "tag"].contains(value("mod"))
+                || value("mod") == "post" && ["newthread", "reply", "edit"].contains(value("action"))
+                || value("mod") == "misc" && ["rate", "report"].contains(value("action"))
+        case "/home.php":
+            return value("mod") == "space" && ["", "profile", "thread", "blog", "friend", "favorite"].contains(value("do"))
+                || value("mod") == "spacecp" && ["blog", "friend"].contains(value("ac")) && ["", "add", "edit"].contains(value("op"))
+        case "/search.php": return !items.contains { ["srchtxt", "searchid"].contains($0.name) }
+        default: return false
+        }
+    }
+
     public static func isForumPage(_ url: URL) -> Bool {
         YamiboForumEnvironment.current.isForumPageURL(url)
     }

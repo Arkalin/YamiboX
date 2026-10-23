@@ -35,6 +35,12 @@
 
 切换已保存账号也在租约内先验证目标会话。目标已失效时保留账号资料并使凭据失效；网络失败或身份不匹配不应直接把当前账号替换成目标账号。验证目标会话不借用当前账号的 WAF 恢复会话。
 
+候选校验使用独立临时 `SessionStore` 的 scope/generation/Cookie storage 身份，并注入同一个必需执行器；这不是禁用 WAF 的旁路。成功只合并候选的 WAF Cookie，随后将已验证的候选会话与 profile 一起交给账号切换。退出的服务端请求使用退役 scope，不能取得新活跃账号的凭据。所有 scope 的 WAF-only 提交都在存储事务内检查 generation。
+
+原生登录 POST 合并该候选私有 Cookie jar 中的表单会话 Cookie 与候选存储中的最新 WAF Cookie，避免显式 Cookie header 遮蔽表单校验所需的临时 Cookie；不会导入活跃账号的认证 Cookie。资料校验本身也可能触发静默恢复，因此登录保存会话前再次读取候选的最新 Cookie，而不是保存资料 GET 之前的快照。
+
+`ForumWebSessionCoordinator` 只管理用户主动登录浏览器与生命周期；静默验证使用独立的 `WebKitSilentForumVerifier`。账号切换取消旧 flight、导航及 Cookie 同步；候选超时或需要人工验证只显示内联失败，不另开验证或错误弹窗。普通网页登录由用户主动触发，不是网络错误的自动回退。
+
 ## 账号转换的固定顺序
 
 `AccountSwitchCoordinator` 负责选择操作及校验身份，`AccountTransitionWorkflow` 负责顺序和失败收尾，AppContext 仅装配依赖。正常切换、激活登录、退出和应用重置共用此路径。

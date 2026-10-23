@@ -2,6 +2,7 @@ import Foundation
 
 /// One atomic document owns saved credentials and both current-account projections.
 public actor AccountStore {
+    public nonisolated let forumScopeID = UUID()
     public static let shared = AccountStore(persistence: KeychainAccountVaultPersistence(), legacyDefaults: .standard)
     nonisolated let broadcaster = StoreChangeBroadcaster()
     public nonisolated let operations = AccountOperationGate()

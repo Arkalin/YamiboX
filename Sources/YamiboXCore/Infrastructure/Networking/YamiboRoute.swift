@@ -52,6 +52,26 @@ public enum YamiboRoute: Sendable {
     case threadReply(tid: String, page: Int)
     case threadPostReply(tid: String, pid: String, page: Int)
 
+    /// Explicit read allowlist. New routes, actions and read-marking message
+    /// views remain non-replayable until their business semantics are audited.
+    var readReplayPolicy: ForumReplayPolicy {
+        switch self {
+        case .favorites, .boardFavorites, .favoriteDeleteForm, .login, .currentProfile,
+             .tagIndex, .tagNamed, .tag, .searchPage, .forumSearchPage,
+             .threadByID, .forumHome, .forumBoard, .userSpaceProfile, .creditLog,
+             .userSpaceThreads, .userSpaceReplies, .userSpaceBlogs, .userSpaceMyBlogs,
+             .userSpaceFriendBlogs, .userSpaceViewAllBlogs, .userSpaceFriends,
+             .userSpaceFriendPage, .userSpaceAddFriendForm, .forumBlacklist,
+             .userSpaceBlogEditor, .blog,
+             .threadRateOptions, .threadRatingResults, .threadPostComment, .threadPollVoters:
+            return .safeReadOnce
+        case let .thread(url, _, _):
+            return ForumWebPagePolicy.allowsAutomaticReadReplay(url) ? .safeReadOnce : .never
+        default:
+            return .never
+        }
+    }
+
     public static func findPostURL(threadURL: URL, postID: String?) -> URL? {
         let normalizedPostID = postID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !normalizedPostID.isEmpty else { return nil }

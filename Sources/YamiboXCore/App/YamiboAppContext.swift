@@ -60,7 +60,7 @@ public final class YamiboAppContext: Sendable {
     private let accountTransitionWorkflow: AccountTransitionWorkflow
     private let dataResetWorkflow: AppDataResetWorkflow
     private let websiteDataClearer: (any WebsiteDataClearing)?
-    private let wafRecoverer: (any YamiboWAFChallengeRecovering)?
+    public let requestExecutor: ForumRequestExecutor
     public let accountTransitionLifecycle = AccountTransitionLifecycle()
 
     public init(
@@ -100,7 +100,7 @@ public final class YamiboAppContext: Sendable {
         websiteDataClearer: (any WebsiteDataClearing)? = nil,
         session: URLSession = YamiboNetworkConfiguration.makeSession(),
         imageSession: URLSession = YamiboNetworkConfiguration.makeImageSession(),
-        wafRecoverer: (any YamiboWAFChallengeRecovering)? = nil,
+        requestExecutor: ForumRequestExecutor = .unavailable,
         httpCache: URLCache = .shared
     ) {
         // Recover the diagnostic ring and retire old share snapshots off the UI thread.
@@ -120,16 +120,17 @@ public final class YamiboAppContext: Sendable {
         )
         self.websiteDataClearer = websiteDataClearer
         self.sessionStore = sessionStore
-        self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { state in
-            UserSpaceRepository(client: YamiboClient(session: session, credentials: state.credentials, handlesCookies: false))
+        self.messageUnreadWorkflow = MessageUnreadWorkflow(sessionStore: sessionStore) { snapshot in
+            UserSpaceRepository(client: YamiboClient(session: session,
+                context: sessionStore.forumRequestContext(snapshot: snapshot), executor: requestExecutor))
         }
         self.blacklistWorkflow = ForumBlacklistWorkflow(
             sessionStore: sessionStore,
             store: ForumBlacklistStore(defaults: profileDefaults)
-        ) { snapshot, interactive in
+        ) { snapshot, _ in
             ForumBlacklistRepository(client: YamiboClient(
-                session: session, credentials: snapshot.session.credentials,
-                wafRecoverer: interactive ? wafRecoverer : nil, handlesCookies: false,
+                session: session, context: sessionStore.forumRequestContext(snapshot: snapshot),
+                executor: requestExecutor, handlesCookies: false,
                 validateSession: {
                     guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
                 }
@@ -238,6 +239,7 @@ public final class YamiboAppContext: Sendable {
             contentCoverStore: self.contentCoverStore,
             sessionStore: sessionStore,
             imageSession: imageSession,
+            requestExecutor: requestExecutor,
             offlineImages: resolvedDownloadStore,
             failureCacheDirectory: resolvedCachesRootDirectory.appendingPathComponent("image-load-policy")
         )
@@ -249,10 +251,10 @@ public final class YamiboAppContext: Sendable {
         }
         self.ordinaryImageCache = ordinaryImageCache
         self.httpCache = httpCache
-        self.downloadBackgroundDownloadTransport = downloadBackgroundDownloadTransport ?? DownloadBackgroundTransport(sessionStore: sessionStore)
+        self.downloadBackgroundDownloadTransport = downloadBackgroundDownloadTransport ?? DownloadBackgroundTransport(sessionStore: sessionStore, requestExecutor: requestExecutor)
         self.downloadRunObserver = downloadRunObserver
         self.session = session
-        self.wafRecoverer = wafRecoverer
+        self.requestExecutor = requestExecutor
         let webDataCleaner = AccountWebDataCleaner(session: session, httpCache: httpCache, websiteDataClearer: websiteDataClearer)
         let accountTransitionWorkflow = AccountTransitionWorkflow(
             sessionStore: sessionStore,
@@ -522,14 +524,14 @@ public final class YamiboAppContext: Sendable {
     // MARK: - Factories
 
     private func makeClient() async -> YamiboClient {
-        let snapshot = try? await sessionStore.snapshot()
+        let snapshot = (try? await sessionStore.snapshot()) ?? AccountSessionSnapshot(session: SessionState(), generation: UUID())
         return YamiboClient(
             session: session,
-            credentials: (snapshot?.session ?? SessionState()).credentials,
-            wafRecoverer: wafRecoverer,
+            context: sessionStore.forumRequestContext(snapshot: snapshot),
+            executor: requestExecutor,
             handlesCookies: false,
             validateSession: { [sessionStore] in
-                guard let snapshot, await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
+                guard await sessionStore.isCurrentGeneration(snapshot.generation) else { throw CancellationError() }
             }
         )
     }
@@ -625,7 +627,7 @@ public final class YamiboAppContext: Sendable {
             checkInStore: checkInStore,
             settingsStore: settingsStore,
             session: session,
-            wafRecoverer: wafRecoverer
+            requestExecutor: requestExecutor
         )
     }
 
@@ -635,7 +637,7 @@ public final class YamiboAppContext: Sendable {
             sessionStore: sessionStore,
             profileStore: profileStore,
             websiteDataClearer: websiteDataClearer,
-            wafRecoverer: wafRecoverer,
+            executor: requestExecutor,
             coordinatedSignOut: { [self] in try await accountSwitcher.signOut() },
             coordinatedInvalidation: { [self] generation in
                 try await accountSwitcher.invalidateCurrent(expectedGeneration: generation)

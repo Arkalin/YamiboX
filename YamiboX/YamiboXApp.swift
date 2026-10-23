@@ -158,7 +158,7 @@ private final class YamiboAppStartup {
             downloadRunObserver: downloadCoordinator,
             databasePool: database,
             websiteDataClearer: WebKitWebsiteDataClearer(),
-            wafRecoverer: webSessionCoordinator
+            requestExecutor: webSessionCoordinator.requestExecutor
         )
         #if os(iOS)
         YamiboAppDelegate.appContext = appContext
@@ -436,9 +436,9 @@ struct YamiboCheckInIntent: AppIntent {
             guard snapshot.session.isLoggedIn else {
                 return .result(dialog: IntentDialog(stringLiteral: YamiboCheckInResult.notAuthenticated.message))
             }
-            let recoverer = await BackgroundCheckInWAFRecoverer(sessionStore: sessionStore, snapshot: snapshot)
-            try await recoverer.synchronizeCookies()
-            let outcome = await YamiboAppContext(sessionStore: sessionStore, wafRecoverer: recoverer)
+            let verifier = await WebKitSilentForumVerifier()
+            let executor = ForumRequestExecutor(recovery: ForumWAFRecoveryCoordinator(verifier: verifier))
+            let outcome = await YamiboAppContext(sessionStore: sessionStore, requestExecutor: executor)
                 .makeCheckInService().checkInWithDetails(force: false)
             if outcome.isCancelled { throw CancellationError() }
             if outcome.requiresSecurityVerification {
