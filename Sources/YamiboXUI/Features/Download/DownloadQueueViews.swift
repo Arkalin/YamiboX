@@ -22,37 +22,36 @@ struct DownloadQueueScreen: View {
 
     var body: some View {
         List {
-            Group {
+            Section {
                 if let failure = viewModel.loadFailure {
                     LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
                         Task { await viewModel.refresh() }
                     }
                 }
-                if viewModel.isEmpty && viewModel.loadFailure == nil && !viewModel.isLoading {
-                    DownloadQueueEmptyState()
-                } else {
-                    Section {
-                        ForEach(viewModel.groups) { group in
-                            DownloadQueueOwnerRow(
-                                group: group,
-                                runState: viewModel.runState,
-                                isSelecting: viewModel.isSelectionMode,
-                                isSelected: viewModel.isOwnerSelected(id: group.id),
-                                open: {
-                                    viewModel.setSelectionMode(false)
-                                    selectedGroupID = group.id
-                                },
-                                toggleSelection: {
-                                    viewModel.toggleOwnerSelection(id: group.id)
-                                },
-                                cancel: {
-                                    Task {
-                                        await viewModel.cancelOwnerGroup(id: group.id)
-                                    }
-                                }
-                            )
+            }
+            // Keep the data section in place when the last row disappears.
+            // An empty-state row must not replace it during a deletion update.
+            Section {
+                ForEach(viewModel.groups) { group in
+                    DownloadQueueOwnerRow(
+                        group: group,
+                        runState: viewModel.runState,
+                        isCommandRunning: viewModel.isCommandRunning,
+                        isSelecting: viewModel.isSelectionMode,
+                        isSelected: viewModel.isOwnerSelected(id: group.id),
+                        open: {
+                            viewModel.setSelectionMode(false)
+                            selectedGroupID = group.id
+                        },
+                        toggleSelection: {
+                            viewModel.toggleOwnerSelection(id: group.id)
+                        },
+                        cancel: {
+                            Task {
+                                await viewModel.cancelOwnerGroup(id: group.id)
+                            }
                         }
-                    }
+                    )
                 }
             }
         }
@@ -122,8 +121,12 @@ struct DownloadQueueScreen: View {
             }
         }
         .overlay {
-            if viewModel.isLoading && viewModel.isEmpty {
-                ProgressView()
+            if viewModel.groups.isEmpty {
+                if viewModel.isLoading {
+                    ProgressView()
+                } else if viewModel.loadFailure == nil {
+                    DownloadQueueEmptyState()
+                }
             }
         }
         .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
@@ -269,6 +272,7 @@ private struct DownloadQueueControls: View {
 private struct DownloadQueueOwnerRow: View {
     let group: DownloadQueueOwnerGroup
     let runState: DownloadQueueRunState
+    let isCommandRunning: Bool
     let isSelecting: Bool
     let isSelected: Bool
     let open: () -> Void
@@ -332,9 +336,7 @@ private struct DownloadQueueOwnerRow: View {
         .downloadListRow(isSelected: isSelected, action: rowAction)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !isSelecting {
-                Button(role: .destructive, action: cancel) {
-                    Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
-                }
+                DownloadQueueCancelSwipeButton(isDisabled: isCommandRunning, action: cancel)
             }
         }
         .contextMenu {
@@ -342,6 +344,7 @@ private struct DownloadQueueOwnerRow: View {
                 Button(role: .destructive, action: cancel) {
                     Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
                 }
+                .disabled(isCommandRunning)
             }
         }
     }
@@ -365,6 +368,7 @@ private struct DownloadQueueOwnerRow: View {
 private struct DownloadQueueOwnerScreen: View {
     let viewModel: DownloadQueueViewModel
     let groupID: DownloadGroupID
+    @State private var hasRequestedDismissal = false
     @Environment(\.dismiss) private var dismiss
 
     private var group: DownloadQueueOwnerGroup? {
@@ -373,36 +377,32 @@ private struct DownloadQueueOwnerScreen: View {
 
     var body: some View {
         List {
-            Group {
+            Section {
                 if let group {
-                    Section {
-                        Text(L10n.string("mine.download_queue.chapter_count_format", group.chapterCount))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-
-                    Section {
-                        ForEach(group.chapters) { chapter in
-                            DownloadQueueChapterRowView(
-                                chapter: chapter,
-                                runState: viewModel.runState,
-                                isCommandRunning: viewModel.isCommandRunning,
-                                isSelecting: viewModel.isSelectionMode,
-                                isSelected: viewModel.selectedWorkIDs.contains(chapter.id),
-                                toggleSelection: {
-                                    viewModel.toggleWorkSelection(chapter.id)
-                                },
-                                cancel: {
-                                    Task {
-                                        await viewModel.cancelChapter(chapter.id)
-                                        dismissIfGroupIsEmpty()
-                                    }
-                                }
-                            )
-                        }
-                    }
-                } else if viewModel.loadFailure == nil {
-                    DownloadQueueEmptyState()
+                    Text(L10n.string("mine.download_queue.chapter_count_format", group.chapterCount))
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+            }
+            Section {
+                ForEach(group?.chapters ?? []) { chapter in
+                    DownloadQueueChapterRowView(
+                        chapter: chapter,
+                        runState: viewModel.runState,
+                        isCommandRunning: viewModel.isCommandRunning,
+                        isSelecting: viewModel.isSelectionMode,
+                        isSelected: viewModel.selectedWorkIDs.contains(chapter.id),
+                        toggleSelection: {
+                            viewModel.toggleWorkSelection(chapter.id)
+                        },
+                        cancel: {
+                            Task {
+                                await viewModel.cancelChapter(chapter.id)
+                            }
+                        }
+                    )
+                }
+            }
+            Section {
                 if let failure = viewModel.loadFailure {
                     LoadFailureView(message: L10n.string("common.load_failed"), details: failure) {
                         Task { await viewModel.refresh() }
@@ -424,12 +424,12 @@ private struct DownloadQueueOwnerScreen: View {
         }
         .refreshable {
             await viewModel.refresh()
-            dismissIfGroupIsEmpty()
         }
-        .onChange(of: viewModel.groups.map(\.id)) {
-            dismissIfGroupIsEmpty()
+        .onChange(of: shouldDismissEmptyGroup) { _, shouldDismiss in
+            guard shouldDismiss, !hasRequestedDismissal else { return }
+            hasRequestedDismissal = true
+            dismiss()
         }
-        .onChange(of: viewModel.isLoading) { dismissIfGroupIsEmpty() }
         .onDisappear {
             viewModel.setSelectionMode(false)
         }
@@ -468,18 +468,21 @@ private struct DownloadQueueOwnerScreen: View {
             }
         }
         .overlay {
-            if viewModel.isLoading && group == nil {
-                ProgressView()
+            if group == nil {
+                if viewModel.isLoading {
+                    ProgressView()
+                } else if viewModel.loadFailure == nil {
+                    DownloadQueueEmptyState()
+                }
             }
         }
         .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
         .downloadQueueFailureAlert(viewModel)
     }
 
-    private func dismissIfGroupIsEmpty() {
-        if group == nil, viewModel.loadFailure == nil, !viewModel.isLoading {
-            dismiss()
-        }
+    private var shouldDismissEmptyGroup: Bool {
+        group == nil && viewModel.loadFailure == nil
+            && !viewModel.isLoading && !viewModel.isCommandRunning
     }
 }
 
@@ -548,10 +551,7 @@ private struct DownloadQueueChapterRowView: View {
         .downloadListRow(isSelected: isSelected, action: selectionAction)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !isSelecting {
-                Button(role: .destructive, action: cancel) {
-                    Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
-                }
-                .disabled(isCommandRunning)
+                DownloadQueueCancelSwipeButton(isDisabled: isCommandRunning, action: cancel)
             }
         }
         .contextMenu {
@@ -585,6 +585,22 @@ private struct DownloadQueueChapterRowView: View {
         if chapter.state == .failed { return "exclamationmark.circle" }
         if runState != .running { return "pause.circle" }
         return chapter.state == .running ? "arrow.down.circle" : "clock"
+    }
+}
+
+private struct DownloadQueueCancelSwipeButton: View {
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        // Cancellation joins the worker and deletes persisted work asynchronously.
+        // A destructive swipe optimistically removes the row before that finishes;
+        // only the refreshed queue snapshot should drive the list's deletion.
+        Button(action: action) {
+            Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
+        }
+        .tint(.red)
+        .disabled(isDisabled)
     }
 }
 
