@@ -16,6 +16,7 @@ struct MangaPagedReaderPageSurface: View {
     let surfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
     let onLongPress: (MangaReaderPageProjection) -> Void
+    let nativeAnimationSpeed: Float
 
     @State private var loadedImage: UIImage?
     @State private var loadedPageID: String?
@@ -42,7 +43,8 @@ struct MangaPagedReaderPageSurface: View {
                     surfaceInteraction: surfaceInteraction,
                     onLongPress: {
                         onLongPress(page)
-                    }
+                    },
+                    nativeAnimationSpeed: nativeAnimationSpeed
                 )
                 .id(surfaceIdentity)
             } else if loadingPageID == page.id {

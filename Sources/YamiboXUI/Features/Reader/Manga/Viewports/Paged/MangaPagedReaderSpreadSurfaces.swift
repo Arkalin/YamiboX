@@ -105,6 +105,7 @@ struct MangaPagedReaderPageSlot: View {
     let allowsUnzoomedSurfacePan: Bool
     let isPageZoomEnabled: Bool
     let likedPageIDs: Set<String>
+    var nativeAnimationSpeed: Float = 1
 
     var body: some View {
         ZStack {
@@ -121,7 +122,8 @@ struct MangaPagedReaderPageSlot: View {
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan && isPageZoomEnabled,
                     surfaceInteraction: surface.surfaceInteraction,
                     likedPageIDs: likedPageIDs,
-                    onLongPress: surface.onLongPress
+                    onLongPress: surface.onLongPress,
+                    nativeAnimationSpeed: nativeAnimationSpeed
                 )
             }
         }

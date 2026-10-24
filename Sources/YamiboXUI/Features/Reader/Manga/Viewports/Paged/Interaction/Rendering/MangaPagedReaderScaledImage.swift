@@ -13,6 +13,7 @@ struct MangaPagedReaderScaledImage: View {
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaSurfaceAttachment
     let onLongPress: () -> Void
+    let nativeAnimationSpeed: Float
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -22,7 +23,8 @@ struct MangaPagedReaderScaledImage: View {
                     zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: allowsUnzoomedSurfacePan),
                 geometry: .image(size: image.size, viewport: proxy.size,
                     fit: MangaSurfaceFit(pageScaleMode), alignment: initialHorizontalAlignment),
-                background: pageEdgeFillStyle.uiColor(for: colorScheme), onLongPress: onLongPress)
+                background: pageEdgeFillStyle.uiColor(for: colorScheme), onLongPress: onLongPress,
+                nativeAnimationSpeed: nativeAnimationSpeed)
         }
     }
 }
@@ -34,6 +36,7 @@ private struct MangaNativeImageSurface: UIViewRepresentable {
     let geometry: MangaSurfaceGeometry
     let background: UIColor
     let onLongPress: () -> Void
+    let nativeAnimationSpeed: Float
 
     func makeUIView(context: Context) -> MangaNativeSurfaceView {
         let view = MangaNativeSurfaceView()
@@ -49,6 +52,7 @@ private struct MangaNativeImageSurface: UIViewRepresentable {
         if imageView?.image !== image { imageView?.image = image }
         view.backgroundColor = background
         view.onLongPress = onLongPress
+        if view.layer.speed != nativeAnimationSpeed { view.layer.speed = nativeAnimationSpeed }
         view.configure(runtime: runtime, configuration: configuration, geometry: geometry, imageLoaded: true)
     }
 

@@ -155,7 +155,9 @@ struct MangaPagedPageCurlLeafView: View {
             zoomEnabled: zoomEnabled,
             allowsUnzoomedSurfacePan: true,
             isPageZoomEnabled: isPageZoomEnabled,
-            likedPageIDs: likedPageIDs
+            likedPageIDs: likedPageIDs,
+            // Cancel the curl container's faster clock only inside the single-page image surface.
+            nativeAnimationSpeed: isPageZoomEnabled ? 1 / ReaderPagedPageCurlTransition.animationSpeed : 1
         )
         .padding(.top, informationState.configuration.contentTopInset)
         .background(.black)
