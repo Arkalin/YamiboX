@@ -13,6 +13,13 @@
       "iconURL": "https://raw.githubusercontent.com/Arkalin/YamiboX/main/YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
       "versions": [
         {
+          "version": "1.0.2",
+          "date": "2026-10-30T06:01:21Z",
+          "localizedDescription": "【新增】\n- 支持系统接力（Handoff）\n- 应用主题新增深色模式设置\n\n【修复】\n- 修复阅读漫画时可能出现重定向次数过多导致的图片加载失败问题\n- 修复原帖被删除、限制访问或正文失效后，已下载的小说和漫画无法打开的问题\n- 修复收藏更新时间和更新提醒不准确的问题\n- 修复漫画卷页模式跳页后进度可能不更新，平移翻页缩放可能出现的画面错位\n- 修复取消下载任务时下载列表可能闪退的问题",
+          "downloadURL": "https://github.com/Arkalin/YamiboX/releases/download/v1.0.2/YamiboX_v1.0.2_unsigned.ipa",
+          "size": 20812091
+        },
+        {
           "version": "1.0.1",
           "date": "2026-10-10T06:03:58Z",
           "localizedDescription": "【变更】\n- 优化 WebDAV 同步，减少未变化数据的重复下载，以及短时间切换前后台时的重复同步\n- 减少对访问受限封面的重复请求\n- 作品封面独立保存，不再随普通图片缓存清理或被自动淘汰；存储设置可单独查看封面占用并清理封面图片\n- 优化小说阅读设置预览底部留白及文字渐隐显示\n\n【修复】\n- 修复漫画目录页数识别错误导致反复加载无效页面或重复章节的问题\n- 修复帖子中部分图片圆角未正确显示的问题\n- 修复小说详情页长标题未完整显示两行的问题\n- 修复小说阅读器中图片“喜欢”标记不显示的问题\n- 修复 iPad 书架从浏览记录返回后顶部栏布局异常的问题",
