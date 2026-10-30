@@ -22,6 +22,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     private var lastReportedGlobalIndex: Int?
     private var lastAppliedPlacementRevision: Int?
     private var lastLaidOutViewportSize: CGSize?
+    private var pagingSettlementDisplayLink: CADisplayLink?
+    private weak var settlingCollectionView: UICollectionView?
     private let imagePrefetch: MangaPagedImagePrefetchSession
     private(set) lazy var gestures = MangaPagedScrollNavigationAdapter(coordinator: self)
 
@@ -95,6 +97,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
 
         contentIdentity = nextIdentity
+        stopPagingSettlementObservation()
         pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
         interactionRuntime.reset()
         surfaceInteractionIdentity = nil
@@ -193,6 +196,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         pagingDriver.scrollViewWillBeginDragging(scrollView, inputs: pagingInputs)
+        guard let collectionView = scrollView as? UICollectionView else { return }
+        observePagingSettlement(in: collectionView)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -209,6 +214,46 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         pagingDriver.scrollViewDidEndScrollingAnimation(scrollView, inputs: pagingInputs)
+    }
+
+    private func observePagingSettlement(in collectionView: UICollectionView) {
+        guard parent.settings.pagedTurnStyle == .slide else { return }
+        settlingCollectionView = collectionView
+        guard pagingSettlementDisplayLink == nil else { return }
+        let displayLink = CADisplayLink(target: self, selector: #selector(settlePagingIfIdle))
+        pagingSettlementDisplayLink = displayLink
+        displayLink.add(to: .main, forMode: .common)
+    }
+
+    func stopPagingSettlementObservation() {
+        pagingSettlementDisplayLink?.invalidate()
+        pagingSettlementDisplayLink = nil
+        settlingCollectionView = nil
+    }
+
+    @objc private func settlePagingIfIdle() {
+        guard let collectionView = settlingCollectionView, collectionView.window != nil,
+              parent.settings.pagedTurnStyle == .slide,
+              !pagingDriver.isPerformingSlideTransition else {
+            stopPagingSettlementObservation()
+            return
+        }
+        guard !collectionView.isTracking, !collectionView.isDragging, !collectionView.isDecelerating else { return }
+        stopPagingSettlementObservation()
+        guard pendingInitialSpreadIndex == nil,
+              lastLaidOutViewportSize == collectionView.bounds.size,
+              collectionView.bounds.width > 0, collectionView.bounds.height > 0,
+              let spreadIndex = currentSpreadIndex(in: collectionView) else { return }
+        let offsetX = CGFloat(viewportIndex(forSpreadIndex: spreadIndex)) * collectionView.bounds.width
+        guard collectionView.contentSize.width >= offsetX + collectionView.bounds.width else { return }
+
+        // A new touch or image gesture can interrupt native paging between pages.
+        // Its completion callbacks alone do not guarantee an aligned resting offset.
+        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
+        if collectionView.contentOffset.x != offsetX {
+            collectionView.setContentOffset(CGPoint(x: offsetX, y: collectionView.contentOffset.y), animated: false)
+        }
+        publishCurrentPageIfNeeded(spreadIndex: spreadIndex)
     }
 
     func applyInitialPlacementIfNeeded(in collectionView: UICollectionView) {

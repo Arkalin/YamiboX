@@ -8,6 +8,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
         coordinator.stopImagePrefetch()
+        coordinator.stopPagingSettlementObservation()
         coordinator.pagingDriver.cancelSlideTransition(in: view, inputs: coordinator.pagingInputs)
         (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
         (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
