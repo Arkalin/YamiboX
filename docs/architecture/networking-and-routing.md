@@ -108,17 +108,33 @@ Discuz 的 GET 链接也可能改写状态。`ForumWebPagePolicy.requiresConfirm
 
 ### 当前执行流程
 
-1. 所有原生论坛入口必须携带 `ForumRequestContext` 和非可选 `ForumRequestExecutor`；`YamiboClient` 仅构造请求和解码。`ForumRequestPolicy` 默认禁止重放，已审定读取才显式使用 `.safeReadOnce`。未识别的 GET、POST、上传、签到、退出与推广不会自动重发。
-2. 受控适配器隔离 405 响应头／前 128 KiB 正文，以及连续两次相同 URL 自重定向证据。普通 403/405、单跳和非论坛来源不会发起验证。原生逐跳适配器在第二次自跳停止，另设 10 跳上限；不允许携带论坛凭据跨 origin。
-3. `ForumWAFRecoveryCoordinator` actor 按 origin、scope、generation、Cookie storage ID、UA 合并 flight。迟到挑战先检查同上下文的新 clearance。单等待者取消不影响其他等待者，最后等待者离开取消执行与计时资源。
-4. `WebKitSilentForumVerifier` 创建非持久、未挂载到任何界面的 WebKit，只种入 WAF Cookie，以原 UA 访问安全登录入口。默认上限 8 秒，后台剩余运行机会更短时优先结束。页面加载完成本身不表示成功，须获得相对原请求更新且仍有效超过 60 秒的 clearance。
-5. 协调器仅以原子 generation 检查提交 WAF Cookie。UA 不同的上下文不读写另一 UA 的持久 clearance；其结果仅在兼容 key 的有界内存内复用。原账号 Cookie、Referer、body、UA 不被验证结果替换。
+1. 所有原生论坛入口必须携带 `ForumRequestContext` 和非可选 `ForumRequestExecutor`；`YamiboClient` 构造请求和解码。`YamiboRoute.requestDefinition` 集中声明读取／写入以及重试许可，`ForumRequestDefinition` 统一生成执行策略；业务只能选择命名路由，不能给 `fetchHTML` 或 `performRequest` 传入重试开关。动态页面／Web 导航共用请求定义中的 URL 安全规则；图片和下载共用资源读取定义。未识别的 GET、POST、上传、签到提交、退出与推广不会自动重发，读取也可以声明为不可重试。
+2. 受控适配器隔离前 128 KiB 正文，识别百度 405 头／正文证据、阿里云 2xx/403/405 HTML 内的组合脚本证据，以及连续两次相同 URL 自重定向。普通 200/403/405、单跳和非论坛来源不会仅因状态码发起验证。data 和 Nuke 流式传输共用 `ForumWAFChallengeDocument` 准入，仅为首次、允许重试、不需要动作确认且不带 body 的 GET 保留同一 URL 的完整 HTML 挑战文档；完整接收成功后才交接，最大 128 KiB。挑战字节不交付 Nuke 或成功缓存；截断、超限、传输失败、未知读取、POST 或动作不取得文档执行能力。论坛下载沿用受控 data 传输；公开外站后台下载不进入论坛恢复。原生逐跳适配器在第二次自跳停止，另设 10 跳上限；不允许携带论坛凭据跨 origin。
+3. `ForumWAFRecoveryCoordinator` actor 按 origin、scope、generation、Cookie storage ID、UA、供应商和验证输入种类合并 flight。安全入口预热与已接收挑战文档分开，避免先启动的普通登录页导航丢弃后到的真实挑战；不同供应商不能共享成功判据，同供应商同种输入的并发请求仍合并。迟到挑战先检查同上下文、同供应商的新 clearance。每个 flight 仍有独立的最多 8 秒上限，不因等待者加入而延期。单等待者取消不影响其他等待者，最后等待者离开取消执行与计时资源。
+4. `WebKitSilentForumVerifier` 创建非持久、未挂载到任何界面的 WebKit，只种入 WAF Cookie，保持原 UA。有受控挑战文档时，以 `loadSimulatedRequest` 直接载入原响应字节和编码，初次主请求不会再次发送；仅允许该已审定 URL 的 GET 导航，不能转入其他操作。没有文档时仍访问安全登录入口，不导航到未知或有副作用的原始请求。文档仅驻留内存，不持久化、不记录正文，也不携带原账号 Cookie 或表单 body。默认上限 8 秒，后台剩余运行机会更短时优先结束。页面加载完成本身不表示成功，须获得相对原请求更新且仍有效超过 60 秒的 clearance。
+5. 协调器仅以原子 generation 检查提交相对验证起点实际发生变化的 WAF Cookie，不把 WebKit 重新采集的旧 Cookie 当作更新覆盖另一供应商的并发结果。重放合并当前防护状态和本次更新，保留另一供应商的有效凭据。UA 不同的上下文不读写另一 UA 的持久 clearance；其结果仅在兼容 key 的有界内存内复用。原账号 Cookie、Referer、body、UA 不被验证结果替换。
 6. 原操作最多初始尝试加一次重放。重放仍受阻即 `replayExhausted`；不允许重放的操作在成功更新 clearance 后返回 `replayNotPermitted`，不会把验证成功当作业务成功。取消和会话失效不重放。
 7. 前台、后台、阅读器、候选账号均没有自动 WAF sheet、alert、登录或浏览器回退。错误进入既有加载失败、内联状态或队列失败／暂停。用户主动登录是另一项能力。预热使用相同 actor，不拥有展示能力。
 
+WebKit 的原响应载入语义见 Apple 的 [`loadSimulatedRequest(_:response:responseData:)` 文档](https://developer.apple.com/documentation/webkit/wkwebview/loadsimulatedrequest(_:response:responsedata:))。
+
+### 防护会话与通行凭据
+
+供应商协议分文件维护：`BaiduWAFProtocol` 负责百度头／正文证据、`nox_*` 归属和 NOX 通行判定；`AliyunWAFProtocol` 负责 `acw_tc`、`cdn_sec_tc` 防护会话，以及已观察到的 `arg1` / `acw_sc__v2` JavaScript 挑战。会话 Cookie 不作为通行成功证据。两者均由共享 WAF 层自动识别，业务不选择供应商；WebKit 执行、会话隔离、期限及重试预算保持共用，不复制两套生命周期代码。
+
+阿里云识别先限定精确论坛 origin、候选状态码和 HTML MIME，再解析有界 HTML：可执行内联 script 以 40 位十六进制 `arg1` 声明开头，同时包含 `document` 与通行 Cookie 赋值字符串。仅提及 Cookie 名、转义的帖子引用、JSON script、模板及代码容器均不足以触发恢复。原始完整混淆脚本仍由隔离 WebKit 执行，Core 不实现置换、异或、密钥或挑战求解算法。只对已审定安全 GET 执行原始文档及其同 URL 刷新，签到提交不能借脚本刷新获得重放权限。
+
+data 和 Nuke 的网络回调只向本次 attempt 的 `ForumResponseState` 记录真实 metrics；执行器在传输成功后统一按原子 generation 合并防护会话，交付结果前仍检查取消及会话代次。仅全链路精确论坛 origin 的最终新鲜网络响应可续存，不从缓存或 304 重新计算 `Max-Age`。普通持久化失败不把已完成读取变成失败，取消及会话失效仍传播。初次传输在相同 UA／generation 内合并最新 WAF 状态，不替换账号 Cookie。签到页读取及结果复查忽略本地 HTTP 缓存。
+
+签到仓储只调用 `checkInPage`、`checkInSubmission`、`checkInPromotion` 路由，不再合并 Cookie。推广路由的去认证策略由请求定义和客户端执行，不能带入账号凭据。登录 Cookie jar 的整合由 `ForumSessionCookieJar` 负责；登录业务仍负责身份核验，但不理解防护供应商。恢复失败作为终态错误返回，业务通过通用 `NetworkFailureRecovery` 判断能否使用缓存或必须停止，不自行开启第二轮 WAF 重试／浏览器回退。透明恢复不等于隐藏失败或自动重复写操作。
+
+取得通行凭据要求对应供应商的 `nox_jst_v1` 或 `acw_sc__v2` 适用于受阻 URL、剩余有效期超过 60 秒，并且指纹或到期时间相对受阻请求发生更新；阿里云值还必须符合已观察到的 40 位十六进制格式。Cookie 的域、路径、Secure 和原始到期时间按 WebKit 返回值保留，不延长一小时有效期或转成无期限会话 Cookie。更新 Cookie 仅允许进入重放阶段，不证明服务端已接受：原生重放仍经过同一分类器，再次挑战即 `replayExhausted`；签到成功还需业务页解析及既有提交结果核验。不将普通 200、跟踪 Cookie 或另一供应商的凭据当作挑战完成。阿里云字段定义见[边缘防护 Cookie 说明](https://help.aliyun.com/en/edge-security-acceleration/esa/support/http-header)及 [JavaScript 验证参数](https://www.alibabacloud.com/help/en/edge-security-acceleration/dcdn/user-guide/overview-of-waf)。
+
+2026-11-14 经用户授权的正式站只读排查，确认旧代码未续存上述两个会话 Cookie；修复后实际读取保留有效状态且不改认证和 UA。但携带两者的请求仍出现百度 NOX 405（脚本 `nox_20260413.js`、`gangplank_20251103.js`），因此会话续存修复不等于 WAF 恢复成功。受阻原生请求与验证器的独立导航出现 405／200 分歧，旧流程没有取得新的 `nox_jst_v1`；挑战文档交接修正该假设，不意味着站点全面迁移到另一种 WAF。具体只读闭环与保留边界见[验收记录](../tests/waf-recovery-regression.md)。
+
 ### 图片、下载与网页边界
 
-Nuke 的原始数据缓存键保持不变，流式 loader 必须携带执行器发出的 attempt；缺失 attempt 的缓存请求只能失败，不能退回不受控网络 loader。405 字节不会进入成功缓存。图片失败注册表保留原 operation、单次预算和 lease；同会话新 clearance 只向有效、未重放的失败图发布一次 revision。通知先于 UI 失败时仍能消费，成功图、全局 epoch、阅读会话身份与阅读位置不因 WAF 变化重置。
+Nuke 的原始数据缓存键保持不变，流式 loader 必须携带执行器发出的 attempt；缺失 attempt 的缓存请求只能失败，不能退回不受控网络 loader。405 和识别出的 2xx/403 HTML 挑战字节不会进入成功缓存；非挑战的成功内容在有界检查后继续交付。图片失败注册表保留原 operation、单次预算、lease 和真实挑战供应商／指纹，但不保留可执行文档；同会话对应供应商的新 clearance 只向有效、未重放的失败图发布一次 revision。通知先于 UI 失败时仍能消费，成功图、全局 epoch、阅读会话身份与阅读位置不因 WAF 变化重置。
 
 下载适配器声明后台 URLSession 不具备逐跳否决能力。论坛下载改用受控 data 传输，保留进度、取消与 50 MiB 限制；仅无 Cookie、Authorization、Referer 的外部公开图片允许系统后台下载。后台 pending 保留 operation/scope/generation/attempt，完成文件与实际 metrics 在终态交付前汇合；无可信 pending 的重连任务取消，持久队列仍保留并等待用户继续。不能声称后台任务在不可观察的第二跳提前拦截。具体限制见[下载与存储](downloads-and-storage.md)。
 
@@ -129,8 +145,10 @@ WebKit 内部子资源仍由所属 Cookie store 管理，不能宣称这是对�
 ### 诊断与准入
 
 `networking` 日志使用公开的随机 operation/scope/generation/flight ID 关联 attempt、challenge、join 和 terminal，不输出 Cookie、口令、挑战全文或可复用凭据。既有 HTTP 诊断继续由 `NetworkLogRecorder` 脱敏记录。
+静默验证结束时，`verifierResources=released` 同时记录最后的导航阶段（`navigationStage`）和已观察到的最近一次主框架 HTTP 状态（`lastMainFrameHTTP`，尚未观察到则为 `none`）。可用同一 `flight` 对照终态，区分未收到验证页响应和收到响应但仍未恢复。
 
 `bash scripts/check-architecture.sh` 按确切文件登记四个原生创建边界、两项外部服务以及网页／静默验证 WebKit 创建点。新增适配器须先说明用途、来源限制、能力、预算及生命周期，再添加精确文件登记；禁止用目录通配放开新网络入口。CI 沿用同一命令。扫描是文本准入而非完整 Swift 数据流证明，不能发现所有别名、动态调用或语义上的错误重放；仍需要代码审查和本地行为验收。负例必须留在临时源码副本，不进入正式源码或测试 target。
+准入同时禁止网络层之外直接使用 `ForumRequestPolicy`／`ForumReplayPolicy`，禁止业务直接判断 WAF 错误或操作 WAF Cookie；供应商实现只能由共享 WAF 层及 Cookie 分类入口访问。传输适配器与会话存储的例外按确切文件登记。
 
 源码入口：[执行器](../../Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/ForumRequestExecutor.swift)、[恢复协调器](../../Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/ForumWAFRecoveryCoordinator.swift)、[平台验证器](../../Sources/YamiboXUI/Platform/WebKit/WebKitSilentForumVerifier.swift)、[验收记录](../tests/waf-recovery-regression.md)。
 

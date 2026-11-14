@@ -2,29 +2,45 @@ import Foundation
 
 public enum ForumWAFResponseClassifier {
     public static let maximumBodyBytes = 128 * 1024
-    private static let markers = ["window.__noxexpire", "nox_jst_v1", "gangplank", "/nox"]
+
+    /// Candidate responses need bounded body inspection, not automatic recovery.
+    public static func mayContainChallenge(_ response: HTTPURLResponse) -> Bool {
+        response.statusCode == 405 || AliyunWAFProtocol.mayContainChallenge(response)
+    }
 
     public static func matches(
         response: HTTPURLResponse, prefix: Data, origin: ForumOrigin,
         originalURL: URL, leftOrigin: Bool
     ) -> Bool {
-        guard !leftOrigin, origin.contains(originalURL),
-              let finalURL = response.url, origin.contains(finalURL), response.statusCode == 405 else { return false }
-        if response.value(forHTTPHeaderField: "Server")?.localizedCaseInsensitiveContains("baidu_waf") == true
-            || response.value(forHTTPHeaderField: "bdwaf-request-id")?.isEmpty == false { return true }
-        let inspected = prefix.prefix(maximumBodyBytes)
-        // A bounded prefix can end mid-scalar; keep earlier ASCII evidence
-        // instead of rejecting the whole prefix as malformed UTF-8.
-        let body = String(decoding: inspected, as: UTF8.self).lowercased()
-        return markers.filter { body.contains($0) }.count >= 2
+        provider(response: response, prefix: prefix, origin: origin, originalURL: originalURL, leftOrigin: leftOrigin) != nil
     }
 
-    public static func challenge(url: URL, request: URLRequest, credentials: YamiboRequestCredentials) -> YamiboWAFChallenge {
-        let clearance = credentials.cookies.first { $0.name == "nox_jst_v1" && $0.matches(url) }
+    private static func provider(response: HTTPURLResponse, prefix: Data, origin: ForumOrigin,
+                                 originalURL: URL, leftOrigin: Bool) -> ForumWAFProvider? {
+        guard !leftOrigin, origin.contains(originalURL),
+              let finalURL = response.url, origin.contains(finalURL) else { return nil }
+        if BaiduWAFProtocol.isChallenge(response, prefix: prefix) { return .baidu }
+        if AliyunWAFProtocol.isChallenge(response, prefix: prefix) { return .aliyun }
+        return nil
+    }
+
+    public static func challenge(response: HTTPURLResponse, prefix: Data, origin: ForumOrigin,
+                                 request: URLRequest, credentials: YamiboRequestCredentials, leftOrigin: Bool,
+                                 document: ForumWAFChallengeDocument? = nil) -> YamiboWAFChallenge? {
+        guard let originalURL = request.url, let url = response.url,
+              let provider = provider(response: response, prefix: prefix, origin: origin,
+                                      originalURL: originalURL, leftOrigin: leftOrigin) else { return nil }
+        return challenge(url: url, request: request, credentials: credentials, document: document, provider: provider)
+    }
+
+    public static func challenge(url: URL, request: URLRequest, credentials: YamiboRequestCredentials,
+                                 document: ForumWAFChallengeDocument? = nil,
+                                 provider: ForumWAFProvider = .baidu) -> YamiboWAFChallenge {
+        let clearance = ForumWAFResult(cookies: credentials.cookies).clearance(for: url, provider: provider)
         return YamiboWAFChallenge(
             url: url, method: request.httpMethod ?? "GET", userAgent: credentials.userAgent,
             clearanceFingerprint: clearance.map { YamiboWAFChallenge.clearanceFingerprint(for: $0.value) },
-            clearanceExpiresAt: clearance?.expiresAt
+            clearanceExpiresAt: clearance?.expiresAt, document: document, provider: provider
         )
     }
 }

@@ -40,7 +40,7 @@ struct ReaderProjectionPreparedSourcePage<Projection: Sendable, SourcePage: Send
 enum ReaderProjectionFallbackPolicy {
     static func isEligibleOfflineFallbackTrigger(_ error: Error) -> Bool {
         let error = LoadDiagnosticError.classificationError(error)
-        if let failure = error as? ForumWAFFailure { return failure != .sessionInvalidated }
+        if let recovery = NetworkFailureRecovery.state(of: error) { return recovery == .exhausted }
         if error is CancellationError {
             return false
         }

@@ -2,6 +2,18 @@ import Foundation
 
 /// Shared by every transport, but only compatible sessions share a flight.
 public actor ForumWAFRecoveryCoordinator {
+    private struct RecoveryKey: Hashable {
+        let session: ForumSessionKey
+        let provider: ForumWAFProvider
+    }
+
+    private struct FlightKey: Hashable {
+        let recovery: RecoveryKey
+        // A safe-entry preheat cannot consume an actual received challenge.
+        // Keep that flight from discarding the document of a later real read.
+        let hasDocument: Bool
+    }
+
     private struct Waiter {
         let continuation: CheckedContinuation<ForumWAFResult, any Error>
         let challenge: YamiboWAFChallenge
@@ -16,8 +28,8 @@ public actor ForumWAFRecoveryCoordinator {
     }
 
     private let verifier: any ForumSilentVerifying
-    private var flights: [ForumSessionKey: Flight] = [:]
-    private var clearances: [ForumSessionKey: ForumWAFResult] = [:]
+    private var flights: [FlightKey: Flight] = [:]
+    private var clearances: [RecoveryKey: ForumWAFResult] = [:]
 
     public init(verifier: any ForumSilentVerifying) {
         self.verifier = verifier
@@ -42,11 +54,13 @@ public actor ForumWAFRecoveryCoordinator {
             YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) clearance=reuse-current")
             return current
         }
-        if let cached = clearances[context.key], cached.hasUpdatedClearance(for: challenge) {
+        let recoveryKey = RecoveryKey(session: context.key, provider: challenge.provider)
+        if let cached = clearances[recoveryKey], cached.hasUpdatedClearance(for: challenge) {
             YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) clearance=reuse-flight")
             return cached
         }
 
+        let flightKey = FlightKey(recovery: recoveryKey, hasDocument: challenge.document != nil)
         let waiterID = UUID()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
@@ -54,18 +68,19 @@ public actor ForumWAFRecoveryCoordinator {
                 let deadlineTask = Task {
                     do { try await ContinuousClock().sleep(until: lease.deadline) }
                     catch { return }
-                    self.removeWaiter(waiterID, key: context.key, error: ForumWAFFailure.silentTimeout)
+                    self.removeWaiter(waiterID, key: flightKey, error: ForumWAFFailure.silentTimeout)
                 }
                 let waiter = Waiter(continuation: continuation, challenge: challenge, timeout: deadlineTask)
-                if flights[context.key] != nil {
-                    let id = flights[context.key]!.id
+                if flights[flightKey] != nil {
+                    let id = flights[flightKey]!.id
                     YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) flight=\(id, privacy: .public) join")
-                    flights[context.key]?.waiters[waiterID] = waiter
+                    flights[flightKey]?.waiters[waiterID] = waiter
                     return
                 }
 
                 let flightID = UUID()
-                YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) flight=\(flightID, privacy: .public) start")
+                let input = flightKey.hasDocument ? "receivedChallenge" : "safeEntry"
+                YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) flight=\(flightID, privacy: .public) start input=\(input, privacy: .public) provider=\(challenge.provider.rawValue, privacy: .public)")
                 let deadline = min(lease.deadline, ContinuousClock.now.advanced(by: .seconds(8)))
                 let request = ForumSilentVerificationRequest(
                     flightID: flightID, key: context.key, challenge: challenge,
@@ -73,7 +88,8 @@ public actor ForumWAFRecoveryCoordinator {
                 )
                 let work = Task {
                     do {
-                        let result = try await self.verifier.verify(request)
+                        let verified = try await self.verifier.verify(request)
+                        let result = verified.updates(comparedTo: request.baseline)
                         try Task.checkCancellation()
                         guard result.hasUpdatedClearance(for: challenge) else {
                             throw ForumWAFFailure.noUpdatedClearance
@@ -88,12 +104,12 @@ public actor ForumWAFRecoveryCoordinator {
                             value.cookies.contains { ($0.expiresAt ?? .distantPast) > .now }
                         }
                         if self.clearances.count >= 64 { self.clearances.removeAll() }
-                        self.clearances[context.key] = result
-                        self.finish(key: context.key, id: flightID, result: .success(result))
+                        self.clearances[recoveryKey] = result
+                        self.finish(key: flightKey, id: flightID, result: .success(result))
                     } catch {
                         let failure: any Error = error is ForumWAFFailure || error is CancellationError
                             ? error : ForumWAFFailure.runtimeUnavailable
-                        self.finish(key: context.key, id: flightID, result: .failure(failure))
+                        self.finish(key: flightKey, id: flightID, result: .failure(failure))
                     }
                 }
                 // Independent from verifier cooperation: a hung platform call
@@ -101,23 +117,23 @@ public actor ForumWAFRecoveryCoordinator {
                 let timeout = Task {
                     do { try await ContinuousClock().sleep(until: deadline) }
                     catch { return }
-                    self.finish(key: context.key, id: flightID, result: .failure(ForumWAFFailure.silentTimeout))
+                    self.finish(key: flightKey, id: flightID, result: .failure(ForumWAFFailure.silentTimeout))
                 }
-                flights[context.key] = Flight(id: flightID, work: work, timeout: timeout, waiters: [waiterID: waiter])
+                flights[flightKey] = Flight(id: flightID, work: work, timeout: timeout, waiters: [waiterID: waiter])
             }
         } onCancel: {
-            Task { await self.removeWaiter(waiterID, key: context.key, error: CancellationError()) }
+            Task { await self.removeWaiter(waiterID, key: flightKey, error: CancellationError()) }
         }
     }
 
     public func invalidate(scopeID: UUID) {
-        clearances = clearances.filter { $0.key.scopeID != scopeID }
-        for (key, flight) in flights where key.scopeID == scopeID {
+        clearances = clearances.filter { $0.key.session.scopeID != scopeID }
+        for (key, flight) in flights where key.recovery.session.scopeID == scopeID {
             finish(key: key, id: flight.id, result: .failure(ForumWAFFailure.sessionInvalidated))
         }
     }
 
-    private func removeWaiter(_ id: UUID, key: ForumSessionKey, error: any Error) {
+    private func removeWaiter(_ id: UUID, key: FlightKey, error: any Error) {
         guard let waiter = flights[key]?.waiters.removeValue(forKey: id) else { return }
         waiter.timeout.cancel()
         waiter.continuation.resume(throwing: error)
@@ -132,7 +148,7 @@ public actor ForumWAFRecoveryCoordinator {
         }
     }
 
-    private func finish(key: ForumSessionKey, id: UUID, result: Result<ForumWAFResult, any Error>) {
+    private func finish(key: FlightKey, id: UUID, result: Result<ForumWAFResult, any Error>) {
         guard flights[key]?.id == id, let flight = flights.removeValue(forKey: key) else { return }
         let terminal: String
         switch result {

@@ -17,7 +17,11 @@ enum ForumDataTransport {
         let observer = RedirectObserver(request: request, attempt: attempt, downstream: delegate)
         let policy = NetworkResponseBodyPolicy(prefixByteCount: ForumWAFResponseClassifier.maximumBodyBytes) { response, prefix in
             if let failure = observer.challenge(response: response, prefix: prefix) {
-                return NetworkResponseBodyLimit(maximumBytes: 0, error: failure)
+                // Keep at most one complete, bounded HTML challenge for an
+                // audited read. A prefix or failed transfer must never execute.
+                let limit = observer.canReceiveChallengeDocument(response)
+                    ? ForumWAFResponseClassifier.maximumBodyBytes : 0
+                return NetworkResponseBodyLimit(maximumBytes: limit, error: failure)
             }
             if response.statusCode == 405 {
                 return NetworkResponseBodyLimit(maximumBytes: ForumWAFResponseClassifier.maximumBodyBytes,
@@ -25,7 +29,7 @@ enum ForumDataTransport {
             }
             return bodyPolicy?.classify(response, Data(prefix.prefix(bodyPolicy?.prefixByteCount ?? 0)))
         } headerFailure: { response in
-            observer.challenge(response: response, prefix: Data())
+            observer.canReceiveChallengeDocument(response) ? nil : observer.challenge(response: response, prefix: Data())
         }
         do {
             let (data, response) = try await NetworkLoggedTransport.data(
@@ -33,7 +37,7 @@ enum ForumDataTransport {
             )
             if let challenge = observer.redirectChallenge { throw challenge }
             guard let response = response as? HTTPURLResponse else { throw YamiboError.invalidResponse(statusCode: nil) }
-            if let challenge = observer.challenge(response: response, prefix: data) { throw challenge }
+            if let challenge = observer.challenge(response: response, prefix: data, isComplete: true) { throw challenge }
             return YamiboHTTPResponse(data: data, response: response)
         } catch {
             if let challenge = observer.redirectChallenge { throw challenge }
@@ -59,21 +63,35 @@ enum ForumDataTransport {
             lock.withLock { evidence.challengeURL.map { makeChallenge(url: $0) } }
         }
 
-        func challenge(response: HTTPURLResponse, prefix: Data) -> ForumTransportChallenge? {
+        func canReceiveChallengeDocument(_ response: HTTPURLResponse) -> Bool {
+            ForumWAFChallengeDocument.canReceive(response, request: request, attempt: attempt)
+        }
+
+        func challenge(response: HTTPURLResponse, prefix: Data, isComplete: Bool = false) -> ForumTransportChallenge? {
             lock.withLock {
-                guard ForumWAFResponseClassifier.matches(response: response, prefix: prefix,
-                    origin: evidence.origin, originalURL: evidence.originalURL, leftOrigin: evidence.leftOrigin),
-                    let url = response.url else { return nil }
-                return makeChallenge(url: url)
+                let document = isComplete && canReceiveChallengeDocument(response)
+                    ? ForumWAFChallengeDocument(response: response, completeBody: prefix, request: request, attempt: attempt) : nil
+                guard let challenge = ForumWAFResponseClassifier.challenge(response: response, prefix: prefix,
+                    origin: evidence.origin, request: request, credentials: attempt.credentials,
+                    leftOrigin: evidence.leftOrigin, document: document) else { return nil }
+                return ForumTransportChallenge(challenge: challenge)
             }
         }
 
-        private func makeChallenge(url: URL) -> ForumTransportChallenge {
-            ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(url: url, request: request, credentials: attempt.credentials))
+        private func makeChallenge(url: URL, document: ForumWAFChallengeDocument? = nil) -> ForumTransportChallenge {
+            ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(
+                url: url, request: request, credentials: attempt.credentials, document: document
+            ))
         }
 
         func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
             downstream?.urlSession?(session, didCreateTask: task)
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        didFinishCollecting metrics: URLSessionTaskMetrics) {
+            attempt.responseState.record(metrics, origin: attempt.context.key.origin)
+            downstream?.urlSession?(session, task: task, didFinishCollecting: metrics)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask,

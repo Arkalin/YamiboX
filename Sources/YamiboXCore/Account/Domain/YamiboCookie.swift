@@ -85,8 +85,13 @@ public struct YamiboCookie: Codable, Hashable, Sendable {
     }
 
     public static func isWAFCookie(_ name: String) -> Bool {
-        let normalized = name.lowercased()
-        return normalized == "nox_jst_v1" || normalized.hasPrefix("nox_")
+        ForumProtectionState.ownsCookie(name)
+    }
+
+    /// Edge session identifiers are needed by subsequent requests, but do not
+    /// prove that a JavaScript challenge has been completed.
+    public static func isWAFSessionCookie(_ name: String) -> Bool {
+        AliyunWAFProtocol.ownsSessionCookie(name)
     }
 
     private static func isLegacyWAFCookie(_ name: String) -> Bool {

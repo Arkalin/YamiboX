@@ -80,6 +80,27 @@ while IFS= read -r -d '' file; do
         'Legacy optional recovery, independent replay and automatic WAF presentation are forbidden.'
     check_pattern "$file" 'ForumRequestExecutor[[:space:]]*[?]' 'Forum executor dependencies must not be optional.'
     case "$file" in
+        Sources/YamiboXCore/Infrastructure/Networking/*) ;;
+        *) check_symbols "$file" 'ForumRequestPolicy|ForumReplayPolicy|safeReadOnce' \
+            'Retry permission belongs to centralized request definitions, not feature code or transport call sites.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXCore/Infrastructure/*|\
+        Sources/YamiboXCore/Account/Domain/YamiboCookie.swift|\
+        Sources/YamiboXCore/Account/Domain/SessionState.swift|\
+        Sources/YamiboXCore/Reader/Shared/Download/Application/DownloadBackgroundTransport.swift) ;;
+        Sources/YamiboXCore/*)
+            check_symbols "$file" 'ForumWAFFailure|ForumWAFResult|ForumWAFResponseClassifier|isWAFCookie|isWAFSessionCookie' \
+                'Feature workflows must consume network results and recovery disposition, not WAF protocols or cookies.' ;;
+    esac
+    case "$file" in
+        Sources/YamiboXCore/Infrastructure/Networking/ForumWAF/*|Sources/YamiboXCore/Account/Domain/YamiboCookie.swift) ;;
+        *) check_symbols "$file" 'BaiduWAFProtocol|AliyunWAFProtocol|ForumProtectionState' \
+            'Provider implementations must remain behind the shared WAF layer.'
+           check_pattern "$file" '(nox_jst_v1|acw_sc__v2|acw_tc|cdn_sec_tc|baidu_waf|gangplank)' \
+            'Provider fingerprints and cookie names belong to the shared WAF layer.' ;;
+    esac
+    case "$file" in
         Sources/YamiboXCore/*)
             check_imports "$file" \
                 'YamiboXUI|SwiftUI|UIKit|WebKit|UserNotifications|BackgroundTasks|Photos|PhotosUI|GameController' \

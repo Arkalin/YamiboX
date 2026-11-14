@@ -55,7 +55,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
             guard let self else { return }
             defer { preheatTask = nil }
             guard let snapshot = try? await sessionStore.snapshot(), snapshot.session.isLoggedIn else { return }
-            let clearance = snapshot.session.cookies.first { $0.name == "nox_jst_v1" && $0.matches(YamiboDomain.baseURL) }
+            let clearance = ForumWAFResult(cookies: snapshot.session.cookies).clearance(for: YamiboDomain.baseURL)
             guard (clearance?.expiresAt?.timeIntervalSinceNow ?? 0) <= 300 else { return }
             let challenge = YamiboWAFChallenge(url: YamiboDomain.baseURL, method: "GET", userAgent: snapshot.session.userAgent,
                 clearanceFingerprint: clearance.map { YamiboWAFChallenge.clearanceFingerprint(for: $0.value) },

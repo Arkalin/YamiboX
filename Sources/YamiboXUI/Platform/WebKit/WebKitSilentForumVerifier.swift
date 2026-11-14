@@ -28,12 +28,18 @@ public struct WebKitSilentForumVerifier: ForumSilentVerifying {
 
 @MainActor
 private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    private enum NavigationStage: String {
+        case preparing, loadRequested, provisional, responseReceived, finished
+    }
+
     private let request: ForumSilentVerificationRequest
     private var continuation: CheckedContinuation<ForumWAFResult, any Error>?
     private var work: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
     private var webView: WKWebView?
     private var finishedNavigation = false
+    private var navigationStage: NavigationStage = .preparing
+    private var lastMainFrameStatus: Int?
     private let navigationLogs = WebNavigationLogCapture(source: .webVerification)
 
     init(request: ForumSilentVerificationRequest) {
@@ -80,9 +86,23 @@ private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKS
             if let cookie = cookie.httpCookie() { await store.setCookieAsync(cookie) }
             try Task.checkCancellation()
         }
-        // Never navigate to the original request, which might mutate state.
-        guard request.key.origin.contains(YamiboRoute.login.url) else { throw ForumWAFFailure.sessionInvalidated }
-        view.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
+        navigationStage = .loadRequested
+        if let document = request.challenge.document {
+            guard request.challenge.method == "GET", document.url == request.challenge.url,
+                  request.key.origin.contains(document.url) else { throw ForumWAFFailure.sessionInvalidated }
+            // Execute the response that actually blocked this read, not a new
+            // login-page request which may not receive the same challenge.
+            // The main request is not sent by loadSimulatedRequest.
+            let response = URLResponse(url: document.url, mimeType: document.mimeType,
+                                       expectedContentLength: document.body.count, textEncodingName: document.textEncodingName)
+            YamiboLog.networking.info("Forum flight=\(self.request.flightID, privacy: .public) verifierInput=receivedChallenge bytes=\(document.body.count, privacy: .public)")
+            view.loadSimulatedRequest(URLRequest(url: document.url, cachePolicy: .reloadIgnoringLocalCacheData),
+                                      response: response, responseData: document.body)
+        } else {
+            // Unknown reads and actions must never be navigated or resubmitted.
+            guard request.key.origin.contains(YamiboRoute.login.url) else { throw ForumWAFFailure.sessionInvalidated }
+            view.load(URLRequest(url: YamiboRoute.login.url, cachePolicy: .reloadIgnoringLocalCacheData))
+        }
         while true {
             try Task.checkCancellation()
             guard UIApplication.shared.applicationState == .active || UIApplication.shared.backgroundTimeRemaining > 1 else {
@@ -110,7 +130,8 @@ private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKS
         webView?.stopLoading()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "yamiboWAFInteraction")
         webView = nil
-        YamiboLog.networking.info("Forum flight=\(self.request.flightID, privacy: .public) verifierResources=released")
+        let status = lastMainFrameStatus.map(String.init) ?? "none"
+        YamiboLog.networking.info("Forum flight=\(self.request.flightID, privacy: .public) verifierResources=released navigationStage=\(self.navigationStage.rawValue, privacy: .public) lastMainFrameHTTP=\(status, privacy: .public)")
         continuation.resume(with: result)
     }
 
@@ -135,6 +156,7 @@ private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        navigationStage = .provisional
         navigationLogs.start(navigation, webView: webView)
     }
 
@@ -144,10 +166,17 @@ private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKS
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         finishedNavigation = true
+        navigationStage = .finished
         navigationLogs.finish(navigation)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        if navigationResponse.isForMainFrame {
+            navigationStage = .responseReceived
+            if let response = navigationResponse.response as? HTTPURLResponse {
+                lastMainFrameStatus = response.statusCode
+            }
+        }
         navigationLogs.receive(navigationResponse)
         guard navigationResponse.canShowMIMEType else {
             navigationLogs.cancel(navigationResponse)
@@ -159,6 +188,13 @@ private final class SilentForumVerification: NSObject, WKNavigationDelegate, WKS
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = navigationAction.request.url, request.key.origin.contains(url) else {
+            finish(.failure(ForumWAFFailure.runtimeUnavailable))
+            return .cancel
+        }
+        if let document = request.challenge.document,
+           navigationAction.request.httpMethod != "GET" || url != document.url {
+            // A challenge may reload its audited read after setting clearance,
+            // but it cannot gain navigation authority for any other operation.
             finish(.failure(ForumWAFFailure.runtimeUnavailable))
             return .cancel
         }

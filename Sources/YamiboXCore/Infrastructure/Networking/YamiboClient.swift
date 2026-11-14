@@ -45,8 +45,8 @@ struct YamiboClient: Sendable {
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         cancellationPolicy: YamiboRequestCancellationPolicy = .propagateCancellation
     ) async throws -> String {
-        try await fetchHTML(url: route.url, replay: route.readReplayPolicy, userAgent: userAgent,
-                            cachePolicy: cachePolicy, cancellationPolicy: cancellationPolicy)
+        try await html(YamiboNetworkConfiguration.makeRequest(url: route.url, cachePolicy: cachePolicy),
+                       definition: route.requestDefinition, userAgent: userAgent, cancellationPolicy: cancellationPolicy)
     }
 
     func fetchThreadById(
@@ -67,25 +67,25 @@ struct YamiboClient: Sendable {
         request.httpMethod = "POST"
         request.httpBody = Self.formBody(fields)
         request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        return try await html(request, replay: .never, userAgent: userAgent, cancellationPolicy: .propagateCancellation)
+        return try await html(request, definition: .write, userAgent: userAgent, cancellationPolicy: .propagateCancellation)
     }
 
     func fetchHTML(
         url: URL,
-        replay: ForumReplayPolicy = .never,
         userAgent: String? = nil,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         cancellationPolicy: YamiboRequestCancellationPolicy = .propagateCancellation
     ) async throws -> String {
-        try await html(YamiboNetworkConfiguration.makeRequest(url: url, cachePolicy: cachePolicy),
-                       replay: replay, userAgent: userAgent, cancellationPolicy: cancellationPolicy)
+        let request = YamiboNetworkConfiguration.makeRequest(url: url, cachePolicy: cachePolicy)
+        return try await html(request, definition: .navigation(request), userAgent: userAgent, cancellationPolicy: cancellationPolicy)
     }
 
-    private func html(_ request: URLRequest, replay: ForumReplayPolicy, userAgent: String?,
+    private func html(_ request: URLRequest, definition: ForumRequestDefinition, userAgent: String?,
                       cancellationPolicy: YamiboRequestCancellationPolicy) async throws -> String {
         var request = request
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        return try await performRequest(request, userAgent: userAgent, cancellationPolicy: cancellationPolicy, replay: replay).decodeHTML()
+        return try await perform(request, definition: definition, userAgent: userAgent,
+                                 cancellationPolicy: cancellationPolicy, delegate: nil, bodyPolicy: nil).decodeHTML()
     }
 
     func performRequest(
@@ -93,15 +93,26 @@ struct YamiboClient: Sendable {
         userAgent: String? = nil,
         cancellationPolicy: YamiboRequestCancellationPolicy = .propagateCancellation,
         delegate: (any URLSessionTaskDelegate)? = nil,
-        replay: ForumReplayPolicy = .never,
         bodyPolicy: NetworkResponseBodyPolicy? = nil
     ) async throws -> YamiboHTTPResponse {
-        let context = requestContext.replacingCredentials(YamiboRequestCredentials(cookies: credentials.cookies, userAgent: userAgent ?? self.userAgent))
+        try await perform(unsignedRequest, definition: .navigation(unsignedRequest), userAgent: userAgent,
+                          cancellationPolicy: cancellationPolicy, delegate: delegate, bodyPolicy: bodyPolicy)
+    }
+
+    private func perform(_ unsignedRequest: URLRequest, definition: ForumRequestDefinition, userAgent: String?,
+                         cancellationPolicy: YamiboRequestCancellationPolicy, delegate: (any URLSessionTaskDelegate)?,
+                         bodyPolicy: NetworkResponseBodyPolicy?) async throws -> YamiboHTTPResponse {
+        let cookies = definition.credentials == .protectionOnly ? ForumWAFResult(cookies: credentials.cookies).cookies : credentials.cookies
+        let context = requestContext.replacingCredentials(YamiboRequestCredentials(cookies: cookies, userAgent: userAgent ?? self.userAgent))
         do {
-            return try await executor.execute(context: context, policy: ForumRequestPolicy(replay: replay, lease: .init(duration: .seconds(40)),
+            return try await executor.execute(context: context, policy: definition.policy(for: unsignedRequest, lease: .init(duration: .seconds(40)),
                 deliversCompletedInitialResponse: cancellationPolicy == .completeStartedRequest)) { attempt in
                 try await validateSession?()
                 try Task.checkCancellation()
+                if definition.credentials == .protectionOnly,
+                   unsignedRequest.url.map({ attempt.credentials.cookieHeader(for: $0).isEmpty }) != false {
+                    throw RequestAdmissionError.missingProtectionState
+                }
                 var request = unsignedRequest
                 if attempt.number > 1 { request.cachePolicy = .reloadIgnoringLocalCacheData }
                 YamiboNetworkPolicy.applyCredentials(attempt.credentials, to: &request,
@@ -125,6 +136,8 @@ struct YamiboClient: Sendable {
             throw LoadDiagnosticError.attaching(to: error, requestContext: unsignedRequest.url?.absoluteString)
         }
     }
+
+    private enum RequestAdmissionError: Error { case missingProtectionState }
 
     static func formBody(_ fields: [(String, String)]) -> Data? {
         var allowed = CharacterSet.urlQueryAllowed

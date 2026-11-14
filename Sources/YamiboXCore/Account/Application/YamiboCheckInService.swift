@@ -36,13 +36,11 @@ public struct YamiboCheckInOutcome: Sendable {
     public let result: YamiboCheckInResult
     public let details: LoadFailureDetails?
     public let isCancelled: Bool
-    public let requiresSecurityVerification: Bool
 
-    public init(result: YamiboCheckInResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false, requiresSecurityVerification: Bool = false) {
+    public init(result: YamiboCheckInResult, details: LoadFailureDetails? = nil, isCancelled: Bool = false) {
         self.result = result
         self.details = details
         self.isCancelled = isCancelled
-        self.requiresSecurityVerification = requiresSecurityVerification
     }
 }
 
@@ -151,8 +149,7 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
         return YamiboCheckInOutcome(
             result: mapNetworkError(error),
             details: cancelled ? nil : LoadFailureDetails(error: error),
-            isCancelled: cancelled,
-            requiresSecurityVerification: LoadDiagnosticError.classificationError(error) is ForumWAFFailure
+            isCancelled: cancelled
         )
     }
 

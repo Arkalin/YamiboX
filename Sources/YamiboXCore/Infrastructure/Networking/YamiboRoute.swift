@@ -51,10 +51,18 @@ public enum YamiboRoute: Sendable {
     case threadPollVote(fid: String, tid: String)
     case threadReply(tid: String, page: Int)
     case threadPostReply(tid: String, pid: String, page: Int)
+    case checkInPage
+    case checkInSubmission(url: URL)
+    case checkInPromotion(uid: String)
+    case forumBlacklistDelete(url: URL)
+    case tagPage(target: ForumTagTarget, page: Int)
+    case contentUpdate(tid: String, authorID: String?, reverse: Bool)
+    case postLocation(url: URL)
+    case ratingReasons(url: URL)
 
     /// Explicit read allowlist. New routes, actions and read-marking message
     /// views remain non-replayable until their business semantics are audited.
-    var readReplayPolicy: ForumReplayPolicy {
+    var requestDefinition: ForumRequestDefinition {
         switch self {
         case .favorites, .boardFavorites, .favoriteDeleteForm, .login, .currentProfile,
              .tagIndex, .tagNamed, .tag, .searchPage, .forumSearchPage,
@@ -63,12 +71,20 @@ public enum YamiboRoute: Sendable {
              .userSpaceFriendBlogs, .userSpaceViewAllBlogs, .userSpaceFriends,
              .userSpaceFriendPage, .userSpaceAddFriendForm, .forumBlacklist,
              .userSpaceBlogEditor, .blog,
-             .threadRateOptions, .threadRatingResults, .threadPostComment, .threadPollVoters:
-            return .safeReadOnce
+             .threadRateOptions, .threadRatingResults, .threadPostComment, .threadPollVoters,
+             .checkInPage, .tagPage, .contentUpdate, .postLocation, .ratingReasons:
+            return .read
         case let .thread(url, _, _):
-            return ForumWebPagePolicy.allowsAutomaticReadReplay(url) ? .safeReadOnce : .never
-        default:
-            return .never
+            return .navigation(URLRequest(url: url))
+        case .search, .forumSearch, .userSpaceSendPrivateMessage, .threadReply, .threadPostReply:
+            return .nonRetryingRead
+        case .favoriteDelete, .threadFavorite, .logout, .forumBoardFavorite, .userSpaceAddFriendSubmit,
+             .forumBlacklistAdd, .userSpacePrivateMessages, .userSpaceNotices, .privateMessage,
+             .privateMessageSend, .blogComment, .threadRateSubmit, .threadPollVote,
+             .checkInSubmission, .forumBlacklistDelete:
+            return .write
+        case .checkInPromotion:
+            return .promotion
         }
     }
 
@@ -113,6 +129,21 @@ public enum YamiboRoute: Sendable {
 
     public var url: URL {
         switch self {
+        case .checkInPage:
+            return Self.makeURL(path: "/plugin.php", queryItems: [.init(name: "id", value: "zqlj_sign"), .init(name: "mobile", value: "2")])
+        case let .checkInSubmission(url), let .forumBlacklistDelete(url), let .postLocation(url), let .ratingReasons(url):
+            return url
+        case let .checkInPromotion(uid):
+            return Self.makeURL(path: "/", queryItems: [.init(name: "fromuid", value: uid)])
+        case let .tagPage(target, page):
+            return target.url(page: page)
+        case let .contentUpdate(tid, authorID, reverse):
+            var components = URLComponents(url: Self.threadByID(tid: tid, page: 1, authorID: authorID, reverse: reverse).url,
+                                           resolvingAgainstBaseURL: false)!
+            components.queryItems = components.queryItems?.map {
+                $0.name == "mobile" ? URLQueryItem(name: "mobile", value: "no") : $0
+            }
+            return components.url!
         case let .favorites(page):
             return Self.makeURL(path: "/home.php", queryItems: [
                 .init(name: "mod", value: "space"),

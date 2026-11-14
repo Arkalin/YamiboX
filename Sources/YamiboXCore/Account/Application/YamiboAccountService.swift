@@ -1,7 +1,7 @@
 import Foundation
 
 public struct YamiboAccountService: Sendable {
-    private let session: URLSession
+    private let cookieJar: ForumSessionCookieJar
     private let remote: any YamiboAccountRemoteOperating
     private let sessionStore: SessionStore
     private let profileStore: YamiboProfileStore
@@ -23,7 +23,7 @@ public struct YamiboAccountService: Sendable {
         coordinatedInvalidation: (@Sendable (UUID?) async throws -> Void)? = nil,
         remote: (any YamiboAccountRemoteOperating)? = nil
     ) {
-        self.session = session
+        cookieJar = ForumSessionCookieJar(session: session, sessionStore: sessionStore)
         self.remote = remote ?? YamiboAccountRemoteRepository(
             session: session, userAgent: userAgent, executor: executor, sessionStore: sessionStore,
             cookieStorageContext: cookieStorageContext
@@ -62,7 +62,7 @@ public struct YamiboAccountService: Sendable {
         let form = try await remote.fetchLoginForm()
         // An explicit Cookie header must also carry the isolated login form's
         // session cookies; clearance alone would hide them from the POST.
-        let loginCookies = await currentCookies()
+        let loginCookies = await cookieJar.cookies()
         let response = try await remote.submitLogin(
             YamiboLoginRequest(
                 username: trimmedUsername,
@@ -78,7 +78,7 @@ public struct YamiboAccountService: Sendable {
             throw YamiboError.loginVerificationRequired
         }
 
-        let cookies = await currentCookies()
+        let cookies = await cookieJar.cookies()
         guard cookies.contains(where: { SessionState.isAuthenticationCookieName($0.name) && !$0.isExpired() }) else {
             throw YamiboError.loginFailed(response.failureMessage)
         }
@@ -88,7 +88,7 @@ public struct YamiboAccountService: Sendable {
         guard !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw YamiboError.accountUIDUnavailable }
         // Profile validation may itself recover a challenge. Persist the
         // candidate's latest clearance, not the snapshot from before that GET.
-        let authenticatedCookies = await currentCookies()
+        let authenticatedCookies = await cookieJar.cookies()
         try Task.checkCancellation()
         guard await sessionStore.isCurrentGeneration(baseline.generation) else { throw CancellationError() }
         try await sessionStore.save(
@@ -165,7 +165,7 @@ public struct YamiboAccountService: Sendable {
         if let expectedGeneration, !(await sessionStore.isCurrentGeneration(expectedGeneration)) { throw CancellationError() }
         try await sessionStore.reset()
         await profileStore.clear()
-        clearHTTPCookies()
+        cookieJar.clear()
         await websiteDataClearer?.clearYamiboCookies()
     }
 
@@ -193,37 +193,4 @@ public struct YamiboAccountService: Sendable {
         )
     }
 
-    private func currentCookies() async -> [YamiboCookie] {
-        let storageCookies = cookieStorages()
-            .flatMap { $0.cookies ?? [] }
-            .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
-
-        var uniqueCookies: [String: YamiboCookie] = [:]
-        for cookie in storageCookies {
-            let stored = YamiboCookie(cookie)
-            uniqueCookies[stored.identity] = stored
-        }
-        for cookie in await sessionStore.load().cookies where YamiboCookie.isWAFCookie(cookie.name) {
-            uniqueCookies[cookie.identity] = cookie
-        }
-
-        return uniqueCookies.values
-            .sorted { $0.identity < $1.identity }
-    }
-
-    private func cookieStorages() -> [HTTPCookieStorage] {
-        var storages: [HTTPCookieStorage] = []
-        if let storage = session.configuration.httpCookieStorage {
-            storages.append(storage)
-        }
-        return storages
-    }
-
-    private func clearHTTPCookies() {
-        for storage in cookieStorages() {
-            for cookie in storage.cookies ?? [] where YamiboDomain.containsYamiboDomain(cookie.domain) {
-                storage.deleteCookie(cookie)
-            }
-        }
-    }
 }

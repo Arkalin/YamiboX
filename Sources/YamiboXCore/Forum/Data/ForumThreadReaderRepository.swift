@@ -12,14 +12,8 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
     public func fetchContentUpdatePage(
         thread: ThreadIdentity, title: String, authorID: String?, reverse: Bool
     ) async throws -> ForumThreadPage {
-        var components = URLComponents(url: YamiboRoute.threadByID(
-            tid: thread.tid, page: 1, authorID: authorID, reverse: reverse
-        ).url, resolvingAgainstBaseURL: false)!
-        components.queryItems = components.queryItems?.map {
-            $0.name == "mobile" ? URLQueryItem(name: "mobile", value: "no") : $0
-        }
         let html = try await client.fetchHTML(
-            url: components.url!, replay: .safeReadOnce, userAgent: YamiboNetworkConfiguration.desktopTagUserAgent,
+            for: .contentUpdate(tid: thread.tid, authorID: authorID, reverse: reverse), userAgent: YamiboNetworkConfiguration.desktopTagUserAgent,
             cachePolicy: .reloadIgnoringLocalCacheData, cancellationPolicy: .propagateCancellation
         )
         try Task.checkCancellation()
@@ -200,7 +194,7 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
               let url = YamiboRoute.findPostURL(threadID: tid, postID: pid) else {
             throw YamiboError.parsingFailed(context: L10n.string("reader.comment_composer.locate_failed"))
         }
-        let html = try await client.fetchHTML(url: url, replay: .safeReadOnce, cachePolicy: .reloadIgnoringLocalCacheData)
+        let html = try await client.fetchHTML(for: .postLocation(url: url), cachePolicy: .reloadIgnoringLocalCacheData)
         return try LoadDiagnosticError.parsing(html: html, context: "ForumPostActionContext") {
             let page = try ForumThreadPageHTMLParser.parsePage(from: html, thread: ThreadIdentity(tid: tid), fallbackTitle: nil)
             guard let post = page.posts.first(where: { $0.postID == pid }) else {

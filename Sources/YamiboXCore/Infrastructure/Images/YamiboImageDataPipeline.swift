@@ -257,7 +257,7 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         private var evidence: ForumRedirectEvidence
         private var challengeResponse: HTTPURLResponse?
         private var challengeBody = Data()
-        private static let maximumChallengeBodyBytes = 128 * 1024
+        private static let maximumChallengeBodyBytes = ForumWAFResponseClassifier.maximumBodyBytes
 
         init(
             request: URLRequest, attempt: ForumRequestAttempt,
@@ -286,15 +286,14 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
                 return
             }
             if let httpResponse = response as? HTTPURLResponse,
-               let responseURL = httpResponse.url,
-               httpResponse.statusCode == 405, canRecover(httpResponse, task: dataTask) {
-                if ForumWAFResponseClassifier.matches(response: httpResponse, prefix: Data(),
-                    origin: evidence.origin, originalURL: evidence.originalURL, leftOrigin: evidence.leftOrigin) {
-                    validationError = verificationError(for: httpResponse)
+               ForumWAFResponseClassifier.mayContainChallenge(httpResponse), canRecover(httpResponse, task: dataTask) {
+                if let challenge = classifiedChallenge(httpResponse),
+                   !ForumWAFChallengeDocument.canReceive(httpResponse, request: request, attempt: attempt) {
+                    validationError = challenge
                     completionHandler(.cancel)
                 } else {
-                    // Some gateways identify a challenge only in its HTML.
-                    // Inspect a bounded prefix without passing it to Nuke/cache.
+                    // Quarantine challenge bytes from Nuke/cache. Only a fully
+                    // received, bounded document may be handed to the verifier.
                     challengeResponse = httpResponse
                     completionHandler(.allow)
                 }
@@ -344,10 +343,21 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
             if let challengeResponse {
-                challengeBody.append(data.prefix(Self.maximumChallengeBodyBytes - challengeBody.count))
-                if challengeBody.count == Self.maximumChallengeBodyBytes {
-                    validationError = challengeResponseError(challengeResponse)
-                    dataTask.cancel()
+                let remaining = Self.maximumChallengeBodyBytes - challengeBody.count
+                challengeBody.append(data.prefix(remaining))
+                if data.count > remaining {
+                    if let error = challengeResponseError(challengeResponse) {
+                        validationError = error
+                        dataTask.cancel()
+                    } else {
+                        // Ordinary successful content is not a challenge just
+                        // because its MIME type warranted prefix inspection.
+                        self.challengeResponse = nil
+                        validatedResponse = challengeResponse
+                        didReceiveData(challengeBody, challengeResponse)
+                        challengeBody.removeAll(keepingCapacity: false)
+                        didReceiveData(Data(data.dropFirst(remaining)), challengeResponse)
+                    }
                 }
                 return
             }
@@ -362,28 +372,37 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
                 && YamiboImageSource.sameOrigin(final, YamiboDomain.baseURL)
         }
 
-        private func verificationError(for response: HTTPURLResponse) -> any Error {
+        private func verificationError(for response: HTTPURLResponse, document: ForumWAFChallengeDocument? = nil) -> any Error {
             guard let url = response.url else { return YamiboError.invalidResponse(statusCode: response.statusCode) }
             return ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(
-                url: url, request: request, credentials: attempt.credentials))
+                url: url, request: request, credentials: attempt.credentials, document: document))
         }
 
-        private func challengeResponseError(_ response: HTTPURLResponse) -> any Error {
-            if let url = response.url, ForumWAFResponseClassifier.matches(response: response, prefix: challengeBody,
-                origin: evidence.origin, originalURL: evidence.originalURL, leftOrigin: evidence.leftOrigin) {
-                return verificationError(for: response)
-            }
-            return LoadDiagnosticError.attaching(to: YamiboError.invalidResponse(statusCode: response.statusCode),
+        private func classifiedChallenge(_ response: HTTPURLResponse, isComplete: Bool = false) -> ForumTransportChallenge? {
+            let document = isComplete ? ForumWAFChallengeDocument(response: response, completeBody: challengeBody,
+                                                                 request: request, attempt: attempt) : nil
+            guard let challenge = ForumWAFResponseClassifier.challenge(response: response, prefix: challengeBody,
+                origin: evidence.origin, request: request, credentials: attempt.credentials,
+                leftOrigin: evidence.leftOrigin, document: document) else { return nil }
+            return ForumTransportChallenge(challenge: challenge)
+        }
+
+        private func challengeResponseError(_ response: HTTPURLResponse, isComplete: Bool = false) -> (any Error)? {
+            if let challenge = classifiedChallenge(response, isComplete: isComplete) { return challenge }
+            guard let error = YamiboURLSessionImageDataLoader.validationError(for: response) else { return nil }
+            return LoadDiagnosticError.attaching(to: error,
                 requestContext: response.url?.absoluteString, httpStatus: response.statusCode)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
             duration = metrics.taskInterval.duration
+            attempt.responseState.record(metrics, origin: attempt.context.key.origin)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             if validationError == nil, error == nil, let challengeResponse {
-                validationError = challengeResponseError(challengeResponse)
+                validationError = challengeResponseError(challengeResponse, isComplete: true)
+                if validationError == nil { didReceiveData(challengeBody, challengeResponse) }
             }
             NetworkLogRecorder.shared.finish(
                 logToken,

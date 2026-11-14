@@ -82,12 +82,12 @@ final class ForumWebWAFBridge {
     func receive(_ navigationResponse: WKNavigationResponse, webView: WKWebView) -> Bool {
         guard navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse else { return true }
         self.response = response
-        if isChallenge(prefix: Data()) { recover(webView); return false }
+        if let challenge = detectedChallenge(prefix: Data()) { recover(webView, challenge: challenge); return false }
         return true
     }
 
     func finished(_ webView: WKWebView) {
-        guard response?.statusCode == 405 else {
+        guard let response, ForumWAFResponseClassifier.mayContainChallenge(response) else {
             request = nil
             return
         }
@@ -95,32 +95,34 @@ final class ForumWebWAFBridge {
         Task { [weak self, weak webView] in
             guard let self, let webView else { return }
             let prefix = try? await webView.evaluateJavaScript("document.documentElement.outerHTML.slice(0, 131072)") as? String
-            guard self.generation == generation, let prefix, self.isChallenge(prefix: Data(prefix.utf8)) else { return }
-            self.recover(webView)
+            guard self.generation == generation, self.response === response else { return }
+            guard let prefix, let challenge = self.detectedChallenge(prefix: Data(prefix.utf8)) else {
+                self.request = nil
+                return
+            }
+            self.recover(webView, challenge: challenge)
         }
     }
 
-    private func isChallenge(prefix: Data) -> Bool {
-        guard let context, let response, let url = request?.url else { return false }
-        return ForumWAFResponseClassifier.matches(response: response, prefix: prefix,
-            origin: context.key.origin, originalURL: url, leftOrigin: false)
+    private func detectedChallenge(prefix: Data) -> YamiboWAFChallenge? {
+        guard let context, let response, let request else { return nil }
+        return ForumWAFResponseClassifier.challenge(response: response, prefix: prefix,
+            origin: context.key.origin, request: request, credentials: context.credentials, leftOrigin: false)
     }
 
-    private func recover(_ webView: WKWebView) {
+    private func recover(_ webView: WKWebView, challenge: YamiboWAFChallenge? = nil) {
         guard recovery == nil, let context, let request, let url = response?.url ?? webView.url else { return }
         webView.stopLoading()
         guard !isReplay else { onFailure?(.replayExhausted); return }
         isReplay = true
         let generation = generation
-        let safe = (request.httpMethod ?? "GET") == "GET" && request.httpBody == nil
-            && ForumWebPagePolicy.allowsAutomaticReadReplay(url)
         recovery = Task { [weak self, weak webView] in
             guard let self, let webView else { return }
             defer { if self.generation == generation { recovery = nil } }
             do {
-                let challenge = ForumWAFResponseClassifier.challenge(url: url, request: request, credentials: context.credentials)
+                let challenge = challenge ?? ForumWAFResponseClassifier.challenge(url: url, request: request, credentials: context.credentials)
                 let credentials = try await executor.recoverNavigation(context: context,
-                    policy: .init(replay: safe ? .safeReadOnce : .never, lease: .init(duration: .seconds(8)), operation: operation), challenge: challenge)
+                    policy: ForumRequestDefinition.navigation(request).policy(for: request, lease: .init(duration: .seconds(8)), operation: operation), challenge: challenge)
                 try Task.checkCancellation()
                 guard self.generation == generation, await sessionStore.isCurrentGeneration(context.key.generation) else { return }
                 for cookie in credentials.cookies where YamiboCookie.isWAFCookie(cookie.name) {

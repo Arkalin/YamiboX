@@ -35,17 +35,12 @@ struct ForumPageClient: Sendable {
         }
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9", forHTTPHeaderField: "Accept")
         request.setValue(referer?.absoluteString, forHTTPHeaderField: "Referer")
-        // Discuz can mutate state with GET links as well as form submissions.
-        // Recovery may complete, but neither kind of action may be replayed.
-        let safeRead = request.httpMethod == "GET"
-            && request.url.map(ForumWebPagePolicy.allowsAutomaticReadReplay) == true
         let delegate = ForumPageRedirectDelegate(progress: downloadProgress)
         defer { delegate.stopObserving() }
         do {
             let response = try await transport.performRequest(
                 request,
                 delegate: delegate,
-                replay: safeRead ? .safeReadOnce : .never,
                 bodyPolicy: NetworkResponseBodyPolicy(prefixByteCount: 512) { response, prefix in
                     guard 200..<300 ~= response.statusCode, Self.isFile(response: response, prefix: prefix) else { return nil }
                     return NetworkResponseBodyLimit(maximumBytes: Self.maximumFileBytes, error: ForumPageError.fileTooLarge)

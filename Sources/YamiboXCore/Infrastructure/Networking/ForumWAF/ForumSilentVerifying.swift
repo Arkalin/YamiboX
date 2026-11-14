@@ -1,5 +1,10 @@
 import Foundation
 
+public enum ForumWAFProvider: String, Hashable, Sendable {
+    case baidu
+    case aliyun
+}
+
 public enum ForumWAFFailure: String, Error, Sendable, LocalizedError {
     case challenge
     case silentTimeout
@@ -36,12 +41,30 @@ public struct ForumWAFResult: Sendable {
     }
 
     public func hasUpdatedClearance(for challenge: YamiboWAFChallenge, at date: Date = .now) -> Bool {
-        cookies.contains {
-            $0.name == "nox_jst_v1" && $0.matches(challenge.url, at: date)
-                && ($0.expiresAt?.timeIntervalSince(date) ?? 0) > 60
-                && (YamiboWAFChallenge.clearanceFingerprint(for: $0.value) != challenge.clearanceFingerprint
-                    || $0.expiresAt != challenge.clearanceExpiresAt)
+        switch challenge.provider {
+        case .baidu: BaiduWAFProtocol.hasUpdatedClearance(in: cookies, for: challenge, at: date)
+        case .aliyun: AliyunWAFProtocol.hasUpdatedClearance(in: cookies, for: challenge, at: date)
         }
+    }
+
+    public func clearance(for url: URL, provider: ForumWAFProvider = .baidu, at date: Date = .now) -> YamiboCookie? {
+        switch provider {
+        case .baidu: BaiduWAFProtocol.clearance(in: cookies, for: url, at: date)
+        case .aliyun: AliyunWAFProtocol.clearance(in: cookies, for: url, at: date)
+        }
+    }
+
+    func updates(comparedTo baseline: Self) -> Self {
+        let previous = Dictionary(uniqueKeysWithValues: baseline.cookies.map { ($0.identity, $0) })
+        // WebKit snapshots give every cookie a new capturedAt, including old
+        // cookies copied into the jar. Do not roll back another provider's
+        // concurrent flight by committing those unchanged baseline cookies.
+        return Self(cookies: cookies.filter { cookie in
+            guard let old = previous[cookie.identity] else { return true }
+            return cookie.value != old.value || cookie.expiresAt != old.expiresAt
+                || cookie.isSecure != old.isSecure || cookie.isHTTPOnly != old.isHTTPOnly
+                || cookie.sameSitePolicy != old.sameSitePolicy
+        })
     }
 }
 

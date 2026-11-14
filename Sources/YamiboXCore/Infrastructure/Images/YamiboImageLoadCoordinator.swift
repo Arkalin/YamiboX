@@ -259,7 +259,7 @@ actor YamiboImageLoadCoordinator {
     }
 
     private static func clearanceID(_ credentials: YamiboRequestCredentials, for url: URL) -> String? {
-        guard let cookie = credentials.cookies.first(where: { $0.name == "nox_jst_v1" && $0.matches(url) }) else { return nil }
+        guard let cookie = ForumWAFResult(cookies: credentials.cookies).clearance(for: url) else { return nil }
         return digest([cookie.identity, cookie.value, cookie.expiresAt.map { String($0.timeIntervalSince1970) } ?? "",
             credentials.userAgent])
     }

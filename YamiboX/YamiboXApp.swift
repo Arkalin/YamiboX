@@ -441,7 +441,7 @@ struct YamiboCheckInIntent: AppIntent {
             let outcome = await YamiboAppContext(sessionStore: sessionStore, requestExecutor: executor)
                 .makeCheckInService().checkInWithDetails(force: false)
             if outcome.isCancelled { throw CancellationError() }
-            if outcome.requiresSecurityVerification {
+            if outcome.details?.isSilentForumFailure == true {
                 return .result(dialog: IntentDialog(stringLiteral: L10n.string("yamibo_check_in.background_verification_failed")))
             }
             result = outcome.result

@@ -149,7 +149,7 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         let lease = ticket?.lease ?? ForumRuntimeLease(duration: .seconds(40))
         do {
             return try await requestExecutor.execute(context: requestContext,
-                policy: ForumRequestPolicy(replay: .safeReadOnce, lease: lease, operation: operation)) { [self] attempt in
+                policy: ForumRequestDefinition.resource.policy(for: URLRequest(url: source.url), lease: lease, operation: operation)) { [self] attempt in
                 guard await isCurrent(context, source: source) else { throw CancellationError() }
                 do {
                     return try await engine.data(for: source, attempt: attempt, session: imageSession)
@@ -161,11 +161,10 @@ public final class YamiboImagePipeline: YamiboImageDataLoading {
         } catch {
             if let failure = error as? ForumWAFFailure,
                [.silentTimeout, .runtimeUnavailable, .interactionRequired, .noUpdatedClearance, .processTerminated].contains(failure),
-               operation.attemptCount == 1, !Task.isCancelled {
+               operation.attemptCount == 1, !Task.isCancelled, let challenge = operation.challenge {
                 await coordinator.recordVerificationFailure(for: source, context: context,
                     ticket: .init(requestContext: requestContext, operation: operation, lease: lease,
-                        challenge: ForumWAFResponseClassifier.challenge(url: source.url,
-                            request: URLRequest(url: source.url), credentials: requestContext.credentials)))
+                        challenge: challenge))
             }
             throw error
         }

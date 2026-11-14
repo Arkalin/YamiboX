@@ -72,7 +72,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         let snapshot = try await sessionStore.snapshot()
         let context = sessionStore.forumRequestContext(snapshot: snapshot)
         return try await requestExecutor.execute(context: context,
-            policy: .init(replay: .safeReadOnce, lease: .init(duration: .seconds(40)))) { [self] attempt in
+            policy: ForumRequestDefinition.resource.policy(for: URLRequest(url: source.url), lease: .init(duration: .seconds(40)))) { [self] attempt in
             // Background URLSession follows redirects without a per-hop veto.
             // Forum requests therefore use the controlled, cancellable adapter.
             guard attempt.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
@@ -340,12 +340,10 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             if let error = pending.completionError { return .failure(error) }
             guard pending.metricsReceived, let result = pending.result else { return nil }
             if let response = pending.response, let request = pending.task?.originalRequest,
-               let originalURL = request.url,
-               ForumWAFResponseClassifier.matches(response: response, prefix: pending.prefix,
-                   origin: pending.attempt.context.key.origin, originalURL: originalURL, leftOrigin: pending.leftOrigin),
-               let url = response.url {
-                return .failure(ForumTransportChallenge(challenge: ForumWAFResponseClassifier.challenge(
-                    url: url, request: request, credentials: pending.attempt.credentials)))
+               let challenge = ForumWAFResponseClassifier.challenge(response: response, prefix: pending.prefix,
+                   origin: pending.attempt.context.key.origin, request: request,
+                   credentials: pending.attempt.credentials, leftOrigin: pending.leftOrigin) {
+                return .failure(ForumTransportChallenge(challenge: challenge))
             }
             return result
         }

@@ -53,9 +53,16 @@ public final class ForumRequestOperation: @unchecked Sendable {
     public let id = UUID()
     private let lock = NSLock()
     private var count = 0
+    private var observedChallenge: YamiboWAFChallenge?
 
     public init() {}
     var attemptCount: Int { lock.withLock { count } }
+    var challenge: YamiboWAFChallenge? { lock.withLock { observedChallenge } }
+
+    func recordChallenge(_ challenge: YamiboWAFChallenge) {
+        lock.withLock { observedChallenge = challenge.withoutDocument() }
+    }
+
     func reserveAttempt(replay: ForumReplayPolicy) throws -> Int {
         try lock.withLock {
             guard count < (replay == .safeReadOnce ? 2 : 1) else { throw ForumWAFFailure.replayExhausted }
@@ -137,14 +144,17 @@ public struct ForumRequestAttempt: Sendable {
     public let context: ForumRequestContext
     public let credentials: YamiboRequestCredentials
     public let lease: ForumRuntimeLease
+    let replay: ForumReplayPolicy
+    let responseState = ForumResponseState()
 
     init(operationID: UUID, number: Int, context: ForumRequestContext,
-         credentials: YamiboRequestCredentials, lease: ForumRuntimeLease) {
+         credentials: YamiboRequestCredentials, lease: ForumRuntimeLease, replay: ForumReplayPolicy) {
         self.operationID = operationID
         self.number = number
         self.context = context
         self.credentials = credentials
         self.lease = lease
+        self.replay = replay
     }
 }
 

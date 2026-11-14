@@ -45,7 +45,7 @@ actor ForumBlacklistRepository: ForumBlacklistRemoteOperating {
         guard ForumBlacklistHTMLParser.deleteUID(entry.deleteURL) == entry.uid else {
             throw YamiboError.parsingFailed(context: L10n.string("blacklist.title"))
         }
-        let html = try await client.fetchHTML(url: entry.deleteURL, cachePolicy: .reloadIgnoringLocalCacheData)
+        let html = try await client.fetchHTML(for: .forumBlacklistDelete(url: entry.deleteURL), cachePolicy: .reloadIgnoringLocalCacheData)
         _ = try LoadDiagnosticError.parsing(html: html, context: "ForumBlacklistRepository.remove") {
             try DiscuzActionResultParser.successMessage(from: html, emptyPageContext: L10n.string("blacklist.title"))
         }

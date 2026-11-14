@@ -51,18 +51,26 @@ public struct ForumRequestExecutor: ForumRequestExecuting {
         let operationID = policy.operation.id
         try Task.checkCancellation()
         try await context.validate()
+        let current = ForumWAFResult(cookies: try await context.currentWAFCookies())
+        try await context.validate()
+        try Task.checkCancellation()
         guard policy.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
         let number = try policy.operation.reserveAttempt(replay: policy.replay)
         YamiboLog.networking.info("Forum operation=\(operationID, privacy: .public) scope=\(context.key.scopeID, privacy: .public) generation=\(context.key.generation, privacy: .public) attempt=\(number, privacy: .public) start")
         let first = ForumRequestAttempt(operationID: operationID, number: number, context: context,
-                                        credentials: context.credentials, lease: policy.lease)
+                                        credentials: YamiboRequestCredentials(
+                                            cookies: context.credentials.cookies + current.cookies,
+                                            userAgent: context.key.userAgent
+                                        ), lease: policy.lease, replay: policy.replay)
         do {
             let result = try await transport(first)
+            try await first.responseState.commit(for: first)
             try await context.validate()
             if number != 1 || !policy.deliversCompletedInitialResponse { try Task.checkCancellation() }
             YamiboLog.networking.info("Forum operation=\(operationID, privacy: .public) attempt=\(number, privacy: .public) success")
             return result
         } catch let blocked as ForumTransportChallenge {
+            policy.operation.recordChallenge(blocked.challenge)
             YamiboLog.networking.info("Forum operation=\(operationID, privacy: .public) attempt=\(number, privacy: .public) challenge")
             guard number == 1 else { throw ForumWAFFailure.replayExhausted }
             try Task.checkCancellation()
@@ -72,16 +80,20 @@ public struct ForumRequestExecutor: ForumRequestExecuting {
             try await context.validate()
             guard policy.replay == .safeReadOnce else { throw ForumWAFFailure.replayNotPermitted }
             guard policy.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
+            let current = try await context.currentWAFCookies()
+            try await context.validate()
+            try Task.checkCancellation()
             let credentials = YamiboRequestCredentials(
-                cookies: context.credentials.cookies.filter { !YamiboCookie.isWAFCookie($0.name) } + result.cookies,
+                cookies: context.credentials.cookies + current + result.cookies,
                 userAgent: context.key.userAgent
             )
             let replayNumber = try policy.operation.reserveAttempt(replay: policy.replay)
             YamiboLog.networking.info("Forum operation=\(operationID, privacy: .public) attempt=\(replayNumber, privacy: .public) replay")
             let replay = ForumRequestAttempt(operationID: operationID, number: replayNumber, context: context,
-                                             credentials: credentials, lease: policy.lease)
+                                             credentials: credentials, lease: policy.lease, replay: policy.replay)
             do {
                 let result = try await transport(replay)
+                try await replay.responseState.commit(for: replay)
                 try await context.validate()
                 try Task.checkCancellation()
                 YamiboLog.networking.info("Forum operation=\(operationID, privacy: .public) attempt=\(replayNumber, privacy: .public) success")
