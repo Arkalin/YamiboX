@@ -145,18 +145,25 @@ struct SettingsPeripheralSections: View {
             }
 
             Section(L10n.string("settings.external_display")) {
-                Picker(
-                    L10n.string("settings.external_display.shortcut"),
-                    selection: Binding(
-                        get: { viewModel.externalDisplay.shortcutAction },
-                        set: { viewModel.updateExternalDisplayShortcut($0) }
-                    )
-                ) {
-                    ForEach(ExternalDisplayShortcutAction.allCases, id: \.self) { action in
-                        Text(action.title).tag(action)
-                    }
-                }
+                AppThemeSwitch(L10n.string("settings.external_display.enabled"), isOn: Binding(
+                    get: { viewModel.externalDisplay.isEnabled },
+                    set: { viewModel.updateExternalDisplayEnabled($0) }
+                ))
                 .disabled(viewModel.isBusy)
+                if viewModel.externalDisplay.isEnabled {
+                    Picker(
+                        L10n.string("settings.external_display.shortcut"),
+                        selection: Binding(
+                            get: { viewModel.externalDisplay.shortcutAction },
+                            set: { viewModel.updateExternalDisplayShortcut($0) }
+                        )
+                    ) {
+                        ForEach(ExternalDisplayShortcutAction.allCases, id: \.self) { action in
+                            Text(action.title).tag(action)
+                        }
+                    }
+                    .disabled(viewModel.isBusy)
+                }
             }
         }
         .onDisappear {

@@ -44,6 +44,12 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         externalDisplay = ExternalDisplaySettings()
     }
 
+    func updateExternalDisplayEnabled(_ isEnabled: Bool) {
+        persistSettings(\.externalDisplay.isEnabled, to: isEnabled) {
+            $0.system.externalDisplay.isEnabled = isEnabled
+        }
+    }
+
     func updateExternalDisplayShortcut(_ action: ExternalDisplayShortcutAction) {
         persistSettings(\.externalDisplay.shortcutAction, to: action) {
             $0.system.externalDisplay.shortcutAction = action

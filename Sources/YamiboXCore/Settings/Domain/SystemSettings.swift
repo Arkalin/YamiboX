@@ -92,10 +92,20 @@ public enum ExternalDisplayShortcutAction: String, Codable, Hashable, CaseIterab
 }
 
 public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
+    public var isEnabled: Bool
     public var shortcutAction: ExternalDisplayShortcutAction
 
-    public init(shortcutAction: ExternalDisplayShortcutAction = .comments) {
+    public init(isEnabled: Bool = true, shortcutAction: ExternalDisplayShortcutAction = .comments) {
+        self.isEnabled = isEnabled
         self.shortcutAction = shortcutAction
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true,
+            shortcutAction: try container.decodeIfPresent(ExternalDisplayShortcutAction.self, forKey: .shortcutAction) ?? .comments
+        )
     }
 }
 

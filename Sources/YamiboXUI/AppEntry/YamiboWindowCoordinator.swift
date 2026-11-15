@@ -19,7 +19,7 @@ public struct YamiboWindowRequest: Codable, Hashable, Sendable {
 @MainActor
 @Observable
 public final class YamiboWindowCoordinator {
-    let externalReader = ReaderExternalDisplayCoordinator()
+    let externalReader: ReaderExternalDisplayCoordinator
     public let appContext: YamiboAppContext
     public let webSessionCoordinator: ForumWebSessionCoordinator
     public let imagePipeline: YamiboUIImagePipeline
@@ -60,6 +60,7 @@ public final class YamiboWindowCoordinator {
         initialNavigation: AppNavigationTarget? = nil
     ) {
         self.appContext = appContext
+        externalReader = ReaderExternalDisplayCoordinator(settingsStore: appContext.settingsStore)
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
             sessionStore: appContext.forumDependencies.sessionStore
         )

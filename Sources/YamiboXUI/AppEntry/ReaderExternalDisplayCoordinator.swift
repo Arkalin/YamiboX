@@ -61,8 +61,43 @@ final class ReaderExternalDisplayCoordinator {
     @ObservationIgnored private var scheduledEvaluation = false
     @ObservationIgnored private var timeout: Task<Void, Never>?
     @ObservationIgnored private let wakefulness = ReaderTrackpadWakefulness()
+    @ObservationIgnored private var settingsObservation: Task<Void, Never>?
+    @ObservationIgnored private var isTakeoverEnabled = false
 
-    init() { ReaderExternalDisplayScenes.shared.coordinator = self }
+    init(settingsStore: SettingsStore) {
+        ReaderExternalDisplayScenes.shared.coordinator = self
+        // Subscribe before loading so writes during startup are not missed.
+        let changes = settingsStore.changes()
+        settingsObservation = Task { [weak self] in
+            let initial = await settingsStore.load()
+            guard !Task.isCancelled else { return }
+            self?.setTakeoverEnabled(initial.system.externalDisplay.isEnabled)
+            for await _ in changes {
+                let settings = await settingsStore.load()
+                guard !Task.isCancelled, let self else { return }
+                setTakeoverEnabled(settings.system.externalDisplay.isEnabled)
+            }
+        }
+    }
+
+    deinit { settingsObservation?.cancel() }
+
+    private func setTakeoverEnabled(_ enabled: Bool) {
+        guard isTakeoverEnabled != enabled else { return }
+        isTakeoverEnabled = enabled
+        if enabled {
+            evaluate()
+        } else {
+            disconnectedPreparation?.cancel()
+            disconnectedPreparation = nil
+            failedPresentation = nil
+            reservedOwner = nil
+            // Keep the candidates and any device panel so they can finish
+            // locally, and so opting in again does not require a reconnect.
+            release(requireActivation: false)
+            elect(nil)
+        }
+    }
 
     func offer(session: ReaderSession, model: YamiboAppModel, host: ReaderExternalDisplayRegistrationHost.Host?,
                navigator: ForumDestinationNavigator, eligible: Bool) {
@@ -283,7 +318,7 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     private func evaluate() {
-        guard lease == nil, closingSessionID == nil else { return }
+        guard isTakeoverEnabled, lease == nil, closingSessionID == nil else { return }
         guard !needsExplicitActivation else { elect(nil); return }
         if let reservedOwner, !canTakeOver(reservedOwner) { return }
         let candidate = reservedOwner ?? candidates.values.filter {

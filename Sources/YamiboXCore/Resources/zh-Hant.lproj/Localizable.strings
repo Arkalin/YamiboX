@@ -1243,6 +1243,7 @@
 "settings.manga_download.empty_title" = "暫無漫畫下載內容";
 "settings.manga_download.title" = "漫畫下載內容";
 "settings.external_display" = "顯示器";
+"settings.external_display.enabled" = "接管顯示器";
 "settings.external_display.shortcut" = "快捷按鈕";
 "settings.favorite_background" = "收藏頁背景";
 "settings.favorite_background.custom" = "自訂";
