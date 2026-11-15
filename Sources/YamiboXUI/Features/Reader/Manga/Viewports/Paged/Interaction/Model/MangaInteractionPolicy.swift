@@ -25,7 +25,9 @@ enum MangaInteractionDecision: Equatable {
 
 struct MangaInteractionConfiguration: Equatable {
     var chromeVisible = false
+    // Nested pages leave zooming to their enclosing spread surface.
     var zoomEnabled = true
+    var doubleTapZoomEnabled = true
     var allowsUnzoomedPan = true
 }
 
@@ -51,7 +53,7 @@ enum MangaInteractionPolicy {
             return imageLoaded && !menuFrame.isEmpty && menuFrame.contains(point) ? .menu : .ignore
         case let .doubleTap(point):
             if configuration.chromeVisible { return .toggleChrome }
-            return configuration.zoomEnabled && imageLoaded ? .zoom(point) : .ignore
+            return configuration.zoomEnabled && configuration.doubleTapZoomEnabled && imageLoaded ? .zoom(point) : .ignore
         case let .edge(edge):
             if configuration.chromeVisible { return .toggleChrome }
             return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)

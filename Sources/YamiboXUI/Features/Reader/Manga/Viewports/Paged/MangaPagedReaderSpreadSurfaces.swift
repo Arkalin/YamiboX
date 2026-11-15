@@ -75,7 +75,7 @@ private struct MangaPagedReaderSpreadSurface: View {
                     imageLoader: imageLoader,
                     pageScaleMode: pageScaleMode,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    isZoomInteractionEnabled: zoomEnabled,
+                    isDoubleTapZoomEnabled: zoomEnabled,
                     spreadSurfaceInteraction: spreadSurfaceInteraction,
                     likedPageIDs: likedPageIDs
                 )
@@ -120,7 +120,8 @@ struct MangaPagedReaderPageSlot: View {
                     pageScaleMode: pageScaleMode,
                     initialHorizontalAlignment: surface.initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,
-                    zoomEnabled: zoomEnabled && isPageZoomEnabled,
+                    zoomEnabled: isPageZoomEnabled,
+                    doubleTapZoomEnabled: zoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan && isPageZoomEnabled,
                     surfaceInteraction: surface.surfaceInteraction,
                     likedPageIDs: likedPageIDs,

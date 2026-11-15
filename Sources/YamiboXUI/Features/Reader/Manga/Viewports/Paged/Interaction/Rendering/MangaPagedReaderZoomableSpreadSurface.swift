@@ -10,7 +10,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     let imageLoader: MangaReaderPageImageLoader
     let pageScaleMode: MangaPageScaleMode
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
-    let isZoomInteractionEnabled: Bool
+    let isDoubleTapZoomEnabled: Bool
     let spreadSurfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
     @Environment(\.mangaViewportHandoff) private var handoff
@@ -19,7 +19,7 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
         GeometryReader { proxy in
             MangaNativeHostedSurface(runtime: spreadSurfaceInteraction.runtime,
                 configuration: MangaInteractionConfiguration(chromeVisible: spreadSurfaceInteraction.runtime.configuration.chromeVisible,
-                    zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: false),
+                    doubleTapZoomEnabled: isDoubleTapZoomEnabled, allowsUnzoomedPan: false),
                 viewport: proxy.size, imageLoaded: hasLoadedImage,
                 pageContent: .spread(left: spreadImage(leftPageSurface), right: spreadImage(rightPageSurface)),
                 handoff: handoff) {

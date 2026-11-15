@@ -71,6 +71,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
     public var pageScaleMode: MangaPageScaleMode
     public var pageEdgeFillStyle: MangaPageEdgeFillStyle
     public var brightness: Double
+    /// Controls double-tap zoom only; pinch zoom remains available.
     public var zoomEnabled: Bool
     public var zoomAnimationEnabled: Bool
     /// Retained for persisted-settings compatibility; the viewport determines spreads.

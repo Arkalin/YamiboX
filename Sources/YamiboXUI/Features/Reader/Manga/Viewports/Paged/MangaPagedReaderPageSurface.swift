@@ -12,6 +12,7 @@ struct MangaPagedReaderPageSurface: View {
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
     let zoomEnabled: Bool
+    let doubleTapZoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
@@ -40,6 +41,7 @@ struct MangaPagedReaderPageSurface: View {
                     initialHorizontalAlignment: initialHorizontalAlignment,
                     pageEdgeFillStyle: pageEdgeFillStyle,
                     isZoomInteractionEnabled: zoomEnabled,
+                    isDoubleTapZoomEnabled: doubleTapZoomEnabled,
                     allowsUnzoomedSurfacePan: allowsUnzoomedSurfacePan,
                     surfaceInteraction: surfaceInteraction,
                     onLongPress: {

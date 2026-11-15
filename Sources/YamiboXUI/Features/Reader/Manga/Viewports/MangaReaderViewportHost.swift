@@ -58,9 +58,6 @@ struct MangaReaderPresentationContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundStyle(.white)
-        .onChange(of: presentation.settings.zoomEnabled, initial: true) { _, enabled in
-            if !enabled { pagedZoom.resetFactor() }
-        }
     }
 
     @ViewBuilder
@@ -208,12 +205,12 @@ private struct MangaReaderLoadedContent: View {
                                                 usesTwoPageSpread: usesTwoPageSpread)
         if let handoff {
             // Capture the mounted viewport before SwiftUI replaces or reloads it.
-            if didRebuild, settings.zoomEnabled, handoff.pendingFocus == nil {
+            if didRebuild, handoff.pendingFocus == nil {
                 handoff.layoutFocus = controlPageTurnBridge.capturePosition?()?.focus
             }
             let pageIndex = loaded.viewportPlacement?.targetPageIndex ?? plan.currentPageIndex
             let target = pageIndex.flatMap(plan.spreadIndex(forPageAt:)).flatMap(plan.spread(at:))
-            if let focus = handoff.layoutFocus, !settings.zoomEnabled || target?.containsPage(id: focus.pageID) != true {
+            if let focus = handoff.layoutFocus, target?.containsPage(id: focus.pageID) != true {
                 handoff.layoutFocus = nil
             }
         }

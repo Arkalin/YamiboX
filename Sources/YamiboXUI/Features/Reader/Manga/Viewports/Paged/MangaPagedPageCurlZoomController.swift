@@ -31,7 +31,8 @@ final class MangaPagedPageCurlZoomController {
         container.zoomView.handoff = parent.handoff
         container.zoomView.configure(runtime: runtime,
             configuration: MangaInteractionConfiguration(chromeVisible: parent.isChromeVisible,
-                zoomEnabled: parent.zoomEnabled && parent.sequence.usesTwoPageSpread, allowsUnzoomedPan: false),
+                zoomEnabled: parent.sequence.usesTwoPageSpread, doubleTapZoomEnabled: parent.zoomEnabled,
+                allowsUnzoomedPan: false),
             geometry: .spread(viewport: container.view.bounds.size),
             imageLoaded: parent.sequence.usesTwoPageSpread && spreadPageIDs.contains {
                 coordinator.pageSurfaceInteractions[$0]?.runtime.imageLoaded == true

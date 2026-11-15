@@ -11,6 +11,7 @@ struct MangaPagedReaderScaledImage: View {
     let initialHorizontalAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment
     let pageEdgeFillStyle: MangaPageEdgeFillStyle
     let isZoomInteractionEnabled: Bool
+    let isDoubleTapZoomEnabled: Bool
     let allowsUnzoomedSurfacePan: Bool
     let surfaceInteraction: MangaSurfaceAttachment
     let onLongPress: () -> Void
@@ -22,7 +23,8 @@ struct MangaPagedReaderScaledImage: View {
         GeometryReader { proxy in
             MangaNativeImageSurface(image: image, runtime: surfaceInteraction.runtime,
                 configuration: MangaInteractionConfiguration(chromeVisible: surfaceInteraction.runtime.configuration.chromeVisible,
-                    zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: allowsUnzoomedSurfacePan),
+                    zoomEnabled: isZoomInteractionEnabled, doubleTapZoomEnabled: isDoubleTapZoomEnabled,
+                    allowsUnzoomedPan: allowsUnzoomedSurfacePan),
                 geometry: .image(size: image.size, viewport: proxy.size,
                     fit: MangaSurfaceFit(pageScaleMode), alignment: initialHorizontalAlignment),
                 background: pageEdgeFillStyle.uiColor(for: colorScheme), onLongPress: onLongPress,

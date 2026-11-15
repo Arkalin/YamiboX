@@ -106,7 +106,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             view.panGestureRecognizer.addTarget(self, action: #selector(handleBoundaryPan(_:)))
             view.permitsPinch = { [weak self] in
                 guard let self else { return false }
-                return self.parent.zoomEnabled && !self.parent.pages.isEmpty
+                return !self.parent.pages.isEmpty
             }
             view.onViewportSizeChange = { [weak self] _, previous in
                 self?.rebuildLayout(preserving: previous)
@@ -171,12 +171,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 view.collectionView.reloadData()
                 rebuildLayout(preserving: nil)
             }
-            if !parent.zoomEnabled, MangaPageZoomPolicy.isActive(view.normalizedZoomFactor) {
-                view.stopInteraction()
-                view.resetZoom(animated: false)
-            }
-            let maximumScale = parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
-            if view.maximumZoomScale != maximumScale { view.maximumZoomScale = maximumScale }
             applyPlacementIfNeeded()
             updateImagePrefetch()
         }
@@ -196,7 +190,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             view.logicalCollectionLayout.logicalLayout = logicalLayout
             view.configureGeometry(
                 contentSize: CGSize(width: view.bounds.width, height: max(1, logicalLayout.contentSize.height)),
-                maximumFactor: parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
+                maximumFactor: MangaPageZoomPolicy.maximumScale
             )
             if let placementPageID, let index = contentIdentity.firstIndex(of: placementPageID) {
                 // Image dimensions and prefetched pages can change after the
@@ -400,7 +394,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         func remoteTransform(at point: CGPoint, zoom: Bool) -> ReaderRemoteTransform? {
-            guard !isDismantled, let view = viewport, parent.zoomEnabled,
+            guard !isDismantled, let view = viewport,
                   zoom ? remoteImageCell(at: point) != nil : isZoomed else { return nil }
             placementPageID = nil
             let revision = layoutRevision
@@ -408,7 +402,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             return view.remoteTransform(at: point, canZoom: zoom) { [weak self, weak view] in
                 guard let self, let view else { return false }
                 return !self.isDismantled && self.viewport === view && self.layoutRevision == revision &&
-                    self.lastAppliedPlacementRevision == placement && self.parent.zoomEnabled
+                    self.lastAppliedPlacementRevision == placement
             }
         }
 

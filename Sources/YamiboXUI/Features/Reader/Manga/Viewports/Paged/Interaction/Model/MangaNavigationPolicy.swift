@@ -30,7 +30,7 @@ struct MangaNavigationConfiguration: Equatable {
     func allowsDoubleTap(in zone: PhysicalZone?) -> Bool {
         guard let zone else { return false }
         // Edge taps only wait for a second tap when double-tap zoom is enabled.
-        return zone == .center || surface.zoomEnabled
+        return zone == .center || (surface.zoomEnabled && surface.doubleTapZoomEnabled)
     }
 }
 
