@@ -7,7 +7,6 @@ struct DownloadManagementGroupScreen: View {
     let viewModel: DownloadManagementViewModel
     let groupID: DownloadGroupID
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteInput) private var remote
 
     private var row: DownloadManagementRow? {
         viewModel.downloadManagementRow(id: groupID)
@@ -22,11 +21,6 @@ struct DownloadManagementGroupScreen: View {
                     }
                 }
                 if let row {
-                    if remote != nil {
-                        Section {
-                            deleteGroupAction(row.id)
-                        }
-                    }
                     Section {
                         DownloadStorageSummary(rows: [row], showsEntryCount: true)
                     }
@@ -48,7 +42,7 @@ struct DownloadManagementGroupScreen: View {
         .navigationTitle(row?.title ?? L10n.string("settings.download.title"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if let row, remote == nil {
+                if let row {
                     Menu {
                         deleteGroupAction(row.id)
                     } label: {

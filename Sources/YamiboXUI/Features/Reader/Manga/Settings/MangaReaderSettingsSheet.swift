@@ -2,8 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 #if os(iOS)
-import UIKit
-
 struct MangaReaderSettingsSheet: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
@@ -13,18 +11,13 @@ struct MangaReaderSettingsSheet: View {
     let controlAccent: Color
     let readerViewportSize: CGSize
     let readerTopInset: CGFloat
+    let readerSupportsSpreads: Bool
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
-    @Environment(\.readerExternalGeometry) private var externalGeometry
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
     @State private var hasLoadedDraft = false
     @State private var isPeripheralSettingsPresented = false
     @State private var tapZonesPreviewRequestID = 0
-
-    private var isPadDevice: Bool {
-        externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
-    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -44,7 +37,7 @@ struct MangaReaderSettingsSheet: View {
             // A narrow settings sheet must not turn a landscape reader spread into a single-page preview.
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: draftSettings,
-                isPadDevice: isPadDevice,
+                isPadDevice: readerSupportsSpreads,
                 availableSize: readerContentSize
             )
 
@@ -86,7 +79,7 @@ struct MangaReaderSettingsSheet: View {
         // to the system blue.
         .tint(controlAccent)
         .onAppear(perform: loadDraftIfNeeded)
-        .readerDeviceSheet(isPresented: $isPeripheralSettingsPresented) {
+        .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
                 peripheralInput: peripheralInput
@@ -107,7 +100,7 @@ struct MangaReaderSettingsSheet: View {
     }
 
     private func closePanel() {
-        if let dismissPanel { dismissPanel() } else { dismiss() }
+        dismiss()
     }
 }
 #endif

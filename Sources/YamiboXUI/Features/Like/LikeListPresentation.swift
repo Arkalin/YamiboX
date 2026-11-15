@@ -123,22 +123,12 @@ struct LikeWorkFilterBar: View {
 }
 
 struct LikeContentFilterBar: View {
-    @Environment(\.readerRemoteInput) private var remote
     @Binding var selection: LikeContentFilter
     let usesMenu: Bool
 
     var body: some View {
         Group {
-            if usesMenu && remote != nil {
-                ReaderRemoteMenu {
-                    ForEach(LikeContentFilter.allCases, id: \.self) { filter in
-                        ReaderRemoteButton(action: { selection = filter }) { Text(filter.title) }
-                    }
-                } label: {
-                    Label(selection.title, systemImage: "line.3.horizontal.decrease")
-                        .frame(minHeight: 44)
-                }
-            } else if usesMenu {
+            if usesMenu {
                 HStack {
                     Spacer(minLength: 0)
                     Menu {

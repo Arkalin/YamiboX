@@ -20,7 +20,6 @@ final class ReaderExternalInput {
         var kind = GestureKind.pending
         var translation = CGPoint.zero
         var magnification: CGFloat = 1
-        var layer: ReaderRemoteLayer
         var finish: ((Bool) -> Void)?
     }
     private(set) var location = CGPoint.zero
@@ -33,7 +32,6 @@ final class ReaderExternalInput {
     @ObservationIgnored let targets = ReaderRemoteTargetRegistry()
     @ObservationIgnored private var gesture: Gesture?
     @ObservationIgnored weak var buttonViewport: ReaderViewportLifetime?
-    var menu: AnyView?
 
     deinit { idleTask?.cancel() }
 
@@ -53,7 +51,6 @@ final class ReaderExternalInput {
     func reset() {
         cancel()
         buttonViewport = nil
-        menu = nil
         targets.reset()
         bounds = .zero
     }
@@ -61,16 +58,7 @@ final class ReaderExternalInput {
     func press(_ button: ReaderExternalButton) {
         guard isEnabled else { return }
         cancel()
-        guard menu == nil else { return }
         buttonViewport?.performExternalButton(button)
-    }
-
-    func presentMenu(@ViewBuilder _ items: () -> some View) {
-        menu = AnyView(
-            VStack(alignment: .leading, spacing: 10) { items() }
-                .buttonStyle(.bordered)
-                .padding(20)
-        )
     }
 
     func begin() -> UUID {
@@ -95,10 +83,9 @@ final class ReaderExternalInput {
     }
 
     func click(epoch: UUID) {
-        guard admits(epoch),
-              let target = targets.target(at: location, where: { $0.tap != nil || $0.blocksTap }),
+        guard admits(epoch) else { return }
+        guard let target = targets.target(at: location, where: { $0.tap != nil || $0.blocksTap }),
               let frame = target.visibleFrame else { return }
-        if target.remoteLayer.depth == 100 && target.actions.tap != nil { menu = nil }
         target.actions.tap?(location, frame)
     }
 
@@ -116,17 +103,13 @@ final class ReaderExternalInput {
         let content = targets.target(at: location, where: { $0.scroll != nil || $0.pinch != nil })
         gesture = Gesture(
             dragTarget: drag, contentTarget: content,
-            dragRevision: drag?.revision, contentRevision: content?.revision,
-            layer: targets.activeLayer
+            dragRevision: drag?.revision, contentRevision: content?.revision
         )
     }
 
     func updateTwoFinger(translation: CGPoint, ratio: CGFloat, epoch: UUID) {
         guard admits(epoch) else { return }
-        guard var gesture, gesture.layer == targets.activeLayer else {
-            finishTwoFinger(cancelled: true)
-            return
-        }
+        guard var gesture else { return }
         var delta = translation
         var scale = ratio
         let wasPending = gesture.kind == .pending
@@ -138,8 +121,7 @@ final class ReaderExternalInput {
             let pinched = abs(log(max(gesture.magnification, 0.001)))
             if gesture.dragTarget != nil, moved >= 8 {
                 gesture.kind = .drag
-            } else if pinched >= 0.075, gesture.dragTarget == nil,
-                      gesture.layer == .body || gesture.contentTarget?.actions.pinch != nil {
+            } else if pinched >= 0.075, gesture.dragTarget == nil {
                 gesture.kind = .pinch
             } else if moved >= 10 {
                 gesture.kind = .scroll

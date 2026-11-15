@@ -27,15 +27,6 @@ enum ReaderLibraryPanelTab: Hashable, Sendable {
     case bookmarks
     case likes
 
-    init?(shortcut: ExternalDisplayShortcutAction) {
-        switch shortcut {
-        case .directory: self = .chapters
-        case .bookmarks: self = .bookmarks
-        case .likes: self = .likes
-        case .toolbar, .comments, .settings: return nil
-        }
-    }
-
     var title: String {
         switch self {
         case .chapters: L10n.string("annotations.segment.chapters")

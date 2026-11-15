@@ -976,11 +976,10 @@
 "reader.open_as_manga.recommended" = "用漫画阅读器打开（推荐）";
 "reader.switch_failed" = "切换阅读模式失败";
 "reader.switching" = "正在切换阅读模式…";
-"reader.external.shortcut.comments" = "打开/关闭评论";
+"reader.external.shortcut.comments" = "评论";
 "reader.external.shortcut.directory" = "目录";
-"reader.external.shortcut.settings" = "设置";
-"reader.external.shortcut.toolbar" = "工具栏";
-"reader.external.trackpad" = "当前设备作为触控板";
+"reader.external.shortcut.toolbar" = "菜单";
+"reader.external.trackpad" = "触控板";
 "reader.external.unavailable" = "无法在外接显示器上继续阅读，已恢复在本机阅读。";
 "reader.switching_to_thread" = "正在切换到原帖…";
 "reader.switching_to_novel" = "正在切换到小说阅读器…";

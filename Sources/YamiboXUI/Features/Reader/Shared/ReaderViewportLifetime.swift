@@ -15,6 +15,7 @@ final class ReaderViewportLifetime {
     private(set) var isCurrent = true
     private var hasDetached = false
     private var isSuspended = false
+    private var isInputPaused = false
     private(set) var hasRendered = false
 
     func attach(
@@ -37,13 +38,13 @@ final class ReaderViewportLifetime {
         self.handleExternalShortcut = handleExternalShortcut
         externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
-            guard self?.accepts(id) == true else { return }
+            guard self?.acceptsInput(id) == true else { return }
             handleInput(event)
         }
     }
 
     func performExternalButton(_ button: ReaderExternalButton) {
-        guard let attachmentID, accepts(attachmentID) else { return }
+        guard let attachmentID, acceptsInput(attachmentID) else { return }
         switch button {
         case let .pageStep(direction): peripheralInput?.dispatchExternalPageStep(direction)
         case let .shortcut(action): handleExternalShortcut?(action)
@@ -53,6 +54,8 @@ final class ReaderViewportLifetime {
     func accepts(_ id: UUID) -> Bool {
         isCurrent && !isSuspended && attachmentID == id
     }
+
+    func acceptsInput(_ id: UUID) -> Bool { !isInputPaused && accepts(id) }
 
     func frameDidRender() {
         guard isCurrent, !hasDetached else { return }
@@ -73,6 +76,8 @@ final class ReaderViewportLifetime {
         if suspended && capturingPosition { synchronizePosition() }
         isSuspended = suspended
     }
+
+    func setInputPaused(_ paused: Bool) { isInputPaused = paused }
 
     @discardableResult
     func detach(_ id: UUID) -> Bool {

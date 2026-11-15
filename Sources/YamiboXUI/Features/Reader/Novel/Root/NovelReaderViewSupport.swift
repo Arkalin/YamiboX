@@ -111,7 +111,7 @@ struct NovelReaderLifecycleModifier: ViewModifier {
 /// download management and note editing have independent sheet content.
 /// The item-driven full-screen covers (`forumThreadOverlayItem`,
 /// `imageBrowserItem`) are separate presentation slots and stay item-based.
-enum NovelReaderPresentedSheet: Identifiable, Hashable {
+enum NovelReaderPresentedSheet: ReaderPanelRoute, Hashable {
     case settings
     case downloadPanel
     case downloadProgress
@@ -129,27 +129,6 @@ enum NovelReaderPresentedSheet: Identifiable, Hashable {
         switch self {
         case .annotations, .chapterComments: true
         case .settings, .downloadPanel, .downloadProgress, .note: false
-        }
-    }
-}
-
-extension Optional where Wrapped == NovelReaderPresentedSheet {
-    var modalSheet: Wrapped? {
-        get { self?.isCompanionPanel == true ? nil : self }
-        set {
-            // A modal's dismissal must not clear a newly opened companion.
-            if newValue != nil || self?.isCompanionPanel != true {
-                self = newValue
-            }
-        }
-    }
-
-    var isCompanionPresented: Bool {
-        get { self?.isCompanionPanel == true }
-        set {
-            if !newValue, self?.isCompanionPanel == true {
-                self = nil
-            }
         }
     }
 }
@@ -177,15 +156,11 @@ struct NovelReaderPresentationModifier: ViewModifier {
     @Binding var readerLibraryTab: ReaderLibraryPanelTab
 
     func body(content: Content) -> some View {
-        content
-            .modifier(ReaderCompanionPresentation(isPresented: $presentedSheet.isCompanionPresented) {
-                if let sheet = presentedSheet, sheet.isCompanionPanel {
-                    auxiliaryContent(sheet)
-                }
-            })
-            .readerPanel(item: $presentedSheet.modalSheet) { sheet in
-                auxiliaryContent(sheet)
-            }
+        ReaderPanelHost(item: $presentedSheet) {
+            content
+        } panel: { sheet, close in
+            auxiliaryContent(sheet, close: close)
+        }
             .fullScreenCover(item: $forumThreadOverlayItem) { item in
                 ForumThreadOverlayScreen(
                     item: item,
@@ -208,7 +183,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
     }
 
     @ViewBuilder
-    private func auxiliaryContent(_ sheet: NovelReaderPresentedSheet) -> some View {
+    private func auxiliaryContent(_ sheet: NovelReaderPresentedSheet, close: @escaping () -> Void) -> some View {
         switch sheet {
         case .settings:
             NovelReaderSettingsSheet(
@@ -244,9 +219,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
         case .downloadPanel:
             NovelReaderDownloadPanel(download: model.download)
         case .downloadProgress:
-            NovelReaderDownloadProgressSheet(download: model.download) {
-                presentedSheet = nil
-            }
+            NovelReaderDownloadProgressSheet(download: model.download, onClose: close)
             .onDisappear {
                 if model.download.hasOperationSession {
                     model.download.hideProgress()
@@ -262,13 +235,13 @@ struct NovelReaderPresentationModifier: ViewModifier {
                     selectedTab: $readerLibraryTab,
                     onOpenBookmark: onOpenBookmark,
                     onOpenLikeAnchor: onOpenLikeAnchor,
-                    onDismiss: { presentedSheet = nil },
+                    onDismiss: close,
                     dismissesAfterNavigation: true
                 ) { isActive, _ in
                     NovelReaderChapterSheet(
                         model: model,
                         onSelect: { chapter in
-                            presentedSheet = nil
+                            close()
                             onJumpToChapterDirectoryChapter(chapter)
                         },
                         onSelectWebView: onPreviewChapterDirectoryWebView,

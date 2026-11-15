@@ -2,7 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 struct DownloadManagementView: View {
-    @Environment(\.readerRemoteInput) private var remote
     let viewModel: DownloadManagementViewModel
     let queue: DownloadQueueViewModel
     let openQueue: () -> Void
@@ -81,50 +80,34 @@ struct DownloadManagementView: View {
                 viewModel: viewModel,
                 groupID: groupID
             )
-            .navigationBarBackButtonHidden(remote != nil)
-            .readerRemoteBack(remote != nil) { selectedGroupID = nil }
         }
         .toolbar {
-            if remote == nil {
-                if viewModel.isDownloadManagementSelectionMode {
-                    ToolbarItem(placement: .cancellationAction) {
-                        DownloadManagementSelectAllButton(viewModel: viewModel)
-                    }
+            if viewModel.isDownloadManagementSelectionMode {
+                ToolbarItem(placement: .cancellationAction) {
+                    DownloadManagementSelectAllButton(viewModel: viewModel)
                 }
+            }
 
-                ToolbarItem(placement: .primaryAction) {
-                    if !viewModel.downloadManagementIsEmpty { selectionToggle }
-                }
+            ToolbarItem(placement: .primaryAction) {
+                if !viewModel.downloadManagementIsEmpty { selectionToggle }
+            }
 
-                #if os(iOS)
-                if viewModel.isDownloadManagementSelectionMode && usesSystemSelectionBottomToolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        SelectionBottomToolbar(
-                            actions: DownloadManagementSelectionActions.delete(
-                                actionState: viewModel.downloadManagementSelectionActionState,
-                                onDelete: viewModel.requestSelectedDownloadGroupDeletion
-                            )
+            #if os(iOS)
+            if viewModel.isDownloadManagementSelectionMode && usesSystemSelectionBottomToolbar {
+                ToolbarItem(placement: .bottomBar) {
+                    SelectionBottomToolbar(
+                        actions: DownloadManagementSelectionActions.delete(
+                            actionState: viewModel.downloadManagementSelectionActionState,
+                            onDelete: viewModel.requestSelectedDownloadGroupDeletion
                         )
-                    }
+                    )
                 }
-                #endif
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if remote != nil, !viewModel.downloadManagementIsEmpty {
-                HStack {
-                    if viewModel.isDownloadManagementSelectionMode { DownloadManagementSelectAllButton(viewModel: viewModel) }
-                    Spacer()
-                    selectionToggle
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(.bar)
-            }
+            #endif
         }
         .toolbar(viewModel.isDownloadManagementSelectionMode ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.isDownloadManagementSelectionMode && (remote != nil || !usesSystemSelectionBottomToolbar) {
+            if viewModel.isDownloadManagementSelectionMode && !usesSystemSelectionBottomToolbar {
                 SelectionBottomToolbar(
                     actions: DownloadManagementSelectionActions.delete(
                         actionState: viewModel.downloadManagementSelectionActionState,

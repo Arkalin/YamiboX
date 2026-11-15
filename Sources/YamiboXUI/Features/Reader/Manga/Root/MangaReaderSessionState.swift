@@ -1,6 +1,19 @@
 import Observation
 import YamiboXCore
 
+enum MangaReaderPanel: ReaderPanelRoute, Hashable {
+    case settings
+    case download
+    case companion(MangaReaderCompanion)
+
+    var id: Self { self }
+
+    var isCompanionPanel: Bool {
+        if case .companion = self { return true }
+        return false
+    }
+}
+
 @MainActor
 @Observable
 final class MangaReaderSessionState {
@@ -8,10 +21,8 @@ final class MangaReaderSessionState {
     let viewportHandoff = MangaViewportHandoff()
     var isDismissing = false
     var isChromeVisible = true
-    var companionPanel: MangaReaderCompanion?
+    var presentedPanel: MangaReaderPanel?
     var forumThreadOverlayItem: ForumThreadOverlayItem?
-    var isSettingsPresented = false
-    var isDownloadPresented = false
     var rememberedAnnotationSegment: ReaderAnnotationSegment?
     var readerLibraryTab: ReaderLibraryPanelTab = .bookmarks
     var likedItemForActionTarget: LikeItem?

@@ -30,7 +30,6 @@ struct MangaReaderSettingsSections: View {
             .padding(.top, 8)
             .padding(.horizontal, 20)
             .padding(.bottom, 22)
-            .readerRemoteScrollContent()
         }
         .scrollIndicators(.hidden)
     }

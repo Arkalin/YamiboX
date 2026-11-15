@@ -7,13 +7,6 @@ enum MangaReaderCompanion: Hashable {
     case comments
 }
 
-extension Optional where Wrapped == MangaReaderCompanion {
-    var isPresented: Bool {
-        get { self != nil }
-        set { if !newValue { self = nil } }
-    }
-}
-
 struct MangaReaderCompanionPanel: View {
     let companion: MangaReaderCompanion
     let context: MangaLaunchContext
@@ -49,7 +42,7 @@ struct MangaReaderCompanionPanel: View {
                             annotationSegment: $annotationSegment,
                             selectedTab: $selectedTab,
                             onOpenBookmark: onOpenBookmark,
-                            onOpenLikeAnchor: openLikeAnchor,
+                            onOpenLikeAnchor: onOpenLikeAnchor,
                             onDismiss: onDismiss,
                             dismissesAfterNavigation: dismissesAfterNavigation
                         ) { isActive, onNavigationStateChange in
@@ -69,7 +62,7 @@ struct MangaReaderCompanionPanel: View {
                             annotationSegment: $annotationSegment,
                             selectedTab: $selectedTab,
                             onOpenBookmark: onOpenBookmark,
-                            onOpenLikeAnchor: openLikeAnchor,
+                            onOpenLikeAnchor: onOpenLikeAnchor,
                             onDismiss: onDismiss,
                             dismissesAfterNavigation: dismissesAfterNavigation
                         )
@@ -102,10 +95,6 @@ struct MangaReaderCompanionPanel: View {
         if dismissesAfterNavigation { onDismiss() }
     }
 
-    private func openLikeAnchor(_ anchor: LikeAnchorPayload) {
-        dismissAfterNavigation()
-        onOpenLikeAnchor(anchor)
-    }
 }
 
 private struct MangaReaderDirectoryCompanion: View {
@@ -140,7 +129,7 @@ private struct MangaReaderDirectoryCompanion: View {
         } else if isEmbedded {
             MangaDirectoryUnavailableContent()
         } else {
-            MangaDirectoryUnavailableSheet(showsRemoteToolbarClose: true)
+            MangaDirectoryUnavailableSheet()
         }
     }
 }

@@ -57,7 +57,6 @@ struct ChapterCommentFilterSettingsSheet: View {
 }
 
 struct ChapterCommentRulesView: View {
-    @Environment(\.readerRemoteInput) private var remoteInput
     let viewModel: SettingsReadingViewModel
     let scope: ChapterCommentFilterScope
     @State private var editingRule: ChapterCommentFilterRule?
@@ -73,7 +72,6 @@ struct ChapterCommentRulesView: View {
                 .accessibilityIdentifier("chapter-comment-filter-enabled")
             }
             Section(L10n.string("settings.chapter_comments.rules")) {
-                if remoteInput != nil { addRuleButton }
                 if viewModel.chapterComments[scope].rules.isEmpty {
                     Text(L10n.string("settings.chapter_comments.no_rules"))
                         .foregroundStyle(.secondary)
@@ -93,7 +91,6 @@ struct ChapterCommentRulesView: View {
                         .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("chapter-comment-rule-\(rule.id)")
-                    .readerRemoteScrollContent()
                 }
                 .onDelete { viewModel.deleteCommentRules(at: $0, scope: scope) }
             }
@@ -107,17 +104,15 @@ struct ChapterCommentRulesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .disabled(viewModel.isBusy || viewModel.pendingCommentRuleEdits > 0)
         .toolbar {
-            if remoteInput == nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    addRuleButton
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                addRuleButton
             }
         }
         .destructiveConfirmationDialog(L10n.string("settings.chapter_comments.reset_confirmation"),
                             isPresented: $confirmsReset, actionTitle: L10n.string("settings.chapter_comments.reset")) {
             viewModel.resetCommentRules(scope: scope)
         }
-        .readerDeviceSheet(item: $editingRule) { rule in
+        .sheet(item: $editingRule) { rule in
             ChapterCommentRuleEditor(viewModel: viewModel, scope: scope, rule: rule)
         }
         .onChange(of: editingRule) { _, rule in viewModel.isEditingCommentRule = rule != nil }
@@ -134,7 +129,6 @@ struct ChapterCommentRulesView: View {
 
 private struct ChapterCommentRuleEditor: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerDeviceDismiss) private var dismissDevice
     let viewModel: SettingsReadingViewModel
     let scope: ChapterCommentFilterScope
     let rule: ChapterCommentFilterRule
@@ -235,7 +229,7 @@ private struct ChapterCommentRuleEditor: View {
     }
 
     private func close() {
-        if let dismissDevice { dismissDevice() } else { dismiss() }
+        dismiss()
     }
 
     private func matchTitle(_ match: ChapterCommentFilterEngine.Match) -> String {

@@ -795,36 +795,18 @@ struct NovelReaderView: View {
     // MARK: - Chrome state and control events
 
     private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
-        guard !reader.isDismissing, reader.forumThreadOverlayItem == nil,
-              reader.imageBrowserItem == nil, reader.searchPresentation == nil,
-              let remoteInput, remoteInput.targets.activeDepth <= 1 else { return }
-        if case .note = reader.presentedSheet { return }
-
-        switch action {
+        guard !reader.isDismissing, !hasPresentedOverlay else { return }
+        switch ReaderExternalShortcutTarget(action) {
         case .toolbar:
-            let wasPresentingPanel = reader.presentedSheet != nil
-            reader.presentedSheet = nil
-            withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
-                if wasPresentingPanel { reader.chromeState.showChromeAfterClosingOverlay() }
-                else { reader.chromeState.toggleChrome() }
-            }
+            toggleChrome()
         case .comments:
-            if reader.presentedSheet == .chapterComments { reader.presentedSheet = nil }
-            else if !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented {
-                openChapterComments()
-            }
-        case .settings:
-            if reader.presentedSheet == .settings { reader.presentedSheet = nil }
-            else { openSettings() }
-        case .directory, .bookmarks, .likes:
-            guard let tab = ReaderLibraryPanelTab(shortcut: action) else { return }
-            if reader.presentedSheet == .annotations, reader.readerLibraryTab == tab {
-                reader.presentedSheet = nil
-            } else if !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented {
-                if let segment = tab.annotationSegment { reader.annotations.selectedSegment = segment }
-                reader.readerLibraryTab = tab
-                reader.presentedSheet = .annotations
-            }
+            guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else { return }
+            openChapterComments()
+        case let .library(tab):
+            guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else { return }
+            if let segment = tab.annotationSegment { reader.annotations.selectedSegment = segment }
+            reader.readerLibraryTab = tab
+            reader.presentedSheet = .annotations
         }
     }
 
@@ -836,8 +818,7 @@ struct NovelReaderView: View {
     }
 
     private func handleControlEvent(_ event: ReaderControlEvent) {
-        guard !reader.isDismissing, !hasPresentedOverlay,
-              remoteInput?.targets.activeLayer.id == nil else { return }
+        guard !reader.isDismissing, !hasPresentedOverlay else { return }
         guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else {
             // Loading/error: Menu still flips the chrome state so a
             // controller user keeps an escape hatch wherever chrome renders.
@@ -1003,7 +984,6 @@ struct NovelReaderView: View {
     }
 
     private func handleLikeAnchorOpen(_ payload: LikeAnchorPayload) {
-        if reader.presentedSheet == .annotations { reader.presentedSheet = nil }
         guard let point = reader.annotations.resumePoint(for: payload) else { return }
         Task { await jumpToAnnotationAnchor(point) }
     }
@@ -1114,7 +1094,7 @@ struct NovelReaderView: View {
     }
 
     private func goRelativePage(_ delta: Int, pagerIdentity: ReaderPagedPagerIdentity?) async {
-        guard viewport.accepts(attachmentID), model.settings.readingMode == .paged else { return }
+        guard viewport.acceptsInput(attachmentID), model.settings.readingMode == .paged else { return }
         let animationRequest = pagerIdentity.flatMap {
             makePagedScrollAnimationRequest(delta: delta, pagerIdentity: $0)
         }

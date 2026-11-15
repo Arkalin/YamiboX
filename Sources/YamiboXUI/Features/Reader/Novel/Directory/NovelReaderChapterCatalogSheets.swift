@@ -49,13 +49,6 @@ struct NovelReaderChapterSheet: View {
         // The chapter sheet and its popover get their own hosting controllers
         // on iOS 27, so inherit the app accent explicitly at this boundary.
         .tint(appTheme.controlAccent)
-        .modifier(ReaderRemotePanel(isPresented: $showingWebPicker, maximumWidth: 380, deviceSheet: false) {
-            NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
-                showingWebPicker = false
-                guard view != navigation.visibleChapterDirectoryView else { return }
-                onSelectWebView(view)
-            }
-        })
         .failureToast(message: isActive ? navigation.chapterDirectory.error : nil,
                       details: navigation.chapterDirectory.errorDetails,
                       eventID: navigation.chapterDirectory.failureEventID,
@@ -97,7 +90,6 @@ struct NovelReaderChapterSheet: View {
                                     .buttonStyle(.plain)
                                     .listRowBackground(isCurrent(chapter) ? appTheme.controlAccent.opacity(0.12) : Color.clear)
                                     .id(chapter.ordinal)
-                                    .readerRemoteScrollContent()
                                 }
 
                             }
@@ -254,19 +246,12 @@ private struct NovelReaderChapterWebPaginationBar: View {
 }
 
 private struct ReaderChapterWebPickerPresentation<Picker: View>: ViewModifier {
-    @Environment(\.readerRemoteInput) private var input
     @Binding var isPresented: Bool
     @ViewBuilder let picker: () -> Picker
 
     func body(content: Content) -> some View {
-        if input != nil {
-            // The external panel is attached to the reader's full-size
-            // directory below, not to the small pagination button.
-            content
-        } else {
-            content.popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                picker().presentationCompactAdaptation(.popover)
-            }
+        content.popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            picker().presentationCompactAdaptation(.popover)
         }
     }
 }

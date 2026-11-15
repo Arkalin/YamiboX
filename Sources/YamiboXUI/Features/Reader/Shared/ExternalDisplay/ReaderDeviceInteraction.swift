@@ -8,7 +8,6 @@ struct ReaderDeviceInteraction: Identifiable {
     let contentID: UUID
     let account: UUID
     let body: AnyView
-    let onReturn: () -> Void
 
     func validate(session: ReaderSession, appModel: YamiboAppModel) -> Bool {
         sessionID == session.id && contentID == session.contentID && account == appModel.accountGeneration
@@ -21,13 +20,11 @@ struct ReaderDeviceInteractionContext {
     let session: ReaderSession
     let appModel: YamiboAppModel
 
-    func present<Content: View>(onReturn: @escaping () -> Void = {},
-                                @ViewBuilder content: (UUID) -> Content) {
+    func present<Content: View>(@ViewBuilder content: (UUID) -> Content) {
         let id = UUID()
-        let finish = ReaderPresentationDismissal(id: id) { self.finish(id) }
         let interaction = ReaderDeviceInteraction(id: id, sessionID: session.id, contentID: session.contentID,
             account: appModel.accountGeneration,
-            body: AnyView(content(id).environment(\.readerDeviceDismiss, finish)), onReturn: onReturn)
+            body: AnyView(content(id)))
         display.beginDeviceInteraction(interaction, session: session)
     }
 
@@ -37,12 +34,6 @@ struct ReaderDeviceInteractionContext {
                 guard isCurrent(id) else { return false }
                 return await save(note)
             }, onClose: { finish(id) })
-        }
-    }
-
-    func search(title: String, prompt: String, text: Binding<String>) {
-        present { id in
-            ReaderDeviceTextEntry(title: title, prompt: prompt, text: text) { finish(id) }
         }
     }
 
@@ -61,33 +52,7 @@ struct ReaderDeviceInteractionContext {
     }
 }
 
-private struct ReaderDeviceTextEntry: View {
-    let title: String
-    let prompt: String
-    @Binding var text: String
-    let onClose: () -> Void
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField(prompt, text: $text)
-                    .focused($focused)
-                    .submitLabel(.search)
-                    .onSubmit(onClose)
-            }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("common.done"), action: onClose)
-                }
-            }
-            .task { focused = true }
-        }
-    }
-}
-
-private struct ReaderDeviceNoteEditor: View {
+struct ReaderDeviceNoteEditor: View {
     let item: LikeItem
     let save: (String?) async -> Bool
     let onClose: () -> Void
@@ -142,5 +107,4 @@ private struct ReaderDeviceNoteEditor: View {
 
 extension EnvironmentValues {
     @Entry var readerDeviceInteraction: ReaderDeviceInteractionContext? = nil
-    @Entry var readerDeviceDismiss: ReaderPresentationDismissal? = nil
 }

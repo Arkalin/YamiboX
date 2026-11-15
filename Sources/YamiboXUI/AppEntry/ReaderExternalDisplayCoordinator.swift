@@ -47,7 +47,7 @@ final class ReaderExternalDisplayCoordinator {
     let pointer = ReaderExternalInput()
     @ObservationIgnored private var candidates: [String: Candidate] = [:]
     @ObservationIgnored private var scenePhases: [String: ScenePhase] = [:]
-    @ObservationIgnored private var focusedWindowID: String?
+    private var focusedWindowID: String?
     @ObservationIgnored private var usage: UInt64 = 0
     @ObservationIgnored private var needsExplicitActivation = false
     @ObservationIgnored private var elected: Candidate?
@@ -123,9 +123,11 @@ final class ReaderExternalDisplayCoordinator {
     func focusChanged(_ id: String) {
         focusedWindowID = id
         if let lease {
-            let focused = lease.owner.model?.windowID == id
-            pointer.setEnabled(focused && phase == .external)
-            wakefulness.setNeeded(focused && phase == .external)
+            if phase == .external || phase == .deviceInteraction {
+                lease.connection.conceal(!showsReaderOnExternalDisplay)
+            }
+            pointer.setEnabled(showsReaderOnExternalDisplay && phase == .external)
+            wakefulness.setNeeded(showsReaderOnExternalDisplay && phase == .external)
         }
         if lease == nil { evaluate() }
     }
@@ -136,7 +138,7 @@ final class ReaderExternalDisplayCoordinator {
             // capture callback consume keystrokes from its sheet.
             return candidates[windowID]?.session.deviceInteraction == nil
         }
-        return phase == .external && scenePhases[windowID] == .active && pointer.menu == nil
+        return phase == .external && showsReaderOnExternalDisplay && scenePhases[windowID] == .active
     }
 
     func userOperated(_ id: String) {
@@ -155,11 +157,16 @@ final class ReaderExternalDisplayCoordinator {
         phase == .preparing || (phase == .suspended && suspendedFrom == .preparing)
     }
 
+    var showsReaderOnExternalDisplay: Bool {
+        (phase == .external || phase == .deviceInteraction) &&
+            (focusedWindowID == nil || focusedWindowID == lease?.owner.model?.windowID)
+    }
+
     func scenePhaseChanged(_ value: ScenePhase, windowID: String) {
         scenePhases[windowID] = value
         if let lease, lease.owner.model?.windowID == windowID, closingSessionID != lease.owner.session.id {
             if value != .active {
-                if phase != .deviceInteraction && phase != .suspended {
+                if phase != .suspended {
                     lease.connection.conceal(true)
                     lease.owner.session.saveReadingPosition()
                     lease.viewport.setSuspended(true, capturingPosition: false)
@@ -172,9 +179,9 @@ final class ReaderExternalDisplayCoordinator {
                     focusedWindowID = windowID
                 }
                 lease.viewport.setSuspended(false)
-                if suspendedFrom == .external || lease.viewport.hasRendered {
-                    setPhase(.external)
-                    lease.connection.conceal(false)
+                if suspendedFrom == .external || suspendedFrom == .deviceInteraction || lease.viewport.hasRendered {
+                    setPhase(lease.owner.session.deviceInteraction == nil ? .external : .deviceInteraction)
+                    lease.connection.conceal(!showsReaderOnExternalDisplay)
                 } else {
                     beginPreparing(lease)
                 }
@@ -207,9 +214,8 @@ final class ReaderExternalDisplayCoordinator {
         guard let lease, phase == .external, lease.owner.session === session,
               let model = lease.owner.model, interaction.validate(session: session, appModel: model), !session.isClosed,
               session.deviceInteraction == nil else { return }
-        lease.connection.conceal(true)
         setPhase(.deviceInteraction)
-        lease.viewport.setSuspended(true)
+        lease.viewport.setInputPaused(true)
         lease.owner.model?.peripheralInput.resetPressState()
         session.deviceInteraction = interaction
     }
@@ -219,16 +225,18 @@ final class ReaderExternalDisplayCoordinator {
               let model = candidates.values.first(where: { $0.session === session })?.model,
               interaction.validate(session: session, appModel: model), !session.isClosed else { return }
         session.deviceInteraction = nil
-        interaction.onReturn()
-        guard let lease, lease.owner.session === session, phase == .deviceInteraction else {
+        guard let lease, lease.owner.session === session else {
             evaluate()
             return
         }
+        lease.viewport.setInputPaused(false)
+        guard phase == .deviceInteraction else { return }
         if let windowID = lease.owner.model?.windowID, scenePhases[windowID] == .active {
-            lease.viewport.setSuspended(false)
             setPhase(.external)
-            lease.connection.conceal(false)
+            lease.connection.conceal(!showsReaderOnExternalDisplay)
         } else {
+            lease.connection.conceal(true)
+            lease.viewport.setSuspended(true)
             suspendedFrom = .external
             setPhase(.suspended)
         }
@@ -288,7 +296,8 @@ final class ReaderExternalDisplayCoordinator {
         }
         elect(candidate)
         guard lease == nil, let candidate, let model = candidate.model else { return }
-        guard candidate.session.viewport.hasRendered else {
+        let isRestoringDeviceInteraction = candidate === reservedOwner && candidate.session.deviceInteraction != nil
+        guard isRestoringDeviceInteraction || candidate.session.viewport.hasRendered else {
             // Let the device finish its first layout before passing position
             // to a viewport on an already-connected display.
             candidate.session.viewport.didRender = { [weak self] in self?.evaluate() }
@@ -298,13 +307,14 @@ final class ReaderExternalDisplayCoordinator {
                   $0.scene != nil && $0.registrationID == registrationID &&
                   ($0.sceneIdentifier != failedPresentation?.sceneID || candidate.contentID != failedPresentation?.contentID)
               }) else { return }
-        deviceFrameDuringPreparation = candidate.host?.viewIfLoaded?.window?.snapshotView(afterScreenUpdates: false)
+        deviceFrameDuringPreparation = isRestoringDeviceInteraction
+            ? nil : candidate.host?.viewIfLoaded?.window?.snapshotView(afterScreenUpdates: false)
         let viewport = candidate.session.beginExternalViewport()
         reservedOwner = candidate
         disconnectedPreparation?.cancel()
         model.externalDisplayFailure = false
         pointer.reset()
-        candidate.session.hideReaderChrome()
+        if !isRestoringDeviceInteraction { candidate.session.hideReaderChrome() }
         let lease = Lease(owner: candidate, connection: connection, viewport: viewport)
         self.lease = lease
         connection.displayCoordinator = self
@@ -321,8 +331,15 @@ final class ReaderExternalDisplayCoordinator {
 
     private func canTakeOver(_ owner: Candidate) -> Bool {
         guard let id = owner.model?.windowID, scenePhases[id] == .active,
-              !owner.session.isClosed, !owner.session.isShowingDevicePanel,
-              owner.session.deviceInteraction == nil, owner.session.contentID == owner.contentID else { return false }
+              !owner.session.isClosed, owner.session.contentID == owner.contentID else { return false }
+        if owner.session.deviceInteraction != nil {
+            // A foreground transition can reconnect an accessory while its
+            // owner still has a device sheet. Keep that sheet and restore only
+            // the external reader, without re-enabling remote input.
+            guard owner === reservedOwner else { return false }
+        } else {
+            guard !owner.session.isShowingDevicePanel else { return false }
+        }
         if #available(iOS 27, *) { return owner.host != nil }
         return true
     }
@@ -360,8 +377,10 @@ final class ReaderExternalDisplayCoordinator {
         timeout?.cancel()
         timeout = nil
         lease.viewport.didRender = nil
-        setPhase(.external)
-        lease.connection.conceal(false)
+        let hasDeviceInteraction = lease.owner.session.deviceInteraction != nil
+        lease.viewport.setInputPaused(hasDeviceInteraction)
+        setPhase(hasDeviceInteraction ? .deviceInteraction : .external)
+        lease.connection.conceal(!showsReaderOnExternalDisplay)
     }
 
     private func fail(_ generation: UUID) {
@@ -391,8 +410,7 @@ final class ReaderExternalDisplayCoordinator {
     private func setPhase(_ phase: Phase) {
         self.phase = phase
         if !isWaitingForExternalFrame { deviceFrameDuringPreparation = nil }
-        let canUseTrackpad = phase == .external &&
-            (focusedWindowID == nil || focusedWindowID == lease?.owner.model?.windowID)
+        let canUseTrackpad = phase == .external && showsReaderOnExternalDisplay
         pointer.setEnabled(canUseTrackpad)
         wakefulness.setNeeded(canUseTrackpad)
         if phase == .local { pointer.reset() }

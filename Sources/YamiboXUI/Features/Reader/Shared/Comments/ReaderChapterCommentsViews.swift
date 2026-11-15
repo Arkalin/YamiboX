@@ -108,7 +108,6 @@ struct ReaderChapterCommentsContent: View {
                             .id(Self.loadNextRowID)
                     }
                     .scrollTargetLayout()
-                    .readerRemoteScrollContent()
                 }
                 .scrollPosition(id: $scrollTarget, anchor: .top)
             }
@@ -188,10 +187,6 @@ private enum ReaderChapterCommentRoute: Hashable {
 
 struct ReaderChapterCommentsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
-    @Environment(\.readerDeviceInteraction) private var deviceInteraction
-    @Environment(\.readerRemoteInput) private var remoteInput
-    @Environment(\.readerRemoteLayer) private var remoteLayer
 
     let target: ReaderChapterCommentTarget?
     let state: ReaderChapterCommentsState
@@ -287,12 +282,8 @@ struct ReaderChapterCommentsSheet: View {
     var body: some View {
         presentation
             .transientMessage(feedback) { feedback = nil }
-            .readerPanel(isPresented: $showsFilterSettings) {
-                if remoteInput != nil {
-                    ReaderRemoteCommentFilterSettings(dependencies: appModel.appContext.settingsDependencies)
-                } else {
-                    ChapterCommentFilterSettingsSheet(dependencies: appModel.appContext.settingsDependencies)
-                }
+            .sheet(isPresented: $showsFilterSettings) {
+                ChapterCommentFilterSettingsSheet(dependencies: appModel.appContext.settingsDependencies)
             }
             .sheet(item: $composerTarget, onDismiss: composerDismissed) { composeTarget in
                 composer(composeTarget, isCurrent: { true })
@@ -362,16 +353,7 @@ struct ReaderChapterCommentsSheet: View {
             }
             .navigationDestination(for: ReaderChapterCommentRoute.self) { route in
                 destination(route)
-                    .navigationBarBackButtonHidden(remoteInput != nil)
                     .toolbar {
-                        if remoteInput != nil {
-                            ToolbarItem(placement: .topBarLeading) {
-                                ReaderRemoteButton(action: goBack) {
-                                    Image(systemName: "chevron.backward")
-                                }
-                                .accessibilityLabel(L10n.string("common.back"))
-                            }
-                        }
                         ToolbarItem(placement: .topBarTrailing) {
                             moreMenu
                         }
@@ -447,7 +429,11 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private var moreMenu: some View {
-        ReaderRemoteToolbarMenu(title: L10n.string("common.more")) { moreActions }
+        Menu {
+            moreActions
+        } label: {
+            Label(L10n.string("common.more"), systemImage: "ellipsis").labelStyle(.iconOnly)
+        }
             .accessibilityIdentifier("chapter-comments-more")
     }
 
@@ -463,7 +449,7 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func closePanel() {
-        if let dismissPanel { dismissPanel() } else { dismiss() }
+        dismiss()
     }
 
     private func goBack() {
@@ -563,7 +549,7 @@ struct ReaderChapterCommentsSheet: View {
     private func handleControlEvent(_ event: ReaderControlEvent) {
         // Presented content owns input; closing must not dismiss this sheet underneath it.
         guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil, profileItem == nil,
-              !showsFilterSettings, remoteInput?.targets.activeDepth == remoteLayer.depth || remoteInput == nil else { return }
+              !showsFilterSettings else { return }
         switch ReaderControlCommandResolver.commentsCommand(for: event) {
         case .close:
             goBack()
@@ -645,14 +631,7 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func openComposer(_ target: ReaderChapterCommentComposeTarget) {
-        if let deviceInteraction {
-            deviceInteraction.present(onReturn: composerDismissed) { id in
-                composer(target, autofocus: true, isCurrent: { deviceInteraction.isCurrent(id) },
-                         onExit: { deviceInteraction.finish(id) })
-            }
-        } else {
-            composerTarget = target
-        }
+        composerTarget = target
     }
 
     private func composer(_ target: ReaderChapterCommentComposeTarget, autofocus: Bool = false,
@@ -685,36 +664,16 @@ struct ReaderChapterCommentsSheet: View {
     /// work must not write its own browsing-history row (browsing-history
     /// decision #14).
     private func openOriginalPost(_ url: URL) {
-        if let deviceInteraction {
-            let item = ForumThreadOverlayItem(url: url, title: target?.title)
-            deviceInteraction.present { _ in
-                ForumThreadOverlayScreen(item: item, dependencies: forumDependencies, appModel: appModel,
-                                         rootIsDiscussionView: true, discussionWorkTIDs: discussionWorkTIDs)
-            }
-            return
-        }
         threadOverlayItem = ForumThreadOverlayItem(url: url, title: target?.title)
     }
 
     private func openProfile(_ uid: String, _ name: String) {
-        let item = ReaderChapterCommentProfileItem(uid: uid, name: name)
-        if let deviceInteraction {
-            deviceInteraction.present { _ in
-                ReaderChapterCommentProfileScreen(item: item, dependencies: forumDependencies,
-                                                  appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
-            }
-        } else { profileItem = item }
+        profileItem = ReaderChapterCommentProfileItem(uid: uid, name: name)
     }
 
     private func openImage(_ comment: ChapterComment, blockID: String) {
         guard let target else { return }
-        let request = ReaderChapterCommentImageGallery.request(comment: comment, target: target, selectedBlockID: blockID)
-        if let deviceInteraction, let request {
-            deviceInteraction.present { id in
-                ImageBrowserView(items: request.items, initialItemID: request.initialItemID,
-                    mode: request.items.count == 1 ? .single : .multiple, onDismiss: { deviceInteraction.finish(id) })
-            }
-        } else { imageBrowserRequest = request }
+        imageBrowserRequest = ReaderChapterCommentImageGallery.request(comment: comment, target: target, selectedBlockID: blockID)
     }
 }
 
@@ -995,7 +954,6 @@ private struct ReaderChapterCommentProfileItem: Identifiable {
 
 private struct ReaderChapterCommentProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerDeviceDismiss) private var dismissDevice
     @State private var navigator: ForumDestinationNavigator
     let item: ReaderChapterCommentProfileItem
     let appModel: YamiboAppModel
@@ -1015,7 +973,7 @@ private struct ReaderChapterCommentProfileScreen: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.done")) {
-                            if let dismissDevice { dismissDevice() } else { dismiss() }
+                            dismiss()
                         }
                     }
                 }

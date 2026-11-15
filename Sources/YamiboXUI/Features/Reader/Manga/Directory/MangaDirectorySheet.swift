@@ -18,8 +18,6 @@ struct MangaDirectorySheet: View {
     let onNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
-    @Environment(\.readerRemoteInput) private var remote
     @State private var draft = MangaDirectoryEditDraft(
         cleanBookName: "",
         primaryKeyword: "",
@@ -85,7 +83,6 @@ struct MangaDirectorySheet: View {
                     ChapterDirectoryLayoutPicker(layout: $layout)
                 }
                 .mangaDirectoryListRow(top: 10, bottom: 7)
-                .readerRemoteScrollContent()
 
                 if panel.displayChapters.isEmpty {
                     ContentUnavailableView(L10n.string("manga.no_chapters"), systemImage: "books.vertical")
@@ -124,7 +121,6 @@ struct MangaDirectorySheet: View {
                             onBeginSelection: beginSelection
                         )
                         .mangaDirectoryListRow(top: 5, bottom: 5)
-                        .readerRemoteScrollContent()
                         .deleteSwipeAction(isVisible: canDeleteChapterFromSwipe(chapter)) {
                             deleteChapter(chapter)
                         }
@@ -137,7 +133,7 @@ struct MangaDirectorySheet: View {
                           eventID: panel.failureEventID, clear: onClearFailure)
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && (remote != nil || !usesSystemSelectionBottomToolbar) {
+                if isSelecting && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
@@ -163,7 +159,7 @@ struct MangaDirectorySheet: View {
                     } else if !isEmbeddedInReaderPanel {
                         ToolbarItem(placement: .topBarLeading) {
                             ReaderRemoteButton {
-                                if let dismissPanel { dismissPanel() } else { dismiss() }
+                                dismiss()
                             } label: {
                                 Image(systemName: "xmark")
                             }
@@ -177,7 +173,7 @@ struct MangaDirectorySheet: View {
                         }
                     }
 
-                    if isSelecting && remote == nil && usesSystemSelectionBottomToolbar {
+                    if isSelecting && usesSystemSelectionBottomToolbar {
                         ToolbarItem(placement: .bottomBar) {
                             SelectionBottomToolbar(actions: selectionActions)
                         }
@@ -217,7 +213,7 @@ struct MangaDirectorySheet: View {
                 message: L10n.string("manga.directory.reset_confirm_message"),
                 onConfirm: onResetDirectory
             )
-            .readerDeviceSheet(isPresented: $isCorrectionPresented) {
+            .sheet(isPresented: $isCorrectionPresented) {
                 MangaDirectoryCorrectionSheet(
                     draft: $draft,
                     onSaveCorrection: { draft in
@@ -230,7 +226,7 @@ struct MangaDirectorySheet: View {
     }
 
     private var directoryMenu: some View {
-        ReaderRemoteToolbarMenu(title: L10n.string("common.more")) {
+        Menu {
             ReaderRemoteButton {
                 seedDraft(from: panel)
                 isCorrectionPresented = true
@@ -255,6 +251,8 @@ struct MangaDirectorySheet: View {
                 Label(L10n.string("manga.directory.reset"), systemImage: "arrow.counterclockwise")
             }
             .disabled(panel.isUpdating)
+        } label: {
+            Label(L10n.string("common.more"), systemImage: "ellipsis").labelStyle(.iconOnly)
         }
     }
 
@@ -627,23 +625,19 @@ private struct TruncationAwareText: View {
 
 struct MangaDirectoryUnavailableSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
-    var showsRemoteToolbarClose = false
 
     var body: some View {
         NavigationStack {
             MangaDirectoryUnavailableContent()
                 .navigationTitle(L10n.string("manga.directory"))
                 .toolbar {
-                    if dismissPanel == nil || showsRemoteToolbarClose {
-                        ToolbarItem(placement: .topBarLeading) {
-                            ReaderRemoteButton {
-                                if let dismissPanel { dismissPanel() } else { dismiss() }
-                            } label: {
-                                Image(systemName: "xmark")
-                            }
-                            .accessibilityLabel(L10n.string("common.close"))
+                    ToolbarItem(placement: .topBarLeading) {
+                        ReaderRemoteButton {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
                         }
+                        .accessibilityLabel(L10n.string("common.close"))
                     }
                 }
         }

@@ -41,7 +41,6 @@ struct ReaderExternalSurface: View {
                     .environment(\.readerDeviceInteraction, ReaderDeviceInteractionContext(
                         display: display, session: session, appModel: appModel
                     ))
-                    ReaderExternalMenuHost(input: display.pointer)
                     ReaderExternalCursor(input: display.pointer)
                     ReaderExternalPrivacyCover(display: display, sessionID: session.id)
                 }
@@ -69,23 +68,11 @@ private struct ReaderExternalPrivacyCover: View {
     let sessionID: UUID
 
     var body: some View {
-        if display.phase != .external || display.sessionID != sessionID {
+        if !display.showsReaderOnExternalDisplay || display.sessionID != sessionID {
             Color.black.ignoresSafeArea()
                 .accessibilityHidden(true)
                 .transaction { $0.animation = nil }
         }
-    }
-}
-
-private struct ReaderExternalMenuHost: View {
-    @Bindable var input: ReaderExternalInput
-
-    var body: some View {
-        Color.clear.modifier(ReaderRemotePanel(isPresented: Binding(
-            get: { input.menu != nil }, set: { if !$0 { input.menu = nil } }
-        ), maximumWidth: 360, depthOverride: 100) {
-            if let menu = input.menu { menu }
-        })
     }
 }
 

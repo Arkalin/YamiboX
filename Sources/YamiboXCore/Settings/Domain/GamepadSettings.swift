@@ -331,9 +331,7 @@ public enum ReaderControlCommandResolver {
             .scroll(.up)
         case .dpad(.down):
             .scroll(.down)
-        case let .externalPageStep(direction):
-            .scroll(direction)
-        case .bound, .dpad:
+        case .bound, .dpad, .externalPageStep:
             nil
         }
     }

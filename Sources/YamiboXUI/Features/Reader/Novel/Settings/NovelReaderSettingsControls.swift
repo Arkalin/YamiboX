@@ -47,9 +47,6 @@ struct NovelReaderFontScaleRow: View {
                     in: 0.8 ... 2.3
                 )
                 .tint(palette.controlAccent)
-                .readerRemoteSlider(value: Binding(get: { value }, set: {
-                    onChange(min(2.3, max(0.8, ($0 / 0.1).rounded() * 0.1)))
-                }), in: 0.8 ... 2.3)
 
                 ReaderSettingsStepperButton(
                     systemName: "plus",
@@ -123,9 +120,6 @@ struct NovelReaderSliderRow: View {
                     in: range
                 )
                 .tint(tint)
-                .readerRemoteSlider(value: Binding(get: { value }, set: {
-                    onChange(min(range.upperBound, max(range.lowerBound, ($0 / step).rounded() * step)))
-                }), in: range)
 
                 Text(valueLabel)
                     .font(.title3.monospacedDigit())

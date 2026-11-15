@@ -24,7 +24,7 @@ extension View {
         message: String? = nil,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        modifier(ReaderRemoteDestructiveConfirmation(title: title, actionTitle: actionTitle, message: message,
+        modifier(ReaderDestructiveConfirmation(title: title, actionTitle: actionTitle, message: message,
             item: isPresented, usesAlert: true, confirm: onConfirm))
     }
 
@@ -37,13 +37,13 @@ extension View {
         message: String? = nil,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        modifier(ReaderRemoteDestructiveConfirmation(title: title, actionTitle: actionTitle, message: message,
+        modifier(ReaderDestructiveConfirmation(title: title, actionTitle: actionTitle, message: message,
             item: isPresented, usesAlert: false, confirm: onConfirm))
     }
 }
 
 private struct ReaderDestructiveItemConfirmation<Item>: ViewModifier {
-    @Environment(\.readerRemoteInput) private var input
+    @Environment(\.readerDeviceInteraction) private var device
     @Binding var item: Item?
     let title: (Item) -> String
     let actionTitle: (Item) -> String
@@ -52,10 +52,13 @@ private struct ReaderDestructiveItemConfirmation<Item>: ViewModifier {
 
     func body(content: Content) -> some View {
         let presented = Binding(get: { item != nil }, set: { if !$0 { item = nil } })
-        if input != nil {
-            content.modifier(ReaderRemoteDestructiveConfirmation(title: item.map(title) ?? "",
-                actionTitle: item.map(actionTitle) ?? "", message: item.map(message),
-                item: presented, usesAlert: true, confirm: { if let item { confirm(item) } }))
+        if let device {
+            content.onChange(of: presented.wrappedValue, initial: true) { _, _ in
+                guard let value = item else { return }
+                item = nil
+                presentDestructiveConfirmation(on: device, title: title(value), actionTitle: actionTitle(value),
+                                               message: message(value), confirm: { confirm(value) })
+            }
         } else {
             content.alert(item.map(title) ?? "", isPresented: presented, presenting: item) { value in
                 Button(actionTitle(value), role: .destructive) { confirm(value) }
@@ -67,8 +70,8 @@ private struct ReaderDestructiveItemConfirmation<Item>: ViewModifier {
     }
 }
 
-private struct ReaderRemoteDestructiveConfirmation: ViewModifier {
-    @Environment(\.readerRemoteInput) private var input
+private struct ReaderDestructiveConfirmation: ViewModifier {
+    @Environment(\.readerDeviceInteraction) private var device
     let title: String
     let actionTitle: String
     let message: String?
@@ -77,21 +80,12 @@ private struct ReaderRemoteDestructiveConfirmation: ViewModifier {
     let confirm: () -> Void
 
     func body(content: Content) -> some View {
-        if input != nil {
-            content.readerPanel(isPresented: $item, maximumWidth: 440) {
-                VStack(spacing: 16) {
-                    Text(title).font(.headline)
-                    if let message { Text(message).foregroundStyle(.secondary) }
-                    HStack {
-                        ReaderRemoteButton(L10n.string("common.cancel"), role: .cancel) { item = false }
-                        ReaderRemoteButton(actionTitle, role: .destructive) {
-                            confirm()
-                            item = false
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(24)
+        if let device {
+            content.onChange(of: item, initial: true) { _, isPresented in
+                guard isPresented else { return }
+                item = false
+                presentDestructiveConfirmation(on: device, title: title, actionTitle: actionTitle,
+                                               message: message, confirm: confirm)
             }
         } else if usesAlert {
             content.alert(title, isPresented: $item) {
@@ -107,5 +101,29 @@ private struct ReaderRemoteDestructiveConfirmation: ViewModifier {
                 if let message { Text(message) }
             }
         }
+    }
+}
+
+@MainActor
+private func presentDestructiveConfirmation(
+    on device: ReaderDeviceInteractionContext, title: String, actionTitle: String,
+    message: String?, confirm: @escaping () -> Void
+) {
+    device.present { id in
+        VStack(spacing: 16) {
+            Text(title).font(.headline)
+            if let message { Text(message).foregroundStyle(.secondary) }
+            HStack {
+                Button(L10n.string("common.cancel"), role: .cancel) { device.finish(id) }
+                Button(actionTitle, role: .destructive) {
+                    guard device.isCurrent(id) else { return }
+                    device.finish(id)
+                    confirm()
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(24)
+        .presentationDetents([.medium])
     }
 }

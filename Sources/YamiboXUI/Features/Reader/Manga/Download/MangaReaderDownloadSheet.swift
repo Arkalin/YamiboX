@@ -4,7 +4,6 @@ import YamiboXCore
 
 #if os(iOS)
 struct MangaReaderDownloadSheet: View {
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @StateObject private var model: MangaReaderDownloadViewModel
     @State private var queueViewModel: DownloadQueueViewModel
     @State private var managementViewModel: DownloadManagementViewModel
@@ -40,12 +39,6 @@ struct MangaReaderDownloadSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if dismissPanel != nil {
-                        HStack {
-                            Spacer()
-                            downloadQueueButton
-                        }
-                    }
                     if let errorMessage = model.errorMessage {
                         MangaReaderDownloadErrorBanner(message: errorMessage, details: model.errorDetails)
                     }
@@ -66,7 +59,6 @@ struct MangaReaderDownloadSheet: View {
                     }
                 }
                 .padding(16)
-                .readerRemoteScrollContent()
             }
             .background(YamiboColors.SystemSurface.groupedBackground)
             .navigationTitle(
@@ -76,28 +68,26 @@ struct MangaReaderDownloadSheet: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if dismissPanel == nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        downloadQueueButton
-                    }
+                ToolbarItem(placement: .topBarLeading) {
+                    ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    downloadQueueButton
                 }
 
-                if dismissPanel == nil && isSelecting && usesSystemSelectionBottomToolbar {
+                if isSelecting && usesSystemSelectionBottomToolbar {
                     ToolbarItem(placement: .bottomBar) {
                         SelectionBottomToolbar(actions: selectionActions)
                     }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && (dismissPanel != nil || !usesSystemSelectionBottomToolbar) {
+                if isSelecting && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
             }
-            .readerPanel(isPresented: $isQueuePresented) {
+            .sheet(isPresented: $isQueuePresented) {
                 DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .task {

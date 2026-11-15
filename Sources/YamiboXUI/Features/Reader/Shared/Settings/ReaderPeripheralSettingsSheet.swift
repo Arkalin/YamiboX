@@ -15,7 +15,6 @@ import YamiboXCore
 struct ReaderPeripheralSettingsSheet: View {
     let peripheralInput: ReaderPeripheralInputManager
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerDeviceDismiss) private var dismissDevice
     /// `@State` (not `@StateObject`) because the view model is `@Observable`.
     /// SwiftUI keeps the first instance for the view's lifetime; the
     /// constructions on later `init` calls are discarded, which is safe here
@@ -42,9 +41,7 @@ struct ReaderPeripheralSettingsSheet: View {
             .yamiboInlineNavigationTitleDisplayMode()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("common.done")) {
-                        if let dismissDevice { dismissDevice() } else { dismiss() }
-                    }
+                    Button(L10n.string("common.done")) { dismiss() }
                 }
             }
         }

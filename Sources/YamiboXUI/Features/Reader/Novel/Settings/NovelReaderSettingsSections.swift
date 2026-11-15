@@ -211,7 +211,6 @@ struct NovelReaderForumFormatSheet: View {
     @Binding var settings: NovelReaderAppearanceSettings
     let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -238,16 +237,13 @@ struct NovelReaderForumFormatSheet: View {
                     formatToggle("reader.forum_format.images", palette: palette, isOn: $settings.loadsInlineImages)
                 }
                 .padding(20)
-                .readerRemoteScrollContent()
             }
             .background(palette.bodyBackground.ignoresSafeArea())
             .navigationTitle(L10n.string("reader.forum_format"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if dismissPanel == nil {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.string("common.done")) { dismiss() }
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("common.done")) { dismiss() }
                 }
             }
         }

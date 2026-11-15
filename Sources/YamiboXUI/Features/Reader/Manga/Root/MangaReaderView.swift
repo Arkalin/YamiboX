@@ -58,7 +58,7 @@ struct MangaReaderView: View {
                 topInset: readingTopInset
             )
 
-            MangaReaderPresentationContent(
+            let surface = MangaReaderPresentationContent(
                 informationLayout: ReaderAttachedInformationConfiguration(
                     topInset: informationTopInset, bottomInset: bottomInset,
                     titleSidePadding: model.canNavigateForward ? 128 : 76,
@@ -157,16 +157,6 @@ struct MangaReaderView: View {
             .onChange(of: usesTwoPageSpread, initial: true) { _, newValue in
                 controlUsesTwoPageSpread = newValue
             }
-            .readerPanel(isPresented: $reader.isSettingsPresented) {
-                MangaReaderSettingsSheet(
-                    model: model,
-                    settingsStore: dependencies.settingsStore,
-                    peripheralInput: appModel.peripheralInput,
-                    controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent,
-                    readerViewportSize: proxy.size,
-                    readerTopInset: readingTopInset
-                )
-            }
             .overlay {
                 ApplePencilPageTurnInteractionOverlay(
                     settings: model.applePencilPageTurnSettings,
@@ -198,13 +188,13 @@ struct MangaReaderView: View {
                     onClose: closeReader,
                     onShowDirectory: openDirectory,
                     onShowComments: {
-                        reader.companionPanel = .comments
+                        reader.presentedPanel = .companion(.comments)
                     },
                     onShowSettings: {
-                        reader.isSettingsPresented = true
+                        reader.presentedPanel = .settings
                     },
                     onShowDownload: {
-                        reader.isDownloadPresented = true
+                        reader.presentedPanel = .download
                     },
                     onToggleBookmark: {
                         Task { await model.toggleBookmarkForCurrentPage() }
@@ -214,7 +204,7 @@ struct MangaReaderView: View {
                         reader.readerLibraryTab = ReaderLibraryPanelTab(
                             annotationSegment: annotationSegmentBinding.wrappedValue
                         )
-                        reader.companionPanel = .annotations
+                        reader.presentedPanel = .companion(.annotations)
                     },
                     isBookmarked: model.isCurrentPageBookmarked,
                     annotationCapsule: model.annotationCapsule,
@@ -254,6 +244,15 @@ struct MangaReaderView: View {
             .onDisappear {
                 viewport.detach(attachmentID)
             }
+
+            ReaderPanelHost(item: $reader.presentedPanel) {
+                surface
+                    .transientMessage(model.chapterJumpFeedback) {
+                        model.chapterJumpErrorMessage = nil
+                    }
+            } panel: { panel, close in
+                panelContent(panel, viewportSize: proxy.size, readingTopInset: readingTopInset, close: close)
+            }
         }
         .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
@@ -265,30 +264,6 @@ struct MangaReaderView: View {
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
         .statusBarHidden(!reader.isChromeVisible)
         .persistentSystemOverlays(reader.isChromeVisible ? .automatic : .hidden)
-        .transientMessage(model.chapterJumpFeedback) {
-            model.chapterJumpErrorMessage = nil
-        }
-        .modifier(ReaderCompanionPresentation(
-            isPresented: $reader.companionPanel.isPresented,
-            showsDefaultClose: reader.companionPanel == .annotations && model.annotationSheetContext == nil
-        ) {
-            if let companionPanel = reader.companionPanel {
-                MangaReaderCompanionPanel(
-                    companion: companionPanel,
-                    context: context,
-                    model: model,
-                    forumDependencies: forumDependencies,
-                    appModel: appModel,
-                    discussionWorkTIDs: discussionWorkTIDs,
-                    annotationSegment: annotationSegmentBinding,
-                    selectedTab: $reader.readerLibraryTab,
-                    dismissesAfterNavigation: true,
-                    onOpenBookmark: { item in Task { await openBookmark(item) } },
-                    onOpenLikeAnchor: { anchor in Task { await openLikedAnchor(anchor) } },
-                    onDismiss: { reader.companionPanel = nil }
-                )
-            }
-        })
         .fullScreenCover(item: $reader.forumThreadOverlayItem) { item in
             ForumThreadOverlayScreen(
                 item: item,
@@ -297,17 +272,6 @@ struct MangaReaderView: View {
                 rootIsDiscussionView: true,
                 discussionWorkTIDs: discussionWorkTIDs
             )
-        }
-        .readerPanel(isPresented: $reader.isDownloadPresented) {
-            if case let .loaded(loaded) = model.presentation.state {
-                MangaReaderDownloadSheet(
-                    context: context,
-                    panel: loaded.directoryPanel,
-                    dependencies: dependencies
-                )
-            } else {
-                MangaDirectoryUnavailableSheet()
-            }
         }
         .sheet(item: $reader.noteEditTarget) { item in
             LikeNoteEditorSheet(item: item) { note in
@@ -447,15 +411,52 @@ struct MangaReaderView: View {
         return tids
     }
 
+    @ViewBuilder
+    private func panelContent(
+        _ panel: MangaReaderPanel, viewportSize: CGSize, readingTopInset: CGFloat, close: @escaping () -> Void
+    ) -> some View {
+        switch panel {
+        case .settings:
+            MangaReaderSettingsSheet(
+                model: model,
+                settingsStore: dependencies.settingsStore,
+                peripheralInput: appModel.peripheralInput,
+                controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent,
+                readerViewportSize: viewportSize,
+                readerTopInset: readingTopInset,
+                readerSupportsSpreads: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
+            )
+        case .download:
+            if case let .loaded(loaded) = model.presentation.state {
+                MangaReaderDownloadSheet(context: context, panel: loaded.directoryPanel, dependencies: dependencies)
+            } else {
+                MangaDirectoryUnavailableSheet()
+            }
+        case let .companion(companion):
+            MangaReaderCompanionPanel(
+                companion: companion,
+                context: context,
+                model: model,
+                forumDependencies: forumDependencies,
+                appModel: appModel,
+                discussionWorkTIDs: discussionWorkTIDs,
+                annotationSegment: annotationSegmentBinding,
+                selectedTab: $reader.readerLibraryTab,
+                dismissesAfterNavigation: true,
+                onOpenBookmark: { item in Task { await openBookmark(item) } },
+                onOpenLikeAnchor: { anchor in Task { await openLikedAnchor(anchor) } },
+                onDismiss: close
+            )
+        }
+    }
+
     private var canReceiveApplePencilPageTurn: Bool {
         guard case let .loaded(loaded) = model.presentation.state else { return false }
         return ReaderApplePencilPageTurnGate.canTurnPage(
             isPadDevice: externalGeometry == nil && UIDevice.current.userInterfaceIdiom == .pad,
             isPagedReadingMode: model.presentation.settings.readingMode == .paged,
             hasReadableContent: !loaded.pages.isEmpty,
-            hasBlockingOverlay: reader.companionPanel != nil
-                || reader.isSettingsPresented
-                || reader.isDownloadPresented
+            hasBlockingOverlay: reader.presentedPanel != nil
                 || reader.noteEditTarget != nil
                 || reader.forumThreadOverlayItem != nil,
             isDismissing: reader.isDismissing,
@@ -464,9 +465,7 @@ struct MangaReaderView: View {
     }
 
     private var hasControlBlockingSheet: Bool {
-        reader.companionPanel != nil ||
-            reader.isSettingsPresented ||
-            reader.isDownloadPresented ||
+        reader.presentedPanel != nil ||
             reader.noteEditTarget != nil ||
             reader.forumThreadOverlayItem != nil ||
             reader.imageSavePresentation.isActionDialogPresented ||
@@ -486,68 +485,33 @@ struct MangaReaderView: View {
         guard context.isSmartModeEnabled else { return }
         if model.annotationSheetContext != nil {
             reader.readerLibraryTab = .chapters
-            reader.companionPanel = .annotations
+            reader.presentedPanel = .companion(.annotations)
         } else {
-            reader.companionPanel = .directory
+            reader.presentedPanel = .companion(.directory)
         }
     }
 
     private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
-        guard !reader.isDismissing, reader.forumThreadOverlayItem == nil,
-              reader.noteEditTarget == nil, !reader.imageSavePresentation.isActionDialogPresented,
-              !reader.isPhotoPermissionAlertPresented,
-              let remoteInput, remoteInput.targets.activeDepth <= 1 else { return }
-
-        let wasPresentingPanel = reader.companionPanel != nil ||
-            reader.isSettingsPresented || reader.isDownloadPresented
-
-        switch action {
+        guard !reader.isDismissing, !hasControlBlockingSheet else { return }
+        switch ReaderExternalShortcutTarget(action) {
         case .toolbar:
-            closeShortcutPanels()
-            if wasPresentingPanel { reader.isChromeVisible = true }
-            else { toggleChrome() }
+            toggleChrome()
         case .comments:
-            if reader.companionPanel == .comments { closeShortcutPanels() }
-            else if canToggleChrome {
-                closeShortcutPanels()
-                reader.companionPanel = .comments
-            }
-        case .settings:
-            let wasShowingSettings = reader.isSettingsPresented
-            closeShortcutPanels()
-            reader.isSettingsPresented = !wasShowingSettings
-        case .directory, .bookmarks, .likes:
-            guard let tab = ReaderLibraryPanelTab(shortcut: action) else { return }
-            if (reader.companionPanel == .directory && tab == .chapters) ||
-                (reader.companionPanel == .annotations && reader.readerLibraryTab == tab) {
-                closeShortcutPanels()
-            } else if canToggleChrome {
-                if tab == .chapters {
-                    guard context.isSmartModeEnabled else { return }
-                    reader.isSettingsPresented = false
-                    reader.isDownloadPresented = false
-                    openDirectory()
-                } else {
-                    guard model.annotationSheetContext != nil else { return }
-                    reader.isSettingsPresented = false
-                    reader.isDownloadPresented = false
-                    reader.rememberedAnnotationSegment = tab.annotationSegment
-                    reader.readerLibraryTab = tab
-                    reader.companionPanel = .annotations
-                }
-            }
+            guard canToggleChrome else { return }
+            reader.presentedPanel = .companion(.comments)
+        case .library(.chapters):
+            guard canToggleChrome else { return }
+            openDirectory()
+        case let .library(tab):
+            guard canToggleChrome, model.annotationSheetContext != nil else { return }
+            reader.rememberedAnnotationSegment = tab.annotationSegment
+            reader.readerLibraryTab = tab
+            reader.presentedPanel = .companion(.annotations)
         }
     }
 
-    private func closeShortcutPanels() {
-        reader.companionPanel = nil
-        reader.isSettingsPresented = false
-        reader.isDownloadPresented = false
-    }
-
     private func handleControlEvent(_ event: ReaderControlEvent) {
-        guard !reader.isDismissing, !hasControlBlockingSheet,
-              remoteInput?.targets.activeLayer.id == nil else { return }
+        guard !reader.isDismissing, !hasControlBlockingSheet else { return }
         guard case let .loaded(loaded) = model.presentation.state, !loaded.pages.isEmpty else {
             // Loading/error: Menu still toggles the chrome so a controller
             // user can always reach the close button.
@@ -569,7 +533,7 @@ struct MangaReaderView: View {
         case .toggleChrome:
             toggleChrome()
         case .openComments:
-            reader.companionPanel = .comments
+            reader.presentedPanel = .companion(.comments)
         case let .turnPage(delta):
             hideChromeForControlReading()
             performPageTurn(delta, usesTwoPageSpread: controlUsesTwoPageSpread)
@@ -633,32 +597,19 @@ struct MangaReaderView: View {
                 return
             }
             guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
-            if let remoteInput, let deviceInteraction {
-                remoteInput.presentMenu {
-                    ReaderRemoteButton(L10n.string("reader.comment_view_image")) {
-                        let item = ImageBrowserItem(id: page.id, source: model.imageSource(for: page), title: context.displayTitle)
-                        deviceInteraction.present { id in
-                            ImageBrowserView(items: [item], initialItemID: item.id, mode: .single,
-                                onDismiss: { deviceInteraction.finish(id) })
-                        }
-                    }
-                    if model.canSetMangaCover {
-                        ReaderRemoteButton(L10n.string("cover.set_as_cover")) { Task { await setMangaCover(page) } }
-                        if canRestoreCover {
-                            ReaderRemoteButton(L10n.string("cover.restore_auto_cover")) { Task { await restoreMangaCover() } }
-                        }
-                    }
-                    if let likedItem {
-                        ReaderRemoteButton(L10n.string(likedItem.hasNote ? "likes.edit_note" : "likes.add_note")) {
-                            editNote(likedItem)
-                        }
-                        ReaderRemoteButton(L10n.string("likes.remove_like"), role: .destructive) {
-                            Task { await unlikePage(likedItem) }
-                        }
-                    } else {
-                        ReaderRemoteButton(L10n.string("likes.add_note")) { Task { await addNote(to: page) } }
-                        ReaderRemoteButton(L10n.string("likes.add_to_likes")) { Task { await likePage(page) } }
-                    }
+            if let deviceInteraction {
+                let image = ImageBrowserItem(id: page.id, source: model.imageSource(for: page), title: context.displayTitle)
+                deviceInteraction.present { _ in
+                    MangaReaderDeviceImageActions(
+                        image: image,
+                        likedItem: likedItem,
+                        setCover: model.canSetMangaCover ? { Task { await setMangaCover(page) } } : nil,
+                        restoreCover: model.canSetMangaCover && canRestoreCover ? { Task { await restoreMangaCover() } } : nil,
+                        addLike: { Task { await likePage(page) } },
+                        removeLike: { item in Task { await unlikePage(item) } },
+                        createNoteItem: { await prepareNoteItem(for: page) },
+                        saveNote: { item, note in await saveNote(note, to: item) }
+                    )
                 }
             } else {
                 reader.canRestoreMangaCover = canRestoreCover
@@ -745,32 +696,41 @@ struct MangaReaderView: View {
     /// discover and perform separately.
     @MainActor
     private func addNote(to page: MangaReaderPageProjection) async {
+        if let item = await prepareNoteItem(for: page) { editNote(item) }
+    }
+
+    @MainActor
+    private func prepareNoteItem(for page: MangaReaderPageProjection) async -> LikeItem? {
         reader.imageSavePresentation.clearActionTarget()
         reader.likedItemForActionTarget = nil
         guard let outcome = await model.likePage(page) else {
-            guard !Task.isCancelled, !model.likeActionWasCancelled else { return }
+            guard !Task.isCancelled, !model.likeActionWasCancelled else { return nil }
             reader.imageSavePresentation.finishSave(with: .failure(message: L10n.string("image.action_failed"),
                                                            details: model.likeActionFailureDetails))
-            return
+            return nil
         }
 
         switch outcome {
         case let .added(item), let .merged(item), let .alreadyLiked(item):
-            editNote(item)
+            return item
         }
     }
 
     private func editNote(_ item: LikeItem) {
         if let deviceInteraction {
             deviceInteraction.editNote(item) { note in
-                guard let annotation = model.annotationSheetContext else { return false }
-                return await model.annotationOperations.perform {
-                    try await annotation.like.annotations.updateNote(id: item.id, note: note)
-                } != nil
+                await saveNote(note, to: item)
             }
         } else {
             reader.noteEditTarget = item
         }
+    }
+
+    private func saveNote(_ note: String?, to item: LikeItem) async -> Bool {
+        guard let annotation = model.annotationSheetContext else { return false }
+        return await model.annotationOperations.perform {
+            try await annotation.like.annotations.updateNote(id: item.id, note: note)
+        } != nil
     }
 
     @MainActor
@@ -795,7 +755,7 @@ struct MangaReaderView: View {
     /// back to presenting a fresh reader when that fails.
     private func openBookmark(_ item: BookmarkItem) async {
         guard case let .manga(anchor) = item.anchor else { return }
-        reader.companionPanel = nil
+        if reader.presentedPanel == .companion(.annotations) { reader.presentedPanel = nil }
         if await model.jumpToLikedMangaPage(tid: anchor.chapterTID, localIndex: anchor.pageLocalIndex) {
             return
         }

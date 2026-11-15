@@ -5,7 +5,6 @@ import YamiboXCore
 import UIKit
 
 struct NovelReaderDownloadPanel: View {
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @ObservedObject var download: NovelReaderDownloadCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var isSelecting = false
@@ -25,12 +24,6 @@ struct NovelReaderDownloadPanel: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if dismissPanel != nil {
-                        HStack {
-                            Spacer()
-                            ReaderDownloadQueueToolbarButton(entryCount: download.state.queueEntryCount, action: showQueue)
-                        }
-                    }
                     ReaderDownloadSelectionSection(
                         rows: rows,
                         sectionTitle: L10n.string("reader.download_page_section"),
@@ -47,7 +40,6 @@ struct NovelReaderDownloadPanel: View {
                     }
                 }
                 .padding(16)
-                .readerRemoteScrollContent()
             }
             .background(YamiboColors.SystemSurface.groupedBackground)
             .navigationTitle(
@@ -57,28 +49,26 @@ struct NovelReaderDownloadPanel: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if dismissPanel == nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        ReaderDownloadQueueToolbarButton(entryCount: download.state.queueEntryCount, action: showQueue)
-                    }
+                ToolbarItem(placement: .topBarLeading) {
+                    ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ReaderDownloadQueueToolbarButton(entryCount: download.state.queueEntryCount, action: showQueue)
                 }
 
-                if dismissPanel == nil && isSelecting && usesSystemSelectionBottomToolbar {
+                if isSelecting && usesSystemSelectionBottomToolbar {
                     ToolbarItem(placement: .bottomBar) {
                         SelectionBottomToolbar(actions: selectionActions)
                     }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && (dismissPanel != nil || !usesSystemSelectionBottomToolbar) {
+                if isSelecting && !usesSystemSelectionBottomToolbar {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
             }
-            .readerPanel(isPresented: $isQueuePresented) {
+            .sheet(isPresented: $isQueuePresented) {
                 DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .destructiveConfirmationDialog(

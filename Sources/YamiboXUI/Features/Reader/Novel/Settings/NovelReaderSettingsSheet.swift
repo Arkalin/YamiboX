@@ -10,7 +10,6 @@ struct NovelReaderSettingsSheet: View {
     let peripheralInput: ReaderPeripheralInputManager
     let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
@@ -61,7 +60,7 @@ struct NovelReaderSettingsSheet: View {
             model.fontLibrary.protect(selection, owner: fontProtectionID)
         }
         .onDisappear { model.fontLibrary.protect(nil, owner: fontProtectionID) }
-        .readerPanel(isPresented: $isFontLibraryPresented) {
+        .sheet(isPresented: $isFontLibraryPresented) {
             NovelReaderFontLibraryView(
                 library: model.fontLibrary,
                 selection: draftSettings.fontSelection,
@@ -72,13 +71,13 @@ struct NovelReaderSettingsSheet: View {
                 }
             )
         }
-        .readerDeviceSheet(isPresented: $isPeripheralSettingsPresented) {
+        .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
                 peripheralInput: peripheralInput
             )
         }
-        .readerPanel(isPresented: $isForumFormatPresented) {
+        .sheet(isPresented: $isForumFormatPresented) {
             NovelReaderForumFormatSheet(settings: $draftSettings, controlAccent: controlAccent)
         }
     }
@@ -155,7 +154,6 @@ struct NovelReaderSettingsSheet: View {
             .padding(.top, 24)
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
-            .readerRemoteScrollContent()
         }
         .scrollIndicators(.hidden)
     }
@@ -176,7 +174,7 @@ struct NovelReaderSettingsSheet: View {
     }
 
     private func closePanel() {
-        if let dismissPanel { dismissPanel() } else { dismiss() }
+        dismiss()
     }
 
     private func setFontScale(_ value: Double) { draftSettings.fontScale = value }

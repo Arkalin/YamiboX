@@ -42,7 +42,8 @@ struct ReaderSessionScreen: View {
                 }
             }
             .overlay {
-                if let display = appModel.externalReader, display.sessionID == session.id, display.isWaitingForExternalFrame {
+                if session.deviceInteraction == nil,
+                   let display = appModel.externalReader, display.sessionID == session.id, display.isWaitingForExternalFrame {
                     // The view model has already moved to the external geometry.
                     // Keep the prior device frame above that relayout until handoff commits.
                     if let frame = display.deviceFrameDuringPreparation {

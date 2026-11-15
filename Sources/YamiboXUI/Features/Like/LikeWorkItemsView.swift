@@ -8,8 +8,6 @@ import UIKit
 /// Mine opens a text detail sheet or image browser first; the reader's
 /// annotation panel opts into opening the saved anchor directly.
 struct LikeWorkItemsView: View {
-    @Environment(\.readerDeviceInteraction) private var deviceInteraction
-    @Environment(\.readerRemoteInput) private var remote
     let work: ReadingWorkKey
     let workTitle: String
     let like: LikeDependencies
@@ -74,24 +72,10 @@ struct LikeWorkItemsView: View {
                         action: { open(item) },
                         onToggleSelection: { toggleSelection(item.id) }
                     )
-                    if let deviceInteraction, !isSelecting {
-                        ReaderRemoteButton {
-                            deviceInteraction.editNote(item) { note in
-                                await annotationOperations.perform {
-                                    try await like.annotations.updateNote(id: item.id, note: normalizedNote(note))
-                                } != nil
-                            }
-                        } label: {
-                            Image(systemName: "note.text").frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(L10n.string(item.hasNote ? "likes.edit_note" : "likes.add_note"))
-                    }
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .readerRemoteScrollContent()
                 .deleteSwipeAction(allowsFullSwipe: false, isVisible: !isSelecting) {
                     delete(item)
                 }
@@ -128,26 +112,8 @@ struct LikeWorkItemsView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if remote != nil, isSelecting {
-                HStack {
-                    SelectAllToolbarButton(isSelectionComplete: isAllVisibleSelected, isDisabled: filteredItems.isEmpty, toggle: toggleSelectAll)
-                    Spacer()
-                    ReaderRemoteButton(L10n.string("common.done")) { setSelecting(false) }
-                }
-                .padding(12)
-                .background(.bar)
-            }
             if work.kind == .novel {
                 LikeContentFilterBar(selection: $filter, usesMenu: onAnnotationNavigationStateChange != nil)
-            }
-            if let deviceInteraction, isAnnotationSegmentActive {
-                ReaderRemoteButton(action: {
-                    deviceInteraction.search(title: L10n.string("common.search"),
-                                             prompt: L10n.string("likes.search_placeholder"), text: $searchText)
-                }) {
-                    Label(searchText.isEmpty ? L10n.string("common.search") : searchText, systemImage: "magnifyingglass")
-                }
-                .padding(.vertical, 8)
             }
         }
         .likeWorkItemsNavigationTitle(
@@ -157,12 +123,12 @@ struct LikeWorkItemsView: View {
             workTitle: currentWorkTitle ?? workTitle
         )
         .likeWorkItemsSearchable(
-            isEnabled: isAnnotationSegmentActive && deviceInteraction == nil,
+            isEnabled: isAnnotationSegmentActive,
             text: $searchText,
             prompt: L10n.string("likes.search_placeholder")
         )
         .toolbar {
-            if isSelecting, remote == nil {
+            if isSelecting {
                 ToolbarItem(placement: .cancellationAction) {
                     SelectAllToolbarButton(
                         isSelectionComplete: isAllVisibleSelected,
@@ -185,7 +151,7 @@ struct LikeWorkItemsView: View {
                         )
                     }
                 }
-            } else if remote == nil, onAnnotationNavigationStateChange == nil {
+            } else if onAnnotationNavigationStateChange == nil {
                 if let onDismiss {
                     ToolbarItem(placement: .cancellationAction) {
                         ReaderRemoteButton(L10n.string("common.close"), action: onDismiss)
@@ -205,7 +171,7 @@ struct LikeWorkItemsView: View {
         }
         .toolbar(isSelecting ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if isSelecting && (remote != nil || !usesSystemSelectionBottomToolbar) {
+            if isSelecting && !usesSystemSelectionBottomToolbar {
                 SelectionBottomToolbar(
                     actions: LikeSelectionActions.delete(selectedCount: selectedItemIDs.count) {
                         isShowingDeleteConfirmation = true

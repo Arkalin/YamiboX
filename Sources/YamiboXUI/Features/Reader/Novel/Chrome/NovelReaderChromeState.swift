@@ -82,10 +82,4 @@ struct NovelReaderChromeState: Equatable {
         mode = .visible
         showsChrome = true
     }
-
-    mutating func showChromeAfterClosingOverlay() {
-        // The toolbar shortcut explicitly overrides the before-panel mode.
-        overlayRestoreMode = nil
-        showChrome()
-    }
 }

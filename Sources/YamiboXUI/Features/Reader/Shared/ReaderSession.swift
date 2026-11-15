@@ -199,7 +199,7 @@ final class ReaderSession: Identifiable {
                 reader.forumThreadOverlayItem != nil || reader.imageBrowserItem != nil
         }
         if let reader = mangaReader {
-            return reader.companionPanel != nil || reader.isSettingsPresented || reader.isDownloadPresented ||
+            return reader.presentedPanel != nil ||
                 reader.forumThreadOverlayItem != nil || reader.noteEditTarget != nil ||
                 reader.imageSavePresentation.isActionDialogPresented || reader.isPhotoPermissionAlertPresented || reader.isSavingImage
         }

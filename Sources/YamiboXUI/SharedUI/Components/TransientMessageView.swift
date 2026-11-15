@@ -13,6 +13,7 @@ struct TransientMessageView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .readerRemoteActivate(showDetails)
             .help(L10n.string("load_failure.details"))
             .accessibilityHint(L10n.string("load_failure.details"))
             .accessibilityIdentifier("toast-failure-details")
@@ -55,6 +56,7 @@ private struct TransientMessageOverlayModifier<Toast: View>: ViewModifier {
     let clear: @MainActor () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
     @State private var countdown = TransientFeedbackCountdown()
     @State private var presented: PresentedLoadFailure?
     @State private var timerRevision = UUID()
@@ -69,6 +71,10 @@ private struct TransientMessageOverlayModifier<Toast: View>: ViewModifier {
                 if isVisible, let feedback {
                     toast(feedback, feedback.details.map { details in
                         {
+                            if let deviceInteraction {
+                                deviceInteraction.showDetails(details)
+                                return
+                            }
                             countdown.pause(id: feedback.id, now: now)
                             timerRevision = UUID()
                             presented = PresentedLoadFailure(details: details)

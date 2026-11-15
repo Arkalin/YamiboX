@@ -79,7 +79,6 @@ public enum ExternalDisplayShortcutAction: String, Codable, Hashable, CaseIterab
     case bookmarks
     case likes
     case comments
-    case settings
 
     public var title: String {
         switch self {
@@ -88,7 +87,6 @@ public enum ExternalDisplayShortcutAction: String, Codable, Hashable, CaseIterab
         case .bookmarks: L10n.string("annotations.segment.bookmarks")
         case .likes: L10n.string("annotations.segment.likes")
         case .comments: L10n.string("reader.external.shortcut.comments")
-        case .settings: L10n.string("reader.external.shortcut.settings")
         }
     }
 }
@@ -168,7 +166,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
             applePencilPageTurn: try container.decodeIfPresent(ApplePencilPageTurnSettings.self, forKey: .applePencilPageTurn) ?? .init(),
             gamepad: try container.decodeIfPresent(GamepadSettings.self, forKey: .gamepad) ?? .init(),
             keyboard: try container.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init(),
-            externalDisplay: try container.decodeIfPresent(ExternalDisplaySettings.self, forKey: .externalDisplay) ?? .init()
+            externalDisplay: (try? container.decode(ExternalDisplaySettings.self, forKey: .externalDisplay)) ?? .init()
         )
     }
 

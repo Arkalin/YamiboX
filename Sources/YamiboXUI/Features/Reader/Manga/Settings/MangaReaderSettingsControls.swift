@@ -42,9 +42,6 @@ struct MangaReaderBrightnessRow: View {
                 }
 
                 Slider(value: $value, in: 0.25 ... 1.5, step: 0.05)
-                    .readerRemoteSlider(value: Binding(get: { value }, set: {
-                        value = min(1.5, max(0.25, ($0 / 0.05).rounded() * 0.05))
-                    }), in: 0.25 ... 1.5)
                     .tint(palette.warmAccent)
 
                 ReaderSettingsStepperButton(
