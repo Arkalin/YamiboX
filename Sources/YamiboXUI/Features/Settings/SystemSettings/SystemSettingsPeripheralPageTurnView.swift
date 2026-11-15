@@ -153,18 +153,6 @@ struct SettingsPeripheralSections: View {
                 .disabled(viewModel.isBusy)
                 if viewModel.externalDisplay.isEnabled {
                     trackpadSensitivityRow
-                    Picker(
-                        L10n.string("settings.external_display.shortcut"),
-                        selection: Binding(
-                            get: { viewModel.externalDisplay.shortcutAction },
-                            set: { viewModel.updateExternalDisplayShortcut($0) }
-                        )
-                    ) {
-                        ForEach(ExternalDisplayShortcutAction.allCases, id: \.self) { action in
-                            Text(action.title).tag(action)
-                        }
-                    }
-                    .disabled(viewModel.isBusy)
                 }
             }
         }

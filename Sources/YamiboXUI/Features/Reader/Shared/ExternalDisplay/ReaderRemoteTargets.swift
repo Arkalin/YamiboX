@@ -3,23 +3,18 @@ import UIKit
 
 @MainActor
 struct ReaderRemoteActions {
-    var tap: ((CGPoint, CGRect) -> Void)?
-    // Drag receives total travel from touch-down, not a rounded step per frame.
-    var drag: ((CGPoint, CGRect) -> Void)?
-    var finishDrag: ((Bool) -> Void)?
+    var tap: ((CGPoint) -> Void)?
     var scroll: ((CGPoint) -> Void)?
     var pinch: ((CGFloat, CGPoint) -> Void)?
-    var finishScroll: ((Bool) -> Void)?
+    var finishScroll: (() -> Void)?
     var gestureID: AnyHashable?
     var blocksTap = false
     var hold: ((CGPoint) -> Void)?
     var didBeginScroll: (() -> Void)?
-    var didBeginDrag: (() -> Void)?
 }
 
 extension EnvironmentValues {
     @Entry var readerRemoteInput: ReaderExternalInput? = nil
-    @Entry var readerRemoteVisible = true
 }
 
 @MainActor
@@ -51,7 +46,7 @@ final class ReaderRemoteTargetRegistry {
 
 extension View {
     func readerRemoteActivate(_ action: @escaping () -> Void) -> some View {
-        readerRemoteTarget(actions: ReaderRemoteActions(tap: { _, _ in action() }))
+        readerRemoteTarget(actions: ReaderRemoteActions(tap: { _ in action() }))
     }
 
     @ViewBuilder
@@ -67,7 +62,6 @@ extension View {
 
 private struct ReaderRemoteTargetModifier: ViewModifier {
     @Environment(\.readerRemoteInput) private var input
-    @Environment(\.readerRemoteVisible) private var visible
     @Environment(\.isEnabled) private var enabled
     let priority: Int
     let actions: ReaderRemoteActions
@@ -75,7 +69,7 @@ private struct ReaderRemoteTargetModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.background {
             if let input {
-                ReaderRemoteTargetAttachment(registry: input.targets, visible: visible, priority: priority, actions: enabled ? actions :
+                ReaderRemoteTargetAttachment(registry: input.targets, priority: priority, actions: enabled ? actions :
                         .init(gestureID: actions.gestureID, blocksTap: true))
             }
         }
@@ -84,7 +78,6 @@ private struct ReaderRemoteTargetModifier: ViewModifier {
 
 private struct ReaderRemoteTargetAttachment: UIViewRepresentable {
     let registry: ReaderRemoteTargetRegistry
-    let visible: Bool
     let priority: Int
     let actions: ReaderRemoteActions
 
@@ -93,7 +86,7 @@ private struct ReaderRemoteTargetAttachment: UIViewRepresentable {
     func updateUIView(_ view: ReaderRemoteTargetProbe, context: Context) {
         if view.actions.gestureID != actions.gestureID { view.revision = UUID() }
         view.registry = registry
-        view.visible = visible
+        view.visible = true
         view.priority = priority
         view.actions = actions
         if view.window != nil { registry.add(view) }

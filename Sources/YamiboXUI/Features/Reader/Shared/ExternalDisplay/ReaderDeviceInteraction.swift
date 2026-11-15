@@ -20,6 +20,10 @@ struct ReaderDeviceInteractionContext {
     let session: ReaderSession
     let appModel: YamiboAppModel
 
+    func showMenu(from viewport: ReaderViewportLifetime) {
+        display.showDeviceMenu(for: session, from: viewport)
+    }
+
     func present<Content: View>(@ViewBuilder content: (UUID) -> Content) {
         let id = UUID()
         let interaction = ReaderDeviceInteraction(id: id, sessionID: session.id, contentID: session.contentID,

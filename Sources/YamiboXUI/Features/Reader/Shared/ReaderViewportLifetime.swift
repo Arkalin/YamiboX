@@ -1,17 +1,19 @@
-import Foundation
+import SwiftUI
 import YamiboXCore
 
 /// One presentation of a reader. Platform views detach without ending the
 /// reader, and a retiring presentation can't remove its successor's handler.
 @MainActor
 final class ReaderViewportLifetime {
+    typealias DeviceMenu = @MainActor (EdgeInsets) -> AnyView
+
     let settingsTarget: ReaderSettingsTarget
     private weak var peripheralInput: ReaderPeripheralInputManager?
     private var handlerToken: UUID?
     private var attachmentID: UUID?
     private var capturePosition: (() -> Void)?
     private var onDetach: (() -> Void)?
-    private var handleExternalShortcut: ((ExternalDisplayShortcutAction) -> Void)?
+    private(set) var deviceMenu: DeviceMenu?
     var didRender: (() -> Void)?
     private(set) var isCurrent = true
     private var hasDetached = false
@@ -29,7 +31,7 @@ final class ReaderViewportLifetime {
         capturePosition: (() -> Void)? = nil,
         onDetach: (() -> Void)? = nil,
         externalInput: ReaderExternalInput? = nil,
-        handleExternalShortcut: ((ExternalDisplayShortcutAction) -> Void)? = nil,
+        deviceMenu: DeviceMenu? = nil,
         handleInput: @escaping (ReaderControlEvent) -> Void
     ) {
         guard isCurrent, attachmentID != id else { return }
@@ -40,7 +42,7 @@ final class ReaderViewportLifetime {
         self.capturePosition = capturePosition
         self.onDetach = onDetach
         self.peripheralInput = peripheralInput
-        self.handleExternalShortcut = handleExternalShortcut
+        self.deviceMenu = deviceMenu
         externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
             guard self?.acceptsInput(id) == true else { return }
@@ -48,12 +50,9 @@ final class ReaderViewportLifetime {
         }
     }
 
-    func performExternalButton(_ button: ReaderExternalButton) {
+    func performExternalPageStep(_ direction: ReaderControlScrollDirection) {
         guard let attachmentID, acceptsInput(attachmentID) else { return }
-        switch button {
-        case let .pageStep(direction): peripheralInput?.dispatchExternalPageStep(direction)
-        case let .shortcut(action): handleExternalShortcut?(action)
-        }
+        peripheralInput?.dispatchExternalPageStep(direction)
     }
 
     func accepts(_ id: UUID) -> Bool {
@@ -106,7 +105,7 @@ final class ReaderViewportLifetime {
         handlerToken = nil
         attachmentID = nil
         capturePosition = nil
-        handleExternalShortcut = nil
+        deviceMenu = nil
         let cleanup = onDetach
         onDetach = nil
         cleanup?()

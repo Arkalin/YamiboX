@@ -53,7 +53,6 @@ struct ReaderInformationVisibility: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
-            .environment(\.readerRemoteVisible, isVisible)
             .animation(reduceMotion ? nil : .easeInOut(duration: ReaderInformationAnimation.visibilityDuration), value: isVisible)
     }
 }

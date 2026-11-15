@@ -28,7 +28,6 @@ final class MangaPagedControlPageTurnBridge {
     }
 
     var route: ((NavigationStep) -> Void)?
-    var tap: ((CGPoint) -> Void)?
     var pagedSurface: (() -> MangaSurfaceRuntime?)?
     var remotePanSurface: MangaSurfaceRuntime?
     var scroll: ((CGPoint) -> Void)?

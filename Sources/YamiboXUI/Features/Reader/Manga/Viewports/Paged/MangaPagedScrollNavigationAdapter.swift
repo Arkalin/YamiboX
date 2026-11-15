@@ -64,12 +64,6 @@ final class MangaPagedScrollNavigationAdapter {
         route(.control(step), in: collection)
     }
 
-    func routeRemoteTap(_ point: CGPoint, in collection: UICollectionView) {
-        guard let window = collection.window else { return }
-        let local = collection.convert(point, from: window)
-        route(.tap(PhysicalZone.at(local, in: collection.bounds)), in: collection)
-    }
-
     private func navigationStep(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> NavigationStep? {
         guard let coordinator, !coordinator.parent.plan.spreads.isEmpty, pan.numberOfTouches <= 1 else { return nil }
         let translation = pan.translation(in: collection)

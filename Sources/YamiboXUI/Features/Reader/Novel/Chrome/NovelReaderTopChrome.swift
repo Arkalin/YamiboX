@@ -10,7 +10,6 @@ struct NovelReaderTopChrome: View {
     let onNavigateBack: () -> Void
     let onNavigateForward: () -> Void
     let onClose: () -> Void
-    let onRefresh: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
     @Environment(\.readerToolbarStyle) private var toolbarStyle

@@ -976,9 +976,8 @@
 "reader.open_as_manga.recommended" = "用漫画阅读器打开（推荐）";
 "reader.switch_failed" = "切换阅读模式失败";
 "reader.switching" = "正在切换阅读模式…";
-"reader.external.shortcut.comments" = "评论";
-"reader.external.shortcut.directory" = "目录";
-"reader.external.shortcut.toolbar" = "菜单";
+"reader.external.menu" = "菜单";
+"reader.external.dismiss_menu" = "收起菜单";
 "reader.external.trackpad" = "触控板";
 "reader.external.unavailable" = "无法在外接显示器上继续阅读，已恢复在本机阅读。";
 "reader.switching_to_thread" = "正在切换到原帖…";
@@ -1244,7 +1243,6 @@
 "settings.manga_download.title" = "漫画下载内容";
 "settings.external_display" = "显示器";
 "settings.external_display.enabled" = "接管显示器";
-"settings.external_display.shortcut" = "快捷按钮";
 "settings.external_display.trackpad_sensitivity" = "触控板灵敏度";
 "settings.favorite_background" = "收藏页背景";
 "settings.favorite_background.custom" = "自定义";

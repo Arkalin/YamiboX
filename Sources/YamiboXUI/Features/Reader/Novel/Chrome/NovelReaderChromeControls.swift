@@ -10,7 +10,6 @@ struct NovelReaderChromeControls: View {
     let onNavigateBack: () -> Void
     let onNavigateForward: () -> Void
     let onClose: () -> Void
-    let onRefresh: () -> Void
     let onShowChapters: () -> Void
     let onShowSettings: () -> Void
     let onShowDownload: () -> Void
@@ -26,7 +25,6 @@ struct NovelReaderChromeControls: View {
     let onVerticalProgressCommit: (Int) -> Void
     let onBeginVerticalProgressScrub: () -> Void
     let onEndVerticalProgressScrub: () -> Void
-    let isProgressScrubbing: Bool
 
     var body: some View {
         ZStack {
@@ -51,8 +49,7 @@ struct NovelReaderChromeControls: View {
             topInset: topInset,
             onNavigateBack: onNavigateBack,
             onNavigateForward: onNavigateForward,
-            onClose: onClose,
-            onRefresh: onRefresh
+            onClose: onClose
         )
         .background(
             GeometryReader { geometry in
@@ -90,8 +87,7 @@ struct NovelReaderChromeControls: View {
             onProgressCommit: onProgressCommit,
             onVerticalProgressCommit: onVerticalProgressCommit,
             onBeginVerticalProgressScrub: onBeginVerticalProgressScrub,
-            onEndVerticalProgressScrub: onEndVerticalProgressScrub,
-            isProgressScrubbing: isProgressScrubbing
+            onEndVerticalProgressScrub: onEndVerticalProgressScrub
         )
         .background(
             GeometryReader { geometry in

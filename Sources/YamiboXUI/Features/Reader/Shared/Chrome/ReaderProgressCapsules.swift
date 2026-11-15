@@ -65,7 +65,6 @@ struct ReaderDirectoryProgressCapsule: View {
     let onTapDirectory: () -> Void
     let onScrub: (CGFloat, CGFloat) -> Void
     let onEndScrub: () -> Void
-    let onCancelScrub: () -> Void
     @State private var dragStartProgressFraction: Double?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
@@ -86,8 +85,7 @@ struct ReaderDirectoryProgressCapsule: View {
         usesNativePressFeedback: Bool = false,
         onTapDirectory: @escaping () -> Void,
         onScrub: @escaping (CGFloat, CGFloat) -> Void,
-        onEndScrub: @escaping () -> Void,
-        onCancelScrub: @escaping () -> Void = {}
+        onEndScrub: @escaping () -> Void
     ) {
         self.title = title
         self.progressFraction = progressFraction
@@ -101,7 +99,6 @@ struct ReaderDirectoryProgressCapsule: View {
         self.onTapDirectory = onTapDirectory
         self.onScrub = onScrub
         self.onEndScrub = onEndScrub
-        self.onCancelScrub = onCancelScrub
     }
 
     var body: some View {
@@ -129,18 +126,6 @@ struct ReaderDirectoryProgressCapsule: View {
             .buttonStyle(ReaderBooksPressButtonStyle(isPressFeedbackEnabled: usesNativePressFeedback))
             // A recognized scrub takes priority over activating the directory button.
             .highPriorityGesture(scrubGesture(width: width), including: supportsScrub ? .all : .subviews)
-            .readerRemoteTarget(actions: .init(tap: { _, _ in onTapDirectory() },
-                drag: supportsScrub ? { delta, frame in
-                    let signed = fillDirection == .rightToLeft ? -delta.x : delta.x
-                    let value = min(max((dragStartProgressFraction ?? progressFraction) +
-                        Double(signed / max(frame.width, 1)), 0), 1)
-                    dragStartProgressFraction = value
-                    onScrub(CGFloat(value) * width, width)
-                } : nil,
-                finishDrag: supportsScrub ? { cancelled in
-                    dragStartProgressFraction = nil
-                    if cancelled { onCancelScrub() } else { onEndScrub() }
-                } : nil))
             .accessibilityLabel(title)
             .accessibilityHint(L10n.string("reader.chapters"))
         }
@@ -388,27 +373,6 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
                     }
             )
             .accessibilityLabel(L10n.string("reader.progress_capsule.directory_progress"))
-            .readerRemoteTarget(actions: .init(
-                drag: { delta, frame in
-                    guard let dragStartProgressFraction else { return }
-                    let next = ReaderProgressDragMapping.value(
-                        startProgressFraction: dragStartProgressFraction, translation: delta.y,
-                        length: frame.height, range: 0...1
-                    )
-                    updateScrub(value: next)
-                }, finishDrag: { cancelled in
-                    dragStartProgressFraction = nil
-                    if cancelled {
-                        scrubState.reset()
-                        onPreviewChange(nil)
-                        onEndScrub()
-                    } else {
-                        commitScrub()
-                    }
-                }, didBeginDrag: {
-                    prepareFeedbackGenerators()
-                    dragStartProgressFraction = displayedProgressFraction
-                }))
         }
         .frame(width: totalWidth)
         .frame(height: layout.verticalScrubberHeight(capsuleCount: stackedCapsuleCount))

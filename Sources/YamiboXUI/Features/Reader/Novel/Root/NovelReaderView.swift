@@ -15,7 +15,6 @@ struct NovelReaderView: View {
     @Environment(\.readerExternalGeometry) private var externalGeometry
     @Environment(\.readerDeviceInteraction) private var deviceInteraction
     @Environment(\.readerRemoteInput) private var remoteInput
-    @State private var isVerticalProgressScrubbing = false
     @State private var verticalTapSuppression = NovelReaderVerticalTapSuppression()
     @State private var verticalBoundaryPullState = NovelReaderVerticalBoundaryPullState.idle
     @State private var isHandlingVerticalBoundaryPull = false
@@ -23,7 +22,6 @@ struct NovelReaderView: View {
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
-    @State private var remotePageTurn = ReaderRemotePageTurn()
     /// Scene-local window safe-area insets reported by
     /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
     @State private var windowSafeAreaInsets: UIEdgeInsets?
@@ -35,6 +33,7 @@ struct NovelReaderView: View {
     let onResumeRouteChangeImmediately: @MainActor (ReaderResumeRoute) -> Void
 
     private var model: NovelReaderViewModel { reader.model }
+    private var showsChrome: Bool { externalGeometry == nil && reader.chromeState.showsChrome }
 
     private var isPadDevice: Bool {
         externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
@@ -81,36 +80,16 @@ struct NovelReaderView: View {
                 }
                 .opacity(loadingOverlayPresentation.isPresented ? 0 : 1)
                 .allowsHitTesting(!loadingOverlayPresentation.isPresented)
-                .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(tap: { point, frame in
-                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry else { return }
-                    if let window = remoteInput?.targets.window,
-                       NovelReaderImageInteraction.tapAtExternalPoint(point, in: window,
-                            isChromeVisible: reader.chromeState.showsChrome, onHideChrome: enterImmersiveMode,
-                            onOpen: openImageBrowser(url:title:)) { return }
-                    if model.settings.readingMode == .paged {
-                        let zone = ReaderPagedTapZone.zone(for: point, in: frame)
-                        let direction = model.settings.pageTurnDirection
-                        handlePagedTapZone(direction.directionalTapZone(for: zone, swapped: model.settings.swapsPageTurnTapZones),
-                                           pagerIdentity: pagedPagerIdentity)
-                    } else {
-                        handleVerticalTap()
-                    }
+                .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(tap: { point in
+                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry,
+                          let window = remoteInput?.targets.window else { return }
+                    NovelReaderImageInteraction.openImage(at: point, in: window, onOpen: openImageBrowser(url:title:))
                 }, scroll: { delta in
-                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry else { return }
-                    if model.settings.readingMode == .vertical {
-                        cancelVerticalRestoreForUserScroll()
-                        verticalScrollCoordinator.scrollFromTrackpad(delta)
-                    } else {
-                        remotePageTurn.add(delta)
-                    }
-                }, finishScroll: { cancelled in
-                    remotePageTurn.finish(cancelled: cancelled || model.settings.readingMode != .paged || !viewport.acceptsGeometry,
-                        rightToLeft: model.settings.pageTurnDirection == .rightToLeft, width: proxy.size.width) { delta in
-                        hideChromeForControlReading()
-                        Task { await goRelativePage(delta, pagerIdentity: pagedPagerIdentity) }
-                    }
+                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry,
+                          model.settings.readingMode == .vertical else { return }
+                    cancelVerticalRestoreForUserScroll()
+                    verticalScrollCoordinator.scrollFromTrackpad(delta)
                 }, gestureID: model.presentationStructure?.id))
-                .onChange(of: model.presentationStructure?.id) { _, _ in remotePageTurn.cancel() }
 
                 // Chrome-visible only, and only once the top chrome has
                 // reported its height: on the first chrome frame
@@ -119,7 +98,7 @@ struct NovelReaderView: View {
                 if let sourceStatusText = model.sourceStatusText,
                    !model.novelReaderSurfaces.isEmpty,
                    !reader.isOfflineBannerDismissed,
-                   reader.chromeState.showsChrome,
+                   showsChrome,
                    topChromeHeight > 0 {
                     VStack(spacing: 0) {
                         NovelReaderOfflineFallbackBanner(
@@ -150,7 +129,7 @@ struct NovelReaderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let warning = model.fontWarning, !reader.isFontBannerDismissed,
-                   reader.chromeState.showsChrome, topChromeHeight > 0, model.sourceStatusText == nil {
+                   showsChrome, topChromeHeight > 0, model.sourceStatusText == nil {
                     VStack {
                         NovelReaderOfflineFallbackBanner(
                             message: warning, details: nil,
@@ -165,50 +144,11 @@ struct NovelReaderView: View {
                     .zIndex(2.5)
                 }
 
-                if loadingOverlayPresentation.allowsChrome {
-                    NovelReaderChromeControls(
-                        model: model,
-                        topInset: topInset,
-                        bottomInset: bottomInset,
-                        isChromeVisible: reader.chromeState.showsChrome,
-                        onNavigateBack: {
-                            Task { await navigateBackFromChrome() }
-                        },
-                        onNavigateForward: {
-                            Task { await navigateForwardFromChrome() }
-                        },
-                        onClose: closeReader,
-                        onRefresh: refreshReader,
-                        onShowChapters: openChapterDrawer,
-                        onShowSettings: openSettings,
-                        onShowDownload: openDownloadPanel,
-                        onShowComments: openChapterComments,
-                        onOpenForum: openInForum,
-                        onShowSearch: openSearch,
-                        onToggleBookmark: toggleBookmarkAtCurrentPosition,
-                        onShowAnnotations: openAnnotations,
-                        isBookmarked: reader.annotations.isCurrentPositionBookmarked,
-                        annotationCapsule: reader.annotations.capsule,
-                        onJumpChapter: { delta in
-                            jumpAdjacentChapter(delta)
-                        },
-                        onProgressCommit: { surfaceIndex in
-                            commitProgressSlider(surfaceIndex)
-                        },
-                        onVerticalProgressCommit: { surfaceIndex in
-                            commitVerticalProgressScrub(surfaceIndex)
-                        },
-                        onBeginVerticalProgressScrub: {
-                            beginVerticalProgressScrub()
-                        },
-                        onEndVerticalProgressScrub: {
-                            endVerticalProgressScrub()
-                        },
-                        isProgressScrubbing: isVerticalProgressScrubbing
-                    )
-                    // Match the viewport's origin; the chrome already includes topInset.
-                    .ignoresSafeArea(.container, edges: .top)
-                    .zIndex(2)
+                if externalGeometry == nil {
+                    chrome(topInset: topInset, bottomInset: bottomInset, isVisible: showsChrome)
+                        // Match the viewport's origin; the chrome already includes topInset.
+                        .ignoresSafeArea(.container, edges: .top)
+                        .zIndex(2)
                 }
 
                 verticalBoundaryPullOverlayLayer(
@@ -246,7 +186,7 @@ struct NovelReaderView: View {
                         verticalRestore.cancelPendingRestoreWork()
                     },
                     externalInput: remoteInput,
-                    handleExternalShortcut: handleExternalShortcut,
+                    deviceMenu: deviceInteraction == nil ? nil : deviceMenu,
                     handleInput: handleControlEvent
                 )
                 verticalRestore.admitsViewport = { [weak viewport] in viewport?.acceptsGeometry == true }
@@ -260,7 +200,7 @@ struct NovelReaderView: View {
             .transientMessage(
                 loadingOverlayPresentation.isPresented || hasPresentedOverlay
                     ? nil : model.pageBoundary?.message,
-                bottomPadding: reader.chromeState.showsChrome
+                bottomPadding: showsChrome
                     ? max(bottomChromeHeight, bottomInset + 210) + 8
                     : max(bottomInset, 24) + 8
             ) {
@@ -320,7 +260,7 @@ struct NovelReaderView: View {
             }
             // The bookmark glyph is only readable while the chrome is up, so
             // that is when it is worth re-deriving from the current position.
-            .onChange(of: reader.chromeState.showsChrome) { _, showsChrome in
+            .onChange(of: showsChrome) { _, showsChrome in
                 guard showsChrome else { return }
                 Task { await reader.annotations.refresh() }
             }
@@ -333,10 +273,7 @@ struct NovelReaderView: View {
         // Inspector belongs outside the viewport geometry so a pinned panel
         // reflows the reader rather than covering already laid-out text.
         .modifier(novelReaderPresentationModifier())
-        .environment(\.readerToolbarPaper, readerThemeColor(for: model.settings.backgroundStyle, colorScheme: colorScheme))
-        .environment(\.readerToolbarInk, model.settings.backgroundStyle == .quiet
-            ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
-            : (colorScheme == .dark ? .white : .black))
+        .modifier(NovelReaderToolbarColors(backgroundStyle: model.settings.backgroundStyle))
         .annotationOperationFeedback(reader.annotations.operations)
         .background {
             NovelReaderHandoffSource(model: model, isActive: !reader.isDismissing
@@ -354,6 +291,41 @@ struct NovelReaderView: View {
             model.flushViewportSnapshot()
         }
         .environment(\.readingHandoffAllowed, allowsReadingHandoff && !model.context.isPreview)
+    }
+
+    private func chrome(topInset: CGFloat, bottomInset: CGFloat, isVisible: Bool) -> some View {
+        NovelReaderChromeControls(
+            model: model,
+            topInset: topInset,
+            bottomInset: bottomInset,
+            isChromeVisible: isVisible,
+            onNavigateBack: { Task { await navigateBackFromChrome() } },
+            onNavigateForward: { Task { await navigateForwardFromChrome() } },
+            onClose: closeReader,
+            onShowChapters: openChapterDrawer,
+            onShowSettings: openSettings,
+            onShowDownload: openDownloadPanel,
+            onShowComments: openChapterComments,
+            onOpenForum: openInForum,
+            onShowSearch: openSearch,
+            onToggleBookmark: toggleBookmarkAtCurrentPosition,
+            onShowAnnotations: openAnnotations,
+            isBookmarked: reader.annotations.isCurrentPositionBookmarked,
+            annotationCapsule: reader.annotations.capsule,
+            onJumpChapter: jumpAdjacentChapter,
+            onProgressCommit: commitProgressSlider,
+            onVerticalProgressCommit: commitVerticalProgressScrub,
+            onBeginVerticalProgressScrub: suppressVerticalTapAfterScrub,
+            onEndVerticalProgressScrub: suppressVerticalTapAfterScrub
+        )
+    }
+
+    private func deviceMenu(_ insets: EdgeInsets) -> AnyView {
+        let topInset = UIDevice.current.userInterfaceIdiom == .pad
+            ? verticalBands.padVisibleStatusBarTopInset : insets.top
+        return AnyView(chrome(topInset: topInset, bottomInset: insets.bottom, isVisible: true)
+            .modifier(NovelReaderToolbarColors(backgroundStyle: model.settings.backgroundStyle))
+            .task { await reader.annotations.refresh() })
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {
@@ -443,8 +415,8 @@ struct NovelReaderView: View {
             presentedSheet: $reader.presentedSheet,
             forumThreadOverlayItem: $reader.forumThreadOverlayItem,
             imageBrowserItem: $reader.imageBrowserItem,
-            isStatusBarHidden: reader.chromeState.mode == .immersiveHidden,
-            isChromeVisible: reader.chromeState.showsChrome,
+            isStatusBarHidden: externalGeometry != nil || reader.chromeState.mode == .immersiveHidden,
+            isChromeVisible: showsChrome,
             onUpdateChromeForContentState: {
                 updateChromeForContentState()
             },
@@ -492,7 +464,7 @@ struct NovelReaderView: View {
                 topInset: topInset,
                 bottomInset: bottomInset,
                 isPadDevice: isPadDevice,
-                isChromeVisible: reader.chromeState.showsChrome,
+                isChromeVisible: showsChrome,
                 verticalRestore: verticalRestore,
                 verticalScrollCoordinator: verticalScrollCoordinator,
                 viewport: viewport,
@@ -518,7 +490,7 @@ struct NovelReaderView: View {
             likeHighlightController: reader.annotations.highlightController,
             searchHighlightController: reader.searchHighlightController,
             likedImageAnchors: reader.annotations.likedImageAnchors,
-            isChromeVisible: reader.chromeState.showsChrome,
+            isChromeVisible: showsChrome,
             canBoundaryPageTurn: { delta in
                 canNavigatePagedBoundary(delta: delta)
             },
@@ -629,7 +601,7 @@ struct NovelReaderView: View {
     private func verticalBoundaryPullTopPadding(topInset: CGFloat) -> CGFloat {
         verticalBands.boundaryPullTopPadding(
             topInset: topInset,
-            isChromeVisible: reader.chromeState.showsChrome,
+            isChromeVisible: showsChrome,
             measuredTopChromeHeight: topChromeHeight
         )
     }
@@ -637,7 +609,7 @@ struct NovelReaderView: View {
     private func verticalBoundaryPullBottomPadding(bottomInset: CGFloat) -> CGFloat {
         verticalBands.boundaryPullBottomPadding(
             bottomInset: bottomInset,
-            isChromeVisible: reader.chromeState.showsChrome,
+            isChromeVisible: showsChrome,
             measuredBottomChromeHeight: bottomChromeHeight
         )
     }
@@ -753,7 +725,7 @@ struct NovelReaderView: View {
     // MARK: - Image taps and browser
 
     private func handleImageTap(url: URL, title: String?) {
-        guard !reader.chromeState.showsChrome else {
+        guard !showsChrome else {
             enterImmersiveMode()
             return
         }
@@ -802,24 +774,12 @@ struct NovelReaderView: View {
 
     // MARK: - Chrome state and control events
 
-    private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
-        guard !reader.isDismissing, !hasPresentedOverlay else { return }
-        switch ReaderExternalShortcutTarget(action) {
-        case .toolbar:
-            toggleChrome()
-        case .comments:
-            guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else { return }
-            openChapterComments()
-        case let .library(tab):
-            guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else { return }
-            if let segment = tab.annotationSegment { reader.annotations.selectedSegment = segment }
-            reader.readerLibraryTab = tab
-            reader.presentedSheet = .annotations
-        }
-    }
-
     private func toggleChrome() {
         guard !reader.isDismissing, !hasPresentedOverlay else { return }
+        if let deviceInteraction {
+            deviceInteraction.showMenu(from: viewport)
+            return
+        }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             reader.chromeState.toggleChrome()
         }
@@ -830,11 +790,7 @@ struct NovelReaderView: View {
         guard !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented else {
             // Loading/error: Menu still flips the chrome state so a
             // controller user keeps an escape hatch wherever chrome renders.
-            if event == .menu {
-                withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
-                    reader.chromeState.toggleChrome()
-                }
-            }
+            if event == .menu { toggleChrome() }
             return
         }
 
@@ -860,7 +816,7 @@ struct NovelReaderView: View {
     /// A page turn while the chrome is up means "keep reading": perform it
     /// and tuck the chrome away, mirroring the tap-zone mental model.
     private func hideChromeForControlReading() {
-        guard reader.chromeState.showsChrome else { return }
+        guard showsChrome else { return }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             reader.chromeState.hideChrome()
         }
@@ -894,7 +850,7 @@ struct NovelReaderView: View {
         pageDelta: Int? = nil,
         pagerIdentity: ReaderPagedPagerIdentity? = nil
     ) {
-        guard !reader.chromeState.showsChrome else {
+        guard !showsChrome else {
             enterImmersiveMode()
             return
         }
@@ -1218,24 +1174,16 @@ struct NovelReaderView: View {
             hasReadableContent: !model.novelReaderSurfaces.isEmpty,
             hasBlockingOverlay: hasPresentedOverlay,
             isDismissing: reader.isDismissing,
-            isChromeVisible: reader.chromeState.showsChrome
+            isChromeVisible: showsChrome
         )
     }
 
-    private func beginVerticalProgressScrub() {
-        guard !isVerticalProgressScrubbing else { return }
-        isVerticalProgressScrubbing = true
+    private func suppressVerticalTapAfterScrub() {
         verticalTapSuppression.until = CACurrentMediaTime() + 0.5
     }
 
     private func commitVerticalProgressScrub(_ target: Int) {
         navigationPresentation.perform { model.jumpToSurface(target) }
-        verticalTapSuppression.until = CACurrentMediaTime() + 0.5
-    }
-
-    private func endVerticalProgressScrub() {
-        guard isVerticalProgressScrubbing else { return }
-        isVerticalProgressScrubbing = false
         verticalTapSuppression.until = CACurrentMediaTime() + 0.5
     }
 
@@ -1254,5 +1202,18 @@ struct NovelReaderView: View {
     /// viewports and the chrome; see `NovelReaderVerticalBandsPresentation`.
     private var verticalBands: NovelReaderVerticalBandsPresentation {
         NovelReaderVerticalBandsPresentation()
+    }
+}
+
+private struct NovelReaderToolbarColors: ViewModifier {
+    let backgroundStyle: ReaderBackgroundStyle
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.readerToolbarPaper, readerThemeColor(for: backgroundStyle, colorScheme: colorScheme))
+            .environment(\.readerToolbarInk, backgroundStyle == .quiet
+                ? Color(uiColor: readerThemeTextUIColor(for: .quiet))
+                : (colorScheme == .dark ? .white : .black))
     }
 }

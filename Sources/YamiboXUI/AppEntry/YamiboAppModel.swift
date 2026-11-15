@@ -90,7 +90,6 @@ public final class YamiboAppModel {
     @ObservationIgnored private var claimedForumSearchRequestID: UUID?
     public private(set) var appAppearanceSettings = AppAppearanceSettings()
     private(set) var readerToolbarStyle = ReaderToolbarStyle.liquidGlass
-    private(set) var externalDisplayShortcut = ExternalDisplayShortcutAction.comments
     public var clipboardForumLinkPrompt: ClipboardForumLinkPrompt?
     let forumContentRefresh = ForumContentRefreshState()
 
@@ -279,7 +278,6 @@ public final class YamiboAppModel {
             }
             appAppearanceSettings = latestSettings.appearance
             readerToolbarStyle = latestSettings.readerToolbarStyle
-            externalDisplayShortcut = latestSettings.system.externalDisplay.shortcutAction
             bootstrapState = YamiboBootstrapState(
                 session: state.session, profile: state.profile, settings: latestSettings,
                 localFavoriteLibrary: state.localFavoriteLibrary
@@ -347,7 +345,6 @@ public final class YamiboAppModel {
         applyNavigationSettings(state.settings.system.navigation)
         appAppearanceSettings = state.settings.appearance
         readerToolbarStyle = state.settings.readerToolbarStyle
-        externalDisplayShortcut = state.settings.system.externalDisplay.shortcutAction
         bootstrapState = state
         bootstrapErrorMessage = nil
         let restoredRoute = await appContinuity.restoreExplicitly(
@@ -392,7 +389,6 @@ public final class YamiboAppModel {
         appAppearanceSettings = settings.appearance
         applyNavigationSettings(settings.system.navigation)
         readerToolbarStyle = settings.readerToolbarStyle
-        externalDisplayShortcut = settings.system.externalDisplay.shortcutAction
         if let state = bootstrapState {
             bootstrapState = YamiboBootstrapState(
                 session: state.session, profile: state.profile, settings: settings,

@@ -80,12 +80,6 @@ final class MangaPagedPageCurlNavigationAdapter {
         route(.control(step), in: container)
     }
 
-    func routeRemoteTap(_ point: CGPoint, in container: MangaPagedPageCurlContainerViewController) {
-        guard let window = container.view.window else { return }
-        let local = container.view.convert(point, from: window)
-        route(.tap(PhysicalZone.at(local, in: container.view.bounds)), in: container)
-    }
-
     private func permits(_ recognizer: UIGestureRecognizer) -> Bool {
         guard let coordinator, let container = coordinator.activeContainerViewController else { return false }
         guard let pan = recognizer as? UIPanGestureRecognizer else { return true }

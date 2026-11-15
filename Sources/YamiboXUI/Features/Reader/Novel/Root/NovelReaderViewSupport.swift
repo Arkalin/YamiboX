@@ -73,11 +73,6 @@ struct NovelReaderLoadingOverlayPresentation: Equatable, Sendable {
     var isPresented: Bool {
         reason != nil
     }
-
-    var allowsChrome: Bool {
-        // Loading conceals unfinished content, not the reader's controls.
-        true
-    }
 }
 
 struct NovelReaderLifecycleModifier: ViewModifier {

@@ -65,10 +65,9 @@ final class MangaSurfaceRuntime {
         nativeSurface?.zoomFromTrackpad(ratio: ratio, windowPoint: point)
     }
 
-    func panFromTrackpad(_ delta: CGPoint) -> Bool {
-        guard normalizedFocus != nil else { return false }
-        if permitsInteraction() { nativeSurface?.panFromTrackpad(delta) }
-        return true
+    func panFromTrackpad(_ delta: CGPoint) {
+        guard normalizedFocus != nil, permitsInteraction() else { return }
+        nativeSurface?.panFromTrackpad(delta)
     }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {

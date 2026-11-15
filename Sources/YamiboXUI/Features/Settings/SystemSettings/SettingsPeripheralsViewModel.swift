@@ -50,12 +50,6 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }
     }
 
-    func updateExternalDisplayShortcut(_ action: ExternalDisplayShortcutAction) {
-        persistSettings(\.externalDisplay.shortcutAction, to: action) {
-            $0.system.externalDisplay.shortcutAction = action
-        }
-    }
-
     func updateTrackpadSensitivity(_ sensitivity: Double) {
         guard externalDisplay.trackpadSensitivity != sensitivity else { return }
         persistSettings(\.externalDisplay.trackpadSensitivity, to: sensitivity) {

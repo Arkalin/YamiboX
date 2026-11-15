@@ -36,7 +36,17 @@ struct ReaderSessionScreen: View {
                 if session.deviceInteraction != nil {
                     ReaderDeviceInteractionBackdrop()
                 } else if showsTrackpad, let display = appModel.externalReader {
-                    ReaderDeviceTrackpad(input: display.pointer, shortcut: appModel.externalDisplayShortcut)
+                    let menu = display.deviceMenu(for: session)
+                    ZStack {
+                        ReaderDeviceTrackpad(input: display.pointer) { display.showDeviceMenu(for: session) }
+                            .allowsHitTesting(menu == nil)
+                            .accessibilityHidden(menu != nil)
+                        if let menu {
+                            ReaderDeviceMenuOverlay(menu: menu) { display.dismissDeviceMenu(for: session) }
+                        }
+                    }
+                    .statusBarHidden(menu == nil)
+                    .persistentSystemOverlays(menu == nil ? .hidden : .automatic)
                 } else {
                     ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: true)
                 }
@@ -120,6 +130,37 @@ struct ReaderSessionScreen: View {
         }
         appModel.externalReader?.offer(session: session, model: appModel, host: displayHost, navigator: navigator,
             eligible: eligible || (owned && !session.isClosed && session.content.resumeRoute != nil && navigator.path.isEmpty))
+    }
+}
+
+private struct ReaderDeviceMenuOverlay: View {
+    let menu: ReaderViewportLifetime.DeviceMenu
+    let onDismiss: () -> Void
+    @State private var windowInsets: UIEdgeInsets?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let insets = EdgeInsets(
+                top: max(proxy.safeAreaInsets.top, windowInsets?.top ?? 0),
+                leading: max(proxy.safeAreaInsets.leading, windowInsets?.left ?? 0),
+                bottom: max(proxy.safeAreaInsets.bottom, windowInsets?.bottom ?? 0),
+                trailing: max(proxy.safeAreaInsets.trailing, windowInsets?.right ?? 0)
+            )
+            ZStack {
+                Button(action: onDismiss) {
+                    Rectangle()
+                        .fill(.regularMaterial)
+                        .environment(\.colorScheme, .dark)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.string("reader.external.dismiss_menu"))
+
+                menu(insets)
+            }
+            .accessibilityAction(.escape, onDismiss)
+            .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
+        }
+        .ignoresSafeArea()
     }
 }
 

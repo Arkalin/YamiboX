@@ -32,7 +32,7 @@ struct NovelReaderBottomChrome: View {
     let onVerticalProgressCommit: (Int) -> Void
     let onBeginVerticalProgressScrub: () -> Void
     let onEndVerticalProgressScrub: () -> Void
-    let isProgressScrubbing: Bool
+    @State private var isProgressScrubbing = false
 
     @State private var scrubState = ReaderProgressScrubState()
     @State private var scrubFeedback = ReaderProgressScrubFeedback()
@@ -61,10 +61,6 @@ struct NovelReaderBottomChrome: View {
             }
         }
         .padding(.top, chromeLayout.bottomChromeTopPadding)
-        .environment(\.readerToolbarPaper, readerThemeColor(for: backgroundStyle, colorScheme: colorScheme))
-        .environment(\.readerToolbarInk, backgroundStyle == .quiet
-            ? Color(uiColor: readerThemeTextUIColor(for: backgroundStyle))
-            : (colorScheme == .dark ? .white : .black))
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
         .onAppear(perform: prepareFeedbackGenerators)
     }
@@ -123,9 +119,15 @@ struct NovelReaderBottomChrome: View {
             scrubContext: progress.scrubContext,
             ticks: progress.ticks,
             stackedCapsuleCount: stackedCapsuleCount,
-            onBeginScrub: onBeginVerticalProgressScrub,
+            onBeginScrub: {
+                isProgressScrubbing = true
+                onBeginVerticalProgressScrub()
+            },
             onCommit: onVerticalProgressCommit,
-            onEndScrub: onEndVerticalProgressScrub
+            onEndScrub: {
+                isProgressScrubbing = false
+                onEndVerticalProgressScrub()
+            }
         )
         .frame(width: chromeLayout.verticalScrubberWidth, alignment: .trailing)
     }
@@ -253,7 +255,6 @@ struct NovelReaderBottomChrome: View {
         }
         .buttonBorderShape(.capsule)
         .readerBottomChromeButtonStyle(tint: appTheme.controlAccent)
-        .readerRemoteActivate(handler)
         .opacity(action.isDisabled ? 0.34 : 1)
         .disabled(action.isDisabled)
         .accessibilityLabel(title)
@@ -283,13 +284,11 @@ struct NovelReaderBottomChrome: View {
                 },
                 onEndScrub: {
                     commitHorizontalCapsuleScrub()
-                },
-                onCancelScrub: { scrubState.reset() }
+                }
             )
             .opacity(shouldHideDirectoryCapsule ? 0 : 1)
             .allowsHitTesting(!shouldHideDirectoryCapsule)
             .accessibilityHidden(shouldHideDirectoryCapsule)
-            .environment(\.readerRemoteVisible, !shouldHideDirectoryCapsule && isVisible)
             .readerChromeRowVisibility(isVisible, index: 0, count: stackedCapsuleCount + 1)
 
             // Only exists once the work has something to show — an entry point

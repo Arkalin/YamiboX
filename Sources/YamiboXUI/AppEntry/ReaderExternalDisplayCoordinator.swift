@@ -42,6 +42,7 @@ final class ReaderExternalDisplayCoordinator {
 
     private(set) var phase = Phase.local
     private(set) var sessionID: UUID?
+    private var isDeviceMenuPresented = false
     private var suspendedFrom = Phase.local
     @ObservationIgnored private(set) var deviceFrameDuringPreparation: UIView?
     let pointer = ReaderExternalInput()
@@ -166,8 +167,8 @@ final class ReaderExternalDisplayCoordinator {
             if phase == .external || phase == .deviceInteraction {
                 lease.connection.conceal(!showsReaderOnExternalDisplay)
             }
-            pointer.setEnabled(showsReaderOnExternalDisplay && phase == .external)
-            wakefulness.setNeeded(showsReaderOnExternalDisplay && phase == .external)
+            if !showsReaderOnExternalDisplay { isDeviceMenuPresented = false }
+            synchronizeInput()
         }
         if lease == nil { evaluate() }
     }
@@ -178,7 +179,7 @@ final class ReaderExternalDisplayCoordinator {
             // capture callback consume keystrokes from its sheet.
             return candidates[windowID]?.session.deviceInteraction == nil
         }
-        return phase == .external && showsReaderOnExternalDisplay && scenePhases[windowID] == .active
+        return canUseTrackpad && scenePhases[windowID] == .active
     }
 
     func userOperated(_ id: String) {
@@ -200,6 +201,32 @@ final class ReaderExternalDisplayCoordinator {
     var showsReaderOnExternalDisplay: Bool {
         (phase == .external || phase == .deviceInteraction) &&
             (focusedWindowID == nil || focusedWindowID == lease?.owner.model?.windowID)
+    }
+
+    private var canUseTrackpad: Bool {
+        phase == .external && showsReaderOnExternalDisplay && !isDeviceMenuPresented
+    }
+
+    func deviceMenu(for session: ReaderSession) -> ReaderViewportLifetime.DeviceMenu? {
+        guard isDeviceMenuPresented, let lease, lease.owner.session === session,
+              lease.owner.contentID == session.contentID, !session.isClosed else { return nil }
+        return lease.viewport.deviceMenu
+    }
+
+    func showDeviceMenu(for session: ReaderSession, from viewport: ReaderViewportLifetime? = nil) {
+        guard canUseTrackpad, let lease, lease.owner.session === session,
+              viewport == nil || lease.viewport === viewport,
+              lease.owner.contentID == session.contentID, !session.isClosed,
+              !session.isShowingDevicePanel, lease.viewport.deviceMenu != nil else { return }
+        isDeviceMenuPresented = true
+        synchronizeInput()
+        lease.owner.model?.peripheralInput.resetPressState()
+    }
+
+    func dismissDeviceMenu(for session: ReaderSession) {
+        guard isDeviceMenuPresented, lease?.owner.session === session else { return }
+        isDeviceMenuPresented = false
+        synchronizeInput(revealCursor: false)
     }
 
     func scenePhaseChanged(_ value: ScenePhase, windowID: String) {
@@ -255,7 +282,6 @@ final class ReaderExternalDisplayCoordinator {
               let model = lease.owner.model, interaction.validate(session: session, appModel: model), !session.isClosed,
               session.deviceInteraction == nil else { return }
         setPhase(.deviceInteraction)
-        lease.viewport.setInputPaused(true)
         lease.owner.model?.peripheralInput.resetPressState()
         session.deviceInteraction = interaction
     }
@@ -269,7 +295,6 @@ final class ReaderExternalDisplayCoordinator {
             evaluate()
             return
         }
-        lease.viewport.setInputPaused(false)
         guard phase == .deviceInteraction else { return }
         if let windowID = lease.owner.model?.windowID, scenePhases[windowID] == .active {
             setPhase(.external)
@@ -431,7 +456,6 @@ final class ReaderExternalDisplayCoordinator {
         timeout = nil
         lease.viewport.didRender = nil
         let hasDeviceInteraction = lease.owner.session.deviceInteraction != nil
-        lease.viewport.setInputPaused(hasDeviceInteraction)
         setPhase(hasDeviceInteraction ? .deviceInteraction : .external)
         lease.connection.conceal(!showsReaderOnExternalDisplay)
     }
@@ -462,11 +486,17 @@ final class ReaderExternalDisplayCoordinator {
 
     private func setPhase(_ phase: Phase) {
         self.phase = phase
+        if phase != .external { isDeviceMenuPresented = false }
         if !isWaitingForExternalFrame { deviceFrameDuringPreparation = nil }
-        let canUseTrackpad = phase == .external && showsReaderOnExternalDisplay
-        pointer.setEnabled(canUseTrackpad)
-        wakefulness.setNeeded(canUseTrackpad)
+        synchronizeInput()
         if phase == .local { pointer.reset() }
+    }
+
+    private func synchronizeInput(revealCursor: Bool = true) {
+        // Invalidate in-flight gestures before an overlay can consume input.
+        pointer.setEnabled(canUseTrackpad, revealCursor: revealCursor)
+        lease?.viewport.setInputPaused(isDeviceMenuPresented || phase == .deviceInteraction)
+        wakefulness.setNeeded(phase == .external && showsReaderOnExternalDisplay)
     }
 }
 

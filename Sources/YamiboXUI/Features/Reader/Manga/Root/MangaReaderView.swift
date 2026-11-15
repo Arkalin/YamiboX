@@ -18,7 +18,6 @@ struct MangaReaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var controlScrollStep: ReaderControlScrollStepRequest?
     @State private var controlPageTurnBridge = MangaPagedControlPageTurnBridge()
-    @State private var remotePageTurn = ReaderRemotePageTurn()
     @State private var controlUsesTwoPageSpread = false
     @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
     /// Scene-local window safe-area insets reported by
@@ -35,6 +34,7 @@ struct MangaReaderView: View {
 
     private var model: MangaReaderViewModel { reader.model }
     private var context: MangaLaunchContext { model.context }
+    private var showsChrome: Bool { externalGeometry == nil && reader.isChromeVisible }
 
     var body: some View {
         GeometryReader { proxy in
@@ -67,7 +67,7 @@ struct MangaReaderView: View {
                 ),
                 presentation: presentation,
                 imageLoader: model.imageLoader,
-                isChromeVisible: reader.isChromeVisible,
+                isChromeVisible: showsChrome,
                 likedPageIDs: model.likedPageIDs,
                 pagedContentTopInset: pagedContentTopInset,
                 controlScrollStep: controlScrollStep,
@@ -102,21 +102,12 @@ struct MangaReaderView: View {
                     toggleChrome()
                 }
             )
-            .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(tap: { point, _ in
-                guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
-                if presentation.settings.readingMode == .paged && !reader.isChromeVisible {
-                    controlPageTurnBridge.tap?(point)
-                } else {
-                    toggleChrome()
-                }
-            }, scroll: { delta in
+            .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(scroll: { delta in
                 guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
                 if model.presentation.settings.readingMode == .vertical {
                     controlPageTurnBridge.scroll?(delta)
-                } else if let remotePanSurface = controlPageTurnBridge.remotePanSurface {
-                    _ = remotePanSurface.panFromTrackpad(delta)
                 } else {
-                    remotePageTurn.add(delta)
+                    controlPageTurnBridge.remotePanSurface?.panFromTrackpad(delta)
                 }
             }, pinch: { ratio, point in
                 guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
@@ -125,15 +116,8 @@ struct MangaReaderView: View {
                 } else {
                     controlPageTurnBridge.pagedSurface?()?.zoomFromTrackpad(ratio, at: point)
                 }
-            }, finishScroll: { cancelled in
-                let inverted = model.presentation.settings.pageTurnDirection == .rightToLeft
-                let wasPanning = controlPageTurnBridge.remotePanSurface != nil
+            }, finishScroll: {
                 controlPageTurnBridge.remotePanSurface = nil
-                remotePageTurn.finish(cancelled: cancelled || wasPanning || model.presentation.settings.readingMode != .paged ||
-                    !viewport.acceptsGeometry, rightToLeft: inverted, width: proxy.size.width) { delta in
-                    hideChromeForControlReading()
-                    performPageTurn(delta, usesTwoPageSpread: usesTwoPageSpread)
-                }
             }, gestureID: model.viewportContentID, hold: { _ in
                 guard case let .loaded(loaded) = presentation.state, let page = loaded.currentPage else { return }
                 openImageActions(page)
@@ -142,7 +126,6 @@ struct MangaReaderView: View {
                 controlPageTurnBridge.remotePanSurface = surface?.normalizedFocus == nil ? nil : surface
             }))
             .onChange(of: model.viewportContentID) { _, _ in
-                remotePageTurn.cancel()
                 controlPageTurnBridge.remotePanSurface = nil
             }
             .modifier(ReaderViewportRenderAcknowledgement(ready: model.hasCurrentPage, viewport: viewport))
@@ -167,60 +150,17 @@ struct MangaReaderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .overlay(alignment: .top) {
-                MangaReaderChromeControls(
-                    topInset: informationTopInset,
-                    bottomInset: bottomInset,
-                    isVisible: reader.isChromeVisible,
-                    isPreview: context.isPreview,
-                    imageLoader: model.imageLoader,
-                    summary: mangaChromeSummary(from: model.presentation, usesTwoPageSpread: usesTwoPageSpread),
-                    readingMode: model.presentation.settings.readingMode,
-                    isImmersive: model.presentation.settings.isImmersiveModeEnabled,
-                    pageTurnDirection: model.presentation.settings.pageTurnDirection,
-                    canNavigateBack: model.canNavigateBack,
-                    canNavigateForward: model.canNavigateForward,
-                    onNavigateBack: {
-                        Task { await model.navigateBack() }
-                    },
-                    onNavigateForward: {
-                        Task { await model.navigateForward() }
-                    },
-                    onClose: closeReader,
-                    onShowDirectory: openDirectory,
-                    onShowComments: {
-                        reader.presentedPanel = .companion(.comments)
-                    },
-                    onShowSettings: {
-                        reader.presentedPanel = .settings
-                    },
-                    onShowDownload: {
-                        reader.presentedPanel = .download
-                    },
-                    onToggleBookmark: {
-                        Task { await model.toggleBookmarkForCurrentPage() }
-                    },
-                    onShowAnnotations: {
-                        guard model.canShowLikes else { return }
-                        reader.readerLibraryTab = ReaderLibraryPanelTab(
-                            annotationSegment: annotationSegmentBinding.wrappedValue
-                        )
-                        reader.presentedPanel = .companion(.annotations)
-                    },
-                    isBookmarked: model.isCurrentPageBookmarked,
-                    annotationCapsule: model.annotationCapsule,
-                    onOpenOriginalPost: openOriginalPost,
-                    onJumpToLocalPage: { targetIndex in
-                        Task { await model.jumpToPage(localIndex: targetIndex) }
-                    },
-                    onBottomChromeHeightChange: { height in
-                        bottomChromeHeight = height
+                if externalGeometry == nil {
+                    chrome(topInset: informationTopInset, bottomInset: bottomInset,
+                           isVisible: showsChrome, usesTwoPageSpread: usesTwoPageSpread) {
+                        bottomChromeHeight = $0
                     }
-                )
+                }
             }
             .transientMessage(
                 model.chapterJumpErrorMessage != nil || reader.imageSavePresentation.feedback != nil
                     ? nil : model.pageBoundary?.message,
-                bottomPadding: reader.isChromeVisible
+                bottomPadding: showsChrome
                     ? max(bottomChromeHeight, bottomInset + 210) + 8
                     : max(bottomInset, 24) + 8
             ) {
@@ -236,7 +176,7 @@ struct MangaReaderView: View {
                         if let sample { reader.viewportHandoff.pendingFocus = sample.focus }
                     },
                     externalInput: remoteInput,
-                    handleExternalShortcut: handleExternalShortcut,
+                    deviceMenu: deviceInteraction == nil ? nil : deviceMenu,
                     handleInput: handleControlEvent
                 )
                 reader.prepareIfNeeded()
@@ -262,8 +202,8 @@ struct MangaReaderView: View {
             appModel.handoffPublisher.flushLatest(handoffPayload)
         }
         .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowSafeAreaInsets))
-        .statusBarHidden(!reader.isChromeVisible)
-        .persistentSystemOverlays(reader.isChromeVisible ? .automatic : .hidden)
+        .statusBarHidden(!showsChrome)
+        .persistentSystemOverlays(showsChrome ? .automatic : .hidden)
         .fullScreenCover(item: $reader.forumThreadOverlayItem) { item in
             ForumThreadOverlayScreen(
                 item: item,
@@ -387,16 +327,72 @@ struct MangaReaderView: View {
         .environment(\.readingHandoffAllowed, allowsReadingHandoff && !context.isPreview)
     }
 
+    private func chrome(
+        topInset: CGFloat, bottomInset: CGFloat, isVisible: Bool, usesTwoPageSpread: Bool,
+        onBottomChromeHeightChange: @escaping (CGFloat) -> Void = { _ in }
+    ) -> some View {
+        MangaReaderChromeControls(
+            topInset: topInset,
+            bottomInset: bottomInset,
+            isVisible: isVisible,
+            isPreview: context.isPreview,
+            imageLoader: model.imageLoader,
+            summary: mangaChromeSummary(from: model.presentation, usesTwoPageSpread: usesTwoPageSpread),
+            readingMode: model.presentation.settings.readingMode,
+            isImmersive: model.presentation.settings.isImmersiveModeEnabled,
+            pageTurnDirection: model.presentation.settings.pageTurnDirection,
+            canNavigateBack: model.canNavigateBack,
+            canNavigateForward: model.canNavigateForward,
+            onNavigateBack: {
+                Task { await model.navigateBack() }
+            },
+            onNavigateForward: {
+                Task { await model.navigateForward() }
+            },
+            onClose: closeReader,
+            onShowDirectory: openDirectory,
+            onShowComments: {
+                reader.presentedPanel = .companion(.comments)
+            },
+            onShowSettings: {
+                reader.presentedPanel = .settings
+            },
+            onShowDownload: {
+                reader.presentedPanel = .download
+            },
+            onToggleBookmark: {
+                Task { await model.toggleBookmarkForCurrentPage() }
+            },
+            onShowAnnotations: {
+                guard model.canShowLikes else { return }
+                reader.readerLibraryTab = ReaderLibraryPanelTab(
+                    annotationSegment: annotationSegmentBinding.wrappedValue
+                )
+                reader.presentedPanel = .companion(.annotations)
+            },
+            isBookmarked: model.isCurrentPageBookmarked,
+            annotationCapsule: model.annotationCapsule,
+            onOpenOriginalPost: openOriginalPost,
+            onJumpToLocalPage: { targetIndex in
+                Task { await model.jumpToPage(localIndex: targetIndex) }
+            },
+            onBottomChromeHeightChange: onBottomChromeHeightChange
+        )
+    }
+
+    private func deviceMenu(_ insets: EdgeInsets) -> AnyView {
+        AnyView(chrome(topInset: insets.top, bottomInset: insets.bottom,
+                      isVisible: true, usesTwoPageSpread: controlUsesTwoPageSpread))
+    }
+
     private func toggleChrome() {
-        guard canToggleChrome else { return }
+        if let deviceInteraction {
+            deviceInteraction.showMenu(from: viewport)
+            return
+        }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             reader.isChromeVisible.toggle()
         }
-    }
-
-    private var canToggleChrome: Bool {
-        guard case let .loaded(loaded) = model.presentation.state else { return false }
-        return !loaded.pages.isEmpty
     }
 
     /// Every thread ID this reading session covers: the work thread plus (for
@@ -462,7 +458,7 @@ struct MangaReaderView: View {
                 || reader.noteEditTarget != nil
                 || reader.forumThreadOverlayItem != nil,
             isDismissing: reader.isDismissing,
-            isChromeVisible: reader.isChromeVisible
+            isChromeVisible: showsChrome
         )
     }
 
@@ -493,35 +489,12 @@ struct MangaReaderView: View {
         }
     }
 
-    private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
-        guard !reader.isDismissing, !hasControlBlockingSheet else { return }
-        switch ReaderExternalShortcutTarget(action) {
-        case .toolbar:
-            toggleChrome()
-        case .comments:
-            guard canToggleChrome else { return }
-            reader.presentedPanel = .companion(.comments)
-        case .library(.chapters):
-            guard canToggleChrome else { return }
-            openDirectory()
-        case let .library(tab):
-            guard canToggleChrome, model.annotationSheetContext != nil else { return }
-            reader.rememberedAnnotationSegment = tab.annotationSegment
-            reader.readerLibraryTab = tab
-            reader.presentedPanel = .companion(.annotations)
-        }
-    }
-
     private func handleControlEvent(_ event: ReaderControlEvent) {
         guard !reader.isDismissing, !hasControlBlockingSheet else { return }
         guard case let .loaded(loaded) = model.presentation.state, !loaded.pages.isEmpty else {
             // Loading/error: Menu still toggles the chrome so a controller
             // user can always reach the close button.
-            if event == .menu {
-                withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
-                    reader.isChromeVisible.toggle()
-                }
-            }
+            if event == .menu { toggleChrome() }
             return
         }
 
@@ -564,7 +537,7 @@ struct MangaReaderView: View {
     /// A page turn while the chrome is up means "keep reading": perform it
     /// and tuck the chrome away, mirroring the tap-zone mental model.
     private func hideChromeForControlReading() {
-        guard reader.isChromeVisible else { return }
+        guard showsChrome else { return }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
             reader.isChromeVisible = false
         }

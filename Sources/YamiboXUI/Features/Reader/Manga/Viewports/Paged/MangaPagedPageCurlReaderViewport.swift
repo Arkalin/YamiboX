@@ -110,10 +110,6 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
             guard let gestures, let containerViewController else { return }
             gestures.routeControl(step, in: containerViewController)
         }
-        controlPageTurnBridge.tap = { [weak gestures, weak containerViewController] point in
-            guard let containerViewController else { return }
-            gestures?.routeRemoteTap(point, in: containerViewController)
-        }
         controlPageTurnBridge.pagedSurface = { [weak gestures] in gestures?.currentSurface }
         let coordinator = context.coordinator
         controlPageTurnBridge.capturePosition = { [weak coordinator] in

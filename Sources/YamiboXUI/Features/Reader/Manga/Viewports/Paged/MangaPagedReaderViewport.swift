@@ -95,10 +95,6 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
             guard let gestures, let collectionView else { return }
             gestures.routeControl(step, in: collectionView)
         }
-        controlPageTurnBridge.tap = { [weak gestures, weak collectionView] point in
-            guard let collectionView else { return }
-            gestures?.routeRemoteTap(point, in: collectionView)
-        }
         controlPageTurnBridge.pagedSurface = { [weak gestures, weak collectionView] in
             guard let collectionView else { return nil }
             return gestures?.currentSurface(in: collectionView)
