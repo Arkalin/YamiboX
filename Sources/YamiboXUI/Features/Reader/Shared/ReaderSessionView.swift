@@ -36,7 +36,7 @@ struct ReaderSessionScreen: View {
                 if session.deviceInteraction != nil {
                     ReaderDeviceInteractionBackdrop()
                 } else if showsTrackpad, let display = appModel.externalReader {
-                    ReaderDeviceTrackpad(input: display.pointer)
+                    ReaderDeviceTrackpad(input: display.pointer, shortcut: appModel.externalDisplayShortcut)
                 } else {
                     ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: true)
                 }

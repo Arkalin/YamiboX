@@ -3,13 +3,14 @@ import Observation
 import YamiboXCore
 
 /// State and commands for the peripherals page: Apple Pencil page turn,
-/// gamepad, and hardware keyboard bindings.
+/// gamepad, hardware keyboard, and external display controls.
 @MainActor
 @Observable
 final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     var applePencilPageTurn = ApplePencilPageTurnSettings()
     var gamepad = GamepadSettings()
     var keyboard = KeyboardSettings()
+    var externalDisplay = ExternalDisplaySettings()
 
     let settingsStore: SettingsStore
     let activity: SystemSettingsActivity
@@ -23,6 +24,7 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         applePencilPageTurn = settings.system.applePencilPageTurn
         gamepad = settings.system.gamepad
         keyboard = settings.system.keyboard
+        externalDisplay = settings.system.externalDisplay
     }
 
     /// Reads this page's slice of the settings on its own, for presentations
@@ -39,6 +41,13 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         applePencilPageTurn = ApplePencilPageTurnSettings()
         gamepad = GamepadSettings()
         keyboard = KeyboardSettings()
+        externalDisplay = ExternalDisplaySettings()
+    }
+
+    func updateExternalDisplayShortcut(_ action: ExternalDisplayShortcutAction) {
+        persistSettings(\.externalDisplay.shortcutAction, to: action) {
+            $0.system.externalDisplay.shortcutAction = action
+        }
     }
 
     // MARK: - Apple Pencil

@@ -10,6 +10,7 @@ final class ReaderViewportLifetime {
     private var attachmentID: UUID?
     private var capturePosition: (() -> Void)?
     private var onDetach: (() -> Void)?
+    private var handleExternalShortcut: ((ExternalDisplayShortcutAction) -> Void)?
     var didRender: (() -> Void)?
     private(set) var isCurrent = true
     private var hasDetached = false
@@ -21,6 +22,8 @@ final class ReaderViewportLifetime {
         peripheralInput: ReaderPeripheralInputManager,
         capturePosition: (() -> Void)? = nil,
         onDetach: (() -> Void)? = nil,
+        externalInput: ReaderExternalInput? = nil,
+        handleExternalShortcut: ((ExternalDisplayShortcutAction) -> Void)? = nil,
         handleInput: @escaping (ReaderControlEvent) -> Void
     ) {
         guard isCurrent, attachmentID != id else { return }
@@ -31,9 +34,19 @@ final class ReaderViewportLifetime {
         self.capturePosition = capturePosition
         self.onDetach = onDetach
         self.peripheralInput = peripheralInput
+        self.handleExternalShortcut = handleExternalShortcut
+        externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
             guard self?.accepts(id) == true else { return }
             handleInput(event)
+        }
+    }
+
+    func performExternalButton(_ button: ReaderExternalButton) {
+        guard let attachmentID, accepts(attachmentID) else { return }
+        switch button {
+        case let .pageStep(direction): peripheralInput?.dispatchExternalPageStep(direction)
+        case let .shortcut(action): handleExternalShortcut?(action)
         }
     }
 
@@ -83,6 +96,7 @@ final class ReaderViewportLifetime {
         handlerToken = nil
         attachmentID = nil
         capturePosition = nil
+        handleExternalShortcut = nil
         let cleanup = onDetach
         onDetach = nil
         cleanup?()

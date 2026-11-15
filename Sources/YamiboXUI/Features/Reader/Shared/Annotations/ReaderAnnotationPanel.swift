@@ -16,7 +16,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
     private let tabs: [ReaderLibraryPanelTab]
     private let chapterContent: (Bool, @escaping (ReaderAnnotationSegmentNavigationState) -> Void) -> ChapterContent
 
-    @State private var selectedTab: ReaderLibraryPanelTab
+    @Binding private var selectedTab: ReaderLibraryPanelTab
     @State private var chapterNavigationState = ReaderAnnotationSegmentNavigationState()
     @State private var bookmarkNavigationState = ReaderAnnotationSegmentNavigationState()
     @State private var likeNavigationState = ReaderAnnotationSegmentNavigationState()
@@ -28,7 +28,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         workTitle: String,
         like: LikeDependencies,
         annotationSegment: Binding<ReaderAnnotationSegment>,
-        initialTab: ReaderLibraryPanelTab,
+        selectedTab: Binding<ReaderLibraryPanelTab>,
         onOpenBookmark: @escaping (BookmarkItem) -> Void,
         onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
         onDismiss: @escaping () -> Void,
@@ -48,7 +48,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         self.dismissesAfterNavigation = dismissesAfterNavigation
         self.tabs = ReaderLibraryPanelTab.available(includingChapters: true)
         self.chapterContent = chapterContent
-        self._selectedTab = State(initialValue: initialTab)
+        self._selectedTab = selectedTab
     }
 
     private var activeNavigationState: ReaderAnnotationSegmentNavigationState {
@@ -202,6 +202,7 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
         workTitle: String,
         like: LikeDependencies,
         annotationSegment: Binding<ReaderAnnotationSegment>,
+        selectedTab: Binding<ReaderLibraryPanelTab>,
         onOpenBookmark: @escaping (BookmarkItem) -> Void,
         onOpenLikeAnchor: @escaping (LikeAnchorPayload) -> Void,
         onDismiss: @escaping () -> Void,
@@ -217,9 +218,7 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
         self.dismissesAfterNavigation = dismissesAfterNavigation
         self.tabs = ReaderLibraryPanelTab.available(includingChapters: false)
         self.chapterContent = { _, _ in EmptyView() }
-        self._selectedTab = State(
-            initialValue: ReaderLibraryPanelTab(annotationSegment: annotationSegment.wrappedValue)
-        )
+        self._selectedTab = selectedTab
     }
 }
 

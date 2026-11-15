@@ -976,6 +976,10 @@
 "reader.open_as_manga.recommended" = "用漫畫閱讀器開啟（推薦）";
 "reader.switch_failed" = "切換閱讀模式失敗";
 "reader.switching" = "正在切換閱讀模式…";
+"reader.external.shortcut.comments" = "開啟/關閉評論";
+"reader.external.shortcut.directory" = "目錄";
+"reader.external.shortcut.settings" = "設定";
+"reader.external.shortcut.toolbar" = "工具列";
 "reader.external.trackpad" = "目前裝置作為觸控板";
 "reader.external.unavailable" = "無法在外接顯示器上繼續閱讀，已恢復在本機閱讀。";
 "reader.switching_to_thread" = "正在切換到原帖…";
@@ -1239,6 +1243,8 @@
 "settings.manga_download.empty_message" = "沒有可清理的漫畫下載內容或未完成任務。";
 "settings.manga_download.empty_title" = "暫無漫畫下載內容";
 "settings.manga_download.title" = "漫畫下載內容";
+"settings.external_display" = "顯示器";
+"settings.external_display.shortcut" = "快捷按鈕";
 "settings.favorite_background" = "收藏頁背景";
 "settings.favorite_background.custom" = "自訂";
 "settings.favorite_background.default" = "預設";

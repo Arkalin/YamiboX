@@ -247,6 +247,8 @@ public enum ReaderControlEvent: Hashable, Sendable {
     case bound(ReaderControlAction)
     /// A direction-pad press; semantics depend on the active surface.
     case dpad(ReaderControlDirection)
+    /// The fixed previous/next buttons on the device's external-display control surface.
+    case externalPageStep(ReaderControlScrollDirection)
 }
 
 /// Tracks per-element pressed state so callers can act exactly once per
@@ -316,6 +318,8 @@ public enum ReaderControlCommandResolver {
             return boundCommand(for: action, surface: surface)
         case let .dpad(direction):
             return dpadCommand(for: direction, surface: surface)
+        case let .externalPageStep(direction):
+            return boundCommand(for: direction == .up ? .previousPage : .nextPage, surface: surface)
         }
     }
 
@@ -327,6 +331,8 @@ public enum ReaderControlCommandResolver {
             .scroll(.up)
         case .dpad(.down):
             .scroll(.down)
+        case let .externalPageStep(direction):
+            .scroll(direction)
         case .bound, .dpad:
             nil
         }

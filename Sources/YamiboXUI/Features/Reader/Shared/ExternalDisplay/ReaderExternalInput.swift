@@ -3,6 +3,11 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
+enum ReaderExternalButton {
+    case pageStep(ReaderControlScrollDirection)
+    case shortcut(ExternalDisplayShortcutAction)
+}
+
 @MainActor
 @Observable
 final class ReaderExternalInput {
@@ -21,12 +26,13 @@ final class ReaderExternalInput {
     private(set) var location = CGPoint.zero
     private(set) var isVisible = false
     @ObservationIgnored private var bounds = CGRect.zero
-    @ObservationIgnored private var isEnabled = false
+    private(set) var isEnabled = false
     @ObservationIgnored private var idleTask: Task<Void, Never>?
     @ObservationIgnored private var touching = false
     @ObservationIgnored private(set) var epoch = UUID()
     @ObservationIgnored let targets = ReaderRemoteTargetRegistry()
     @ObservationIgnored private var gesture: Gesture?
+    @ObservationIgnored weak var buttonViewport: ReaderViewportLifetime?
     var menu: AnyView?
 
     deinit { idleTask?.cancel() }
@@ -46,9 +52,17 @@ final class ReaderExternalInput {
 
     func reset() {
         cancel()
+        buttonViewport = nil
         menu = nil
         targets.reset()
         bounds = .zero
+    }
+
+    func press(_ button: ReaderExternalButton) {
+        guard isEnabled else { return }
+        cancel()
+        guard menu == nil else { return }
+        buttonViewport?.performExternalButton(button)
     }
 
     func presentMenu(@ViewBuilder _ items: () -> some View) {
@@ -230,21 +244,61 @@ struct ReaderExternalCursor: View {
 
 struct ReaderDeviceTrackpad: View {
     let input: ReaderExternalInput
+    let shortcut: ExternalDisplayShortcutAction
+    @ScaledMetric(relativeTo: .body) private var minimumButtonHeight: CGFloat = 62
 
     var body: some View {
-        ZStack {
-            Color(white: 0.08)
-            Text(L10n.string("reader.external.trackpad"))
-                .foregroundStyle(Color(white: 0.72))
-                .multilineTextAlignment(.center)
-                .padding(20)
-            TouchArea(input: input)
-                .accessibilityHidden(true)
+        GeometryReader { proxy in
+            let height = min(max(proxy.size.height / 4, minimumButtonHeight), proxy.size.height / 2)
+            VStack(spacing: 0) {
+                ZStack {
+                    Text(L10n.string("reader.external.trackpad"))
+                        .foregroundStyle(Color(white: 0.72))
+                        .multilineTextAlignment(.center)
+                        .padding(20)
+                    TouchArea(input: input)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                HStack(spacing: 0) {
+                    button(ReaderControlAction.previousPage.title, .pageStep(.up), id: "previous")
+                        .frame(width: proxy.size.width * 0.3)
+                    button(shortcut.title, .shortcut(shortcut), id: "shortcut")
+                        .frame(width: proxy.size.width * 0.4)
+                        .overlay(alignment: .leading) { separator.frame(width: 1) }
+                        .overlay(alignment: .trailing) { separator.frame(width: 1) }
+                    button(ReaderControlAction.nextPage.title, .pageStep(.down), id: "next")
+                        .frame(width: proxy.size.width * 0.3)
+                }
+                .frame(height: height)
+                .overlay(alignment: .top) { separator.frame(height: 1) }
+                .disabled(!input.isEnabled)
+            }
         }
-        .ignoresSafeArea()
+        .background(Color(white: 0.08).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+    }
+
+    private var separator: some View {
+        Color.white.opacity(0.18).allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private func button(_ title: String, _ action: ReaderExternalButton, id: String) -> some View {
+        Button { input.press(action) } label: {
+            Text(title)
+                .font(.body.weight(.medium))
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .accessibilityIdentifier("reader-external-\(id)")
     }
 
     private struct TouchArea: UIViewRepresentable {
@@ -278,6 +332,13 @@ struct ReaderDeviceTrackpad: View {
         required init?(coder: NSCoder) { nil }
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            if let epoch, !input.admits(epoch) {
+                holdTask?.cancel()
+                active = nil
+                points.removeAll()
+                lastPair = nil
+                self.epoch = nil
+            }
             if points.isEmpty, let first = touches.first {
                 active = first
                 last = first.location(in: self)
@@ -330,6 +391,7 @@ struct ReaderDeviceTrackpad: View {
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { finish(touches, permitsClick: false) }
 
         private func finish(_ touches: Set<UITouch>, permitsClick: Bool) {
+            guard points.contains(where: touches.contains) else { return }
             points.removeAll { touches.contains($0) }
             if lastPair != nil, points.count != 2 {
                 lastPair = nil

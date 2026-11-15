@@ -245,6 +245,8 @@ struct NovelReaderView: View {
                         verticalScrollCoordinator.attach(scrollView: nil)
                         verticalRestore.cancelPendingRestoreWork()
                     },
+                    externalInput: remoteInput,
+                    handleExternalShortcut: handleExternalShortcut,
                     handleInput: handleControlEvent
                 )
                 verticalRestore.admitsViewport = { [weak viewport] in viewport?.acceptsGeometry == true }
@@ -423,7 +425,7 @@ struct NovelReaderView: View {
                 Task { await reader.annotations.saveNote(for: item, note: note) }
             },
             annotationSegment: annotationSegmentBinding,
-            initialReaderLibraryTab: reader.initialReaderLibraryTab
+            readerLibraryTab: $reader.readerLibraryTab
         )
     }
 
@@ -792,6 +794,40 @@ struct NovelReaderView: View {
 
     // MARK: - Chrome state and control events
 
+    private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
+        guard !reader.isDismissing, reader.forumThreadOverlayItem == nil,
+              reader.imageBrowserItem == nil, reader.searchPresentation == nil,
+              let remoteInput, remoteInput.targets.activeDepth <= 1 else { return }
+        if case .note = reader.presentedSheet { return }
+
+        switch action {
+        case .toolbar:
+            let wasPresentingPanel = reader.presentedSheet != nil
+            reader.presentedSheet = nil
+            withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
+                if wasPresentingPanel { reader.chromeState.showChromeAfterClosingOverlay() }
+                else { reader.chromeState.toggleChrome() }
+            }
+        case .comments:
+            if reader.presentedSheet == .chapterComments { reader.presentedSheet = nil }
+            else if !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented {
+                openChapterComments()
+            }
+        case .settings:
+            if reader.presentedSheet == .settings { reader.presentedSheet = nil }
+            else { openSettings() }
+        case .directory, .bookmarks, .likes:
+            guard let tab = ReaderLibraryPanelTab(shortcut: action) else { return }
+            if reader.presentedSheet == .annotations, reader.readerLibraryTab == tab {
+                reader.presentedSheet = nil
+            } else if !model.novelReaderSurfaces.isEmpty, !readerLoadingOverlayPresentation.isPresented {
+                if let segment = tab.annotationSegment { reader.annotations.selectedSegment = segment }
+                reader.readerLibraryTab = tab
+                reader.presentedSheet = .annotations
+            }
+        }
+    }
+
     private func toggleChrome() {
         guard !reader.isDismissing, !hasPresentedOverlay else { return }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
@@ -911,7 +947,7 @@ struct NovelReaderView: View {
     }
 
     private func openChapterDrawer() {
-        reader.initialReaderLibraryTab = .chapters
+        reader.readerLibraryTab = .chapters
         reader.presentedSheet = .annotations
     }
 
@@ -935,7 +971,7 @@ struct NovelReaderView: View {
     }
 
     private func openAnnotations() {
-        reader.initialReaderLibraryTab = ReaderLibraryPanelTab(
+        reader.readerLibraryTab = ReaderLibraryPanelTab(
             annotationSegment: annotationSegmentBinding.wrappedValue
         )
         reader.presentedSheet = .annotations

@@ -14,7 +14,7 @@ final class NovelReaderSessionState {
     var chapterCommentsTarget: ReaderChapterCommentTarget?
     var chapterCommentsHasLaterChapter = false
     var searchPresentation: NovelReaderSearchPresentation?
-    var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
+    var readerLibraryTab: ReaderLibraryPanelTab = .bookmarks
     var isDismissing = false
     var isOfflineBannerDismissed = false
     var isFontBannerDismissed = false

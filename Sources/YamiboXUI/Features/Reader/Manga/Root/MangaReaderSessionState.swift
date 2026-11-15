@@ -13,7 +13,7 @@ final class MangaReaderSessionState {
     var isSettingsPresented = false
     var isDownloadPresented = false
     var rememberedAnnotationSegment: ReaderAnnotationSegment?
-    var initialReaderLibraryTab: ReaderLibraryPanelTab = .bookmarks
+    var readerLibraryTab: ReaderLibraryPanelTab = .bookmarks
     var likedItemForActionTarget: LikeItem?
     var noteEditTarget: LikeItem?
     var imageSavePresentation = MangaImageSavePresentationState()

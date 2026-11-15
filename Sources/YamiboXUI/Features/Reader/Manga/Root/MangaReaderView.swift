@@ -196,28 +196,7 @@ struct MangaReaderView: View {
                         Task { await model.navigateForward() }
                     },
                     onClose: closeReader,
-                    onShowDirectory: {
-                        // Smart Comic Mode off (decision #2/#12): there is no
-                        // `MangaDirectory` to show — `MangaReaderWorkflow`
-                        // skipped resolution entirely and is holding a
-                        // single-chapter pseudo-directory. The capsule itself
-                        // keeps showing its own within-chapter page-progress
-                        // text unaffected (that comes from `summary?.progress`
-                        // independently of this closure); only the
-                        // tap-to-open-directory-sheet interaction becomes a
-                        // no-op.
-                        guard model.context.isSmartModeEnabled else { return }
-                        if model.annotationSheetContext != nil {
-                            reader.initialReaderLibraryTab = .chapters
-                            reader.companionPanel = .annotations
-                        } else {
-                            // A directory may become available before a Like
-                            // identity does; keep that narrow transition on
-                            // the existing directory-only fallback rather than
-                            // presenting an empty unified sheet.
-                            reader.companionPanel = .directory
-                        }
-                    },
+                    onShowDirectory: openDirectory,
                     onShowComments: {
                         reader.companionPanel = .comments
                     },
@@ -232,7 +211,7 @@ struct MangaReaderView: View {
                     },
                     onShowAnnotations: {
                         guard model.canShowLikes else { return }
-                        reader.initialReaderLibraryTab = ReaderLibraryPanelTab(
+                        reader.readerLibraryTab = ReaderLibraryPanelTab(
                             annotationSegment: annotationSegmentBinding.wrappedValue
                         )
                         reader.companionPanel = .annotations
@@ -266,6 +245,8 @@ struct MangaReaderView: View {
                         if let page = sample?.page { model.updateCurrentPage(visiblePage: page, placement: sample?.placement) }
                         if let sample { reader.viewportHandoff.pendingFocus = sample.focus }
                     },
+                    externalInput: remoteInput,
+                    handleExternalShortcut: handleExternalShortcut,
                     handleInput: handleControlEvent
                 )
                 reader.prepareIfNeeded()
@@ -300,7 +281,7 @@ struct MangaReaderView: View {
                     appModel: appModel,
                     discussionWorkTIDs: discussionWorkTIDs,
                     annotationSegment: annotationSegmentBinding,
-                    initialTab: reader.initialReaderLibraryTab,
+                    selectedTab: $reader.readerLibraryTab,
                     dismissesAfterNavigation: true,
                     onOpenBookmark: { item in Task { await openBookmark(item) } },
                     onOpenLikeAnchor: { anchor in Task { await openLikedAnchor(anchor) } },
@@ -497,6 +478,71 @@ struct MangaReaderView: View {
               case let .loaded(loaded) = model.presentation.state,
               loaded.currentPage != nil else { return nil }
         return .manga(model.currentResumeContext)
+    }
+
+    private func openDirectory() {
+        // Non-smart manga has no chapter directory. Smart manga may have a
+        // directory before its annotation identity is ready.
+        guard context.isSmartModeEnabled else { return }
+        if model.annotationSheetContext != nil {
+            reader.readerLibraryTab = .chapters
+            reader.companionPanel = .annotations
+        } else {
+            reader.companionPanel = .directory
+        }
+    }
+
+    private func handleExternalShortcut(_ action: ExternalDisplayShortcutAction) {
+        guard !reader.isDismissing, reader.forumThreadOverlayItem == nil,
+              reader.noteEditTarget == nil, !reader.imageSavePresentation.isActionDialogPresented,
+              !reader.isPhotoPermissionAlertPresented,
+              let remoteInput, remoteInput.targets.activeDepth <= 1 else { return }
+
+        let wasPresentingPanel = reader.companionPanel != nil ||
+            reader.isSettingsPresented || reader.isDownloadPresented
+
+        switch action {
+        case .toolbar:
+            closeShortcutPanels()
+            if wasPresentingPanel { reader.isChromeVisible = true }
+            else { toggleChrome() }
+        case .comments:
+            if reader.companionPanel == .comments { closeShortcutPanels() }
+            else if canToggleChrome {
+                closeShortcutPanels()
+                reader.companionPanel = .comments
+            }
+        case .settings:
+            let wasShowingSettings = reader.isSettingsPresented
+            closeShortcutPanels()
+            reader.isSettingsPresented = !wasShowingSettings
+        case .directory, .bookmarks, .likes:
+            guard let tab = ReaderLibraryPanelTab(shortcut: action) else { return }
+            if (reader.companionPanel == .directory && tab == .chapters) ||
+                (reader.companionPanel == .annotations && reader.readerLibraryTab == tab) {
+                closeShortcutPanels()
+            } else if canToggleChrome {
+                if tab == .chapters {
+                    guard context.isSmartModeEnabled else { return }
+                    reader.isSettingsPresented = false
+                    reader.isDownloadPresented = false
+                    openDirectory()
+                } else {
+                    guard model.annotationSheetContext != nil else { return }
+                    reader.isSettingsPresented = false
+                    reader.isDownloadPresented = false
+                    reader.rememberedAnnotationSegment = tab.annotationSegment
+                    reader.readerLibraryTab = tab
+                    reader.companionPanel = .annotations
+                }
+            }
+        }
+    }
+
+    private func closeShortcutPanels() {
+        reader.companionPanel = nil
+        reader.isSettingsPresented = false
+        reader.isDownloadPresented = false
     }
 
     private func handleControlEvent(_ event: ReaderControlEvent) {

@@ -174,7 +174,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
     let onOpenBookmark: (BookmarkItem) -> Void
     let onSaveNote: (LikeItem, String?) -> Void
     @Binding var annotationSegment: ReaderAnnotationSegment
-    let initialReaderLibraryTab: ReaderLibraryPanelTab
+    @Binding var readerLibraryTab: ReaderLibraryPanelTab
 
     func body(content: Content) -> some View {
         content
@@ -259,7 +259,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
                     workTitle: model.title,
                     like: likeDependencies,
                     annotationSegment: $annotationSegment,
-                    initialTab: initialReaderLibraryTab,
+                    selectedTab: $readerLibraryTab,
                     onOpenBookmark: onOpenBookmark,
                     onOpenLikeAnchor: onOpenLikeAnchor,
                     onDismiss: { presentedSheet = nil },
