@@ -29,8 +29,9 @@ final class MangaPagedScrollNavigationAdapter {
         }
         input.receives = { [weak self] recognizer, touch in
             guard let self, let collection = recognizer.view as? UICollectionView else { return false }
-            return recognizer !== self.input.doubleTap ||
-                PhysicalZone.at(touch.location(in: collection), in: collection.bounds) == .center
+            guard recognizer === self.input.doubleTap else { return true }
+            let zone = PhysicalZone.at(touch.location(in: collection), in: collection.bounds)
+            return self.configuration.allowsDoubleTap(in: zone)
         }
         input.onEvent = { [weak self] role, recognizer in
             guard let self, let collection = recognizer.view as? UICollectionView else { return }

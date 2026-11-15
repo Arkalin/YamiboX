@@ -26,6 +26,12 @@ struct MangaNavigationConfiguration: Equatable {
     let direction: MangaReadingDirection
     let surface: MangaInteractionConfiguration
     var swapsPageTurnTapZones = false
+
+    func allowsDoubleTap(in zone: PhysicalZone?) -> Bool {
+        guard let zone else { return false }
+        // Edge taps only wait for a second tap when double-tap zoom is enabled.
+        return zone == .center || surface.zoomEnabled
+    }
 }
 
 enum MangaNavigationRequest {
@@ -39,10 +45,10 @@ enum MangaNavigationRequest {
         case .tap(.left): .edge(.left)
         case .tap(.right): .edge(.right)
         case .tap(.center): .centerTap
-        case let .doubleTap(.center, location): .doubleTap(location)
+        case let .doubleTap(.some, location): .doubleTap(location)
         case let .control(step): .control(direction.edge(for: step))
         case let .pan(translation, velocity): .pan(translation: translation, velocity: velocity)
-        case .tap(nil), .doubleTap: nil
+        case .tap(nil), .doubleTap(nil, _): nil
         }
     }
 }
