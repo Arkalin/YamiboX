@@ -9,7 +9,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
     static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
         coordinator.stopImagePrefetch()
         coordinator.detachViewport()
-        coordinator.pagingDriver.cancelSlideTransition(in: view, inputs: coordinator.pagingInputs)
+        coordinator.pagingDriver.cancelSelectionScroll(in: view, inputs: coordinator.pagingInputs)
         (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
         (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
         coordinator.gestures.input.detach()
@@ -23,6 +23,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
     let zoomEnabled: Bool
     let likedPageIDs: Set<String>
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
+    let pagedZoom: MangaPagedZoomSession
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int) -> Bool
     let onBoundaryPageTurn: (Int) -> Void
@@ -109,8 +110,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
             let plan = coordinator.parent.plan
             let retainedIndex = plan.currentPageIndex.flatMap { spread.containsPage(at: $0) ? $0 : nil }
             let fallback = retainedIndex.map { plan.pages[$0] } ?? spread.preferredPage
-            let focus = spread.pageFocus(from: coordinator.gestures.currentSurface(in: collectionView)?.normalizedFocus,
-                                        defaultPage: fallback)
+            let focus = coordinator.gestures.currentSurface(in: collectionView)?.pageFocus
             let page = [spread.leftPage, spread.rightPage].compactMap { $0 }.first { $0.id == focus?.pageID } ?? fallback
             return .init(page: page, placement: coordinator.parent.viewportPlacement, focus: focus)
         }

@@ -34,28 +34,4 @@ extension MangaPagedImageSurfaceInitialHorizontalAlignment {
             self = .right
         }
     }
-
-    static func enteringPage(
-        pageTurnDirection: MangaPageTurnDirection,
-        pageScaleMode: MangaPageScaleMode,
-        currentPageIndex: Int?,
-        targetPageIndex: Int
-    ) -> Self {
-        let defaultAlignment = Self(pageTurnDirection: pageTurnDirection)
-        guard pageScaleMode == .fitHeight,
-              let currentPageIndex,
-              abs(targetPageIndex - currentPageIndex) == 1 else {
-            return defaultAlignment
-        }
-        return targetPageIndex < currentPageIndex ? defaultAlignment.opposite : defaultAlignment
-    }
-
-    private var opposite: Self {
-        switch self {
-        case .left:
-            .right
-        case .right:
-            .left
-        }
-    }
 }

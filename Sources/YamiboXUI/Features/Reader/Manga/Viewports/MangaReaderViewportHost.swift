@@ -12,6 +12,7 @@ struct MangaReaderPresentationContent: View {
     let likedPageIDs: Set<String>
     let pagedContentTopInset: CGFloat
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
+    let pagedZoom: MangaPagedZoomSession
     let onRetryInitialLoad: () -> Void
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int, Bool) -> Bool
@@ -37,6 +38,7 @@ struct MangaReaderPresentationContent: View {
                     likedPageIDs: likedPageIDs,
                     pagedContentTopInset: pagedContentTopInset,
                     controlPageTurnBridge: controlPageTurnBridge,
+                    pagedZoom: pagedZoom,
                     onCurrentPageChange: onCurrentPageChange,
                     canBoundaryPageTurn: canBoundaryPageTurn,
                     onBoundaryPageTurn: onBoundaryPageTurn,
@@ -56,6 +58,9 @@ struct MangaReaderPresentationContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundStyle(.white)
+        .onChange(of: presentation.settings.zoomEnabled, initial: true) { _, enabled in
+            if !enabled { pagedZoom.resetFactor() }
+        }
     }
 
     @ViewBuilder
@@ -82,6 +87,7 @@ private struct MangaReaderLoadedContent: View {
     let likedPageIDs: Set<String>
     let pagedContentTopInset: CGFloat
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
+    let pagedZoom: MangaPagedZoomSession
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int, Bool) -> Bool
     let onBoundaryPageTurn: (Int, Bool) -> Void
@@ -92,6 +98,7 @@ private struct MangaReaderLoadedContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.readerExternalGeometry) private var externalGeometry
     @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
+    @Environment(\.mangaViewportHandoff) private var handoff
     @State private var pagedCache = MangaPagedContentCache()
 
     /// Reduce Motion downgrades the 3D page-curl transition to the already
@@ -132,11 +139,7 @@ private struct MangaReaderLoadedContent: View {
                         isPadDevice: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad),
                         availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
                     )
-                    let plan = pagedCache.plan(
-                        loaded: loaded,
-                        direction: settings.pageTurnDirection,
-                        usesTwoPageSpread: usesTwoPageSpread
-                    )
+                    let plan = readingPlan(usesTwoPageSpread: usesTwoPageSpread)
                     if effectiveSettings.pagedTurnStyle == .pageCurl {
                         MangaPagedPageCurlReaderViewport(
                             attachedInformation: attachedInformation(plan: plan),
@@ -149,6 +152,7 @@ private struct MangaReaderLoadedContent: View {
                             zoomEnabled: settings.zoomEnabled,
                             likedPageIDs: likedPageIDs,
                             controlPageTurnBridge: controlPageTurnBridge,
+                            pagedZoom: pagedZoom,
                             onCurrentPageChange: onCurrentPageChange,
                             canBoundaryPageTurn: { delta in
                                 canBoundaryPageTurn(delta, usesTwoPageSpread)
@@ -176,6 +180,7 @@ private struct MangaReaderLoadedContent: View {
                             zoomEnabled: settings.zoomEnabled,
                             likedPageIDs: likedPageIDs,
                             controlPageTurnBridge: controlPageTurnBridge,
+                            pagedZoom: pagedZoom,
                             onCurrentPageChange: onCurrentPageChange,
                             canBoundaryPageTurn: { delta in
                                 canBoundaryPageTurn(delta, usesTwoPageSpread)
@@ -196,6 +201,23 @@ private struct MangaReaderLoadedContent: View {
         } else {
             ReaderLoadStateView(status: .loading, tint: .white)
         }
+    }
+
+    private func readingPlan(usesTwoPageSpread: Bool) -> MangaPagedReadingPlan {
+        let (plan, didRebuild) = pagedCache.plan(loaded: loaded, direction: settings.pageTurnDirection,
+                                                usesTwoPageSpread: usesTwoPageSpread)
+        if let handoff {
+            // Capture the mounted viewport before SwiftUI replaces or reloads it.
+            if didRebuild, settings.zoomEnabled, handoff.pendingFocus == nil {
+                handoff.layoutFocus = controlPageTurnBridge.capturePosition?()?.focus
+            }
+            let pageIndex = loaded.viewportPlacement?.targetPageIndex ?? plan.currentPageIndex
+            let target = pageIndex.flatMap(plan.spreadIndex(forPageAt:)).flatMap(plan.spread(at:))
+            if let focus = handoff.layoutFocus, !settings.zoomEnabled || target?.containsPage(id: focus.pageID) != true {
+                handoff.layoutFocus = nil
+            }
+        }
+        return plan
     }
 
     private func attachedInformation(plan: MangaPagedReadingPlan) -> ReaderAttachedInformationConfiguration {
@@ -222,10 +244,11 @@ private final class MangaPagedContentCache {
     private var informationVariants: [Int: [[ReaderAttachedPageInformation]]] = [:]
 
     func plan(loaded: MangaReaderLoadedPresentation, direction: MangaPageTurnDirection,
-              usesTwoPageSpread: Bool) -> MangaPagedReadingPlan {
+              usesTwoPageSpread: Bool) -> (plan: MangaPagedReadingPlan, didRebuild: Bool) {
         let structureChanged = basePlan?.pages != loaded.pages
             || basePlan?.pageTurnDirection != direction
             || basePlan?.usesTwoPageSpread != usesTwoPageSpread
+        let didRebuild = structureChanged && basePlan != nil
         if structureChanged {
             cachedSequence = nil
             basePlan = MangaPagedReadingPlan(pages: loaded.pages, currentPageIndex: nil,
@@ -254,7 +277,7 @@ private final class MangaPagedContentCache {
                 }
             }
         }
-        return basePlan!.selectingPage(at: loaded.currentPageIndex)
+        return (basePlan!.selectingPage(at: loaded.currentPageIndex), didRebuild)
     }
 
     func informationPages(isImmersive: Bool, isChromeVisible: Bool) -> [[ReaderAttachedPageInformation]] {

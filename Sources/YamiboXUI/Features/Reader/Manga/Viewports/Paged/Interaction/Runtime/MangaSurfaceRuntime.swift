@@ -6,7 +6,8 @@ protocol MangaNativeSurfaceControlling: AnyObject {
     func applyNative(_ decision: MangaInteractionDecision, animated: Bool)
     func cancelNative(reset: Bool)
     var keepsPageFixedDuringImageInteraction: Bool { get }
-    var normalizedFocus: (point: CGPoint, factor: CGFloat)? { get }
+    func applyPendingPageEntry()
+    var pageFocus: MangaViewportFocus? { get }
     func doubleTapFromTrackpad(at windowPoint: CGPoint)
     func remoteTransform(at windowPoint: CGPoint, canZoom: Bool,
                          isCurrent: @escaping () -> Bool) -> ReaderRemoteTransform?
@@ -14,6 +15,16 @@ protocol MangaNativeSurfaceControlling: AnyObject {
 
 @MainActor @Observable
 final class MangaSurfaceRuntime {
+    struct PageEntry: Equatable {
+        var factor: CGFloat
+        let alignment: MangaPagedImageSurfaceInitialHorizontalAlignment
+    }
+
+    private struct PageEntryState {
+        var placement: PageEntry
+        var needsPlacement = true
+    }
+
     // Paging queries these snapshots; SwiftUI does not render native motion.
     @ObservationIgnored private(set) var transform = MangaSurfaceTransform()
     @ObservationIgnored private(set) var configuration = MangaInteractionConfiguration()
@@ -22,8 +33,10 @@ final class MangaSurfaceRuntime {
     private(set) var imageLoaded = false
     @ObservationIgnored private(set) var menuFrame: CGRect = .zero
     @ObservationIgnored private var mountingInstance: UUID?
-    @ObservationIgnored private weak var nativeSurface: (any MangaNativeSurfaceControlling)?
+    @ObservationIgnored private(set) weak var nativeSurface: (any MangaNativeSurfaceControlling)?
     @ObservationIgnored private(set) var nativeIsInteracting = false
+    @ObservationIgnored weak var zoomSession: MangaPagedZoomSession?
+    @ObservationIgnored private var pageEntry: PageEntryState?
     @ObservationIgnored var permitsInteraction: () -> Bool = { true }
     @ObservationIgnored var onNativeInteractionEnd: (() -> Void)?
     private let shouldAnimateZoom: () -> Bool
@@ -34,6 +47,8 @@ final class MangaSurfaceRuntime {
 
     func mount(_ instance: UUID) {
         guard mountingInstance != instance else { return }
+        if let zoomSession { pageEntry?.placement.factor = zoomSession.factor }
+        pageEntry?.needsPlacement = true
         invalidate(reset: true)
         mountingInstance = instance
     }
@@ -69,13 +84,42 @@ final class MangaSurfaceRuntime {
         onNativeInteractionEnd?()
     }
 
+    var pendingPageEntry: PageEntry? {
+        guard let pageEntry, pageEntry.needsPlacement else { return nil }
+        return pageEntry.placement
+    }
+
+    func preparePageEntry(factor: CGFloat, alignment: MangaPagedImageSurfaceInitialHorizontalAlignment,
+                          applyImmediately: Bool = true) {
+        let entry = PageEntry(factor: factor, alignment: alignment)
+        if pageEntry?.placement != entry {
+            pageEntry = PageEntryState(placement: entry)
+        }
+        if applyImmediately { nativeSurface?.applyPendingPageEntry() }
+    }
+
+    func finishPageEntry() {
+        pageEntry?.needsPlacement = false
+    }
+
+    func endPageEntry() {
+        zoomSession = nil
+        pageEntry = nil
+        invalidate()
+    }
+
+    func recordNativeZoom(_ factor: CGFloat) {
+        guard canPinch, pendingPageEntry == nil else { return }
+        zoomSession?.record(factor, from: self)
+    }
+
     var hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> { geometry.hiddenEdges(transform) }
     var isManipulating: Bool { nativeIsInteracting }
     var canPinch: Bool {
         imageLoaded && geometry.viewport.width > 0 && geometry.viewport.height > 0 && configuration.zoomEnabled
     }
 
-    var normalizedFocus: (point: CGPoint, factor: CGFloat)? { nativeSurface?.normalizedFocus }
+    var pageFocus: MangaViewportFocus? { nativeSurface?.pageFocus }
     var isZoomed: Bool { MangaPageZoomPolicy.isActive(transform.scale) }
 
     func doubleTapFromTrackpad(at point: CGPoint) {
@@ -87,11 +131,13 @@ final class MangaSurfaceRuntime {
         guard permitsInteraction(), zoom ? canPinch : isZoomed else { return nil }
         let revision = generation
         let instance = mountingInstance
-        return nativeSurface?.remoteTransform(at: point, canZoom: zoom) { [weak self] in
+        let transform = nativeSurface?.remoteTransform(at: point, canZoom: zoom) { [weak self] in
             guard let self else { return false }
             return self.generation == revision && self.mountingInstance == instance && self.permitsInteraction() &&
                 (zoom ? self.canPinch : self.isZoomed)
         }
+        if zoom, transform != nil { finishPageEntry() }
+        return transform
     }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {
@@ -112,7 +158,12 @@ final class MangaSurfaceRuntime {
         self.configuration = configuration
         self.geometry = geometry
         self.imageLoaded = imageLoaded
-        if disablesZoom { invalidate(reset: true) }
+        if disablesZoom {
+            zoomSession?.record(1, from: self)
+            pageEntry?.placement.factor = 1
+            pageEntry?.needsPlacement = true
+            invalidate(reset: true)
+        }
     }
 
     func setMenuFrame(_ frame: CGRect) { menuFrame = frame }

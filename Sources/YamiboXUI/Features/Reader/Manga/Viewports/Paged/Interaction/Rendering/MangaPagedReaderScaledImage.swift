@@ -26,7 +26,7 @@ struct MangaPagedReaderScaledImage: View {
                 geometry: .image(size: image.size, viewport: proxy.size,
                     fit: MangaSurfaceFit(pageScaleMode), alignment: initialHorizontalAlignment),
                 background: pageEdgeFillStyle.uiColor(for: colorScheme), onLongPress: onLongPress,
-                nativeAnimationSpeed: nativeAnimationSpeed, restoreFocus: { handoff?.takeFocus(for: pageID) })
+                nativeAnimationSpeed: nativeAnimationSpeed, pageID: pageID, handoff: handoff)
         }
     }
 }
@@ -39,7 +39,8 @@ private struct MangaNativeImageSurface: UIViewRepresentable {
     let background: UIColor
     let onLongPress: () -> Void
     let nativeAnimationSpeed: Float
-    let restoreFocus: () -> MangaViewportFocus?
+    let pageID: String
+    let handoff: MangaViewportHandoff?
 
     func makeUIView(context: Context) -> MangaNativeSurfaceView {
         let view = MangaNativeSurfaceView()
@@ -55,7 +56,8 @@ private struct MangaNativeImageSurface: UIViewRepresentable {
         if imageView?.image !== image { imageView?.image = image }
         view.backgroundColor = background
         view.onLongPress = onLongPress
-        view.restoreFocus = restoreFocus
+        view.pageContent = .image(pageID)
+        view.handoff = handoff
         if view.layer.speed != nativeAnimationSpeed { view.layer.speed = nativeAnimationSpeed }
         view.configure(runtime: runtime, configuration: configuration, geometry: geometry, imageLoaded: true)
     }

@@ -20,11 +20,9 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
             MangaNativeHostedSurface(runtime: spreadSurfaceInteraction.runtime,
                 configuration: MangaInteractionConfiguration(chromeVisible: spreadSurfaceInteraction.runtime.configuration.chromeVisible,
                     zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: false),
-                viewport: proxy.size, imageLoaded: hasLoadedImage, restoreFocus: {
-                    if let id = leftPageSurface?.page.id, let focus = handoff?.takeFocus(for: id, horizontalHalf: 0) { return focus }
-                    if let id = rightPageSurface?.page.id { return handoff?.takeFocus(for: id, horizontalHalf: 1) }
-                    return nil
-                }) {
+                viewport: proxy.size, imageLoaded: hasLoadedImage,
+                pageContent: .spread(left: spreadImage(leftPageSurface), right: spreadImage(rightPageSurface)),
+                handoff: handoff) {
                 HStack(spacing: 0) {
                     pageSlot(leftPageSurface)
                     pageSlot(rightPageSurface)
@@ -36,8 +34,15 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
         }
     }
 
+    private func spreadImage(_ surface: MangaPagedReaderSpreadPageSurface?) -> MangaNativeSurfaceView.SpreadImage? {
+        surface.map { .init(pageID: $0.page.id, runtime: $0.surfaceInteraction.runtime) }
+    }
+
     private var hasLoadedImage: Bool {
-        [leftPageSurface, rightPageSurface].compactMap { $0 }.contains { $0.surfaceInteraction.runtime.imageLoaded }
+        // Read both dependencies even when the first checked slot is already loaded.
+        let leftLoaded = leftPageSurface?.surfaceInteraction.runtime.imageLoaded == true
+        let rightLoaded = rightPageSurface?.surfaceInteraction.runtime.imageLoaded == true
+        return leftLoaded || rightLoaded
     }
 
     private func pageSlot(_ surface: MangaPagedReaderSpreadPageSurface?) -> some View {
@@ -52,7 +57,8 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
     let configuration: MangaInteractionConfiguration
     let viewport: CGSize
     let imageLoaded: Bool
-    let restoreFocus: () -> MangaViewportFocus?
+    let pageContent: MangaNativeSurfaceView.PageContent
+    let handoff: MangaViewportHandoff?
     @ViewBuilder let content: () -> Content
 
     final class Coordinator {
@@ -81,7 +87,8 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
 
     func updateUIView(_ view: MangaNativeSurfaceView, context: Context) {
         context.coordinator.hostedView?.configuration = hostedContentConfiguration
-        view.restoreFocus = restoreFocus
+        view.pageContent = pageContent
+        view.handoff = handoff
         view.configure(runtime: runtime, configuration: configuration,
                        geometry: .spread(viewport: viewport), imageLoaded: imageLoaded)
     }

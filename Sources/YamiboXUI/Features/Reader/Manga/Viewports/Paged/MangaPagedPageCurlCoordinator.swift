@@ -9,7 +9,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     var parent: MangaPagedPageCurlReaderViewport
     let informationState = ReaderAttachedInformationState()
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
-    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime { [weak self] in
+    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime(zoomSession: parent.pagedZoom) { [weak self] in
         self?.parent.settings.zoomAnimationEnabled ?? true
     }
     private var selectionResolver = MangaPagedPageCurlSelectionResolver()
@@ -58,7 +58,6 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             pageSurfaceInteractions = [:]
             pageCurlSurfaceInteractionIdentity = nil
             pageCurlPageAppearanceGenerations = [:]
-            zoom.reset()
         }
         contentIdentity = nextContentIdentity
         gestures.configureContainerGestures(in: containerViewController)
@@ -99,7 +98,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
 
         for case let controller as MangaPagedPageCurlHostingController in pageViewController.viewControllers ?? [] {
             controller.updateRootView(
-                rootView(for: controller.leaf, preserving: controller.rootView.pageSurface),
+                rootView(for: controller.leaf),
                 pageBackgroundColor: parent.pageEdgeFillColor
             )
         }
@@ -132,6 +131,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         willTransitionTo pendingViewControllers: [UIViewController]
     ) {
         invalidatePageCurlTransitions()
+        for case let controller as MangaPagedPageCurlHostingController in pendingViewControllers {
+            preparePageEntry(at: controller.leaf.selectionIndex)
+        }
         refreshBackPages()
         let transitionID = UUID()
         interactivePageCurlTransition = (transitionID, interactionRuntime.navigationGeneration)
@@ -142,7 +144,12 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         spineLocationFor orientation: UIInterfaceOrientation
     ) -> UIPageViewController.SpineLocation {
         let spineLocation = configureSpine(in: pageViewController)
-        setCurrentSelection(in: pageViewController, animated: false)
+        let visibleLeaves = (pageViewController.viewControllers ?? [])
+            .compactMap { ($0 as? MangaPagedPageCurlHostingController)?.leaf }
+            .compactMap(parent.sequence.leafIndex(matching:))
+        if visibleLeaves.sorted() != parent.sequence.leafIndexes(forSelectionIndex: selectionIndex).sorted() {
+            setCurrentSelection(in: pageViewController, animated: false)
+        }
         return spineLocation
     }
 
@@ -155,8 +162,8 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         guard let transition = interactivePageCurlTransition else { return }
         interactivePageCurlTransition = nil
         guard completed, interactionRuntime.navigationGeneration == transition.generation else { return }
-        preparePreviousPageCurlPagesForReuse(previousViewControllers)
         publishSelection(from: pageViewController)
+        preparePreviousPageCurlPagesForReuse(previousViewControllers)
     }
 
     func configureSpine(in pageViewController: UIPageViewController) -> UIPageViewController.SpineLocation {
@@ -220,6 +227,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         refreshBackPages()
         let transitionID = selectionTransitionID
         let clampedSelectionIndex = min(max(selectionIndex, 0), max(parent.sequence.pageCount - 1, 0))
+        preparePageEntry(at: clampedSelectionIndex)
         let leafIndexes = parent.sequence.leafIndexes(forSelectionIndex: clampedSelectionIndex)
         let direction = navigationDirection(to: clampedSelectionIndex)
         let displayedLeafIndexes = ReaderPagedPageCurlTransition.displayedLeafIndexes(
@@ -235,17 +243,6 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             currentSelectionIndex = nil
             return
         }
-        if clampedSelectionIndex != currentSelectionIndex {
-            zoom.runtime.invalidate(reset: true)
-            for case let controller as MangaPagedPageCurlHostingController in pageViewController.viewControllers ?? [] {
-                // Keep the outgoing single-page crop until its sheet has finished turning.
-                if !controller.leaf.isBack, !animated || parent.sequence.usesTwoPageSpread,
-                   let pageID = controller.leaf.pageID {
-                    pageSurfaceInteractions[pageID]?.runtime.invalidate(reset: true)
-                }
-            }
-        }
-
         let outgoingViewControllers = pageViewController.viewControllers ?? []
         let shouldPrepareOutgoingPageCurlPages = !parent.sequence.usesTwoPageSpread &&
             clampedSelectionIndex != currentSelectionIndex
@@ -258,24 +255,24 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             direction: direction,
             animated: animated
         ) { [weak self] completed in
-            guard let self else { return }
+            guard animated, let self else { return }
             guard self.selectionTransitionID == transitionID else { return }
             self.animatedSelectionTransitionID = nil
             guard self.interactionRuntime.navigationGeneration == generation else { return }
-            guard !animated || completed else { return }
-            if animated, shouldPrepareOutgoingPageCurlPages {
+            guard completed else { return }
+            self.commitSelection(clampedSelectionIndex)
+            if shouldPrepareOutgoingPageCurlPages {
                 self.preparePreviousPageCurlPagesForReuse(outgoingViewControllers)
             }
-            self.currentSelectionIndex = clampedSelectionIndex
             if publishOnCompletion {
                 self.publishCurrentPageIfNeeded(selectionIndex: clampedSelectionIndex)
             }
         }
         if !animated {
+            commitSelection(clampedSelectionIndex)
             if shouldPrepareOutgoingPageCurlPages {
                 preparePreviousPageCurlPagesForReuse(outgoingViewControllers)
             }
-            currentSelectionIndex = clampedSelectionIndex
         }
     }
 
@@ -291,6 +288,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     private func controller(forLeafIndex leafIndex: Int) -> UIViewController? {
         guard parent.sequence.leaves.indices.contains(leafIndex) else { return nil }
         let leaf = parent.sequence.leaves[leafIndex]
+        preparePageEntry(at: leaf.selectionIndex)
         let controller = MangaPagedPageCurlHostingController(
             leaf: leaf,
             rootView: rootView(for: leaf),
@@ -306,15 +304,12 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         return controller
     }
 
-    private func rootView(
-        for leaf: MangaPagedPageCurlLeaf,
-        preserving existingSurface: MangaPagedReaderSpreadPageSurface? = nil
-    ) -> MangaPagedPageCurlLeafView {
+    private func rootView(for leaf: MangaPagedPageCurlLeaf) -> MangaPagedPageCurlLeafView {
         MangaPagedPageCurlLeafView(
             informationState: informationState,
             informationIndex: leaf.selectionIndex,
             informationSlot: parent.plan.usesTwoPageSpread ? leaf.index % 2 : 0,
-            pageSurface: pageSurface(for: leaf, preserving: existingSurface),
+            pageSurface: pageSurface(for: leaf),
             imageLoader: parent.imageLoader,
             pageScaleMode: parent.effectivePageScaleMode,
             pageEdgeFillStyle: parent.settings.pageEdgeFillStyle,
@@ -338,7 +333,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         return MangaPagedPageCurlBackContent(image: image,
             geometry: .image(size: image?.size ?? .zero, viewport: .zero,
                 fit: MangaSurfaceFit(parent.effectivePageScaleMode),
-                alignment: initialHorizontalAlignment(for: page, pageIndex: pageIndex)),
+                alignment: pageEntryAlignment),
             transform: MangaSurfaceTransform())
     }
 
@@ -354,25 +349,17 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         controller.view.layoutIfNeeded()
     }
 
-    private func pageSurface(
-        for leaf: MangaPagedPageCurlLeaf,
-        preserving existingSurface: MangaPagedReaderSpreadPageSurface?
-    ) -> MangaPagedReaderSpreadPageSurface? {
+    private func pageSurface(for leaf: MangaPagedPageCurlLeaf) -> MangaPagedReaderSpreadPageSurface? {
         guard !leaf.isBack, let pageIndex = leaf.pageIndex,
               let page = parent.plan.page(at: pageIndex) else {
             return nil
         }
         let identity = pageCurlPageSurfaceIdentity(for: page)
         let interaction = surfaceInteraction(for: page)
-        // Chrome/like refreshes must not reinterpret a backward entry after selection catches up.
-        let alignment = existingSurface.flatMap { surface in
-            surface.surfaceIdentity == identity && surface.surfaceInteraction === interaction
-                ? surface.initialHorizontalAlignment : nil
-        } ?? initialHorizontalAlignment(for: page, pageIndex: pageIndex)
         return MangaPagedReaderSpreadPageSurface(
             page: page,
             surfaceIdentity: identity,
-            initialHorizontalAlignment: alignment,
+            initialHorizontalAlignment: pageEntryAlignment,
             surfaceInteraction: interaction,
             onLongPress: { [weak self] page in
                 guard let self else { return }
@@ -403,16 +390,25 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         )
     }
 
-    private func initialHorizontalAlignment(
-        for page: MangaReaderPageProjection,
-        pageIndex: Int
-    ) -> MangaPagedImageSurfaceInitialHorizontalAlignment {
-        MangaPagedImageSurfaceInitialHorizontalAlignment.enteringPage(
-            pageTurnDirection: parent.settings.pageTurnDirection,
-            pageScaleMode: parent.effectivePageScaleMode,
-            currentPageIndex: parent.plan.currentPageIndex,
-            targetPageIndex: pageIndex
-        )
+    private var pageEntryAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment {
+        .init(pageTurnDirection: parent.settings.pageTurnDirection)
+    }
+
+    private func preparePageEntry(at index: Int) {
+        guard !parent.sequence.usesTwoPageSpread, let page = parent.plan.spread(at: index)?.preferredPage else { return }
+        interactionRuntime.prepare(SurfaceID(value: "page:" + page.id), alignment: pageEntryAlignment)
+    }
+
+    private func commitSelection(_ index: Int) {
+        currentSelectionIndex = index
+        guard let spread = parent.plan.spread(at: index) else { return }
+        let usesSpread = parent.sequence.usesTwoPageSpread
+        let id = SurfaceID(value: usesSpread ? "curl-spread" : "page:" + spread.preferredPage.id)
+        // The shared spread host still has the outgoing page's readiness until it is reconfigured.
+        interactionRuntime.activate(id, selectionID: spread.id, alignment: pageEntryAlignment, applyImmediately: !usesSpread)
+        if usesSpread, let container = activeContainerViewController {
+            zoom.updatePageCurlSpreadZoomAvailability(in: container)
+        }
     }
 
     private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaSurfaceAttachment {
@@ -452,10 +448,7 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         let leafIndexes = pageViewController.viewControllers?
             .compactMap { ($0 as? MangaPagedPageCurlHostingController)?.leaf.index } ?? []
         guard let selectionIndex = parent.sequence.selectionIndex(forLeafIndexes: leafIndexes) else { return }
-        if parent.sequence.usesTwoPageSpread, selectionIndex != currentSelectionIndex {
-            zoom.reset()
-        }
-        currentSelectionIndex = selectionIndex
+        commitSelection(selectionIndex)
         guard selectionIndex != parent.selectionIndex else { return }
         publishCurrentPageIfNeeded(selectionIndex: selectionIndex)
     }
@@ -479,11 +472,6 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         }
 
         lastReportedGlobalIndex = globalIndex
-        if parent.sequence.usesTwoPageSpread {
-            interactionRuntime.activate(SurfaceID(value: "curl-spread"))
-        } else if let page = parent.plan.spread(at: selectionIndex)?.preferredPage {
-            interactionRuntime.activate(SurfaceID(value: "page:" + page.id))
-        }
         let onCurrentPageChange = parent.onCurrentPageChange
         callbackScheduler.publish {
             onCurrentPageChange(globalIndex)

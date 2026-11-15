@@ -23,11 +23,12 @@ final class MangaPagedPageCurlZoomController {
         let parent = coordinator.parent
         let spread = parent.plan.spread(at: coordinator.selectionIndex)
         let spreadPageIDs = [spread?.leftPage?.id, spread?.rightPage?.id].compactMap { $0 }
-        container.zoomView.restoreFocus = {
-            if let id = spread?.leftPage?.id, let focus = parent.handoff?.takeFocus(for: id, horizontalHalf: 0) { return focus }
-            if let id = spread?.rightPage?.id { return parent.handoff?.takeFocus(for: id, horizontalHalf: 1) }
-            return nil
+        func spreadImage(for pageID: String?) -> MangaNativeSurfaceView.SpreadImage? {
+            pageID.map { .init(pageID: $0, runtime: coordinator.pageSurfaceInteractions[$0]?.runtime) }
         }
+        container.zoomView.pageContent = .spread(left: spreadImage(for: spread?.leftPage?.id),
+                                                right: spreadImage(for: spread?.rightPage?.id))
+        container.zoomView.handoff = parent.handoff
         container.zoomView.configure(runtime: runtime,
             configuration: MangaInteractionConfiguration(chromeVisible: parent.isChromeVisible,
                 zoomEnabled: parent.zoomEnabled && parent.sequence.usesTwoPageSpread, allowsUnzoomedPan: false),
@@ -45,10 +46,6 @@ final class MangaPagedPageCurlZoomController {
                 self.updatePageCurlSpreadZoomAvailability(in: container)
             }
         }
-    }
-
-    func reset() {
-        runtime.invalidate(reset: true)
     }
 
     func detach(from container: MangaPagedPageCurlContainerViewController) {

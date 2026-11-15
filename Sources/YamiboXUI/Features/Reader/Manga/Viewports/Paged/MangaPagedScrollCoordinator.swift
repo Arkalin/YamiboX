@@ -15,15 +15,14 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     var parent: MangaPagedReaderViewport
     let informationState = ReaderAttachedInformationState()
-    let pagingDriver = ReaderPagedPagingDriver()
-    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime { [weak self] in
+    let pagingDriver = ReaderPagedPagingDriver(commitsQuickFadeSelectionImmediately: true)
+    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime(zoomSession: parent.pagedZoom) { [weak self] in
         self?.parent.settings.zoomAnimationEnabled ?? true
     }
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var surfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
     private var pageSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
     private var spreadSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]
-    private var pageSurfaceInitialHorizontalAlignments: [String: MangaPagedImageSurfaceInitialHorizontalAlignment] = [:]
     private var lastAppliedLikedPageIDs: Set<String> = []
     private var pendingInitialSpreadIndex: Int?
     private var lastReportedGlobalIndex: Int?
@@ -56,7 +55,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     private func pagingInputs(selectionSpreadIndex: Int?) -> ReaderPagedPagingInputs {
         let spreadIndex = parent.plan.clampedSpreadIndex(selectionSpreadIndex) ?? 0
-        let reportsDriverSelection = !usesSlidePaging
+        let contentIdentity = contentIdentity
+        let placementRevision = parent.viewportPlacement?.revision
         return ReaderPagedPagingInputs(
             itemCount: parent.plan.spreads.count,
             selectionIndex: spreadIndex,
@@ -71,11 +71,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             ),
             scrollAnimationRequest: nil,
             canBoundaryPageTurn: parent.canBoundaryPageTurn,
-            onSelectionChange: { [weak self] spreadIndex in
-                // Sliding manga commits selection only after the full spread is aligned.
-                guard reportsDriverSelection else { return }
-                self?.publishCurrentPageIfNeeded(spreadIndex: spreadIndex)
-            },
             onBoundaryPageTurn: parent.onBoundaryPageTurn,
             onBoundaryPageTurnRejected: parent.onBoundaryPageTurnRejected,
             onScrollAnimationRequestConsumed: { _ in },
@@ -91,6 +86,12 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             },
             selectionIndexForItemIndex: { [weak self] viewportIndex in
                 self?.spreadIndex(forViewportIndex: viewportIndex) ?? viewportIndex
+            },
+            onSelectionSettled: { [weak self] spreadIndex in
+                // Slide commits only after its own geometry-based alignment.
+                guard let self, !self.usesSlidePaging, self.contentIdentity == contentIdentity,
+                      self.parent.viewportPlacement?.revision == placementRevision else { return }
+                self.commitVisibleSpread(spreadIndex)
             }
         )
     }
@@ -129,12 +130,11 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
         contentIdentity = nextIdentity
         resetSlideSettlement()
-        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
+        pagingDriver.cancelSelectionScroll(in: collectionView, inputs: pagingInputs)
         interactionRuntime.reset()
         surfaceInteractionIdentity = nil
         pageSurfaceInteractions = [:]
         spreadSurfaceInteractions = [:]
-        pageSurfaceInitialHorizontalAlignments = [:]
         lastReportedGlobalIndex = nil
         if parent.plan.spreads.isEmpty {
             pendingInitialSpreadIndex = nil
@@ -176,7 +176,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             return
         }
 
-        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
+        pagingDriver.cancelSelectionScroll(in: collectionView, inputs: pagingInputs)
         collectionView.collectionViewLayout.invalidateLayout()
         if usesSlidePaging {
             // A model placement not yet completed is reapplied from the
@@ -193,6 +193,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             animated: false
         )
         // A resize only restores placement; it must not change reading progress.
+        activatePageEntry(at: spreadIndex)
         updateGestureState(in: collectionView)
     }
 
@@ -214,7 +215,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             return cell
         }
 
-        configureSpreadCell(cell, spreadIndex: spreadIndex, refreshInitialHorizontalAlignment: true)
+        configureSpreadCell(cell, spreadIndex: spreadIndex)
         return cell
     }
 
@@ -224,7 +225,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         forItemAt indexPath: IndexPath
     ) {
         let spreadIndex = spreadIndex(forViewportIndex: indexPath.item)
-        configureSpreadCell(cell, spreadIndex: spreadIndex, refreshInitialHorizontalAlignment: true)
+        configureSpreadCell(cell, spreadIndex: spreadIndex)
     }
 
     func collectionView(
@@ -248,6 +249,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             scheduleSlideAlignment(.drag)
         }
         pagingDriver.scrollViewWillBeginDragging(scrollView, inputs: pagingInputs)
+        if let collectionView = scrollView as? UICollectionView {
+            prepareVisiblePageEntries(in: collectionView)
+        }
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -455,11 +459,11 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         guard collectionView.bounds.width > 0, collectionView.bounds.height > 0 else {
             return
         }
-        pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
+        preparePageEntry(at: targetIndex)
+        pagingDriver.cancelSelectionScroll(in: collectionView, inputs: pagingInputs)
         if usesSlidePaging {
             guard alignSlide(to: targetIndex, in: collectionView) else { return }
             settledSlideSpreadIndex = targetIndex
-            activateSurface(forSpreadAt: targetIndex)
         } else {
             collectionView.scrollToItem(
                 at: IndexPath(item: viewportIndex(forSpreadIndex: targetIndex), section: 0),
@@ -467,6 +471,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
                 animated: false
             )
         }
+        activatePageEntry(at: targetIndex)
         lastHandledPlacementRevision = placement?.revision
         pendingInitialSpreadIndex = nil
         collectionView.alpha = 1
@@ -489,6 +494,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         }
 
         let placementInputs = pagingInputs(selectionSpreadIndex: targetSpreadIndex)
+        preparePageEntry(at: targetSpreadIndex)
         if usesSlidePaging {
             guard !collectionView.isDragging, placement.revision != animatingSlidePlacementRevision,
                   let x = alignedSlideOffsetX(for: targetSpreadIndex, in: collectionView) else { return }
@@ -507,28 +513,18 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
         let targetViewportIndex = viewportIndex(forSpreadIndex: targetSpreadIndex)
         lastHandledPlacementRevision = placement.revision
+        pagingDriver.cancelSelectionScroll(in: collectionView, inputs: pagingInputs)
         if placement.animated {
-            let didRequestDriverScroll = pagingDriver.requestSelectionScroll(
-                in: collectionView,
-                animated: true,
-                inputs: placementInputs
-            )
-            if !didRequestDriverScroll {
-                collectionView.scrollToItem(
-                    at: IndexPath(item: targetViewportIndex, section: 0),
-                    at: .centeredHorizontally,
-                    animated: parent.settings.pagedTurnStyle != .none
-                )
-            }
-        } else {
-            pagingDriver.cancelSlideTransition(in: collectionView, inputs: pagingInputs)
-            collectionView.scrollToItem(
-                at: IndexPath(item: targetViewportIndex, section: 0),
-                at: .centeredHorizontally,
-                animated: false
-            )
-            publishCurrentPageIfNeeded(spreadIndex: targetSpreadIndex)
+            if pagingDriver.requestSelectionScroll(in: collectionView, animated: true, inputs: placementInputs) { return }
+            // A detached or not-yet-laid-out UIKit viewport may not send animation completion.
+            pagingDriver.cancelSelectionScroll(in: collectionView, inputs: pagingInputs)
         }
+        collectionView.scrollToItem(
+            at: IndexPath(item: targetViewportIndex, section: 0),
+            at: .centeredHorizontally,
+            animated: false
+        )
+        commitVisibleSpread(targetSpreadIndex)
     }
 
     private func spreadIndex(for placement: MangaNovelReaderViewportPlacement) -> Int? {
@@ -541,6 +537,7 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         in collectionView: UICollectionView,
         inputs: ReaderPagedPagingInputs
     ) {
+        preparePageEntry(at: targetSpreadIndex)
         if usesSlidePaging {
             guard !hasUnappliedViewportPlacement, collectionView.window != nil,
                   let x = alignedSlideOffsetX(for: targetSpreadIndex, in: collectionView) else { return }
@@ -612,35 +609,24 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         for case let cell as ReaderPagedPageTurnCell in collectionView.visibleCells {
             guard let indexPath = collectionView.indexPath(for: cell) else { continue }
             let spreadIndex = spreadIndex(forViewportIndex: indexPath.item)
-            configureSpreadCell(cell, spreadIndex: spreadIndex, refreshInitialHorizontalAlignment: false)
+            configureSpreadCell(cell, spreadIndex: spreadIndex)
         }
     }
 
-    private func configureSpreadCell(
-        _ cell: UICollectionViewCell,
-        spreadIndex: Int,
-        refreshInitialHorizontalAlignment: Bool
-    ) {
+    private func configureSpreadCell(_ cell: UICollectionViewCell, spreadIndex: Int) {
         guard let cell = cell as? ReaderPagedPageTurnCell,
               parent.plan.spreads.indices.contains(spreadIndex) else {
             return
         }
 
         let spread = parent.plan.spreads[spreadIndex]
+        preparePageEntry(at: spreadIndex)
         cell.configure(
             informationState: informationState,
             informationIndex: spreadIndex,
             usesTwoPageSpread: parent.plan.usesTwoPageSpread,
-            leftPageSurface: pageSurface(
-                page: spread.leftPage,
-                pageIndex: spread.leftPageIndex,
-                refreshInitialHorizontalAlignment: refreshInitialHorizontalAlignment
-            ),
-            rightPageSurface: pageSurface(
-                page: spread.rightPage,
-                pageIndex: spread.rightPageIndex,
-                refreshInitialHorizontalAlignment: refreshInitialHorizontalAlignment
-            ),
+            leftPageSurface: pageSurface(spread.leftPage),
+            rightPageSurface: pageSurface(spread.rightPage),
             imageLoader: parent.imageLoader,
             pageScaleMode: parent.effectivePageScaleMode,
             pageEdgeFillStyle: parent.settings.pageEdgeFillStyle,
@@ -662,20 +648,12 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         imagePrefetch.stop()
     }
 
-    private func pageSurface(
-        page: MangaReaderPageProjection?,
-        pageIndex: Int?,
-        refreshInitialHorizontalAlignment: Bool
-    ) -> MangaPagedReaderSpreadPageSurface? {
-        guard let page, let pageIndex else { return nil }
+    private func pageSurface(_ page: MangaReaderPageProjection?) -> MangaPagedReaderSpreadPageSurface? {
+        guard let page else { return nil }
         return MangaPagedReaderSpreadPageSurface(
             page: page,
             surfaceIdentity: MangaPagedReaderPageAppearanceIdentity(pageID: page.id, appearanceGeneration: 0),
-            initialHorizontalAlignment: initialHorizontalAlignment(
-                for: page,
-                pageIndex: pageIndex,
-                refresh: refreshInitialHorizontalAlignment
-            ),
+            initialHorizontalAlignment: pageEntryAlignment,
             surfaceInteraction: surfaceInteraction(for: page),
             onLongPress: { [weak self] page in
                 guard let self else { return }
@@ -687,25 +665,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
                 }
             }
         )
-    }
-
-    private func initialHorizontalAlignment(
-        for page: MangaReaderPageProjection,
-        pageIndex: Int,
-        refresh: Bool
-    ) -> MangaPagedImageSurfaceInitialHorizontalAlignment {
-        if !refresh, let alignment = pageSurfaceInitialHorizontalAlignments[page.id] {
-            return alignment
-        }
-
-        let alignment = MangaPagedImageSurfaceInitialHorizontalAlignment.enteringPage(
-            pageTurnDirection: parent.settings.pageTurnDirection,
-            pageScaleMode: parent.effectivePageScaleMode,
-            currentPageIndex: parent.plan.currentPageIndex,
-            targetPageIndex: pageIndex
-        )
-        pageSurfaceInitialHorizontalAlignments[page.id] = alignment
-        return alignment
     }
 
     private func surfaceInteraction(for page: MangaReaderPageProjection) -> MangaSurfaceAttachment {
@@ -748,30 +707,19 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     private func confirmSlideLanding(at spreadIndex: Int, publishesProgress: Bool) {
         settledSlideSpreadIndex = spreadIndex
-        if publishesProgress {
-            publishCurrentPageIfNeeded(spreadIndex: spreadIndex)
-            return
-        }
-        // For model-driven jumps and resize, don't replace an exact page with
-        // the preferred page of its spread.
-        lastReportedGlobalIndex = parent.plan.globalIndex(forSpreadAt: spreadIndex)
-        activateSurface(forSpreadAt: spreadIndex)
+        commitVisibleSpread(spreadIndex, publishesProgress: publishesProgress)
     }
 
-    private func activateSurface(forSpreadAt spreadIndex: Int) {
-        let spread = parent.plan.spreads[spreadIndex]
-        let id = parent.plan.usesTwoPageSpread ? "spread:" + spread.id : "page:" + spread.preferredPage.id
-        interactionRuntime.activate(SurfaceID(value: id))
-    }
-
-    private func publishCurrentPageIfNeeded(spreadIndex: Int) {
+    private func commitVisibleSpread(_ spreadIndex: Int, publishesProgress: Bool = true) {
+        activatePageEntry(at: spreadIndex)
         guard let globalIndex = parent.plan.globalIndex(forSpreadAt: spreadIndex),
               globalIndex != lastReportedGlobalIndex else {
             return
         }
 
         lastReportedGlobalIndex = globalIndex
-        activateSurface(forSpreadAt: spreadIndex)
+        // Preserve an exact model-selected page instead of publishing its spread's preferred page.
+        guard publishesProgress, parent.plan.currentSpreadIndex != spreadIndex || parent.plan.currentPageIndex == nil else { return }
         let onCurrentPageChange = parent.onCurrentPageChange
         callbackScheduler.publish {
             onCurrentPageChange(globalIndex)
@@ -780,6 +728,30 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     func currentSpreadIndex(in collectionView: UICollectionView) -> Int? {
         restingSlideSpreadIndex ?? nearestSpreadIndex(in: collectionView)
+    }
+
+    private func surfaceID(for spread: MangaPageSpread) -> SurfaceID {
+        SurfaceID(value: parent.plan.usesTwoPageSpread ? "spread:" + spread.id : "page:" + spread.preferredPage.id)
+    }
+
+    private var pageEntryAlignment: MangaPagedImageSurfaceInitialHorizontalAlignment {
+        .init(pageTurnDirection: parent.settings.pageTurnDirection)
+    }
+
+    func preparePageEntry(at index: Int) {
+        guard let spread = parent.plan.spread(at: index) else { return }
+        interactionRuntime.prepare(surfaceID(for: spread), alignment: pageEntryAlignment)
+    }
+
+    private func prepareVisiblePageEntries(in collectionView: UICollectionView) {
+        for indexPath in collectionView.indexPathsForVisibleItems {
+            preparePageEntry(at: spreadIndex(forViewportIndex: indexPath.item))
+        }
+    }
+
+    private func activatePageEntry(at index: Int) {
+        guard let spread = parent.plan.spread(at: index) else { return }
+        interactionRuntime.activate(surfaceID(for: spread), selectionID: spread.id, alignment: pageEntryAlignment)
     }
 
     private func nearestSpreadIndex(in collectionView: UICollectionView) -> Int? {

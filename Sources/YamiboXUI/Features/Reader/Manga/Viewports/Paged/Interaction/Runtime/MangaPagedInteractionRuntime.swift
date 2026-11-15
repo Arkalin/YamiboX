@@ -1,6 +1,33 @@
 import Foundation
 
 @MainActor
+final class MangaPagedZoomSession {
+    private weak var current: MangaSurfaceRuntime?
+    private(set) var factor = MangaPageZoomPolicy.minimumScale
+
+    func activate(_ surface: MangaSurfaceRuntime) {
+        current = surface
+    }
+
+    func deactivate(_ surface: MangaSurfaceRuntime) {
+        if current === surface { current = nil }
+    }
+
+    func owns(_ surface: MangaSurfaceRuntime) -> Bool {
+        current === surface
+    }
+
+    func record(_ factor: CGFloat, from surface: MangaSurfaceRuntime) {
+        guard owns(surface), factor.isFinite else { return }
+        self.factor = MangaPageZoomPolicy.clampedScale(factor)
+    }
+
+    func resetFactor() {
+        factor = MangaPageZoomPolicy.minimumScale
+    }
+}
+
+@MainActor
 final class MangaPagedInteractionRuntime {
     func navigationContext(
         selectionIndex: Int,
@@ -40,11 +67,13 @@ final class MangaPagedInteractionRuntime {
     }
 
     private var surfaces: [SurfaceID: MangaSurfaceRuntime] = [:]
-    private(set) var activeSurface: SurfaceID?
+    private var active: (surfaceID: SurfaceID, selectionID: String)?
     private(set) var navigationGeneration: UInt64 = 0
+    private let zoomSession: MangaPagedZoomSession
     private let shouldAnimateZoom: () -> Bool
 
-    init(shouldAnimateZoom: @escaping () -> Bool) {
+    init(zoomSession: MangaPagedZoomSession, shouldAnimateZoom: @escaping () -> Bool) {
+        self.zoomSession = zoomSession
         self.shouldAnimateZoom = shouldAnimateZoom
     }
 
@@ -55,17 +84,34 @@ final class MangaPagedInteractionRuntime {
         return surface
     }
 
-    func activate(_ id: SurfaceID) {
-        guard activeSurface != id else { return }
+    func prepare(_ id: SurfaceID, alignment: MangaPagedImageSurfaceInitialHorizontalAlignment) {
+        guard active?.surfaceID != id else { return }
+        surface(id).preparePageEntry(factor: zoomSession.factor, alignment: alignment)
+    }
+
+    func activate(_ id: SurfaceID, selectionID: String, alignment: MangaPagedImageSurfaceInitialHorizontalAlignment,
+                  applyImmediately: Bool = true) {
+        guard active?.surfaceID != id || active?.selectionID != selectionID else { return }
         navigationGeneration &+= 1
-        if let activeSurface { surfaces[activeSurface]?.invalidate(reset: true) }
-        activeSurface = id
+        deactivate()
+        active = (id, selectionID)
+        let runtime = surface(id)
+        runtime.zoomSession = zoomSession
+        zoomSession.activate(runtime)
+        runtime.preparePageEntry(factor: zoomSession.factor, alignment: alignment, applyImmediately: applyImmediately)
+    }
+
+    private func deactivate() {
+        guard let active, let surface = surfaces[active.surfaceID] else { return }
+        zoomSession.deactivate(surface)
+        surface.endPageEntry()
+        self.active = nil
     }
 
     func reset(keeping ids: Set<SurfaceID> = []) {
         navigationGeneration &+= 1
+        deactivate()
         for surface in surfaces.values { surface.invalidate(reset: true) }
         surfaces = surfaces.filter { ids.contains($0.key) }
-        activeSurface = nil
     }
 }

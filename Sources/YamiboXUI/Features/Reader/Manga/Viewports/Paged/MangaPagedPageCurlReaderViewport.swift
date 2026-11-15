@@ -23,6 +23,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     let zoomEnabled: Bool
     let likedPageIDs: Set<String>
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
+    let pagedZoom: MangaPagedZoomSession
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int) -> Bool
     let onBoundaryPageTurn: (Int) -> Void
@@ -117,7 +118,7 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
             let plan = coordinator.parent.plan
             let retainedIndex = plan.currentPageIndex.flatMap { spread.containsPage(at: $0) ? $0 : nil }
             let fallback = retainedIndex.map { plan.pages[$0] } ?? spread.preferredPage
-            let focus = spread.pageFocus(from: coordinator.gestures.currentSurface?.normalizedFocus, defaultPage: fallback)
+            let focus = coordinator.gestures.currentSurface?.pageFocus
             let page = [spread.leftPage, spread.rightPage].compactMap { $0 }.first { $0.id == focus?.pageID } ?? fallback
             return .init(page: page, placement: coordinator.parent.viewportPlacement, focus: focus)
         }

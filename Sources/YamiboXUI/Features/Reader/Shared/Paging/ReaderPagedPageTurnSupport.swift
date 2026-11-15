@@ -376,7 +376,7 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
     var pagerIdentity: ReaderPagedPagerIdentity
     var scrollAnimationRequest: ReaderPagedScrollAnimationRequest?
     var canBoundaryPageTurn: (Int) -> Bool
-    var onSelectionChange: (Int) -> Void
+    var onSelectionChange: ((Int) -> Void)? = nil
     var onBoundaryPageTurn: (Int) -> Void
     var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     var onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
@@ -384,6 +384,7 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
     var pageTurnBackgroundColor: (UITraitCollection, CGFloat) -> UIColor
     var itemIndexForSelectionIndex: (Int) -> Int = { $0 }
     var selectionIndexForItemIndex: (Int) -> Int = { $0 }
+    var onSelectionSettled: ((Int) -> Void)? = nil
 }
 
 extension ReaderPagedTurnStyle {
@@ -401,7 +402,7 @@ final class ReaderPagedPagingDriver {
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
     private var pendingSelectionIndex: Int?
     private var isReloadingDataForSelectionScroll = false
-    private var isPendingSelectionScrollRetryScheduled = false
+    private var pendingSelectionScrollRetryID: UUID?
     private var consumedScrollAnimationRequestID: UUID?
     private var pageTurnRestingIndex: Int?
     private var isPerformingQuickFadeTransition = false
@@ -433,6 +434,12 @@ final class ReaderPagedPagingDriver {
         endPageTurnVisuals(in: collectionView, inputs: inputs)
     }
 
+    func cancelSelectionScroll(in collectionView: UICollectionView, inputs: ReaderPagedPagingInputs) {
+        pendingSelectionIndex = nil
+        pendingSelectionScrollRetryID = nil
+        cancelSlideTransition(in: collectionView, inputs: inputs)
+    }
+
     /// Animates a target already resolved by the caller's layout. Unlike a
     /// selection request, this doesn't queue a retry or publish selection.
     func slideToResolvedOffset(
@@ -442,8 +449,7 @@ final class ReaderPagedPagingDriver {
         inputs: ReaderPagedPagingInputs,
         onFinished: @escaping (Bool) -> Void
     ) {
-        pendingSelectionIndex = nil
-        cancelSlideTransition(in: collectionView, inputs: inputs)
+        cancelSelectionScroll(in: collectionView, inputs: inputs)
         startSlide(
             to: selectionIndex,
             offset: CGPoint(x: offsetX, y: collectionView.contentOffset.y),
@@ -713,11 +719,12 @@ final class ReaderPagedPagingDriver {
         animated: Bool,
         inputs: ReaderPagedPagingInputs
     ) {
-        guard !isPendingSelectionScrollRetryScheduled else { return }
-        isPendingSelectionScrollRetryScheduled = true
+        guard pendingSelectionScrollRetryID == nil else { return }
+        let retryID = UUID()
+        pendingSelectionScrollRetryID = retryID
         DispatchQueue.main.async { [weak self, weak collectionView] in
-            guard let self else { return }
-            self.isPendingSelectionScrollRetryScheduled = false
+            guard let self, self.pendingSelectionScrollRetryID == retryID else { return }
+            self.pendingSelectionScrollRetryID = nil
             guard let collectionView else { return }
             self.scrollToPendingSelectionIfPossible(in: collectionView, animated: animated, inputs: inputs)
         }
@@ -732,10 +739,12 @@ final class ReaderPagedPagingDriver {
 
     private func publishSelectionIfNeeded(_ selectionIndex: Int, inputs: ReaderPagedPagingInputs) {
         let clampedItem = min(max(selectionIndex, 0), max(inputs.itemCount - 1, 0))
-        guard clampedItem != inputs.selectionIndex else { return }
-        let onSelectionChange = inputs.onSelectionChange
+        let onSelectionChange = clampedItem != inputs.selectionIndex ? inputs.onSelectionChange : nil
+        let onSelectionSettled = inputs.onSelectionSettled
+        guard onSelectionChange != nil || onSelectionSettled != nil else { return }
         callbackScheduler.publish {
-            onSelectionChange(clampedItem)
+            onSelectionSettled?(clampedItem)
+            onSelectionChange?(clampedItem)
         }
     }
 

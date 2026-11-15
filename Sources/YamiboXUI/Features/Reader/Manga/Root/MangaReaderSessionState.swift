@@ -19,6 +19,7 @@ enum MangaReaderPanel: ReaderPanelRoute, Hashable {
 final class MangaReaderSessionState {
     let model: MangaReaderViewModel
     let viewportHandoff = MangaViewportHandoff()
+    let pagedZoom = MangaPagedZoomSession()
     var isDismissing = false
     var isChromeVisible = true
     var presentedPanel: MangaReaderPanel?

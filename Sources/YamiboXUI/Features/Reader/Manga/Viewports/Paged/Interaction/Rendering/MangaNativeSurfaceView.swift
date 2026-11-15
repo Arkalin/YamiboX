@@ -4,6 +4,16 @@ import UIKit
 
 /// The same host is used for a fitted bitmap, a hosted spread, and page-curl.
 final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceControlling, UIGestureRecognizerDelegate {
+    enum PageContent {
+        case image(String)
+        case spread(left: SpreadImage?, right: SpreadImage?)
+    }
+
+    struct SpreadImage {
+        let pageID: String
+        let runtime: MangaSurfaceRuntime?
+    }
+
     private(set) var runtime: MangaSurfaceRuntime?
     private let instance = UUID()
     private var geometry: MangaSurfaceGeometry = .spread(viewport: .zero)
@@ -12,7 +22,8 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
     var onLongPress: (() -> Void)?
     var onBaseSizeChange: ((CGSize) -> Void)?
     var onInformationZoomChange: ((Bool) -> Void)?
-    var restoreFocus: (() -> MangaViewportFocus?)?
+    var pageContent: PageContent?
+    var handoff: MangaViewportHandoff?
     private(set) lazy var longPress = UILongPressGestureRecognizer(target: self, action: #selector(showMenu(_:)))
 
     override init() {
@@ -37,8 +48,13 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             return runtime.canPinch && runtime.permitsInteraction()
         }
         onSnapshotChange = { [weak self] snapshot in
-            self?.onInformationZoomChange?(MangaPageZoomPolicy.isActive(snapshot.factor) || snapshot.isInteracting)
-            self?.publishNativeState()
+            guard let self else { return }
+            if !self.configuring, let state = self.pinchGestureRecognizer?.state,
+               snapshot.isZooming, state == .began || state == .changed {
+                self.runtime?.finishPageEntry()
+            }
+            self.onInformationZoomChange?(MangaPageZoomPolicy.isActive(snapshot.factor) || snapshot.isInteracting)
+            self.publishNativeState()
         }
         onInteractionEnd = { [weak self] in
             guard let self else { return }
@@ -73,7 +89,8 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             }
             let maximum: CGFloat = configuration.zoomEnabled ? 4 : 1
             if maximumZoomScale != maximum { maximumZoomScale = maximum }
-            applyHandoffFocusIfReady()
+            if !imageLoaded, runtime.pendingPageEntry != nil { showUnzoomedPlaceholder() }
+            applyPendingPageEntry()
             publishNativeState()
         }
     }
@@ -106,15 +123,35 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             placeAtRest()
         }
         configuring = false
-        applyHandoffFocusIfReady()
+        applyPendingPageEntry()
         publishNativeState()
+        notifySpreadOfReadyImage()
     }
 
-    var normalizedFocus: (point: CGPoint, factor: CGFloat)? {
-        guard baseContentSize.width > 0, baseContentSize.height > 0,
-              normalizedZoomFactor > 1.001 else { return nil }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { notifySpreadOfReadyImage() }
+    }
+
+    var pageFocus: MangaViewportFocus? {
+        guard baseContentSize != .zero, normalizedZoomFactor > 1.001, let pageContent else { return nil }
         let rect = snapshot.visibleRect
-        return (CGPoint(x: rect.midX / baseContentSize.width, y: rect.midY / baseContentSize.height), normalizedZoomFactor)
+        let pageID: String
+        let frame: CGRect
+        switch pageContent {
+        case let .image(id):
+            pageID = id
+            frame = CGRect(origin: .zero, size: baseContentSize)
+        case let .spread(left, right):
+            let image = rect.midX < baseContentSize.width / 2 ? left ?? right : right ?? left
+            guard let image, let bitmap = spreadImageFrame(for: image) else { return nil }
+            pageID = image.pageID
+            frame = bitmap
+        }
+        return MangaViewportFocus(pageID: pageID, point: CGPoint(
+            x: min(max((rect.midX - frame.minX) / frame.width, 0), 1),
+            y: min(max((rect.midY - frame.minY) / frame.height, 0), 1)
+        ), factor: normalizedZoomFactor)
     }
 
     var keepsPageFixedDuringImageInteraction: Bool {
@@ -140,11 +177,92 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         runtime.apply(decision)
     }
 
-    private func applyHandoffFocusIfReady() {
-        guard baseContentSize.width > 0, baseContentSize.height > 0,
-              runtime?.canPinch == true, let focus = restoreFocus?() else { return }
-        place(contentPoint: CGPoint(x: focus.point.x * baseContentSize.width, y: focus.point.y * baseContentSize.height),
-              at: CGPoint(x: bounds.width / 2, y: bounds.height / 2), zoomFactor: focus.factor)
+    func applyPendingPageEntry() {
+        guard !configuring, baseContentSize.width > 0, baseContentSize.height > 0,
+              let runtime, runtime.isMounted(instance), runtime.canPinch,
+              maximumZoomScale > minimumZoomScale else { return }
+        let entry = runtime.pendingPageEntry
+        let content = CGRect(origin: .zero, size: baseContentSize)
+        var placement: (focus: MangaViewportFocus, frame: CGRect)?
+        if runtime.zoomSession?.owns(runtime) == true, let focus = handoff?.focusToRestore {
+            switch pageContent {
+            case .image(let id) where id == focus.pageID:
+                placement = (focus, content)
+            case let .spread(left, right):
+                if let image = left?.pageID == focus.pageID ? left : (right?.pageID == focus.pageID ? right : nil) {
+                    guard let frame = spreadImageFrame(for: image) else {
+                        if entry != nil { showUnzoomedPlaceholder() }
+                        return
+                    }
+                    placement = (focus, frame)
+                }
+            default:
+                break
+            }
+        }
+        guard placement != nil || entry != nil else { return }
+
+        var entryFrame = content
+        if placement == nil, let entry, entry.factor > 1, case let .spread(left, right) = pageContent {
+            let leading = entry.alignment == .left ? left ?? right : right ?? left
+            guard let frame = spreadImageFrame(for: leading) else {
+                // Keep loading and retry controls visible without consuming the inherited factor.
+                showUnzoomedPlaceholder()
+                return
+            }
+            entryFrame = frame
+        }
+        callbackRevision &+= 1
+        configuring = true
+        if let (focus, frame) = placement {
+            handoff?.consumeFocus(for: focus.pageID)
+            place(contentPoint: CGPoint(x: frame.minX + focus.point.x * frame.width, y: frame.minY + focus.point.y * frame.height),
+                  at: CGPoint(x: bounds.width / 2, y: bounds.height / 2), zoomFactor: focus.factor)
+        } else if let entry {
+            let startsAtRight = entry.alignment == .right
+            let fitsWidth = entryFrame.width * entry.factor <= bounds.width
+            let fitsHeight = entryFrame.height * entry.factor <= bounds.height
+            place(contentPoint: CGPoint(
+                x: fitsWidth ? entryFrame.midX : (startsAtRight ? entryFrame.maxX : entryFrame.minX),
+                y: fitsHeight ? entryFrame.midY : entryFrame.minY
+            ), at: CGPoint(
+                x: fitsWidth ? bounds.width / 2 : (startsAtRight ? bounds.width : 0),
+                y: fitsHeight ? bounds.height / 2 : 0
+            ), zoomFactor: entry.factor)
+        }
+        runtime.finishPageEntry()
+        configuring = false
+        publishNativeState()
+    }
+
+    private func spreadImageFrame(for slot: SpreadImage?) -> CGRect? {
+        guard let runtime = slot?.runtime, runtime.imageLoaded,
+              let image = runtime.nativeSurface as? MangaNativeSurfaceView,
+              image.isDescendant(of: zoomContentView), image.baseContentSize != .zero else { return nil }
+        return zoomContentView.convert(image.zoomContentView.bounds, from: image.zoomContentView)
+    }
+
+    private func notifySpreadOfReadyImage() {
+        guard case .image = geometry, runtime?.imageLoaded == true, baseContentSize != .zero else { return }
+        var ancestor = superview
+        while let view = ancestor {
+            if let spread = view as? MangaNativeSurfaceView, case .spread = spread.pageContent {
+                if spread.runtime?.pendingPageEntry != nil || spread.handoff?.focusToRestore != nil {
+                    spread.applyPendingPageEntry()
+                }
+                return
+            }
+            ancestor = view.superview
+        }
+    }
+
+    private func showUnzoomedPlaceholder() {
+        guard !configuring, normalizedZoomFactor > 1 else { return }
+        configuring = true
+        resetZoom(animated: false)
+        placeAtRest()
+        configuring = false
+        publishNativeState()
     }
 
     private func placeAtRest() {
@@ -157,6 +275,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         switch decision {
         case let .zoom(point):
             guard runtime?.permitsInteraction() == true else { return }
+            runtime?.finishPageEntry()
             if MangaPageZoomPolicy.isZoomedForDoubleTapReset(normalizedZoomFactor) {
                 let resting = geometry.nativeImageFrame(MangaSurfaceTransform())
                 zoom(factor: 1, centeredAt: CGPoint(x: bounds.width / 2 - resting.minX,
@@ -188,6 +307,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
     private func publishNativeState() {
         guard !configuring, let runtime, runtime.isMounted(instance), baseContentSize != .zero else { return }
         let value = snapshot
+        runtime.recordNativeZoom(value.factor)
         let frame = convert(zoomContentView.bounds, from: zoomContentView).offsetBy(dx: -bounds.minX, dy: -bounds.minY)
         let rest = geometry.nativeRestingOffset(scale: value.factor)
         let transform = MangaSurfaceTransform(scale: value.factor, offset: CGSize(

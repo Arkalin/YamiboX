@@ -45,6 +45,11 @@ final class MangaPagedScrollNavigationAdapter {
                 self.route(request, in: collection)
             case .navigationPan:
                 guard let pan = recognizer as? UIPanGestureRecognizer, let coordinator = self.coordinator else { return }
+                if pan.state == .ended {
+                    let current = coordinator.pagingInputs.selectionIndex
+                    coordinator.preparePageEntry(at: current - 1)
+                    coordinator.preparePageEntry(at: current + 1)
+                }
                 coordinator.pagingDriver.handleDiscretePagePan(pan, inputs: coordinator.pagingInputs)
             }
         }

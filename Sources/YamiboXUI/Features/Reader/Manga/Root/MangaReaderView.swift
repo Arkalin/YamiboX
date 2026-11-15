@@ -114,6 +114,7 @@ struct MangaReaderView: View {
                 likedPageIDs: model.likedPageIDs,
                 pagedContentTopInset: pagedContentTopInset,
                 controlPageTurnBridge: controlPageTurnBridge,
+                pagedZoom: reader.pagedZoom,
                 onRetryInitialLoad: {
                     Task { await model.retryInitialLoad() }
                 },

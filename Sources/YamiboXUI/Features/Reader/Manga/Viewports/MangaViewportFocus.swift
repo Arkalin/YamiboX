@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Only semantic image coordinates cross a display boundary. UIKit still
+/// Only semantic image coordinates cross display or layout changes. UIKit still
 /// owns the live zoom scale and offset in each mounted viewport.
 struct MangaViewportFocus {
     let pageID: String
@@ -10,15 +10,18 @@ struct MangaViewportFocus {
 
 @MainActor
 final class MangaViewportHandoff {
-    var pendingFocus: MangaViewportFocus?
+    var pendingFocus: MangaViewportFocus? {
+        didSet {
+            if pendingFocus != nil { layoutFocus = nil }
+        }
+    }
+    var layoutFocus: MangaViewportFocus?
 
-    func takeFocus(for pageID: String, horizontalHalf: Int? = nil) -> MangaViewportFocus? {
-        guard let focus = pendingFocus, focus.pageID == pageID else { return nil }
-        pendingFocus = nil
-        guard let horizontalHalf else { return focus }
-        return MangaViewportFocus(pageID: focus.pageID,
-            point: CGPoint(x: (CGFloat(horizontalHalf) + focus.point.x) / 2, y: focus.point.y),
-            factor: focus.factor)
+    var focusToRestore: MangaViewportFocus? { pendingFocus ?? layoutFocus }
+
+    func consumeFocus(for pageID: String) {
+        if pendingFocus?.pageID == pageID { pendingFocus = nil }
+        if layoutFocus?.pageID == pageID { layoutFocus = nil }
     }
 }
 
