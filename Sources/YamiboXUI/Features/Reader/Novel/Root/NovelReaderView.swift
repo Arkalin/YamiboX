@@ -130,6 +130,9 @@ struct NovelReaderView: View {
                 .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(
                     tap: { point in
                         guard let window = remoteInput?.targets.window else { return }
+                        if NovelReaderImageInteraction.activateFailureControl(at: point, in: window, device: deviceInteraction) {
+                            return
+                        }
                         if let item = reader.annotations.highlightController.item(at: point, in: window) {
                             showRemoteTextMenu(for: item)
                         } else if !NovelReaderImageInteraction.openImage(at: point, in: window, onOpen: openImageBrowser(url:title:)),

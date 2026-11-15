@@ -33,6 +33,8 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.mangaViewportHandoff) var handoff
+    @Environment(\.readerRemoteInput) var remoteInput
+    @Environment(\.readerDeviceInteraction) var deviceInteraction
 
     var pageEdgeFillColor: UIColor {
         settings.pageEdgeFillStyle.uiColor(for: colorScheme)

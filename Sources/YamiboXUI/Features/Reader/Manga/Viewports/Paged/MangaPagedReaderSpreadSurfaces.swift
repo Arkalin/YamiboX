@@ -19,7 +19,9 @@ extension ReaderPagedPageTurnCell {
         spreadSurfaceInteraction: MangaSurfaceAttachment,
         likedPageIDs: Set<String>,
         colorScheme: ColorScheme,
-        handoff: MangaViewportHandoff?
+        handoff: MangaViewportHandoff?,
+        remoteInput: ReaderExternalInput?,
+        deviceInteraction: ReaderDeviceInteractionContext?
     ) {
         let pageEdgeFillColor = pageEdgeFillStyle.uiColor(for: colorScheme)
         backgroundColor = pageEdgeFillColor
@@ -38,6 +40,8 @@ extension ReaderPagedPageTurnCell {
                 likedPageIDs: likedPageIDs
             )
             .environment(\.mangaViewportHandoff, handoff)
+            .environment(\.readerRemoteInput, remoteInput)
+            .environment(\.readerDeviceInteraction, deviceInteraction)
             .padding(.top, informationState.configuration.contentTopInset)
             .background(.black)
             .overlay {

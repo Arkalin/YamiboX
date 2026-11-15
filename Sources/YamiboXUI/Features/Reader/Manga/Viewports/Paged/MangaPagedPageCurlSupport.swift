@@ -109,6 +109,8 @@ struct MangaPagedPageCurlLeafView: View {
     var isBack: Bool = false
     var backContent: MangaPagedPageCurlBackContent?
     var handoff: MangaViewportHandoff?
+    var remoteInput: ReaderExternalInput?
+    var deviceInteraction: ReaderDeviceInteractionContext?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -161,6 +163,8 @@ struct MangaPagedPageCurlLeafView: View {
             nativeAnimationSpeed: isPageZoomEnabled ? 1 / ReaderPagedPageCurlTransition.animationSpeed : 1
         )
         .environment(\.mangaViewportHandoff, handoff)
+        .environment(\.readerRemoteInput, remoteInput)
+        .environment(\.readerDeviceInteraction, deviceInteraction)
         .padding(.top, informationState.configuration.contentTopInset)
         .background(.black)
         .overlay {

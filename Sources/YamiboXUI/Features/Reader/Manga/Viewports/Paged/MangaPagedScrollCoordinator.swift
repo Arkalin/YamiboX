@@ -635,7 +635,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             spreadSurfaceInteraction: spreadSurfaceInteraction(for: spread),
             likedPageIDs: parent.likedPageIDs,
             colorScheme: parent.colorScheme,
-            handoff: parent.handoff
+            handoff: parent.handoff,
+            remoteInput: parent.remoteInput,
+            deviceInteraction: parent.deviceInteraction
         )
         cell.resetPageTurnVisuals()
     }
