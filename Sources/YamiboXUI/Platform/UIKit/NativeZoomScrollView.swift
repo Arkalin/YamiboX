@@ -8,8 +8,9 @@ struct NativeZoomSnapshot: Equatable {
     var isDecelerating: Bool
     var isZooming: Bool
     var isZoomBouncing: Bool
+    var isDrivenTransform: Bool = false
 
-    var isInteracting: Bool { isDragging || isDecelerating || isZooming || isZoomBouncing }
+    var isInteracting: Bool { isDragging || isDecelerating || isZooming || isZoomBouncing || isDrivenTransform }
 }
 
 /// UIKit owns the transform and offset. Clients supply base geometry and discrete
@@ -28,6 +29,7 @@ class NativeZoomScrollView: UIScrollView, UIScrollViewDelegate {
     private var isUpdatingGeometry = false
     private var lastSnapshot: NativeZoomSnapshot?
     private var lastMotionTime: CFTimeInterval?
+    private(set) var isDrivenTransform = false
     var currentTime: () -> CFTimeInterval = CACurrentMediaTime
 
     var normalizedZoomFactor: CGFloat { zoomScale / max(minimumZoomScale, 0.0001) }
@@ -41,7 +43,7 @@ class NativeZoomScrollView: UIScrollView, UIScrollViewDelegate {
             factor: normalizedZoomFactor,
             visibleRect: convert(bounds, to: zoomContentView),
             isDragging: isDragging, isDecelerating: isDecelerating,
-            isZooming: isZooming, isZoomBouncing: isZoomBouncing
+            isZooming: isZooming, isZoomBouncing: isZoomBouncing, isDrivenTransform: isDrivenTransform
         )
     }
 
@@ -111,16 +113,11 @@ class NativeZoomScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
-    func zoomFromTrackpad(ratio: CGFloat, windowPoint: CGPoint) {
-        guard let window, ratio.isFinite, ratio > 0, baseContentSize != .zero else { return }
-        let point = convert(windowPoint, from: window)
-        let contentPoint = convert(point, to: zoomContentView)
-        place(contentPoint: contentPoint, at: CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY),
-              zoomFactor: normalizedZoomFactor * ratio)
-    }
-
-    func panFromTrackpad(_ delta: CGPoint) {
-        setContentOffset(clampedOffset(CGPoint(x: contentOffset.x - delta.x, y: contentOffset.y - delta.y)), animated: false)
+    func setDrivenTransformActive(_ active: Bool) {
+        guard active != isDrivenTransform else { return }
+        isDrivenTransform = active
+        reportSnapshot()
+        if !active { onInteractionEnd?() }
     }
 
     func place(contentPoint: CGPoint, at viewportPoint: CGPoint, animated: Bool = false) {

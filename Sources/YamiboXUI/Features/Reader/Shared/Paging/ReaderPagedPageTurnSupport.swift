@@ -53,6 +53,12 @@ enum ReaderPagedHorizontalNavigationDirection: Equatable {
     case rightSwipeAdvances
 }
 
+extension MangaPageTurnDirection {
+    var readerPageTurnDirection: ReaderPageTurnDirection {
+        self == .leftToRight ? .leftToRight : .rightToLeft
+    }
+}
+
 extension ReaderPageTurnDirection {
     var horizontalNavigationDirection: ReaderPagedHorizontalNavigationDirection {
         switch self {

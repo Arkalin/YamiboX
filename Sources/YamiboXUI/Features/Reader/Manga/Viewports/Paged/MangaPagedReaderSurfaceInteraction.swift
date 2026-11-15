@@ -29,9 +29,7 @@ final class MangaPagedControlPageTurnBridge {
 
     var route: ((NavigationStep) -> Void)?
     var pagedSurface: (() -> MangaSurfaceRuntime?)?
-    var remotePanSurface: MangaSurfaceRuntime?
-    var scroll: ((CGPoint) -> Void)?
-    var zoom: ((CGFloat, CGPoint) -> Void)?
+    weak var verticalViewport: MangaVerticalCollectionViewport.Coordinator?
     var capturePosition: (() -> Sample?)?
 
     func requestPageTurn(_ delta: Int) {

@@ -11,13 +11,11 @@ struct MangaReaderPresentationContent: View {
     let isChromeVisible: Bool
     let likedPageIDs: Set<String>
     let pagedContentTopInset: CGFloat
-    let controlScrollStep: ReaderControlScrollStepRequest?
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
     let onRetryInitialLoad: () -> Void
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int, Bool) -> Bool
     let onBoundaryPageTurn: (Int, Bool) -> Void
-    let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
     var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
@@ -38,12 +36,10 @@ struct MangaReaderPresentationContent: View {
                     isChromeVisible: isChromeVisible,
                     likedPageIDs: likedPageIDs,
                     pagedContentTopInset: pagedContentTopInset,
-                    controlScrollStep: controlScrollStep,
                     controlPageTurnBridge: controlPageTurnBridge,
                     onCurrentPageChange: onCurrentPageChange,
                     canBoundaryPageTurn: canBoundaryPageTurn,
                     onBoundaryPageTurn: onBoundaryPageTurn,
-                    onControlScrollEdgeReached: onControlScrollEdgeReached,
                     onVerticalBoundaryPull: onVerticalBoundaryPull,
                     onPageLongPress: onPageLongPress,
                     onTap: onTap
@@ -85,18 +81,17 @@ private struct MangaReaderLoadedContent: View {
     let isChromeVisible: Bool
     let likedPageIDs: Set<String>
     let pagedContentTopInset: CGFloat
-    let controlScrollStep: ReaderControlScrollStepRequest?
     let controlPageTurnBridge: MangaPagedControlPageTurnBridge
     let onCurrentPageChange: (Int) -> Void
     let canBoundaryPageTurn: (Int, Bool) -> Bool
     let onBoundaryPageTurn: (Int, Bool) -> Void
-    let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
     var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.readerExternalGeometry) private var externalGeometry
+    @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
     @State private var pagedCache = MangaPagedContentCache()
 
     /// Reduce Motion downgrades the 3D page-curl transition to the already
@@ -118,14 +113,12 @@ private struct MangaReaderLoadedContent: View {
                     pages: loaded.pages,
                     currentPageIndex: loaded.currentPageIndex,
                     viewportPlacement: loaded.viewportPlacement,
-                    controlScrollStep: controlScrollStep,
                     viewportBridge: controlPageTurnBridge,
                     imageLoader: imageLoader,
                     isChromeVisible: isChromeVisible,
                     zoomEnabled: settings.zoomEnabled,
                     likedPageIDs: likedPageIDs,
                     onCurrentPageChange: onCurrentPageChange,
-                    onControlScrollEdgeReached: onControlScrollEdgeReached,
                     onVerticalBoundaryPull: onVerticalBoundaryPull,
                     onPageLongPress: onPageLongPress,
                     onTap: onTap
@@ -205,13 +198,14 @@ private struct MangaReaderLoadedContent: View {
     }
 
     private func attachedInformation(plan: MangaPagedReadingPlan) -> ReaderAttachedInformationConfiguration {
+        let showsFullInformation = isChromeVisible || externalMenuPresented
         var result = informationLayout
         result.contentTopInset = pagedContentTopInset
         result.presentation = ReaderPageInformationPresentation(isPaged: true,
-            isImmersive: settings.isImmersiveModeEnabled, isChromeVisible: isChromeVisible)
+            isImmersive: settings.isImmersiveModeEnabled, isChromeVisible: showsFullInformation)
         result.selectedIndex = plan.currentSpreadIndex ?? 0
         result.pages = pagedCache.informationPages(isImmersive: settings.isImmersiveModeEnabled,
-                                                  isChromeVisible: isChromeVisible)
+                                                  isChromeVisible: showsFullInformation)
         return result
     }
 }

@@ -22,7 +22,7 @@ struct ReaderSettingsSegmentButton<Palette: ReaderSettingsPalette>: View {
     let action: () -> Void
 
     var body: some View {
-        ReaderRemoteButton(action: action) {
+        Button(action: action) {
             Text(title)
                 .fixedSize(horizontal: false, vertical: true)
             .font(.subheadline.weight(.semibold))

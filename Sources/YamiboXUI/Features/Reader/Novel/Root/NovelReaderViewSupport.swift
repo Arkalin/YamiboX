@@ -343,7 +343,7 @@ struct NovelReaderOfflineFallbackBanner: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
-                ReaderRemoteButton(action: retry) {
+                Button(action: retry) {
                     Label(retryTitle, systemImage: retrySystemName)
                         .labelStyle(.iconOnly)
                 }
@@ -353,7 +353,7 @@ struct NovelReaderOfflineFallbackBanner: View {
                 LoadFailureDetailsButton(details: details, message: message)
             }
 
-            ReaderRemoteButton(action: dismiss) {
+            Button(action: dismiss) {
                 Label(L10n.string("common.close"), systemImage: "xmark")
                     .labelStyle(.iconOnly)
             }

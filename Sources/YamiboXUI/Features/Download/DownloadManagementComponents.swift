@@ -76,7 +76,7 @@ struct DownloadManagementGroupScreen: View {
     }
 
     private func deleteGroupAction(_ id: DownloadGroupID) -> some View {
-        ReaderRemoteButton(role: .destructive) {
+        Button(role: .destructive) {
             viewModel.requestDownloadGroupDeletion(id: id)
         } label: {
             Label(L10n.string("settings.download.delete_group"), systemImage: "trash")

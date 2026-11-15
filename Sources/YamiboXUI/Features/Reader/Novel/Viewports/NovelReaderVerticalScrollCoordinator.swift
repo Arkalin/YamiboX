@@ -4,20 +4,13 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
-/// Result of a controller "scroll one viewport" request against the vertical
-/// scroll view.
-enum NovelReaderControlScrollOutcome {
-    case scrolled
-    /// Already clamped at the requested edge when pressed; the caller
-    /// crosses to the adjacent web page instead.
-    case atEdge
-    case unavailable
-}
 
 final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerDelegate {
     static let boundaryTriggerDistance = ReaderVerticalBoundaryAttempt.triggerDistance
 
-    var onBoundaryPullRelease: ((NovelReaderVerticalBoundaryDirection) -> Void)?
+    var onBoundaryPullRelease: ((NovelReaderVerticalBoundaryDirection, @escaping () -> Bool) -> Void)?
+    var onDragStart: (() -> Void)?
+    var onSettle: (() -> Void)?
     var onViewportMetricsChange: (() -> Void)?
     var onBoundaryPullStateChange: ((NovelReaderVerticalBoundaryPullState) -> Void)?
 
@@ -37,18 +30,23 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
     private var lastMotionTime = CACurrentMediaTime()
     private var isRestoringOffset = false
     private let motionSuppressionInterval: CFTimeInterval = 0.35
-    private var pendingControlScrollTarget: (y: CGFloat, timestamp: CFTimeInterval)?
-    /// Grace window in which a still-animating step's target keeps serving as
-    /// the base for the next one, so rapid presses compound predictably.
-    private static let controlScrollAnimationGrace: CFTimeInterval = 0.45
+    private var controlScroll = ReaderVerticalScrollStep()
 
     func attach(scrollView: UIScrollView?) {
+        if scrollView == nil {
+            onSettle = nil
+            onDragStart = nil
+            onBoundaryPullRelease = nil
+            onViewportMetricsChange = nil
+            onBoundaryPullStateChange = nil
+        }
         guard self.scrollView !== scrollView else { return }
         detachTapRecognizer()
         detachBoundaryPanTarget()
         contentOffsetObservation = nil
         boundsObservation = nil
         self.scrollView = scrollView
+        controlScroll.reset()
         scrollView?.alwaysBounceVertical = true
         installTapRecognizerIfNeeded()
         installBoundaryPanTargetIfNeeded()
@@ -66,21 +64,14 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         scrollView != nil
     }
 
-    func scrollFromTrackpad(_ delta: CGPoint) {
-        guard let scrollView else { return }
-        let inset = scrollView.adjustedContentInset
-        let current = scrollView.contentOffset
-        let y = min(max(current.y - delta.y, -inset.top),
-                    max(-inset.top, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom))
-        scrollView.setContentOffset(CGPoint(x: current.x, y: y), animated: false)
-    }
+    var attachedScrollView: UIScrollView? { scrollView }
 
     func interruptScrollingIfNeeded() -> Bool {
         guard let scrollView, scrollView.isDragging || scrollView.isDecelerating else {
             return false
         }
 
-        pendingControlScrollTarget = nil
+        controlScroll.reset()
         let offset = scrollView.contentOffset
         scrollView.setContentOffset(offset, animated: false)
         lastMotionTime = CACurrentMediaTime()
@@ -110,7 +101,7 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         )
         let targetOffsetY = min(max(desiredY, minOffsetY), maxOffsetY)
         isRestoringOffset = true
-        pendingControlScrollTarget = nil
+        controlScroll.reset()
         scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: targetOffsetY), animated: false)
         isRestoringOffset = false
         Task { @MainActor [weak self] in
@@ -121,39 +112,8 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         return true
     }
 
-    /// Scrolls one controller step (85% of the viewport) with animation,
-    /// clamping at the content edges. Returns `.atEdge` without moving when
-    /// the press lands while already clamped, so the caller can cross pages.
-    func performControlScrollStep(_ direction: ReaderControlScrollDirection) -> NovelReaderControlScrollOutcome {
-        guard let scrollView, scrollView.bounds.height > 0 else { return .unavailable }
-
-        let minOffsetY = -scrollView.adjustedContentInset.top
-        let maxOffsetY = max(
-            minOffsetY,
-            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
-        )
-        let currentY = scrollView.contentOffset.y
-        let edgeTolerance: CGFloat = 0.5
-        let isAtEdge = switch direction {
-        case .down: currentY >= maxOffsetY - edgeTolerance
-        case .up: currentY <= minOffsetY + edgeTolerance
-        }
-        if isAtEdge {
-            return .atEdge
-        }
-
-        let now = CACurrentMediaTime()
-        var baseY = currentY
-        if let pending = pendingControlScrollTarget,
-           now - pending.timestamp < Self.controlScrollAnimationGrace {
-            baseY = pending.y
-        }
-        let step = scrollView.bounds.height * CGFloat(ReaderControlCommandResolver.verticalScrollViewportFraction)
-        let desiredTargetY = direction == .down ? baseY + step : baseY - step
-        let targetY = min(max(desiredTargetY, minOffsetY), maxOffsetY)
-        pendingControlScrollTarget = (targetY, now)
-        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: targetY), animated: true)
-        return .scrolled
+    func performControlScrollStep(_ direction: ReaderControlScrollDirection) -> ReaderVerticalScrollStep.Outcome {
+        controlScroll.perform(direction, in: scrollView)
     }
 
     func shouldSuppressChromeToggle() -> Bool {
@@ -223,7 +183,10 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
             viewportHeight: scrollView.bounds.height
         )
         updateViewportMetrics(metrics)
-        updateBoundaryPullState(boundaryPullState(for: scrollView))
+        if let pan = boundaryPanGestureRecognizer, scrollView.isDragging,
+           pan.state == .began || pan.state == .changed {
+            handleScroll(.dragged(pan.translation(in: scrollView).y))
+        }
     }
 
     private func updateViewportMetrics(_ metrics: NovelReaderVerticalViewportMetrics) {
@@ -246,27 +209,46 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         }
     }
 
-    private func boundaryPullState(for scrollView: UIScrollView) -> NovelReaderVerticalBoundaryPullState {
-        guard let panGestureRecognizer = boundaryPanGestureRecognizer,
-              scrollView.isDragging,
-              panGestureRecognizer.state == .began || panGestureRecognizer.state == .changed else {
-            return .idle
+    @discardableResult
+    func handleScroll(_ event: ReaderVerticalScrollEvent,
+                      canNavigate: (NovelReaderVerticalBoundaryDirection) -> Bool = { _ in false },
+                      admitsRelease: @escaping () -> Bool = { true }) -> Bool {
+        switch event {
+        case .began:
+            controlScroll.reset()
+            updateBoundaryPullState(.idle)
+            onDragStart?()
+        case let .dragged(translation):
+            if let scrollView {
+                updateBoundaryPullState(boundaryPullState(y: scrollView.contentOffset.y, translationY: translation))
+            }
+        case .released:
+            let state = pendingBoundaryPullState ?? currentBoundaryPullState
+            updateBoundaryPullState(.idle)
+            if state.isArmed, let direction = state.direction {
+                onBoundaryPullRelease?(direction, admitsRelease)
+                return canNavigate(direction)
+            }
+        case .settled, .cancelled:
+            updateBoundaryPullState(.idle)
+            onSettle?()
         }
+        return false
+    }
 
-        let minOffsetY = -scrollView.adjustedContentInset.top
-        let maxOffsetY = max(
-            minOffsetY,
-            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
-        )
-        let topOverscroll = max(minOffsetY - scrollView.contentOffset.y, 0)
-        let bottomOverscroll = max(scrollView.contentOffset.y - maxOffsetY, 0)
-        let translationY = panGestureRecognizer.translation(in: scrollView).y
+    private func boundaryPullState(y: CGFloat, translationY: CGFloat) -> NovelReaderVerticalBoundaryPullState {
+        guard let scrollView else { return .idle }
+        let limits = ReaderVerticalBoundaryAttempt.limits(scrollView)
+        let topOverscroll = max(limits.lowerBound - y, 0)
+        let bottomOverscroll = max(y - limits.upperBound, 0)
+        let boundary = ReaderVerticalBoundaryAttempt.boundary(offsetY: y, minOffsetY: limits.lowerBound,
+                                                             maxOffsetY: limits.upperBound, translationY: translationY)
 
         if topOverscroll > 0, translationY > 0 {
             return NovelReaderVerticalBoundaryPullState(
                 direction: .previous,
                 distance: topOverscroll,
-                isArmed: topOverscroll >= Self.boundaryTriggerDistance
+                isArmed: boundary == .previous
             )
         }
 
@@ -274,7 +256,7 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
             return NovelReaderVerticalBoundaryPullState(
                 direction: .next,
                 distance: bottomOverscroll,
-                isArmed: bottomOverscroll >= Self.boundaryTriggerDistance
+                isArmed: boundary == .next
             )
         }
 
@@ -342,16 +324,10 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
     @objc
     private func handleBoundaryPan(_ recognizer: UIPanGestureRecognizer) {
         switch recognizer.state {
-        case .ended, .cancelled, .failed:
-            let releasedState = currentBoundaryPullState
-            updateBoundaryPullState(.idle)
-            guard recognizer.state == .ended, releasedState.isArmed,
-                  let direction = releasedState.direction else {
-                return
-            }
-            onBoundaryPullRelease?(direction)
-        default:
-            break
+        case .began: handleScroll(.began)
+        case .ended: handleScroll(.released)
+        case .cancelled, .failed: updateBoundaryPullState(.idle)
+        default: break
         }
     }
 
@@ -365,89 +341,6 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let scrollView else { return false }
         return scrollView.isDragging || scrollView.isDecelerating
-    }
-}
-
-struct NovelReaderScrollViewResolver: UIViewRepresentable {
-    let onResolve: (UIScrollView?) -> Void
-
-    func makeUIView(context: Context) -> NovelReaderScrollViewResolverView {
-        let view = NovelReaderScrollViewResolverView()
-        view.onResolve = onResolve
-        return view
-    }
-
-    func updateUIView(_ uiView: NovelReaderScrollViewResolverView, context: Context) {
-        uiView.onResolve = onResolve
-        uiView.resolveScrollViewIfNeeded()
-    }
-}
-
-final class NovelReaderScrollViewResolverView: UIView {
-    var onResolve: ((UIScrollView?) -> Void)?
-    private weak var resolvedScrollView: UIScrollView?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .clear
-        isUserInteractionEnabled = false
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func didMoveToSuperview() {
-        super.didMoveToSuperview()
-        resolveScrollViewIfNeeded()
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        resolveScrollViewIfNeeded()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        resolveScrollViewIfNeeded()
-    }
-
-    func resolveScrollViewIfNeeded() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let scrollView = self.nearestAncestorScrollView() else { return }
-            guard scrollView !== self.resolvedScrollView else { return }
-            self.resolvedScrollView = scrollView
-            self.onResolve?(scrollView)
-        }
-    }
-
-    private func nearestAncestorScrollView() -> UIScrollView? {
-        var candidate = superview
-        while let current = candidate {
-            if let scrollView = current as? UIScrollView {
-                return scrollView
-            }
-            if let scrollView = current.firstDescendantScrollView(excluding: self) {
-                return scrollView
-            }
-            candidate = current.superview
-        }
-        return nil
-    }
-}
-
-private extension UIView {
-    func firstDescendantScrollView(excluding excludedView: UIView) -> UIScrollView? {
-        for subview in subviews where subview !== excludedView {
-            if let scrollView = subview as? UIScrollView {
-                return scrollView
-            }
-            if let scrollView = subview.firstDescendantScrollView(excluding: excludedView) {
-                return scrollView
-            }
-        }
-        return nil
     }
 }
 #endif

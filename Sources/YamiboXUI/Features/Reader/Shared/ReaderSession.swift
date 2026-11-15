@@ -169,12 +169,15 @@ final class ReaderSession: Identifiable {
     }
 
     func beginExternalViewport(
-        resolution: ReaderSettingsTarget.Resolution, onFailure: @escaping @MainActor () -> Void
+        resolution: ReaderSettingsTarget.Resolution,
+        onTrackpadSensitivityChange: @escaping @MainActor (Double) -> Void,
+        onFailure: @escaping @MainActor () -> Void
     ) -> ReaderViewportLifetime {
         viewport.retire(capturingPosition: true)
         let next = ReaderViewportLifetime(settingsTarget: .external(resolution))
         externalViewport = next
-        observeSettings(for: next, preparing: true, onFailure: onFailure)
+        observeSettings(for: next, preparing: true,
+                        onTrackpadSensitivityChange: onTrackpadSensitivityChange, onFailure: onFailure)
         return next
     }
 
@@ -186,6 +189,24 @@ final class ReaderSession: Identifiable {
         observeSettings(for: viewport, preparing: true)
     }
 
+    var leftPageButtonIsPrevious: Bool {
+        let direction: ReaderPageTurnDirection
+        let swapped: Bool
+        switch content {
+        case .novel:
+            guard let settings = novelReader?.model.settings else { return true }
+            direction = settings.pageTurnDirection
+            swapped = settings.swapsPageTurnTapZones
+        case .manga:
+            guard let settings = mangaReader?.model.presentation.settings else { return true }
+            direction = settings.pageTurnDirection.readerPageTurnDirection
+            swapped = settings.swapsPageTurnTapZones
+        case .thread:
+            return true
+        }
+        return direction.directionalTapZone(for: .previous, swapped: swapped) == .previous
+    }
+
     func isPreparingSettings(for viewport: ReaderViewportLifetime) -> Bool {
         pendingSettingsViewport === viewport
     }
@@ -193,6 +214,7 @@ final class ReaderSession: Identifiable {
     private func observeSettings(
         for viewport: ReaderViewportLifetime,
         preparing: Bool = false,
+        onTrackpadSensitivityChange: (@MainActor (Double) -> Void)? = nil,
         onFailure: (@MainActor () -> Void)? = nil
     ) {
         settingsTask?.cancel()
@@ -218,7 +240,8 @@ final class ReaderSession: Identifiable {
                     onFailure?()
                     return
                 }
-                let applied = await self?.applySettings(snapshot, to: viewport) == true
+                let applied = await self?.applySettings(snapshot, to: viewport,
+                                                        onTrackpadSensitivityChange: onTrackpadSensitivityChange) == true
                 guard !Task.isCancelled, viewport.isCurrent else { return }
                 if !applied, let onFailure {
                     onFailure()
@@ -229,13 +252,17 @@ final class ReaderSession: Identifiable {
             for await _ in changes {
                 let snapshot = await store.load()
                 guard !Task.isCancelled, viewport.isCurrent else { return }
-                _ = await self?.applySettings(snapshot, to: viewport)
+                _ = await self?.applySettings(snapshot, to: viewport,
+                                              onTrackpadSensitivityChange: onTrackpadSensitivityChange)
             }
         }
     }
 
-    private func applySettings(_ settings: AppSettings, to viewport: ReaderViewportLifetime) async -> Bool {
+    private func applySettings(
+        _ settings: AppSettings, to viewport: ReaderViewportLifetime, onTrackpadSensitivityChange: (@MainActor (Double) -> Void)?
+    ) async -> Bool {
         guard !Task.isCancelled, viewport.isCurrent, !isClosed else { return false }
+        onTrackpadSensitivityChange?(settings.trackpadSensitivity(for: viewport.settingsTarget))
         if let model = novelReader?.model {
             return await model.applyViewportSettings(settings.novelSettings(for: viewport.settingsTarget), viewport: viewport)
         }

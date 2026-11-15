@@ -15,8 +15,8 @@ extension View {
         sharedGlassButtonStyle(prominent: prominent, tint: tint)
     }
 
-    func readerChromeFadeVisibility(_ isVisible: Bool) -> some View {
-        modifier(ReaderChromeFadeVisibilityModifier(isVisible: isVisible))
+    func readerChromeFadeVisibility(_ isVisible: Bool, hiddenOpacity: Double = 0) -> some View {
+        modifier(ReaderChromeFadeVisibilityModifier(isVisible: isVisible, hiddenOpacity: hiddenOpacity))
     }
 
     func readerChromeRowVisibility(_ isVisible: Bool, index: Int, count: Int) -> some View {
@@ -26,11 +26,12 @@ extension View {
 
 private struct ReaderChromeFadeVisibilityModifier: ViewModifier {
     let isVisible: Bool
+    let hiddenOpacity: Double
     private let presentation = ReaderChromeVisibilityAnimationPresentation.fade
 
     func body(content: Content) -> some View {
         content
-            .opacity(isVisible ? 1 : 0)
+            .opacity(isVisible ? 1 : hiddenOpacity)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
             .animation(.easeInOut(duration: presentation.duration), value: isVisible)
@@ -102,7 +103,6 @@ struct ReaderChromeIconButton: View {
         }
         .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
-        .readerRemoteActivate(action)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
     }
@@ -277,7 +277,6 @@ struct ReaderToolbarIconButton: View {
             Label(title, systemImage: systemName)
                 .labelStyle(.iconOnly)
         }
-        .readerRemoteActivate(action)
         .accessibilityLabel(title)
     }
 }

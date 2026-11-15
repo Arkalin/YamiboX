@@ -21,13 +21,15 @@ public enum ReaderSettingsTarget: Hashable, Sendable {
 private struct ExternalReaderProfile: Codable, Hashable, Sendable {
     var novel: NovelReaderAppearanceSettings
     var manga: MangaReaderSettings
+    var trackpadSensitivity: Double?
 
-    private enum CodingKeys: String, CodingKey { case novel, manga }
+    private enum CodingKeys: String, CodingKey { case novel, manga, trackpadSensitivity }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try novel.encode(to: container.superEncoder(forKey: .novel), includesForumFormat: false)
         try container.encode(manga, forKey: .manga)
+        try container.encodeIfPresent(trackpadSensitivity, forKey: .trackpadSensitivity)
     }
 }
 
@@ -130,9 +132,37 @@ public struct AppSettings: Codable, Hashable, Sendable {
         return externalReaderProfiles[resolution.key]?.manga ?? manga
     }
 
+    public func trackpadSensitivity(for target: ReaderSettingsTarget) -> Double {
+        if case let .external(resolution) = target,
+           let sensitivity = externalReaderProfiles[resolution.key]?.trackpadSensitivity {
+            return ExternalDisplaySettings.clampTrackpadSensitivity(sensitivity)
+        }
+        return system.externalDisplay.trackpadSensitivity
+    }
+
     public mutating func initializeReaderProfile(for resolution: ReaderSettingsTarget.Resolution) {
-        guard externalReaderProfiles[resolution.key] == nil else { return }
-        externalReaderProfiles[resolution.key] = ExternalReaderProfile(novel: Self.scopedNovel(novelReader), manga: manga)
+        let sensitivity = system.externalDisplay.trackpadSensitivity
+        if let profile = externalReaderProfiles[resolution.key] {
+            // Older profiles already have independent reading preferences.
+            if profile.trackpadSensitivity == nil {
+                externalReaderProfiles[resolution.key]?.trackpadSensitivity = sensitivity
+            }
+        } else {
+            externalReaderProfiles[resolution.key] = ExternalReaderProfile(
+                novel: Self.scopedNovel(novelReader), manga: manga, trackpadSensitivity: sensitivity
+            )
+        }
+    }
+
+    public mutating func updateTrackpadSensitivity(_ value: Double, for target: ReaderSettingsTarget) {
+        let sensitivity = ExternalDisplaySettings.clampTrackpadSensitivity(value)
+        switch target {
+        case .device:
+            system.externalDisplay.trackpadSensitivity = sensitivity
+        case let .external(resolution):
+            initializeReaderProfile(for: resolution)
+            externalReaderProfiles[resolution.key]?.trackpadSensitivity = sensitivity
+        }
     }
 
     public mutating func updateNovelSettings(

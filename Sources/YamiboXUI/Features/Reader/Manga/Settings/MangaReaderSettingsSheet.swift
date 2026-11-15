@@ -93,6 +93,7 @@ struct MangaReaderSettingsSheet: View {
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
+                settingsTarget: settingsTarget,
                 peripheralInput: peripheralInput
             )
         }

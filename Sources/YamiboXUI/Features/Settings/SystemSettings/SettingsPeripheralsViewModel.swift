@@ -11,13 +11,16 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     var gamepad = GamepadSettings()
     var keyboard = KeyboardSettings()
     var externalDisplay = ExternalDisplaySettings()
+    var trackpadSensitivity = ExternalDisplaySettings.defaultTrackpadSensitivity
 
     let settingsStore: SettingsStore
     let activity: SystemSettingsActivity
+    private let settingsTarget: ReaderSettingsTarget
 
-    init(settingsStore: SettingsStore, activity: SystemSettingsActivity) {
+    init(settingsStore: SettingsStore, activity: SystemSettingsActivity, settingsTarget: ReaderSettingsTarget = .device) {
         self.settingsStore = settingsStore
         self.activity = activity
+        self.settingsTarget = settingsTarget
     }
 
     func applyLoadedSettings(_ settings: AppSettings) {
@@ -25,6 +28,7 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         gamepad = settings.system.gamepad
         keyboard = settings.system.keyboard
         externalDisplay = settings.system.externalDisplay
+        trackpadSensitivity = settings.trackpadSensitivity(for: settingsTarget)
     }
 
     /// Reads this page's slice of the settings on its own, for presentations
@@ -37,12 +41,7 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         applyLoadedSettings(await settingsStore.load())
     }
 
-    func restoreDefaultsAfterApplicationReset() {
-        applePencilPageTurn = ApplePencilPageTurnSettings()
-        gamepad = GamepadSettings()
-        keyboard = KeyboardSettings()
-        externalDisplay = ExternalDisplaySettings()
-    }
+    func restoreDefaultsAfterApplicationReset() { applyLoadedSettings(AppSettings()) }
 
     func updateExternalDisplayEnabled(_ isEnabled: Bool) {
         persistSettings(\.externalDisplay.isEnabled, to: isEnabled) {
@@ -51,9 +50,10 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
     }
 
     func updateTrackpadSensitivity(_ sensitivity: Double) {
-        guard externalDisplay.trackpadSensitivity != sensitivity else { return }
-        persistSettings(\.externalDisplay.trackpadSensitivity, to: sensitivity) {
-            $0.system.externalDisplay.trackpadSensitivity = sensitivity
+        guard trackpadSensitivity != sensitivity else { return }
+        let target = settingsTarget
+        persistSettings(\.trackpadSensitivity, to: sensitivity) {
+            $0.updateTrackpadSensitivity(sensitivity, for: target)
         }
     }
 

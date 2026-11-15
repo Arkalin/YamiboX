@@ -94,7 +94,7 @@ private struct MangaReaderEdgeFillButton: View {
     let action: () -> Void
 
     var body: some View {
-        ReaderRemoteButton(action: action) {
+        Button(action: action) {
             let layout = usesRowLayout
                 ? AnyLayout(HStackLayout(spacing: 12))
                 : AnyLayout(VStackLayout(spacing: 8))

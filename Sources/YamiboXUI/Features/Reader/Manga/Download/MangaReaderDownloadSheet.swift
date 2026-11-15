@@ -108,7 +108,7 @@ struct MangaReaderDownloadSheet: View {
                     clearOnDismiss: { model.clearPrompt() }
                 )
             ) {
-                ReaderRemoteButton(L10n.string("common.ok"), role: .cancel) {
+                Button(L10n.string("common.ok"), role: .cancel) {
                     model.clearPrompt()
                 }
             }

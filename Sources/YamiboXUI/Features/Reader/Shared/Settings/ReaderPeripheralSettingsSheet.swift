@@ -22,12 +22,13 @@ struct ReaderPeripheralSettingsSheet: View {
     /// dependencies and has no side effects.
     @State private var viewModel: SettingsPeripheralsViewModel
 
-    init(settingsStore: SettingsStore, peripheralInput: ReaderPeripheralInputManager) {
+    init(settingsStore: SettingsStore, settingsTarget: ReaderSettingsTarget, peripheralInput: ReaderPeripheralInputManager) {
         self.peripheralInput = peripheralInput
         _viewModel = State(
             initialValue: SettingsPeripheralsViewModel(
                 settingsStore: settingsStore,
-                activity: SystemSettingsActivity()
+                activity: SystemSettingsActivity(),
+                settingsTarget: settingsTarget
             )
         )
     }

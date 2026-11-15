@@ -110,14 +110,7 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     private lazy var styleRowInteraction = UIEditMenuInteraction(delegate: self)
 
     /// What picking a swatch should do.
-    private enum StyleRowContext {
-        /// Nothing exists yet: the pick captures the live selection in that
-        /// style, so a colour is chosen once rather than set and then corrected.
-        case capture
-        case restyle(LikeItem, NovelLikeHighlightController)
-    }
-
-    private var pendingStyleRow: StyleRowContext?
+    private var pendingStyleRow: ((LikeStyle) -> Void)?
     private var styleRowAnchorRect: CGRect = .zero
     private lazy var likeHighlightTapRecognizer = UITapGestureRecognizer(
         target: self,
@@ -132,6 +125,21 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     /// only subview rendering survives out there (`clipsToBounds` stays false).
     private var noteBadgeViewsByItemID: [String: NovelLikeNoteBadgeUIView] = [:]
     private static let selectionHandleKnobDiameter: CGFloat = 14
+
+    func remoteTextHit(at point: CGPoint, in window: UIWindow) -> Bool {
+        guard let reference = displayReference, !reference.isStale,
+              let anchor = reference.selectionAnchor(at: convert(point, from: window)),
+              let glyph = NovelTextSelectionRange(generation: anchor.generation, lowerBound: anchor.documentOffset,
+                                                 upperBound: anchor.documentOffset + 1) else { return false }
+        let local = convert(point, from: window)
+        return reference.selectionRects(for: glyph).contains { $0.contains(local) }
+    }
+
+    func remoteHandle(at point: CGPoint, in window: UIWindow) -> NovelTextSelectionController.HandleKind? {
+        if startHandleView?.readerContains(windowPoint: point, in: window, slop: NovelSelectionHandleUIView.touchTargetPadding) == true { return .start }
+        if endHandleView?.readerContains(windowPoint: point, in: window, slop: NovelSelectionHandleUIView.touchTargetPadding) == true { return .end }
+        return nil
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -209,104 +217,37 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         if interaction === styleRowInteraction {
             return makeStyleRowMenu()
         }
+        guard let selectionController else { return nil }
+        let annotation = interaction === annotationMenuInteraction ? pendingAnnotationMenu : nil
         if interaction === annotationMenuInteraction {
-            return makeAnnotationMenu()
-        }
-        guard selectionController?.hasSelection == true else { return nil }
-        // Ordered explicitly rather than appended after `suggestedActions`: the
-        // bar shows six items before it paginates, so anything the system
-        // prepends would push this menu's own actions behind the `›`.
-        let copyAction = UIAction(
-            title: L10n.string("reader.copy")
-        ) { [weak self] _ in
-            self?.selectionController?.copySelection()
-        }
-        return UIMenu(children: [
-            makeLikeElement(),
-            // A fresh selection has nothing to edit yet, so this is always the
-            // "add" wording — unlike the menu for an existing annotation.
-            makeAddNoteAction(),
-            copyAction,
-            makeShareAction(),
-            makeLookUpAction(),
-        ].compactMap { $0 })
-    }
-
-    // A3: the edit menu omits "add to likes" entirely when the selection
-    // can't resolve to a semantic position (no chapter title on that content).
-    // A selection that merely crosses a post boundary is different: it is
-    // resolvable at both ends and is almost always a slip, so the action stays
-    // visible and says why it is off rather than vanishing.
-    private func makeLikeElement() -> UIMenuElement? {
-        switch selectionController?.likeAvailability {
-        case .none, .unavailable:
+            guard annotation?.controller != nil else { return nil }
+        } else if !selectionController.hasSelection {
             return nil
-        case .crossesChapters:
-            // Stays an action rather than the style submenu: a `UIMenu` cannot
-            // carry `.disabled`, and the whole point of this branch is to be
-            // visible and say why it is off.
-            let action = UIAction(
-                title: L10n.string("likes.add_to_likes"),
-                subtitle: L10n.string("likes.cannot_span_posts")
-            ) { _ in }
-            action.attributes = .disabled
-            return action
-        case .available:
-            // The menu is about to offer 「喜欢」 — give the reader a chance to
-            // prepare its haptic generator before the user can tap it.
-            selectionController?.noteLikeActionOffered()
-            return UIAction(title: L10n.string("likes.add_to_likes")) { [weak self] _ in
-                guard let self else { return }
-                self.presentStyleRow(
-                    .capture,
-                    anchorRect: self.selectionController?.menuTargetRect(in: self) ?? self.bounds
-                )
+        }
+        let anchor = annotation?.anchorRect ?? selectionController.menuTargetRect(in: self)
+        let menu = selectionController.textMenu(
+            item: annotation?.item, highlights: annotation?.controller,
+            share: { [weak self] text in
+                guard let self, let presenter = self.nearestViewController else { return }
+                let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+                controller.popoverPresentationController?.sourceView = self
+                controller.popoverPresentationController?.sourceRect = anchor
+                presenter.present(controller, animated: true)
+            },
+            lookUp: { [weak self] term in
+                self?.nearestViewController?.present(UIReferenceLibraryViewController(term: term), animated: true)
             }
-        }
-    }
-
-    /// Captures and opens the editor in one step, so a note can be the reason
-    /// for annotating rather than something bolted on afterwards.
-    private func makeAddNoteAction() -> UIAction? {
-        guard selectionController?.likeAvailability == .available else { return nil }
-        return UIAction(title: L10n.string("likes.add_note")) { [weak self] _ in
-            self?.selectionController?.likeSelection(thenAddNote: true)
-        }
-    }
-
-    private func makeShareAction() -> UIAction? {
-        guard selectionController?.selectedText() != nil else { return nil }
-        return UIAction(title: L10n.string("common.share")) { [weak self] _ in
-            self?.presentShareSheet()
-        }
-    }
-
-    private func presentShareSheet(for text: String? = nil) {
-        guard let text = text ?? selectionController?.selectedText(),
-              let presenter = nearestViewController else {
-            return
-        }
-        let activityViewController = UIActivityViewController(activityItems: [text], applicationActivities: nil)
-        if let popover = activityViewController.popoverPresentationController {
-            popover.sourceView = self
-            popover.sourceRect = selectionController?.menuTargetRect(in: self) ?? bounds
-        }
-        presenter.present(activityViewController, animated: true)
-    }
-
-    private func makeLookUpAction() -> UIAction? {
-        guard let text = selectionController?.selectedText(),
-              UIReferenceLibraryViewController.dictionaryHasDefinition(forTerm: text) else {
-            return nil
-        }
-        return UIAction(title: L10n.string("reader.look_up")) { [weak self] _ in
-            self?.presentLookUp(for: text)
-        }
-    }
-
-    private func presentLookUp(for term: String) {
-        guard let presenter = nearestViewController else { return }
-        presenter.present(UIReferenceLibraryViewController(term: term), animated: true)
+        )
+        return UIMenu(children: menu.actions.map { action in
+            switch action.command {
+            case let .perform(perform):
+                UIAction(title: action.title, attributes: action.destructive ? .destructive : []) { _ in perform() }
+            case let .styles(choose):
+                UIAction(title: action.title) { [weak self] _ in self?.presentStyleRow(choose, anchorRect: anchor) }
+            case let .disabled(reason):
+                UIAction(title: action.title, subtitle: reason, attributes: .disabled) { _ in }
+            }
+        })
     }
 
     func editMenuInteraction(
@@ -326,7 +267,7 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
 
     /// Reopens at the same anchor as the menu that asked for it, so the row
     /// lands where the menu the user just tapped was.
-    private func presentStyleRow(_ context: StyleRowContext, anchorRect: CGRect) {
+    private func presentStyleRow(_ context: @escaping (LikeStyle) -> Void, anchorRect: CGRect) {
         pendingStyleRow = context
         styleRowAnchorRect = anchorRect
         becomeFirstResponder()
@@ -344,19 +285,7 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     }
 
     private func makeStyleRowMenu() -> UIMenu? {
-        guard let context = pendingStyleRow else { return nil }
-        return NovelLikeStyleMenu.makeRoot { [weak self] style in
-            switch context {
-            case .capture:
-                self?.selectionController?.likeSelection(style: style)
-            case let .restyle(item, controller):
-                // Paint immediately, persist behind it — same contract as the
-                // optimistic paint on capture.
-                controller.applyStyleOptimistically(itemID: item.id, style: style)
-                ReaderHighlightStyleDefault.set(style)
-                Task { await controller.updateStyle(item, to: style) }
-            }
-        }
+        pendingStyleRow.map { NovelLikeStyleMenu.makeRoot(onSelect: $0) }
     }
 
     override func layoutSubviews() {
@@ -421,21 +350,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         presentLikeHighlightMenu(for: item, controller: likeHighlightController, at: location)
     }
 
-    /// Entry point for an existing annotation, from a tap on it or from the
-    /// annotation panel.
-    ///
-    /// Takes `controller` explicitly rather than reading
-    /// `self.likeHighlightController` from inside the action closures, so the
-    /// actions don't need to capture `self` across an async `Task` boundary.
-    func presentLikeAnnotationMenu(for item: LikeItem) -> Bool {
-        guard let likeHighlightController,
-              let anchorRect = likeHighlightController.unionRect(for: item, in: self) else {
-            return false
-        }
-        presentLikeHighlightMenu(for: item, controller: likeHighlightController, at: anchorRect.origin)
-        return true
-    }
-
     private func presentLikeHighlightMenu(
         for item: LikeItem,
         controller: NovelLikeHighlightController,
@@ -460,50 +374,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         )
     }
 
-    /// The menu for an annotation that already exists: the same shape as the
-    /// selection menu, with the note action switched to editing and a remove
-    /// action added. Five items, which is inside the bar's six-item ceiling.
-    private func makeAnnotationMenu() -> UIMenu? {
-        guard let pending = pendingAnnotationMenu, let controller = pending.controller else {
-            return nil
-        }
-        let item = pending.item
-        let anchorRect = pending.anchorRect
-        var children: [UIMenuElement] = []
-
-        children.append(UIAction(title: L10n.string("likes.add_to_likes")) { [weak self] _ in
-            self?.presentStyleRow(.restyle(item, controller), anchorRect: anchorRect)
-        })
-
-        // Says what tapping it will actually do: this annotation either has a
-        // note to open or doesn't have one yet.
-        let noteTitle = item.hasNote
-            ? L10n.string("likes.edit_note")
-            : L10n.string("likes.add_note")
-        children.append(UIAction(title: noteTitle) { [weak self] _ in
-            self?.selectionController?.requestNoteEditor(for: item)
-        })
-
-        let excerpt = item.excerptText.flatMap { $0.isEmpty ? nil : $0 }
-        if let excerpt {
-            children.append(UIAction(title: L10n.string("reader.copy")) { _ in
-                UIPasteboard.general.string = excerpt
-            })
-        }
-
-        let remove = UIAction(title: L10n.string("likes.remove_like")) { _ in
-            Task { await controller.remove(item) }
-        }
-        remove.attributes = .destructive
-        children.append(remove)
-
-        if let excerpt {
-            children.append(UIAction(title: L10n.string("common.share")) { [weak self] _ in
-                self?.presentShareSheet(for: excerpt)
-            })
-        }
-        return UIMenu(children: children)
-    }
 
     private var nearestViewController: UIViewController? {
         sequence(first: next) { $0?.next }.compactMap { $0 as? UIViewController }.first
@@ -629,8 +499,10 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             selectionController.updateSelection(in: self, at: point)
         case .ended:
             selectionController.updateSelection(in: self, at: point)
+            selectionController.finishSelectionDrag()
             showCopyMenu()
         case .cancelled, .failed:
+            selectionController.finishSelectionDrag()
             dismissCopyMenu()
         default:
             break
@@ -652,8 +524,10 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             selectionController.updateSelection(in: self, at: point)
         case .ended:
             selectionController.updateSelection(in: self, at: point)
+            selectionController.finishSelectionDrag()
             showCopyMenu()
         case .cancelled, .failed:
+            selectionController.finishSelectionDrag()
             selectionController.refreshSelectionDisplay()
         default:
             break
@@ -838,7 +712,7 @@ final class NovelLikeNoteBadgeUIView: UIView {
 @MainActor
 final class NovelSelectionHandleUIView: UIView {
     let kind: NovelTextSelectionController.HandleKind
-    private let touchTargetPadding: CGFloat = -15
+    static let touchTargetPadding: CGFloat = 15
 
     init(kind: NovelTextSelectionController.HandleKind) {
         self.kind = kind
@@ -854,7 +728,7 @@ final class NovelSelectionHandleUIView: UIView {
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.insetBy(dx: touchTargetPadding, dy: touchTargetPadding).contains(point)
+        bounds.insetBy(dx: -Self.touchTargetPadding, dy: -Self.touchTargetPadding).contains(point)
     }
 
     override func draw(_ rect: CGRect) {

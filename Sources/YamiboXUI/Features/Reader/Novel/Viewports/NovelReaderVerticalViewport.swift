@@ -30,7 +30,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let isChromeVisible: Bool
     let onVisibleSurfaceIdentitiesChange: ([NovelReaderSurfaceIdentity]) -> Void
     let onScrollRequestHandled: (NovelReaderVerticalScrollRequest) -> Void
-    let onScrollViewReady: (UIScrollView) -> Void
+    let onScrollViewReady: (UIScrollView, @escaping () -> Void) -> Void
     let onSurfaceFramesChange: ([Int: NovelReaderVerticalSurfaceFrameValue]) -> Void
     let onViewportSampleChange: (NovelReaderVerticalViewportSample?) -> Void
     let onViewportChange: () -> Void
@@ -85,7 +85,10 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         context.coordinator.longPressGesture.cancelsTouchesInView = false
         context.coordinator.longPressGesture.delegate = context.coordinator
         collectionView.addGestureRecognizer(context.coordinator.longPressGesture)
-        onScrollViewReady(collectionView)
+        onScrollViewReady(collectionView) { [weak collectionView, weak coordinator] in
+            guard let collectionView else { return }
+            coordinator?.publishScrollSettled(from: collectionView)
+        }
         selectionController?.configure(mode: .vertical)
         selectionController?.attachVerticalScrollView(collectionView)
         return collectionView
@@ -480,7 +483,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             return lastPublishedViewportSample != sample
         }
 
-        private func publishScrollSettled(from scrollView: UIScrollView) {
+        fileprivate func publishScrollSettled(from scrollView: UIScrollView) {
             publishFrames(from: scrollView)
             let onScrollSettled = parent.onScrollSettled
             callbackScheduler.publish {
@@ -1309,26 +1312,9 @@ extension UIView {
         return superview?.isDescendant(ofType: type) ?? false
     }
 
-    func firstDescendant<T: UIView>(
-        ofType type: T.Type,
-        containing point: CGPoint,
-        event: UIEvent? = nil
-    ) -> T? {
-        for subview in subviews.reversed() {
-            let subviewPoint = convert(point, to: subview)
-            if let typedSubview = subview as? T,
-               typedSubview.point(inside: subviewPoint, with: event) {
-                return typedSubview
-            }
-            if let match = subview.firstDescendant(
-                ofType: type,
-                containing: subviewPoint,
-                event: event
-            ) {
-                return match
-            }
-        }
-        return nil
+    func firstDescendant<T: UIView>(ofType type: T.Type, containing point: CGPoint) -> T? {
+        guard let window else { return nil }
+        return readerHit(type, at: convert(point, to: window), in: window) { match, _ in match }
     }
 }
 

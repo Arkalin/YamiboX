@@ -123,11 +123,12 @@ private struct MangaReaderTopChapterTitle: View {
 /// including text composited separately from its plate in UIKit page hosts.
 /// Native glass can still adapt its primary foreground over bright artwork.
 struct MangaReaderTitleAppearance: ViewModifier {
+    var isEnabled = true
     @Environment(\.readerToolbarStyle) private var toolbarStyle
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
-        content.environment(\.colorScheme, toolbarStyle.effectiveStyle == .liquidGlass ? .dark : colorScheme)
+        content.environment(\.colorScheme, isEnabled && toolbarStyle.effectiveStyle == .liquidGlass ? .dark : colorScheme)
     }
 }
 #endif

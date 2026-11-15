@@ -74,8 +74,8 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
 }
 
 public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
-    public static let trackpadSensitivityRange = 0.5...2.0
-    public static let defaultTrackpadSensitivity = 1.0
+    public static let trackpadSensitivityRange = 0.5...3.5
+    public static let defaultTrackpadSensitivity = 1.5
 
     public var isEnabled: Bool
     public var trackpadSensitivity: Double
@@ -85,9 +85,12 @@ public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
         trackpadSensitivity: Double = Self.defaultTrackpadSensitivity
     ) {
         self.isEnabled = isEnabled
-        self.trackpadSensitivity = trackpadSensitivity.isFinite
-            ? min(max(trackpadSensitivity, Self.trackpadSensitivityRange.lowerBound), Self.trackpadSensitivityRange.upperBound)
-            : Self.defaultTrackpadSensitivity
+        self.trackpadSensitivity = Self.clampTrackpadSensitivity(trackpadSensitivity)
+    }
+
+    static func clampTrackpadSensitivity(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultTrackpadSensitivity }
+        return min(max(value, trackpadSensitivityRange.lowerBound), trackpadSensitivityRange.upperBound)
     }
 
     public init(from decoder: any Decoder) throws {

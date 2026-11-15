@@ -73,7 +73,7 @@ struct NovelReaderFontPickerRow: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
             Spacer()
-            ReaderRemoteButton(action: onSelect) {
+            Button(action: onSelect) {
                 HStack(spacing: 8) {
                     Text(title)
                         .foregroundStyle(palette.secondaryText)
@@ -195,7 +195,7 @@ struct NovelReaderTranslationPicker: View {
     }
 
     private func translationButton(_ title: String, modeRawValue: String, action: @escaping () -> Void) -> some View {
-        ReaderRemoteButton(action: action) {
+        Button(action: action) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
@@ -236,7 +236,7 @@ struct NovelReaderThemePicker: View {
 
     private var swatches: some View {
         ForEach(ReaderBackgroundStyle.allCases, id: \.self) { style in
-            ReaderRemoteButton {
+            Button {
                 onSelect(style)
             } label: {
                 VStack(spacing: 10) {

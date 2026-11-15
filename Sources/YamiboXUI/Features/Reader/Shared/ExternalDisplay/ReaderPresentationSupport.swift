@@ -1,27 +1,5 @@
 import SwiftUI
 
-struct ReaderRemoteButton<Label: View>: View {
-    let role: ButtonRole?
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-
-    init(role: ButtonRole? = nil, action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) {
-        self.role = role
-        self.action = action
-        self.label = label
-    }
-
-    var body: some View {
-        Button(role: role, action: action, label: label)
-            .readerRemoteActivate(action)
-    }
-}
-
-extension ReaderRemoteButton where Label == Text {
-    init(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) {
-        self.init(role: role, action: action) { Text(title) }
-    }
-}
 
 extension View {
     func readerDeviceSheet<Item: Identifiable, Panel: View>(item: Binding<Item?>,

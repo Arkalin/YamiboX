@@ -27,6 +27,12 @@ final class NovelTextSelectionController {
     private var onLikeFailure: ((any Error) -> Void)?
     private var onLikeActionOffered: (() -> Void)?
     private var onRequestNoteEditor: ((LikeItem) -> Void)?
+    var onRemoteSelectionCleared: (() -> Void)?
+    private var selectionScrollTask: Task<Void, Never>?
+    private var dragPoint: CGPoint?
+    private var remoteDragID: UUID?
+    private var selectionTextSnapshot: String?
+    private var selectionEndpointsSnapshot: ResolvedEndpoints?
 
     var hasSelection: Bool {
         selectionRangeValue != nil
@@ -89,6 +95,9 @@ final class NovelTextSelectionController {
             clearSelection()
             return false
         }
+        stopDrag()
+        selectionTextSnapshot = nil
+        selectionEndpointsSnapshot = nil
         baseAnchor = anchor
         activeSurfaceIdentity = displayReference.surfaceIdentity
         selectionRangeValue = expandedRange
@@ -96,10 +105,25 @@ final class NovelTextSelectionController {
         return true
     }
 
-    func updateSelection(
-        in view: NovelTextViewportReferenceUIView,
-        at point: CGPoint
-    ) {
+    func updateSelection(in view: NovelTextViewportReferenceUIView, at point: CGPoint) {
+        updateRange(in: view, at: point)
+        guard mode == .vertical, let window = view.window else { return }
+        dragPoint = view.convert(point, to: window)
+        guard selectionScrollTask == nil else { return }
+        selectionScrollTask = Task { [weak self, weak window] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(32)) } catch { return }
+                guard let self, let window, let scroll = self.verticalScrollView, scroll.window === window,
+                      let point = self.dragPoint else { return }
+                if self.autoScrollIfNeeded(at: scroll.convert(point, from: window)),
+                   let candidate = self.currentTextView(in: window) {
+                    self.updateRange(in: candidate, at: candidate.convert(point, from: window))
+                }
+            }
+        }
+    }
+
+    private func updateRange(in view: NovelTextViewportReferenceUIView, at point: CGPoint) {
         guard let baseAnchor,
               let selectionTarget = selectionTarget(startingFrom: view, point: point),
               let displayReference = selectionTarget.view.displayReference,
@@ -114,7 +138,6 @@ final class NovelTextSelectionController {
             return
         }
         selectionRangeValue = range
-        autoScrollIfNeeded(from: selectionTarget.view, point: selectionTarget.point)
         refreshSelectionDisplay()
     }
 
@@ -126,12 +149,25 @@ final class NovelTextSelectionController {
         guard let selectionRangeValue, selectionRangeValue.generation == generation else {
             return false
         }
+        stopDrag()
+        selectionTextSnapshot = nil
+        selectionEndpointsSnapshot = nil
         let fixedOffset = kind == .start ? selectionRangeValue.upperBound : selectionRangeValue.lowerBound
         baseAnchor = NovelTextSelectionAnchor(generation: generation, documentOffset: fixedOffset)
         return true
     }
 
+    func finishSelectionDrag() {
+        stopDrag()
+        selectionTextSnapshot = selectedText()
+        selectionEndpointsSnapshot = resolvedSelectionEndpoints()
+    }
+
     func clearSelection() {
+        stopDrag()
+        selectionTextSnapshot = nil
+        selectionEndpointsSnapshot = nil
+        onRemoteSelectionCleared?()
         guard selectionRangeValue != nil || baseAnchor != nil else { return }
         selectionRangeValue = nil
         baseAnchor = nil
@@ -164,6 +200,7 @@ final class NovelTextSelectionController {
     }
 
     func selectedText() -> String? {
+        if let selectionTextSnapshot { return selectionTextSnapshot }
         guard let selectionRangeValue,
               let displayReference = firstCurrentDisplayReference(),
               let text = displayReference.selectedText(for: selectionRangeValue),
@@ -210,7 +247,9 @@ final class NovelTextSelectionController {
     ///   - thenAddNote: opens the note editor on whatever the capture resolved
     ///     to, so 「添加笔记」 on a fresh selection is one action rather than
     ///     like-then-find-it-again.
-    func likeSelection(style: LikeStyle? = nil, thenAddNote: Bool = false) {
+    func likeSelection(style: LikeStyle? = nil, thenAddNote: Bool = false,
+                       admitsNote: @escaping () -> Bool = { true },
+                       didCapture: ((LikeItem) -> Void)? = nil) {
         guard let likeWorkKey, let likeCaptureService,
               let endpoints = likeAnchorEndpoints() else {
             return
@@ -246,10 +285,10 @@ final class NovelTextSelectionController {
                 return
             }
             onLikeCaptured?(outcome)
-            guard thenAddNote else { return }
             switch outcome {
             case .added(let item), .merged(let item), .alreadyLiked(let item):
-                self?.requestNoteEditor(for: item)
+                didCapture?(item)
+                if thenAddNote, admitsNote() { self?.requestNoteEditor(for: item) }
             }
         }
     }
@@ -262,16 +301,6 @@ final class NovelTextSelectionController {
 
     func requestNoteEditor(for item: LikeItem) {
         onRequestNoteEditor?(item)
-    }
-
-    /// Opens the annotation menu on an existing annotation. Tries every
-    /// registered surface because the selection may already have been cleared,
-    /// so `activeSurfaceIdentity` is gone; the first surface that can resolve
-    /// the item's rects is the one showing it.
-    func presentAnnotationMenu(for item: LikeItem) {
-        for view in registeredViews.allObjects where view.presentLikeAnnotationMenu(for: item) {
-            return
-        }
     }
 
     func refreshSelectionDisplay() {
@@ -338,7 +367,7 @@ final class NovelTextSelectionController {
     /// projection is one contiguous TextKit document, so a range crossing the
     /// illustration that splits a chapter's text renders and resolves without
     /// any change below this layer.
-    private func resolvedSelectionEndpoints() -> (
+    private typealias ResolvedEndpoints = (
         start: NovelTextViewportSemanticTextPosition,
         end: NovelTextViewportSemanticTextPosition,
         excerptText: String,
@@ -348,7 +377,10 @@ final class NovelTextSelectionController {
         resolvedAuthorID: String?,
         chapterTitle: String?,
         crossesChapters: Bool
-    )? {
+    )
+
+    private func resolvedSelectionEndpoints() -> ResolvedEndpoints? {
+        if let selectionEndpointsSnapshot { return selectionEndpointsSnapshot }
         guard let selectionRangeValue,
               let displayReference = firstCurrentDisplayReference(),
               let excerptText = displayReference.selectedText(for: selectionRangeValue),
@@ -414,7 +446,7 @@ final class NovelTextSelectionController {
 
         let pointInScrollView = view.convert(point, to: scrollView)
         let candidates = registeredViews.allObjects.filter {
-            $0.window != nil && $0.displayReference?.isStale == false
+            $0.window === scrollView.window && $0.displayReference?.isStale == false
         }
         if let containingView = candidates.first(where: { candidate in
             let candidatePoint = scrollView.convert(pointInScrollView, to: candidate)
@@ -459,18 +491,11 @@ final class NovelTextSelectionController {
         }
     }
 
-    private func autoScrollIfNeeded(
-        from view: UIView,
-        point: CGPoint
-    ) {
-        guard mode == .vertical,
-              let scrollView = verticalScrollView,
-              view.window != nil else {
-            return
-        }
-        let pointInScrollView = view.convert(point, to: scrollView)
+    @discardableResult
+    private func autoScrollIfNeeded(at pointInScrollView: CGPoint) -> Bool {
+        guard mode == .vertical, let scrollView = verticalScrollView, scrollView.window != nil else { return false }
         let edgeThreshold: CGFloat = 48
-        let step: CGFloat = 18
+        let step: CGFloat = 5
         let minOffsetY = -scrollView.adjustedContentInset.top
         let maxOffsetY = max(
             minOffsetY,
@@ -488,12 +513,135 @@ final class NovelTextSelectionController {
 
         guard let nextOffsetY,
               nextOffsetY != scrollView.contentOffset.y else {
-            return
+            return false
         }
         scrollView.setContentOffset(
             CGPoint(x: scrollView.contentOffset.x, y: nextOffsetY),
             animated: false
         )
+        return true
+    }
+
+    func remoteTextHit(at point: CGPoint, in window: UIWindow) -> Bool {
+        remoteTextView(at: point, in: window) != nil
+    }
+
+    private func remoteTextView(at point: CGPoint, in window: UIWindow) -> NovelTextViewportReferenceUIView? {
+        registeredViews.allObjects.first {
+            $0.readerContains(windowPoint: point, in: window) && $0.remoteTextHit(at: point, in: window)
+        }
+    }
+
+    func beginRemoteSelection(at point: CGPoint, in window: UIWindow, onComplete: @escaping () -> Void) -> ReaderRemoteDrag? {
+        guard let view = remoteTextView(at: point, in: window) else { return nil }
+        clearSelection()
+        guard beginSelection(in: view, at: view.convert(point, from: window)) else { return nil }
+        return remoteDrag(from: view, in: window, onComplete: onComplete)
+    }
+
+    func beginRemoteHandle(at point: CGPoint, in window: UIWindow, onComplete: @escaping () -> Void) -> ReaderRemoteDrag? {
+        for view in registeredViews.allObjects where view.window === window {
+            guard let handle = view.remoteHandle(at: point, in: window),
+                  let reference = view.displayReference, !reference.isStale,
+                  beginHandleDrag(handle, generation: reference.generation) else { continue }
+            return remoteDrag(from: view, in: window, onComplete: onComplete)
+        }
+        return nil
+    }
+
+    private func remoteDrag(from view: NovelTextViewportReferenceUIView, in window: UIWindow,
+                            onComplete: @escaping () -> Void) -> ReaderRemoteDrag {
+        onRemoteSelectionCleared?()
+        let id = UUID()
+        remoteDragID = id
+        return ReaderRemoteDrag(update: { [weak self, weak view, weak window] point in
+            guard let self, let window, self.remoteDragID == id,
+                  let view = self.mode == .paged ? view : self.currentTextView(in: window),
+                  view.window === window else { return }
+            self.updateSelection(in: view, at: view.convert(point, from: window))
+        }, finish: { [weak self] end in
+            guard let self, self.remoteDragID == id else { return }
+            self.finishSelectionDrag()
+            if case .completed = end, self.hasSelection { onComplete() }
+        })
+    }
+
+    private func currentTextView(in window: UIWindow) -> NovelTextViewportReferenceUIView? {
+        registeredViews.allObjects.first { $0.window === window && $0.displayReference?.isStale == false }
+    }
+
+    private func stopDrag() {
+        dragPoint = nil
+        remoteDragID = nil
+        selectionScrollTask?.cancel()
+        selectionScrollTask = nil
+    }
+}
+
+struct NovelTextMenu: Identifiable {
+    enum Command {
+        case perform(() -> Void), styles((LikeStyle) -> Void), disabled(String)
+    }
+
+    struct Action: Identifiable {
+        let id: String
+        let command: Command
+        var destructive = false
+        var title: String { L10n.string(id) }
+    }
+
+    let id: UUID
+    let actions: [Action]
+}
+
+extension NovelTextSelectionController {
+    func textMenu(id: UUID = UUID(), item: LikeItem? = nil, highlights: NovelLikeHighlightController? = nil,
+                  admits: @escaping () -> Bool = { true }, share: @escaping (String) -> Void,
+                  lookUp: @escaping (String) -> Void, didCapture: ((LikeItem) -> Void)? = nil,
+                  dismissAnnotation: (() -> Void)? = nil) -> NovelTextMenu {
+        var actions: [NovelTextMenu.Action] = []
+        func add(_ title: String, destructive: Bool = false, _ perform: @escaping () -> Void) {
+            actions.append(.init(id: title, command: .perform { if admits() { perform() } }, destructive: destructive))
+        }
+
+        let text = item == nil ? selectedText() : item?.excerptText
+        if let item, let highlights {
+            actions.append(.init(id: "likes.add_to_likes", command: .styles { style in
+                if admits(), let current = highlights.item(id: item.id) { highlights.restyle(current, to: style) }
+            }))
+            add(item.hasNote ? "likes.edit_note" : "likes.add_note") { [weak self] in
+                guard let current = highlights.item(id: item.id) else { return }
+                dismissAnnotation?()
+                self?.requestNoteEditor(for: current)
+            }
+        } else if likeAvailability == .available {
+            noteLikeActionOffered()
+            actions.append(.init(id: "likes.add_to_likes", command: .styles { [weak self] style in
+                if admits() { self?.likeSelection(style: style, didCapture: didCapture) }
+            }))
+            add("likes.add_note") { [weak self] in self?.likeSelection(thenAddNote: true, admitsNote: admits) }
+        } else if likeAvailability == .crossesChapters {
+            actions.append(.init(id: "likes.add_to_likes", command: .disabled(L10n.string("likes.cannot_span_posts"))))
+        }
+        if let text, !text.isEmpty {
+            add("reader.copy") { UIPasteboard.general.string = text }
+        }
+        if let item, let highlights {
+            add("likes.remove_like", destructive: true) {
+                Task {
+                    guard admits(), let current = highlights.item(id: item.id),
+                          await highlights.remove(current), admits() else { return }
+                    dismissAnnotation?()
+                }
+            }
+        }
+        if let text, !text.isEmpty {
+            add("common.share") { share(text) }
+            if item == nil, UIReferenceLibraryViewController.dictionaryHasDefinition(forTerm: text) {
+                add("reader.look_up") { lookUp(text) }
+            }
+        }
+        return NovelTextMenu(id: id, actions: actions)
     }
 }
 

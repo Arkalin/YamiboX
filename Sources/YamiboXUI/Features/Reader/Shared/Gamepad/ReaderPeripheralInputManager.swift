@@ -127,9 +127,10 @@ public final class ReaderPeripheralInputManager {
         handlerStack.removeAll { $0.token == token }
     }
 
-    func dispatchExternalPageStep(_ direction: ReaderControlScrollDirection) {
-        guard allowsEvent(isCapturing: false) else { return }
-        handlerStack.last?.handler(.externalPageStep(direction))
+    func dispatchExternalPageStep(_ direction: ReaderControlScrollDirection) -> Bool {
+        guard allowsEvent(isCapturing: false), let handler = handlerStack.last?.handler else { return false }
+        handler(.externalPageStep(direction))
+        return true
     }
 
     // MARK: - Binding capture

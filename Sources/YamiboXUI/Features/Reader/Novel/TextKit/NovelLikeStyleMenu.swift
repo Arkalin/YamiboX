@@ -28,7 +28,7 @@ import UIKit
 @MainActor
 enum NovelLikeStyleMenu {
     /// The order the row lays out: the five colours, then underline.
-    private static var styles: [LikeStyle] { LikeStyle.colors + [.underline] }
+    static var styles: [LikeStyle] { LikeStyle.colors + [.underline] }
 
     /// Swatch side, in points. Sized against the bar rather than by taste: the
     /// bar gives every item the same slot regardless, so this only controls how
@@ -50,7 +50,7 @@ enum NovelLikeStyleMenu {
     /// opening 「喜欢」, so the style in force is one level up in context, and a
     /// ring heavy enough to read against six page themes drew the eye harder
     /// than the colours it was annotating.
-    private static func swatchImage(for style: LikeStyle) -> UIImage {
+    static func swatchImage(for style: LikeStyle) -> UIImage {
         let side = swatchSide
         let bounds = CGRect(x: 0, y: 0, width: side, height: side)
         // Resolved eagerly against the light appearance the menu's material

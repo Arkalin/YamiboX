@@ -57,7 +57,6 @@ struct SelectionBottomToolbar: View {
                     .opacity(action.isEnabled ? 1 : 0.35)
                 }
                 .buttonStyle(.plain)
-                .readerRemoteActivate(action.action)
                 .disabled(!action.isEnabled)
                 .accessibilityLabel(action.accessibilityLabel ?? action.title)
                 .anchorPreference(key: SelectionBottomToolbarActionAnchorKey.self, value: .bounds) {

@@ -36,17 +36,21 @@ struct ReaderSessionScreen: View {
                 if session.deviceInteraction != nil {
                     ReaderDeviceInteractionBackdrop()
                 } else if showsTrackpad, let display = appModel.externalReader {
-                    let menu = display.deviceMenu(for: session)
+                    let isMenuVisible = display.isShowingDeviceMenu(for: session)
                     ZStack {
-                        ReaderDeviceTrackpad(input: display.pointer) { display.showDeviceMenu(for: session) }
-                            .allowsHitTesting(menu == nil)
-                            .accessibilityHidden(menu != nil)
-                        if let menu {
-                            ReaderDeviceMenuOverlay(menu: menu) { display.dismissDeviceMenu(for: session) }
+                        ReaderDeviceTrackpad(input: display.pointer, showsControls: !isMenuVisible,
+                                             leftPageButtonIsPrevious: session.leftPageButtonIsPrevious) {
+                            display.showDeviceMenu(for: session)
+                        }
+                        if let menu = display.deviceMenu(for: session) {
+                            ReaderDeviceMenuOverlay(menu: menu, isVisible: isMenuVisible) {
+                                display.dismissDeviceMenu(for: session)
+                            }
+                            .id(session.contentID)
                         }
                     }
-                    .statusBarHidden(menu == nil)
-                    .persistentSystemOverlays(menu == nil ? .hidden : .automatic)
+                    .statusBarHidden(!isMenuVisible)
+                    .persistentSystemOverlays(isMenuVisible ? .automatic : .hidden)
                 } else {
                     ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: true)
                 }
@@ -135,6 +139,7 @@ struct ReaderSessionScreen: View {
 
 private struct ReaderDeviceMenuOverlay: View {
     let menu: ReaderViewportLifetime.DeviceMenu
+    let isVisible: Bool
     let onDismiss: () -> Void
     @State private var windowInsets: UIEdgeInsets?
 
@@ -149,17 +154,24 @@ private struct ReaderDeviceMenuOverlay: View {
             ZStack {
                 Button(action: onDismiss) {
                     Rectangle()
-                        .fill(.regularMaterial)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.45)
                         .environment(\.colorScheme, .dark)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.string("reader.external.dismiss_menu"))
+                .readerChromeFadeVisibility(isVisible)
 
-                menu(insets)
+                // Keep the chrome mounted so its original per-row timeline
+                // can interpolate in both directions without a new transition.
+                menu(insets, isVisible)
+                    .animation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration), value: isVisible)
             }
             .accessibilityAction(.escape, onDismiss)
             .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
         }
+        .allowsHitTesting(isVisible)
+        .accessibilityHidden(!isVisible)
         .ignoresSafeArea()
     }
 }

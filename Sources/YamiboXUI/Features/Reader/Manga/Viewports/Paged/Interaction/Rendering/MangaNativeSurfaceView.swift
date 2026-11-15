@@ -37,7 +37,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             return runtime.canPinch && runtime.permitsInteraction()
         }
         onSnapshotChange = { [weak self] snapshot in
-            self?.onInformationZoomChange?(snapshot.factor > 1.001 || snapshot.isInteracting)
+            self?.onInformationZoomChange?(MangaPageZoomPolicy.isActive(snapshot.factor) || snapshot.isInteracting)
             self?.publishNativeState()
         }
         onViewportSizeChange = { [weak self] size, previous in
@@ -113,6 +113,22 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         return (CGPoint(x: rect.midX / baseContentSize.width, y: rect.midY / baseContentSize.height), normalizedZoomFactor)
     }
 
+    func remoteImageHit(at point: CGPoint, in window: UIWindow) -> Bool {
+        onLongPress != nil && runtime?.imageLoaded == true && runtime?.permitsInteraction() == true &&
+            readerContains(windowPoint: point, in: window) &&
+            zoomContentView.readerContains(windowPoint: point, in: window)
+    }
+
+    func doubleTapFromTrackpad(at windowPoint: CGPoint) {
+        guard let window, let runtime else { return }
+        let point = convert(windowPoint, from: window)
+        let local = CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)
+        let decision = runtime.decision(.doubleTap(local))
+        // A trackpad double tap never dispatches a menu or navigation action.
+        guard case .zoom = decision else { return }
+        runtime.apply(decision)
+    }
+
     private func applyHandoffFocusIfReady() {
         guard baseContentSize.width > 0, baseContentSize.height > 0,
               runtime?.canPinch == true, let focus = restoreFocus?() else { return }
@@ -136,7 +152,8 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
                                                    y: bounds.height / 2 - resting.minY), animated: animated)
             } else {
                 let local = CGPoint(x: point.x + bounds.minX, y: point.y + bounds.minY)
-                zoom(factor: 2, centeredAt: convert(local, to: zoomContentView), animated: animated)
+                zoom(factor: MangaPageZoomPolicy.doubleTapTargetScale,
+                     centeredAt: convert(local, to: zoomContentView), animated: animated)
             }
         case let .reveal(edge):
             let x = edge == .left ? -contentInset.left : max(-contentInset.left, contentSize.width - bounds.width + contentInset.right)
@@ -170,7 +187,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         let revision = callbackRevision
         callbackScheduler.publish { [weak runtime, weak self] in
             guard let self, self.callbackRevision == revision else { return }
-            runtime?.receiveNative(transform, interacting: value.isInteracting, instance: self.instance)
+            runtime?.receiveNative(transform, interacting: value.isInteracting, driven: value.isDrivenTransform, instance: self.instance)
             if runtime?.isMounted(self.instance) == true { runtime?.setMenuFrame(menuFrame) }
         }
     }
@@ -192,6 +209,32 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
     @objc private func showMenu(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began, runtime?.isMounted(instance) == true else { return }
         onLongPress?()
+    }
+}
+
+extension NativeZoomScrollView {
+    func remoteTransform(at windowPoint: CGPoint, canZoom: Bool,
+                         isCurrent: @escaping () -> Bool) -> ReaderRemoteTransform? {
+        guard let window, baseContentSize != .zero else { return nil }
+        let point = convert(windowPoint, from: window)
+        let anchor = CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)
+        let contentPoint = convert(point, to: zoomContentView)
+        let factor = normalizedZoomFactor
+        let size = baseContentSize
+        setDrivenTransformActive(true)
+        let valid = { [weak self] in self?.baseContentSize == size && isCurrent() }
+        return ReaderRemoteTransform(isCurrent: valid, update: { [weak self] ratio, delta in
+            guard let self, valid(), ratio.isFinite, ratio > 0 else { return }
+            self.place(contentPoint: contentPoint, at: CGPoint(x: anchor.x + delta.x, y: anchor.y + delta.y),
+                       zoomFactor: factor * (canZoom ? ratio : 1))
+        }, pan: { [weak self] delta in
+            guard let self, valid(),
+                  MangaPageZoomPolicy.isActive(self.normalizedZoomFactor) else { return }
+            let offset = CGPoint(x: self.contentOffset.x - delta.x, y: self.contentOffset.y - delta.y)
+            self.setContentOffset(self.clampedOffset(offset), animated: false)
+        }, finish: { [weak self] in
+            self?.setDrivenTransformActive(false)
+        })
     }
 }
 

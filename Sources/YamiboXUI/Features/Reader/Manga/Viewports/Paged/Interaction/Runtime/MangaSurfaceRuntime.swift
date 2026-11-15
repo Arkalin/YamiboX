@@ -6,8 +6,9 @@ protocol MangaNativeSurfaceControlling: AnyObject {
     func applyNative(_ decision: MangaInteractionDecision, animated: Bool)
     func cancelNative(reset: Bool)
     var normalizedFocus: (point: CGPoint, factor: CGFloat)? { get }
-    func zoomFromTrackpad(ratio: CGFloat, windowPoint: CGPoint)
-    func panFromTrackpad(_ delta: CGPoint)
+    func doubleTapFromTrackpad(at windowPoint: CGPoint)
+    func remoteTransform(at windowPoint: CGPoint, canZoom: Bool,
+                         isCurrent: @escaping () -> Bool) -> ReaderRemoteTransform?
 }
 
 @MainActor @Observable
@@ -43,9 +44,9 @@ final class MangaSurfaceRuntime {
         nativeSurface = surface
     }
 
-    func receiveNative(_ transform: MangaSurfaceTransform, interacting: Bool, instance: UUID) {
+    func receiveNative(_ transform: MangaSurfaceTransform, interacting: Bool, driven: Bool, instance: UUID) {
         guard isMounted(instance) else { return }
-        if interacting && !nativeIsInteracting { generation &+= 1 }
+        if interacting && !driven && !nativeIsInteracting { generation &+= 1 }
         nativeIsInteracting = interacting
         self.transform = transform
     }
@@ -59,15 +60,22 @@ final class MangaSurfaceRuntime {
     }
 
     var normalizedFocus: (point: CGPoint, factor: CGFloat)? { nativeSurface?.normalizedFocus }
+    var isZoomed: Bool { MangaPageZoomPolicy.isActive(transform.scale) }
 
-    func zoomFromTrackpad(_ ratio: CGFloat, at point: CGPoint) {
+    func doubleTapFromTrackpad(at point: CGPoint) {
         guard canPinch, permitsInteraction() else { return }
-        nativeSurface?.zoomFromTrackpad(ratio: ratio, windowPoint: point)
+        nativeSurface?.doubleTapFromTrackpad(at: point)
     }
 
-    func panFromTrackpad(_ delta: CGPoint) {
-        guard normalizedFocus != nil, permitsInteraction() else { return }
-        nativeSurface?.panFromTrackpad(delta)
+    func remoteTransform(at point: CGPoint, zoom: Bool) -> ReaderRemoteTransform? {
+        guard permitsInteraction(), zoom ? canPinch : isZoomed else { return nil }
+        let revision = generation
+        let instance = mountingInstance
+        return nativeSurface?.remoteTransform(at: point, canZoom: zoom) { [weak self] in
+            guard let self else { return false }
+            return self.generation == revision && self.mountingInstance == instance && self.permitsInteraction() &&
+                (zoom ? self.canPinch : self.isZoomed)
+        }
     }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {

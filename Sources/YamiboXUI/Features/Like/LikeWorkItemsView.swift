@@ -137,7 +137,7 @@ struct LikeWorkItemsView: View {
                     )
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ReaderRemoteButton(L10n.string("common.done")) {
+                    Button(L10n.string("common.done")) {
                         setSelecting(false)
                     }
                     .fontWeight(.semibold)
@@ -154,12 +154,12 @@ struct LikeWorkItemsView: View {
             } else if onAnnotationNavigationStateChange == nil {
                 if let onDismiss {
                     ToolbarItem(placement: .cancellationAction) {
-                        ReaderRemoteButton(L10n.string("common.close"), action: onDismiss)
+                        Button(L10n.string("common.close"), action: onDismiss)
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if !filteredItems.isEmpty {
-                        ReaderRemoteButton {
+                        Button {
                             setSelecting(true)
                         } label: {
                             Image(systemName: "checklist")
@@ -543,7 +543,7 @@ private struct LikeItemCard: View {
     }
 
     var body: some View {
-        ReaderRemoteButton(action: activate) {
+        Button(action: activate) {
             switch item.kind {
             case .text:
                 LikeTextCardContent(item: item, chapterInfo: chapterInfo)

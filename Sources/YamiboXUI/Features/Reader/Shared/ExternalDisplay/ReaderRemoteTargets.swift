@@ -1,16 +1,20 @@
 import SwiftUI
 import UIKit
+import YamiboXCore
 
 @MainActor
 struct ReaderRemoteActions {
     var tap: ((CGPoint) -> Void)?
-    var scroll: ((CGPoint) -> Void)?
-    var pinch: ((CGFloat, CGPoint) -> Void)?
-    var finishScroll: (() -> Void)?
+    var doubleTap: ((CGPoint) -> Void)?
     var gestureID: AnyHashable?
+    var isAvailable: () -> Bool = { true }
     var blocksTap = false
-    var hold: ((CGPoint) -> Void)?
-    var didBeginScroll: (() -> Void)?
+    var hold: ((CGPoint) -> (handled: Bool, drag: ReaderRemoteDrag?))?
+    var drag: ((CGPoint) -> ReaderRemoteDrag?)?
+    var textHit: ((CGPoint) -> Bool)?
+    var transform: ((CGPoint, Bool) -> ReaderRemoteTransform?)?
+    var mangaIsZoomed: (() -> Bool)?
+    var verticalScroll: (() -> ReaderRemoteScrollTarget?)?
 }
 
 extension EnvironmentValues {
@@ -29,14 +33,18 @@ final class ReaderRemoteTargetRegistry {
 
     func add(_ target: ReaderRemoteTargetProbe) { targets.add(target) }
 
-    func eligible(_ target: ReaderRemoteTargetProbe) -> Bool {
-        target.window != nil && target.window === window && target.visible
+    func eligible(_ target: ReaderRemoteTargetProbe, at point: CGPoint? = nil) -> Bool {
+        guard target.window === window, target.actions.isAvailable(), let frame = target.visibleFrame else { return false }
+        return point.map(frame.contains) ?? true
+    }
+
+    func contentTarget(where supports: (ReaderRemoteActions) -> Bool) -> ReaderRemoteTargetProbe? {
+        targets.allObjects.first { eligible($0) && supports($0.actions) }
     }
 
     func target(at point: CGPoint, where supports: (ReaderRemoteActions) -> Bool) -> ReaderRemoteTargetProbe? {
         targets.allObjects.filter {
-            eligible($0) &&
-                supports($0.actions) && $0.visibleFrame?.contains(point) == true
+            supports($0.actions) && eligible($0, at: point)
         }.max { first, second in
             if first.priority != second.priority { return first.priority < second.priority }
             return first.bounds.width * first.bounds.height > second.bounds.width * second.bounds.height
@@ -47,11 +55,6 @@ final class ReaderRemoteTargetRegistry {
 extension View {
     func readerRemoteActivate(_ action: @escaping () -> Void) -> some View {
         readerRemoteTarget(actions: ReaderRemoteActions(tap: { _ in action() }))
-    }
-
-    @ViewBuilder
-    func readerRemoteActivate(_ action: (() -> Void)?) -> some View {
-        if let action { readerRemoteActivate(action) } else { self }
     }
 
     func readerRemoteTarget(priority: Int = 10, actions: ReaderRemoteActions) -> some View {
@@ -120,15 +123,41 @@ final class ReaderRemoteTargetProbe: UIView {
 
     var visibleFrame: CGRect? {
         guard let window, visible else { return nil }
-        var frame = convert(bounds, to: window).intersection(window.bounds)
-        var ancestor: UIView? = self
-        while let view = ancestor {
-            if view.isHidden || view.alpha < 0.98 { return nil }
-            if view.clipsToBounds || view is UIScrollView {
-                frame = frame.intersection(view.convert(view.bounds, to: window))
+        return readerVisibleFrame(in: window)
+    }
+}
+
+extension UIView {
+    private var readerIsVisible: Bool { !isHidden && alpha >= 0.98 }
+
+    func readerVisibleFrame(in window: UIWindow, slop: CGFloat = 0) -> CGRect? {
+        guard self.window === window, readerIsVisible else { return nil }
+        var frame = convert(bounds.insetBy(dx: -slop, dy: -slop), to: window).intersection(window.bounds)
+        var view = superview
+        while let ancestor = view {
+            guard ancestor.readerIsVisible else { return nil }
+            if ancestor.clipsToBounds || ancestor is UIScrollView {
+                frame = frame.intersection(ancestor.convert(ancestor.bounds, to: window))
             }
-            ancestor = view.superview
+            view = ancestor.superview
         }
         return frame.isEmpty ? nil : frame
+    }
+
+    func readerContains(windowPoint: CGPoint, in window: UIWindow, slop: CGFloat = 0) -> Bool {
+        readerVisibleFrame(in: window, slop: slop)?.contains(windowPoint) == true
+    }
+
+    func readerHit<T: UIView, Result>(_ type: T.Type, at point: CGPoint, in window: UIWindow,
+                                      resolve: (T, CGPoint) -> Result?) -> Result? {
+        guard readerIsVisible else { return nil }
+        let local = convert(point, from: window)
+        if (clipsToBounds || self is UIScrollView), !bounds.contains(local) { return nil }
+        for child in subviews.reversed() {
+            if let hit = child.readerHit(type, at: point, in: window, resolve: resolve) { return hit }
+        }
+        guard let match = self as? T, match.point(inside: local, with: nil),
+              match.readerContains(windowPoint: point, in: window) else { return nil }
+        return resolve(match, local)
     }
 }

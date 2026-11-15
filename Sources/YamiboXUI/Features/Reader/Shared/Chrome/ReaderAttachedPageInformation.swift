@@ -34,6 +34,7 @@ struct ReaderAttachedInformationConfiguration: Equatable {
     var presentation = ReaderPageInformationPresentation(isPaged: true, isImmersive: true, isChromeVisible: false)
     var selectedIndex = 0
     var backgroundStyle: ReaderBackgroundStyle? = nil
+    var usesBackingPlate = false
     var topInset: CGFloat = 0
     var bottomInset: CGFloat = 0
     var titleSidePadding: CGFloat = 76
@@ -92,7 +93,7 @@ private struct ReaderAttachedInformationPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ReaderAttachedInformationTitle(title: page.title, backgroundStyle: configuration.backgroundStyle)
+            ReaderAttachedInformationTitle(title: page.title, configuration: configuration)
                 .id(page.pageID)
                 .padding(.horizontal, configuration.titleSidePadding)
                 .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
@@ -107,13 +108,33 @@ private struct ReaderAttachedInformationPage: View {
     }
 }
 
+/// A vertical reader has no attached page host. While the device menu is up,
+/// display the same edge information as a read-only overlay on the scroll view.
+struct ReaderExternalVerticalInformation: View {
+    let page: ReaderAttachedPageInformation
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+    var backgroundStyle: ReaderBackgroundStyle?
+
+    var body: some View {
+        ReaderAttachedInformationPage(page: page, configuration: .init(
+            presentation: .init(isPaged: false, isImmersive: false, isChromeVisible: true),
+            backgroundStyle: backgroundStyle, usesBackingPlate: true,
+            topInset: topInset, bottomInset: bottomInset, titleSidePadding: 16
+        ))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+}
+
 private struct ReaderAttachedInformationTitle: View {
     let title: String
-    let backgroundStyle: ReaderBackgroundStyle?
+    let configuration: ReaderAttachedInformationConfiguration
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let backgroundStyle = configuration.backgroundStyle
         let text = Text(title)
             .modifier(ReaderInformationFont())
             .lineLimit(1)
@@ -122,7 +143,7 @@ private struct ReaderAttachedInformationTitle: View {
             .foregroundStyle(backgroundStyle == .quiet
                 ? Color(uiColor: readerThemeTextUIColor(for: .quiet)).opacity(0.8)
                 : (backgroundStyle == nil ? Color.primary : Color.secondary))
-        if backgroundStyle == nil {
+        if backgroundStyle == nil || configuration.usesBackingPlate {
             let capsuleSize = text.hidden().padding(.horizontal, 14).padding(.vertical, 8)
             let animation: Animation? = reduceMotion ? nil
                 : .easeInOut(duration: ReaderInformationAnimation.titleCrossfadeDuration)
@@ -139,7 +160,7 @@ private struct ReaderAttachedInformationTitle: View {
                     }
             }
             .animation(animation, value: title)
-            .modifier(MangaReaderTitleAppearance())
+            .modifier(MangaReaderTitleAppearance(isEnabled: backgroundStyle == nil))
         } else {
             text
                 .modifier(ReaderInformationTitleTransition(title: title))
@@ -157,18 +178,19 @@ private struct ReaderAttachedInformationFooter: View {
             pageID: page.pageID, number: number, pageLine: page.pageLine, webLine: page.webLine,
             style: configuration.presentation.pageNumberStyle
         )) { value in
-            ReaderAttachedInformationFooterContent(value: value, backgroundStyle: configuration.backgroundStyle)
+            ReaderAttachedInformationFooterContent(value: value, configuration: configuration)
         }
     }
 }
 
 private struct ReaderAttachedInformationFooterContent: View {
     let value: ReaderInformationFooterValue
-    let backgroundStyle: ReaderBackgroundStyle?
+    let configuration: ReaderAttachedInformationConfiguration
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let compact = value.style == .compact
+        let backgroundStyle = configuration.backgroundStyle
         let content = VStack(spacing: ReaderBottomChromeLayoutPresentation().progressSummaryLineSpacing) {
             Text(compact ? String(value.number) : value.pageLine)
             if !value.webLine.isEmpty {
@@ -181,7 +203,7 @@ private struct ReaderAttachedInformationFooterContent: View {
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         .multilineTextAlignment(.center)
-        if backgroundStyle == nil {
+        if backgroundStyle == nil || configuration.usesBackingPlate {
             content.padding(.horizontal, 14).padding(.vertical, 6)
                 .readerStyledChromePanel(cornerRadius: 16, tint: readerChromePanelTint(for: colorScheme))
         } else {

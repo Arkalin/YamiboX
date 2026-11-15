@@ -13,6 +13,7 @@ struct ReaderExternalGeometry: Equatable {
 
 extension EnvironmentValues {
     @Entry var readerExternalGeometry: ReaderExternalGeometry? = nil
+    @Entry var readerExternalMenuPresented = false
 }
 
 struct ReaderExternalSurface: View {
@@ -37,6 +38,7 @@ struct ReaderExternalSurface: View {
                         isFullScreenRoot: true, externalViewport: viewport
                     )
                     .environment(\.readerExternalGeometry, geometry)
+                    .environment(\.readerExternalMenuPresented, display.isShowingDeviceMenu(for: session))
                     .environment(\.displayScale, geometry.scale)
                     .environment(\.readerDeviceInteraction, ReaderDeviceInteractionContext(
                         display: display, session: session, appModel: appModel

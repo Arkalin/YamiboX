@@ -15,10 +15,7 @@ struct NovelReaderTopChrome: View {
     @Environment(\.readerToolbarStyle) private var toolbarStyle
 
     var body: some View {
-        let summary = ReaderChromeProgressSummary(
-            chapterTitle: model.currentChapterTitle,
-            progressText: model.progressText
-        )
+        let summary = model.chromeProgressSnapshot.currentSummary
         VStack(spacing: 8) {
             ReaderGlassContainer(spacing: 12) {
                 let chromeButtonSize: CGFloat = 44

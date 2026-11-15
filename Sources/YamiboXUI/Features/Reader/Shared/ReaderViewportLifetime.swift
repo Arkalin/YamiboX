@@ -1,11 +1,17 @@
 import SwiftUI
+import Observation
 import YamiboXCore
 
 /// One presentation of a reader. Platform views detach without ending the
 /// reader, and a retiring presentation can't remove its successor's handler.
 @MainActor
 final class ReaderViewportLifetime {
-    typealias DeviceMenu = @MainActor (EdgeInsets) -> AnyView
+    typealias DeviceMenu = @MainActor (EdgeInsets, _ isVisible: Bool) -> AnyView
+
+    @Observable
+    fileprivate final class DeviceMenuRegistration {
+        var menu: DeviceMenu?
+    }
 
     let settingsTarget: ReaderSettingsTarget
     private weak var peripheralInput: ReaderPeripheralInputManager?
@@ -13,12 +19,14 @@ final class ReaderViewportLifetime {
     private var attachmentID: UUID?
     private var capturePosition: (() -> Void)?
     private var onDetach: (() -> Void)?
-    private(set) var deviceMenu: DeviceMenu?
+    private let menuRegistration = DeviceMenuRegistration()
+    var deviceMenu: DeviceMenu? { menuRegistration.menu }
     var didRender: (() -> Void)?
     private(set) var isCurrent = true
     private var hasDetached = false
     private var isSuspended = false
     private var isInputPaused = false
+    private var inputRevision = 0
     private(set) var hasRendered = false
 
     init(settingsTarget: ReaderSettingsTarget = .device) {
@@ -42,7 +50,7 @@ final class ReaderViewportLifetime {
         self.capturePosition = capturePosition
         self.onDetach = onDetach
         self.peripheralInput = peripheralInput
-        self.deviceMenu = deviceMenu
+        menuRegistration.menu = deviceMenu
         externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
             guard self?.acceptsInput(id) == true else { return }
@@ -50,16 +58,26 @@ final class ReaderViewportLifetime {
         }
     }
 
-    func performExternalPageStep(_ direction: ReaderControlScrollDirection) {
-        guard let attachmentID, acceptsInput(attachmentID) else { return }
-        peripheralInput?.dispatchExternalPageStep(direction)
+    func performExternalPageStep(_ direction: ReaderControlScrollDirection) -> Bool {
+        guard let attachmentID, acceptsInput(attachmentID), let peripheralInput else { return false }
+        return peripheralInput.dispatchExternalPageStep(direction)
     }
 
-    func accepts(_ id: UUID) -> Bool {
-        isCurrent && !isSuspended && attachmentID == id
-    }
+    func ownsAttachment(_ id: UUID) -> Bool { isCurrent && attachmentID == id }
+
+    func accepts(_ id: UUID) -> Bool { !isSuspended && ownsAttachment(id) }
 
     func acceptsInput(_ id: UUID) -> Bool { !isInputPaused && accepts(id) }
+
+    /// Queued work must still belong to the same uninterrupted input interval.
+    func enqueueInput(_ id: UUID, while admits: @escaping () -> Bool, _ operation: @escaping () async -> Void) {
+        guard acceptsInput(id) else { return }
+        let revision = inputRevision
+        Task { [weak self] in
+            guard let self, inputRevision == revision, acceptsInput(id), admits() else { return }
+            await operation()
+        }
+    }
 
     func frameDidRender() {
         guard isCurrent, !hasDetached else { return }
@@ -77,11 +95,17 @@ final class ReaderViewportLifetime {
     }
 
     func setSuspended(_ suspended: Bool, capturingPosition: Bool = true) {
+        guard isSuspended != suspended else { return }
         if suspended && capturingPosition { synchronizePosition() }
         isSuspended = suspended
+        inputRevision &+= 1
     }
 
-    func setInputPaused(_ paused: Bool) { isInputPaused = paused }
+    func setInputPaused(_ paused: Bool) {
+        guard isInputPaused != paused else { return }
+        isInputPaused = paused
+        inputRevision &+= 1
+    }
 
     @discardableResult
     func detach(_ id: UUID) -> Bool {
@@ -101,11 +125,12 @@ final class ReaderViewportLifetime {
     }
 
     private func detach() {
+        inputRevision &+= 1
         peripheralInput?.removeHandler(handlerToken)
         handlerToken = nil
         attachmentID = nil
         capturePosition = nil
-        deviceMenu = nil
+        menuRegistration.menu = nil
         let cleanup = onDetach
         onDetach = nil
         cleanup?()

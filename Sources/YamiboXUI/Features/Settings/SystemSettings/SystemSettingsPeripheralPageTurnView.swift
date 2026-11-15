@@ -164,20 +164,12 @@ struct SettingsPeripheralSections: View {
 
     private var trackpadSensitivityRow: some View {
         let title = L10n.string("settings.external_display.trackpad_sensitivity")
-        let percentage = (trackpadSensitivityDraft ?? viewModel.externalDisplay.trackpadSensitivity)
-            .formatted(.percent.precision(.fractionLength(0)))
         return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(percentage)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            .accessibilityHidden(true)
+            Text(title)
+                .accessibilityHidden(true)
             Slider(
                 value: Binding(
-                    get: { trackpadSensitivityDraft ?? viewModel.externalDisplay.trackpadSensitivity },
+                    get: { trackpadSensitivityDraft ?? viewModel.trackpadSensitivity },
                     set: { value in
                         if trackpadSensitivityDraft != nil {
                             trackpadSensitivityDraft = value
@@ -190,7 +182,7 @@ struct SettingsPeripheralSections: View {
                 step: 0.1,
                 onEditingChanged: { isEditing in
                     if isEditing {
-                        trackpadSensitivityDraft = viewModel.externalDisplay.trackpadSensitivity
+                        trackpadSensitivityDraft = viewModel.trackpadSensitivity
                     } else if let draft = trackpadSensitivityDraft {
                         viewModel.updateTrackpadSensitivity(draft)
                         trackpadSensitivityDraft = nil
@@ -199,7 +191,6 @@ struct SettingsPeripheralSections: View {
             )
             .tint(appTheme.controlAccent)
             .accessibilityLabel(title)
-            .accessibilityValue(percentage)
         }
         .disabled(viewModel.isBusy)
     }

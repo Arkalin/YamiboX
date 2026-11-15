@@ -159,14 +159,14 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         .toolbar {
             if !activeNavigationState.isSelecting {
                 ToolbarItem(placement: .topBarLeading) {
-                    ReaderRemoteButton(action: onDismiss) {
+                    Button(action: onDismiss) {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel(L10n.string("common.close"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if isAnnotationTabSelected, activeNavigationState.itemCount > 0 {
-                        ReaderRemoteButton {
+                        Button {
                             requestAnnotationSelection()
                         } label: {
                             Image(systemName: "checklist")
@@ -230,7 +230,7 @@ struct ReaderBookmarkListView: View {
     var body: some View {
         List {
             ForEach(items) { item in
-                ReaderRemoteButton {
+                Button {
                     if isSelecting {
                         toggleSelection(item.id)
                     } else {
@@ -285,7 +285,7 @@ struct ReaderBookmarkListView: View {
                     )
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ReaderRemoteButton(L10n.string("common.done")) {
+                    Button(L10n.string("common.done")) {
                         setSelecting(false)
                     }
                     .fontWeight(.semibold)

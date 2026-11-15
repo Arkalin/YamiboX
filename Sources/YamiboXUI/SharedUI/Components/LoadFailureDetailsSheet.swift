@@ -12,13 +12,15 @@ struct LoadFailureDetailsButton: View {
     @Environment(\.readerDeviceInteraction) private var deviceInteraction
 
     var body: some View {
-        ReaderRemoteButton {
+        let showDetails = {
             let failure = details ?? LoadFailureDetails(message: message)
             if let deviceInteraction { deviceInteraction.showDetails(failure) }
             else { presented = PresentedLoadFailure(details: failure) }
-        } label: {
+        }
+        Button(action: showDetails) {
             Label(L10n.string("load_failure.details"), systemImage: "info.circle")
         }
+        .readerRemoteActivate(showDetails)
         .buttonStyle(.plain)
         .font(.subheadline)
         .frame(minHeight: 44)

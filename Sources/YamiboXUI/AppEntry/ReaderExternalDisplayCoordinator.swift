@@ -72,21 +72,16 @@ final class ReaderExternalDisplayCoordinator {
         settingsObservation = Task { [weak self] in
             let initial = await settingsStore.load()
             guard !Task.isCancelled else { return }
-            self?.applySettings(initial.system.externalDisplay)
+            self?.setTakeoverEnabled(initial.system.externalDisplay.isEnabled)
             for await _ in changes {
                 let settings = await settingsStore.load()
                 guard !Task.isCancelled, let self else { return }
-                applySettings(settings.system.externalDisplay)
+                setTakeoverEnabled(settings.system.externalDisplay.isEnabled)
             }
         }
     }
 
     deinit { settingsObservation?.cancel() }
-
-    private func applySettings(_ settings: ExternalDisplaySettings) {
-        pointer.sensitivity = CGFloat(settings.trackpadSensitivity)
-        setTakeoverEnabled(settings.isEnabled)
-    }
 
     private func setTakeoverEnabled(_ enabled: Bool) {
         guard isTakeoverEnabled != enabled else { return }
@@ -208,9 +203,13 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     func deviceMenu(for session: ReaderSession) -> ReaderViewportLifetime.DeviceMenu? {
-        guard isDeviceMenuPresented, let lease, lease.owner.session === session,
+        guard let lease, lease.owner.session === session,
               lease.owner.contentID == session.contentID, !session.isClosed else { return nil }
         return lease.viewport.deviceMenu
+    }
+
+    func isShowingDeviceMenu(for session: ReaderSession) -> Bool {
+        isDeviceMenuPresented && deviceMenu(for: session) != nil
     }
 
     func showDeviceMenu(for session: ReaderSession, from viewport: ReaderViewportLifetime? = nil) {
@@ -385,9 +384,14 @@ final class ReaderExternalDisplayCoordinator {
         deviceFrameDuringPreparation = isRestoringDeviceInteraction
             ? nil : candidate.host?.viewIfLoaded?.window?.snapshotView(afterScreenUpdates: false)
         let generation = UUID()
-        let viewport = candidate.session.beginExternalViewport(resolution: resolution) { [weak self] in
-            self?.fail(generation)
-        }
+        let viewport = candidate.session.beginExternalViewport(
+            resolution: resolution,
+            onTrackpadSensitivityChange: { [weak self] sensitivity in
+                guard let self, lease?.generation == generation else { return }
+                pointer.sensitivity = CGFloat(sensitivity)
+            },
+            onFailure: { [weak self] in self?.fail(generation) }
+        )
         reservedOwner = candidate
         disconnectedPreparation?.cancel()
         model.externalDisplayFailure = false
@@ -495,7 +499,7 @@ final class ReaderExternalDisplayCoordinator {
     private func synchronizeInput(revealCursor: Bool = true) {
         // Invalidate in-flight gestures before an overlay can consume input.
         pointer.setEnabled(canUseTrackpad, revealCursor: revealCursor)
-        lease?.viewport.setInputPaused(isDeviceMenuPresented || phase == .deviceInteraction)
+        lease?.viewport.setInputPaused(!canUseTrackpad)
         wakefulness.setNeeded(phase == .external && showsReaderOnExternalDisplay)
     }
 }

@@ -268,21 +268,21 @@ struct NovelReaderDownloadProgressSheet: View {
                 ToolbarItem(placement: .bottomBar) {
                     HStack {
                         if download.state.operation.isFinished {
-                            ReaderRemoteButton(L10n.string("common.done")) {
+                            Button(L10n.string("common.done")) {
                                 download.dismissProgress()
                                 onClose()
                                 dismiss()
                             }
                             .appProminentButtonStyle()
                         } else {
-                            ReaderRemoteButton(L10n.string("reader.run_in_background")) {
+                            Button(L10n.string("reader.run_in_background")) {
                                 download.hideProgress()
                                 onClose()
                                 dismiss()
                             }
                             .appProminentButtonStyle()
 
-                            ReaderRemoteButton(L10n.string("common.stop"), role: .destructive) {
+                            Button(L10n.string("common.stop"), role: .destructive) {
                                 download.stopDownloading()
                             }
                             .buttonStyle(.bordered)

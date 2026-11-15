@@ -9,14 +9,12 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let pages: [MangaReaderPageProjection]
     let currentPageIndex: Int?
     let viewportPlacement: MangaNovelReaderViewportPlacement?
-    let controlScrollStep: ReaderControlScrollStepRequest?
     var viewportBridge: MangaPagedControlPageTurnBridge? = nil
     let imageLoader: MangaReaderPageImageLoader
     let isChromeVisible: Bool
     let zoomEnabled: Bool
     let likedPageIDs: Set<String>
     let onCurrentPageChange: (Int) -> Void
-    let onControlScrollEdgeReached: (ReaderControlScrollDirection) -> Void
     var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
@@ -32,15 +30,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         let view = MangaVerticalNativeViewport()
         coordinator.attach(to: view)
         viewportBridge?.capturePosition = { [weak coordinator] in coordinator?.capturePosition() }
-        viewportBridge?.scroll = { [weak coordinator, weak view] delta in
-            coordinator?.placementPageID = nil
-            view?.panFromTrackpad(delta)
-        }
-        viewportBridge?.zoom = { [weak coordinator, weak view] ratio, point in
-            guard coordinator?.parent.zoomEnabled == true else { return }
-            coordinator?.placementPageID = nil
-            view?.zoomFromTrackpad(ratio: ratio, windowPoint: point)
-        }
+        viewportBridge?.verticalViewport = coordinator
         return view
     }
 
@@ -78,17 +68,14 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         // win the area heuristic and immediately overwrite the requested page.
         fileprivate var placementPageID: String?
         private var lastAppliedPlacementRevision: Int?
-        private var lastAppliedControlScrollRevision: Int?
-        private var pendingControlScrollTarget: (y: CGFloat, timestamp: TimeInterval)?
+        private var controlScroll = ReaderVerticalScrollStep()
         private var lastReportedGlobalIndex: Int?
         private var pendingReportedGlobalIndex: Int?
         private var currentPagePublishDisplayLink: CADisplayLink?
         private var pendingBoundaryPull: ReaderPageBoundary?
         private var panIncludedPinch = false
-        private let currentTime: () -> CFTimeInterval
-        private var lastScrollMotionTime: CFTimeInterval?
-        private static let chromeToggleMotionSuppressionInterval: CFTimeInterval = 0.35
         var verticalZoomScale: CGFloat { viewport?.normalizedZoomFactor ?? 1 }
+        var isZoomed: Bool { MangaPageZoomPolicy.isActive(verticalZoomScale) }
         var pinchGesture: UIPinchGestureRecognizer { viewport!.pinchGestureRecognizer! }
         lazy var tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         lazy var doubleTapGesture: UITapGestureRecognizer = {
@@ -97,9 +84,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             return recognizer
         }()
 
-        init(parent: MangaVerticalCollectionViewport, currentTime: @escaping () -> CFTimeInterval = CACurrentMediaTime) {
+        init(parent: MangaVerticalCollectionViewport) {
             self.parent = parent
-            self.currentTime = currentTime
             prefetchImageLoader = parent.imageLoader
             imagePrefetchCoordinator = parent.imageLoader.makePrefetchCoordinator()
         }
@@ -127,8 +113,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             }
             view.onSnapshotChange = { [weak self] snapshot in
                 guard let self, !self.isUpdatingLayout else { return }
-                if snapshot.isInteracting { self.lastScrollMotionTime = self.currentTime() }
-                if snapshot.isDragging { self.pendingControlScrollTarget = nil }
                 if snapshot.isDragging || snapshot.isZooming {
                     self.placementPageID = nil
                 }
@@ -140,8 +124,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 self.publishCurrentPageIfNeeded()
             }
             view.onInteractionEnd = { [weak self] in
-                self?.applyPendingRatios()
-                self?.publishCurrentPageIfNeeded()
+                self?.handleScroll(.settled)
             }
         }
 
@@ -171,7 +154,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 lastReportedGlobalIndex = nil
                 pendingReportedGlobalIndex = nil
                 cancelPendingCurrentPagePublish()
-                pendingControlScrollTarget = nil
+                controlScroll.reset()
                 // A retained placement index belongs to its original page
                 // window. Only a new request may override the current index
                 // after prefetch inserts or removes pages.
@@ -186,7 +169,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 view.alpha = parent.pages.isEmpty ? 1 : 0
                 view.collectionView.reloadData()
                 rebuildLayout(preserving: nil)
-                lastAppliedControlScrollRevision = parent.controlScrollStep?.revision
             }
             if !parent.zoomEnabled, MangaPageZoomPolicy.isActive(view.normalizedZoomFactor) {
                 view.stopInteraction()
@@ -195,7 +177,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             let maximumScale = parent.zoomEnabled ? MangaPageZoomPolicy.maximumScale : 1
             if view.maximumZoomScale != maximumScale { view.maximumZoomScale = maximumScale }
             applyPlacementIfNeeded()
-            applyControlScrollStepIfNeeded()
             updateImagePrefetch()
         }
 
@@ -265,7 +246,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             // Double-tap zoom uses isZoomAnimating. Keep its host geometry stable
             // until UIKit finishes animating the presentation transform.
             guard !isDismantled, !pendingRatios.isEmpty, let view = viewport,
-                  !view.isZooming, !view.isZoomBouncing, !view.isZoomAnimating else { return }
+                  !view.isZooming, !view.isZoomBouncing, !view.isZoomAnimating, !view.isDrivenTransform else { return }
             let previous = view.snapshot
             heightToWidthRatios.merge(pendingRatios) { _, new in new }
             pendingRatios = [:]
@@ -355,55 +336,93 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             lastReportedGlobalIndex = index
         }
 
-        private func applyControlScrollStepIfNeeded() {
-            guard pendingInitialPageIndex == nil, let view = viewport, !parent.pages.isEmpty,
-                  view.bounds.height > 0, let request = parent.controlScrollStep,
-                  request.revision != lastAppliedControlScrollRevision else { return }
-            lastAppliedControlScrollRevision = request.revision
+        func performControlScrollStep(_ direction: ReaderControlScrollDirection) -> ReaderVerticalScrollStep.Outcome {
+            guard !isDismantled, pendingInitialPageIndex == nil, let viewport,
+                  viewport.window != nil, !parent.pages.isEmpty else { return .unavailable }
             placementPageID = nil
-            let minY = -view.contentInset.top
-            let maxY = max(minY, view.contentSize.height - view.bounds.height + view.contentInset.bottom)
-            let currentY = view.contentOffset.y
-            let isAtEdge = request.direction == .down ? currentY >= maxY - 0.5 : currentY <= minY + 0.5
-            if isAtEdge {
-                let callback = parent.onControlScrollEdgeReached
-                callbackScheduler.publish { callback(request.direction) }
-                return
-            }
-            let now = currentTime()
-            let baseY = pendingControlScrollTarget.flatMap { now - $0.timestamp < 0.45 ? $0.y : nil } ?? currentY
-            let step = view.bounds.height * CGFloat(ReaderControlCommandResolver.verticalScrollViewportFraction)
-            let target = min(max(baseY + (request.direction == .down ? step : -step), minY), maxY)
-            pendingControlScrollTarget = (target, now)
-            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
+            return controlScroll.perform(direction, in: viewport)
         }
 
-        // Exposed to gesture tests to model a recent scroll even after UIKit has
-        // already stopped decelerating at touch-down.
-        func scrollViewDidScroll(_ scrollView: UIScrollView) { lastScrollMotionTime = currentTime() }
+        private func boundary(in view: MangaVerticalNativeViewport, y: CGFloat, translation: CGFloat) -> ReaderPageBoundary? {
+            guard pendingInitialPageIndex == nil, !parent.pages.isEmpty else { return nil }
+            let limits = ReaderVerticalBoundaryAttempt.limits(view)
+            return ReaderVerticalBoundaryAttempt.boundary(offsetY: y, minOffsetY: limits.lowerBound,
+                                                          maxOffsetY: limits.upperBound, translationY: translation)
+        }
+
+        func remoteScrollTarget() -> ReaderRemoteScrollTarget? {
+            guard let view = viewport, !isDismantled, pendingInitialPageIndex == nil, !parent.pages.isEmpty else { return nil }
+            let placement = lastAppliedPlacementRevision
+            let identity = contentIdentity
+            return ReaderRemoteScrollTarget(view: view, isAttached: { [weak self, weak view] in
+                guard let self, let view else { return false }
+                return self.viewport === view && !self.isDismantled &&
+                    self.contentIdentity == identity && self.lastAppliedPlacementRevision == placement
+            }, handle: { [weak self] in self?.handleScroll($0) ?? false })
+        }
+
+        @discardableResult
+        private func handleScroll(_ event: ReaderVerticalScrollEvent) -> Bool {
+            switch event {
+            case .began:
+                placementPageID = nil
+                controlScroll.reset()
+                pendingBoundaryPull = nil
+            case let .dragged(translation):
+                guard let view = viewport else { return false }
+                pendingBoundaryPull = boundary(in: view, y: view.contentOffset.y, translation: translation)
+            case .released:
+                guard let boundary = pendingBoundaryPull else { return false }
+                pendingBoundaryPull = nil
+                let callback = parent.onVerticalBoundaryPull
+                callbackScheduler.publish { callback(boundary) }
+                return false
+            case .settled, .cancelled:
+                pendingBoundaryPull = nil
+                applyPendingRatios()
+                publishCurrentPageIfNeeded()
+            }
+            return false
+        }
+
+        func performRemoteImageAction(at point: CGPoint) -> Bool {
+            guard let page = remoteImageCell(at: point)?.page else { return false }
+            parent.onPageLongPress(page)
+            return true
+        }
+
+        private func remoteImageCell(at point: CGPoint) -> MangaVerticalCollectionPageCell? {
+            guard !isDismantled, let view = viewport, let window = view.window,
+                  view.readerContains(windowPoint: point, in: window) else { return nil }
+            return view.collectionView.visibleCells.compactMap { $0 as? MangaVerticalCollectionPageCell }
+                .first { $0.remoteImageHit(at: point, in: window) }
+        }
+
+        func remoteTransform(at point: CGPoint, zoom: Bool) -> ReaderRemoteTransform? {
+            guard !isDismantled, let view = viewport, parent.zoomEnabled,
+                  zoom ? remoteImageCell(at: point) != nil : isZoomed else { return nil }
+            placementPageID = nil
+            let revision = layoutRevision
+            let placement = lastAppliedPlacementRevision
+            return view.remoteTransform(at: point, canZoom: zoom) { [weak self, weak view] in
+                guard let self, let view else { return false }
+                return !self.isDismantled && self.viewport === view && self.layoutRevision == revision &&
+                    self.lastAppliedPlacementRevision == placement && self.parent.zoomEnabled
+            }
+        }
 
         @objc func handleBoundaryPan(_ recognizer: UIPanGestureRecognizer) {
             guard let view = viewport else { return }
             switch recognizer.state {
             case .began:
-                placementPageID = nil
                 panIncludedPinch = view.isZooming || view.isZoomBouncing || recognizer.numberOfTouches > 1
-                pendingBoundaryPull = nil
+                handleScroll(.began)
             case .changed:
                 guard !panIncludedPinch, !view.isZooming, !view.isZoomBouncing,
-                      recognizer.numberOfTouches == 1, pendingInitialPageIndex == nil,
-                      !parent.pages.isEmpty else { pendingBoundaryPull = nil; return }
-                let minY = -view.contentInset.top
-                let maxY = max(minY, view.contentSize.height - view.bounds.height + view.contentInset.bottom)
-                pendingBoundaryPull = ReaderVerticalBoundaryAttempt.boundary(
-                    offsetY: view.contentOffset.y, minOffsetY: minY, maxOffsetY: maxY,
-                    translationY: recognizer.translation(in: view).y
-                )
+                      recognizer.numberOfTouches == 1 else { pendingBoundaryPull = nil; return }
+                handleScroll(.dragged(recognizer.translation(in: view).y))
             case .ended:
-                defer { pendingBoundaryPull = nil }
-                guard !panIncludedPinch, let boundary = pendingBoundaryPull else { return }
-                let callback = parent.onVerticalBoundaryPull
-                callbackScheduler.publish { callback(boundary) }
+                if !panIncludedPinch { handleScroll(.released) }
             case .cancelled, .failed:
                 pendingBoundaryPull = nil
             default: break
@@ -424,13 +443,22 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 callbackScheduler.publish { callback() }
                 return
             }
+            toggleZoom(in: view, at: recognizer.location(in: view.zoomContentView))
+        }
+
+        func doubleTapFromTrackpad(at point: CGPoint) {
+            guard !isDismantled, let view = viewport, let window = view.window, pendingInitialPageIndex == nil else { return }
+            toggleZoom(in: view, at: view.zoomContentView.convert(point, from: window))
+        }
+
+        private func toggleZoom(in view: MangaVerticalNativeViewport, at point: CGPoint) {
             guard parent.zoomEnabled, !parent.pages.isEmpty else { return }
             placementPageID = nil
             let factor = MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: view.normalizedZoomFactor)
             if factor == 1 {
                 view.resetZoom(animated: true)
             } else {
-                view.zoom(factor: factor, centeredAt: recognizer.location(in: view.zoomContentView), animated: true)
+                view.zoom(factor: factor, centeredAt: point, animated: true)
             }
         }
 
@@ -449,9 +477,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         private func canRecognizeTap(in view: UIScrollView) -> Bool {
-            guard !view.isDragging, !view.isDecelerating, !view.isZooming, !view.isZoomBouncing,
-                  view.pinchGestureRecognizer?.state != .began, view.pinchGestureRecognizer?.state != .changed else { return false }
-            return lastScrollMotionTime.map { currentTime() - $0 > Self.chromeToggleMotionSuppressionInterval } ?? true
+            (view as? NativeZoomScrollView)?.acceptsDiscreteTouch == true &&
+                view.pinchGestureRecognizer?.state != .began && view.pinchGestureRecognizer?.state != .changed
         }
 
         func visiblePageIndexes() -> [Int] {
@@ -570,7 +597,19 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
     }()
     private var task: Task<Void, Never>?
     private var verificationRecoveryObservation: AnyCancellable?
-    private var page: MangaReaderPageProjection?
+    private(set) var page: MangaReaderPageProjection?
+
+    func remoteImageHit(at point: CGPoint, in window: UIWindow) -> Bool {
+        imageView.readerContains(windowPoint: point, in: window) &&
+            imageFrame.contains(contentView.convert(point, from: window))
+    }
+
+    private var imageFrame: CGRect {
+        guard let image = imageView.image else { return .null }
+        return imageView.convert(ImageContentGeometry.aspectFitFrame(
+            imageSize: image.size, containerSize: imageView.bounds.size
+        ), to: contentView)
+    }
     private var imageLoader: MangaReaderPageImageLoader?
     private var currentPageID: String?
     private var failedPageID: String?
@@ -758,19 +797,13 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
     }
 
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-        let imageFrame = ImageContentGeometry.aspectFitFrame(
-            imageSize: imageView.image?.size ?? .zero,
-            containerSize: imageView.bounds.size
-        )
-        let imageFrameInPage = imageView.convert(imageFrame, to: contentView)
-
         guard recognizer.state == .began,
               let page,
               imageView.image != nil,
               MangaPageLongPressHitTesting.acceptsPageLongPress(
                   at: recognizer.location(in: contentView),
                   in: contentView.bounds,
-                  imageFrame: imageFrameInPage
+                  imageFrame: imageFrame
               ) else {
             return
         }

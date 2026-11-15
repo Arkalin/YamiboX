@@ -21,12 +21,8 @@ struct LoadFailureView: View {
         } actions: {
             VStack(spacing: 0) {
                 if showsRetry {
-                    if prominentRetry {
-                        ReaderRemoteButton(L10n.string("common.retry"), action: retry)
-                            .appProminentButtonStyle()
-                    } else {
-                        ReaderRemoteButton(L10n.string("common.retry"), action: retry)
-                    }
+                    let button = Button(L10n.string("common.retry"), action: retry).readerRemoteActivate(retry)
+                    if prominentRetry { button.appProminentButtonStyle() } else { button }
                 }
                 LoadFailureDetailsButton(details: details, message: message)
             }

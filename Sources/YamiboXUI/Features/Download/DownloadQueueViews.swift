@@ -225,7 +225,7 @@ private struct DownloadQueueControls: View {
     private var actions: some View {
         HStack(spacing: 12) {
             if viewModel.failedCount > 0 && viewModel.runState == .running {
-                ReaderRemoteButton {
+                Button {
                     Task { await viewModel.continueQueue() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -235,7 +235,7 @@ private struct DownloadQueueControls: View {
                 .accessibilityLabel(L10n.string("downloads.retry_continue_all"))
                 .frame(minWidth: 44, minHeight: 44)
             }
-            ReaderRemoteButton {
+            Button {
                 Task {
                     if viewModel.runState == .running {
                         await viewModel.pauseQueue()

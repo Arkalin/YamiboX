@@ -171,6 +171,15 @@ final class NovelLikeHighlightController {
         return nil
     }
 
+    func item(at point: CGPoint, in window: UIWindow) -> LikeItem? {
+        for view in registeredViews.allObjects where view.readerContains(windowPoint: point, in: window) {
+            if let item = item(at: view.convert(point, from: window), in: view) { return item }
+        }
+        return nil
+    }
+
+    func item(id: String) -> LikeItem? { itemsByID[id] }
+
     /// Union of the rects `item` occupies on `view`'s surface, for anchoring
     /// the style capsule. Empty when the item isn't resolvable there.
     func unionRect(for item: LikeItem, in view: NovelTextViewportReferenceUIView) -> CGRect? {
@@ -182,16 +191,27 @@ final class NovelLikeHighlightController {
         return rects.reduce(CGRect.null) { $0.union($1) }
     }
 
-    func remove(_ item: LikeItem) async {
+    @discardableResult
+    func remove(_ item: LikeItem) async -> Bool {
+        guard let annotations else { return false }
         let expectedConfiguration = configurationID
-        do { try await annotations?.removeLikes([item]) }
+        do {
+            try await annotations.removeLikes([item])
+            return configurationID == expectedConfiguration
+        }
         catch {
-            guard configurationID == expectedConfiguration else { return }
-            onFailure?(error)
+            if configurationID == expectedConfiguration { onFailure?(error) }
+            return false
         }
     }
 
-    func updateStyle(_ item: LikeItem, to style: LikeStyle) async {
+    func restyle(_ item: LikeItem, to style: LikeStyle) {
+        applyStyleOptimistically(itemID: item.id, style: style)
+        ReaderHighlightStyleDefault.set(style)
+        Task { await updateStyle(item, to: style) }
+    }
+
+    private func updateStyle(_ item: LikeItem, to style: LikeStyle) async {
         let expectedConfiguration = configurationID
         do { try await annotations?.updateStyle(id: item.id, style: style) }
         catch {

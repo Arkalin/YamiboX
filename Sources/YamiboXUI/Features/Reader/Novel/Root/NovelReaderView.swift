@@ -13,6 +13,7 @@ struct NovelReaderView: View {
     @Environment(\.readingHandoffAllowed) private var allowsReadingHandoff
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.readerExternalGeometry) private var externalGeometry
+    @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
     @Environment(\.readerDeviceInteraction) private var deviceInteraction
     @Environment(\.readerRemoteInput) private var remoteInput
     @State private var verticalTapSuppression = NovelReaderVerticalTapSuppression()
@@ -34,6 +35,50 @@ struct NovelReaderView: View {
 
     private var model: NovelReaderViewModel { reader.model }
     private var showsChrome: Bool { externalGeometry == nil && reader.chromeState.showsChrome }
+
+    private var remoteContentID: String? {
+        guard remoteInput != nil else { return nil }
+        let page = model.settings.readingMode == .paged ? model.pagedViewportSelectionIndex : -1
+        return "\(attachmentID)#\(model.presentationStructure?.id.uuidString ?? "")#\(model.visibleView)#\(model.navigationOverlayRevision)#\(page)#\(model.settings.readingMode)"
+    }
+
+    private var admitsContentInput: Bool {
+        viewport.acceptsInput(attachmentID) && !reader.isDismissing && !hasPresentedOverlay &&
+            !readerLoadingOverlayPresentation.isPresented
+    }
+
+    private var selectionController: NovelTextSelectionController { reader.annotations.selectionController }
+
+    private func configureRemoteInput(_ identity: String) {
+        guard viewport.isCurrent, let remoteInput else { return }
+        remoteInput.configure(model.settings.readingMode == .vertical ? .novelVertical : .novelPaged, content: identity)
+        selectionController.onRemoteSelectionCleared = { [weak remoteInput] in remoteInput?.updateTextMenu(nil) }
+        selectionController.clearSelection()
+        verticalBoundaryPullState = .idle
+    }
+
+    private func showRemoteTextMenu(for item: LikeItem? = nil) {
+        guard let remoteInput, let deviceInteraction else { return }
+        ReaderDeviceTextMenu.show(for: item, selection: selectionController,
+                                  highlights: reader.annotations.highlightController, input: remoteInput,
+                                  device: deviceInteraction, viewport: viewport, attachment: attachmentID)
+    }
+
+    private func remoteScrollTarget() -> ReaderRemoteScrollTarget? {
+        guard model.settings.readingMode == .vertical,
+              let remoteInput, let scroll = verticalScrollCoordinator.attachedScrollView else { return nil }
+        let identity = remoteContentID
+        let isAttached = { [weak scroll] in
+            viewport.ownsAttachment(attachmentID) && remoteContentID == identity &&
+                verticalScrollCoordinator.attachedScrollView === scroll
+        }
+        return ReaderRemoteScrollTarget(view: scroll, isAttached: isAttached) { [weak remoteInput] event in
+            let epoch = remoteInput?.epoch
+            return verticalScrollCoordinator.handleScroll(event, canNavigate: canNavigateVerticalBoundary) {
+                isAttached() && remoteInput?.epoch == epoch && remoteInput?.isEnabled == true
+            }
+        }
+    }
 
     private var isPadDevice: Bool {
         externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
@@ -62,6 +107,7 @@ struct NovelReaderView: View {
                 layout: currentLayout
             )
             let loadingOverlayPresentation = readerLoadingOverlayPresentation
+            let remoteInputID = remoteContentID.map { "\($0)#\(loadingOverlayPresentation.isPresented)" }
 
             ZStack {
                 backgroundColor
@@ -80,16 +126,34 @@ struct NovelReaderView: View {
                 }
                 .opacity(loadingOverlayPresentation.isPresented ? 0 : 1)
                 .allowsHitTesting(!loadingOverlayPresentation.isPresented)
-                .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(tap: { point in
-                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry,
-                          let window = remoteInput?.targets.window else { return }
-                    NovelReaderImageInteraction.openImage(at: point, in: window, onOpen: openImageBrowser(url:title:))
-                }, scroll: { delta in
-                    guard !loadingOverlayPresentation.isPresented, viewport.acceptsGeometry,
-                          model.settings.readingMode == .vertical else { return }
-                    cancelVerticalRestoreForUserScroll()
-                    verticalScrollCoordinator.scrollFromTrackpad(delta)
-                }, gestureID: model.presentationStructure?.id))
+                .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(
+                    tap: { point in
+                        guard let window = remoteInput?.targets.window else { return }
+                        if let item = reader.annotations.highlightController.item(at: point, in: window) {
+                            showRemoteTextMenu(for: item)
+                        } else if !NovelReaderImageInteraction.openImage(at: point, in: window, onOpen: openImageBrowser(url:title:)),
+                                  !selectionController.hasSelection || !selectionController.remoteTextHit(at: point, in: window) {
+                            selectionController.clearSelection()
+                        }
+                    },
+                    gestureID: remoteInputID,
+                    isAvailable: { admitsContentInput },
+                    hold: { point in
+                        guard let window = remoteInput?.targets.window,
+                              let drag = selectionController.beginRemoteSelection(at: point, in: window, onComplete: { showRemoteTextMenu() })
+                        else { return (false, nil) }
+                        return (true, drag)
+                    },
+                    drag: { point in
+                        guard let window = remoteInput?.targets.window else { return nil }
+                        return selectionController.beginRemoteHandle(at: point, in: window) { showRemoteTextMenu() }
+                    },
+                    textHit: { point in
+                        guard let window = remoteInput?.targets.window else { return false }
+                        return selectionController.remoteTextHit(at: point, in: window)
+                    },
+                    verticalScroll: { remoteScrollTarget() }
+                ))
 
                 // Chrome-visible only, and only once the top chrome has
                 // reported its height: on the first chrome frame
@@ -149,6 +213,18 @@ struct NovelReaderView: View {
                         // Match the viewport's origin; the chrome already includes topInset.
                         .ignoresSafeArea(.container, edges: .top)
                         .zIndex(2)
+                } else if externalMenuPresented, model.settings.readingMode == .vertical,
+                          !loadingOverlayPresentation.isPresented {
+                    let progress = model.chromeProgressSnapshot
+                    let summary = progress.currentSummary
+                    ReaderExternalVerticalInformation(
+                        page: .init(pageID: nil, title: summary.chapterTitle,
+                                    pageNumber: progress.pageNumber,
+                                    pageLine: summary.pageProgressLine, webLine: summary.webProgressLine),
+                        topInset: topInset, bottomInset: bottomInset, backgroundStyle: model.settings.backgroundStyle
+                    )
+                    .ignoresSafeArea(.container, edges: .top)
+                    .zIndex(2)
                 }
 
                 verticalBoundaryPullOverlayLayer(
@@ -173,6 +249,9 @@ struct NovelReaderView: View {
                         .zIndex(1)
                 }
             }
+            .onChange(of: remoteInputID, initial: true) { _, identity in
+                if let identity { configureRemoteInput(identity) }
+            }
             .onAppear { [viewport] in
                 guard viewport.isCurrent else { return }
                 viewport.attach(attachmentID, peripheralInput: appModel.peripheralInput,
@@ -180,6 +259,10 @@ struct NovelReaderView: View {
                         verticalRestore.syncVerticalViewportBeforeSave(model: model, scrollCoordinator: verticalScrollCoordinator)
                     },
                     onDetach: { [model, verticalRestore, verticalScrollCoordinator] in
+                        if remoteInput != nil {
+                            selectionController.clearSelection()
+                            selectionController.onRemoteSelectionCleared = nil
+                        }
                         model.setInitialPresentationReporter(active: false)
                         model.setNavigationOverlayReporter(active: false)
                         verticalScrollCoordinator.attach(scrollView: nil)
@@ -320,12 +403,14 @@ struct NovelReaderView: View {
         )
     }
 
-    private func deviceMenu(_ insets: EdgeInsets) -> AnyView {
+    private func deviceMenu(_ insets: EdgeInsets, isVisible: Bool) -> AnyView {
         let topInset = UIDevice.current.userInterfaceIdiom == .pad
             ? verticalBands.padVisibleStatusBarTopInset : insets.top
-        return AnyView(chrome(topInset: topInset, bottomInset: insets.bottom, isVisible: true)
+        return AnyView(chrome(topInset: topInset, bottomInset: insets.bottom, isVisible: isVisible)
             .modifier(NovelReaderToolbarColors(backgroundStyle: model.settings.backgroundStyle))
-            .task { await reader.annotations.refresh() })
+            .task(id: isVisible) {
+                if isVisible { await reader.annotations.refresh() }
+            })
     }
 
     private func readerLifecycleModifier(currentLayout: NovelReaderLayout) -> NovelReaderLifecycleModifier {
@@ -441,7 +526,8 @@ struct NovelReaderView: View {
                     .font(.largeTitle)
                 Text(errorMessage)
                     .multilineTextAlignment(.center)
-                ReaderRemoteButton(L10n.string("common.retry"), action: retryLoad)
+                Button(L10n.string("common.retry"), action: retryLoad)
+                    .readerRemoteActivate(retryLoad)
                     .appProminentButtonStyle()
                 LoadFailureDetailsButton(details: model.errorDetails, message: errorMessage)
             }
@@ -471,7 +557,7 @@ struct NovelReaderView: View {
                 annotations: reader.annotations,
                 searchHighlightController: reader.searchHighlightController,
                 verticalTapSuppression: verticalTapSuppression,
-                handleVerticalBoundaryPullRelease: handleVerticalBoundaryPullRelease,
+                onBoundaryPullRelease: scheduleVerticalBoundaryRelease,
                 updateVerticalBoundaryPullState: updateVerticalBoundaryPullState,
                 handleVerticalTap: handleVerticalTap,
                 enterImmersiveMode: enterImmersiveMode,
@@ -805,9 +891,13 @@ struct NovelReaderView: View {
         case .openComments:
             openChapterComments()
         case let .turnPage(delta):
+            remoteInput?.interruptMotion()
             hideChromeForControlReading()
-            Task { await goRelativePage(delta, pagerIdentity: controlPagedPagerIdentity) }
+            viewport.enqueueInput(attachmentID, while: { admitsContentInput && model.settings.readingMode == .paged }) {
+                await goRelativePage(delta, pagerIdentity: controlPagedPagerIdentity)
+            }
         case let .scrollStep(direction):
+            remoteInput?.interruptMotion()
             hideChromeForControlReading()
             performControlVerticalScrollStep(direction)
         }
@@ -830,9 +920,7 @@ struct NovelReaderView: View {
         case .atEdge:
             // Pressed while already clamped: cross to the adjacent web page
             // through the same linear path as the touch boundary pull.
-            Task {
-                await handleVerticalBoundaryPullRelease(direction == .down ? .next : .previous)
-            }
+            scheduleVerticalBoundaryRelease(direction == .down ? .next : .previous) { true }
         }
     }
 
@@ -1130,6 +1218,19 @@ struct NovelReaderView: View {
 
         withAnimation(.easeInOut(duration: 0.12)) {
             verticalBoundaryPullState = state
+        }
+    }
+
+    private func scheduleVerticalBoundaryRelease(
+        _ direction: NovelReaderVerticalBoundaryDirection, admits: @escaping () -> Bool
+    ) {
+        let view = model.visibleView
+        let revision = model.navigationOverlayRevision
+        viewport.enqueueInput(attachmentID, while: {
+            admitsContentInput && model.settings.readingMode == .vertical &&
+                model.visibleView == view && model.navigationOverlayRevision == revision && admits()
+        }) {
+            await handleVerticalBoundaryPullRelease(direction)
         }
     }
 

@@ -12,11 +12,11 @@ struct MangaReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.readingHandoffAllowed) private var allowsReadingHandoff
     @Environment(\.readerExternalGeometry) private var externalGeometry
+    @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
     @Environment(\.readerRemoteInput) private var remoteInput
     @Environment(\.readerDeviceInteraction) private var deviceInteraction
     @State private var bottomChromeHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var controlScrollStep: ReaderControlScrollStepRequest?
     @State private var controlPageTurnBridge = MangaPagedControlPageTurnBridge()
     @State private var controlUsesTwoPageSpread = false
     @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
@@ -35,6 +35,49 @@ struct MangaReaderView: View {
     private var model: MangaReaderViewModel { reader.model }
     private var context: MangaLaunchContext { model.context }
     private var showsChrome: Bool { externalGeometry == nil && reader.isChromeVisible }
+
+    private var admitsContentInput: Bool {
+        viewport.acceptsInput(attachmentID) && model.hasCurrentPage && !reader.isDismissing && !hasControlBlockingSheet
+    }
+
+    private var remoteContentID: String? {
+        guard remoteInput != nil else { return nil }
+        let page = model.presentation.settings.readingMode == .vertical ? "" : model.currentPageProjection?.id ?? ""
+        return "\(attachmentID)#\(model.viewportContentID)#\(page)"
+    }
+
+    private func remoteImage(at point: CGPoint) -> MangaNativeSurfaceView? {
+        guard let window = remoteInput?.targets.window else { return nil }
+        return window.readerHit(MangaNativeSurfaceView.self, at: point, in: window) { surface, _ in
+            surface.remoteImageHit(at: point, in: window) ? surface : nil
+        }
+    }
+
+    private func remoteTransform(at point: CGPoint, zoom: Bool) -> ReaderRemoteTransform? {
+        if model.presentation.settings.readingMode == .vertical {
+            return controlPageTurnBridge.verticalViewport?.remoteTransform(at: point, zoom: zoom)
+        }
+        guard let surface = controlPageTurnBridge.pagedSurface?() else { return nil }
+        guard !zoom || focusHitsPagedSurface(surface, at: point) else { return nil }
+        return surface.remoteTransform(at: point, zoom: zoom)
+    }
+
+    private func focusHitsPagedSurface(_ surface: MangaSurfaceRuntime, at point: CGPoint) -> Bool {
+        // A spread is already one zoom surface, including the gutter. Only
+        // standalone images require a hit on the bitmap before zooming.
+        if case .spread = surface.geometry { return true }
+        return remoteImage(at: point) != nil
+    }
+
+    private func remoteDoubleTap(at point: CGPoint) {
+        let settings = model.presentation.settings
+        guard settings.zoomEnabled else { return }
+        if settings.readingMode == .vertical {
+            controlPageTurnBridge.verticalViewport?.doubleTapFromTrackpad(at: point)
+        } else {
+            controlPageTurnBridge.pagedSurface?()?.doubleTapFromTrackpad(at: point)
+        }
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -70,7 +113,6 @@ struct MangaReaderView: View {
                 isChromeVisible: showsChrome,
                 likedPageIDs: model.likedPageIDs,
                 pagedContentTopInset: pagedContentTopInset,
-                controlScrollStep: controlScrollStep,
                 controlPageTurnBridge: controlPageTurnBridge,
                 onRetryInitialLoad: {
                     Task { await model.retryInitialLoad() }
@@ -85,14 +127,12 @@ struct MangaReaderView: View {
                     model.canJumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread)
                 },
                 onBoundaryPageTurn: { delta, usesTwoPageSpread in
-                    Task { await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread) }
-                },
-                onControlScrollEdgeReached: { direction in
-                    Task {
-                        await model.jumpToAdjacentChapterFromVerticalBoundary(direction == .down ? 1 : -1)
+                    navigateFromViewport {
+                        await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread)
                     }
                 },
                 onVerticalBoundaryPull: { boundary in
+                    guard admitsContentInput else { return }
                     model.reportVerticalPageBoundary(boundary == .next ? 1 : -1)
                 },
                 onPageLongPress: { page in
@@ -102,31 +142,34 @@ struct MangaReaderView: View {
                     toggleChrome()
                 }
             )
-            .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(scroll: { delta in
-                guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
-                if model.presentation.settings.readingMode == .vertical {
-                    controlPageTurnBridge.scroll?(delta)
-                } else {
-                    controlPageTurnBridge.remotePanSurface?.panFromTrackpad(delta)
+            .readerRemoteTarget(priority: 0, actions: ReaderRemoteActions(
+                doubleTap: { point in remoteDoubleTap(at: point) },
+                gestureID: remoteContentID,
+                isAvailable: { admitsContentInput },
+                hold: { point in
+                    if model.presentation.settings.readingMode == .vertical {
+                        return (controlPageTurnBridge.verticalViewport?.performRemoteImageAction(at: point) == true, nil)
+                    }
+                    guard let image = remoteImage(at: point) else { return (false, nil) }
+                    image.onLongPress?()
+                    return (true, nil)
+                },
+                transform: { remoteTransform(at: $0, zoom: $1) },
+                mangaIsZoomed: {
+                    if model.presentation.settings.readingMode == .vertical {
+                        return controlPageTurnBridge.verticalViewport?.isZoomed == true
+                    }
+                    return controlPageTurnBridge.pagedSurface?()?.isZoomed == true
+                },
+                verticalScroll: {
+                    guard model.presentation.settings.readingMode == .vertical else { return nil }
+                    return controlPageTurnBridge.verticalViewport?.remoteScrollTarget()
                 }
-            }, pinch: { ratio, point in
-                guard viewport.acceptsGeometry, !hasControlBlockingSheet else { return }
-                if model.presentation.settings.readingMode == .vertical {
-                    controlPageTurnBridge.zoom?(ratio, point)
-                } else {
-                    controlPageTurnBridge.pagedSurface?()?.zoomFromTrackpad(ratio, at: point)
-                }
-            }, finishScroll: {
-                controlPageTurnBridge.remotePanSurface = nil
-            }, gestureID: model.viewportContentID, hold: { _ in
-                guard case let .loaded(loaded) = presentation.state, let page = loaded.currentPage else { return }
-                openImageActions(page)
-            }, didBeginScroll: {
-                let surface = controlPageTurnBridge.pagedSurface?()
-                controlPageTurnBridge.remotePanSurface = surface?.normalizedFocus == nil ? nil : surface
-            }))
-            .onChange(of: model.viewportContentID) { _, _ in
-                controlPageTurnBridge.remotePanSurface = nil
+            ))
+            .onChange(of: remoteContentID, initial: true) { _, identity in
+                guard viewport.isCurrent, let identity else { return }
+                remoteInput?.configure(model.presentation.settings.readingMode == .vertical ? .mangaVertical : .mangaPaged,
+                                       content: identity)
             }
             .modifier(ReaderViewportRenderAcknowledgement(ready: model.hasCurrentPage, viewport: viewport))
             .ignoresSafeArea()
@@ -155,6 +198,13 @@ struct MangaReaderView: View {
                            isVisible: showsChrome, usesTwoPageSpread: usesTwoPageSpread) {
                         bottomChromeHeight = $0
                     }
+                } else if externalMenuPresented, presentation.settings.readingMode == .vertical,
+                          let summary = mangaChromeSummary(from: presentation, usesTwoPageSpread: false) {
+                    ReaderExternalVerticalInformation(
+                        page: .init(pageID: nil, title: summary.headerTitle, pageNumber: summary.pageNumber,
+                                    pageLine: summary.pageSummary, webLine: ""),
+                        topInset: informationTopInset, bottomInset: bottomInset
+                    )
                 }
             }
             .transientMessage(
@@ -380,9 +430,9 @@ struct MangaReaderView: View {
         )
     }
 
-    private func deviceMenu(_ insets: EdgeInsets) -> AnyView {
+    private func deviceMenu(_ insets: EdgeInsets, isVisible: Bool) -> AnyView {
         AnyView(chrome(topInset: insets.top, bottomInset: insets.bottom,
-                      isVisible: true, usesTwoPageSpread: controlUsesTwoPageSpread))
+                      isVisible: isVisible, usesTwoPageSpread: controlUsesTwoPageSpread))
     }
 
     private func toggleChrome() {
@@ -510,15 +560,23 @@ struct MangaReaderView: View {
         case .openComments:
             reader.presentedPanel = .companion(.comments)
         case let .turnPage(delta):
+            remoteInput?.interruptMotion()
             hideChromeForControlReading()
             performPageTurn(delta, usesTwoPageSpread: controlUsesTwoPageSpread)
         case let .scrollStep(direction):
+            remoteInput?.interruptMotion()
             hideChromeForControlReading()
-            controlScrollStep = ReaderControlScrollStepRequest(
-                direction: direction,
-                revision: (controlScrollStep?.revision ?? 0) + 1
-            )
+            if controlPageTurnBridge.verticalViewport?.performControlScrollStep(direction) == .atEdge {
+                navigateFromViewport {
+                    await model.jumpToAdjacentChapterFromVerticalBoundary(direction == .down ? 1 : -1)
+                }
+            }
         }
+    }
+
+    private func navigateFromViewport(_ operation: @escaping () async -> Void) {
+        let contentID = model.viewportContentID
+        viewport.enqueueInput(attachmentID, while: { admitsContentInput && model.viewportContentID == contentID }, operation)
     }
 
     /// Non-touch page-turn triggers (keyboard, gamepad, Apple Pencil) share
@@ -531,7 +589,7 @@ struct MangaReaderView: View {
             controlPageTurnBridge.requestPageTurn(delta)
             return
         }
-        Task { await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread) }
+        navigateFromViewport { await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread) }
     }
 
     /// A page turn while the chrome is up means "keep reading": perform it

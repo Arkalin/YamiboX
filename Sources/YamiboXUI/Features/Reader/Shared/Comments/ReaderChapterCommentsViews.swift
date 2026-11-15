@@ -171,7 +171,7 @@ struct ReaderChapterCommentsContent: View {
             }
             .padding(.vertical, 12)
         } else if !page.isComplete {
-            ReaderRemoteButton(L10n.string("common.retry")) {
+            Button(L10n.string("common.retry")) {
                 if page.needsInitialRetry == true { retry(target) } else { loadNext() }
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -342,7 +342,7 @@ struct ReaderChapterCommentsSheet: View {
                     ReaderChapterCommentsToolbarTitle(target: target)
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    ReaderRemoteButton(action: closePanel) {
+                    Button(action: closePanel) {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel(L10n.string("common.done"))
@@ -439,11 +439,11 @@ struct ReaderChapterCommentsSheet: View {
 
     @ViewBuilder
     private var moreActions: some View {
-        ReaderRemoteButton(action: refreshCurrent) {
+        Button(action: refreshCurrent) {
             Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
         }
         .disabled(target == nil)
-        ReaderRemoteButton { showsFilterSettings = true } label: {
+        Button { showsFilterSettings = true } label: {
             Label(L10n.string("reader.chapter_comments_filter_settings"), systemImage: "line.3.horizontal.decrease")
         }
     }
@@ -501,7 +501,7 @@ struct ReaderChapterCommentsSheet: View {
             if isLoadingMore {
                 ProgressView()
             } else {
-                ReaderRemoteButton(L10n.string("common.retry")) {
+                Button(L10n.string("common.retry")) {
                     if case let .loaded(_, page) = state, page.needsInitialRetry != true { loadNextPage() }
                     else if let target { retry(target) }
                 }
@@ -715,7 +715,7 @@ private struct ReaderChapterCommentRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                ReaderRemoteButton {
+                Button {
                     if let uid = comment.authorUID { openProfile(uid, comment.authorName) }
                 } label: {
                     HStack(spacing: 8) {
@@ -739,7 +739,7 @@ private struct ReaderChapterCommentRow: View {
                 Spacer(minLength: 8)
                 ReaderChapterCommentSourceBadge(source: comment.source)
                 if let originalPostURL {
-                    ReaderRemoteButton {
+                    Button {
                         openOriginalPost(originalPostURL)
                     } label: {
                         Image(systemName: "arrow.up.forward.square")
@@ -811,7 +811,7 @@ private struct ReaderChapterCommentFooter: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let navigationAction {
-                    ReaderRemoteButton(action: navigationAction.perform) {
+                    Button(action: navigationAction.perform) {
                         HStack(spacing: 4) {
                             Text(navigationAction.title)
                                 .font(.footnote)
@@ -831,7 +831,7 @@ private struct ReaderChapterCommentFooter: View {
             }
             Spacer(minLength: 0)
             if let onReply {
-                ReaderRemoteButton(action: onReply) {
+                Button(action: onReply) {
                     Text(L10n.string("reader.comments"))
                         .font(.footnote)
                         .fixedSize()
@@ -854,7 +854,7 @@ struct ReaderChapterCommentComposeBar: View {
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-            ReaderRemoteButton(action: compose) {
+            Button(action: compose) {
                 Label(L10n.string("reader.comment_composer.write"), systemImage: "square.and.pencil")
                     .font(.callout.weight(.medium))
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -910,7 +910,7 @@ struct ReaderChapterCommentBody: View {
                             prefix: block.id == contentBlocks.first?.id ? replyingToName.map { replyPrefix($0) } : nil
                         )
                     case .image:
-                        ReaderRemoteButton { onImageTap(block.id) } label: {
+                        Button { onImageTap(block.id) } label: {
                             Label(L10n.string("reader.comment_view_image"), systemImage: "photo")
                                 .font(.body)
                                 .frame(minHeight: 44, alignment: .leading)

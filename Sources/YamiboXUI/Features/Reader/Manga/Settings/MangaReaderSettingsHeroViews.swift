@@ -177,7 +177,7 @@ private struct MangaReaderSettingsPageTurnZonesPreview: View {
 
             // Match the visible foreground spread, not the full-width hero or its duplicate sheets.
             ReaderSettingsPageTurnZonesPreview(
-                direction: settings.pageTurnDirection == .leftToRight ? .leftToRight : .rightToLeft,
+                direction: settings.pageTurnDirection.readerPageTurnDirection,
                 swapped: settings.swapsPageTurnTapZones,
                 requestID: tapZonesPreviewRequestID,
                 isEnabled: settings.readingMode == .paged,

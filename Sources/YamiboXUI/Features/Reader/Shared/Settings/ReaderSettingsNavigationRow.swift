@@ -11,7 +11,7 @@ struct ReaderSettingsNavigationRow<Palette: ReaderSettingsPalette>: View {
     let action: () -> Void
 
     var body: some View {
-        ReaderRemoteButton(action: action) {
+        Button(action: action) {
             HStack(spacing: 12) {
                 Text(title)
                     .font(.title3)

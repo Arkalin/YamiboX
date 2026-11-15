@@ -11,7 +11,7 @@ struct DownloadManagementView: View {
         List {
             if !viewModel.isDownloadManagementSelectionMode {
                 Section {
-                    ReaderRemoteButton(action: openQueue) {
+                    Button(action: openQueue) {
                         HStack(spacing: 12) {
                             Image(systemName: "arrow.down.circle")
                                 .font(.system(size: 20))

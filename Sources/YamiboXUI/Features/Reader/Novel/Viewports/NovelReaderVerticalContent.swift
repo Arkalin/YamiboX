@@ -15,7 +15,7 @@ struct NovelReaderVerticalContent: View {
     let annotations: NovelReaderAnnotationCoordinator
     let searchHighlightController: NovelReaderSearchHighlightController
     let verticalTapSuppression: NovelReaderVerticalTapSuppression
-    let handleVerticalBoundaryPullRelease: (NovelReaderVerticalBoundaryDirection) async -> Void
+    let onBoundaryPullRelease: (NovelReaderVerticalBoundaryDirection, @escaping () -> Bool) -> Void
     let updateVerticalBoundaryPullState: (NovelReaderVerticalBoundaryPullState) -> Void
     let handleVerticalTap: () -> Void
     let enterImmersiveMode: () -> Void
@@ -54,14 +54,15 @@ struct NovelReaderVerticalContent: View {
                     scrollCoordinator: verticalScrollCoordinator
                 )
             },
-            onScrollViewReady: { scrollView in
+            onScrollViewReady: { scrollView, settle in
                 guard viewport.acceptsGeometry else { return }
                 verticalScrollCoordinator.attach(scrollView: scrollView)
-                verticalScrollCoordinator.onBoundaryPullRelease = { direction in
-                    Task { @MainActor in
-                        await handleVerticalBoundaryPullRelease(direction)
-                    }
+                verticalScrollCoordinator.onSettle = settle
+                verticalScrollCoordinator.onDragStart = {
+                    verticalRestore.cancelVerticalRestoreForUserScroll()
+                    verticalTapSuppression.until = CACurrentMediaTime() + 0.5
                 }
+                verticalScrollCoordinator.onBoundaryPullRelease = onBoundaryPullRelease
                 verticalScrollCoordinator.onViewportMetricsChange = {
                     Task { @MainActor in
                         verticalRestore.tryAdvanceVerticalRestore(
@@ -97,6 +98,7 @@ struct NovelReaderVerticalContent: View {
                 )
             },
             onScrollSettled: {
+                guard viewport.acceptsGeometry else { return }
                 verticalRestore.updateVerticalViewportPosition(model: model)
                 Task { await self.annotations.refreshPosition() }
             },
@@ -114,17 +116,5 @@ struct NovelReaderVerticalContent: View {
             }
         )
         .contentShape(Rectangle())
-        .simultaneousGesture(verticalScrollSuppressionGesture)
-    }
-
-    private var verticalScrollSuppressionGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { _ in
-                verticalRestore.cancelVerticalRestoreForUserScroll()
-                verticalTapSuppression.until = CACurrentMediaTime() + 0.5
-            }
-            .onEnded { _ in
-                verticalTapSuppression.until = CACurrentMediaTime() + 0.5
-            }
     }
 }

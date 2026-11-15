@@ -76,6 +76,9 @@ public struct NovelReaderChromeProgressSnapshot: Equatable, Sendable {
     public var currentProgressPercentText: String { didSet { preparedChromeProgress = nil } }
     public var progressChapterTicks: [NovelReaderProgressChapterTick] { didSet { preparedChromeProgress = nil } }
     private var scrubData: NovelReaderProgressScrubData
+    var currentSummary: ReaderChromeProgressSummary {
+        ReaderChromeProgressSummary(chapterTitle: currentChapterTitle, progressText: progressText)
+    }
     var spreadSummaries: [ReaderChromeProgressSummary?]? = nil
     var spreadPageNumbers: [Int?]? = nil
     var pageNumber: Int = 1

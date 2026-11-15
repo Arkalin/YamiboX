@@ -5,6 +5,7 @@ import YamiboXCore
 struct NovelReaderPagedContent: View {
     @Environment(\.readerToolbarStyle) private var toolbarStyle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
     let model: NovelReaderViewModel
     let layout: NovelReaderLayout
     let topInset: CGFloat
@@ -40,7 +41,8 @@ struct NovelReaderPagedContent: View {
         let pagedBottomInset = layout.chromeInsets.bottom + bottomInset
         let bindings = makeBindings(pagerIdentity)
         let information = ReaderPageInformationPresentation(isPaged: true,
-            isImmersive: model.settings.isImmersiveModeEnabled, isChromeVisible: bindings.isChromeVisible)
+            isImmersive: model.settings.isImmersiveModeEnabled,
+            isChromeVisible: bindings.isChromeVisible || externalMenuPresented)
         let attachedInformation = ReaderAttachedInformationConfiguration(
             pages: model.attachedPageInformation(workTitle: model.title, information: information),
             presentation: information, selectedIndex: model.pagedViewportSelectionIndex,

@@ -5,10 +5,11 @@ import YamiboXCore
 /// and callback scheduler. No interaction state is shared between reader sessions.
 @MainActor
 enum NovelReaderImageInteraction {
-    static func openImage(at point: CGPoint, in window: UIWindow, onOpen: (URL, String?) -> Void) {
-        guard let image = window.firstDescendant(ofType: NovelReaderVerticalViewportImageView.self, containing: point),
-              let payload = image.imageTapPayloadIfHit(at: window.convert(point, to: image)) else { return }
+    static func openImage(at point: CGPoint, in window: UIWindow, onOpen: (URL, String?) -> Void) -> Bool {
+        guard let payload = window.readerHit(NovelReaderVerticalViewportImageView.self, at: point, in: window,
+                                             resolve: { $0.imageTapPayloadIfHit(at: $1) }) else { return false }
         onOpen(payload.url, payload.title)
+        return true
     }
 
     static func tap(

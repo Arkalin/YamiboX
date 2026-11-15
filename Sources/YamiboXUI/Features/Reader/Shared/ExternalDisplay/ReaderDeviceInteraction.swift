@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import YamiboXCore
 
 @MainActor
@@ -45,6 +46,31 @@ struct ReaderDeviceInteractionContext {
         present { id in LoadFailureDetailsSheet(details: details, onClose: { finish(id) }) }
     }
 
+    func shareText(_ text: String) {
+        present { id in
+            ReaderDeviceTextController(makeController: {
+                let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+                controller.completionWithItemsHandler = { _, _, _, _ in
+                    Task { @MainActor in finish(id) }
+                }
+                return controller
+            })
+        }
+    }
+
+    func lookUpText(_ text: String) {
+        present { id in
+            NavigationStack {
+                ReaderDeviceTextController(makeController: { UIReferenceLibraryViewController(term: text) })
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.string("common.done")) { finish(id) }
+                        }
+                    }
+            }
+        }
+    }
+
     func isCurrent(_ id: UUID) -> Bool {
         session.deviceInteraction?.id == id && session.deviceInteraction?.account == appModel.accountGeneration &&
             session.deviceInteraction?.contentID == session.contentID && !session.isClosed
@@ -54,6 +80,13 @@ struct ReaderDeviceInteractionContext {
         guard isCurrent(id) else { return }
         display.finishDeviceInteraction(id: id, session: session)
     }
+}
+
+private struct ReaderDeviceTextController: UIViewControllerRepresentable {
+    let makeController: () -> UIViewController
+
+    func makeUIViewController(context: Context) -> UIViewController { makeController() }
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
 }
 
 struct ReaderDeviceNoteEditor: View {

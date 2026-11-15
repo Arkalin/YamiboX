@@ -77,7 +77,7 @@ struct ChapterCommentRulesView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(viewModel.chapterComments[scope].rules) { rule in
-                    ReaderRemoteButton { editingRule = rule } label: {
+                    Button { editingRule = rule } label: {
                         HStack(spacing: 12) {
                             Text(rule.pattern)
                                 .font(.body.monospaced())
@@ -95,7 +95,7 @@ struct ChapterCommentRulesView: View {
                 .onDelete { viewModel.deleteCommentRules(at: $0, scope: scope) }
             }
             Section {
-                ReaderRemoteButton(role: .destructive) { confirmsReset = true } label: {
+                Button(role: .destructive) { confirmsReset = true } label: {
                     Label(L10n.string("settings.chapter_comments.reset"), systemImage: "arrow.counterclockwise")
                 }
             }
@@ -119,7 +119,7 @@ struct ChapterCommentRulesView: View {
     }
 
     private var addRuleButton: some View {
-        ReaderRemoteButton { editingRule = .init(pattern: "") } label: {
+        Button { editingRule = .init(pattern: "") } label: {
             Label(L10n.string("settings.chapter_comments.add"), systemImage: "plus")
         }
         .accessibilityIdentifier("chapter-comment-add-rule")

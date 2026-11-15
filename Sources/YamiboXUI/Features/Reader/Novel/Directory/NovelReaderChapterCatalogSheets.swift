@@ -68,7 +68,7 @@ struct NovelReaderChapterSheet: View {
                         List {
                             Section {
                                 ForEach(navigation.visibleChapterDirectoryChapters, id: \.ordinal) { chapter in
-                                    ReaderRemoteButton {
+                                    Button {
                                         onSelect(chapter)
                                         if !isEmbeddedInReaderPanel {
                                             dismiss()
@@ -184,7 +184,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            ReaderRemoteButton {
+            Button {
                 guard let previousView = navigation.previousChapterDirectoryWebView else { return }
                 onSelectWebView(previousView)
             } label: {
@@ -195,7 +195,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
             .accessibilityLabel(L10n.string("reader.previous_web_page"))
             .disabled(navigation.previousChapterDirectoryWebView == nil)
 
-            ReaderRemoteButton {
+            Button {
                 showingWebPicker.toggle()
             } label: {
                 HStack(spacing: 6) {
@@ -224,7 +224,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
                 .tint(appTheme.controlAccent)
             })
 
-            ReaderRemoteButton {
+            Button {
                 guard let nextView = navigation.nextChapterDirectoryWebView else { return }
                 onSelectWebView(nextView)
             } label: {
@@ -269,7 +269,7 @@ private struct NovelReaderChapterWebPicker: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(1 ... model.maxView, id: \.self) { view in
-                        ReaderRemoteButton {
+                        Button {
                             onSelect(view)
                         } label: {
                             HStack(spacing: 10) {

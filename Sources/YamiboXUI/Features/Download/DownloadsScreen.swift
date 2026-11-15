@@ -63,7 +63,6 @@ private struct DownloadListRowModifier: ViewModifier {
             if let action {
                 Button(action: action) { content }
                     .buttonStyle(.plain)
-                    .readerRemoteActivate(action)
             } else {
                 content
             }

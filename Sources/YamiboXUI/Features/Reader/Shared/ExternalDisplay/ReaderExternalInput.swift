@@ -3,34 +3,69 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
+enum ReaderRemoteCursorStyle: Equatable { case arrow, text, focus }
+enum ReaderRemoteKind: Equatable { case novelPaged, novelVertical, mangaPaged, mangaVertical
+    var isVertical: Bool { self == .novelVertical || self == .mangaVertical }
+    var isManga: Bool { self == .mangaPaged || self == .mangaVertical }
+}
+
+@MainActor
+struct ReaderRemoteDrag {
+    enum End { case completed, cancelled }
+    let update: (CGPoint) -> Void
+    let finish: (End) -> Void
+}
+
+@MainActor
+struct ReaderRemoteTransform {
+    let isCurrent: () -> Bool
+    let update: (CGFloat, CGPoint) -> Void
+    let pan: (CGPoint) -> Void
+    let finish: () -> Void
+}
+
 @MainActor
 @Observable
 final class ReaderExternalInput {
-    private enum GestureKind { case pending, scroll, pinch }
-    private struct Gesture {
-        weak var target: ReaderRemoteTargetProbe?
-        let revision: UUID
-        var kind = GestureKind.pending
-        var translation = CGPoint.zero
-        var magnification: CGFloat = 1
-        var finish: (() -> Void)?
-    }
     private(set) var location = CGPoint.zero
+    private(set) var cursorStyle = ReaderRemoteCursorStyle.arrow
     private(set) var isVisible = false
+    private(set) var isEnabled = false
+    private(set) var kind = ReaderRemoteKind.novelPaged
+    private(set) var textMenu: NovelTextMenu?
     @ObservationIgnored private var bounds = CGRect.zero
     @ObservationIgnored var sensitivity = CGFloat(ExternalDisplaySettings.defaultTrackpadSensitivity)
-    private(set) var isEnabled = false
     @ObservationIgnored private var idleTask: Task<Void, Never>?
     @ObservationIgnored private var touching = false
-    @ObservationIgnored private(set) var epoch = UUID()
+    private(set) var epoch = UUID()
     @ObservationIgnored let targets = ReaderRemoteTargetRegistry()
-    @ObservationIgnored private var gesture: Gesture?
     @ObservationIgnored weak var buttonViewport: ReaderViewportLifetime?
+    @ObservationIgnored weak var scrollRelay: ReaderExternalScrollRelay?
+    @ObservationIgnored private var activeContent: AnyHashable?
+    @ObservationIgnored private var activeDrag: ReaderRemoteDrag?
+    @ObservationIgnored private var activeTransform: ReaderRemoteTransform?
+    @ObservationIgnored private weak var activeTarget: ReaderRemoteTargetProbe?
+    @ObservationIgnored private var activeRevision: UUID?
+    @ObservationIgnored private var pairScale: CGFloat = 1
+    @ObservationIgnored private var pairTranslation = CGPoint.zero
 
     deinit { idleTask?.cancel() }
 
+    func configure(_ kind: ReaderRemoteKind, content: AnyHashable) {
+        guard self.kind != kind || activeContent != content else { return }
+        cancel()
+        self.kind = kind
+        activeContent = content
+        textMenu = nil
+    }
+
+    func updateTextMenu(_ menu: NovelTextMenu?) {
+        if textMenu?.id != menu?.id { textMenu = menu }
+    }
+
     func updateBounds(_ bounds: CGRect) {
         let first = self.bounds.isEmpty
+        if !first, self.bounds != bounds { cancel() }
         self.bounds = bounds
         location = first ? CGPoint(x: bounds.midX, y: bounds.midY) : clamped(location)
     }
@@ -47,16 +82,24 @@ final class ReaderExternalInput {
         buttonViewport = nil
         targets.reset()
         bounds = .zero
+        activeContent = nil
+        textMenu = nil
     }
 
-    func stepPage(_ direction: ReaderControlScrollDirection) {
-        guard isEnabled else { return }
+    @discardableResult
+    func step(_ direction: ReaderControlScrollDirection) -> Bool {
+        guard isEnabled, let buttonViewport else { return false }
         cancel()
-        buttonViewport?.performExternalPageStep(direction)
+        return buttonViewport.performExternalPageStep(direction)
+    }
+
+    func interruptMotion() {
+        if touching || scrollRelay?.isMoving == true { cancel() }
     }
 
     func begin() -> UUID {
         if isEnabled {
+            scrollRelay?.interrupt()
             touching = true
             show()
         }
@@ -65,83 +108,151 @@ final class ReaderExternalInput {
 
     func admits(_ epoch: UUID) -> Bool { isEnabled && self.epoch == epoch }
 
+    func scrollTarget() -> ReaderRemoteScrollTarget? {
+        guard isEnabled, kind.isVertical,
+              let target = targets.contentTarget(where: { $0.verticalScroll != nil }),
+              var scroll = target.actions.verticalScroll?(), scroll.isAttached() else { return nil }
+        let revision = target.revision
+        scroll.admitsInput = { [weak self, weak target] in
+            guard let self, let target else { return false }
+            return target.revision == revision && target.actions.verticalScroll != nil &&
+                self.targets.eligible(target)
+        }
+        return scroll
+    }
+
+    func beginScroll() -> UUID {
+        epoch = UUID()
+        finishManipulation(completed: false)
+        touching = false
+        hideCursor()
+        return epoch
+    }
+
+    func hideCursor() {
+        idleTask?.cancel()
+        idleTask = nil
+        isVisible = false
+    }
+
+    private func capture(_ target: ReaderRemoteTargetProbe) {
+        activeTarget = target
+        activeRevision = target.revision
+    }
+
+    private var targetIsCurrent: Bool {
+        guard let activeTarget, activeTarget.revision == activeRevision else { return false }
+        return !activeTarget.actions.blocksTap && targets.eligible(activeTarget) &&
+            activeTransform?.isCurrent() != false
+    }
+
     func move(_ delta: CGPoint, epoch: UUID) {
         guard admits(epoch) else { return }
+        if activeDrag != nil || activeTransform != nil, !targetIsCurrent {
+            cancel()
+            return
+        }
+        if let activeTransform {
+            activeTransform.pan(scaledPan(delta))
+            return
+        }
         let gain = 1.6 * sensitivity
         location = clamped(CGPoint(x: location.x + delta.x * gain, y: location.y + delta.y * gain))
+        activeDrag?.update(location)
+        refreshCursorStyle()
     }
 
     func end(epoch: UUID) {
         guard admits(epoch) else { return }
+        finishManipulation(completed: targetIsCurrent)
+        let shouldShowCursor = isVisible || (kind.isManga && touching)
         touching = false
-        show()
+        if shouldShowCursor { show() }
     }
 
-    func click(epoch: UUID) {
-        guard admits(epoch) else { return }
-        targets.target(at: location, where: { $0.tap != nil || $0.blocksTap })?.actions.tap?(location)
+    func cancelGesture(epoch: UUID) {
+        if admits(epoch) { cancel() }
+    }
+
+    func click(epoch: UUID, double: Bool) {
+        guard admits(epoch), let target = clickTarget else { return }
+        if double { target.actions.doubleTap?(location) }
+        else { target.actions.tap?(location) }
+        refreshCursorStyle()
+    }
+
+    var canDoubleClick: Bool { clickTarget?.actions.doubleTap != nil }
+
+    private var clickTarget: ReaderRemoteTargetProbe? {
+        targets.target(at: location) { $0.tap != nil || $0.doubleTap != nil || $0.blocksTap }
     }
 
     func hold(epoch: UUID) -> Bool {
         guard admits(epoch),
               let target = targets.target(at: location, where: { $0.tap != nil || $0.hold != nil || $0.blocksTap }),
               let hold = target.actions.hold else { return false }
-        hold(location)
-        return true
+        let result = hold(location)
+        guard admits(epoch) else { return result.handled }
+        if let drag = result.drag {
+            capture(target)
+            activeDrag = drag
+        }
+        return result.handled
+    }
+
+    func beginSingleDrag(epoch: UUID) {
+        guard admits(epoch), activeDrag == nil, activeTransform == nil,
+              let target = targets.target(at: location, where: { $0.drag != nil || $0.transform != nil || $0.tap != nil || $0.blocksTap }) else { return }
+        if let drag = target.actions.drag?(location) {
+            capture(target)
+            activeDrag = drag
+        } else if let transform = target.actions.transform?(location, false) {
+            capture(target)
+            activeTransform = transform
+            hideCursor()
+        }
     }
 
     func beginTwoFinger(epoch: UUID) {
-        guard admits(epoch),
-              let target = targets.target(at: location, where: { $0.scroll != nil || $0.pinch != nil }) else { return }
-        gesture = Gesture(target: target, revision: target.revision)
+        guard admits(epoch) else { return }
+        finishManipulation(completed: false)
+        guard let target = targets.target(at: location, where: { $0.transform != nil || $0.tap != nil || $0.blocksTap }),
+              let transform = target.actions.transform?(location, true) else { return }
+        capture(target)
+        activeTransform = transform
+        pairScale = 1
+        pairTranslation = .zero
+        hideCursor()
     }
 
     func updateTwoFinger(translation: CGPoint, ratio: CGFloat, epoch: UUID) {
-        guard admits(epoch) else { return }
-        guard var gesture else { return }
-        var delta = translation
-        var scale = ratio
-        let wasPending = gesture.kind == .pending
-        gesture.translation.x += translation.x
-        gesture.translation.y += translation.y
-        if wasPending {
-            gesture.magnification *= ratio
-            let moved = hypot(gesture.translation.x, gesture.translation.y)
-            let pinched = abs(log(max(gesture.magnification, 0.001)))
-            if pinched >= 0.075 {
-                gesture.kind = .pinch
-            } else if moved >= 10 {
-                gesture.kind = .scroll
-            }
-            delta = gesture.translation
-            scale = gesture.magnification
-        }
-        switch gesture.kind {
-        case .pending:
-            self.gesture = gesture
-        case .scroll, .pinch:
-            guard let target = gesture.target, target.revision == gesture.revision,
-                  targets.eligible(target), target.visibleFrame != nil else {
-                finishTwoFinger()
-                return
-            }
-            if gesture.kind == .scroll {
-                if wasPending { gesture.finish = target.actions.finishScroll }
-                self.gesture = gesture
-                if wasPending { target.actions.didBeginScroll?() }
-                target.actions.scroll?(delta)
-            } else {
-                self.gesture = gesture
-                target.actions.pinch?(scale, location)
-            }
-        }
+        guard admits(epoch), let activeTransform else { return }
+        guard targetIsCurrent else { cancel(); return }
+        pairScale *= ratio
+        let pan = scaledPan(translation)
+        pairTranslation.x += pan.x
+        pairTranslation.y += pan.y
+        activeTransform.update(pairScale, pairTranslation)
     }
 
-    func finishTwoFinger(from epoch: UUID? = nil) {
-        if let epoch, !admits(epoch) { return }
-        guard let gesture else { return }
-        self.gesture = nil
-        gesture.finish?()
+    private func scaledPan(_ delta: CGPoint) -> CGPoint {
+        CGPoint(x: delta.x * sensitivity, y: delta.y * sensitivity)
+    }
+
+    private func finishManipulation(completed: Bool) {
+        let drag = activeDrag
+        let transform = activeTransform
+        activeDrag = nil
+        activeTransform = nil
+        activeTarget = nil
+        activeRevision = nil
+        drag?.finish(completed ? .completed : .cancelled)
+        transform?.finish()
+    }
+
+    private func refreshCursorStyle() {
+        cursorStyle = kind.isManga ? .focus :
+            (targets.target(at: location, where: { $0.textHit != nil || $0.tap != nil || $0.blocksTap })?.actions.textHit?(location) == true ? .text : .arrow)
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
@@ -150,22 +261,27 @@ final class ReaderExternalInput {
     }
 
     private func show() {
+        if kind.isManga,
+           targets.contentTarget(where: { $0.mangaIsZoomed != nil })?.actions.mangaIsZoomed?() == true {
+            hideCursor()
+            return
+        }
+        refreshCursorStyle()
         isVisible = true
         idleTask?.cancel()
         guard !touching else { return }
         idleTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            self?.isVisible = false
+            withAnimation(.easeOut(duration: 0.18)) { self?.isVisible = false }
         }
     }
 
     private func cancel() {
-        finishTwoFinger()
         epoch = UUID()
+        finishManipulation(completed: false)
+        scrollRelay?.interrupt()
         touching = false
-        idleTask?.cancel()
-        idleTask = nil
-        isVisible = false
+        hideCursor()
     }
 }
 
@@ -174,18 +290,37 @@ struct ReaderExternalCursor: View {
 
     var body: some View {
         if input.isVisible {
+            let style = input.cursorStyle
             Canvas { context, _ in
                 let pointer = Path { path in
-                    path.move(to: .zero)
-                    path.addLines([CGPoint(x: 18, y: 13), CGPoint(x: 10, y: 14),
-                                   CGPoint(x: 7, y: 21), .zero])
-                    path.closeSubpath()
+                    switch style {
+                    case .focus:
+                        path.addEllipse(in: CGRect(x: 6, y: 7, width: 10, height: 10))
+                    case .text:
+                        path.move(to: CGPoint(x: 11, y: 4))
+                        path.addLine(to: CGPoint(x: 11, y: 20))
+                        path.move(to: CGPoint(x: 7, y: 4))
+                        path.addLine(to: CGPoint(x: 15, y: 4))
+                        path.move(to: CGPoint(x: 7, y: 20))
+                        path.addLine(to: CGPoint(x: 15, y: 20))
+                    case .arrow:
+                        path.move(to: .zero)
+                        path.addLines([CGPoint(x: 18, y: 13), CGPoint(x: 10, y: 14),
+                                       CGPoint(x: 7, y: 21), .zero])
+                        path.closeSubpath()
+                    }
                 }
-                context.fill(pointer, with: .color(.white))
-                context.stroke(pointer, with: .color(.black), lineWidth: 1.5)
+                if style == .arrow {
+                    context.fill(pointer, with: .color(.white))
+                    context.stroke(pointer, with: .color(.black), lineWidth: 1.5)
+                } else {
+                    context.stroke(pointer, with: .color(.black), lineWidth: 3)
+                    context.stroke(pointer, with: .color(.white), lineWidth: 1.4)
+                }
             }
             .frame(width: 22, height: 24)
-            .position(x: input.location.x + 10, y: input.location.y + 12)
+            .position(x: input.location.x + (style == .arrow ? 11 : 0),
+                      y: input.location.y + (style == .arrow ? 12 : 0))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -194,59 +329,65 @@ struct ReaderExternalCursor: View {
 
 struct ReaderDeviceTrackpad: View {
     let input: ReaderExternalInput
+    let showsControls: Bool
+    let leftPageButtonIsPrevious: Bool
     let onMenu: () -> Void
-    @ScaledMetric(relativeTo: .body) private var minimumButtonHeight: CGFloat = 62
 
     var body: some View {
         GeometryReader { proxy in
-            let height = min(max(proxy.size.height / 4, minimumButtonHeight), proxy.size.height / 2)
+            let height = proxy.size.height / 2
             VStack(spacing: 0) {
-                ZStack {
-                    Text(L10n.string("reader.external.trackpad"))
-                        .foregroundStyle(Color(white: 0.72))
-                        .multilineTextAlignment(.center)
-                        .padding(20)
+                ZStack(alignment: .top) {
+                    if input.textMenu == nil {
+                        ReaderDeviceControlLabel(title: L10n.string("reader.external.trackpad"))
+                    }
                     TouchArea(input: input)
+                        .id(input.epoch)
                         .accessibilityHidden(true)
+                    if let menu = input.textMenu {
+                        ReaderDeviceTextMenu(menu: menu)
+                            .id(menu.id)
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(height: height)
 
-                HStack(spacing: 0) {
-                    button(ReaderControlAction.previousPage.title, id: "previous") { input.stepPage(.up) }
-                        .frame(width: proxy.size.width * 0.3)
-                    button(L10n.string("reader.external.menu"), id: "menu", action: onMenu)
-                        .frame(width: proxy.size.width * 0.4)
-                        .overlay(alignment: .leading) { separator.frame(width: 1) }
-                        .overlay(alignment: .trailing) { separator.frame(width: 1) }
-                    button(ReaderControlAction.nextPage.title, id: "next") { input.stepPage(.down) }
-                        .frame(width: proxy.size.width * 0.3)
+                Group {
+                    if input.kind.isVertical {
+                        ReaderExternalScrollArea(input: input, onMenu: onMenu)
+                    } else {
+                        HStack(spacing: 0) {
+                            pageButton(isPrevious: leftPageButtonIsPrevious)
+                                .frame(width: proxy.size.width * 0.3)
+                            ReaderDeviceControlButton.menu(action: onMenu)
+                                .frame(width: proxy.size.width * 0.4)
+                                .overlay(alignment: .leading) { separator.frame(width: 1) }
+                                .overlay(alignment: .trailing) { separator.frame(width: 1) }
+                            pageButton(isPrevious: !leftPageButtonIsPrevious)
+                                .frame(width: proxy.size.width * 0.3)
+                        }
+                        .environment(\.layoutDirection, .leftToRight)
+                    }
                 }
                 .frame(height: height)
                 .overlay(alignment: .top) { separator.frame(height: 1) }
-                .disabled(!input.isEnabled)
             }
+            .disabled(!input.isEnabled)
+            .readerChromeFadeVisibility(showsControls, hiddenOpacity: 0.25)
         }
+        .environment(\.colorScheme, .dark)
         .background(Color(white: 0.08).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var separator: some View {
-        Color.white.opacity(0.18).allowsHitTesting(false).accessibilityHidden(true)
+    private func pageButton(isPrevious: Bool) -> some View {
+        let action: ReaderControlAction = isPrevious ? .previousPage : .nextPage
+        return ReaderDeviceControlButton(title: action.title, id: isPrevious ? "previous" : "next") {
+            input.step(isPrevious ? .up : .down)
+        }
     }
 
-    private func button(_ title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.body.weight(.medium))
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .accessibilityIdentifier("reader-external-\(id)")
+    private var separator: some View {
+        Color.white.opacity(0.18).allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private struct TouchArea: UIViewRepresentable {
@@ -255,104 +396,121 @@ struct ReaderDeviceTrackpad: View {
         func updateUIView(_ pad: Pad, context: Context) {}
     }
 
-    private final class Pad: UIView {
+    private final class Pad: UIView, UIGestureRecognizerDelegate {
         private let input: ReaderExternalInput
-        private var active: UITouch?
         private var last = CGPoint.zero
         private var origin = CGPoint.zero
         private var moved = false
-        private var downAt: TimeInterval = 0
         private var epoch: UUID?
         private var points: [UITouch] = []
         private var lastPair: (center: CGPoint, distance: CGFloat)?
         private var usedMultipleFingers = false
-        private var holdTask: Task<Void, Never>?
+        private var blocked = false
         private var held = false
-
-        isolated deinit { holdTask?.cancel() }
+        private lazy var doubleTap: UITapGestureRecognizer = {
+            let recognizer = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            recognizer.numberOfTapsRequired = 2
+            recognizer.delegate = self
+            return recognizer
+        }()
 
         init(input: ReaderExternalInput) {
             self.input = input
             super.init(frame: .zero)
             isMultipleTouchEnabled = true
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            let hold = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
+            hold.minimumPressDuration = 0.55
+            hold.allowableMovement = 6
+            tap.require(toFail: doubleTap)
+            tap.require(toFail: hold)
+            doubleTap.require(toFail: hold)
+            for recognizer in [tap, doubleTap, hold] {
+                recognizer.cancelsTouchesInView = false
+                recognizer.delaysTouchesEnded = false
+                addGestureRecognizer(recognizer)
+            }
         }
 
         required init?(coder: NSCoder) { nil }
 
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            input.canDoubleClick
+        }
+
+        @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+            guard let epoch, !blocked, !usedMultipleFingers, !moved, !held else { return }
+            input.click(epoch: epoch, double: recognizer === doubleTap)
+        }
+
+        @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began, let epoch, !blocked, !usedMultipleFingers, !moved else { return }
+            held = input.hold(epoch: epoch)
+        }
+
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-            if let epoch, !input.admits(epoch) {
-                holdTask?.cancel()
-                active = nil
-                points.removeAll()
-                lastPair = nil
-                self.epoch = nil
-            }
             if points.isEmpty, let first = touches.first {
-                active = first
                 last = first.location(in: self)
                 origin = last
                 moved = false
                 usedMultipleFingers = false
                 held = false
-                downAt = first.timestamp
+                blocked = false
                 epoch = input.begin()
-                if let epoch {
-                    holdTask = Task { [weak self] in
-                        do { try await Task.sleep(for: .milliseconds(550)) } catch { return }
-                        guard let self, !usedMultipleFingers, !moved else { return }
-                        held = input.hold(epoch: epoch)
-                    }
-                }
             }
             points.append(contentsOf: touches)
-            if points.count == 2, !usedMultipleFingers, let epoch {
-                holdTask?.cancel()
+            guard let epoch else { return }
+            if points.count == 2, !blocked {
                 usedMultipleFingers = true
                 lastPair = samplePair()
                 input.beginTwoFinger(epoch: epoch)
             } else if points.count > 2 {
-                holdTask?.cancel()
-                usedMultipleFingers = true
+                blocked = true
                 lastPair = nil
-                if let epoch { input.finishTwoFinger(from: epoch) }
+                input.cancelGesture(epoch: epoch)
             }
         }
 
         override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-            guard let epoch else { return }
+            guard let epoch, !blocked else { return }
             if let previous = lastPair, let current = samplePair() {
                 lastPair = current
                 input.updateTwoFinger(
                     translation: CGPoint(x: current.center.x - previous.center.x, y: current.center.y - previous.center.y),
-                    ratio: current.distance / max(previous.distance, 1), epoch: epoch
+                    ratio: current.distance / previous.distance, epoch: epoch
                 )
                 return
             }
-            guard !usedMultipleFingers, let active, touches.contains(active) else { return }
-            let point = active.location(in: self)
-            if hypot(point.x - origin.x, point.y - origin.y) > 6 { moved = true }
-            input.move(CGPoint(x: point.x - last.x, y: point.y - last.y), epoch: epoch)
-            last = point
+            guard points.count == 1, let finger = points.first, touches.contains(finger) else { return }
+            if usedMultipleFingers, !input.kind.isManga { return }
+            let point = finger.location(in: self)
+            if !moved, hypot(point.x - origin.x, point.y - origin.y) > 6 {
+                moved = true
+                if !held, !usedMultipleFingers { input.beginSingleDrag(epoch: epoch) }
+            }
+            // Preserve the original focus until tap, hold or drag is resolved.
+            if moved || held || usedMultipleFingers {
+                input.move(CGPoint(x: point.x - last.x, y: point.y - last.y), epoch: epoch)
+                last = point
+            }
         }
 
         override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { finish(touches, permitsClick: true) }
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { finish(touches, permitsClick: false) }
 
         private func finish(_ touches: Set<UITouch>, permitsClick: Bool) {
-            guard points.contains(where: touches.contains) else { return }
+            guard points.contains(where: touches.contains), let epoch else { return }
             points.removeAll { touches.contains($0) }
+            if !permitsClick {
+                blocked = true
+                input.cancelGesture(epoch: epoch)
+            }
             if lastPair != nil, points.count != 2 {
                 lastPair = nil
-                if let epoch { input.finishTwoFinger(from: epoch) }
+                if let remaining = points.first { last = remaining.location(in: self); origin = last }
             }
-            guard points.isEmpty, let epoch else { return }
-            holdTask?.cancel()
-            self.epoch = nil
-            if permitsClick, !held, !usedMultipleFingers, !moved, let active, active.timestamp - downAt < 0.32 {
-                input.click(epoch: epoch)
-            }
-            active = nil
-            input.end(epoch: epoch)
+            guard points.isEmpty else { return }
+            if permitsClick, !blocked { input.end(epoch: epoch) }
         }
 
         private func samplePair() -> (center: CGPoint, distance: CGFloat)? {
@@ -360,6 +518,39 @@ struct ReaderDeviceTrackpad: View {
             let a = points[0].location(in: self), b = points[1].location(in: self)
             return (CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), max(1, hypot(a.x - b.x, a.y - b.y)))
         }
+    }
+}
+
+struct ReaderDeviceControlButton: View {
+    let title: String
+    let id: String
+    let action: () -> Void
+
+    static func menu(action: @escaping () -> Void) -> Self {
+        Self(title: L10n.string("reader.external.menu"), id: "menu", action: action)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            ReaderDeviceControlLabel(title: title)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("reader-external-\(id)")
+    }
+}
+
+private struct ReaderDeviceControlLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.body)
+            .foregroundStyle(Color(white: 0.72))
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
