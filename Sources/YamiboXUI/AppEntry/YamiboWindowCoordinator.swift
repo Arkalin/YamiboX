@@ -19,6 +19,7 @@ public struct YamiboWindowRequest: Codable, Hashable, Sendable {
 @MainActor
 @Observable
 public final class YamiboWindowCoordinator {
+    let externalReader = ReaderExternalDisplayCoordinator()
     public let appContext: YamiboAppContext
     public let webSessionCoordinator: ForumWebSessionCoordinator
     public let imagePipeline: YamiboUIImagePipeline
@@ -134,6 +135,7 @@ public final class YamiboWindowCoordinator {
 
     @discardableResult
     func scenePhaseDidChange(_ phase: ScenePhase, windowID: String) -> Bool {
+        externalReader.scenePhaseChanged(phase, windowID: windowID)
         guard phases[windowID] != phase else { return false }
         phases[windowID] = phase
         updateAggregatePhase()
@@ -180,6 +182,7 @@ public final class YamiboWindowCoordinator {
             for model in liveModels { model.peripheralInput.resetPressState() }
         }
         focusedWindowID = windowID
+        externalReader.focusChanged(windowID)
         refreshHandoffOwner()
         presentationWindowID = Self.presentationOwner(
             current: presentationWindowID,
@@ -189,12 +192,27 @@ public final class YamiboWindowCoordinator {
         )
     }
 
+    func recordReaderInteraction(windowID: String) {
+        externalReader.userOperated(windowID)
+    }
+
+    public func readerDeviceSceneChanged(_ sceneIdentifier: String, active: Bool) {
+        guard let windowID = sceneIdentifiers[sceneIdentifier] else { return }
+        externalReader.scenePhaseChanged(active ? .active : .inactive, windowID: windowID)
+    }
+
     static func presentationOwner(current: String?, focused: String, hasPresentation: Bool, currentOwnerIsActive: Bool) -> String {
         if let current, hasPresentation, currentOwnerIsActive { return current }
         return focused
     }
 
     func acceptsPeripheralInput(windowID: String) -> Bool {
+        acceptsPeripheralCapture(windowID: windowID) && externalReader.acceptsPeripheralInput(windowID: windowID)
+    }
+
+    func acceptsPeripheralCapture(windowID: String) -> Bool {
+        // Rebinding in device settings is an explicit capture, not a
+        // reading action. It still belongs to the focused foreground window.
         guard phases[windowID] == .active else { return false }
         if let focusedWindowID { return focusedWindowID == windowID }
         let activeIDs = phases.filter { $0.value == .active }.map(\.key)
@@ -202,7 +220,8 @@ public final class YamiboWindowCoordinator {
     }
 
     public func sceneDidDisconnect(_ sceneIdentifier: String) {
-        guard let windowID = sceneIdentifiers.removeValue(forKey: sceneIdentifier) else { return }
+        guard let windowID = sceneIdentifiers[sceneIdentifier] else { return }
+        externalReader.windowDisconnected(windowID)
         models[windowID]?.value?.handoffPublisher.reset()
         phases.removeValue(forKey: windowID)
         if focusedWindowID == windowID { focusedWindowID = nil }
@@ -211,6 +230,12 @@ public final class YamiboWindowCoordinator {
         }
         updateAggregatePhase()
         refreshHandoffOwner()
+    }
+
+    public func readerDeviceSceneDiscarded(_ sceneIdentifier: String) {
+        guard let windowID = sceneIdentifiers.removeValue(forKey: sceneIdentifier) else { return }
+        externalReader.windowDisconnected(windowID, discarded: true)
+        models[windowID]?.value?.dismissPresentedReaderSession()
     }
 
     private func refreshHandoffOwner() {

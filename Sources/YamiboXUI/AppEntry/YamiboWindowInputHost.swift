@@ -75,12 +75,12 @@ private final class WindowEventRecognizer: UIGestureRecognizer {
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        focus()
+        focus(recordInteraction: true)
         state = .failed
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-        focus()
+        focus(recordInteraction: true)
         route(presses, isPressed: true)
     }
 
@@ -94,9 +94,10 @@ private final class WindowEventRecognizer: UIGestureRecognizer {
         state = .failed
     }
 
-    private func focus() {
+    private func focus(recordInteraction: Bool) {
         guard let window = view as? UIWindow, window.isKeyWindow, let windowID = model.windowID else { return }
         coordinator.focus(windowID: windowID)
+        if recordInteraction { coordinator.recordReaderInteraction(windowID: windowID) }
     }
 
     private func route(_ presses: Set<UIPress>, isPressed: Bool) {

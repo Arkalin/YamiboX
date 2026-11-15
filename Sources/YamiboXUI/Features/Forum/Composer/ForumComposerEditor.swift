@@ -179,6 +179,15 @@ struct ForumComposerEditor: View {
 final class ForumEditorRegistry {
     private var controllers: [String: ForumEditorController] = [:]
 
+    func focusFirstEditor(in form: ForumForm) -> Bool {
+        for field in form.fields {
+            if let view = controllers[field.id]?.view, view.window != nil, view.becomeFirstResponder() {
+                return true
+            }
+        }
+        return false
+    }
+
     func controller(for fieldID: String) -> ForumEditorController {
         if let controller = controllers[fieldID] { return controller }
         let controller = ForumEditorController()

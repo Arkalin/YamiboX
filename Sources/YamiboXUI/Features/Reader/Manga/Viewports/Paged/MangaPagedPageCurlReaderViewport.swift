@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
+    @Environment(\.mangaViewportHandoff) var handoff
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
         coordinator.stopImagePrefetch()
@@ -108,6 +109,21 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         controlPageTurnBridge.route = { [weak gestures, weak containerViewController] step in
             guard let gestures, let containerViewController else { return }
             gestures.routeControl(step, in: containerViewController)
+        }
+        controlPageTurnBridge.tap = { [weak gestures, weak containerViewController] point in
+            guard let containerViewController else { return }
+            gestures?.routeRemoteTap(point, in: containerViewController)
+        }
+        controlPageTurnBridge.pagedSurface = { [weak gestures] in gestures?.currentSurface }
+        let coordinator = context.coordinator
+        controlPageTurnBridge.capturePosition = { [weak coordinator] in
+            guard let coordinator, let spread = coordinator.parent.plan.spread(at: coordinator.selectionIndex) else { return nil }
+            let plan = coordinator.parent.plan
+            let retainedIndex = plan.currentPageIndex.flatMap { spread.containsPage(at: $0) ? $0 : nil }
+            let fallback = retainedIndex.map { plan.pages[$0] } ?? spread.preferredPage
+            let focus = spread.pageFocus(from: coordinator.gestures.currentSurface?.normalizedFocus, defaultPage: fallback)
+            let page = [spread.leftPage, spread.rightPage].compactMap { $0 }.first { $0.id == focus?.pageID } ?? fallback
+            return .init(page: page, placement: coordinator.parent.viewportPlacement, focus: focus)
         }
     }
 }

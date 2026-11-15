@@ -4,6 +4,7 @@ import YamiboXCore
 /// The shared reader-library panel, with an optional chapters tab followed by
 /// the persisted bookmarks and likes tabs.
 struct ReaderAnnotationPanel<ChapterContent: View>: View {
+    @Environment(\.readerRemoteInput) private var remote
     let work: ReadingWorkKey
     let workTitle: String
     let like: LikeDependencies
@@ -93,13 +94,29 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: tabBinding) {
-                ForEach(tabs, id: \.self) { candidate in
-                    Text(candidate.title).tag(candidate)
+            Group {
+                if remote != nil {
+                    HStack(spacing: 6) {
+                        ForEach(tabs, id: \.self) { candidate in
+                            ReaderRemoteButton(action: { tabBinding.wrappedValue = candidate }) {
+                                Text(candidate.title)
+                                    .frame(maxWidth: .infinity, minHeight: 36)
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityAddTraits(selectedTab == candidate ? .isSelected : [])
+                            .tint(selectedTab == candidate ? .accentColor : .secondary)
+                        }
+                    }
+                } else {
+                    Picker("", selection: tabBinding) {
+                        ForEach(tabs, id: \.self) { candidate in
+                            Text(candidate.title).tag(candidate)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .disabled(activeNavigationState.isSelecting)
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -113,6 +130,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                 chapterContent(selectedTab == .chapters) { chapterNavigationState = $0 }
                     .opacity(selectedTab == .chapters ? 1 : 0)
                     .allowsHitTesting(selectedTab == .chapters)
+                    .environment(\.readerRemoteVisible, selectedTab == .chapters)
                     .accessibilityHidden(selectedTab != .chapters)
 
                 ReaderBookmarkListView(
@@ -128,6 +146,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                 )
                 .opacity(selectedTab == .bookmarks ? 1 : 0)
                 .allowsHitTesting(selectedTab == .bookmarks)
+                .environment(\.readerRemoteVisible, selectedTab == .bookmarks)
                 .accessibilityHidden(selectedTab != .bookmarks)
 
                 LikeWorkItemsView(
@@ -143,6 +162,7 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                 )
                 .opacity(selectedTab == .likes ? 1 : 0)
                 .allowsHitTesting(selectedTab == .likes)
+                .environment(\.readerRemoteVisible, selectedTab == .likes)
                 .accessibilityHidden(selectedTab != .likes)
             }
         }
@@ -155,15 +175,15 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
         .navigationBarBackButtonHidden(activeNavigationState.isSelecting)
         .toolbar {
             if !activeNavigationState.isSelecting {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: onDismiss) {
+                ToolbarItem(placement: .topBarLeading) {
+                    ReaderRemoteButton(action: onDismiss) {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel(L10n.string("common.close"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if isAnnotationTabSelected, activeNavigationState.itemCount > 0 {
-                        Button {
+                        ReaderRemoteButton {
                             requestAnnotationSelection()
                         } label: {
                             Image(systemName: "checklist")
@@ -209,6 +229,7 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
 /// so a bookmark synced from another device renders correctly on a device that
 /// has never opened that chapter.
 struct ReaderBookmarkListView: View {
+    @Environment(\.readerRemoteInput) private var remote
     let work: ReadingWorkKey
     let bookmarkStore: BookmarkStore
     let annotations: ReaderAnnotationService
@@ -228,7 +249,7 @@ struct ReaderBookmarkListView: View {
     var body: some View {
         List {
             ForEach(items) { item in
-                Button {
+                ReaderRemoteButton {
                     if isSelecting {
                         toggleSelection(item.id)
                     } else {
@@ -249,6 +270,7 @@ struct ReaderBookmarkListView: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                .readerRemoteScrollContent()
                 .deleteSwipeAction(allowsFullSwipe: false, isVisible: !isSelecting) {
                     delete(item)
                 }
@@ -274,7 +296,7 @@ struct ReaderBookmarkListView: View {
             }
         }
         .toolbar {
-            if isSelecting {
+            if isSelecting, remote == nil {
                 ToolbarItem(placement: .cancellationAction) {
                     SelectAllToolbarButton(
                         isSelectionComplete: isAllSelected,
@@ -283,7 +305,7 @@ struct ReaderBookmarkListView: View {
                     )
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button(L10n.string("common.done")) {
+                    ReaderRemoteButton(L10n.string("common.done")) {
                         setSelecting(false)
                     }
                     .fontWeight(.semibold)
@@ -295,8 +317,19 @@ struct ReaderBookmarkListView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if isSelecting, remote != nil {
+                HStack {
+                    SelectAllToolbarButton(isSelectionComplete: isAllSelected, isDisabled: items.isEmpty, toggle: toggleSelectAll)
+                    Spacer()
+                    ReaderRemoteButton(L10n.string("common.done")) { setSelecting(false) }
+                }
+                .padding(12)
+                .background(.bar)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if isSelecting && !usesSystemSelectionBottomToolbar {
+            if isSelecting && (remote != nil || !usesSystemSelectionBottomToolbar) {
                 SelectionBottomToolbar(actions: deleteActions)
                     .selectionBottomToolbarCapsule()
             }

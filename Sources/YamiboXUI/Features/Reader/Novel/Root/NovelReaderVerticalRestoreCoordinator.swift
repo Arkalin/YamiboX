@@ -3,29 +3,8 @@ import SwiftUI
 import YamiboXCore
 import UIKit
 
-/// Owns the vertical reading-position restore state machine that previously
-/// lived as seven pieces of `@State` (plus ~360 lines of methods) directly on
-/// `NovelReaderView`. Moving it here keeps the polling tasks, retry counters
-/// and fingerprint bookkeeping out of the view value type, where every stray
-/// copy of the struct made the ownership of the two long-lived `Task` handles
-/// hard to reason about.
-///
-/// Design constraints, chosen to keep behavior byte-for-byte equivalent to the
-/// old in-view implementation:
-///
-/// - `model` (`NovelReaderViewModel`) and the `NovelReaderVerticalScrollCoordinator`
-///   are passed as method parameters instead of being injected in `init`.
-///   `NovelReaderView` re-initializes on every parent render, and only the
-///   first `@State` value survives — injecting the view model here in `init`
-///   would wire a freshly built (immediately discarded) instance into the
-///   retained coordinator. Parameter passing sidesteps that lifecycle
-///   question entirely (each call hands over the retained instances the view
-///   resolves at call time) and guarantees the coordinator can never retain
-///   the view or outlive its collaborators' intended lifetimes.
-/// - The class is `@MainActor`, exactly like the SwiftUI `View` the code came
-///   from (the `View` protocol is main-actor isolated), so `Task {}` blocks
-///   created here inherit the same actor context as before and the
-///   `await MainActor.run` hops inside them keep their original structure.
+/// Restores a session's semantic position in one physical viewport. The
+/// polling tasks, frames and last sample never migrate with the reader.
 @MainActor
 @Observable
 final class NovelReaderVerticalRestoreCoordinator {
@@ -51,13 +30,10 @@ final class NovelReaderVerticalRestoreCoordinator {
     /// mutated from the viewport's deferred callbacks.
     private let verticalViewportSampling = NovelReaderVerticalViewportSamplingBox()
     @ObservationIgnored private var lastVerticalPositioningFingerprint: NovelReaderVerticalPositioningFingerprint?
+    @ObservationIgnored var admitsViewport: () -> Bool = { true }
+    @ObservationIgnored private var hasRequestedPlacement = false
 
-    /// The view's `onDisappear` cancels explicitly (see
-    /// `cancelPendingRestoreWork`), matching the old code path; deinit is a
-    /// safety net for teardown orders where SwiftUI destroys the state object
-    /// without a final `onDisappear`. Cancelling an already-cancelled or
-    /// finished task is a no-op, so this can only ever stop work earlier,
-    /// never change results.
+    /// Normally detached synchronously before the session can move.
     deinit {
         verticalRestoreRetryTask?.cancel()
         verticalViewportPositionUpdateTask?.cancel()
@@ -65,12 +41,15 @@ final class NovelReaderVerticalRestoreCoordinator {
 
     // MARK: - View lifecycle support
 
-    /// Called from `NovelReaderView`'s `onDisappear`. Deliberately only
-    /// cancels (does not nil the handles), exactly like the original
-    /// `onDisappear` body did.
     func cancelPendingRestoreWork() {
         verticalRestoreRetryTask?.cancel()
         verticalViewportPositionUpdateTask?.cancel()
+        verticalRestoreController.cancel()
+        verticalScrollRequest = nil
+        lastVerticalPositioningFingerprint = nil
+        hasRequestedPlacement = false
+        verticalViewportSampling.viewportSample = nil
+        verticalViewportSampling.surfaceFrames = [:]
     }
 
     // MARK: - Viewport callback entry points
@@ -84,6 +63,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
+        guard admitsViewport() else { return }
         guard verticalRestoreController.scrollingRequest == request else {
             if verticalScrollRequest == request {
                 verticalScrollRequest = nil
@@ -106,6 +86,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
+        guard admitsViewport() else { return }
         guard verticalViewportSampling.surfaceFrames != frames else { return }
         verticalViewportSampling.surfaceFrames = frames
         tryAdvanceVerticalRestore(model: model, scrollCoordinator: scrollCoordinator)
@@ -116,6 +97,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         _ sample: NovelReaderVerticalViewportSample?,
         model: NovelReaderViewModel
     ) {
+        guard admitsViewport() else { return }
         guard verticalViewportSampling.viewportSample != sample else { return }
         verticalViewportSampling.viewportSample = sample
         applyVerticalViewportPositionUpdate(for: .viewportSampleChanged, model: model)
@@ -178,12 +160,14 @@ final class NovelReaderVerticalRestoreCoordinator {
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
+        guard admitsViewport() else { return }
         guard let fingerprint = currentVerticalPositioningFingerprint(model: model) else {
             lastVerticalPositioningFingerprint = nil
             return
         }
         guard lastVerticalPositioningFingerprint != fingerprint else { return }
         lastVerticalPositioningFingerprint = fingerprint
+        hasRequestedPlacement = true
         requestVerticalScrollToCurrentPage(model: model, scrollCoordinator: scrollCoordinator)
     }
 
@@ -219,7 +203,7 @@ final class NovelReaderVerticalRestoreCoordinator {
     }
 
     func updateVerticalViewportPosition(model: NovelReaderViewModel) {
-        guard model.settings.readingMode == .vertical else { return }
+        guard admitsViewport(), hasRequestedPlacement, model.settings.readingMode == .vertical else { return }
         guard canSampleVerticalViewport() else {
             return
         }
@@ -261,6 +245,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
+        guard admitsViewport() else { return }
         guard verticalRestoreController.scrollingRequest == request else {
             return
         }
@@ -290,6 +275,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
+        guard admitsViewport() else { return }
         refreshVerticalRestorePhase()
         guard let request = verticalRestoreController.scrollingRequest else { return }
         guard request.view == nil || request.view == model.visibleView else {

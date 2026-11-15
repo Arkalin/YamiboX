@@ -54,9 +54,13 @@ struct ForumPostRatingForm: View {
 struct ForumPostCommentFields: View {
     @Bindable var model: ForumThreadCommentSheetModel
     let disabled: Bool
+    var autofocus = false
+    @FocusState private var focused: Bool
 
     var body: some View {
         TextEditor(text: $model.message)
+            .focused($focused)
+            .task { if autofocus { focused = true } }
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

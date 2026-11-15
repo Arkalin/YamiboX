@@ -66,6 +66,15 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         scrollView != nil
     }
 
+    func scrollFromTrackpad(_ delta: CGPoint) {
+        guard let scrollView else { return }
+        let inset = scrollView.adjustedContentInset
+        let current = scrollView.contentOffset
+        let y = min(max(current.y - delta.y, -inset.top),
+                    max(-inset.top, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom))
+        scrollView.setContentOffset(CGPoint(x: current.x, y: y), animated: false)
+    }
+
     func interruptScrollingIfNeeded() -> Bool {
         guard let scrollView, scrollView.isDragging || scrollView.isDecelerating else {
             return false

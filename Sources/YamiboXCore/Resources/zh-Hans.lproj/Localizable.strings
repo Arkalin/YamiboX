@@ -976,6 +976,8 @@
 "reader.open_as_manga.recommended" = "用漫画阅读器打开（推荐）";
 "reader.switch_failed" = "切换阅读模式失败";
 "reader.switching" = "正在切换阅读模式…";
+"reader.external.trackpad" = "当前设备作为触控板";
+"reader.external.unavailable" = "无法在外接显示器上继续阅读，已恢复在本机阅读。";
 "reader.switching_to_thread" = "正在切换到原帖…";
 "reader.switching_to_novel" = "正在切换到小说阅读器…";
 "reader.switching_to_manga" = "正在打开漫画阅读器…";

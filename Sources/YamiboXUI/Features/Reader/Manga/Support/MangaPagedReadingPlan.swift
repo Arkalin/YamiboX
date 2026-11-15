@@ -23,6 +23,17 @@ struct MangaPageSpread: Hashable, Sendable {
         pageIndexes.contains(pageIndex)
     }
 
+    func pageFocus(from focus: (point: CGPoint, factor: CGFloat)?, defaultPage: MangaReaderPageProjection) -> MangaViewportFocus? {
+        guard let focus else { return nil }
+        if pageIndexes.count == 2, let leftPage, let rightPage {
+            let isLeft = focus.point.x < 0.5
+            let x = focus.point.x * 2 - (isLeft ? 0 : 1)
+            return MangaViewportFocus(pageID: isLeft ? leftPage.id : rightPage.id,
+                point: CGPoint(x: x, y: focus.point.y), factor: focus.factor)
+        }
+        return MangaViewportFocus(pageID: defaultPage.id, point: focus.point, factor: focus.factor)
+    }
+
     func pageIndexForHorizontalLocation(_ x: CGFloat, width: CGFloat) -> Int? {
         guard leftPageIndex != nil || rightPageIndex != nil else { return nil }
         guard width > 0 else { return leftPageIndex ?? rightPageIndex }

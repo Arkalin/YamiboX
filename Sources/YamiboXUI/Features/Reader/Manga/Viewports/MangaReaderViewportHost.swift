@@ -96,6 +96,7 @@ private struct MangaReaderLoadedContent: View {
     let onTap: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.readerExternalGeometry) private var externalGeometry
     @State private var pagedCache = MangaPagedContentCache()
 
     /// Reduce Motion downgrades the 3D page-curl transition to the already
@@ -118,6 +119,7 @@ private struct MangaReaderLoadedContent: View {
                     currentPageIndex: loaded.currentPageIndex,
                     viewportPlacement: loaded.viewportPlacement,
                     controlScrollStep: controlScrollStep,
+                    viewportBridge: controlPageTurnBridge,
                     imageLoader: imageLoader,
                     isChromeVisible: isChromeVisible,
                     zoomEnabled: settings.zoomEnabled,
@@ -133,7 +135,7 @@ private struct MangaReaderLoadedContent: View {
                 GeometryReader { proxy in
                     let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                         settings: settings,
-                        isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
+                        isPadDevice: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad),
                         availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
                     )
                     let plan = pagedCache.plan(

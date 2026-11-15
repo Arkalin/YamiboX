@@ -10,6 +10,7 @@ struct NovelReaderSettingsSheet: View {
     let peripheralInput: ReaderPeripheralInputManager
     let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
     @State private var hasLoadedDraft = false
@@ -60,7 +61,7 @@ struct NovelReaderSettingsSheet: View {
             model.fontLibrary.protect(selection, owner: fontProtectionID)
         }
         .onDisappear { model.fontLibrary.protect(nil, owner: fontProtectionID) }
-        .sheet(isPresented: $isFontLibraryPresented) {
+        .readerPanel(isPresented: $isFontLibraryPresented) {
             NovelReaderFontLibraryView(
                 library: model.fontLibrary,
                 selection: draftSettings.fontSelection,
@@ -71,13 +72,13 @@ struct NovelReaderSettingsSheet: View {
                 }
             )
         }
-        .sheet(isPresented: $isPeripheralSettingsPresented) {
+        .readerDeviceSheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
                 peripheralInput: peripheralInput
             )
         }
-        .sheet(isPresented: $isForumFormatPresented) {
+        .readerPanel(isPresented: $isForumFormatPresented) {
             NovelReaderForumFormatSheet(settings: $draftSettings, controlAccent: controlAccent)
         }
     }
@@ -95,7 +96,7 @@ struct NovelReaderSettingsSheet: View {
             topInset: topInset,
             height: heroHeight,
             tapZonesPreviewRequestID: tapZonesPreviewRequestID,
-            onClose: { dismiss() },
+            onClose: closePanel,
             onConfirm: commitDraft
         )
     }
@@ -154,6 +155,7 @@ struct NovelReaderSettingsSheet: View {
             .padding(.top, 24)
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
+            .readerRemoteScrollContent()
         }
         .scrollIndicators(.hidden)
     }
@@ -167,10 +169,14 @@ struct NovelReaderSettingsSheet: View {
 
     private func commitDraft() {
         let committedSettings = draftSettings
-        dismiss()
+        closePanel()
         Task {
             await model.commitNovelTextAppearance(committedSettings)
         }
+    }
+
+    private func closePanel() {
+        if let dismissPanel { dismissPanel() } else { dismiss() }
     }
 
     private func setFontScale(_ value: Double) { draftSettings.fontScale = value }

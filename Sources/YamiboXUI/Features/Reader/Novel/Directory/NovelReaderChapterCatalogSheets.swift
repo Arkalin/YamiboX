@@ -49,6 +49,13 @@ struct NovelReaderChapterSheet: View {
         // The chapter sheet and its popover get their own hosting controllers
         // on iOS 27, so inherit the app accent explicitly at this boundary.
         .tint(appTheme.controlAccent)
+        .modifier(ReaderRemotePanel(isPresented: $showingWebPicker, maximumWidth: 380, deviceSheet: false) {
+            NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
+                showingWebPicker = false
+                guard view != navigation.visibleChapterDirectoryView else { return }
+                onSelectWebView(view)
+            }
+        })
         .failureToast(message: isActive ? navigation.chapterDirectory.error : nil,
                       details: navigation.chapterDirectory.errorDetails,
                       eventID: navigation.chapterDirectory.failureEventID,
@@ -68,7 +75,7 @@ struct NovelReaderChapterSheet: View {
                         List {
                             Section {
                                 ForEach(navigation.visibleChapterDirectoryChapters, id: \.ordinal) { chapter in
-                                    Button {
+                                    ReaderRemoteButton {
                                         onSelect(chapter)
                                         if !isEmbeddedInReaderPanel {
                                             dismiss()
@@ -90,6 +97,7 @@ struct NovelReaderChapterSheet: View {
                                     .buttonStyle(.plain)
                                     .listRowBackground(isCurrent(chapter) ? appTheme.controlAccent.opacity(0.12) : Color.clear)
                                     .id(chapter.ordinal)
+                                    .readerRemoteScrollContent()
                                 }
 
                             }
@@ -184,7 +192,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Button {
+            ReaderRemoteButton {
                 guard let previousView = navigation.previousChapterDirectoryWebView else { return }
                 onSelectWebView(previousView)
             } label: {
@@ -195,7 +203,7 @@ private struct NovelReaderChapterWebPaginationBar: View {
             .accessibilityLabel(L10n.string("reader.previous_web_page"))
             .disabled(navigation.previousChapterDirectoryWebView == nil)
 
-            Button {
+            ReaderRemoteButton {
                 showingWebPicker.toggle()
             } label: {
                 HStack(spacing: 6) {
@@ -215,17 +223,16 @@ private struct NovelReaderChapterWebPaginationBar: View {
             }
             .buttonStyle(.bordered)
             .accessibilityLabel(L10n.string("reader.select_web_page"))
-            .popover(isPresented: $showingWebPicker, arrowEdge: .bottom) {
+            .modifier(ReaderChapterWebPickerPresentation(isPresented: $showingWebPicker) {
                 NovelReaderChapterWebPicker(model: model, navigation: navigation) { view in
                     showingWebPicker = false
                     guard view != navigation.visibleChapterDirectoryView else { return }
                     onSelectWebView(view)
                 }
-                .presentationCompactAdaptation(.popover)
                 .tint(appTheme.controlAccent)
-            }
+            })
 
-            Button {
+            ReaderRemoteButton {
                 guard let nextView = navigation.nextChapterDirectoryWebView else { return }
                 onSelectWebView(nextView)
             } label: {
@@ -246,6 +253,24 @@ private struct NovelReaderChapterWebPaginationBar: View {
     }
 }
 
+private struct ReaderChapterWebPickerPresentation<Picker: View>: ViewModifier {
+    @Environment(\.readerRemoteInput) private var input
+    @Binding var isPresented: Bool
+    @ViewBuilder let picker: () -> Picker
+
+    func body(content: Content) -> some View {
+        if input != nil {
+            // The external panel is attached to the reader's full-size
+            // directory below, not to the small pagination button.
+            content
+        } else {
+            content.popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                picker().presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+}
+
 private struct NovelReaderChapterWebPicker: View {
     // Plain reference (was `@ObservedObject`): the `@Observable` model's
     // tracked properties read in `body` register observation on their own.
@@ -259,7 +284,7 @@ private struct NovelReaderChapterWebPicker: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(1 ... model.maxView, id: \.self) { view in
-                        Button {
+                        ReaderRemoteButton {
                             onSelect(view)
                         } label: {
                             HStack(spacing: 10) {

@@ -14,6 +14,8 @@ struct MangaReaderSettingsSheet: View {
     let readerViewportSize: CGSize
     let readerTopInset: CGFloat
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
+    @Environment(\.readerExternalGeometry) private var externalGeometry
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
     @State private var hasLoadedDraft = false
@@ -21,7 +23,7 @@ struct MangaReaderSettingsSheet: View {
     @State private var tapZonesPreviewRequestID = 0
 
     private var isPadDevice: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
+        externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     var body: some View {
@@ -61,7 +63,7 @@ struct MangaReaderSettingsSheet: View {
                         usesTwoPageSpread: usesTwoPageSpread,
                         readerViewportSize: readerContentSize,
                         tapZonesPreviewRequestID: tapZonesPreviewRequestID,
-                        onClose: { dismiss() },
+                        onClose: closePanel,
                         onConfirm: commitDraft
                     )
 
@@ -84,7 +86,7 @@ struct MangaReaderSettingsSheet: View {
         // to the system blue.
         .tint(controlAccent)
         .onAppear(perform: loadDraftIfNeeded)
-        .sheet(isPresented: $isPeripheralSettingsPresented) {
+        .readerDeviceSheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
                 settingsStore: settingsStore,
                 peripheralInput: peripheralInput
@@ -100,8 +102,12 @@ struct MangaReaderSettingsSheet: View {
 
     private func commitDraft() {
         let committedSettings = draftSettings
-        dismiss()
+        closePanel()
         model.applySettings(committedSettings)
+    }
+
+    private func closePanel() {
+        if let dismissPanel { dismissPanel() } else { dismiss() }
     }
 }
 #endif

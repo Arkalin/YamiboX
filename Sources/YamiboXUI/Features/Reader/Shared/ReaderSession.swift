@@ -38,6 +38,8 @@ struct ReaderSessionLifecycle {
     var didDeactivate: @MainActor (ReaderSession) -> Void = { _ in }
     var didClose: @MainActor (ReaderSession) -> Void = { _ in }
     var didRequestFullScreen: @MainActor (ReaderSession, ReaderSessionContent, MangaReaderProjection?) -> Void = { _, _, _ in }
+    var makeNovelReader: @MainActor (NovelLaunchContext, @escaping ReaderResumeRouteChangeHandler) -> NovelReaderSessionState
+    var makeMangaReader: @MainActor (MangaLaunchContext, MangaReaderProjection?, @escaping ReaderResumeRouteChangeHandler) -> MangaReaderSessionState
 }
 
 /// One navigation entry, with independently resumable reading modes.
@@ -50,6 +52,9 @@ final class ReaderSession: Identifiable {
     private(set) var content: ReaderSessionContent
     private(set) var resumeRoute: ReaderResumeRoute?
     private(set) var contentID = UUID()
+    private(set) var viewport = ReaderViewportLifetime()
+    private(set) var externalViewport: ReaderViewportLifetime?
+    var deviceInteraction: ReaderDeviceInteraction?
     private(set) var isSwitching = false
     private(set) var switchingTitle = L10n.string("reader.switching")
     @ObservationIgnored private(set) var preparedMangaProjection: MangaReaderProjection?
@@ -62,6 +67,8 @@ final class ReaderSession: Identifiable {
     @ObservationIgnored private var novelContexts: [String: NovelLaunchContext] = [:]
     @ObservationIgnored private var mangaContexts: [String: MangaLaunchContext] = [:]
     @ObservationIgnored private var threadModels: [String: ForumThreadReaderViewModel] = [:]
+    @ObservationIgnored private var novelReader: NovelReaderSessionState?
+    @ObservationIgnored private var mangaReader: MangaReaderSessionState?
     @ObservationIgnored private var switchTask: Task<Void, Never>?
     @ObservationIgnored private var onFullScreenHandoff: (@MainActor () -> Void)?
 
@@ -92,23 +99,28 @@ final class ReaderSession: Identifiable {
 
     func activate() {
         guard !isClosed else { return }
+        guard !isActive else { return }
+        isActive = true
         lifecycle.didActivate(self, resumeRoute)
     }
 
     func deactivate() {
+        isActive = false
         cancelSwitch()
         lifecycle.didDeactivate(self)
     }
 
-    func close() {
+    func close(savingProgress: Bool = true) {
         guard !isClosed else { return }
         completeFullScreenHandoff()
         cancelSwitch()
+        retireReader(savingProgress: savingProgress)
         isClosed = true
         lifecycle.didClose(self)
     }
 
-    func present(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil) {
+    func present(_ content: ReaderSessionContent, mangaProjection: MangaReaderProjection? = nil,
+                 savingPreviousPosition: Bool = true) {
         guard !isClosed else { return }
         let previousRoute = resumeRoute
         // Transfer this session out of the navigation column, including its
@@ -119,11 +131,14 @@ final class ReaderSession: Identifiable {
             return
         }
         prepareForContentPresentation()
+        retireReader(savingProgress: savingPreviousPosition)
         self.content = content
         resumeRoute = content.resumeRoute
         preparedMangaProjection = mangaProjection
         contentID = UUID()
+        viewport = ReaderViewportLifetime()
         if let route = content.resumeRoute { remember(route) }
+        isActive = true
         lifecycle.didActivate(self, previousRoute)
     }
 
@@ -147,12 +162,91 @@ final class ReaderSession: Identifiable {
         }
     }
 
+    func beginExternalViewport() -> ReaderViewportLifetime {
+        viewport.retire(capturingPosition: true)
+        let next = ReaderViewportLifetime()
+        externalViewport = next
+        return next
+    }
+
+    func returnToDeviceViewport() {
+        guard let externalViewport else { return }
+        externalViewport.retire(capturingPosition: true)
+        self.externalViewport = nil
+        viewport = ReaderViewportLifetime()
+    }
+
+    func saveReadingPosition() {
+        guard !isPreview else { return }
+        (externalViewport ?? viewport).synchronizePosition()
+        if let model = novelReader?.model, let route = model.resumeRouteForBackground() {
+            updateResumeRoute(route, contentID: contentID)
+            model.flushViewportSnapshot()
+        } else if let model = mangaReader?.model, model.hasCurrentPage {
+            updateResumeRoute(.manga(model.currentResumeContext), contentID: contentID)
+            model.flushViewportSnapshot()
+        }
+    }
+
+    func hideReaderChrome() {
+        novelReader?.chromeState.hideChrome()
+        mangaReader?.isChromeVisible = false
+    }
+
+    var isShowingDevicePanel: Bool {
+        if let reader = novelReader {
+            return reader.presentedSheet != nil || reader.searchPresentation != nil ||
+                reader.forumThreadOverlayItem != nil || reader.imageBrowserItem != nil
+        }
+        if let reader = mangaReader {
+            return reader.companionPanel != nil || reader.isSettingsPresented || reader.isDownloadPresented ||
+                reader.forumThreadOverlayItem != nil || reader.noteEditTarget != nil ||
+                reader.imageSavePresentation.isActionDialogPresented || reader.isPhotoPermissionAlertPresented || reader.isSavingImage
+        }
+        return false
+    }
+
     func updateResumeRoute(_ route: ReaderResumeRoute, contentID: UUID) {
         // Teardown saves from the previous mode must not replace the new route.
-        guard !isClosed, self.contentID == contentID, acceptsResumeRoute(route) else { return }
+        guard !isClosed, !isPreview, self.contentID == contentID, acceptsResumeRoute(route) else { return }
         remember(route)
         resumeRoute = route
         lifecycle.didUpdateResumeRoute(self, route)
+    }
+
+    func novelReader(for context: NovelLaunchContext) -> NovelReaderSessionState {
+        if let novelReader { return novelReader }
+        let reader = lifecycle.makeNovelReader(context, routeReporter())
+        novelReader = reader
+        return reader
+    }
+
+    func mangaReader(for context: MangaLaunchContext) -> MangaReaderSessionState {
+        if let mangaReader { return mangaReader }
+        let reader = lifecycle.makeMangaReader(context, preparedMangaProjection, routeReporter())
+        mangaReader = reader
+        return reader
+    }
+
+    private func routeReporter() -> ReaderResumeRouteChangeHandler {
+        { [weak self, contentID] route in
+            self?.updateResumeRoute(route, contentID: contentID)
+        }
+    }
+
+    @ObservationIgnored private var isActive = false
+
+    private func retireReader(savingProgress: Bool) {
+        deviceInteraction = nil
+        viewport.retire(capturingPosition: savingProgress)
+        externalViewport?.retire(capturingPosition: savingProgress)
+        externalViewport = nil
+        novelReader?.end()
+        novelReader?.model.finish(savingProgress: savingProgress)
+        novelReader = nil
+        mangaReader?.end()
+        mangaReader?.model.finish(savingProgress: savingProgress)
+        mangaReader = nil
     }
 
     func threadModel(for context: ThreadNovelLaunchContext, dependencies: ForumDependencies) -> ForumThreadReaderViewModel {
@@ -327,7 +421,9 @@ final class ReaderSession: Identifiable {
                     self.threadModel(for: context, dependencies: self.dependencies.forum)
                         .prepareForOriginalPost(context: context, preloadedPage: prepared.threadPage)
                 }
-                self.present(next, mangaProjection: mangaProjection)
+                // The original-post transition already flushes the captured
+                // reading position before it can commit its new mode.
+                self.present(next, mangaProjection: mangaProjection, savingPreviousPosition: next.resumeRoute != nil)
             } catch {
                 guard let self, !Task.isCancelled, !self.isClosed, self.contentID == expectedID else { return }
                 if !LoadDiagnosticError.isCancellation(error) {

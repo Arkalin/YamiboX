@@ -31,6 +31,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
     let onTap: () -> Void
 
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.mangaViewportHandoff) var handoff
 
     var pageEdgeFillColor: UIColor {
         settings.pageEdgeFillStyle.uiColor(for: colorScheme)
@@ -93,6 +94,27 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
         controlPageTurnBridge.route = { [weak gestures, weak collectionView] step in
             guard let gestures, let collectionView else { return }
             gestures.routeControl(step, in: collectionView)
+        }
+        controlPageTurnBridge.tap = { [weak gestures, weak collectionView] point in
+            guard let collectionView else { return }
+            gestures?.routeRemoteTap(point, in: collectionView)
+        }
+        controlPageTurnBridge.pagedSurface = { [weak gestures, weak collectionView] in
+            guard let collectionView else { return nil }
+            return gestures?.currentSurface(in: collectionView)
+        }
+        let coordinator = context.coordinator
+        controlPageTurnBridge.capturePosition = { [weak coordinator, weak collectionView] in
+            guard let coordinator, let collectionView,
+                  let index = coordinator.currentSpreadIndex(in: collectionView),
+                  let spread = coordinator.parent.plan.spread(at: index) else { return nil }
+            let plan = coordinator.parent.plan
+            let retainedIndex = plan.currentPageIndex.flatMap { spread.containsPage(at: $0) ? $0 : nil }
+            let fallback = retainedIndex.map { plan.pages[$0] } ?? spread.preferredPage
+            let focus = spread.pageFocus(from: coordinator.gestures.currentSurface(in: collectionView)?.normalizedFocus,
+                                        defaultPage: fallback)
+            let page = [spread.leftPage, spread.rightPage].compactMap { $0 }.first { $0.id == focus?.pageID } ?? fallback
+            return .init(page: page, placement: coordinator.parent.viewportPlacement, focus: focus)
         }
     }
 }

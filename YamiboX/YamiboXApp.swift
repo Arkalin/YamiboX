@@ -207,6 +207,13 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
+        if connectingSceneSession.role == .windowExternalDisplayNonInteractive {
+            if #unavailable(iOS 27) {
+                let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+                configuration.delegateClass = ReaderExternalDisplaySceneDelegate.self
+                return configuration
+            }
+        }
         // A custom scene delegate is required to observe Home Screen quick
         // action taps (`windowScene(_:performActionFor:)`/`scene(_:willConnectTo:options:)`
         // are scene-delegate callbacks, not app-delegate ones); it doesn't
@@ -240,6 +247,12 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
                     completionHandler,
                     forSessionIdentifier: identifier
                 )
+        }
+    }
+
+    func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {
+        for session in sceneSessions where session.role == .windowApplication {
+            Self.windows?.readerDeviceSceneDiscarded(session.persistentIdentifier)
         }
     }
 
@@ -287,6 +300,14 @@ private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidDisconnect(_ scene: UIScene) {
         YamiboAppDelegate.windows?.sceneDidDisconnect(scene.session.persistentIdentifier)
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        YamiboAppDelegate.windows?.readerDeviceSceneChanged(scene.session.persistentIdentifier, active: false)
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        YamiboAppDelegate.windows?.readerDeviceSceneChanged(scene.session.persistentIdentifier, active: true)
     }
 
     private static func handle(_ shortcutItem: UIApplicationShortcutItem, sceneIdentifier: String) {

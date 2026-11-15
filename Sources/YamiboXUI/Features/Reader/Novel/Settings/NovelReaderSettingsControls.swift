@@ -47,6 +47,9 @@ struct NovelReaderFontScaleRow: View {
                     in: 0.8 ... 2.3
                 )
                 .tint(palette.controlAccent)
+                .readerRemoteSlider(value: Binding(get: { value }, set: {
+                    onChange(min(2.3, max(0.8, ($0 / 0.1).rounded() * 0.1)))
+                }), in: 0.8 ... 2.3)
 
                 ReaderSettingsStepperButton(
                     systemName: "plus",
@@ -71,7 +74,7 @@ struct NovelReaderFontPickerRow: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
             Spacer()
-            Button(action: onSelect) {
+            ReaderRemoteButton(action: onSelect) {
                 HStack(spacing: 8) {
                     Text(title)
                         .foregroundStyle(palette.secondaryText)
@@ -120,6 +123,9 @@ struct NovelReaderSliderRow: View {
                     in: range
                 )
                 .tint(tint)
+                .readerRemoteSlider(value: Binding(get: { value }, set: {
+                    onChange(min(range.upperBound, max(range.lowerBound, ($0 / step).rounded() * step)))
+                }), in: range)
 
                 Text(valueLabel)
                     .font(.title3.monospacedDigit())
@@ -193,7 +199,7 @@ struct NovelReaderTranslationPicker: View {
     }
 
     private func translationButton(_ title: String, modeRawValue: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        ReaderRemoteButton(action: action) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
@@ -234,7 +240,7 @@ struct NovelReaderThemePicker: View {
 
     private var swatches: some View {
         ForEach(ReaderBackgroundStyle.allCases, id: \.self) { style in
-            Button {
+            ReaderRemoteButton {
                 onSelect(style)
             } label: {
                 VStack(spacing: 10) {

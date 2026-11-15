@@ -87,16 +87,19 @@ public final class ReaderPeripheralInputManager {
     @ObservationIgnored private var monitorTasks: [Task<Void, Never>] = []
     @ObservationIgnored private let usesWindowKeyboardEvents: Bool
     @ObservationIgnored private let acceptsInput: @MainActor () -> Bool
+    @ObservationIgnored private let acceptsCaptureInput: (@MainActor () -> Bool)?
     private static var managers: [WeakManager] = []
 
     public init(
         settingsStore: SettingsStore,
         usesWindowKeyboardEvents: Bool = false,
-        acceptsInput: @escaping @MainActor () -> Bool = { true }
+        acceptsInput: @escaping @MainActor () -> Bool = { true },
+        acceptsCaptureInput: (@MainActor () -> Bool)? = nil
     ) {
         self.settingsStore = settingsStore
         self.usesWindowKeyboardEvents = usesWindowKeyboardEvents
         self.acceptsInput = acceptsInput
+        self.acceptsCaptureInput = acceptsCaptureInput
         Self.managers.removeAll { $0.value == nil }
         Self.managers.append(WeakManager(self))
         startMonitoring()
@@ -304,7 +307,7 @@ public final class ReaderPeripheralInputManager {
     // MARK: - Event translation
 
     private func handleElementChange(_ element: any GCPhysicalInputElement, controllerKey: ObjectIdentifier) {
-        guard acceptsInput() else {
+        guard allowsEvent(isCapturing: captureHandler != nil) else {
             pressTracker.reset()
             return
         }
@@ -376,7 +379,7 @@ public final class ReaderPeripheralInputManager {
     // MARK: - Keyboard event translation
 
     private func handleKeyChange(_ keyCode: GCKeyCode, isPressed: Bool) {
-        guard acceptsInput() else {
+        guard allowsEvent(isCapturing: keyboardCaptureHandler != nil) else {
             pressTracker.reset()
             return
         }
@@ -391,6 +394,11 @@ public final class ReaderPeripheralInputManager {
     }
 
     func resetPressState() { pressTracker.reset() }
+
+    private func allowsEvent(isCapturing: Bool) -> Bool {
+        if isCapturing, let acceptsCaptureInput { return acceptsCaptureInput() }
+        return acceptsInput()
+    }
 
     private static func forEachManager(_ body: (ReaderPeripheralInputManager) -> Void) {
         managers.removeAll { $0.value == nil }

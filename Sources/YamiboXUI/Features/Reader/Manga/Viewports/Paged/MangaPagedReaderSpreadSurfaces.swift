@@ -18,7 +18,8 @@ extension ReaderPagedPageTurnCell {
         allowsUnzoomedSurfacePan: Bool,
         spreadSurfaceInteraction: MangaSurfaceAttachment,
         likedPageIDs: Set<String>,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        handoff: MangaViewportHandoff?
     ) {
         let pageEdgeFillColor = pageEdgeFillStyle.uiColor(for: colorScheme)
         backgroundColor = pageEdgeFillColor
@@ -36,6 +37,7 @@ extension ReaderPagedPageTurnCell {
                 spreadSurfaceInteraction: spreadSurfaceInteraction,
                 likedPageIDs: likedPageIDs
             )
+            .environment(\.mangaViewportHandoff, handoff)
             .padding(.top, informationState.configuration.contentTopInset)
             .background(.black)
             .overlay {

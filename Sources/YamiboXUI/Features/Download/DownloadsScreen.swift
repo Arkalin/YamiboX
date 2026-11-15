@@ -11,6 +11,7 @@ struct DownloadsScreen: View {
     var showsCloseButton = false
     @State private var showsOtherPage = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissRemote
 
     var body: some View {
         page(initialPage, isRoot: true)
@@ -37,18 +38,34 @@ struct DownloadsScreen: View {
             }
         }
         .toolbar {
-            if showsCloseButton && isRoot && !queue.isSelectionMode && !management.isDownloadManagementSelectionMode {
+            if showsCloseButton && isRoot && dismissRemote == nil && !queue.isSelectionMode && !management.isDownloadManagementSelectionMode {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("common.close")) { dismiss() }
                 }
             }
         }
+        .readerRemoteBack(dismissRemote != nil && !isRoot) { switchPage(fromRoot: false) }
+        .navigationBarBackButtonHidden(!isRoot && dismissRemote != nil)
     }
 
     private func switchPage(fromRoot: Bool) {
         queue.setSelectionMode(false)
         management.setDownloadManagementSelectionMode(false)
         showsOtherPage = fromRoot
+    }
+}
+
+extension View {
+    func readerRemoteBack(_ isPresented: Bool, action: @escaping () -> Void) -> some View {
+        safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
+            if isPresented {
+                ReaderRemoteButton(action: action) {
+                    Label(L10n.string("common.back"), systemImage: "chevron.backward")
+                        .frame(minHeight: 44)
+                }
+                .padding(.horizontal, 16)
+            }
+        }
     }
 }
 
@@ -62,6 +79,7 @@ private struct DownloadListRowModifier: ViewModifier {
             if let action {
                 Button(action: action) { content }
                     .buttonStyle(.plain)
+                    .readerRemoteActivate(action)
             } else {
                 content
             }
@@ -70,6 +88,7 @@ private struct DownloadListRowModifier: ViewModifier {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .readerRemoteScrollContent()
     }
 }
 

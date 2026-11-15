@@ -108,6 +108,7 @@ struct ReaderChapterCommentsContent: View {
                             .id(Self.loadNextRowID)
                     }
                     .scrollTargetLayout()
+                    .readerRemoteScrollContent()
                 }
                 .scrollPosition(id: $scrollTarget, anchor: .top)
             }
@@ -171,7 +172,7 @@ struct ReaderChapterCommentsContent: View {
             }
             .padding(.vertical, 12)
         } else if !page.isComplete {
-            Button(L10n.string("common.retry")) {
+            ReaderRemoteButton(L10n.string("common.retry")) {
                 if page.needsInitialRetry == true { retry(target) } else { loadNext() }
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -187,6 +188,10 @@ private enum ReaderChapterCommentRoute: Hashable {
 
 struct ReaderChapterCommentsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
+    @Environment(\.readerRemoteInput) private var remoteInput
+    @Environment(\.readerRemoteLayer) private var remoteLayer
 
     let target: ReaderChapterCommentTarget?
     let state: ReaderChapterCommentsState
@@ -280,6 +285,63 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     var body: some View {
+        presentation
+            .transientMessage(feedback) { feedback = nil }
+            .readerPanel(isPresented: $showsFilterSettings) {
+                if remoteInput != nil {
+                    ReaderRemoteCommentFilterSettings(dependencies: appModel.appContext.settingsDependencies)
+                } else {
+                    ChapterCommentFilterSettingsSheet(dependencies: appModel.appContext.settingsDependencies)
+                }
+            }
+            .sheet(item: $composerTarget, onDismiss: composerDismissed) { composeTarget in
+                composer(composeTarget, isCurrent: { true })
+            }
+            .fullScreenCover(item: $threadOverlayItem) { item in
+                ForumThreadOverlayScreen(
+                    item: item,
+                    dependencies: forumDependencies,
+                    appModel: appModel,
+                    rootIsDiscussionView: true,
+                    discussionWorkTIDs: discussionWorkTIDs
+                )
+            }
+            .fullScreenCover(item: $imageBrowserRequest) { request in
+                ImageBrowserView(
+                    items: request.items,
+                    initialItemID: request.initialItemID,
+                    mode: request.items.count == 1 ? .single : .multiple,
+                    onDismiss: { imageBrowserRequest = nil }
+                )
+            }
+            .fullScreenCover(item: $profileItem) { item in
+                ReaderChapterCommentProfileScreen(item: item, dependencies: forumDependencies,
+                                                  appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
+            }
+            .task(id: target) { await loadComments() }
+            .onChange(of: state, initial: true) { _, state in filterModel.update(state) }
+            .onChange(of: filterModel.discussions) { _, _ in pruneCompletedNavigation() }
+            .task {
+                let changes = forumDependencies.forum.settingsStore.changes()
+                filterModel.refresh()
+                for await _ in changes { filterModel.refresh() }
+            }
+            .task {
+                let changes = forumDependencies.forum.sessionStore.changes()
+                filterModel.refresh()
+                for await _ in changes { filterModel.refresh() }
+            }
+            .task {
+                let changes = forumDependencies.forum.profileStore.changes()
+                filterModel.refresh()
+                for await _ in changes { filterModel.refresh() }
+            }
+            .onChange(of: filterModel.state) { _, state in restoreCommentScrollTargets(state) }
+            .onAppear(perform: attachControlHandler)
+            .onDisappear(perform: detachCommentPanel)
+    }
+
+    private var presentation: some View {
         NavigationStack(path: $navigationPath) {
             commentsScreen(discussion: nil)
             .navigationBarTitleDisplayMode(.inline)
@@ -289,11 +351,10 @@ struct ReaderChapterCommentsSheet: View {
                     ReaderChapterCommentsToolbarTitle(target: target)
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    ReaderToolbarIconButton(
-                        systemName: "xmark",
-                        title: L10n.string("common.done"),
-                        action: { dismiss() }
-                    )
+                    ReaderRemoteButton(action: closePanel) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(L10n.string("common.done"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     moreMenu
@@ -301,152 +362,112 @@ struct ReaderChapterCommentsSheet: View {
             }
             .navigationDestination(for: ReaderChapterCommentRoute.self) { route in
                 destination(route)
+                    .navigationBarBackButtonHidden(remoteInput != nil)
                     .toolbar {
+                        if remoteInput != nil {
+                            ToolbarItem(placement: .topBarLeading) {
+                                ReaderRemoteButton(action: goBack) {
+                                    Image(systemName: "chevron.backward")
+                                }
+                                .accessibilityLabel(L10n.string("common.back"))
+                            }
+                        }
                         ToolbarItem(placement: .topBarTrailing) {
                             moreMenu
                         }
                     }
             }
         }
-        .transientMessage(feedback) { feedback = nil }
-        .sheet(isPresented: $showsFilterSettings) {
-            ChapterCommentFilterSettingsSheet(dependencies: appModel.appContext.settingsDependencies)
-        }
-        .sheet(item: $composerTarget, onDismiss: composerDismissed) { composeTarget in
-            let accountGeneration = appModel.accountGeneration
-            ReaderChapterCommentComposerSheet(
-                model: ReaderChapterCommentComposerModel(
-                    target: composeTarget,
-                    actions: composerActions ?? ReaderChapterCommentComposeActions(dependencies: forumDependencies.forum) { change in
-                        guard accountGeneration == appModel.accountGeneration else { return }
-                        appModel.forumContentRefresh.record(change)
-                    }
-                ),
-                replyPlacement: ReaderChapterReplyPlacement.resolve(target: composeTarget.chapter, hasLaterChapter: hasLaterChapter, state: state),
-                isNovel: isNovel,
-                onSubmitted: { pendingSubmissionFeedback = $0 }
-            ) { url in
-                ReaderChapterCommentComposerDestination(url: url, dependencies: forumDependencies,
-                                                        appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
-            }
-        }
-        .fullScreenCover(item: $threadOverlayItem) { item in
-            ForumThreadOverlayScreen(
-                item: item,
-                dependencies: forumDependencies,
-                appModel: appModel,
-                rootIsDiscussionView: true,
-                discussionWorkTIDs: discussionWorkTIDs
-            )
-        }
-        .fullScreenCover(item: $imageBrowserRequest) { request in
-            ImageBrowserView(
-                items: request.items,
-                initialItemID: request.initialItemID,
-                mode: request.items.count == 1 ? .single : .multiple,
-                onDismiss: { imageBrowserRequest = nil }
-            )
-        }
-        .fullScreenCover(item: $profileItem) { item in
-            ReaderChapterCommentProfileScreen(item: item, dependencies: forumDependencies,
-                                              appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
-        }
-        .task(id: target) {
-            actionTask?.cancel()
-            cancelLoading()
-            navigationPath = []
-            replyScrollTarget = nil
-            conversationScrollTarget = nil
-            let task = Task { await loadInitial(target) }
-            actionTask = task
-            await withTaskCancellationHandler {
-                await task.value
-            } onCancel: {
-                task.cancel()
-            }
-        }
-        .onChange(of: state, initial: true) { _, state in filterModel.update(state) }
-        .onChange(of: filterModel.discussions) { _, _ in pruneCompletedNavigation() }
-        .task {
-            let changes = forumDependencies.forum.settingsStore.changes()
-            filterModel.refresh()
-            for await _ in changes { filterModel.refresh() }
-        }
-        .task {
-            let changes = forumDependencies.forum.sessionStore.changes()
-            filterModel.refresh()
-            for await _ in changes { filterModel.refresh() }
-        }
-        .task {
-            let changes = forumDependencies.forum.profileStore.changes()
-            filterModel.refresh()
-            for await _ in changes { filterModel.refresh() }
-        }
-        .onChange(of: filterModel.state) { _, state in
-            guard case let .loaded(_, page) = state else { return }
-            pruneCompletedNavigation()
-            let anchor = refreshAnchor ?? scrollTarget
-            if filterModel.discussions.contains(where: { $0.id == anchor }) {
-                scrollTarget = anchor
-                refreshAnchor = nil
-            } else if page.isComplete {
-                scrollTarget = nil
-                refreshAnchor = nil
-            }
-            if case let .discussion(id) = navigationPath.first {
-                let group = filterModel.discussions.first { $0.id == id }
-                if let group, let anchor = replyRefreshAnchor {
-                    if group.id == anchor || group.replies.contains(where: { $0.id == anchor }) {
-                        replyScrollTarget = anchor
-                        replyRefreshAnchor = nil
-                    } else if page.isComplete {
-                        replyRefreshAnchor = nil
-                    }
-                }
-            }
-            if case let .conversation(discussionID, rootID) = navigationPath.last {
-                let conversation = conversation(discussionID: discussionID, rootID: rootID)
-                if let conversation, let anchor = conversationRefreshAnchor {
-                    if conversation.id == anchor || conversation.replies.contains(where: { $0.id == anchor }) {
-                        conversationScrollTarget = anchor
-                        conversationRefreshAnchor = nil
-                    } else if page.isComplete {
-                        conversationRefreshAnchor = nil
-                    }
-                }
-            }
-        }
-        .onAppear {
-            guard let peripheralInput, controlHandlerToken == nil else { return }
-            controlHandlerToken = peripheralInput.pushHandler { event in
-                handleControlEvent(event)
-            }
-        }
-        .onDisappear {
-            filterModel.cancel()
-            actionTask?.cancel()
-            actionTask = nil
-            cancelLoading()
-            peripheralInput?.removeHandler(controlHandlerToken)
-            controlHandlerToken = nil
+    }
+
+    private func loadComments() async {
+        actionTask?.cancel()
+        cancelLoading()
+        navigationPath = []
+        replyScrollTarget = nil
+        conversationScrollTarget = nil
+        let task = Task { await loadInitial(target) }
+        actionTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
-    private var moreMenu: some View {
-        Menu {
-            Button(action: refreshCurrent) {
-                Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
-            }
-            .disabled(target == nil)
-            Button { showsFilterSettings = true } label: {
-                Label(L10n.string("reader.chapter_comments_filter_settings"), systemImage: "line.3.horizontal.decrease")
-            }
-        } label: {
-            Label(L10n.string("common.more"), systemImage: "ellipsis")
-                .labelStyle(.iconOnly)
+    private func restoreCommentScrollTargets(_ state: ReaderChapterCommentsState) {
+        guard case let .loaded(_, page) = state else { return }
+        pruneCompletedNavigation()
+        let anchor = refreshAnchor ?? scrollTarget
+        if filterModel.discussions.contains(where: { $0.id == anchor }) {
+            scrollTarget = anchor
+            refreshAnchor = nil
+        } else if page.isComplete {
+            scrollTarget = nil
+            refreshAnchor = nil
         }
-        .accessibilityLabel(L10n.string("common.more"))
-        .accessibilityIdentifier("chapter-comments-more")
+        if case let .discussion(id) = navigationPath.first {
+            let group = filterModel.discussions.first { $0.id == id }
+            if let group, let anchor = replyRefreshAnchor {
+                if group.id == anchor || group.replies.contains(where: { $0.id == anchor }) {
+                    replyScrollTarget = anchor
+                    replyRefreshAnchor = nil
+                } else if page.isComplete {
+                    replyRefreshAnchor = nil
+                }
+            }
+        }
+        if case let .conversation(discussionID, rootID) = navigationPath.last {
+            let conversation = conversation(discussionID: discussionID, rootID: rootID)
+            if let conversation, let anchor = conversationRefreshAnchor {
+                if conversation.id == anchor || conversation.replies.contains(where: { $0.id == anchor }) {
+                    conversationScrollTarget = anchor
+                    conversationRefreshAnchor = nil
+                } else if page.isComplete {
+                    conversationRefreshAnchor = nil
+                }
+            }
+        }
+    }
+
+    private func attachControlHandler() {
+        guard let peripheralInput, controlHandlerToken == nil else { return }
+        controlHandlerToken = peripheralInput.pushHandler { event in
+            handleControlEvent(event)
+        }
+    }
+
+    private func detachCommentPanel() {
+        filterModel.cancel()
+        actionTask?.cancel()
+        actionTask = nil
+        cancelLoading()
+        peripheralInput?.removeHandler(controlHandlerToken)
+        controlHandlerToken = nil
+    }
+
+    private var moreMenu: some View {
+        ReaderRemoteToolbarMenu(title: L10n.string("common.more")) { moreActions }
+            .accessibilityIdentifier("chapter-comments-more")
+    }
+
+    @ViewBuilder
+    private var moreActions: some View {
+        ReaderRemoteButton(action: refreshCurrent) {
+            Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
+        }
+        .disabled(target == nil)
+        ReaderRemoteButton { showsFilterSettings = true } label: {
+            Label(L10n.string("reader.chapter_comments_filter_settings"), systemImage: "line.3.horizontal.decrease")
+        }
+    }
+
+    private func closePanel() {
+        if let dismissPanel { dismissPanel() } else { dismiss() }
+    }
+
+    private func goBack() {
+        if !navigationPath.isEmpty { navigationPath.removeLast() } else { closePanel() }
     }
 
     @ViewBuilder
@@ -494,7 +515,7 @@ struct ReaderChapterCommentsSheet: View {
             if isLoadingMore {
                 ProgressView()
             } else {
-                Button(L10n.string("common.retry")) {
+                ReaderRemoteButton(L10n.string("common.retry")) {
                     if case let .loaded(_, page) = state, page.needsInitialRetry != true { loadNextPage() }
                     else if let target { retry(target) }
                 }
@@ -515,8 +536,8 @@ struct ReaderChapterCommentsSheet: View {
             failureEventID: failureEventID, clearFailure: clearFailure,
             scrollTarget: conversation != nil ? $conversationScrollTarget : discussion == nil ? $scrollTarget : $replyScrollTarget,
             retry: retry(_:), loadNext: loadNextPage, openOriginalPost: openOriginalPost(_:),
-            openProfile: { profileItem = ReaderChapterCommentProfileItem(uid: $0, name: $1) },
-            compose: { composerTarget = $0 }, openImage: openImage(_:blockID:),
+            openProfile: openProfile(_:_:),
+            compose: openComposer(_:), openImage: openImage(_:blockID:),
             emptyTitle: filterModel.hasHiddenComments ? L10n.string("reader.chapter_comments_filtered_empty") : emptyTitle,
             discussions: filterModel.discussions, selectedDiscussion: discussion, selectedConversation: conversation,
             openReplies: { replyScrollTarget = nil; navigationPath.append(.discussion($0.id)) },
@@ -532,7 +553,7 @@ struct ReaderChapterCommentsSheet: View {
                 let composeTarget = discussion.map { ReaderChapterCommentComposeTarget.reply($0.root, chapter: target) }
                     ?? ReaderChapterCommentComposeTarget.owner(target)
                 if let composeTarget {
-                    ReaderChapterCommentComposeBar { composerTarget = composeTarget }
+                    ReaderChapterCommentComposeBar { openComposer(composeTarget) }
                 }
             }
         }
@@ -541,10 +562,11 @@ struct ReaderChapterCommentsSheet: View {
 
     private func handleControlEvent(_ event: ReaderControlEvent) {
         // Presented content owns input; closing must not dismiss this sheet underneath it.
-        guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil, profileItem == nil else { return }
+        guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil, profileItem == nil,
+              !showsFilterSettings, remoteInput?.targets.activeDepth == remoteLayer.depth || remoteInput == nil else { return }
         switch ReaderControlCommandResolver.commentsCommand(for: event) {
         case .close:
-            if !navigationPath.isEmpty { navigationPath.removeLast() } else { dismiss() }
+            goBack()
         case let .scroll(direction):
             scrollComments(direction)
         case nil:
@@ -622,6 +644,39 @@ struct ReaderChapterCommentsSheet: View {
         refreshCurrent()
     }
 
+    private func openComposer(_ target: ReaderChapterCommentComposeTarget) {
+        if let deviceInteraction {
+            deviceInteraction.present(onReturn: composerDismissed) { id in
+                composer(target, autofocus: true, isCurrent: { deviceInteraction.isCurrent(id) },
+                         onExit: { deviceInteraction.finish(id) })
+            }
+        } else {
+            composerTarget = target
+        }
+    }
+
+    private func composer(_ target: ReaderChapterCommentComposeTarget, autofocus: Bool = false,
+                          isCurrent: @escaping () -> Bool, onExit: (() -> Void)? = nil) -> some View {
+        let accountGeneration = appModel.accountGeneration
+        return ReaderChapterCommentComposerSheet(
+            model: ReaderChapterCommentComposerModel(
+                target: target,
+                actions: composerActions ?? ReaderChapterCommentComposeActions(dependencies: forumDependencies.forum) { change in
+                    guard accountGeneration == appModel.accountGeneration else { return }
+                    appModel.forumContentRefresh.record(change)
+                }
+            ),
+            replyPlacement: ReaderChapterReplyPlacement.resolve(target: target.chapter, hasLaterChapter: hasLaterChapter, state: state),
+            isNovel: isNovel,
+            autofocus: autofocus,
+            onSubmitted: { if isCurrent() { pendingSubmissionFeedback = $0 } },
+            onExit: onExit
+        ) { url in
+            ReaderChapterCommentComposerDestination(url: url, dependencies: forumDependencies,
+                                                    appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
+        }
+    }
+
     /// 查看原帖 opens the original post as a full-screen cover above this
     /// sheet instead of tearing down the reader underneath: closing the cover
     /// returns to the comment list, closing the sheet returns to reading.
@@ -630,12 +685,36 @@ struct ReaderChapterCommentsSheet: View {
     /// work must not write its own browsing-history row (browsing-history
     /// decision #14).
     private func openOriginalPost(_ url: URL) {
+        if let deviceInteraction {
+            let item = ForumThreadOverlayItem(url: url, title: target?.title)
+            deviceInteraction.present { _ in
+                ForumThreadOverlayScreen(item: item, dependencies: forumDependencies, appModel: appModel,
+                                         rootIsDiscussionView: true, discussionWorkTIDs: discussionWorkTIDs)
+            }
+            return
+        }
         threadOverlayItem = ForumThreadOverlayItem(url: url, title: target?.title)
+    }
+
+    private func openProfile(_ uid: String, _ name: String) {
+        let item = ReaderChapterCommentProfileItem(uid: uid, name: name)
+        if let deviceInteraction {
+            deviceInteraction.present { _ in
+                ReaderChapterCommentProfileScreen(item: item, dependencies: forumDependencies,
+                                                  appModel: appModel, discussionWorkTIDs: discussionWorkTIDs)
+            }
+        } else { profileItem = item }
     }
 
     private func openImage(_ comment: ChapterComment, blockID: String) {
         guard let target else { return }
-        imageBrowserRequest = ReaderChapterCommentImageGallery.request(comment: comment, target: target, selectedBlockID: blockID)
+        let request = ReaderChapterCommentImageGallery.request(comment: comment, target: target, selectedBlockID: blockID)
+        if let deviceInteraction, let request {
+            deviceInteraction.present { id in
+                ImageBrowserView(items: request.items, initialItemID: request.initialItemID,
+                    mode: request.items.count == 1 ? .single : .multiple, onDismiss: { deviceInteraction.finish(id) })
+            }
+        } else { imageBrowserRequest = request }
     }
 }
 
@@ -677,7 +756,7 @@ private struct ReaderChapterCommentRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Button {
+                ReaderRemoteButton {
                     if let uid = comment.authorUID { openProfile(uid, comment.authorName) }
                 } label: {
                     HStack(spacing: 8) {
@@ -701,7 +780,7 @@ private struct ReaderChapterCommentRow: View {
                 Spacer(minLength: 8)
                 ReaderChapterCommentSourceBadge(source: comment.source)
                 if let originalPostURL {
-                    Button {
+                    ReaderRemoteButton {
                         openOriginalPost(originalPostURL)
                     } label: {
                         Image(systemName: "arrow.up.forward.square")
@@ -773,7 +852,7 @@ private struct ReaderChapterCommentFooter: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let navigationAction {
-                    Button(action: navigationAction.perform) {
+                    ReaderRemoteButton(action: navigationAction.perform) {
                         HStack(spacing: 4) {
                             Text(navigationAction.title)
                                 .font(.footnote)
@@ -793,7 +872,7 @@ private struct ReaderChapterCommentFooter: View {
             }
             Spacer(minLength: 0)
             if let onReply {
-                Button(action: onReply) {
+                ReaderRemoteButton(action: onReply) {
                     Text(L10n.string("reader.comments"))
                         .font(.footnote)
                         .fixedSize()
@@ -816,7 +895,7 @@ struct ReaderChapterCommentComposeBar: View {
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-            Button(action: compose) {
+            ReaderRemoteButton(action: compose) {
                 Label(L10n.string("reader.comment_composer.write"), systemImage: "square.and.pencil")
                     .font(.callout.weight(.medium))
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -872,7 +951,7 @@ struct ReaderChapterCommentBody: View {
                             prefix: block.id == contentBlocks.first?.id ? replyingToName.map { replyPrefix($0) } : nil
                         )
                     case .image:
-                        Button { onImageTap(block.id) } label: {
+                        ReaderRemoteButton { onImageTap(block.id) } label: {
                             Label(L10n.string("reader.comment_view_image"), systemImage: "photo")
                                 .font(.body)
                                 .frame(minHeight: 44, alignment: .leading)
@@ -916,6 +995,7 @@ private struct ReaderChapterCommentProfileItem: Identifiable {
 
 private struct ReaderChapterCommentProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerDeviceDismiss) private var dismissDevice
     @State private var navigator: ForumDestinationNavigator
     let item: ReaderChapterCommentProfileItem
     let appModel: YamiboAppModel
@@ -934,7 +1014,9 @@ private struct ReaderChapterCommentProfileScreen: View {
                                    navigator: navigator, appModel: appModel)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.done"), action: { dismiss() })
+                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.done")) {
+                            if let dismissDevice { dismissDevice() } else { dismiss() }
+                        }
                     }
                 }
         }

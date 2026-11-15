@@ -55,6 +55,7 @@ private struct SelectableCardRowModifier: ViewModifier {
                 // on touch-down like every other pressable card.
                 Button(action: onTap) { card }
                     .buttonStyle(PressableCardStyle())
+                    .readerRemoteActivate(onTap)
             } else {
                 card
             }

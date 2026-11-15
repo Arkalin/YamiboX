@@ -4,6 +4,7 @@ import YamiboXCore
 
 #if os(iOS)
 struct MangaReaderDownloadSheet: View {
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @StateObject private var model: MangaReaderDownloadViewModel
     @State private var queueViewModel: DownloadQueueViewModel
     @State private var managementViewModel: DownloadManagementViewModel
@@ -39,6 +40,12 @@ struct MangaReaderDownloadSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if dismissPanel != nil {
+                        HStack {
+                            Spacer()
+                            downloadQueueButton
+                        }
+                    }
                     if let errorMessage = model.errorMessage {
                         MangaReaderDownloadErrorBanner(message: errorMessage, details: model.errorDetails)
                     }
@@ -59,6 +66,7 @@ struct MangaReaderDownloadSheet: View {
                     }
                 }
                 .padding(16)
+                .readerRemoteScrollContent()
             }
             .background(YamiboColors.SystemSurface.groupedBackground)
             .navigationTitle(
@@ -68,40 +76,28 @@ struct MangaReaderDownloadSheet: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
+                if dismissPanel == nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
                     }
-                    .accessibilityLabel(L10n.string("common.close"))
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    ReaderDownloadQueueToolbarButton(
-                        entryCount: model.downloadQueueEntryCount,
-                        action: {
-                            isQueuePresented = true
-                        }
-                    ) { isActive in
-                        ReaderDownloadQueueIcon(isActive: isActive)
-                            .anchorPreference(key: MangaReaderDownloadQueueButtonAnchorKey.self, value: .bounds) { $0 }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        downloadQueueButton
                     }
                 }
 
-                if isSelecting && usesSystemSelectionBottomToolbar {
+                if dismissPanel == nil && isSelecting && usesSystemSelectionBottomToolbar {
                     ToolbarItem(placement: .bottomBar) {
                         SelectionBottomToolbar(actions: selectionActions)
                     }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && !usesSystemSelectionBottomToolbar {
+                if isSelecting && (dismissPanel != nil || !usesSystemSelectionBottomToolbar) {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
             }
-            .sheet(isPresented: $isQueuePresented) {
+            .readerPanel(isPresented: $isQueuePresented) {
                 DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .task {
@@ -122,7 +118,7 @@ struct MangaReaderDownloadSheet: View {
                     clearOnDismiss: { model.clearPrompt() }
                 )
             ) {
-                Button(L10n.string("common.ok"), role: .cancel) {
+                ReaderRemoteButton(L10n.string("common.ok"), role: .cancel) {
                     model.clearPrompt()
                 }
             }
@@ -142,6 +138,15 @@ struct MangaReaderDownloadSheet: View {
                     }
                     .allowsHitTesting(false)
                 }
+        }
+    }
+
+    private var downloadQueueButton: some View {
+        ReaderDownloadQueueToolbarButton(entryCount: model.downloadQueueEntryCount, action: {
+            isQueuePresented = true
+        }) { isActive in
+            ReaderDownloadQueueIcon(isActive: isActive)
+                .anchorPreference(key: MangaReaderDownloadQueueButtonAnchorKey.self, value: .bounds) { $0 }
         }
     }
 

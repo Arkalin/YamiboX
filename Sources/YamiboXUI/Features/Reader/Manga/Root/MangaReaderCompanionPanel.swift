@@ -139,7 +139,7 @@ private struct MangaReaderDirectoryCompanion: View {
         } else if isEmbedded {
             MangaDirectoryUnavailableContent()
         } else {
-            MangaDirectoryUnavailableSheet()
+            MangaDirectoryUnavailableSheet(showsRemoteToolbarClose: true)
         }
     }
 }

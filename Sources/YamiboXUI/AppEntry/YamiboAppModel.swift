@@ -73,6 +73,8 @@ public final class YamiboAppModel {
     private(set) var isReaderCoverVisible = false
     private(set) var isOpeningMangaReader = false
     var mangaOpenFailure: LoadFailureDetails?
+    var externalDisplayFailure = false
+    var externalReader: ReaderExternalDisplayCoordinator? { windowCoordinator?.externalReader }
     @ObservationIgnored let mangaReaderOpenValidator: MangaReaderOpenValidator
     @ObservationIgnored private var mangaOpenTask: Task<Void, Never>?
     @ObservationIgnored private var mangaOpenRequestID: UUID?
@@ -147,6 +149,10 @@ public final class YamiboAppModel {
             acceptsInput: { [weak windowCoordinator] in
                 guard let windowID else { return true }
                 return windowCoordinator?.acceptsPeripheralInput(windowID: windowID) == true
+            },
+            acceptsCaptureInput: { [weak windowCoordinator] in
+                guard let windowID else { return true }
+                return windowCoordinator?.acceptsPeripheralCapture(windowID: windowID) == true
             }
         )
         self.webSessionCoordinator = webSessionCoordinator ?? ForumWebSessionCoordinator(
@@ -321,7 +327,7 @@ public final class YamiboAppModel {
         claimedForumSearchRequestID = nil
         clipboardForumLinkPrompt = nil
         forumContentRefresh.reset()
-        (currentReaderSession ?? presentedReaderSession)?.close()
+        (currentReaderSession ?? presentedReaderSession)?.close(savingProgress: false)
         appContinuity.readerRouteDismissed()
         accountGeneration = UUID()
     }
@@ -526,7 +532,8 @@ public final class YamiboAppModel {
         bookOpeningTransition: BookOpeningTransition? = nil,
         presentation: ReaderSessionPresentation = .fullScreen
     ) -> ReaderSession {
-        ReaderSession(
+        let destinations = appContext.forumNavigationDependencies.destinations
+        return ReaderSession(
             content: content,
             dependencies: ReaderSessionDependencies(
                 forum: appContext.forumDependencies,
@@ -547,6 +554,28 @@ public final class YamiboAppModel {
                     self.isReaderCoverVisible = true
                     self.presentedReaderSession = session
                     session.promoteToFullScreen(content, mangaProjection: projection)
+                },
+                makeNovelReader: { [weak self] context, report in
+                    let dependencies = destinations.novelReader
+                    let model = NovelReaderViewModel(
+                        context: context,
+                        dependencies: dependencies,
+                        initialSettings: self?.bootstrapState?.settings.novelReader,
+                        fontLibrary: self?.readerFontLibrary,
+                        imagePipeline: self?.imagePipeline,
+                        onReaderResumeRouteChange: report
+                    )
+                    return NovelReaderSessionState(model: model, dependencies: dependencies)
+                },
+                makeMangaReader: { [weak self] context, projection, report in
+                    let model = MangaReaderViewModel(
+                        context: context,
+                        dependencies: destinations.mangaReader,
+                        initialProjection: projection,
+                        imagePipeline: self?.imagePipeline,
+                        onReaderResumeRouteChange: report
+                    )
+                    return MangaReaderSessionState(model: model)
                 }
             ),
             bookOpeningTransition: bookOpeningTransition,
@@ -583,6 +612,9 @@ public final class YamiboAppModel {
     }
 
     private func finishReaderSession(_ session: ReaderSession) {
+        if let windowID {
+            externalReader?.withdraw(session: session, windowID: windowID, requireActivation: true)
+        }
         deactivateReaderSession(session)
         if presentedReaderSession === session { presentedReaderSession = nil }
     }

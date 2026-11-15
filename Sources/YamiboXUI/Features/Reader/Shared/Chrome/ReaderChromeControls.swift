@@ -33,6 +33,7 @@ private struct ReaderChromeFadeVisibilityModifier: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
+            .environment(\.readerRemoteVisible, isVisible)
             .animation(.easeInOut(duration: presentation.duration), value: isVisible)
     }
 }
@@ -55,6 +56,7 @@ private struct ReaderChromeRowVisibilityModifier: ViewModifier {
             ))
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
+            .environment(\.readerRemoteVisible, isVisible)
             .animation(
                 reduceMotion
                     ? .easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)
@@ -69,6 +71,7 @@ private struct ReaderChromeRowRevealModifier: ViewModifier, Animatable {
     let index: Int
     let count: Int
     let reduceMotion: Bool
+    @Environment(\.readerRemoteVisible) private var remoteVisible
 
     // Interpolate the shared timeline, not the independently eased row values.
     nonisolated var animatableData: CGFloat {
@@ -84,6 +87,7 @@ private struct ReaderChromeRowRevealModifier: ViewModifier, Animatable {
             .scaleEffect(frame.scale, anchor: .bottomTrailing)
             .offset(y: frame.offsetY)
             .opacity(frame.opacity)
+            .environment(\.readerRemoteVisible, remoteVisible && progress >= 0.98)
     }
 }
 
@@ -102,6 +106,7 @@ struct ReaderChromeIconButton: View {
         }
         .readerChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)
+        .readerRemoteActivate(action)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
     }
@@ -122,6 +127,7 @@ struct ReaderChromeCircleButton: View {
                 .frame(width: 34, height: 34)
         }
         .buttonBorderShape(.circle)
+        .readerRemoteActivate(action)
         .readerChromeButtonStyle(prominent: prominent, tint: tint)
         .opacity(isEnabled ? 1 : 0.34)
         .disabled(!isEnabled)
@@ -161,6 +167,7 @@ struct ReaderChromeHistoryButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(ReaderBooksPressButtonStyle())
+        .readerRemoteActivate(action)
         .accessibilityLabel(title)
     }
 
@@ -261,6 +268,7 @@ struct ReaderChromeCapsuleButton: View {
         }
         .buttonStyle(ReaderBooksPressButtonStyle())
         .opacity(isEnabled ? 1 : 0.34)
+        .readerRemoteActivate(action)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
     }
@@ -276,6 +284,7 @@ struct ReaderToolbarIconButton: View {
             Label(title, systemImage: systemName)
                 .labelStyle(.iconOnly)
         }
+        .readerRemoteActivate(action)
         .accessibilityLabel(title)
     }
 }

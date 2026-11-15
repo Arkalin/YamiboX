@@ -5,6 +5,14 @@ import YamiboXCore
 /// and callback scheduler. No interaction state is shared between reader sessions.
 @MainActor
 enum NovelReaderImageInteraction {
+    static func tapAtExternalPoint(_ point: CGPoint, in window: UIWindow, isChromeVisible: Bool,
+                                   onHideChrome: () -> Void, onOpen: (URL, String?) -> Void) -> Bool {
+        guard let image = window.firstDescendant(ofType: NovelReaderVerticalViewportImageView.self, containing: point),
+              let payload = image.imageTapPayloadIfHit(at: window.convert(point, to: image)) else { return false }
+        if isChromeVisible { onHideChrome() } else { onOpen(payload.url, payload.title) }
+        return true
+    }
+
     static func tap(
         imageView: NovelReaderVerticalViewportImageView,
         at location: CGPoint,

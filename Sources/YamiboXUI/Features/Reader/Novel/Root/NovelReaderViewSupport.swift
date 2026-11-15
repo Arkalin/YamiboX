@@ -183,7 +183,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
                     auxiliaryContent(sheet)
                 }
             })
-            .sheet(item: $presentedSheet.modalSheet) { sheet in
+            .readerPanel(item: $presentedSheet.modalSheet) { sheet in
                 auxiliaryContent(sheet)
             }
             .fullScreenCover(item: $forumThreadOverlayItem) { item in
@@ -373,7 +373,7 @@ struct NovelReaderOfflineFallbackBanner: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
-                Button(action: retry) {
+                ReaderRemoteButton(action: retry) {
                     Label(retryTitle, systemImage: retrySystemName)
                         .labelStyle(.iconOnly)
                 }
@@ -383,7 +383,7 @@ struct NovelReaderOfflineFallbackBanner: View {
                 LoadFailureDetailsButton(details: details, message: message)
             }
 
-            Button(action: dismiss) {
+            ReaderRemoteButton(action: dismiss) {
                 Label(L10n.string("common.close"), systemImage: "xmark")
                     .labelStyle(.iconOnly)
             }

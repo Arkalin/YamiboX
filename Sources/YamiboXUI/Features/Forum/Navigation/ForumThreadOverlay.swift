@@ -18,6 +18,7 @@ struct ForumThreadOverlayItem: Identifiable, Equatable {
 /// presenting context keeps running underneath. A cover has no
 /// swipe-to-dismiss, so the root keeps an explicit close button.
 struct ForumThreadOverlayScreen: View {
+    @Environment(\.readerDeviceDismiss) private var dismissDevice
     @Environment(\.dismiss) private var dismiss
     @State private var navigator: ForumDestinationNavigator
 
@@ -69,7 +70,7 @@ struct ForumThreadOverlayScreen: View {
                     ReaderToolbarIconButton(
                         systemName: "xmark",
                         title: L10n.string("common.done"),
-                        action: { dismiss() }
+                        action: { if let dismissDevice { dismissDevice() } else { dismiss() } }
                     )
                 }
             }

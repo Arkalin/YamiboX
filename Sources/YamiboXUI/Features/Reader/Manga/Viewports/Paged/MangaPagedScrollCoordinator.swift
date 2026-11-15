@@ -277,7 +277,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         lastAppliedPlacementRevision = parent.viewportPlacement?.revision
         pendingInitialSpreadIndex = nil
         collectionView.alpha = 1
-        publishCurrentPageIfNeeded(from: collectionView)
+        // The intended image may be the second half of the restored spread.
+        // Don't turn initial placement into a new page selection.
+        lastReportedGlobalIndex = parent.plan.globalIndex(forSpreadAt: targetIndex)
         updateGestureState(in: collectionView)
     }
 
@@ -385,7 +387,8 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             allowsUnzoomedSurfacePan: true,
             spreadSurfaceInteraction: spreadSurfaceInteraction(for: spread),
             likedPageIDs: parent.likedPageIDs,
-            colorScheme: parent.colorScheme
+            colorScheme: parent.colorScheme,
+            handoff: parent.handoff
         )
         cell.resetPageTurnVisuals()
     }

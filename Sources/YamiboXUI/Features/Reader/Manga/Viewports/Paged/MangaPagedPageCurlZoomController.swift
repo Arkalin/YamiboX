@@ -21,6 +21,12 @@ final class MangaPagedPageCurlZoomController {
 
     func updatePageCurlSpreadZoomAvailability(in container: MangaPagedPageCurlContainerViewController) {
         let parent = coordinator.parent
+        let spread = parent.plan.spread(at: coordinator.selectionIndex)
+        container.zoomView.restoreFocus = {
+            if let id = spread?.leftPage?.id, let focus = parent.handoff?.takeFocus(for: id, horizontalHalf: 0) { return focus }
+            if let id = spread?.rightPage?.id { return parent.handoff?.takeFocus(for: id, horizontalHalf: 1) }
+            return nil
+        }
         container.zoomView.configure(runtime: runtime,
             configuration: MangaInteractionConfiguration(chromeVisible: parent.isChromeVisible,
                 zoomEnabled: parent.zoomEnabled && parent.sequence.usesTwoPageSpread, allowsUnzoomedPan: false),

@@ -16,6 +16,7 @@ struct AppThemeSwitch<Label: View>: View {
         Toggle(isOn: $isOn) { label }
             .toggleStyle(.switch)
             .tint(theme.switchTint)
+            .readerRemoteActivate { isOn.toggle() }
     }
 }
 

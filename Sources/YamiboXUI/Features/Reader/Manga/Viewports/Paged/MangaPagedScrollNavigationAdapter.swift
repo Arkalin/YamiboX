@@ -64,6 +64,12 @@ final class MangaPagedScrollNavigationAdapter {
         route(.control(step), in: collection)
     }
 
+    func routeRemoteTap(_ point: CGPoint, in collection: UICollectionView) {
+        guard let window = collection.window else { return }
+        let local = collection.convert(point, from: window)
+        route(.tap(PhysicalZone.at(local, in: collection.bounds)), in: collection)
+    }
+
     private func navigationStep(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> NavigationStep? {
         guard let coordinator, !coordinator.parent.plan.spreads.isEmpty, pan.numberOfTouches <= 1 else { return nil }
         let translation = pan.translation(in: collection)
@@ -114,7 +120,7 @@ final class MangaPagedScrollNavigationAdapter {
             zoomEnabled: parent.zoomEnabled, usesTwoPages: parent.plan.usesTwoPageSpread)
     }
 
-    private func currentSurface(in collection: UICollectionView) -> MangaSurfaceRuntime? {
+    func currentSurface(in collection: UICollectionView) -> MangaSurfaceRuntime? {
         guard let coordinator, let index = coordinator.currentSpreadIndex(in: collection),
               let spread = coordinator.parent.plan.spread(at: index) else { return nil }
         return coordinator.parent.plan.usesTwoPageSpread

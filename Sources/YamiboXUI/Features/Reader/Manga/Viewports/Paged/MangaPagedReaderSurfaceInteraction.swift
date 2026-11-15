@@ -19,8 +19,21 @@ struct MangaPagedReaderSurfaceInteractionIdentity: Equatable {
 }
 
 /// Routes external controls to the mounted backend; absence never means permission to navigate.
+@MainActor
 final class MangaPagedControlPageTurnBridge {
+    struct Sample {
+        let page: MangaReaderPageProjection
+        let placement: MangaNovelReaderViewportPlacement?
+        let focus: MangaViewportFocus?
+    }
+
     var route: ((NavigationStep) -> Void)?
+    var tap: ((CGPoint) -> Void)?
+    var pagedSurface: (() -> MangaSurfaceRuntime?)?
+    var remotePanSurface: MangaSurfaceRuntime?
+    var scroll: ((CGPoint) -> Void)?
+    var zoom: ((CGFloat, CGPoint) -> Void)?
+    var capturePosition: (() -> Sample?)?
 
     func requestPageTurn(_ delta: Int) {
         guard let step = NavigationStep(rawValue: delta) else { return }

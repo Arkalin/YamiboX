@@ -57,6 +57,7 @@ struct ChapterCommentFilterSettingsSheet: View {
 }
 
 struct ChapterCommentRulesView: View {
+    @Environment(\.readerRemoteInput) private var remoteInput
     let viewModel: SettingsReadingViewModel
     let scope: ChapterCommentFilterScope
     @State private var editingRule: ChapterCommentFilterRule?
@@ -72,12 +73,13 @@ struct ChapterCommentRulesView: View {
                 .accessibilityIdentifier("chapter-comment-filter-enabled")
             }
             Section(L10n.string("settings.chapter_comments.rules")) {
+                if remoteInput != nil { addRuleButton }
                 if viewModel.chapterComments[scope].rules.isEmpty {
                     Text(L10n.string("settings.chapter_comments.no_rules"))
                         .foregroundStyle(.secondary)
                 }
                 ForEach(viewModel.chapterComments[scope].rules) { rule in
-                    Button { editingRule = rule } label: {
+                    ReaderRemoteButton { editingRule = rule } label: {
                         HStack(spacing: 12) {
                             Text(rule.pattern)
                                 .font(.body.monospaced())
@@ -91,11 +93,12 @@ struct ChapterCommentRulesView: View {
                         .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("chapter-comment-rule-\(rule.id)")
+                    .readerRemoteScrollContent()
                 }
                 .onDelete { viewModel.deleteCommentRules(at: $0, scope: scope) }
             }
             Section {
-                Button(role: .destructive) { confirmsReset = true } label: {
+                ReaderRemoteButton(role: .destructive) { confirmsReset = true } label: {
                     Label(L10n.string("settings.chapter_comments.reset"), systemImage: "arrow.counterclockwise")
                 }
             }
@@ -104,30 +107,34 @@ struct ChapterCommentRulesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .disabled(viewModel.isBusy || viewModel.pendingCommentRuleEdits > 0)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { editingRule = .init(pattern: "") } label: {
-                    Label(L10n.string("settings.chapter_comments.add"), systemImage: "plus")
+            if remoteInput == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    addRuleButton
                 }
-                .accessibilityIdentifier("chapter-comment-add-rule")
-                .disabled(viewModel.isBusy || viewModel.pendingCommentRuleEdits > 0)
             }
         }
-        .confirmationDialog(L10n.string("settings.chapter_comments.reset_confirmation"),
-                            isPresented: $confirmsReset, titleVisibility: .visible) {
-            Button(L10n.string("settings.chapter_comments.reset"), role: .destructive) {
-                viewModel.resetCommentRules(scope: scope)
-            }
-            Button(L10n.string("common.cancel"), role: .cancel) {}
+        .destructiveConfirmationDialog(L10n.string("settings.chapter_comments.reset_confirmation"),
+                            isPresented: $confirmsReset, actionTitle: L10n.string("settings.chapter_comments.reset")) {
+            viewModel.resetCommentRules(scope: scope)
         }
-        .sheet(item: $editingRule, onDismiss: { viewModel.isEditingCommentRule = false }) { rule in
+        .readerDeviceSheet(item: $editingRule) { rule in
             ChapterCommentRuleEditor(viewModel: viewModel, scope: scope, rule: rule)
         }
         .onChange(of: editingRule) { _, rule in viewModel.isEditingCommentRule = rule != nil }
+    }
+
+    private var addRuleButton: some View {
+        ReaderRemoteButton { editingRule = .init(pattern: "") } label: {
+            Label(L10n.string("settings.chapter_comments.add"), systemImage: "plus")
+        }
+        .accessibilityIdentifier("chapter-comment-add-rule")
+        .disabled(viewModel.isBusy || viewModel.pendingCommentRuleEdits > 0)
     }
 }
 
 private struct ChapterCommentRuleEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerDeviceDismiss) private var dismissDevice
     let viewModel: SettingsReadingViewModel
     let scope: ChapterCommentFilterScope
     let rule: ChapterCommentFilterRule
@@ -181,7 +188,7 @@ private struct ChapterCommentRuleEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("common.cancel")) { dismiss() }.disabled(isSaving)
+                    Button(L10n.string("common.cancel"), action: close).disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("common.save")) { Task { await save() } }
@@ -193,6 +200,8 @@ private struct ChapterCommentRuleEditor: View {
             .interactiveDismissDisabled(isSaving)
             .task(id: [pattern, testText]) { await validate() }
         }
+        .onAppear { viewModel.isEditingCommentRule = true }
+        .onDisappear { viewModel.isEditingCommentRule = false }
     }
 
     private func validate() async {
@@ -217,12 +226,16 @@ private struct ChapterCommentRuleEditor: View {
         saveError = nil
         do {
             let saved = try await viewModel.saveCommentRule(.init(id: rule.id, pattern: pattern), scope: scope)
-            if saved { dismiss() }
+            if saved { close() }
             else {
                 saveError = viewModel.errorMessage ?? L10n.string("common.operation_failed")
                 viewModel.errorMessage = nil
             }
         } catch { saveError = error.localizedDescription }
+    }
+
+    private func close() {
+        if let dismissDevice { dismissDevice() } else { dismiss() }
     }
 
     private func matchTitle(_ match: ChapterCommentFilterEngine.Match) -> String {

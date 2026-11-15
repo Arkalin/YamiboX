@@ -11,6 +11,7 @@ struct NovelReaderVerticalContent: View {
     let isChromeVisible: Bool
     let verticalRestore: NovelReaderVerticalRestoreCoordinator
     let verticalScrollCoordinator: NovelReaderVerticalScrollCoordinator
+    let viewport: ReaderViewportLifetime
     let annotations: NovelReaderAnnotationCoordinator
     let searchHighlightController: NovelReaderSearchHighlightController
     let verticalTapSuppression: NovelReaderVerticalTapSuppression
@@ -43,6 +44,7 @@ struct NovelReaderVerticalContent: View {
             likedImageAnchors: annotations.likedImageAnchors,
             isChromeVisible: isChromeVisible,
             onVisibleSurfaceIdentitiesChange: { surfaceIdentities in
+                guard viewport.acceptsGeometry else { return }
                 model.updateNovelTextViewportVisibleSurfaceIdentities(surfaceIdentities)
             },
             onScrollRequestHandled: { request in
@@ -53,6 +55,7 @@ struct NovelReaderVerticalContent: View {
                 )
             },
             onScrollViewReady: { scrollView in
+                guard viewport.acceptsGeometry else { return }
                 verticalScrollCoordinator.attach(scrollView: scrollView)
                 verticalScrollCoordinator.onBoundaryPullRelease = { direction in
                     Task { @MainActor in

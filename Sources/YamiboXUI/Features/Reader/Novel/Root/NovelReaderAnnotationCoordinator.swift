@@ -158,10 +158,11 @@ final class NovelReaderAnnotationCoordinator {
         }
     }
 
-    func saveNote(for item: LikeItem, note: String?) async {
+    @discardableResult
+    func saveNote(for item: LikeItem, note: String?) async -> Bool {
         await operations.perform {
             try await dependencies.annotations.updateNote(id: item.id, note: note)
-        }
+        } != nil
     }
 
     func resolveSortKeys() async {

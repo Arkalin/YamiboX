@@ -253,6 +253,7 @@ struct NovelReaderBottomChrome: View {
         }
         .buttonBorderShape(.capsule)
         .readerBottomChromeButtonStyle(tint: appTheme.controlAccent)
+        .readerRemoteActivate(handler)
         .opacity(action.isDisabled ? 0.34 : 1)
         .disabled(action.isDisabled)
         .accessibilityLabel(title)
@@ -282,11 +283,13 @@ struct NovelReaderBottomChrome: View {
                 },
                 onEndScrub: {
                     commitHorizontalCapsuleScrub()
-                }
+                },
+                onCancelScrub: { scrubState.reset() }
             )
             .opacity(shouldHideDirectoryCapsule ? 0 : 1)
             .allowsHitTesting(!shouldHideDirectoryCapsule)
             .accessibilityHidden(shouldHideDirectoryCapsule)
+            .environment(\.readerRemoteVisible, !shouldHideDirectoryCapsule && isVisible)
             .readerChromeRowVisibility(isVisible, index: 0, count: stackedCapsuleCount + 1)
 
             // Only exists once the work has something to show — an entry point

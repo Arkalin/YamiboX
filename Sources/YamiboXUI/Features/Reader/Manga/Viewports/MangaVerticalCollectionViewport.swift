@@ -10,6 +10,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let currentPageIndex: Int?
     let viewportPlacement: MangaNovelReaderViewportPlacement?
     let controlScrollStep: ReaderControlScrollStepRequest?
+    var viewportBridge: MangaPagedControlPageTurnBridge? = nil
     let imageLoader: MangaReaderPageImageLoader
     let isChromeVisible: Bool
     let zoomEnabled: Bool
@@ -19,6 +20,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
+    @Environment(\.mangaViewportHandoff) var handoff
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -29,6 +31,16 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     func makeViewportView(coordinator: Coordinator) -> MangaVerticalNativeViewport {
         let view = MangaVerticalNativeViewport()
         coordinator.attach(to: view)
+        viewportBridge?.capturePosition = { [weak coordinator] in coordinator?.capturePosition() }
+        viewportBridge?.scroll = { [weak coordinator, weak view] delta in
+            coordinator?.placementPageID = nil
+            view?.panFromTrackpad(delta)
+        }
+        viewportBridge?.zoom = { [weak coordinator, weak view] ratio, point in
+            guard coordinator?.parent.zoomEnabled == true else { return }
+            coordinator?.placementPageID = nil
+            view?.zoomFromTrackpad(ratio: ratio, windowPoint: point)
+        }
         return view
     }
 
@@ -64,7 +76,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         // A programmatic jump owns the reading position until the user moves.
         // At a clamped bottom edge, another fully visible page can otherwise
         // win the area heuristic and immediately overwrite the requested page.
-        private var placementPageID: String?
+        fileprivate var placementPageID: String?
         private var lastAppliedPlacementRevision: Int?
         private var lastAppliedControlScrollRevision: Int?
         private var pendingControlScrollTarget: (y: CGFloat, timestamp: TimeInterval)?
@@ -294,6 +306,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 lastAppliedPlacementRevision = parent.viewportPlacement?.revision
                 retainPlacementTarget(at: index)
                 view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero)
+                restoreHandoffFocus(in: view)
                 view.alpha = 1
             } else if let placement = parent.viewportPlacement, placement.revision != lastAppliedPlacementRevision {
                 lastAppliedPlacementRevision = placement.revision
@@ -305,6 +318,33 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             }
             updateWindow()
             publishCurrentPageIfNeeded()
+        }
+
+        private func restoreHandoffFocus(in view: MangaVerticalNativeViewport) {
+            guard let focus = parent.handoff?.pendingFocus,
+                  let point = logicalLayout.contentPoint(for: .init(
+                    pageID: focus.pageID, normalizedPoint: focus.point, viewportPoint: .zero
+                  )) else { return }
+            parent.handoff?.pendingFocus = nil
+            placementPageID = nil
+            view.place(contentPoint: point, at: CGPoint(x: view.bounds.midX - view.bounds.minX,
+                                                        y: view.bounds.midY - view.bounds.minY),
+                       zoomFactor: focus.factor)
+        }
+
+        func capturePosition() -> MangaPagedControlPageTurnBridge.Sample? {
+            guard pendingInitialPageIndex == nil, let view = viewport else { return nil }
+            let visible = view.snapshot.visibleRect
+            let anchor = logicalLayout.anchor(at: CGPoint(x: visible.midX, y: visible.midY), viewportPoint: .zero)
+            guard let index = pendingReportedGlobalIndex ?? lastReportedGlobalIndex,
+                  parent.pages.indices.contains(index) else { return nil }
+            let page = parent.pages[index]
+            let focus = anchor.flatMap { anchor in
+                anchor.pageID == page.id
+                    ? MangaViewportFocus(pageID: page.id, point: anchor.normalizedPoint, factor: view.normalizedZoomFactor)
+                    : nil
+            }
+            return .init(page: page, placement: parent.viewportPlacement, focus: focus)
         }
 
         private func retainPlacementTarget(at index: Int?) {

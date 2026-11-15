@@ -28,6 +28,7 @@ struct ForumPostReplyFields: View {
     let form: ForumForm?
     let editorRegistry: ForumEditorRegistry
     var isEmbedded = false
+    var autofocus = false
     var onSubmissionSucceeded: ((TransientFeedback) -> Void)?
     var onAttachmentActivityChanged: ((Bool) -> Void)?
     var onURLTap: ((URL) -> Void)?
@@ -38,6 +39,15 @@ struct ForumPostReplyFields: View {
                 ForumFormPageView(model: session, document: document, composerForm: form,
                                   editorRegistry: editorRegistry, onSubmissionSucceeded: onSubmissionSucceeded, isEmbedded: isEmbedded,
                                   onAttachmentActivityChanged: onAttachmentActivityChanged, onURLTap: { onURLTap?($0) })
+                    .task(id: form.fields.map(\.id)) {
+                        if autofocus {
+                            for _ in 0..<10 {
+                                if editorRegistry.focusFirstEditor(in: form) { break }
+                                try? await Task.sleep(for: .milliseconds(40))
+                                if Task.isCancelled { break }
+                            }
+                        }
+                    }
             } else if session.isLoading || session.page == nil && session.errorMessage == nil {
                 ContentLoadingView(layout: .fills)
             } else {

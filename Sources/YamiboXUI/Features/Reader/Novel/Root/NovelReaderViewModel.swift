@@ -30,6 +30,7 @@ public final class NovelReaderViewModel {
         )
     )
     var initialPresentationPhase: NovelReaderInitialPresentationPhase { preparation.phase }
+    var committedViewportLayout: NovelReaderLayout { preparation.layout }
     public private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -422,6 +423,9 @@ public final class NovelReaderViewModel {
     }
 
     func selectPagedViewportIndex(_ selectionIndex: Int) {
+        // UIKit can echo the new selection while mounting a reflowed spread.
+        // Only a genuine turn replaces the semantic anchor.
+        guard selectionIndex != pagedViewportSelectionIndex else { return }
         let targetSurfaceIndex = isTwoPageSpreadActive
             ? progressSurfaceIndex(forSpreadIndex: selectionIndex)
             : selectionIndex
@@ -493,8 +497,23 @@ public final class NovelReaderViewModel {
         imagePrefetchCoordinator.cancel()
         imagePrefetchSuspendedPosition = nil
         loading.close()
+        chapterCommentsModule.cancelLoading()
         navigation.resetHistory()
         publishedState.publish(nil, cache: presentationCache)
+    }
+
+    func finish(savingProgress: Bool) {
+        if savingProgress { flushViewportSnapshot() }
+        close()
+    }
+
+    func flushViewportSnapshot() {
+        guard !context.isPreview, novelReaderPresentation != nil else { return }
+        let snapshot = currentProgressSnapshot()
+        let date = Date.now
+        Task { [progressSync] in
+            try? await progressSync.flush(.novel(snapshot), activityDate: date)
+        }
     }
 
     var currentChapterIndex: Int? {
@@ -1137,6 +1156,7 @@ public final class NovelReaderViewModel {
     private func scheduleProgressSync() {
         guard !context.isPreview, novelReaderPresentation != nil else { return }
         let snapshot = currentProgressSnapshot()
+        let date = Date.now
         let resumeContext = resumeContext(for: snapshot)
         pendingResumeRouteTask?.cancel()
         pendingResumeRouteTask = Task { [weak self] in
@@ -1145,7 +1165,7 @@ public final class NovelReaderViewModel {
             await self?.persistNovelResumeRoute(resumeContext)
         }
         Task { [progressSync] in
-            await progressSync.queue(.novel(snapshot))
+            await progressSync.queue(.novel(snapshot), activityDate: date)
         }
     }
 
@@ -1153,12 +1173,13 @@ public final class NovelReaderViewModel {
         // Closing a failed/unprepared reader must not persist its fallback page 1.
         guard novelReaderPresentation != nil else { return context }
         let snapshot = currentProgressSnapshot()
+        let date = Date.now
         let resumeContext = resumeContext(for: snapshot)
         guard !context.isPreview else { return resumeContext }
         pendingResumeRouteTask?.cancel()
         pendingResumeRouteTask = nil
         await persistNovelResumeRoute(resumeContext)
-        try? await progressSync.flush(.novel(snapshot))
+        try? await progressSync.flush(.novel(snapshot), activityDate: date)
         return resumeContext
     }
 

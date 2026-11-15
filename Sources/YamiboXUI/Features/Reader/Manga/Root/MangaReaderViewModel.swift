@@ -142,6 +142,7 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private var committedSettings = MangaReaderSettings()
     @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
     @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
+    @ObservationIgnored private var progressRevision = UUID()
     @ObservationIgnored private var downloadOwnerName: String?
     @ObservationIgnored private lazy var lifecycle: MangaReaderLifecycleCoordinator = MangaReaderLifecycleCoordinator { [weak self] in
         guard let self else { return }
@@ -323,7 +324,22 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private var initialProjection: MangaReaderProjection?
 
     func close() {
+        progressRevision = UUID()
         lifecycle.close()
+    }
+
+    func finish(savingProgress: Bool) {
+        if savingProgress { flushViewportSnapshot() }
+        close()
+    }
+
+    func flushViewportSnapshot() {
+        guard !context.isPreview, let snapshot = progressSnapshot(from: presentation) else { return }
+        progressRevision = UUID()
+        let date = Date.now
+        Task { [progressSync = dependencies.progressSync] in
+            try? await progressSync.flush(.manga(snapshot.progress), activityDate: date)
+        }
     }
 
     public func prepare() async {
@@ -414,6 +430,14 @@ public final class MangaReaderViewModel {
     }
 
     // MARK: - Page navigation
+
+    func updateCurrentPage(visiblePage: MangaReaderPageProjection, placement: MangaNovelReaderViewportPlacement?) {
+        guard case let .loaded(loaded) = presentation.state,
+              loaded.viewportPlacement == placement,
+              let index = loaded.pages.firstIndex(where: { $0.id == visiblePage.id }),
+              loaded.currentPageIndex != index else { return }
+        updateCurrentPage(globalIndex: index)
+    }
 
     public func updateCurrentPage(globalIndex: Int) {
         guard let workflow else { return }
@@ -910,9 +934,11 @@ public final class MangaReaderViewModel {
             return snapshot.resumeContext
         }
 
+        progressRevision = UUID()
+        let date = Date.now
         await onReaderResumeRouteChange(.manga(snapshot.resumeContext))
         do {
-            try await dependencies.progressSync.flush(.manga(snapshot.progress))
+            try await dependencies.progressSync.flush(.manga(snapshot.progress), activityDate: date)
         } catch {
             YamiboLog.sync.error("Failed to flush final manga reading progress on close: \(error.localizedDescription)")
         }
@@ -921,6 +947,16 @@ public final class MangaReaderViewModel {
 
     var currentResumeContext: MangaLaunchContext {
         progressSnapshot(from: presentation)?.resumeContext ?? context
+    }
+
+    var hasCurrentPage: Bool {
+        if case let .loaded(loaded) = presentation.state { return loaded.currentPage != nil }
+        return false
+    }
+
+    var viewportContentID: String {
+        guard case let .loaded(loaded) = presentation.state else { return "" }
+        return "\(loaded.readingPosition?.tid ?? "")#\(loaded.viewportPlacement?.revision ?? 0)#\(presentation.settings.readingMode)"
     }
 
     // MARK: - Adjacent prefetch
@@ -1045,10 +1081,13 @@ public final class MangaReaderViewModel {
         guard let snapshot else { return }
         lastQueuedProgressSnapshot = snapshot
         guard !context.isPreview else { return }
-        let progressSync = dependencies.progressSync
-        Task { [onReaderResumeRouteChange, snapshot, progressSync] in
+        let revision = UUID()
+        progressRevision = revision
+        let date = Date.now
+        Task { [weak self] in
+            guard let self, progressRevision == revision else { return }
             await onReaderResumeRouteChange(.manga(snapshot.resumeContext))
-            await progressSync.queue(.manga(snapshot.progress))
+            await dependencies.progressSync.queue(.manga(snapshot.progress), activityDate: date)
         }
     }
 

@@ -16,7 +16,7 @@ struct ReaderSettingsStepperButton<Palette: ReaderSettingsPalette>: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        ReaderRemoteButton(action: action) {
             Image(systemName: systemName)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(palette.primaryText)

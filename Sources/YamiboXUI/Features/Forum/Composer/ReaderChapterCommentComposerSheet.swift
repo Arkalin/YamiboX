@@ -11,20 +11,26 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
     @State private var submissionTask: Task<Void, Never>?
     let replyPlacement: ReaderChapterReplyPlacement
     let isNovel: Bool
+    let autofocus: Bool
     let onSubmitted: (TransientFeedback) -> Void
+    let onExit: (() -> Void)?
     let destination: (URL) -> Destination
 
     init(
         model: ReaderChapterCommentComposerModel,
         replyPlacement: ReaderChapterReplyPlacement,
         isNovel: Bool,
+        autofocus: Bool = false,
         onSubmitted: @escaping (TransientFeedback) -> Void,
+        onExit: (() -> Void)? = nil,
         @ViewBuilder destination: @escaping (URL) -> Destination
     ) {
         _model = State(wrappedValue: model)
         self.replyPlacement = replyPlacement
         self.isNovel = isNovel
+        self.autofocus = autofocus
         self.onSubmitted = onSubmitted
+        self.onExit = onExit
         self.destination = destination
     }
 
@@ -40,7 +46,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
                         header
                     }
                     Divider()
-                    ReaderChapterCommentComposerFields(model: model, onURLTap: openURL)
+                    ReaderChapterCommentComposerFields(model: model, autofocus: autofocus, onURLTap: openURL)
                 }
             }
             .modifier(ForumComposerSurface())
@@ -52,7 +58,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
                     submissionTask = Task {
                         if let feedback = await model.submit() {
                             onSubmitted(feedback)
-                            dismiss()
+                            exit()
                         }
                     }
                 }
@@ -61,7 +67,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
         .modifier(ForumComposerSheetPresentation())
         .interactiveDismissDisabled(model.hasEdits || model.isBusy)
         .confirmationDialog(L10n.string("forum.native.discard_title"), isPresented: $showsDiscardConfirmation, titleVisibility: .visible) {
-            Button(L10n.string("forum.native.discard_leave"), role: .destructive) { dismiss() }
+            Button(L10n.string("forum.native.discard_leave"), role: .destructive, action: exit)
             Button(L10n.string("common.cancel"), role: .cancel) {}
         }
         .fullScreenCover(item: $destinationItem, onDismiss: {
@@ -92,7 +98,11 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
         guard !model.isBusy else { return }
         commitEditing()
         if model.hasEdits { showsDiscardConfirmation = true }
-        else { dismiss() }
+        else { exit() }
+    }
+
+    private func exit() {
+        if let onExit { onExit() } else { dismiss() }
     }
 
     private func openURL(_ url: URL) {
@@ -154,6 +164,7 @@ private struct ReaderChapterCommentComposerHeader: View {
 
 private struct ReaderChapterCommentComposerFields: View {
     let model: ReaderChapterCommentComposerModel
+    let autofocus: Bool
     let onURLTap: (URL) -> Void
 
     var body: some View {
@@ -172,12 +183,13 @@ private struct ReaderChapterCommentComposerFields: View {
                     }
                 case .comment:
                     if let comment = model.comment {
-                        ForumPostCommentFields(model: comment, disabled: model.isBusy)
+                        ForumPostCommentFields(model: comment, disabled: model.isBusy, autofocus: autofocus)
                     }
                 case .reply:
                     if let session = model.replySession {
                         ForumPostReplyFields(session: session, form: model.replyForm, editorRegistry: model.editorRegistry,
-                                             isEmbedded: true, onAttachmentActivityChanged: { model.isPreparingAttachment = $0 },
+                                             isEmbedded: true, autofocus: autofocus,
+                                             onAttachmentActivityChanged: { model.isPreparingAttachment = $0 },
                                              onURLTap: onURLTap)
                     }
                 }
