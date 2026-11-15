@@ -2,6 +2,15 @@ import SwiftUI
 import Observation
 import YamiboXCore
 
+struct ReaderViewportGeometry: Equatable {
+    let size: CGSize
+    let insets: EdgeInsets
+    let scale: CGFloat
+
+    var valid: Bool { size.width.isFinite && size.height.isFinite && size.width >= 1 && size.height >= 1 }
+    var supportsSpreads: Bool { size.width >= 720 && size.width > size.height }
+}
+
 /// One presentation of a reader. Platform views detach without ending the
 /// reader, and a retiring presentation can't remove its successor's handler.
 @MainActor
@@ -22,12 +31,32 @@ final class ReaderViewportLifetime {
     private let menuRegistration = DeviceMenuRegistration()
     var deviceMenu: DeviceMenu? { menuRegistration.menu }
     var didRender: (() -> Void)?
+    var didFailInitialPresentation: (() -> Void)?
+    var admitsPresentationCallbacks: (() -> Bool)?
     private(set) var isCurrent = true
     private var hasDetached = false
     private var isSuspended = false
     private var isInputPaused = false
     private var inputRevision = 0
     private(set) var hasRendered = false
+    private var preparationTrace: (id: UUID, start: UInt64)?
+
+    func traceExternalNovelPreparation(id: UUID) {
+        guard NovelReaderPerformance.isEnabled else { return }
+        preparationTrace = (id, DispatchTime.now().uptimeNanoseconds)
+        tracePreparationStage("start")
+    }
+
+    func tracePreparationStage(_ stage: String) {
+        guard let trace = preparationTrace else { return }
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - trace.start) / 1_000_000
+        YamiboLog.reader.info("Novel external preparation \(trace.id.uuidString, privacy: .public) \(stage, privacy: .public) +\(ms, privacy: .public) ms")
+    }
+
+    func finishPreparationTrace(_ stage: String) {
+        tracePreparationStage(stage)
+        preparationTrace = nil
+    }
 
     init(settingsTarget: ReaderSettingsTarget = .device) {
         self.settingsTarget = settingsTarget
@@ -65,7 +94,7 @@ final class ReaderViewportLifetime {
 
     func ownsAttachment(_ id: UUID) -> Bool { isCurrent && attachmentID == id }
 
-    func accepts(_ id: UUID) -> Bool { !isSuspended && ownsAttachment(id) }
+    func accepts(_ id: UUID) -> Bool { !isSuspended && ownsAttachment(id) && admitsPresentationCallbacks?() != false }
 
     func acceptsInput(_ id: UUID) -> Bool { !isInputPaused && accepts(id) }
 
@@ -80,14 +109,16 @@ final class ReaderViewportLifetime {
     }
 
     func frameDidRender() {
-        guard isCurrent, !hasDetached else { return }
+        guard isCurrent, !hasDetached, admitsPresentationCallbacks?() != false else { return }
         hasRendered = true
         if !isSuspended { didRender?() }
     }
 
+    func invalidateFrameReport() { hasRendered = false }
+
     /// UIKit can enqueue geometry before SwiftUI runs the appearance callback,
     /// but geometry from a previously detached presentation is never admitted.
-    var acceptsGeometry: Bool { isCurrent && !hasDetached && !isSuspended }
+    var acceptsGeometry: Bool { isCurrent && !hasDetached && !isSuspended && admitsPresentationCallbacks?() != false }
 
     func synchronizePosition() {
         guard acceptsGeometry else { return }
@@ -121,6 +152,7 @@ final class ReaderViewportLifetime {
         if capturingPosition { synchronizePosition() }
         isCurrent = false
         didRender = nil
+        didFailInitialPresentation = nil
         detach()
     }
 

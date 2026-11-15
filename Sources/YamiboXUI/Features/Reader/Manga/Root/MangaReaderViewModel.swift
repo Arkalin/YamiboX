@@ -140,6 +140,7 @@ public final class MangaReaderViewModel {
     @ObservationIgnored private var chapterCommentsRepository: (any ReaderChapterCommentsLoading)?
     @ObservationIgnored private var workflow: MangaReaderWorkflow?
     @ObservationIgnored private var committedSettings = MangaReaderSettings()
+    @ObservationIgnored private var viewportSettingsTarget = ReaderSettingsTarget.device
     @ObservationIgnored private var currentStableReadingPosition: MangaReadingPosition?
     @ObservationIgnored private var lastQueuedProgressSnapshot: MangaReaderProgressSnapshot?
     @ObservationIgnored private var progressRevision = UUID()
@@ -354,7 +355,7 @@ public final class MangaReaderViewModel {
 
         let appSettings = await dependencies.settingsStore.load()
         guard lifecycle.accepts(request) else { return false }
-        committedSettings = Self.normalizedSettings(appSettings.manga)
+        committedSettings = Self.normalizedSettings(appSettings.mangaSettings(for: viewportSettingsTarget))
         applePencilPageTurnSettings = appSettings.system.applePencilPageTurn
         presentation = presentationWithCommittedSettings(presentation)
         let imageLoader = MangaReaderPageImageLoader(
@@ -834,7 +835,8 @@ public final class MangaReaderViewModel {
 
     // MARK: - Settings
 
-    func applyViewportSettings(_ settings: MangaReaderSettings) {
+    func applyViewportSettings(_ settings: MangaReaderSettings, target: ReaderSettingsTarget) {
+        viewportSettingsTarget = target
         let normalizedSettings = Self.normalizedSettings(settings)
         guard normalizedSettings != committedSettings else { return }
 

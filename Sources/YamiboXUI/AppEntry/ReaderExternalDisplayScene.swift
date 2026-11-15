@@ -154,6 +154,8 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
         private var availability: (() -> Bool)?
         private var setEnabled: ((Bool) -> Void)?
         private var deactivation: Task<Void, Never>?
+        private var updateTask: Task<Void, Never>?
+        private(set) var sampledAvailability: Bool?
 
         var isAccessoryAvailable: Bool { availability?() ?? false }
 
@@ -163,10 +165,35 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
             view.backgroundColor = .clear
         }
 
+        override func viewIsAppearing(_ animated: Bool) {
+            super.viewIsAppearing(animated)
+            scheduleUpdate()
+        }
+
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            Task { @MainActor [weak self] in
-                guard let self, viewIfLoaded?.window != nil else { return }
+            scheduleUpdate()
+        }
+
+        @available(iOS 26.0, *)
+        override func updateProperties() {
+            super.updateProperties()
+            if availability != nil {
+                // UIKit tracks availability reads during this lifecycle event.
+                let available = isAccessoryAvailable
+                if sampledAvailability != available {
+                    sampledAvailability = available
+                    scheduleUpdate()
+                }
+            }
+        }
+
+        private func scheduleUpdate() {
+            guard updateTask == nil else { return }
+            updateTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                updateTask = nil
+                guard viewIfLoaded?.window != nil else { return }
                 update?(self)
             }
         }
@@ -189,6 +216,7 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
             availability = { registration.isAvailable }
             setEnabled = { registration.isEnabled = $0 }
             unregister = { host in host.unregisterSceneAccessory(registration) }
+            setNeedsUpdateProperties()
         }
 
         func stop() {
@@ -197,6 +225,7 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
             let stop = unregister
             unregister = nil
             availability = nil
+            sampledAvailability = nil
             setEnabled = nil
             registrationID = nil
             stop?(self)

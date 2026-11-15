@@ -373,16 +373,16 @@ package final class NovelTextViewportRuntimeOwner {
         nextGeneration &+= 1
         let candidate: NovelTextLayoutRuntimeCandidate
         do {
-            candidate = try adapter.prepareCandidate(
-                input: NovelTextLayoutRuntimeAdapterInput(
+            candidate = try NovelReaderPerformance.measure("textkit-candidate") {
+                try adapter.prepareCandidate(input: NovelTextLayoutRuntimeAdapterInput(
                     preparedInput: preparedInput,
                     settings: preparedInput.settings,
                     layout: preparedInput.layout,
                     cachedSemanticAttributedDocument: reusableSemanticAttributedDocument(
                         for: preparedInput
                     )
-                )
-            )
+                ))
+            }
         } catch let failure as NovelTextLayoutFailure {
             recordFailure(failure)
             throw failure

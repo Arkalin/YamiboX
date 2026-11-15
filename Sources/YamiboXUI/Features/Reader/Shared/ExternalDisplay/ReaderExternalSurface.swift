@@ -2,17 +2,8 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-struct ReaderExternalGeometry: Equatable {
-    let size: CGSize
-    let insets: EdgeInsets
-    let scale: CGFloat
-
-    var valid: Bool { size.width >= 1 && size.height >= 1 }
-    var supportsSpreads: Bool { size.width >= 720 && size.width > size.height }
-}
-
 extension EnvironmentValues {
-    @Entry var readerExternalGeometry: ReaderExternalGeometry? = nil
+    @Entry var readerExternalGeometry: ReaderViewportGeometry? = nil
     @Entry var readerExternalMenuPresented = false
 }
 
@@ -30,9 +21,12 @@ struct ReaderExternalSurface: View {
             let insets = windowInsets.map {
                 EdgeInsets(top: $0.top, leading: $0.left, bottom: $0.bottom, trailing: $0.right)
             } ?? proxy.safeAreaInsets
-            let geometry = ReaderExternalGeometry(size: proxy.size, insets: insets, scale: scale)
+            let geometry = ReaderViewportGeometry(size: proxy.size, insets: insets, scale: scale)
+            // A proxy that ignores safe areas can report zero before attaching
+            // to its window. Only the window probe can confirm actual insets.
+            let measuredGeometry = windowInsets != nil && geometry.valid ? geometry : nil
             ZStack {
-                if geometry.valid {
+                if measuredGeometry != nil {
                     ReaderSessionContentView(
                         session: session, navigator: navigator, appModel: appModel,
                         isFullScreenRoot: true, externalViewport: viewport
@@ -50,6 +44,9 @@ struct ReaderExternalSurface: View {
             .background(.black)
             .onChange(of: geometry, initial: true) { _, value in
                 display.pointer.updateBounds(CGRect(origin: .zero, size: value.size))
+            }
+            .onChange(of: measuredGeometry, initial: true) { _, value in
+                session.reportNovelViewportGeometry(value, for: viewport)
             }
             .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
         }
@@ -82,13 +79,17 @@ private struct ReaderExternalPrivacyCover: View {
 struct ReaderViewportRenderAcknowledgement: ViewModifier {
     let ready: Bool
     let viewport: ReaderViewportLifetime
+    var revision: UInt64 = 0
+    var isFrameCurrent: (UInt64) -> Bool = { _ in true }
 
     func body(content: Content) -> some View {
         content.background {
             if ready {
-                NovelReaderNavigationOverlayDisplayProbe(revision: 0, waitsForPresentation: false) { _ in
+                NovelReaderNavigationOverlayDisplayProbe(revision: revision, waitsForPresentation: false) { renderedRevision in
+                    guard isFrameCurrent(renderedRevision) else { return }
                     viewport.frameDidRender()
                 }
+                .onAppear { viewport.tracePreparationStage("position-restored") }
                 .accessibilityHidden(true)
             }
         }

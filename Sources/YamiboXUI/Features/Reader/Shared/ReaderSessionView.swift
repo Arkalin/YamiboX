@@ -51,23 +51,19 @@ struct ReaderSessionScreen: View {
                     }
                     .statusBarHidden(!isMenuVisible)
                     .persistentSystemOverlays(isMenuVisible ? .automatic : .hidden)
+                } else if let display = appModel.externalReader, display.sessionID == session.id, display.isWaitingForExternalFrame {
+                    preparationPlaceholder(snapshot: display.deviceFrameDuringPreparation)
+                } else if session.needsDeviceNovelGeometry ||
+                            (appModel.externalReader != nil && appModel.windowID != nil && eligible &&
+                                !session.permitsDeviceReader) {
+                    preparationPlaceholder()
                 } else {
                     ReaderSessionContentView(session: session, navigator: navigator, appModel: appModel, isFullScreenRoot: true)
                 }
             }
-            .overlay {
-                if session.deviceInteraction == nil,
-                   let display = appModel.externalReader, display.sessionID == session.id, display.isWaitingForExternalFrame {
-                    // The view model has already moved to the external geometry.
-                    // Keep the prior device frame above that relayout until handoff commits.
-                    if let frame = display.deviceFrameDuringPreparation {
-                        ReaderDevicePreparationFrame(snapshot: frame).ignoresSafeArea()
-                    } else {
-                        ZStack {
-                            Color(.systemBackground).ignoresSafeArea()
-                            ProgressView().accessibilityLabel(L10n.string("common.loading"))
-                        }
-                    }
+            .background {
+                if session.needsDeviceNovelGeometry {
+                    ReaderDeviceNovelGeometryProbe(session: session, viewport: session.viewport)
                 }
             }
         }
@@ -106,7 +102,40 @@ struct ReaderSessionScreen: View {
             appModel.externalDisplayFailure = false
         }
         .forumTheme(AppTheme.theme(for: appModel.appAppearanceSettings).forumTheme)
-        .onAppear { session.completeFullScreenHandoff() }
+        .onAppear {
+            session.activate()
+            session.completeFullScreenHandoff()
+        }
+    }
+
+    private func preparationPlaceholder(snapshot: UIView? = nil) -> some View {
+        ZStack {
+            if let snapshot {
+                ReaderDevicePreparationFrame(snapshot: snapshot).ignoresSafeArea()
+            } else {
+                Color(.systemBackground).ignoresSafeArea()
+                if session.deviceViewportPreparationFailed {
+                    VStack(spacing: 12) {
+                        Text(L10n.string("common.load_failed"))
+                        Button(L10n.string("common.retry"), action: session.retryDeviceViewportPreparation)
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    ProgressView().accessibilityLabel(L10n.string("common.loading"))
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Button(L10n.string("common.cancel")) {
+                if let display = appModel.externalReader {
+                    display.closeReader(session, contentID: session.contentID)
+                } else {
+                    session.close()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+        }
     }
 
     private var interactionBinding: Binding<ReaderDeviceInteraction?> {
@@ -134,6 +163,31 @@ struct ReaderSessionScreen: View {
         }
         appModel.externalReader?.offer(session: session, model: appModel, host: displayHost, navigator: navigator,
             eligible: eligible || (owned && !session.isClosed && session.content.resumeRoute != nil && navigator.path.isEmpty))
+    }
+}
+
+private struct ReaderDeviceNovelGeometryProbe: View {
+    let session: ReaderSession
+    let viewport: ReaderViewportLifetime
+    @Environment(\.displayScale) private var scale
+    @State private var windowInsets: UIEdgeInsets?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let geometry = ReaderViewportGeometry(
+                size: proxy.size,
+                insets: EdgeInsets(top: max(proxy.safeAreaInsets.top, windowInsets?.top ?? 0),
+                                   leading: 0, bottom: max(proxy.safeAreaInsets.bottom, windowInsets?.bottom ?? 0),
+                                   trailing: 0),
+                scale: scale
+            )
+            Color.clear
+                .onChange(of: windowInsets != nil && geometry.valid ? geometry : nil, initial: true) { _, geometry in
+                    session.reportNovelViewportGeometry(geometry, for: viewport)
+                }
+                .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -282,7 +336,7 @@ struct ReaderSessionContentView: View {
     private var content: some View {
         let contentID = session.contentID
         let viewport = externalViewport ?? session.viewport
-        if session.isPreparingSettings(for: viewport) {
+        if session.isPreparingPresentation(for: viewport) {
             Color(.systemBackground).ignoresSafeArea()
                 .overlay { ProgressView().accessibilityLabel(L10n.string("common.loading")) }
         } else {
