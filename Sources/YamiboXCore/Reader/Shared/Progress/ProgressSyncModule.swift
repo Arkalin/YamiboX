@@ -122,6 +122,7 @@ public actor ProgressSyncModule {
     private let adapter: any ProgressSyncAdapter
     private let debounceNanoseconds: UInt64
     private var pendingTask: Task<Void, Never>?
+    private var activeSave: Task<Void, any Error>?
     private var lastQueuedPosition: ProgressSyncPosition?
     private var lastQueuedActivityDate = Date.distantPast
     private var lastSyncedPosition: ProgressSyncPosition?
@@ -133,11 +134,12 @@ public actor ProgressSyncModule {
         self.debounceNanoseconds = debounceNanoseconds
     }
 
-    public func queue(_ position: ProgressSyncPosition) {
+    public func queue(_ position: ProgressSyncPosition, activityDate: Date = .now) {
+        guard activityDate >= lastQueuedActivityDate else { return }
         guard position != lastQueuedPosition || needsRetry else { return }
 
         lastQueuedPosition = position
-        lastQueuedActivityDate = .now
+        lastQueuedActivityDate = activityDate
         pendingTask?.cancel()
         pendingTask = Task { [weak self, debounceNanoseconds] in
             try? await Task.sleep(nanoseconds: debounceNanoseconds)
@@ -146,12 +148,13 @@ public actor ProgressSyncModule {
         }
     }
 
-    public func flush(_ latestPosition: ProgressSyncPosition? = nil) async throws {
+    public func flush(_ latestPosition: ProgressSyncPosition? = nil, activityDate: Date = .now) async throws {
+        if latestPosition != nil, activityDate < lastQueuedActivityDate { return }
         pendingTask?.cancel()
         pendingTask = nil
 
         if let latestPosition {
-            if latestPosition != lastQueuedPosition { lastQueuedActivityDate = .now }
+            if latestPosition != lastQueuedPosition { lastQueuedActivityDate = activityDate }
             lastQueuedPosition = latestPosition
         }
 
@@ -167,15 +170,26 @@ public actor ProgressSyncModule {
     }
 
     private func flushQueuedPosition() async throws {
+        guard !Task.isCancelled else { return }
         pendingTask = nil
         guard let position = lastQueuedPosition else { return }
         try await saveIfNeeded(position, activityDate: lastQueuedActivityDate)
     }
 
     private func saveIfNeeded(_ position: ProgressSyncPosition, activityDate: Date) async throws {
-        guard activityDate >= lastSyncedActivityDate else { return }
+        // Don't deduplicate against the last completed save while another one
+        // is in flight. A -> B -> A can otherwise leave B stored after exit.
+        while let activeSave { _ = await activeSave.result }
+        guard activityDate >= lastSyncedActivityDate, activityDate >= lastQueuedActivityDate else { return }
         guard position != lastSyncedPosition || needsRetry else { return }
 
+        let save = Task { try await self.persist(position, activityDate: activityDate) }
+        activeSave = save
+        try await save.value
+    }
+
+    private func persist(_ position: ProgressSyncPosition, activityDate: Date) async throws {
+        defer { activeSave = nil }
         do {
             try await adapter.saveReadingPosition(position, activityDate: activityDate)
             if activityDate >= lastSyncedActivityDate {

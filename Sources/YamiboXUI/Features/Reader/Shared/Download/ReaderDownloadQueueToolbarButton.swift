@@ -22,7 +22,7 @@ struct ReaderDownloadQueueToolbarButton<Icon: View>: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        ReaderRemoteButton(action: action) {
             HStack(spacing: 5) {
                 icon(entryCount > 0)
                 Text(verbatim: "\(entryCount)")

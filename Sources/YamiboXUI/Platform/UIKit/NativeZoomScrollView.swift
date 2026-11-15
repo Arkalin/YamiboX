@@ -103,6 +103,26 @@ class NativeZoomScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
+    func place(contentPoint: CGPoint, at viewportPoint: CGPoint, zoomFactor: CGFloat) {
+        callbackScheduler.performViewUpdate {
+            setZoomScale(min(maximumZoomScale, max(minimumZoomScale, minimumZoomScale * zoomFactor)), animated: false)
+            recenterContent()
+            place(contentPoint: contentPoint, at: viewportPoint)
+        }
+    }
+
+    func zoomFromTrackpad(ratio: CGFloat, windowPoint: CGPoint) {
+        guard let window, ratio.isFinite, ratio > 0, baseContentSize != .zero else { return }
+        let point = convert(windowPoint, from: window)
+        let contentPoint = convert(point, to: zoomContentView)
+        place(contentPoint: contentPoint, at: CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY),
+              zoomFactor: normalizedZoomFactor * ratio)
+    }
+
+    func panFromTrackpad(_ delta: CGPoint) {
+        setContentOffset(clampedOffset(CGPoint(x: contentOffset.x - delta.x, y: contentOffset.y - delta.y)), animated: false)
+    }
+
     func place(contentPoint: CGPoint, at viewportPoint: CGPoint, animated: Bool = false) {
         setContentOffset(clampedOffset(CGPoint(
             x: contentPoint.x * zoomScale - viewportPoint.x,

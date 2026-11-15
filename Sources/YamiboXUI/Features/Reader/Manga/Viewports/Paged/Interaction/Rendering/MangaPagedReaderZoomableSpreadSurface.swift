@@ -13,13 +13,18 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     let isZoomInteractionEnabled: Bool
     let spreadSurfaceInteraction: MangaSurfaceAttachment
     let likedPageIDs: Set<String>
+    @Environment(\.mangaViewportHandoff) private var handoff
 
     var body: some View {
         GeometryReader { proxy in
             MangaNativeHostedSurface(runtime: spreadSurfaceInteraction.runtime,
                 configuration: MangaInteractionConfiguration(chromeVisible: spreadSurfaceInteraction.runtime.configuration.chromeVisible,
                     zoomEnabled: isZoomInteractionEnabled, allowsUnzoomedPan: false),
-                viewport: proxy.size, imageLoaded: hasLoadedImage) {
+                viewport: proxy.size, imageLoaded: hasLoadedImage, restoreFocus: {
+                    if let id = leftPageSurface?.page.id, let focus = handoff?.takeFocus(for: id, horizontalHalf: 0) { return focus }
+                    if let id = rightPageSurface?.page.id { return handoff?.takeFocus(for: id, horizontalHalf: 1) }
+                    return nil
+                }) {
                 HStack(spacing: 0) {
                     pageSlot(leftPageSurface)
                     pageSlot(rightPageSurface)
@@ -47,6 +52,7 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
     let configuration: MangaInteractionConfiguration
     let viewport: CGSize
     let imageLoaded: Bool
+    let restoreFocus: () -> MangaViewportFocus?
     @ViewBuilder let content: () -> Content
 
     final class Coordinator {
@@ -75,6 +81,7 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
 
     func updateUIView(_ view: MangaNativeSurfaceView, context: Context) {
         context.coordinator.hostedView?.configuration = hostedContentConfiguration
+        view.restoreFocus = restoreFocus
         view.configure(runtime: runtime, configuration: configuration,
                        geometry: .spread(viewport: viewport), imageLoaded: imageLoaded)
     }

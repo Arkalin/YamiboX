@@ -17,6 +17,7 @@ struct DownloadQueueSheet: View {
 struct DownloadQueueScreen: View {
     let viewModel: DownloadQueueViewModel
     let openManagement: () -> Void
+    @Environment(\.readerRemoteInput) private var remote
 
     @State private var selectedGroupID: DownloadGroupID?
 
@@ -61,6 +62,25 @@ struct DownloadQueueScreen: View {
             if viewModel.showsControls {
                 DownloadQueueControls(viewModel: viewModel)
             }
+            if remote != nil {
+                HStack {
+                    if viewModel.isSelectionMode {
+                        DownloadQueueSelectAllButton(viewModel: viewModel)
+                    } else {
+                        ReaderRemoteButton(L10n.string("settings.download.title"), action: openManagement)
+                            .disabled(viewModel.isCommandRunning)
+                    }
+                    Spacer()
+                    if !viewModel.isEmpty {
+                        SelectionModeToggleButton(isSelecting: viewModel.isSelectionMode, isDisabled: viewModel.isCommandRunning) {
+                            viewModel.setSelectionMode(!viewModel.isSelectionMode)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(.bar)
+            }
         }
         .yamiboInlineNavigationTitleDisplayMode()
         .navigationBarBackButtonHidden(viewModel.isSelectionMode)
@@ -81,41 +101,45 @@ struct DownloadQueueScreen: View {
                 viewModel: viewModel,
                 groupID: groupID
             )
+            .navigationBarBackButtonHidden(remote != nil)
+            .readerRemoteBack(remote != nil) { selectedGroupID = nil }
         }
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                if viewModel.isSelectionMode {
-                    DownloadQueueSelectAllButton(viewModel: viewModel)
-                }
-            }
-
-            if !viewModel.isSelectionMode {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(L10n.string("settings.download.title"), action: openManagement)
-                        .disabled(viewModel.isCommandRunning)
-                }
-            }
-
-            ToolbarItem(placement: .primaryAction) {
-                if !viewModel.isEmpty {
-                    SelectionModeToggleButton(
-                        isSelecting: viewModel.isSelectionMode,
-                        isDisabled: viewModel.isCommandRunning
-                    ) {
-                        viewModel.setSelectionMode(!viewModel.isSelectionMode)
+            if remote == nil {
+                ToolbarItem(placement: .cancellationAction) {
+                    if viewModel.isSelectionMode {
+                        DownloadQueueSelectAllButton(viewModel: viewModel)
                     }
                 }
-            }
 
-            if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
-                ToolbarItem(placement: .bottomBar) {
-                    SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+                if !viewModel.isSelectionMode {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(L10n.string("settings.download.title"), action: openManagement)
+                            .disabled(viewModel.isCommandRunning)
+                    }
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    if !viewModel.isEmpty {
+                        SelectionModeToggleButton(
+                            isSelecting: viewModel.isSelectionMode,
+                            isDisabled: viewModel.isCommandRunning
+                        ) {
+                            viewModel.setSelectionMode(!viewModel.isSelectionMode)
+                        }
+                    }
+                }
+
+                if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
+                    ToolbarItem(placement: .bottomBar) {
+                        SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+                    }
                 }
             }
         }
         .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+            if viewModel.isSelectionMode && (remote != nil || !usesSystemSelectionBottomToolbar) {
                 SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
                     .selectionBottomToolbarCapsule()
             }
@@ -225,7 +249,7 @@ private struct DownloadQueueControls: View {
     private var actions: some View {
         HStack(spacing: 12) {
             if viewModel.failedCount > 0 && viewModel.runState == .running {
-                Button {
+                ReaderRemoteButton {
                     Task { await viewModel.continueQueue() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -235,7 +259,7 @@ private struct DownloadQueueControls: View {
                 .accessibilityLabel(L10n.string("downloads.retry_continue_all"))
                 .frame(minWidth: 44, minHeight: 44)
             }
-            Button {
+            ReaderRemoteButton {
                 Task {
                     if viewModel.runState == .running {
                         await viewModel.pauseQueue()
@@ -370,6 +394,7 @@ private struct DownloadQueueOwnerScreen: View {
     let groupID: DownloadGroupID
     @State private var hasRequestedDismissal = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteInput) private var remote
 
     private var group: DownloadQueueOwnerGroup? {
         viewModel.groups.first { $0.id == groupID }
@@ -434,7 +459,7 @@ private struct DownloadQueueOwnerScreen: View {
             viewModel.setSelectionMode(false)
         }
         .toolbar {
-            if viewModel.isSelectionMode {
+            if remote == nil, viewModel.isSelectionMode {
                 ToolbarItem(placement: .cancellationAction) {
                     DownloadQueueSelectAllButton(
                         viewModel: viewModel,
@@ -443,26 +468,32 @@ private struct DownloadQueueOwnerScreen: View {
                 }
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                if group != nil {
-                    SelectionModeToggleButton(
-                        isSelecting: viewModel.isSelectionMode,
-                        isDisabled: viewModel.isCommandRunning
-                    ) {
-                        viewModel.setSelectionMode(!viewModel.isSelectionMode)
+            if remote == nil {
+                ToolbarItem(placement: .primaryAction) {
+                    if group != nil { selectionToggle }
+                }
+                if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
+                    ToolbarItem(placement: .bottomBar) {
+                        SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
                     }
                 }
             }
-
-            if viewModel.isSelectionMode && usesSystemSelectionBottomToolbar {
-                ToolbarItem(placement: .bottomBar) {
-                    SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if remote != nil, group != nil {
+                HStack {
+                    if viewModel.isSelectionMode { DownloadQueueSelectAllButton(viewModel: viewModel, groupID: groupID) }
+                    Spacer()
+                    selectionToggle
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(.bar)
             }
         }
         .toolbar(viewModel.isSelectionMode ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.isSelectionMode && !usesSystemSelectionBottomToolbar {
+            if viewModel.isSelectionMode && (remote != nil || !usesSystemSelectionBottomToolbar) {
                 SelectionBottomToolbar(actions: DownloadQueueSelectionActions.cancel(viewModel: viewModel))
                     .selectionBottomToolbarCapsule()
             }
@@ -478,6 +509,12 @@ private struct DownloadQueueOwnerScreen: View {
         }
         .sensoryFeedback(.selection, trigger: viewModel.selectedWorkIDs)
         .downloadQueueFailureAlert(viewModel)
+    }
+
+    private var selectionToggle: some View {
+        SelectionModeToggleButton(isSelecting: viewModel.isSelectionMode, isDisabled: viewModel.isCommandRunning) {
+            viewModel.setSelectionMode(!viewModel.isSelectionMode)
+        }
     }
 
     private var shouldDismissEmptyGroup: Bool {

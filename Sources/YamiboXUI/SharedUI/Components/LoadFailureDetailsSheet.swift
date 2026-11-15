@@ -9,10 +9,13 @@ struct LoadFailureDetailsButton: View {
     let details: LoadFailureDetails?
     let message: String
     @State private var presented: PresentedLoadFailure?
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
 
     var body: some View {
-        Button {
-            presented = PresentedLoadFailure(details: details ?? LoadFailureDetails(message: message))
+        ReaderRemoteButton {
+            let failure = details ?? LoadFailureDetails(message: message)
+            if let deviceInteraction { deviceInteraction.showDetails(failure) }
+            else { presented = PresentedLoadFailure(details: failure) }
         } label: {
             Label(L10n.string("load_failure.details"), systemImage: "info.circle")
         }

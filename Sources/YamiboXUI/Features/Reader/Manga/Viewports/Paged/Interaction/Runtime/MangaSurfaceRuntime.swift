@@ -5,6 +5,9 @@ import Observation
 protocol MangaNativeSurfaceControlling: AnyObject {
     func applyNative(_ decision: MangaInteractionDecision, animated: Bool)
     func cancelNative(reset: Bool)
+    var normalizedFocus: (point: CGPoint, factor: CGFloat)? { get }
+    func zoomFromTrackpad(ratio: CGFloat, windowPoint: CGPoint)
+    func panFromTrackpad(_ delta: CGPoint)
 }
 
 @MainActor @Observable
@@ -53,6 +56,19 @@ final class MangaSurfaceRuntime {
     var isManipulating: Bool { nativeIsInteracting }
     var canPinch: Bool {
         imageLoaded && geometry.viewport.width > 0 && geometry.viewport.height > 0 && configuration.zoomEnabled
+    }
+
+    var normalizedFocus: (point: CGPoint, factor: CGFloat)? { nativeSurface?.normalizedFocus }
+
+    func zoomFromTrackpad(_ ratio: CGFloat, at point: CGPoint) {
+        guard canPinch, permitsInteraction() else { return }
+        nativeSurface?.zoomFromTrackpad(ratio: ratio, windowPoint: point)
+    }
+
+    func panFromTrackpad(_ delta: CGPoint) -> Bool {
+        guard normalizedFocus != nil else { return false }
+        if permitsInteraction() { nativeSurface?.panFromTrackpad(delta) }
+        return true
     }
 
     func decision(_ intent: MangaInteractionIntent) -> MangaInteractionDecision {

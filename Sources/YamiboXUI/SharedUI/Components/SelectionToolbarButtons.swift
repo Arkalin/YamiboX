@@ -20,6 +20,7 @@ struct SelectAllToolbarButton: View {
                 Text(title)
             }
         }
+        .readerRemoteActivate(toggle)
         .disabled(isDisabled)
         .accessibilityLabel(title)
     }
@@ -47,6 +48,7 @@ struct SelectionModeToggleButton: View {
                 Text(title)
             }
         }
+        .readerRemoteActivate(toggle)
         .disabled(isDisabled)
         .accessibilityLabel(title)
     }

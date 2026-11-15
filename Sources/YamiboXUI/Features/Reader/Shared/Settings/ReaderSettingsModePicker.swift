@@ -100,7 +100,7 @@ private struct ReaderSettingsAnimationRow<Palette: ReaderSettingsPalette>: View 
     }
 
     var body: some View {
-        Button(action: action) {
+        ReaderRemoteButton(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.body)

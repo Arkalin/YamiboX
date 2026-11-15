@@ -22,10 +22,10 @@ struct LoadFailureView: View {
             VStack(spacing: 0) {
                 if showsRetry {
                     if prominentRetry {
-                        Button(L10n.string("common.retry"), action: retry)
+                        ReaderRemoteButton(L10n.string("common.retry"), action: retry)
                             .appProminentButtonStyle()
                     } else {
-                        Button(L10n.string("common.retry"), action: retry)
+                        ReaderRemoteButton(L10n.string("common.retry"), action: retry)
                     }
                 }
                 LoadFailureDetailsButton(details: details, message: message)

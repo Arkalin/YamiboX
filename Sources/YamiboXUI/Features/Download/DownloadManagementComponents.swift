@@ -7,6 +7,7 @@ struct DownloadManagementGroupScreen: View {
     let viewModel: DownloadManagementViewModel
     let groupID: DownloadGroupID
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteInput) private var remote
 
     private var row: DownloadManagementRow? {
         viewModel.downloadManagementRow(id: groupID)
@@ -21,6 +22,11 @@ struct DownloadManagementGroupScreen: View {
                     }
                 }
                 if let row {
+                    if remote != nil {
+                        Section {
+                            deleteGroupAction(row.id)
+                        }
+                    }
                     Section {
                         DownloadStorageSummary(rows: [row], showsEntryCount: true)
                     }
@@ -42,13 +48,9 @@ struct DownloadManagementGroupScreen: View {
         .navigationTitle(row?.title ?? L10n.string("settings.download.title"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if let row {
+                if let row, remote == nil {
                     Menu {
-                        Button(role: .destructive) {
-                            viewModel.requestDownloadGroupDeletion(id: row.id)
-                        } label: {
-                            Label(L10n.string("settings.download.delete_group"), systemImage: "trash")
-                        }
+                        deleteGroupAction(row.id)
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -77,6 +79,14 @@ struct DownloadManagementGroupScreen: View {
             }
         }
         .downloadManagementAlert(viewModel: viewModel)
+    }
+
+    private func deleteGroupAction(_ id: DownloadGroupID) -> some View {
+        ReaderRemoteButton(role: .destructive) {
+            viewModel.requestDownloadGroupDeletion(id: id)
+        } label: {
+            Label(L10n.string("settings.download.delete_group"), systemImage: "trash")
+        }
     }
 
     private func dismissIfGroupMissing() {

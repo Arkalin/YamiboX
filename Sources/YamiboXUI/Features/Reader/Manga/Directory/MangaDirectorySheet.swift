@@ -18,6 +18,8 @@ struct MangaDirectorySheet: View {
     let onNavigationStateChange: ((ReaderAnnotationSegmentNavigationState) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
+    @Environment(\.readerRemoteInput) private var remote
     @State private var draft = MangaDirectoryEditDraft(
         cleanBookName: "",
         primaryKeyword: "",
@@ -83,6 +85,7 @@ struct MangaDirectorySheet: View {
                     ChapterDirectoryLayoutPicker(layout: $layout)
                 }
                 .mangaDirectoryListRow(top: 10, bottom: 7)
+                .readerRemoteScrollContent()
 
                 if panel.displayChapters.isEmpty {
                     ContentUnavailableView(L10n.string("manga.no_chapters"), systemImage: "books.vertical")
@@ -121,6 +124,7 @@ struct MangaDirectorySheet: View {
                             onBeginSelection: beginSelection
                         )
                         .mangaDirectoryListRow(top: 5, bottom: 5)
+                        .readerRemoteScrollContent()
                         .deleteSwipeAction(isVisible: canDeleteChapterFromSwipe(chapter)) {
                             deleteChapter(chapter)
                         }
@@ -133,7 +137,7 @@ struct MangaDirectorySheet: View {
                           eventID: panel.failureEventID, clear: onClearFailure)
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && !usesSystemSelectionBottomToolbar {
+                if isSelecting && (remote != nil || !usesSystemSelectionBottomToolbar) {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
@@ -154,12 +158,12 @@ struct MangaDirectorySheet: View {
                             )
                         }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button(L10n.string("common.done"), action: exitSelectionMode)
+                            ReaderRemoteButton(L10n.string("common.done"), action: exitSelectionMode)
                         }
                     } else if !isEmbeddedInReaderPanel {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                dismiss()
+                            ReaderRemoteButton {
+                                if let dismissPanel { dismissPanel() } else { dismiss() }
                             } label: {
                                 Image(systemName: "xmark")
                             }
@@ -169,39 +173,11 @@ struct MangaDirectorySheet: View {
 
                     if !isSelecting {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Menu {
-                                Button {
-                                    seedDraft(from: panel)
-                                    isCorrectionPresented = true
-                                } label: {
-                                    Label(L10n.string("manga.correction_title"), systemImage: "pencil")
-                                }
-                                .disabled(panel.isUpdating)
-                                Button {
-                                    isSelecting = true
-                                } label: {
-                                    Label(L10n.string("manga.directory.edit"), systemImage: "checklist")
-                                }
-                                .disabled(panel.displayChapters.isEmpty || panel.isUpdating)
-                                Button(action: onGlobalSearch) {
-                                    Label(L10n.string("manga.global_search"), systemImage: "magnifyingglass")
-                                }
-                                .disabled(!panel.isUpdateButtonEnabled)
-                                Divider()
-                                Button(role: .destructive) {
-                                    isResetConfirmationPresented = true
-                                } label: {
-                                    Label(L10n.string("manga.directory.reset"), systemImage: "arrow.counterclockwise")
-                                }
-                                .disabled(panel.isUpdating)
-                            } label: {
-                                Image(systemName: "ellipsis")
-                            }
-                            .accessibilityLabel(L10n.string("common.more"))
+                            directoryMenu
                         }
                     }
 
-                    if isSelecting && usesSystemSelectionBottomToolbar {
+                    if isSelecting && remote == nil && usesSystemSelectionBottomToolbar {
                         ToolbarItem(placement: .bottomBar) {
                             SelectionBottomToolbar(actions: selectionActions)
                         }
@@ -227,7 +203,7 @@ struct MangaDirectorySheet: View {
             .failureAlert(L10n.string("manga.delete_current_chapter_failed"),
                           message: L10n.string("manga.delete_current_chapter_failed_message"),
                           isPresented: $isCurrentChapterDeleteAlertPresented) {
-                Button(L10n.string("common.ok"), role: .cancel) {}
+                ReaderRemoteButton(L10n.string("common.ok"), role: .cancel) {}
             }
             .destructiveConfirmationDialog(
                 L10n.string("manga.delete_selected_chapters_confirm_title", selectedChapterTIDs.count),
@@ -241,7 +217,7 @@ struct MangaDirectorySheet: View {
                 message: L10n.string("manga.directory.reset_confirm_message"),
                 onConfirm: onResetDirectory
             )
-            .sheet(isPresented: $isCorrectionPresented) {
+            .readerDeviceSheet(isPresented: $isCorrectionPresented) {
                 MangaDirectoryCorrectionSheet(
                     draft: $draft,
                     onSaveCorrection: { draft in
@@ -251,6 +227,35 @@ struct MangaDirectorySheet: View {
                 )
                 .presentationDetents(MangaDirectoryCorrectionSheet.presentationDetents)
             }
+    }
+
+    private var directoryMenu: some View {
+        ReaderRemoteToolbarMenu(title: L10n.string("common.more")) {
+            ReaderRemoteButton {
+                seedDraft(from: panel)
+                isCorrectionPresented = true
+            } label: {
+                Label(L10n.string("manga.correction_title"), systemImage: "pencil")
+            }
+            .disabled(panel.isUpdating)
+            ReaderRemoteButton {
+                isSelecting = true
+            } label: {
+                Label(L10n.string("manga.directory.edit"), systemImage: "checklist")
+            }
+            .disabled(panel.displayChapters.isEmpty || panel.isUpdating)
+            ReaderRemoteButton(action: onGlobalSearch) {
+                Label(L10n.string("manga.global_search"), systemImage: "magnifyingglass")
+            }
+            .disabled(!panel.isUpdateButtonEnabled)
+            Divider()
+            ReaderRemoteButton(role: .destructive) {
+                isResetConfirmationPresented = true
+            } label: {
+                Label(L10n.string("manga.directory.reset"), systemImage: "arrow.counterclockwise")
+            }
+            .disabled(panel.isUpdating)
+        }
     }
 
     private var selectionActions: [SelectionToolbarAction] {
@@ -391,7 +396,7 @@ private struct MangaDirectorySortToggleButton: View {
     @Environment(\.appTheme) private var appTheme
 
     var body: some View {
-        Button {
+        ReaderRemoteButton {
             onSortOrderChange(toggledSortOrder)
         } label: {
             HStack(spacing: 5) {
@@ -434,7 +439,7 @@ private struct MangaDirectoryChapterGridItem: View {
     @ScaledMetric(relativeTo: .body) private var minimumHeight: CGFloat = 48
 
     var body: some View {
-        Button(action: action) {
+        ReaderRemoteButton(action: action) {
             Text(MangaChapterDisplayFormatter.displayNumber(for: chapter))
                 .font(.body.weight(isCurrent ? .semibold : .regular))
                 .monospacedDigit()
@@ -501,7 +506,7 @@ private struct MangaDirectoryChapterRow: View {
                 .layoutPriority(1)
 
                 if isTruncated {
-                    Button {
+                    ReaderRemoteButton {
                         isExpanded.toggle()
                     } label: {
                         Text(isExpanded ? L10n.string("common.collapse") : L10n.string("common.expand"))
@@ -622,19 +627,23 @@ private struct TruncationAwareText: View {
 
 struct MangaDirectoryUnavailableSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
+    var showsRemoteToolbarClose = false
 
     var body: some View {
         NavigationStack {
             MangaDirectoryUnavailableContent()
                 .navigationTitle(L10n.string("manga.directory"))
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
+                    if dismissPanel == nil || showsRemoteToolbarClose {
+                        ToolbarItem(placement: .topBarLeading) {
+                            ReaderRemoteButton {
+                                if let dismissPanel { dismissPanel() } else { dismiss() }
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .accessibilityLabel(L10n.string("common.close"))
                         }
-                        .accessibilityLabel(L10n.string("common.close"))
                     }
                 }
         }

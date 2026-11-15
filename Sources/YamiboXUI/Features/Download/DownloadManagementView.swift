@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct DownloadManagementView: View {
+    @Environment(\.readerRemoteInput) private var remote
     let viewModel: DownloadManagementViewModel
     let queue: DownloadQueueViewModel
     let openQueue: () -> Void
@@ -11,7 +12,7 @@ struct DownloadManagementView: View {
         List {
             if !viewModel.isDownloadManagementSelectionMode {
                 Section {
-                    Button(action: openQueue) {
+                    ReaderRemoteButton(action: openQueue) {
                         HStack(spacing: 12) {
                             Image(systemName: "arrow.down.circle")
                                 .font(.system(size: 20))
@@ -80,28 +81,22 @@ struct DownloadManagementView: View {
                 viewModel: viewModel,
                 groupID: groupID
             )
+            .navigationBarBackButtonHidden(remote != nil)
+            .readerRemoteBack(remote != nil) { selectedGroupID = nil }
         }
         .toolbar {
-            if viewModel.isDownloadManagementSelectionMode {
-                ToolbarItem(placement: .cancellationAction) {
-                    DownloadManagementSelectAllButton(viewModel: viewModel)
-                }
-            }
-
-            ToolbarItem(placement: .primaryAction) {
-                if !viewModel.downloadManagementIsEmpty {
-                    SelectionModeToggleButton(
-                        isSelecting: viewModel.isDownloadManagementSelectionMode,
-                        isDisabled: viewModel.activeAction == .clearingDownload
-                    ) {
-                        viewModel.setDownloadManagementSelectionMode(
-                            !viewModel.isDownloadManagementSelectionMode
-                        )
+            if remote == nil {
+                if viewModel.isDownloadManagementSelectionMode {
+                    ToolbarItem(placement: .cancellationAction) {
+                        DownloadManagementSelectAllButton(viewModel: viewModel)
                     }
                 }
-            }
 
-            #if os(iOS)
+                ToolbarItem(placement: .primaryAction) {
+                    if !viewModel.downloadManagementIsEmpty { selectionToggle }
+                }
+
+                #if os(iOS)
                 if viewModel.isDownloadManagementSelectionMode && usesSystemSelectionBottomToolbar {
                     ToolbarItem(placement: .bottomBar) {
                         SelectionBottomToolbar(
@@ -112,11 +107,24 @@ struct DownloadManagementView: View {
                         )
                     }
                 }
-            #endif
+                #endif
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if remote != nil, !viewModel.downloadManagementIsEmpty {
+                HStack {
+                    if viewModel.isDownloadManagementSelectionMode { DownloadManagementSelectAllButton(viewModel: viewModel) }
+                    Spacer()
+                    selectionToggle
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(.bar)
+            }
         }
         .toolbar(viewModel.isDownloadManagementSelectionMode ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.isDownloadManagementSelectionMode && !usesSystemSelectionBottomToolbar {
+            if viewModel.isDownloadManagementSelectionMode && (remote != nil || !usesSystemSelectionBottomToolbar) {
                 SelectionBottomToolbar(
                     actions: DownloadManagementSelectionActions.delete(
                         actionState: viewModel.downloadManagementSelectionActionState,
@@ -142,5 +150,12 @@ struct DownloadManagementView: View {
         .sensoryFeedback(.selection, trigger: viewModel.selectedDownloadGroupIDs)
         .downloadManagementAlert(viewModel: viewModel, isActive: selectedGroupID == nil)
         .onDisappear { viewModel.setDownloadManagementSelectionMode(false) }
+    }
+
+    private var selectionToggle: some View {
+        SelectionModeToggleButton(isSelecting: viewModel.isDownloadManagementSelectionMode,
+                                  isDisabled: viewModel.activeAction == .clearingDownload) {
+            viewModel.setDownloadManagementSelectionMode(!viewModel.isDownloadManagementSelectionMode)
+        }
     }
 }

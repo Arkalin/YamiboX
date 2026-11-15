@@ -108,6 +108,7 @@ struct MangaPagedPageCurlLeafView: View {
     let likedPageIDs: Set<String>
     var isBack: Bool = false
     var backContent: MangaPagedPageCurlBackContent?
+    var handoff: MangaViewportHandoff?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -159,6 +160,7 @@ struct MangaPagedPageCurlLeafView: View {
             // Cancel the curl container's faster clock only inside the single-page image surface.
             nativeAnimationSpeed: isPageZoomEnabled ? 1 / ReaderPagedPageCurlTransition.animationSpeed : 1
         )
+        .environment(\.mangaViewportHandoff, handoff)
         .padding(.top, informationState.configuration.contentTopInset)
         .background(.black)
         .overlay {

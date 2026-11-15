@@ -22,7 +22,7 @@ struct MangaReaderCompanionPanel: View {
     let appModel: YamiboAppModel
     let discussionWorkTIDs: Set<String>
     @Binding var annotationSegment: ReaderAnnotationSegment
-    let initialTab: ReaderLibraryPanelTab
+    @Binding var selectedTab: ReaderLibraryPanelTab
     let dismissesAfterNavigation: Bool
     let onOpenBookmark: (BookmarkItem) -> Void
     let onOpenLikeAnchor: (LikeAnchorPayload) -> Void
@@ -47,7 +47,7 @@ struct MangaReaderCompanionPanel: View {
                             workTitle: context.displayTitle,
                             like: annotation.like,
                             annotationSegment: $annotationSegment,
-                            initialTab: initialTab,
+                            selectedTab: $selectedTab,
                             onOpenBookmark: onOpenBookmark,
                             onOpenLikeAnchor: openLikeAnchor,
                             onDismiss: onDismiss,
@@ -67,6 +67,7 @@ struct MangaReaderCompanionPanel: View {
                             workTitle: context.displayTitle,
                             like: annotation.like,
                             annotationSegment: $annotationSegment,
+                            selectedTab: $selectedTab,
                             onOpenBookmark: onOpenBookmark,
                             onOpenLikeAnchor: openLikeAnchor,
                             onDismiss: onDismiss,
@@ -139,7 +140,7 @@ private struct MangaReaderDirectoryCompanion: View {
         } else if isEmbedded {
             MangaDirectoryUnavailableContent()
         } else {
-            MangaDirectoryUnavailableSheet()
+            MangaDirectoryUnavailableSheet(showsRemoteToolbarClose: true)
         }
     }
 }

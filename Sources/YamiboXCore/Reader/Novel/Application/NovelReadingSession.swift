@@ -346,7 +346,10 @@ package struct NovelReadingSession: Sendable {
     }
 
     public func captureNovelReadingPosition() -> NovelResumePoint? {
-        currentNovelReadingPosition() ?? preservedResumePoint
+        // The visible edge of a spread is a display detail. Hold the exact
+        // admitted semantic anchor after a layout-only change until a page
+        // turn or a live viewport sample supplies a new reading position.
+        preservedResumePoint ?? currentNovelReadingPosition()
     }
 
     private func currentNovelReadingPosition() -> NovelResumePoint? {
@@ -538,7 +541,14 @@ package struct NovelReadingSession: Sendable {
             currentAuthorID: projection.resolvedAuthorID ?? snapshot.currentAuthorID
         )
         pendingResumePoint = nil
-        preserveCurrentResumePointIfAvailable()
+        if let effectiveResumePoint, effectiveResumePoint.view == resolvedTarget.documentView,
+           let chapterIdentity = effectiveResumePoint.chapterIdentity,
+           surfaces.indices.contains(resolvedTarget.surfaceOrdinal),
+           surfaces[resolvedTarget.surfaceOrdinal].contains(chapterIdentity: chapterIdentity, in: projection) {
+            preservedResumePoint = effectiveResumePoint
+        } else {
+            preserveCurrentResumePointIfAvailable()
+        }
     }
 
     package func surfaceCount(in view: Int) -> Int {

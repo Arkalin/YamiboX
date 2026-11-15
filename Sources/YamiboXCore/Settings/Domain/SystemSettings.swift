@@ -73,6 +73,34 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
     }
 }
 
+public enum ExternalDisplayShortcutAction: String, Codable, Hashable, CaseIterable, Sendable {
+    case toolbar
+    case directory
+    case bookmarks
+    case likes
+    case comments
+    case settings
+
+    public var title: String {
+        switch self {
+        case .toolbar: L10n.string("reader.external.shortcut.toolbar")
+        case .directory: L10n.string("reader.external.shortcut.directory")
+        case .bookmarks: L10n.string("annotations.segment.bookmarks")
+        case .likes: L10n.string("annotations.segment.likes")
+        case .comments: L10n.string("reader.external.shortcut.comments")
+        case .settings: L10n.string("reader.external.shortcut.settings")
+        }
+    }
+}
+
+public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
+    public var shortcutAction: ExternalDisplayShortcutAction
+
+    public init(shortcutAction: ExternalDisplayShortcutAction = .comments) {
+        self.shortcutAction = shortcutAction
+    }
+}
+
 public struct SystemSettings: Codable, Hashable, Sendable {
     public var navigation: AppNavigationSettings
     /// Compatibility projection for settings snapshots written by older clients.
@@ -85,6 +113,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
     public var applePencilPageTurn: ApplePencilPageTurnSettings
     public var gamepad: GamepadSettings
     public var keyboard: KeyboardSettings
+    public var externalDisplay: ExternalDisplaySettings
 
     public init(
         homePage: AppHomePage = .home,
@@ -96,7 +125,8 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         enhancedCheckInEnabled: Bool = false,
         applePencilPageTurn: ApplePencilPageTurnSettings = .init(),
         gamepad: GamepadSettings = .init(),
-        keyboard: KeyboardSettings = .init()
+        keyboard: KeyboardSettings = .init(),
+        externalDisplay: ExternalDisplaySettings = .init()
     ) {
         self.navigation = navigation ?? AppNavigationSettings(startupTab: homePage.tab)
         self.homeShowsOnlyFavorites = homeShowsOnlyFavorites
@@ -107,6 +137,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         self.applePencilPageTurn = applePencilPageTurn
         self.gamepad = gamepad
         self.keyboard = keyboard
+        self.externalDisplay = externalDisplay
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -120,6 +151,7 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         case applePencilPageTurn
         case gamepad
         case keyboard
+        case externalDisplay
     }
 
     /// Decode newer preferences optionally so existing settings retain every other value.
@@ -135,7 +167,8 @@ public struct SystemSettings: Codable, Hashable, Sendable {
             enhancedCheckInEnabled: try container.decodeIfPresent(Bool.self, forKey: .enhancedCheckInEnabled) ?? false,
             applePencilPageTurn: try container.decodeIfPresent(ApplePencilPageTurnSettings.self, forKey: .applePencilPageTurn) ?? .init(),
             gamepad: try container.decodeIfPresent(GamepadSettings.self, forKey: .gamepad) ?? .init(),
-            keyboard: try container.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init()
+            keyboard: try container.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init(),
+            externalDisplay: try container.decodeIfPresent(ExternalDisplaySettings.self, forKey: .externalDisplay) ?? .init()
         )
     }
 
@@ -151,5 +184,6 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         try container.encode(applePencilPageTurn, forKey: .applePencilPageTurn)
         try container.encode(gamepad, forKey: .gamepad)
         try container.encode(keyboard, forKey: .keyboard)
+        try container.encode(externalDisplay, forKey: .externalDisplay)
     }
 }

@@ -12,6 +12,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
     var onLongPress: (() -> Void)?
     var onBaseSizeChange: ((CGSize) -> Void)?
     var onInformationZoomChange: ((Bool) -> Void)?
+    var restoreFocus: (() -> MangaViewportFocus?)?
     private(set) lazy var longPress = UILongPressGestureRecognizer(target: self, action: #selector(showMenu(_:)))
 
     override init() {
@@ -68,6 +69,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             }
             let maximum: CGFloat = configuration.zoomEnabled ? 4 : 1
             if maximumZoomScale != maximum { maximumZoomScale = maximum }
+            applyHandoffFocusIfReady()
             publishNativeState()
         }
     }
@@ -100,7 +102,22 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             placeAtRest()
         }
         configuring = false
+        applyHandoffFocusIfReady()
         publishNativeState()
+    }
+
+    var normalizedFocus: (point: CGPoint, factor: CGFloat)? {
+        guard baseContentSize.width > 0, baseContentSize.height > 0,
+              normalizedZoomFactor > 1.001 else { return nil }
+        let rect = snapshot.visibleRect
+        return (CGPoint(x: rect.midX / baseContentSize.width, y: rect.midY / baseContentSize.height), normalizedZoomFactor)
+    }
+
+    private func applyHandoffFocusIfReady() {
+        guard baseContentSize.width > 0, baseContentSize.height > 0,
+              runtime?.canPinch == true, let focus = restoreFocus?() else { return }
+        place(contentPoint: CGPoint(x: focus.point.x * baseContentSize.width, y: focus.point.y * baseContentSize.height),
+              at: CGPoint(x: bounds.width / 2, y: bounds.height / 2), zoomFactor: focus.factor)
     }
 
     private func placeAtRest() {

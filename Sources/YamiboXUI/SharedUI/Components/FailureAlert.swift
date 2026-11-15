@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 private struct FailureAlertModifier<Actions: View>: ViewModifier {
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
     let title: String
     let message: String?
     let details: LoadFailureDetails?
@@ -12,6 +13,30 @@ private struct FailureAlertModifier<Actions: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         let snapshot = details ?? LoadFailureDetails(message: message ?? title)
+        if let deviceInteraction {
+            content.readerPanel(isPresented: $isPresented, maximumWidth: 450) {
+                VStack(spacing: 12) {
+                    Text(title).font(.headline)
+                    Text(message ?? snapshot.summary).foregroundStyle(.secondary)
+                    HStack {
+                        ReaderRemoteButton(L10n.string("common.ok")) { isPresented = false }
+                        if offersDetails, !snapshot.isSilentForumFailure {
+                            ReaderRemoteButton(L10n.string("load_failure.details")) {
+                                isPresented = false
+                                deviceInteraction.showDetails(snapshot)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(24)
+            }
+        } else {
+            localPresentation(content, snapshot: snapshot)
+        }
+    }
+
+    private func localPresentation(_ content: Content, snapshot: LoadFailureDetails) -> some View {
         content
             .alert(title, isPresented: Binding(
                 get: { isPresented && !snapshot.isSilentForumFailure },

@@ -24,7 +24,7 @@ final class NovelReaderPreparationCoordinator {
 
     private(set) var phase = NovelReaderInitialPresentationPhase.idle
     @ObservationIgnored private(set) var hasStarted = false
-    @ObservationIgnored private(set) var layout = NovelReaderLayout.zero
+    private(set) var layout = NovelReaderLayout.zero
     @ObservationIgnored private(set) var requestedLayout = NovelReaderLayout.zero
     @ObservationIgnored private(set) var layoutRevision: UInt64 = 0
     @ObservationIgnored private var sequence: UInt64 = 0
@@ -36,8 +36,10 @@ final class NovelReaderPreparationCoordinator {
     func setDisplayReporter(active: Bool) {
         hasDisplayReporter = active
         if !active {
-            task?.cancel()
-            finishDisplayWait(error: CancellationError())
+            // Detaching a window removes its display wait, not the session's
+            // data load. Only closing/refreshing cancels the preparation.
+            finishDisplayWait()
+            hasDisplayedInitialSurface = false
         }
     }
 

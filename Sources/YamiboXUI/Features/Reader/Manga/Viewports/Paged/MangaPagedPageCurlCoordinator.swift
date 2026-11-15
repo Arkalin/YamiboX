@@ -320,7 +320,8 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             isPageZoomEnabled: !parent.sequence.usesTwoPageSpread,
             likedPageIDs: leaf.isBack ? [] : parent.likedPageIDs,
             isBack: leaf.isBack,
-            backContent: backContent(for: leaf)
+            backContent: backContent(for: leaf),
+            handoff: parent.handoff
         )
     }
 

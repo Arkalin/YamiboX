@@ -5,6 +5,7 @@ import YamiboXCore
 import UIKit
 
 struct NovelReaderDownloadPanel: View {
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
     @ObservedObject var download: NovelReaderDownloadCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var isSelecting = false
@@ -24,6 +25,12 @@ struct NovelReaderDownloadPanel: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if dismissPanel != nil {
+                        HStack {
+                            Spacer()
+                            ReaderDownloadQueueToolbarButton(entryCount: download.state.queueEntryCount, action: showQueue)
+                        }
+                    }
                     ReaderDownloadSelectionSection(
                         rows: rows,
                         sectionTitle: L10n.string("reader.download_page_section"),
@@ -40,6 +47,7 @@ struct NovelReaderDownloadPanel: View {
                     }
                 }
                 .padding(16)
+                .readerRemoteScrollContent()
             }
             .background(YamiboColors.SystemSurface.groupedBackground)
             .navigationTitle(
@@ -49,35 +57,28 @@ struct NovelReaderDownloadPanel: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
+                if dismissPanel == nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        ReaderToolbarIconButton(systemName: "xmark", title: L10n.string("common.close")) { dismiss() }
                     }
-                    .accessibilityLabel(L10n.string("common.close"))
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ReaderDownloadQueueToolbarButton(entryCount: download.state.queueEntryCount, action: showQueue)
+                    }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    ReaderDownloadQueueToolbarButton(
-                        entryCount: download.state.queueEntryCount,
-                        action: showQueue
-                    )
-                }
-
-                if isSelecting && usesSystemSelectionBottomToolbar {
+                if dismissPanel == nil && isSelecting && usesSystemSelectionBottomToolbar {
                     ToolbarItem(placement: .bottomBar) {
                         SelectionBottomToolbar(actions: selectionActions)
                     }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isSelecting && !usesSystemSelectionBottomToolbar {
+                if isSelecting && (dismissPanel != nil || !usesSystemSelectionBottomToolbar) {
                     SelectionBottomToolbar(actions: selectionActions)
                         .selectionBottomToolbarCapsule()
                 }
             }
-            .sheet(isPresented: $isQueuePresented) {
+            .readerPanel(isPresented: $isQueuePresented) {
                 DownloadQueueSheet(viewModel: queueViewModel, management: managementViewModel)
             }
             .destructiveConfirmationDialog(
@@ -277,21 +278,21 @@ struct NovelReaderDownloadProgressSheet: View {
                 ToolbarItem(placement: .bottomBar) {
                     HStack {
                         if download.state.operation.isFinished {
-                            Button(L10n.string("common.done")) {
+                            ReaderRemoteButton(L10n.string("common.done")) {
                                 download.dismissProgress()
                                 onClose()
                                 dismiss()
                             }
                             .appProminentButtonStyle()
                         } else {
-                            Button(L10n.string("reader.run_in_background")) {
+                            ReaderRemoteButton(L10n.string("reader.run_in_background")) {
                                 download.hideProgress()
                                 onClose()
                                 dismiss()
                             }
                             .appProminentButtonStyle()
 
-                            Button(L10n.string("common.stop"), role: .destructive) {
+                            ReaderRemoteButton(L10n.string("common.stop"), role: .destructive) {
                                 download.stopDownloading()
                             }
                             .buttonStyle(.bordered)

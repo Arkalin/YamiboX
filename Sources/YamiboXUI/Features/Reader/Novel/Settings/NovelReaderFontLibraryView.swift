@@ -2,6 +2,7 @@ import SwiftUI
 import YamiboXCore
 
 struct NovelReaderFontLibraryView: View {
+    @Environment(\.readerRemoteDismiss) private var dismissPanel
     let library: ReaderFontLibrary
     let selection: ReaderFontSelection
     let currentSelection: ReaderFontSelection
@@ -29,7 +30,7 @@ struct NovelReaderFontLibraryView: View {
                     }
                 }
                 Section {
-                    Button {
+                    ReaderRemoteButton {
                         let request = ReaderFontDocumentPicker.Request()
                         pickerRequest = request
                     } label: {
@@ -39,15 +40,28 @@ struct NovelReaderFontLibraryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
+                    .readerRemoteScrollContent()
                     if library.isWorking { ProgressView(L10n.string("reader.font.processing")) }
                     ForEach(library.entries.filter { $0.selection.fileID != nil }) { entry in
-                        fontRow(entry)
-                            .swipeActions {
-                                Button(role: .destructive) { pendingDeletion = entry } label: {
+                        if dismissPanel != nil {
+                            HStack {
+                                fontRow(entry)
+                                ReaderRemoteButton(role: .destructive) { pendingDeletion = entry } label: {
                                     Label(L10n.string("common.delete"), systemImage: "trash")
+                                        .labelStyle(.iconOnly)
                                 }
+                                .buttonStyle(.borderless)
                                 .disabled(library.isWorking)
                             }
+                        } else {
+                            fontRow(entry)
+                                .swipeActions {
+                                    Button(role: .destructive) { pendingDeletion = entry } label: {
+                                        Label(L10n.string("common.delete"), systemImage: "trash")
+                                    }
+                                    .disabled(library.isWorking)
+                                }
+                        }
                     }
                 } header: {
                     Text(L10n.string("reader.font.imported"))
@@ -58,8 +72,10 @@ struct NovelReaderFontLibraryView: View {
             .navigationTitle(L10n.string("reader.font.library"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("common.done")) { dismiss() }
+                if dismissPanel == nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(L10n.string("common.done")) { dismiss() }
+                    }
                 }
             }
             .task {
@@ -71,36 +87,31 @@ struct NovelReaderFontLibraryView: View {
             .onDisappear {
                 library.protect(nil, owner: protectionID)
             }
-            .sheet(item: $pickerRequest) { _ in
-                ReaderFontDocumentPicker { urls in
+            .readerDeviceSheet(item: $pickerRequest) { _ in
+                NovelReaderFontImportPicker { urls in
                     pickerRequest = nil
                     guard let urls else { return }
-                    Task {
-                        report = await library.importFiles(urls).joined(separator: "\n")
-                    }
+                    Task { report = await library.importFiles(urls).joined(separator: "\n") }
                 }
             }
-            .alert(L10n.string("reader.font.delete_file"), isPresented: Binding(
+            .destructiveConfirmationAlert(L10n.string("reader.font.delete_file"), isPresented: Binding(
                 get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
-            )) {
-                Button(L10n.string("common.delete"), role: .destructive) {
-                    guard let entry = pendingDeletion else { return }
-                    pendingDeletion = nil
-                    delete(entry)
-                }
-                Button(L10n.string("common.cancel"), role: .cancel) { pendingDeletion = nil }
+            ), actionTitle: L10n.string("common.delete")) {
+                guard let entry = pendingDeletion else { return }
+                pendingDeletion = nil
+                delete(entry)
             }
-            .alert(L10n.string("reader.font.library"), isPresented: Binding(
+            .failureAlert(L10n.string("reader.font.library"), message: report, offersDetails: false, isPresented: Binding(
                 get: { report != nil }, set: { if !$0 { report = nil } }
             )) {
                 Button(L10n.string("common.done")) { report = nil }
-            } message: { Text(report ?? "") }
+            }
         }
     }
 
     private func fontRow(_ entry: ReaderFontEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { select(entry) } label: {
+            ReaderRemoteButton { select(entry) } label: {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(entry.title).font(.headline)
@@ -126,6 +137,7 @@ struct NovelReaderFontLibraryView: View {
             }
         }
         .padding(.vertical, 4)
+        .readerRemoteScrollContent()
         // Keep separators aligned to the row, not its text or selection checkmark.
         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
         .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
@@ -149,6 +161,18 @@ struct NovelReaderFontLibraryView: View {
         switch status {
         case .available: L10n.string("reader.font.available")
         case .unavailable: L10n.string("reader.font.unavailable")
+        }
+    }
+}
+
+private struct NovelReaderFontImportPicker: View {
+    @Environment(\.readerDeviceDismiss) private var dismissDevice
+    let onFinish: ([URL]?) -> Void
+
+    var body: some View {
+        ReaderFontDocumentPicker { urls in
+            onFinish(urls)
+            dismissDevice?()
         }
     }
 }

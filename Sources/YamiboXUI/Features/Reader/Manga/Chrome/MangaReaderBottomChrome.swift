@@ -190,7 +190,8 @@ private struct MangaReaderDirectoryProgressControl: View {
             },
             onEndScrub: {
                 commitHorizontalCapsuleScrub()
-            }
+            },
+            onCancelScrub: { scrubState.reset() }
         )
         .onAppear(perform: prepareFeedbackGenerators)
     }
@@ -481,6 +482,7 @@ private struct MangaReaderStaticActionControls: View {
                 .frame(width: layout.actionButtonIconFrame, height: layout.actionButtonIconFrame)
                 .frame(maxWidth: .infinity)
         }
+        .readerRemoteActivate(handler)
         .buttonBorderShape(.capsule)
         .readerBottomChromeButtonStyle(tint: appTheme.controlAccent)
         .opacity(isEnabled ? 1 : 0.34)

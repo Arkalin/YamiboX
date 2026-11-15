@@ -14,6 +14,7 @@ struct MangaDirectoryCorrectionSheet: View {
     let onSaveCorrection: (MangaDirectoryEditDraft) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerDeviceDismiss) private var dismissDevice
 
     var body: some View {
         NavigationStack {
@@ -27,7 +28,7 @@ struct MangaDirectoryCorrectionSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        dismiss()
+                        if let dismissDevice { dismissDevice() } else { dismiss() }
                     } label: {
                         Image(systemName: "xmark")
                     }
@@ -37,6 +38,7 @@ struct MangaDirectoryCorrectionSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         onSaveCorrection(trimmedDraft)
+                        dismissDevice?()
                     } label: {
                         Image(systemName: "checkmark")
                     }
