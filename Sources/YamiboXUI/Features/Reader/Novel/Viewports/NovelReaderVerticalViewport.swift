@@ -1232,6 +1232,23 @@ final class NovelReaderVerticalViewportImageView: UIView {
         load(source: source)
     }
 
+    // Resolve native button bounds in the external window, including clipping
+    // by paged and scrolling hosts. Ordinary touch keeps using UIButton actions.
+    func remoteFailureAction(at point: CGPoint, in window: UIWindow,
+                             device: ReaderDeviceInteractionContext?) -> (() -> Void)? {
+        if retryButton.isEnabled, retryButton.readerContains(windowPoint: point, in: window) {
+            return { [weak self] in self?.retryImageLoad() }
+        }
+        if detailsButton.isEnabled, detailsButton.readerContains(windowPoint: point, in: window),
+           let failureDetails {
+            return { [weak self] in
+                if let device { device.showDetails(failureDetails) }
+                else { self?.showDetails() }
+            }
+        }
+        return nil
+    }
+
     func imageTapPayloadIfHit(at point: CGPoint) -> (url: URL, title: String?)? {
         guard let url,
               let image = imageView.image,

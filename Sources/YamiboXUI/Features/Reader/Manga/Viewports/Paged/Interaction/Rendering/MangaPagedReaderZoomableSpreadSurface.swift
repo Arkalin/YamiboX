@@ -53,6 +53,8 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
 }
 
 private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
+    @Environment(\.readerRemoteInput) private var remoteInput
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
     let runtime: MangaSurfaceRuntime
     let configuration: MangaInteractionConfiguration
     let viewport: CGSize
@@ -71,6 +73,8 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
         UIHostingConfiguration {
             // This nested hosting root must not inset the already-laid-out spread again.
             content()
+                .environment(\.readerRemoteInput, remoteInput)
+                .environment(\.readerDeviceInteraction, deviceInteraction)
                 .ignoresSafeArea(.container, edges: MangaPagedLayoutPolicy.hostedPageSafeAreaEdges)
         }
         .margins(.all, 0)

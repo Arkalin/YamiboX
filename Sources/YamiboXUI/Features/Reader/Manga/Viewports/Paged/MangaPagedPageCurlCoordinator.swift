@@ -318,7 +318,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
             likedPageIDs: leaf.isBack ? [] : parent.likedPageIDs,
             isBack: leaf.isBack,
             backContent: backContent(for: leaf),
-            handoff: parent.handoff
+            handoff: parent.handoff,
+            remoteInput: parent.remoteInput,
+            deviceInteraction: parent.deviceInteraction
         )
     }
 

@@ -20,6 +20,8 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let onPageLongPress: (MangaReaderPageProjection) -> Void
     let onTap: () -> Void
     @Environment(\.mangaViewportHandoff) var handoff
+    @Environment(\.readerRemoteInput) var remoteInput
+    @Environment(\.readerDeviceInteraction) var deviceInteraction
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -130,6 +132,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         func updateContentIfNeeded(in view: MangaVerticalNativeViewport) {
+            for case let cell as MangaVerticalCollectionPageCell in view.collectionView.visibleCells {
+                cell.configureRemoteInteraction(input: parent.remoteInput, device: parent.deviceInteraction)
+            }
             if parent.likedPageIDs != lastAppliedLikedPageIDs {
                 lastAppliedLikedPageIDs = parent.likedPageIDs
                 for case let cell as MangaVerticalCollectionPageCell in view.collectionView.visibleCells {
@@ -259,6 +264,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             guard let cell = cell as? MangaVerticalCollectionPageCell,
                   parent.pages.indices.contains(indexPath.item) else { return cell }
             let page = parent.pages[indexPath.item]
+            cell.configureRemoteInteraction(input: parent.remoteInput, device: parent.deviceInteraction)
             cell.configure(
                 page: page, imageLoader: parent.imageLoader,
                 knownHeightToWidthRatio: heightToWidthRatios[page.id],
@@ -547,6 +553,11 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             viewport?.onViewportSizeChange = nil
             viewport?.onInteractionEnd = nil
             viewport?.stopInteraction()
+            if let viewport {
+                for case let cell as MangaVerticalCollectionPageCell in viewport.collectionView.visibleCells {
+                    cell.configureRemoteInteraction(input: nil, device: nil)
+                }
+            }
             viewport?.collectionView.dataSource = nil
             viewport?.collectionView.delegate = nil
             viewport?.panGestureRecognizer.removeTarget(self, action: #selector(handleBoundaryPan(_:)))
@@ -642,12 +653,17 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         imageView.image = nil
         imageView.isHidden = false
         loadStateOverlay.hide()
+        configureRemoteInteraction(input: nil, device: nil)
         likeBadgeImageView.isHidden = true
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         imageView.frame = contentView.bounds
+    }
+
+    func configureRemoteInteraction(input: ReaderExternalInput?, device: ReaderDeviceInteractionContext?) {
+        loadStateOverlay.configureRemoteInteraction(input: input, device: device)
     }
 
     func configure(

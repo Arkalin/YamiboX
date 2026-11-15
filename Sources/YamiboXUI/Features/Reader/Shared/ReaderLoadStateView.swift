@@ -59,6 +59,7 @@ private struct ReaderLoadStateFailureContent: View {
     let details: LoadFailureDetails?
     let retryAction: (() -> Void)?
     let tint: Color
+    @Environment(\.readerDeviceInteraction) private var deviceInteraction
 
     var body: some View {
         VStack(spacing: 12) {
@@ -77,12 +78,17 @@ private struct ReaderLoadStateFailureContent: View {
                 }
                 .buttonStyle(.plain)
                 .tint(tint)
+                .readerRemoteActivate(retryAction)
                 #if os(iOS)
-                ReaderFailureDetailsButton(
-                    details: details ?? LoadFailureDetails(message: message.isEmpty ? title : message),
-                    tint: tint
-                )
-                .frame(minHeight: 44)
+                if deviceInteraction != nil {
+                    LoadFailureDetailsButton(details: details, message: message.isEmpty ? title : message)
+                } else {
+                    ReaderFailureDetailsButton(
+                        details: details ?? LoadFailureDetails(message: message.isEmpty ? title : message),
+                        tint: tint
+                    )
+                    .frame(minHeight: 44)
+                }
                 #else
                 LoadFailureDetailsButton(details: details, message: message.isEmpty ? title : message)
                 #endif
@@ -166,6 +172,9 @@ final class ReaderLoadStateOverlayView: UIView {
     private let failureMessageLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let detailsButton = UIButton(type: .system)
+    private let retryRemoteTarget = ReaderRemoteTargetProbe()
+    private let detailsRemoteTarget = ReaderRemoteTargetProbe()
+    private var deviceInteraction: ReaderDeviceInteractionContext?
     private var retryAction: (() -> Void)?
     private weak var presentedDetailsController: UIViewController?
     private var failureDetails: LoadFailureDetails? {
@@ -184,6 +193,15 @@ final class ReaderLoadStateOverlayView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func configureRemoteInteraction(input: ReaderExternalInput?, device: ReaderDeviceInteractionContext?) {
+        deviceInteraction = device
+        for target in [retryRemoteTarget, detailsRemoteTarget] {
+            target.registry = input?.targets
+            target.visible = input != nil
+            if target.window != nil { input?.targets.add(target) }
+        }
     }
 
     func show(
@@ -253,6 +271,24 @@ final class ReaderLoadStateOverlayView: UIView {
         detailsButton.setTitle(L10n.string("load_failure.details"), for: .normal)
         detailsButton.accessibilityIdentifier = "load-failure-details"
         detailsButton.addTarget(self, action: #selector(handleDetailsButtonTap), for: .touchUpInside)
+        // Register the native buttons with the same priority and visible bounds
+        // as SwiftUI remote controls, above the reader's zoom/gesture surface.
+        for (button, target) in [(retryButton, retryRemoteTarget), (detailsButton, detailsRemoteTarget)] {
+            target.priority = 10
+            target.frame = button.bounds
+            target.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            button.addSubview(target)
+        }
+        retryRemoteTarget.actions = ReaderRemoteActions(tap: { [weak self] _ in
+            self?.handleRetryButtonTap()
+        }, isAvailable: { [weak self] in
+            self?.retryAction != nil && self?.retryButton.isEnabled == true
+        })
+        detailsRemoteTarget.actions = ReaderRemoteActions(tap: { [weak self] _ in
+            self?.handleDetailsButtonTap()
+        }, isAvailable: { [weak self] in
+            self?.failureDetails != nil && self?.detailsButton.isEnabled == true
+        })
         failureStack.axis = .vertical
         failureStack.alignment = .center
         failureStack.spacing = 12
@@ -294,6 +330,10 @@ final class ReaderLoadStateOverlayView: UIView {
 
     @objc private func handleDetailsButtonTap() {
         guard let failureDetails else { return }
+        if let deviceInteraction {
+            deviceInteraction.showDetails(failureDetails)
+            return
+        }
         if let controller = LoadFailureDetailsPresenter.present(failureDetails, from: self) {
             presentedDetailsController = controller
         }

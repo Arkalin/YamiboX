@@ -6,6 +6,8 @@ import UIKit
 
 struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
     @Environment(\.mangaViewportHandoff) var handoff
+    @Environment(\.readerRemoteInput) var remoteInput
+    @Environment(\.readerDeviceInteraction) var deviceInteraction
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIViewController(_ controller: MangaPagedPageCurlContainerViewController, coordinator: MangaPagedPageCurlCoordinator) {
         coordinator.stopImagePrefetch()
