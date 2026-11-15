@@ -1,5 +1,36 @@
 import Foundation
 
+public enum ReaderSettingsTarget: Hashable, Sendable {
+    case device
+    case external(Resolution)
+
+    public struct Resolution: Hashable, Sendable {
+        public let width: Int
+        public let height: Int
+
+        public init?(width: Int, height: Int) {
+            guard width > 0, height > 0 else { return nil }
+            self.width = max(width, height)
+            self.height = min(width, height)
+        }
+
+        fileprivate var key: String { "\(width)x\(height)" }
+    }
+}
+
+private struct ExternalReaderProfile: Codable, Hashable, Sendable {
+    var novel: NovelReaderAppearanceSettings
+    var manga: MangaReaderSettings
+
+    private enum CodingKeys: String, CodingKey { case novel, manga }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try novel.encode(to: container.superEncoder(forKey: .novel), includesForumFormat: false)
+        try container.encode(manga, forKey: .manga)
+    }
+}
+
 /// Thin aggregate over feature-owned settings. Each nested struct is defined
 /// by the feature that owns it and uses compiler-synthesized Codable.
 /// `SettingsStore` falls back to defaults when stored data fails to decode.
@@ -15,6 +46,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var chapterComments: ChapterCommentFilterSettings
     public var readingProgress: ReadingProgressSettings
     public var readerToolbarStyle: ReaderToolbarStyle
+    private var externalReaderProfiles: [String: ExternalReaderProfile] = [:]
 
     public init(
         novelReader: NovelReaderAppearanceSettings = .init(),
@@ -54,6 +86,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case chapterComments
         case readingProgress
         case readerToolbarStyle
+        case externalReaderProfiles
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -80,6 +113,61 @@ public struct AppSettings: Codable, Hashable, Sendable {
             readingProgress: try container.decodeIfPresent(ReadingProgressSettings.self, forKey: .readingProgress) ?? .init(),
             readerToolbarStyle: try container.decodeIfPresent(ReaderToolbarStyle.self, forKey: .readerToolbarStyle) ?? .liquidGlass
         )
+        externalReaderProfiles = (try? container.decode([String: ExternalReaderProfile].self, forKey: .externalReaderProfiles)) ?? [:]
+    }
+
+    public func novelSettings(for target: ReaderSettingsTarget) -> NovelReaderAppearanceSettings {
+        guard case let .external(resolution) = target, let profile = externalReaderProfiles[resolution.key] else {
+            return novelReader
+        }
+        var settings = profile.novel
+        settings.forumFormat = novelReader.forumFormat
+        return settings
+    }
+
+    public func mangaSettings(for target: ReaderSettingsTarget) -> MangaReaderSettings {
+        guard case let .external(resolution) = target else { return manga }
+        return externalReaderProfiles[resolution.key]?.manga ?? manga
+    }
+
+    public mutating func initializeReaderProfile(for resolution: ReaderSettingsTarget.Resolution) {
+        guard externalReaderProfiles[resolution.key] == nil else { return }
+        externalReaderProfiles[resolution.key] = ExternalReaderProfile(novel: Self.scopedNovel(novelReader), manga: manga)
+    }
+
+    public mutating func updateNovelSettings(
+        _ settings: NovelReaderAppearanceSettings, from baseline: NovelReaderAppearanceSettings, for target: ReaderSettingsTarget
+    ) {
+        let updated = Self.scopedNovel(settings)
+        if updated != Self.scopedNovel(baseline) {
+            switch target {
+            case .device:
+                let forumFormat = novelReader.forumFormat
+                novelReader = updated
+                novelReader.forumFormat = forumFormat
+            case let .external(resolution):
+                initializeReaderProfile(for: resolution)
+                externalReaderProfiles[resolution.key]?.novel = updated
+            }
+        }
+        novelReader.forumFormat.applyChanges(from: baseline.forumFormat, to: settings.forumFormat)
+    }
+
+    public mutating func updateMangaSettings(_ settings: MangaReaderSettings, for target: ReaderSettingsTarget) {
+        switch target {
+        case .device:
+            manga = settings
+        case let .external(resolution):
+            initializeReaderProfile(for: resolution)
+            externalReaderProfiles[resolution.key]?.manga = settings
+        }
+    }
+
+    private static func scopedNovel(_ settings: NovelReaderAppearanceSettings) -> NovelReaderAppearanceSettings {
+        var scoped = settings
+        scoped.forumFormat = .init()
+        scoped.resolvedFont = nil
+        return scoped
     }
 
     /// Convenience so callers don't need to reach through `boardReader`

@@ -13,7 +13,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
         var prepareInitialPresentation: @MainActor () async -> Void
         var updatePreparation: @MainActor () -> NovelReadingWorkflowRuntimeUpdatePreparation
         var publish: @MainActor (NovelReadingWorkflowState) -> Void
-        var persist: @MainActor (NovelReaderAppearanceSettings?, ApplePencilPageTurnSettings?) -> Void
         var reportFailure: @MainActor (any Error) -> Void
     }
 
@@ -138,50 +137,36 @@ final class NovelReaderRuntimeUpdateCoordinator {
             .isReadyForTextLayout
     }
 
-    func commitNovelTextAppearance(
-        _ newSettings: NovelReaderAppearanceSettings,
-        applePencilPageTurnSettings requestedApplePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
-    ) async {
-        guard initialPresentationPhase != .cancelled else { return }
-        let newApplePencilPageTurnSettings = requestedApplePencilPageTurnSettings ?? applePencilPageTurnSettings
+    func invalidateViewportUpdates() {
+        reading.workflow()?.supersedePendingRuntimeUpdate()
+        requestSequence &+= 1
+        layoutRequestOwnershipSequence &+= 1
+        appearanceSettingsApplicationSequence &+= 1
+        preparation.rollbackLayoutRequest(ifCurrent: layoutRequestSequence)
+        if isApplyingAppearanceSettings { activity = .idle }
+    }
+
+    func applyNovelTextAppearance(_ newSettings: NovelReaderAppearanceSettings) async {
+        guard initialPresentationPhase != .cancelled, !Task.isCancelled else { return }
         let oldSettings = settings
-        let oldApplePencilPageTurnSettings = applePencilPageTurnSettings
-        let novelReaderSettingsChanged = oldSettings != newSettings
-        let applePencilSettingsChanged = oldApplePencilPageTurnSettings != newApplePencilPageTurnSettings
-        guard novelReaderSettingsChanged else {
-            guard applePencilSettingsChanged else { return }
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            persistSettings(applePencilPageTurnSettings: newApplePencilPageTurnSettings)
-            return
-        }
+        guard oldSettings != newSettings else { return }
 
         if oldSettings.isSurfaceOnlyAppearanceChange(to: newSettings) {
             surfaceAppearanceRevision &+= 1
             latestSurfaceAppearanceSettings = newSettings
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
             if let state = reading.workflow()?.commitSurfaceAppearance(newSettings) {
                 reading.publish(state)
             }
             bootstrapSettings = newSettings
-            persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
-            )
             return
         }
 
         guard reading.workflow()?.state != nil else {
             bootstrapSettings = newSettings
-            applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            persistSettings(
-                novelReaderSettings: newSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? newApplePencilPageTurnSettings : nil
-            )
             return
         }
 
         let applicationSequence = beginApplyingAppearanceSettings()
-        let surfaceRevision = surfaceAppearanceRevision
         let appearanceLayout = NovelReaderLayoutPresentation.layout(
             containerSize: latestRequestedLayout.containerSize,
             safeAreaInsets: latestRequestedLayout.safeAreaInsets,
@@ -204,26 +189,15 @@ final class NovelReaderRuntimeUpdateCoordinator {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
             guard layoutRequestSequence == layoutSequence,
                   layoutRequestOwnershipSequence == layoutOwnership else { return }
-            if surfaceAppearanceRevision == surfaceRevision {
-                applePencilPageTurnSettings = newApplePencilPageTurnSettings
-            }
             preparation.commitLayout(appearanceLayout)
             reading.publish(state)
-            let committedSettings = state.presentation?.committedSettings ?? newSettings
-            bootstrapSettings = committedSettings
-            persistSettings(
-                novelReaderSettings: committedSettings,
-                applePencilPageTurnSettings: applePencilSettingsChanged ? applePencilPageTurnSettings : nil
-            )
+            bootstrapSettings = state.presentation?.committedSettings ?? newSettings
         } catch is CancellationError {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
             rollbackLayoutRequest(ifCurrent: layoutSequence, ownership: layoutOwnership)
         } catch {
             guard appearanceSettingsApplicationSequence == applicationSequence else { return }
             rollbackLayoutRequest(ifCurrent: layoutSequence, ownership: layoutOwnership)
-            if surfaceAppearanceRevision == surfaceRevision {
-                applePencilPageTurnSettings = oldApplePencilPageTurnSettings
-            }
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 reading.reportFailure(error)
             }
@@ -272,13 +246,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 throw error
             }
         }
-    }
-
-    private func persistSettings(
-        novelReaderSettings: NovelReaderAppearanceSettings? = nil,
-        applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
-    ) {
-        reading.persist(novelReaderSettings, applePencilPageTurnSettings)
     }
 
     private func beginLayoutRequestOwnership() -> UInt64 {

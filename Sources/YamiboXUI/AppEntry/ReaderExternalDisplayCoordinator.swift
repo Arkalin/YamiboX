@@ -32,7 +32,7 @@ final class ReaderExternalDisplayCoordinator {
         let owner: Candidate
         let connection: ReaderExternalDisplaySceneDelegate
         let viewport: ReaderViewportLifetime
-        let generation = UUID()
+        let generation: UUID
     }
 
     private struct FailedPresentation {
@@ -347,15 +347,28 @@ final class ReaderExternalDisplayCoordinator {
                   $0.scene != nil && $0.registrationID == registrationID &&
                   ($0.sceneIdentifier != failedPresentation?.sceneID || candidate.contentID != failedPresentation?.contentID)
               }) else { return }
+        guard let bounds = connection.scene?.screen.nativeBounds,
+              let width = Int(exactly: bounds.width), let height = Int(exactly: bounds.height),
+              let resolution = ReaderSettingsTarget.Resolution(width: width, height: height) else {
+            failedPresentation = connection.sceneIdentifier.map {
+                FailedPresentation(sceneID: $0, contentID: candidate.contentID)
+            }
+            reservedOwner = nil
+            model.externalDisplayFailure = true
+            return
+        }
         deviceFrameDuringPreparation = isRestoringDeviceInteraction
             ? nil : candidate.host?.viewIfLoaded?.window?.snapshotView(afterScreenUpdates: false)
-        let viewport = candidate.session.beginExternalViewport()
+        let generation = UUID()
+        let viewport = candidate.session.beginExternalViewport(resolution: resolution) { [weak self] in
+            self?.fail(generation)
+        }
         reservedOwner = candidate
         disconnectedPreparation?.cancel()
         model.externalDisplayFailure = false
         pointer.reset()
         if !isRestoringDeviceInteraction { candidate.session.hideReaderChrome() }
-        let lease = Lease(owner: candidate, connection: connection, viewport: viewport)
+        let lease = Lease(owner: candidate, connection: connection, viewport: viewport, generation: generation)
         self.lease = lease
         connection.displayCoordinator = self
         sessionID = candidate.session.id

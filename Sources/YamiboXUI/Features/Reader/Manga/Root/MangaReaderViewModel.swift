@@ -834,7 +834,7 @@ public final class MangaReaderViewModel {
 
     // MARK: - Settings
 
-    public func applySettings(_ settings: MangaReaderSettings) {
+    func applyViewportSettings(_ settings: MangaReaderSettings) {
         let normalizedSettings = Self.normalizedSettings(settings)
         guard normalizedSettings != committedSettings else { return }
 
@@ -846,11 +846,23 @@ public final class MangaReaderViewModel {
             presentation = presentationWithCommittedSettings(presentation)
         }
 
-        Task { [settingsStore = dependencies.settingsStore, normalizedSettings] in
+    }
+
+    func saveViewportSettings(_ settings: MangaReaderSettings, for target: ReaderSettingsTarget) async throws {
+        let normalized = Self.normalizedSettings(settings)
+        try await dependencies.settingsStore.update { $0.updateMangaSettings(normalized, for: target) }
+    }
+
+    func saveDirectorySortOrder(_ order: MangaDirectorySortOrder, for target: ReaderSettingsTarget) {
+        Task { [settingsStore = dependencies.settingsStore] in
             do {
-                try await settingsStore.update { $0.manga = normalizedSettings }
+                try await settingsStore.update {
+                    var settings = $0.mangaSettings(for: target)
+                    settings.directorySortOrder = order
+                    $0.updateMangaSettings(settings, for: target)
+                }
             } catch {
-                YamiboLog.persistence.error("Failed to save manga reader settings: \(error.localizedDescription)")
+                YamiboLog.persistence.error("Failed to save manga directory sort order: \(error.localizedDescription)")
             }
         }
     }

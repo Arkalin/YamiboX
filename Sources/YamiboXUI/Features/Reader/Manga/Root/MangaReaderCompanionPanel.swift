@@ -11,6 +11,7 @@ struct MangaReaderCompanionPanel: View {
     let companion: MangaReaderCompanion
     let context: MangaLaunchContext
     let model: MangaReaderViewModel
+    let settingsTarget: ReaderSettingsTarget
     let forumDependencies: ForumNavigationDependencies
     let appModel: YamiboAppModel
     let discussionWorkTIDs: Set<String>
@@ -26,6 +27,7 @@ struct MangaReaderCompanionPanel: View {
         case .directory:
             MangaReaderDirectoryCompanion(
                 model: model,
+                settingsTarget: settingsTarget,
                 isEmbedded: false,
                 isActive: true,
                 onNavigate: dismissAfterNavigation,
@@ -48,6 +50,7 @@ struct MangaReaderCompanionPanel: View {
                         ) { isActive, onNavigationStateChange in
                             MangaReaderDirectoryCompanion(
                                 model: model,
+                                settingsTarget: settingsTarget,
                                 isEmbedded: true,
                                 isActive: isActive,
                                 onNavigate: dismissAfterNavigation,
@@ -99,6 +102,7 @@ struct MangaReaderCompanionPanel: View {
 
 private struct MangaReaderDirectoryCompanion: View {
     let model: MangaReaderViewModel
+    let settingsTarget: ReaderSettingsTarget
     let isEmbedded: Bool
     let isActive: Bool
     let onNavigate: () -> Void
@@ -110,9 +114,7 @@ private struct MangaReaderDirectoryCompanion: View {
                 panel: loaded.directoryPanel,
                 onClearFailure: model.clearDirectoryFailure,
                 onSortOrderChange: { sortOrder in
-                    var settings = model.presentation.settings
-                    settings.directorySortOrder = sortOrder
-                    model.applySettings(settings)
+                    model.saveDirectorySortOrder(sortOrder, for: settingsTarget)
                 },
                 onGlobalSearch: { Task { await model.updateDirectory(isForcedSearch: true) } },
                 onResetDirectory: { Task { await model.resetDirectory() } },

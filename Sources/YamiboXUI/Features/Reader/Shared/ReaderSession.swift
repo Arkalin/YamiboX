@@ -24,6 +24,7 @@ private struct ReaderSessionPreparedContent {
 struct ReaderSessionDependencies: Sendable {
     let forum: ForumDependencies
     let mangaReaderOpenValidator: MangaReaderOpenValidator
+    let settingsStore: SettingsStore
 }
 
 enum ReaderSessionPresentation {
@@ -54,6 +55,7 @@ final class ReaderSession: Identifiable {
     private(set) var contentID = UUID()
     private(set) var viewport = ReaderViewportLifetime()
     private(set) var externalViewport: ReaderViewportLifetime?
+    private var pendingSettingsViewport: ReaderViewportLifetime?
     var deviceInteraction: ReaderDeviceInteraction?
     private(set) var isSwitching = false
     private(set) var switchingTitle = L10n.string("reader.switching")
@@ -70,6 +72,7 @@ final class ReaderSession: Identifiable {
     @ObservationIgnored private var novelReader: NovelReaderSessionState?
     @ObservationIgnored private var mangaReader: MangaReaderSessionState?
     @ObservationIgnored private var switchTask: Task<Void, Never>?
+    @ObservationIgnored private var settingsTask: Task<Void, Never>?
     @ObservationIgnored private var onFullScreenHandoff: (@MainActor () -> Void)?
 
     init(
@@ -95,12 +98,14 @@ final class ReaderSession: Identifiable {
 
     deinit {
         switchTask?.cancel()
+        settingsTask?.cancel()
     }
 
     func activate() {
         guard !isClosed else { return }
         guard !isActive else { return }
         isActive = true
+        observeSettings(for: viewport)
         lifecycle.didActivate(self, resumeRoute)
     }
 
@@ -139,6 +144,7 @@ final class ReaderSession: Identifiable {
         viewport = ReaderViewportLifetime()
         if let route = content.resumeRoute { remember(route) }
         isActive = true
+        observeSettings(for: viewport)
         lifecycle.didActivate(self, previousRoute)
     }
 
@@ -162,10 +168,13 @@ final class ReaderSession: Identifiable {
         }
     }
 
-    func beginExternalViewport() -> ReaderViewportLifetime {
+    func beginExternalViewport(
+        resolution: ReaderSettingsTarget.Resolution, onFailure: @escaping @MainActor () -> Void
+    ) -> ReaderViewportLifetime {
         viewport.retire(capturingPosition: true)
-        let next = ReaderViewportLifetime()
+        let next = ReaderViewportLifetime(settingsTarget: .external(resolution))
         externalViewport = next
+        observeSettings(for: next, preparing: true, onFailure: onFailure)
         return next
     }
 
@@ -174,6 +183,64 @@ final class ReaderSession: Identifiable {
         externalViewport.retire(capturingPosition: true)
         self.externalViewport = nil
         viewport = ReaderViewportLifetime()
+        observeSettings(for: viewport, preparing: true)
+    }
+
+    func isPreparingSettings(for viewport: ReaderViewportLifetime) -> Bool {
+        pendingSettingsViewport === viewport
+    }
+
+    private func observeSettings(
+        for viewport: ReaderViewportLifetime,
+        preparing: Bool = false,
+        onFailure: (@MainActor () -> Void)? = nil
+    ) {
+        settingsTask?.cancel()
+        pendingSettingsViewport = nil
+        guard content.resumeRoute != nil else { return }
+        let store = dependencies.settingsStore
+        let changes = store.changes()
+        if preparing {
+            pendingSettingsViewport = viewport
+            novelReader?.model.invalidateViewportSettingsUpdates()
+        }
+        settingsTask = Task { [weak self] in
+            if preparing {
+                let snapshot: AppSettings
+                do {
+                    if case let .external(resolution) = viewport.settingsTarget {
+                        snapshot = try await store.update { $0.initializeReaderProfile(for: resolution) }
+                    } else {
+                        snapshot = await store.load()
+                    }
+                } catch {
+                    guard !Task.isCancelled, viewport.isCurrent else { return }
+                    onFailure?()
+                    return
+                }
+                let applied = await self?.applySettings(snapshot, to: viewport) == true
+                guard !Task.isCancelled, viewport.isCurrent else { return }
+                if !applied, let onFailure {
+                    onFailure()
+                    return
+                }
+                self?.pendingSettingsViewport = nil
+            }
+            for await _ in changes {
+                let snapshot = await store.load()
+                guard !Task.isCancelled, viewport.isCurrent else { return }
+                _ = await self?.applySettings(snapshot, to: viewport)
+            }
+        }
+    }
+
+    private func applySettings(_ settings: AppSettings, to viewport: ReaderViewportLifetime) async -> Bool {
+        guard !Task.isCancelled, viewport.isCurrent, !isClosed else { return false }
+        if let model = novelReader?.model {
+            return await model.applyViewportSettings(settings.novelSettings(for: viewport.settingsTarget), viewport: viewport)
+        }
+        mangaReader?.model.applyViewportSettings(settings.mangaSettings(for: viewport.settingsTarget))
+        return true
     }
 
     func saveReadingPosition() {
@@ -238,6 +305,8 @@ final class ReaderSession: Identifiable {
 
     private func retireReader(savingProgress: Bool) {
         deviceInteraction = nil
+        settingsTask?.cancel()
+        pendingSettingsViewport = nil
         viewport.retire(capturingPosition: savingProgress)
         externalViewport?.retire(capturingPosition: savingProgress)
         externalViewport = nil

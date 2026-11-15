@@ -68,6 +68,15 @@ public struct NovelReaderForumFormatSettings: Codable, Hashable, Sendable {
 
     public init() {}
 
+    mutating func applyChanges(from baseline: Self, to draft: Self) {
+        let fields: [WritableKeyPath<Self, Bool>] = [
+            \.bold, \.italic, \.underline, \.strikethrough, \.textColor, \.backgroundColor, \.ruby, \.quote
+        ]
+        for field in fields where baseline[keyPath: field] != draft[keyPath: field] {
+            self[keyPath: field] = draft[keyPath: field]
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
         case bold, italic, underline, strikethrough, textColor, backgroundColor, ruby, quote
     }
@@ -189,6 +198,31 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         pageTurnDirection = try container.decode(ReaderPageTurnDirection.self, forKey: .pageTurnDirection)
         swapsPageTurnTapZones = try container.decodeIfPresent(Bool.self, forKey: .swapsPageTurnTapZones) ?? false
         translationMode = try container.decode(ReaderTranslationMode.self, forKey: .translationMode)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        try encode(to: encoder, includesForumFormat: true)
+    }
+
+    func encode(to encoder: any Encoder, includesForumFormat: Bool) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isImmersiveModeEnabled, forKey: .isImmersiveModeEnabled)
+        try container.encode(fontScale, forKey: .fontScale)
+        try container.encode(fontSelection, forKey: .fontSelection)
+        try container.encode(lineHeightScale, forKey: .lineHeightScale)
+        try container.encode(characterSpacingScale, forKey: .characterSpacingScale)
+        try container.encode(horizontalPadding, forKey: .horizontalPadding)
+        try container.encode(usesJustifiedText, forKey: .usesJustifiedText)
+        try container.encode(indentsParagraphFirstLine, forKey: .indentsParagraphFirstLine)
+        try container.encode(loadsInlineImages, forKey: .loadsInlineImages)
+        if includesForumFormat { try container.encode(forumFormat, forKey: .forumFormat) }
+        try container.encode(showsTwoPagesInLandscapeOnPad, forKey: .showsTwoPagesInLandscapeOnPad)
+        try container.encode(backgroundStyle, forKey: .backgroundStyle)
+        try container.encode(readingMode, forKey: .readingMode)
+        try container.encode(pagedTurnStyle, forKey: .pagedTurnStyle)
+        try container.encode(pageTurnDirection, forKey: .pageTurnDirection)
+        try container.encode(swapsPageTurnTapZones, forKey: .swapsPageTurnTapZones)
+        try container.encode(translationMode, forKey: .translationMode)
     }
 
     private enum LegacyFontKeys: String, CodingKey { case fontFamily }

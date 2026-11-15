@@ -5,6 +5,7 @@ import YamiboXCore
 /// reader, and a retiring presentation can't remove its successor's handler.
 @MainActor
 final class ReaderViewportLifetime {
+    let settingsTarget: ReaderSettingsTarget
     private weak var peripheralInput: ReaderPeripheralInputManager?
     private var handlerToken: UUID?
     private var attachmentID: UUID?
@@ -17,6 +18,10 @@ final class ReaderViewportLifetime {
     private var isSuspended = false
     private var isInputPaused = false
     private(set) var hasRendered = false
+
+    init(settingsTarget: ReaderSettingsTarget = .device) {
+        self.settingsTarget = settingsTarget
+    }
 
     func attach(
         _ id: UUID,

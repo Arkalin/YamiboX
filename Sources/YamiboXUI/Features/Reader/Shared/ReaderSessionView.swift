@@ -228,11 +228,22 @@ struct ReaderSessionContentView: View {
     @ViewBuilder
     private var content: some View {
         let contentID = session.contentID
+        let viewport = externalViewport ?? session.viewport
+        if session.isPreparingSettings(for: viewport) {
+            Color(.systemBackground).ignoresSafeArea()
+                .overlay { ProgressView().accessibilityLabel(L10n.string("common.loading")) }
+        } else {
+            readerContent(contentID: contentID, viewport: viewport)
+        }
+    }
+
+    @ViewBuilder
+    private func readerContent(contentID: UUID, viewport: ReaderViewportLifetime) -> some View {
         switch session.content {
         case let .novel(context):
             NovelReaderView(
                 reader: session.novelReader(for: context),
-                viewport: externalViewport ?? session.viewport,
+                viewport: viewport,
                 dependencies: navigator.dependencies.destinations.novelReader,
                 forumDependencies: navigator.dependencies,
                 appModel: appModel,
@@ -250,7 +261,7 @@ struct ReaderSessionContentView: View {
         case let .manga(context):
             MangaReaderView(
                 reader: session.mangaReader(for: context),
-                viewport: externalViewport ?? session.viewport,
+                viewport: viewport,
                 dependencies: navigator.dependencies.destinations.mangaReader,
                 forumDependencies: navigator.dependencies,
                 appModel: appModel,

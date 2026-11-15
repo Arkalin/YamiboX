@@ -20,9 +20,6 @@ public final class NovelReaderViewModel {
             prepareInitialPresentation: { [weak self] in await self?.performInitialLoadIfNeeded() },
             updatePreparation: { [weak self] in self?.runtimeUpdatePreparation ?? { $0 } },
             publish: { [weak self] in self?.syncFromWorkflowState($0) },
-            persist: { [weak self] settings, pencil in
-                self?.persistSettings(novelReaderSettings: settings, applePencilPageTurnSettings: pencil)
-            },
             reportFailure: { [weak self] error in
                 self?.errorMessage = error.localizedDescription
                 self?.errorDetails = LoadFailureDetails(error: error)
@@ -637,24 +634,21 @@ public final class NovelReaderViewModel {
         )
     }
 
-    public func commitNovelTextAppearance(
-        _ newSettings: NovelReaderAppearanceSettings,
-        applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
-    ) async {
-        guard !fontProtectionClosed else { return }
+    func invalidateViewportSettingsUpdates() { runtimeUpdates.invalidateViewportUpdates() }
+
+    func applyViewportSettings(_ newSettings: NovelReaderAppearanceSettings, viewport: ReaderViewportLifetime) async -> Bool {
+        guard !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled else { return false }
         let resolved = fontLibrary.resolving(newSettings)
-        guard resolved.resolvedFont?.isFallback != true || newSettings.fontSelection == settings.fontSelection else {
-            errorMessage = L10n.string("reader.font.unavailable")
-            return
-        }
         fontLibrary.protect(newSettings.fontSelection, owner: fontProtectionID)
-        await runtimeUpdates.commitNovelTextAppearance(resolved, applePencilPageTurnSettings: applePencilPageTurnSettings)
-        if !fontProtectionClosed { fontLibrary.protect(settings.fontSelection, owner: fontProtectionID) }
+        await runtimeUpdates.applyNovelTextAppearance(resolved)
+        guard !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled else { return false }
+        fontLibrary.protect(settings.fontSelection, owner: fontProtectionID)
+        return settings == resolved
     }
 
     public func applyApplePencilPageTurnSettings(_ newSettings: ApplePencilPageTurnSettings) {
         applePencilPageTurnSettings = newSettings
-        persistSettings(applePencilPageTurnSettings: newSettings)
+        persistApplePencilSettings(newSettings)
     }
 
     @discardableResult
@@ -1282,20 +1276,12 @@ public final class NovelReaderViewModel {
 
     // MARK: - Appearance persistence
 
-    private func persistSettings(
-        novelReaderSettings: NovelReaderAppearanceSettings? = nil,
-        applePencilPageTurnSettings: ApplePencilPageTurnSettings? = nil
-    ) {
+    private func persistApplePencilSettings(_ settings: ApplePencilPageTurnSettings) {
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await dependencies.settingsStore.update { appSettings in
-                    if let novelReaderSettings {
-                        appSettings.novelReader = novelReaderSettings
-                    }
-                    if let applePencilPageTurnSettings {
-                        appSettings.system.applePencilPageTurn = applePencilPageTurnSettings
-                    }
+                    appSettings.system.applePencilPageTurn = settings
                 }
             } catch {
                 await MainActor.run {

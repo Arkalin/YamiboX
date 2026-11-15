@@ -420,6 +420,7 @@ struct MangaReaderView: View {
             MangaReaderSettingsSheet(
                 model: model,
                 settingsStore: dependencies.settingsStore,
+                settingsTarget: viewport.settingsTarget,
                 peripheralInput: appModel.peripheralInput,
                 controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent,
                 readerViewportSize: viewportSize,
@@ -437,6 +438,7 @@ struct MangaReaderView: View {
                 companion: companion,
                 context: context,
                 model: model,
+                settingsTarget: viewport.settingsTarget,
                 forumDependencies: forumDependencies,
                 appModel: appModel,
                 discussionWorkTIDs: discussionWorkTIDs,

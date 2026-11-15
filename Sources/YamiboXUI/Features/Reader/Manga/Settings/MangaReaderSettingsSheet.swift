@@ -7,6 +7,7 @@ struct MangaReaderSettingsSheet: View {
     // tracked properties read in `body` register observation on their own.
     let model: MangaReaderViewModel
     let settingsStore: SettingsStore
+    let settingsTarget: ReaderSettingsTarget
     let peripheralInput: ReaderPeripheralInputManager
     let controlAccent: Color
     let readerViewportSize: CGSize
@@ -15,7 +16,9 @@ struct MangaReaderSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
-    @State private var hasLoadedDraft = false
+    @State private var baseline: MangaReaderSettings?
+    @State private var isSaving = false
+    @State private var saveFailure: String?
     @State private var isPeripheralSettingsPresented = false
     @State private var tapZonesPreviewRequestID = 0
 
@@ -78,6 +81,14 @@ struct MangaReaderSettingsSheet: View {
         // set the app accent again so UIKit/glass controls cannot fall back
         // to the system blue.
         .tint(controlAccent)
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .failureAlert(
+            L10n.string("common.operation_failed"), message: saveFailure,
+            isPresented: .presentation(isPresented: { saveFailure != nil }, clearOnDismiss: { saveFailure = nil })
+        ) {
+            Button(L10n.string("common.ok")) { saveFailure = nil }
+        }
         .onAppear(perform: loadDraftIfNeeded)
         .sheet(isPresented: $isPeripheralSettingsPresented) {
             ReaderPeripheralSettingsSheet(
@@ -88,15 +99,25 @@ struct MangaReaderSettingsSheet: View {
     }
 
     private func loadDraftIfNeeded() {
-        guard !hasLoadedDraft else { return }
+        guard baseline == nil else { return }
         draftSettings = model.presentation.settings
-        hasLoadedDraft = true
+        baseline = draftSettings
     }
 
     private func commitDraft() {
-        let committedSettings = draftSettings
-        closePanel()
-        model.applySettings(committedSettings)
+        guard let baseline, !isSaving else { return }
+        let draft = draftSettings
+        guard draft != baseline else { closePanel(); return }
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                try await model.saveViewportSettings(draft, for: settingsTarget)
+                dismiss()
+            } catch {
+                saveFailure = error.localizedDescription
+            }
+        }
     }
 
     private func closePanel() {

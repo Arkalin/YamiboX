@@ -541,7 +541,8 @@ public final class YamiboAppModel {
             content: content,
             dependencies: ReaderSessionDependencies(
                 forum: appContext.forumDependencies,
-                mangaReaderOpenValidator: mangaReaderOpenValidator
+                mangaReaderOpenValidator: mangaReaderOpenValidator,
+                settingsStore: appContext.settingsStore
             ),
             lifecycle: ReaderSessionLifecycle(
                 didActivate: { [weak self] session, previousRoute in

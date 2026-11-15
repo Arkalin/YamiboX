@@ -10,6 +10,8 @@ import YamiboXCore
 // settings and the shared option types.
 
 struct NovelReaderFontScaleRow: View {
+    private static let range = 0.8 ... 3.3
+
     let value: Double
     let palette: NovelReaderSheetPalette
     let onChange: (Double) -> Void
@@ -33,7 +35,7 @@ struct NovelReaderFontScaleRow: View {
                     palette: palette,
                     diameter: 44
                 ) {
-                    onChange(max(0.8, value - 0.1))
+                    onChange(max(Self.range.lowerBound, value - 0.1))
                 }
 
                 Slider(
@@ -41,10 +43,10 @@ struct NovelReaderFontScaleRow: View {
                         get: { value },
                         set: { newValue in
                             let stepped = (newValue / 0.1).rounded() * 0.1
-                            onChange(min(2.3, max(0.8, stepped)))
+                            onChange(min(Self.range.upperBound, max(Self.range.lowerBound, stepped)))
                         }
                     ),
-                    in: 0.8 ... 2.3
+                    in: Self.range
                 )
                 .tint(palette.controlAccent)
 
@@ -53,7 +55,7 @@ struct NovelReaderFontScaleRow: View {
                     palette: palette,
                     diameter: 44
                 ) {
-                    onChange(min(2.3, value + 0.1))
+                    onChange(min(Self.range.upperBound, value + 0.1))
                 }
             }
         }

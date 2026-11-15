@@ -272,6 +272,9 @@ struct NovelReaderView: View {
                 controlPagedPagerIdentity = newValue
             }
             .modifier(readerLifecycleModifier(currentLayout: currentLayout))
+            .onChange(of: model.isApplyingAppearanceSettings) { _, applying in
+                if !applying { updateViewportLayout(currentLayout) }
+            }
             .modifier(ReaderViewportRenderAcknowledgement(
                 ready: model.committedViewportLayout == currentLayout && !loadingOverlayPresentation.isPresented &&
                     !model.novelReaderSurfaces.isEmpty,
@@ -375,19 +378,7 @@ struct NovelReaderView: View {
                 // silently no-opped, leaving every chapter ordinal unresolved.
                 await reader.annotations.resolveSortKeys()
             },
-            onLayoutChange: { newValue in
-                Task {
-                    guard viewport.accepts(attachmentID) else { return }
-                    if externalGeometry != nil {
-                        await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
-                    }
-                    guard viewport.accepts(attachmentID) else { return }
-                    await model.commitNovelTextLayout(newValue)
-                    guard viewport.accepts(attachmentID) else { return }
-                    updateChromeForContentState()
-                    restoreVerticalPositionIfNeeded()
-                }
-            },
+            onLayoutChange: updateViewportLayout,
             onMemoryWarning: {
                 model.handleMemoryPressure()
             },
@@ -395,6 +386,22 @@ struct NovelReaderView: View {
                 viewport.detach(attachmentID)
             }
         )
+    }
+
+    private func updateViewportLayout(_ layout: NovelReaderLayout) {
+        Task {
+            // Let the scoped appearance transaction win. Its completion
+            // triggers another read of the current viewport geometry.
+            guard viewport.accepts(attachmentID), !model.isApplyingAppearanceSettings else { return }
+            if externalGeometry != nil {
+                await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
+            }
+            guard viewport.accepts(attachmentID), !model.isApplyingAppearanceSettings else { return }
+            await model.commitNovelTextLayout(layout)
+            guard viewport.accepts(attachmentID) else { return }
+            updateChromeForContentState()
+            restoreVerticalPositionIfNeeded()
+        }
     }
 
     private func novelReaderPresentationModifier() -> NovelReaderPresentationModifier {
@@ -407,6 +414,7 @@ struct NovelReaderView: View {
             chapterCommentsHasLaterChapter: reader.chapterCommentsHasLaterChapter,
             likeDependencies: dependencies.like,
             settingsStore: dependencies.settingsStore,
+            settingsTarget: viewport.settingsTarget,
             forumDependencies: forumDependencies,
             appModel: appModel,
             onJumpToChapterDirectoryChapter: { chapter in

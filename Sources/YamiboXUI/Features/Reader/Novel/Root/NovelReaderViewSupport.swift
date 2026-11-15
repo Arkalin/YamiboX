@@ -145,6 +145,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
     let chapterCommentsHasLaterChapter: Bool
     let likeDependencies: LikeDependencies
     let settingsStore: SettingsStore
+    let settingsTarget: ReaderSettingsTarget
     let forumDependencies: ForumNavigationDependencies
     let appModel: YamiboAppModel
     let onJumpToChapterDirectoryChapter: (NovelReaderChapter) -> Void
@@ -189,6 +190,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
             NovelReaderSettingsSheet(
                 model: model,
                 settingsStore: settingsStore,
+                settingsTarget: settingsTarget,
                 peripheralInput: appModel.peripheralInput,
                 controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent
             )

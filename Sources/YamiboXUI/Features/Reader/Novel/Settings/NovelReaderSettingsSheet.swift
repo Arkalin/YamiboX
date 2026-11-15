@@ -7,12 +7,15 @@ struct NovelReaderSettingsSheet: View {
     // tracked properties read in `body` register observation on their own.
     let model: NovelReaderViewModel
     let settingsStore: SettingsStore
+    let settingsTarget: ReaderSettingsTarget
     let peripheralInput: ReaderPeripheralInputManager
     let controlAccent: Color
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = NovelReaderAppearanceSettings()
-    @State private var hasLoadedDraft = false
+    @State private var baseline: NovelReaderAppearanceSettings?
+    @State private var isSaving = false
+    @State private var saveFailure: String?
     @State private var isPeripheralSettingsPresented = false
     @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
@@ -55,6 +58,14 @@ struct NovelReaderSettingsSheet: View {
         }
         .background(Color.clear)
         .tint(controlAccent)
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .failureAlert(
+            L10n.string("common.operation_failed"), message: saveFailure,
+            isPresented: .presentation(isPresented: { saveFailure != nil }, clearOnDismiss: { saveFailure = nil })
+        ) {
+            Button(L10n.string("common.ok")) { saveFailure = nil }
+        }
         .onAppear(perform: loadDraftIfNeeded)
         .onChange(of: draftSettings.fontSelection) { _, selection in
             model.fontLibrary.protect(selection, owner: fontProtectionID)
@@ -159,17 +170,29 @@ struct NovelReaderSettingsSheet: View {
     }
 
     private func loadDraftIfNeeded() {
-        guard !hasLoadedDraft else { return }
+        guard baseline == nil else { return }
         draftSettings = model.settings
+        baseline = draftSettings
         model.fontLibrary.protect(draftSettings.fontSelection, owner: fontProtectionID)
-        hasLoadedDraft = true
     }
 
     private func commitDraft() {
-        let committedSettings = draftSettings
-        closePanel()
+        guard let baseline, !isSaving else { return }
+        let draft = draftSettings
+        guard draft.fontSelection == baseline.fontSelection || !model.fontLibrary.resolve(draft.fontSelection).isFallback else {
+            saveFailure = L10n.string("reader.font.unavailable")
+            return
+        }
+        let target = settingsTarget
+        isSaving = true
         Task {
-            await model.commitNovelTextAppearance(committedSettings)
+            defer { isSaving = false }
+            do {
+                try await settingsStore.update { $0.updateNovelSettings(draft, from: baseline, for: target) }
+                dismiss()
+            } catch {
+                saveFailure = error.localizedDescription
+            }
         }
     }
 

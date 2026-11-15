@@ -483,7 +483,7 @@ public final class NovelReadingWorkflow {
         )
     }
 
-    private func supersedePendingRuntimeUpdate() {
+    package func supersedePendingRuntimeUpdate() {
         guard pendingRuntimeUpdateTask != nil else { return }
         runtimeUpdateRequestSequence &+= 1
         pendingRuntimeUpdateTask?.cancel()
